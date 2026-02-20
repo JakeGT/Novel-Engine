@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from app.core.config import settings
-from app.api.endpoints import router as api_router
-from app.graph.manager import graph_manager
+from backend.core.config import settings
+from backend.api.endpoints import router as api_router
+from backend.graph.manager import graph_manager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -27,4 +27,4 @@ def read_root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)

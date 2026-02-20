@@ -1,7 +1,7 @@
 from neo4j import GraphDatabase
 from typing import List, Optional, Dict, Any
-from app.graph.schema import Node, Edge, NodeType, EdgeType
-from app.core.config import settings
+from backend.graph.schema import Node, Edge, NodeType, EdgeType
+from backend.core.config import settings
 import logging
 import re
 

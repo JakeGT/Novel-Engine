@@ -14,5 +14,5 @@ A RAG-based novel engine with Knowledge Graph and Story Planning capabilities.
 
 3. Run the server:
    ```bash
-   uvicorn app.main:app --reload
+   uvicorn backend.main:app --reload
    ```

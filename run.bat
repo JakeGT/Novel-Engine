@@ -1,4 +1,4 @@
 @echo off
 echo Starting Novel Engine API...
-uvicorn app.main:app --reload
+uvicorn backend.main:app --reload
 pause

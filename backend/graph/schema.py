@@ -13,6 +13,7 @@ class NodeType(str, Enum):
     SCENE = "Scene"
     ACTION = "Action"
     FLASHBACK = "Flashback"
+    INTERACTION = "Interaction"
     STORY = "Story"
     ACT = "Act"
     ARC = "PlotArc"
@@ -29,6 +30,7 @@ class EdgeType(str, Enum):
     PART_OF = "PART_OF"
     OWNS = "OWNS"
     MEMBER_OF = "MEMBER_OF"
+    OCCURRED_AT = "OCCURRED_AT"
     # Social
     KNOWS = "KNOWS"
     LIKES = "LIKES"

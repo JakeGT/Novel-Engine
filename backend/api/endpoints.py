@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
-from app.graph.manager import graph_manager
-from app.graph.schema import Node, Edge, NodeType
-from app.core.vector_store import vector_store
+from backend.graph.manager import graph_manager
+from backend.graph.schema import Node, Edge, NodeType
+from backend.core.vector_store import vector_store
 from pydantic import BaseModel
 from typing import List, Dict, Any
 
