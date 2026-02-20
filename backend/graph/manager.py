@@ -46,11 +46,14 @@ class GraphManager:
         Creates a uniqueness constraint on the 'id' property for all 'Entity' nodes.
         Reference: CREATE CONSTRAINT IF NOT EXISTS FOR (n:Entity) REQUIRE n.id IS UNIQUE
         """
-        query = "CREATE CONSTRAINT entity_id_unique IF NOT EXISTS FOR (n:Entity) REQUIRE n.id IS UNIQUE"
+        queries = [
+            "CREATE CONSTRAINT entity_id_unique IF NOT EXISTS FOR (n:Entity) REQUIRE n.id IS UNIQUE",
+            ]
         try:
             with self.driver.session() as session:
-                session.run(query)
-                logger.info("Unique constraint on Entity(id) verified.")
+                for query in queries:
+                    session.run(query)
+                logger.info("Constraints created successfully.")
         except Exception as e:
             logger.error(f"Failed to create constraint: {e}")
 
@@ -70,6 +73,15 @@ class GraphManager:
                 target=edge.target, 
                 properties=edge.properties
             )
+
+    def delete_edge(self, edge_id: str):
+        query = """
+        MATCH ()-[r]->()
+        WHERE id(r) = $edge_id
+        DELETE r
+        """
+        with self.driver.session() as session:
+            session.run(query, edge_id=edge_id)
 
     def get_node(self, node_id: str) -> Optional[Dict[str, Any]]:
         query = """
@@ -126,6 +138,50 @@ class GraphManager:
         with self.driver.session() as session:
             result = session.run(query, **params)
             return [record.data() for record in result]
+
+    def get_node_by_type_and_name(self, node_type: str, name: str) -> Optional[Dict[str, Any]]:
+        # Validate and sanitize node_type to prevent injection
+        node_type = self._validate_identifier(node_type)
+        
+        query = f"""
+        MATCH (n:Entity:{node_type} {{name: $name}})
+        RETURN n, labels(n) as labels
+        """
+        with self.driver.session() as session:
+            result = session.run(query, name=name)
+            record = result.single()
+            if record:
+                node_data = dict(record["n"])
+                labels = [l for l in record["labels"] if l != "Entity"]
+                if labels:
+                    node_data["type"] = labels[0]
+                elif record["labels"]:
+                    node_data["type"] = record["labels"][0]
+                return node_data
+            return None
+
+    def get_top_10_nodes_by_name_and_type(self, node_type: str, name: str) -> List[Dict[str, Any]]:
+        # Validate and sanitize node_type to prevent injection
+        node_type = self._validate_identifier(node_type)
+        
+        query = f"""
+        MATCH (n:Entity:{node_type})
+        WHERE toLower(n.name) CONTAINS toLower($name)
+        RETURN n, labels(n) as labels
+        LIMIT 10
+        """
+        with self.driver.session() as session:
+            result = session.run(query, name=name)
+            nodes = []
+            for record in result:
+                node_data = dict(record["n"])
+                labels = [l for l in record["labels"] if l != "Entity"]
+                if labels:
+                    node_data["type"] = labels[0]
+                elif record["labels"]:
+                    node_data["type"] = record["labels"][0]
+                nodes.append(node_data)
+            return nodes
 
 # Singleton instance
 graph_manager = GraphManager()

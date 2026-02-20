@@ -29,6 +29,11 @@ class NodeType(str, Enum):
     RESOURCE = "Resource"
     CONSTRAINT = "Constraint"
     LAW = "Law"
+    # Character Sub-modules
+    APPEARANCE = "Appearance"
+    PERSONALITY = "PersonalityProfile"
+    STATE = "State"
+    BELIEF = "Belief"
 
 class EdgeType(str, Enum):
     # Structural
@@ -37,6 +42,12 @@ class EdgeType(str, Enum):
     OWNS = "OWNS"
     MEMBER_OF = "MEMBER_OF"
     OCCURRED_AT = "OCCURRED_AT"
+    CONTAINS = "CONTAINS"
+    # Character Structural
+    HAS_APPEARANCE = "HAS_APPEARANCE"
+    HAS_PERSONALITY = "HAS_PERSONALITY"
+    CURRENT_STATE = "CURRENT_STATE"
+    HAS_GOAL = "HAS_GOAL"
     # Social
     KNOWS = "KNOWS"
     LIKES = "LIKES"

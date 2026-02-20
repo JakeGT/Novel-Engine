@@ -2,8 +2,11 @@ from fastapi import APIRouter, HTTPException
 from backend.graph.manager import graph_manager
 from backend.graph.schema import Node, Edge, NodeType
 from backend.core.vector_store import vector_store
+from backend.services.character_service import CharacterService
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+
+character_service = CharacterService()
 
 router = APIRouter()
 
@@ -21,7 +24,7 @@ class CreateEdgeRequest(BaseModel):
 class QueryRequest(BaseModel):
     query: str
 
-@router.post("/nodes/")
+@router.post("/graph/nodes/")
 def create_node(node: CreateNodeRequest):
     try:
         new_node = Node(id=node.id, type=node.type, properties=node.properties)
@@ -30,14 +33,28 @@ def create_node(node: CreateNodeRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.get("/nodes/{node_id}")
+@router.get("/graph/nodes/{node_id}")
 def get_node(node_id: str):
     node = graph_manager.get_node(node_id)
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
     return node
 
-@router.post("/edges/")
+@router.get("/graph/nodes/entities")
+def get_entities(type: NodeType):
+    return graph_manager.get_nodes_by_type(type)
+
+@router.put("/graph/nodes/{node_id}")
+def update_node(node_id: str, node: CreateNodeRequest):
+    node = graph_manager.get_node(node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+    node.type = node.type
+    node.properties = node.properties
+    graph_manager.update_node(node)
+    return {"message": "Node updated", "node": node}
+
+@router.post("/graph/edges/")
 def create_edge(edge: CreateEdgeRequest):
     # Basic validation
     if not graph_manager.get_node(edge.source) or not graph_manager.get_node(edge.target):
@@ -51,6 +68,14 @@ def create_edge(edge: CreateEdgeRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@router.delete("/graph/edges/{edge_id}")
+def delete_edge(edge_id: str):
+    try:
+        graph_manager.delete_edge(edge_id)
+        return {"message": "Edge deleted", "edge_id": edge_id}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+        
 @router.post("/rag/query")
 def rag_query(request: QueryRequest):
     # 1. Retrieve relevant text chunks
@@ -65,3 +90,46 @@ def rag_query(request: QueryRequest):
         "graph_context": "Placeholder for Graph Traversal Results",
         "generated_answer": "Placeholder for LLM Generation"
     }
+
+# Character Creation Workflow Endpoints
+
+class CharacterInitRequest(BaseModel):
+    name: str
+    bio: Optional[str] = None
+
+class QuestionsRequest(BaseModel):
+    name: str
+    bio: str
+
+class AnswersRequest(BaseModel):
+    name: str
+    answers: Dict[str, str]
+
+@router.post("/characters/init")
+async def init_character(request: CharacterInitRequest):
+    """Workflow Step 1 & 2: Create initial node"""
+    node = Node(id=request.name.lower().replace(" ", "_"), type="Character", properties={"name": request.name, "bio": request.bio})
+    graph_manager.add_node(node)
+    return {"message": "Character initialized", "node": node}
+
+@router.post("/characters/generate-questions")
+async def generate_questions(request: QuestionsRequest):
+    """Workflow Step 3: Generate questions via GPT-4o"""
+    questions = await character_service.generate_questions(request.name, request.bio)
+    return questions
+
+@router.post("/characters/process-answers")
+async def process_answers(request: AnswersRequest):
+    """Workflow Step 4: Convert answers to KG format and update graph"""
+    update = await character_service.process_answers(request.name, request.answers)
+    
+    # Apply updates to graph
+    for node_data in update.nodes:
+        node = Node(id=node_data.id, type=node_data.type, properties=node_data.properties)
+        graph_manager.add_node(node)
+    
+    for edge_data in update.edges:
+        edge = Edge(source=edge_data.source, target=edge_data.target, type=edge_data.type, properties=edge_data.properties)
+        graph_manager.add_edge(edge)
+        
+    return {"message": "Character graph updated", "update": update}
