@@ -23,6 +23,12 @@ class NodeType(str, Enum):
     CONFLICT = "Conflict"
     SECRET = "Secret"
     WORLD_STATE = "WorldState"
+    # World Building
+    SYSTEM = "System"
+    PRESSURE = "Pressure"
+    RESOURCE = "Resource"
+    CONSTRAINT = "Constraint"
+    LAW = "Law"
 
 class EdgeType(str, Enum):
     # Structural
@@ -57,6 +63,15 @@ class EdgeType(str, Enum):
     TRIGGERS_EVENT = "TRIGGERS_EVENT"
     CHANGES_STATE = "CHANGES_STATE"
     RESOLVES = "RESOLVES"
+    # Systemic (World Building)
+    HAS_SYSTEM = "HAS_SYSTEM"
+    HAS_PRESSURE = "HAS_PRESSURE"
+    REQUIRES_RESOURCE = "REQUIRES_RESOURCE"
+    FORBIDDEN_BY = "FORBIDDEN_BY"
+    CAUSES = "CAUSES"
+    DEPENDS_ON = "DEPENDS_ON"
+    CONTAINS = "CONTAINS"
+    TRAUMATIZED_BY = "TRAUMATIZED_BY"
 
 class Node(BaseModel):
     id: str
