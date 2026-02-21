@@ -76,7 +76,7 @@ def get_node(node_id: str):
     return node
 
 @router.get("/graph/nodes/search")
-def search_nodes(query: str):
+def search_nodes(query: str, type: Optional[str] = None):
     """
     Fast fuzzy search across node names (or IDs if no name) for the given query.
     Used for frontend @-mentions to provide quick autocomplete suggestions.
@@ -84,7 +84,7 @@ def search_nodes(query: str):
     if not query or len(query.strip()) < 2:
         return []
         
-    return graph_manager.search_nodes_by_name(query.strip())
+    return graph_manager.search_nodes_by_name(query.strip(), type)
 
 @router.get("/graph/nodes/entities")
 def get_entities(type: str = None):
@@ -159,33 +159,33 @@ def extract_context_from_tags(request: ContextRequest):
 
 class CharacterInitRequest(BaseModel):
     name: str
-    bio: Optional[str] = None
 
 class QuestionsRequest(BaseModel):
+    id: str
     name: str
     bio: str
 
 class AnswersRequest(BaseModel):
+    id: str
     name: str
     answers: Dict[str, str]
 
 @router.post("/characters/init")
 async def init_character(request: CharacterInitRequest):
-    """Workflow Step 1 & 2: Create initial node"""
-    node = Node(id=request.name.lower().replace(" ", "_"), type="Character", properties={"name": request.name, "bio": request.bio})
-    graph_manager.add_node(node)
+    """Workflow Step 1: Create initial node"""
+    node = character_service.init_character_anchor(request.name)
     return {"message": "Character initialized", "node": node}
 
 @router.post("/characters/generate-questions")
 async def generate_questions(request: QuestionsRequest):
-    """Workflow Step 3: Generate questions via GPT-4o"""
-    questions = await character_service.generate_questions(request.name, request.bio)
+    """Workflow Step 2 & 3: Generate questions via GPT-4o"""
+    questions = await character_service.generate_questions(request.name, request.id, request.bio)
     return questions
 
 @router.post("/characters/process-answers")
 async def process_answers(request: AnswersRequest):
     """Workflow Step 4: Convert answers to KG format and update graph"""
-    update = await character_service.process_answers(request.name, request.answers)
+    update = await character_service.process_answers(request.name, request.id, 1, request.answers)
     
     # Apply updates to graph
     for node_data in update.nodes:

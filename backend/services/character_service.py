@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
-from backend.graph.schema import NodeType, EdgeType, schema_registry
+from backend.graph.schema import NodeType, EdgeType, schema_registry, Node
 from openai import AsyncOpenAI
 from backend.core.config import settings
 from backend.graph.manager import graph_manager
@@ -47,6 +47,18 @@ class CharacterService:
         file_path = debug_dir / filename
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(data.model_dump_json(indent=4))
+
+    def init_character_anchor(self, character_name: str, bio: Optional[str] = None) -> Node:
+        """
+        Creates the base Anchor node for a character deterministically.
+        (Workflow Step 1)
+        """
+        character_id = f"char_{character_name.lower().replace(' ', '_')}"
+        properties = {"name": character_name}
+            
+        node = Node(id=character_id, type="Character", properties=properties)
+        graph_manager.add_node(node)
+        return node
 
     async def generate_questions(self, character_name: str, character_id: str, bio: str) -> CharacterQuestionSheet:
         """
