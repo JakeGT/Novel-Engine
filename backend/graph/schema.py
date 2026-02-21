@@ -92,6 +92,7 @@ class Node(BaseModel):
     id: str
     type: str # Allow dynamic strings
     properties: Dict[str, Any] = Field(default_factory=dict)
+    embedding: Optional[List[float]] = Field(default=None, description="Vector representation of the node for semantic search.")
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class Edge(BaseModel):

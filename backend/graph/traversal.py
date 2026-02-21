@@ -30,32 +30,58 @@ class ContextTraversal:
             if excluded_labels:
                 excluded_labels = f"WHERE {excluded_labels}"
 
-        # We use a variable length path query: (Anchor)-[*1..max_depth]->(n)
-        query = f"""
-        MATCH p=(anchor:Entity)-[r{allowed_rels}*0..{policy.max_depth}]-(n:Entity)
-        WHERE anchor.id IN $anchor_ids
-        {excluded_labels if excluded_labels and 'WHERE' not in 'WHERE' else ('AND ' + excluded_labels.replace('WHERE', '') if excluded_labels else '')}
-        
-        WITH n, length(p) as depth, anchor
-        
-        # Calculate Base Relevance Score based on depth
-        # Depth 0 (Anchor itself) gets max score
-        WITH n, depth, anchor,
-             CASE 
-                WHEN depth = 0 THEN 100.0 
-                ELSE 100.0 / (depth * $weight_depth) 
-             END as temp_score
-             
-        # Optional: Add weight based on specific edge types (would require more complex WITH parsing)
-        
-        RETURN n.id as id, 
-               labels(n) as labels, 
-               n as properties, 
-               min(depth) as shortest_depth, 
-               max(temp_score) as final_score
-        ORDER BY final_score DESC
-        LIMIT $max_nodes
-        """
+        if policy.use_pagerank:
+            # Native Cypher Structural Connectivity Scoring (Mimics Personalized PageRank)
+            # We find all paths from anchors, and score nodes by summing the inverse distances.
+            # A node connected to multiple anchors or via multiple short paths gets a massive score boost.
+            query = f"""
+            MATCH p=(anchor:Entity)-[r{allowed_rels}*0..{policy.max_depth + 1}]-(n:Entity)
+            WHERE anchor.id IN $anchor_ids
+            {excluded_labels if excluded_labels and 'WHERE' not in 'WHERE' else ('AND ' + excluded_labels.replace('WHERE', '') if excluded_labels else '')}
+            
+            WITH n, length(p) as depth
+            
+            // Base score is dampened by depth, just like PageRank damping factor
+            WITH n, depth,
+                 CASE 
+                    WHEN depth = 0 THEN 100.0 
+                    ELSE 100.0 * ( $damping_factor ^ depth )
+                 END as path_score
+                 
+            WITH n, min(depth) as shortest_depth, sum(path_score) as structural_score
+            
+            RETURN n.id as id, 
+                   labels(n) as labels, 
+                   n as properties, 
+                   shortest_depth, 
+                   structural_score as final_score
+            ORDER BY final_score DESC
+            LIMIT $max_nodes
+            """
+        else:
+            # Variable length path traversal (Hop-based)
+            query = f"""
+            MATCH p=(anchor:Entity)-[r{allowed_rels}*0..{policy.max_depth}]-(n:Entity)
+            WHERE anchor.id IN $anchor_ids
+            {excluded_labels if excluded_labels and 'WHERE' not in 'WHERE' else ('AND ' + excluded_labels.replace('WHERE', '') if excluded_labels else '')}
+            
+            WITH n, length(p) as depth, anchor
+            
+            // Calculate Base Relevance Score based on depth
+            WITH n, depth, anchor,
+                 CASE 
+                    WHEN depth = 0 THEN 100.0 
+                    ELSE 100.0 / (depth * $weight_depth) 
+                 END as temp_score
+                 
+            RETURN n.id as id, 
+                   labels(n) as labels, 
+                   n as properties, 
+                   min(depth) as shortest_depth, 
+                   max(temp_score) as final_score
+            ORDER BY final_score DESC
+            LIMIT $max_nodes
+            """
         
         try:
             with self.manager.driver.session() as session:
@@ -63,7 +89,8 @@ class ContextTraversal:
                     query, 
                     anchor_ids=anchor_ids, 
                     weight_depth=policy.weight_depth,
-                    max_nodes=policy.max_nodes
+                    max_nodes=policy.max_nodes,
+                    damping_factor=policy.pagerank_damping
                 )
                 
                 scanned_nodes = []

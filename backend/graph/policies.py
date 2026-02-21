@@ -16,10 +16,15 @@ class TraversalPolicy(BaseModel):
     max_depth: int = Field(default=2, description="Maximum number of hops from the anchor node.")
     allowed_edge_types: Optional[Set[str]] = Field(default=None, description="If True, only traverse these edge types. If None, traverse all.")
     excluded_node_types: Set[str] = Field(default_factory=set, description="Do not return or traverse through these node types.")
-    
     # Relevance Scoring Weights
-    weight_depth: float = Field(default=1.0, description="Multiplier for depth penalty (e.g. 1.0 = depth 1 is 100%, depth 2 is 50%).")
-    weight_recentness: float = Field(default=0.0, description="Multiplier for temporal relevance (if applicable).")
+    weight_depth: float = Field(default=1.0, description="Multiplier for depth penalty (if not using PageRank).")
+    weight_recentness: float = Field(default=0.0, description="Multiplier for temporal relevance.")
+    
+    # Neo4j GraphRAG (Semantic + PageRank) Settings
+    use_semantic_search: bool = Field(default=False, description="Whether to embed the prompt and find semantic anchors.")
+    semantic_top_k: int = Field(default=3, description="Number of semantic anchors to retrieve if semantic search is used.")
+    use_pagerank: bool = Field(default=False, description="If True, uses Graph Data Science Personalized PageRank instead of hop limits.")
+    pagerank_damping: float = Field(default=0.85, description="PageRank damping factor (higher spreads further).")
     
     # Limits
     max_nodes: int = Field(default=50, description="Hard cap on the total number of nodes returned.")
@@ -33,6 +38,10 @@ SCENE_GENERATION_POLICY = TraversalPolicy(
     allowed_edge_types={"HAS_APPEARANCE", "HAS_PERSONALITY", "CURRENT_STATE", "BELIEVES", "LOCATED_AT", "OWNS", "PARTICIPATED_IN"},
     excluded_node_types={"System", "Meta"}, # Don't pull meta-game systems into immediate scene prose
     weight_depth=1.5,
+    use_semantic_search=True,
+    semantic_top_k=5,
+    use_pagerank=True,
+    pagerank_damping=0.85,
     max_nodes=30
 )
 

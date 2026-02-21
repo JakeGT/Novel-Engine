@@ -4,6 +4,8 @@ from backend.graph.schema import NodeType, EdgeType, schema_registry, Node
 from openai import AsyncOpenAI
 from backend.core.config import settings
 from backend.graph.manager import graph_manager
+from backend.graph.vector_search import generate_query_embedding
+from backend.graph.resolver import extract_entity_ids
 import json
 from pathlib import Path
 import logging
@@ -55,8 +57,11 @@ class CharacterService:
         """
         character_id = f"char_{character_name.lower().replace(' ', '_')}"
         properties = {"name": character_name}
+        
+        # Calculate initial semantic embedding for the anchor
+        embedding = generate_node_embedding("Character", properties)
             
-        node = Node(id=character_id, type="Character", properties=properties)
+        node = Node(id=character_id, type="Character", properties=properties, embedding=embedding)
         graph_manager.add_node(node)
         return node
 
@@ -65,7 +70,35 @@ class CharacterService:
         Generates a list of questions to flesh out a character based on a basic bio.
         (Workflow Step 3)
         """
-        prompt = f"Character Name: {character_name} (ID: {character_id})\nCharacter Bio: {bio}"
+        # 1. RAG Sweep: Find contextual nodes based on the bio
+        context_str = "No existing relevant Knowledge Graph context found."
+        context_nodes = []
+        
+        # 1a. Explicit Anchors
+        explicit_ids = extract_entity_ids(bio)
+        for n_id in explicit_ids:
+            node = graph_manager.get_node(n_id)
+            if node:
+                 context_nodes.append(f"- Explicitly Tagged [{n_id}] ({node.get('type')}): {json.dumps(node.get('properties', {}))}")
+                 
+        # 1b. Semantic Anchors
+        bio_embedding = generate_query_embedding(bio)
+        if bio_embedding:
+            # Get top 5 most semantically relevant nodes from the whole graph
+            semantic_ids = graph_manager.search_semantic_nodes(bio_embedding, top_k=5, min_score=0.4)
+            if semantic_ids:
+                for n_id in semantic_ids:
+                    if n_id in explicit_ids: continue # Skip if already caught explicitly
+                    node = graph_manager.get_node(n_id)
+                    if node:
+                         # Exclude characters to focus on World/Events unless strictly necessary
+                         if node.get('type') not in ['Character', 'Appearance', 'PersonalityProfile', 'State', 'Belief']:
+                            context_nodes.append(f"- Semantically Related {node.get('name', n_id)} ({node.get('type')}): {json.dumps(node.get('properties', {}))}")
+                
+        if context_nodes:
+            context_str = "Existing Knowledge Graph Context (Use this to anchor your questions in the established world lore):\n" + "\n".join(context_nodes)
+
+        prompt = f"Character Name: {character_name} (ID: {character_id})\nCharacter Bio: {bio}\n\n{context_str}"
         
         response = await self.client.beta.chat.completions.parse(
             model=self.model,
@@ -102,7 +135,37 @@ class CharacterService:
         TODO: Add RAG for existing events, locations, and characters
         """
         answers_text = "\n".join([f"Q: {q}\nA: {a}" for q, a in answers.items()])
-        prompt = f"Character: {character_name} (ID: {character_id}) Chapter Number: {chapter_number}\n\nUser Answers:\n{answers_text}"
+        
+        # 1. RAG Sweep: Find contextual nodes based on the answers
+        context_str = "No existing relevant Knowledge Graph context found."
+        context_nodes = []
+        
+        # 1a. Explicit Anchors
+        explicit_ids = extract_entity_ids(answers_text)
+        for n_id in explicit_ids:
+            node = graph_manager.get_node(n_id)
+            if node:
+                 context_nodes.append(f"- ID: {n_id} (EXPLICIT MATCH), Name: {node.get('name', 'Unknown')} ({node.get('type')}): {json.dumps(node.get('properties', {}))}")
+                 
+        # 1b. Semantic Anchors
+        answers_embedding = generate_query_embedding(answers_text)
+        if answers_embedding:
+            # Broader sweep for answers to catch Events, Locations, Factions, etc.
+            semantic_ids = graph_manager.search_semantic_nodes(answers_embedding, top_k=10, min_score=0.4)
+            if semantic_ids:
+                for n_id in semantic_ids:
+                    if n_id in explicit_ids: continue # Skip if already caught explicitly
+                    node = graph_manager.get_node(n_id)
+                    if node:
+                        # Exclude subjective/internal states of other characters to prevent leaking secrets,
+                        # but allow public nodes like Events, Locations, Factions, Concepts
+                        if node.get('type') not in ['Appearance', 'PersonalityProfile', 'State', 'Belief']:
+                            context_nodes.append(f"- ID: {n_id}, Name: {node.get('name', 'Unknown')} ({node.get('type')}): {json.dumps(node.get('properties', {}))}")
+                
+        if context_nodes:
+            context_str = "Existing Knowledge Graph Entities (If the user mentions one of these, reuse its exact ID instead of creating a new node):\n" + "\n".join(context_nodes)
+
+        prompt = f"Character: {character_name} (ID: {character_id}) Chapter Number: {chapter_number}\n\nUser Answers:\n{answers_text}\n\n{context_str}"
 
         system_message = (
             "You are a Knowledge Graph specialist. Your task is to convert character details into a modular Graph format.\n\n"
@@ -111,16 +174,16 @@ class CharacterService:
             "2. Personality: (Character)-[:HAS_PERSONALITY]->(:PersonalityProfile {core_trait, attachment_style, alignment}). For example: (Character)-[:HAS_PERSONALITY]->(:PersonalityProfile {core_trait: 'brave', attachment_style: 'avoidant', alignment: 'good'})\n"
             "3. State: (Character)-[:CURRENT_STATE]->(:State {anger, trust_levels, chapter, etc}). For example: (Character)-[:CURRENT_STATE]->(:State {anger: 0.5, trust_levels: 0.7, trust_character1: 0.4, chapter: 1})\n"
             "4. Beliefs: (Character)-[:BELIEVES]->(:Belief {about, claim, confidence, is_true}). For example: (Character)-[:BELIEVES]->(:Belief {about: 'The King', claim: 'He is a tyrant', confidence: 0.9, is_true: true})\n"
-            "5. Events: (Character)-[:PARTICIPATED_IN]->(Event) (refer to existing events if mentioned)\n\n"
+            "5. Events/Locations/Factions: (Character)-[:PARTICIPATED_IN|LOCATED_AT|MEMBER_OF]->(Event|Location|Faction). **CRITICAL**: Check the 'Existing Knowledge Graph Entities' in the prompt. If the user mentions an entity that matches an existing one, you MUST reuse exactly that ID. Do NOT create a new node if one already exists. If it is entirely new, generate a new ID.\n\n"
             "Instructions:\n"
             "- Ensure the Character node is the anchor.\n"
             "- Break down details into these specific sub-nodes.\n"
-            "Use the following deterministic ID format:"
+            "Use the following deterministic ID format for NEW personal nodes:"
             "- Appearance: appearance"
             "- Personality: personality"
             "- State: state"
             "- Beliefs: belief_{short_slug}\n"
-            "- Events: event_{short_slug}\n\n"
+            "- New Events: event_{short_slug}\n\n"
             "AVAILABLE TYPES FOR CUSTOM NODES/EDGES:\n"
             f"Node Types: {', '.join(schema_registry.get_all_node_types())}\n"
             f"Edge Types: {', '.join(schema_registry.get_all_edge_types())}\n"
@@ -150,22 +213,15 @@ class CharacterService:
                 node.id = f"state_{character_id}_ch{chapter_number}"
             elif node.type == "Belief":
                 node.id = f"belief_{node.id}_{character_id}"
-            elif node.type == "Event":
-                # Check for existing event by name if properties exist
-                event_name = node.properties.get("name")
-                if event_name:
-                    existing = graph_manager.get_node_by_type_and_name("Event", event_name)
-                    if existing:
-                        node.id = existing["id"]
-                    else:
-                        # Search for top 10 and ask user through frontend
-                        # TODO: Implement this and consider embeddings search
-                        pass
+            elif node.type in ["Event", "Location", "Faction", "System", "Concept"]:
+                # The LLM is instructed to reuse existing IDs for these public nodes if they match the context.
+                # If it generated a new ID, we just ensure it's slugified.
+                node.id = node.id.lower().replace(" ", "_")
             else:
                 if not schema_registry.is_valid_node_type(node.type):
                     # TODO: Consult user
                     pass
-                node.id += f"{node.type}_{character_id}"
+                node.id += f"_{node.type}_{character_id}"
 
         for edge in parsed.edges:
             if not schema_registry.is_valid_edge_type(edge.type):

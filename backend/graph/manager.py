@@ -13,6 +13,9 @@ class GraphManager:
             settings.NEO4J_URI, 
             auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD)
         )
+        # Ensure constraints and indexes are created on startup
+        self.create_constraints()
+        self.create_vector_index()
 
     def close(self):
         self.driver.close()
@@ -35,11 +38,15 @@ class GraphManager:
         query = f"""
         MERGE (n:Entity {{id: $id}})
         SET n:{label}, n += $properties
-        RETURN n
         """
         
+        if node.embedding is not None:
+            query += "SET n.embedding = $embedding\n"
+            
+        query += "RETURN n"
+        
         with self.driver.session() as session:
-            session.run(query, id=node.id, properties=node.properties)
+            session.run(query, id=node.id, properties=node.properties, embedding=node.embedding)
 
     def create_constraints(self):
         """
@@ -56,6 +63,41 @@ class GraphManager:
                 logger.info("Constraints created successfully.")
         except Exception as e:
             logger.error(f"Failed to create constraint: {e}")
+
+    def create_vector_index(self):
+        """
+        Creates a native vector index for Entity embeddings.
+        Tries Neo4j 5.15+ syntax first, falls back to older 5.x procedure.
+        """
+        query_v5_15 = """
+        CREATE VECTOR INDEX entity_embeddings IF NOT EXISTS
+        FOR (n:Entity)
+        ON (n.embedding)
+        OPTIONS {indexConfig: {
+         `vector.dimensions`: 384,
+         `vector.similarity_function`: 'cosine'
+        }}
+        """
+        
+        query_v5_0 = """
+        CALL db.index.vector.createNodeIndex('entity_embeddings', 'Entity', 'embedding', 384, 'cosine')
+        """
+        
+        try:
+            with self.driver.session() as session:
+                try:
+                    session.run(query_v5_15)
+                    logger.info("Vector Index created successfully (v5.15+ syntax).")
+                except Exception as e:
+                    if "SyntaxError" in str(e) or "Neo.ClientError.Statement.SyntaxError" in str(e):
+                        logger.warning("5.15+ syntax failed, trying older db.index.vector procedure...")
+                        session.run(query_v5_0)
+                        logger.info("Vector Index created successfully (v5.0 syntax).")
+                    else:
+                        raise e
+        except Exception as e:
+            if "already exists" not in str(e).lower():
+                logger.error(f"Failed to create vector index: {e}")
 
     def add_edge(self, edge: Edge):
         # Validate and sanitize relationship type
@@ -107,10 +149,15 @@ class GraphManager:
         query = """
         MATCH (n:Entity {id: $id})
         SET n += $properties
-        RETURN n, labels(n) as labels
         """
+        
+        if node.embedding is not None:
+            query += "SET n.embedding = $embedding\n"
+            
+        query += "RETURN n, labels(n) as labels"
+        
         with self.driver.session() as session:
-            result = session.run(query, id=node.id, properties=node.properties)
+            result = session.run(query, id=node.id, properties=node.properties, embedding=node.embedding)
             record = result.single()
             if record:
                 node_data = dict(record["n"])
@@ -283,6 +330,27 @@ class GraphManager:
                     "type": node_type
                 })
             return nodes
+
+    def search_semantic_nodes(self, embedding: List[float], top_k: int = 5, min_score: float = 0.5) -> List[str]:
+        """
+        Uses the native Neo4j vector index to find the most semantically similar nodes.
+        Returns a list of node IDs.
+        """
+        query = """
+        CALL db.index.vector.queryNodes('entity_embeddings', $top_k, $embedding)
+        YIELD node, score
+        WHERE score >= $min_score
+        RETURN node.id as id, score
+        """
+        anchor_ids = []
+        try:
+            with self.driver.session() as session:
+                result = session.run(query, top_k=top_k, embedding=embedding, min_score=min_score)
+                for record in result:
+                    anchor_ids.append(record["id"])
+        except Exception as e:
+            logger.error(f"Semantic search failed: {e}")
+        return anchor_ids
 
 # Singleton instance
 graph_manager = GraphManager()

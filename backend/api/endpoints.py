@@ -7,6 +7,7 @@ from backend.graph.resolver import extract_entity_ids
 from backend.graph.policies import get_policy
 from backend.graph.traversal import context_traversal
 from backend.graph.summarizer import summarize_context
+from backend.graph.vector_search import generate_node_embedding, generate_query_embedding
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
@@ -65,7 +66,8 @@ def create_node(node: CreateNodeRequest):
         schema_registry.add_custom_node_type(node.type)
         
     try:
-        new_node = Node(id=node.id, type=node.type, properties=node.properties)
+        embedding = generate_node_embedding(node.type, node.properties)
+        new_node = Node(id=node.id, type=node.type, properties=node.properties, embedding=embedding)
         graph_manager.add_node(new_node)
         return {"message": "Node created", "node": new_node}
     except ValueError as e:
@@ -103,8 +105,8 @@ def update_node(node_id: str, node_request: CreateNodeRequest):
         raise HTTPException(status_code=404, detail="Node not found")
     node["type"] = node_request.type
     node["properties"] = node_request.properties
-    node = Node(id=node["id"], type=node["type"], properties=node["properties"])
-    print(node)
+    embedding = generate_node_embedding(node["type"], node["properties"])
+    node = Node(id=node["id"], type=node["type"], properties=node["properties"], embedding=embedding)
     graph_manager.update_node(node)
     return {"message": "Node updated", "node": node}
 
@@ -171,15 +173,26 @@ def extract_context_from_tags(request: ContextRequest):
     to selectively query the Knowledge Graph for relevant context.
     """
     # 1. Resolve explicit anchors
-    anchor_ids = extract_entity_ids(request.text)
-    if not anchor_ids:
-        return {"nodes": [], "summary": ""}
+    explicit_anchors = extract_entity_ids(request.text)
         
     # 2. Get active policy based on frontend usage type
     policy = get_policy(request.context_type)
     
-    # 3. Traverse graph using policy rules
-    scanned_subgraph = context_traversal.traverse(anchor_ids, policy)
+    # 3. Resolve semantic anchors
+    semantic_anchors = []
+    if policy.use_semantic_search:
+        query_embedding = generate_query_embedding(request.text)
+        if query_embedding:
+            semantic_anchors = graph_manager.search_semantic_nodes(query_embedding, top_k=policy.semantic_top_k)
+            
+    # Combine anchors (deduplicated)
+    combined_anchors = list(set(explicit_anchors + semantic_anchors))
+    
+    if not combined_anchors:
+        return {"nodes": [], "summary": "", "policy_used": policy.context_type}
+    
+    # 4. Traverse graph using policy rules
+    scanned_subgraph = context_traversal.traverse(combined_anchors, policy)
     
     # 4. Summarize and format for LLM injection
     formatted_context = summarize_context(scanned_subgraph)
@@ -225,7 +238,8 @@ async def process_answers(request: AnswersRequest):
     
     # Apply updates to graph
     for node_data in update.nodes:
-        node = Node(id=node_data.id, type=node_data.type, properties=node_data.properties)
+        embedding = generate_node_embedding(node_data.type, node_data.properties)
+        node = Node(id=node_data.id, type=node_data.type, properties=node_data.properties, embedding=embedding)
         graph_manager.add_node(node)
     
     for edge_data in update.edges:
