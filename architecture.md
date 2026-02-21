@@ -5,7 +5,7 @@ A RAG-based novel engine that maintains a consistent, evolving world state using
 
 ## 2. Knowledge Graph Schema
 
-- **Entity**: [Character](file:///c:/Users/jaket/Personal%20Projects/Novel%20Engine/backend/services/character_service.py#36-164), `Location`, `Object`, `Faction`, `Concept`, `Resource`, `Appearance`, `PersonalityProfile`, `State`, `Belief`, `Goal`
+- **Entity**: [Character](file:///c:/Users/jaket/Personal%20Projects/Novel%20Engine/backend/services/character_service.py#39-173), `Location`, `Object`, `Faction`, `Concept`, `Resource`, `Appearance`, `PersonalityProfile`, `State`, `Belief`, `Goal`
 - **World**: `System` (Magic, Political, Tech), `Pressure` (Conflict, Scarcity), `Law`, `Constraint`
 - **Event**: `Scene`, `Action`, `Flashback`, `Interaction` (Properties: `category`, `chapter`, `timeline_index`, `summary`, `flags`)
 - **Meta**: `StoryBranch`, `WorldState`, `Source` (e.g., "User Input", "Inference")
@@ -17,7 +17,7 @@ All edges should support **Temporal Properties** (`valid_from`, `valid_until`) a
 *   **Systemic**: `HAS_SYSTEM`, `HAS_PRESSURE`, `REQUIRES_RESOURCE`, `FORBIDDEN_BY`, `AFFECTS`, `CAUSES`, `DEPENDS_ON`
 *   **Social**: `KNOWS`, `LIKES`, `HATES`, `RELATED_TO` (properties: `intensity`, `secret_level`), `PARTICIPATED_IN`, `TRAUMATIZED_BY`
 *   **Epistemic (Beliefs)**:
-    *   **Direct**: [(Character) -[BELIEVES]-> (Statement)](file:///c:/Users/jaket/Personal%20Projects/Novel%20Engine/backend/graph/schema.py#87-92) 
+    *   **Direct**: [(Character) -[BELIEVES]-> (Statement)](file:///c:/Users/jaket/Personal%20Projects/Novel%20Engine/backend/graph/schema.py#98-105) 
 ### 2.5. Character Architecture (Modular)
 Characters use a stable anchor node with dynamic sub-nodes:
 - **Character (Anchor)**: Identity-defining properties (id, name, role, archetype, birthdate).
@@ -105,8 +105,8 @@ A separate but connected subgraph representing **Narrative Intent**.
 
 ## 5. Security/Secrets
 *   **Secret Node**: `Secret(ID: 123, Content: "Bob stole the ring")`.
-*   **Access**: [(Bob)-[KNOWS]->(Secret 123)](file:///c:/Users/jaket/Personal%20Projects/Novel%20Engine/backend/graph/schema.py#87-92).
-*   **Leakage Risk**: If [(Alice)-[HEARS]->(Event: Bob talks to Self)](file:///c:/Users/jaket/Personal%20Projects/Novel%20Engine/backend/graph/schema.py#87-92), probabilistic check if the secret edge is created for Alice.
+*   **Access**: [(Bob)-[KNOWS]->(Secret 123)](file:///c:/Users/jaket/Personal%20Projects/Novel%20Engine/backend/graph/schema.py#98-105).
+*   **Leakage Risk**: If [(Alice)-[HEARS]->(Event: Bob talks to Self)](file:///c:/Users/jaket/Personal%20Projects/Novel%20Engine/backend/graph/schema.py#98-105), probabilistic check if the secret edge is created for Alice.
 
 ## 6. Dual-Database RAG Architecture
 The engine uses a "Two-Brain" approach. The Neo4j Knowledge Graph (KG) serves as the **deterministic source of truth**, while ChromaDB (Vector DB) stores semantic content, stylistic recall, and narrative summaries. The Vector DB **never overrides** the KG.
@@ -115,7 +115,7 @@ The engine uses a "Two-Brain" approach. The Neo4j Knowledge Graph (KG) serves as
 The Vector DB stores immutable, append-only chunks. Old versions are marked with `active=false`. It determines if the "God Hand" should target the KG (hard facts) or Vector DB (stylistic/semantic facts).
 **Vector Schema**:
 *   `ID`: Shared stable ID with the KG where applicable (e.g., `event_brother_execution`).
-*   [Type](file:///c:/Users/jaket/Personal%20Projects/Novel%20Engine/backend/graph/schema.py#6-37): `scene summary`, `character summary`, `rule summary`, `world summary`, `timeline summary`, `faction summary`, `item summary`, `planning document`.
+*   [Type](file:///c:/Users/jaket/Personal%20Projects/Novel%20Engine/backend/graph/schema.py#11-42): `scene summary`, `character summary`, `rule summary`, `world summary`, `timeline summary`, `faction summary`, `item summary`, `planning document`.
 *   `entity_refs`: List of KG Node IDs involved.
 *   `timeline_position`: Chronological anchor.
 *   `world_arc`: The overarching storyline/branch.
@@ -152,3 +152,20 @@ Tracking unresolved threads (e.g., mysteries, promises) requires a dedicated mec
 *   **Option A: KG-Native (Current)**. Use `Conflict` or `PlotArc` nodes connected via `RESOLVES` edges. *Pros*: Tightly coupled to deterministic truth. *Cons*: Hard to capture nuanced, semantic tension.
 *   **Option B: Vector DB Planning Docs**. Store "unresolved thread" summaries in ChromaDB. *Pros*: Excellent semantic retrieval during Level 3 Querying. *Cons*: Might drift from actual KG facts if not synced.
 *   **Option C: Hybrid (Recommended)**. `Thread` nodes in KG track binary open/closed status, linking to Vector DB "Planning Documents" for the semantic context.
+
+## 7. Frontend Tagging & Entity Resolution
+To bridge frontend user input with deterministic backend Knowledge/Vector graphs, the system uses a strictly formatted Markdown Link approach for `@` mentions.
+
+### 7.1. Tag Format (The Entity URN)
+When a user types `@` and selects an entity in the frontend editor, the editor must insert the following raw markdown string into the text:
+`[Display Name](entity:<node_type>:<node_id>)`
+
+**Example:**
+*Raw Text:* `He struck [Arin](entity:Character:char_arin) with the [Sun Blade](entity:Object:item_sun_blade).`
+*Rendered:* `He struck @Arin with the @Sun Blade.`
+
+### 7.2. The Resolution Pipeline (RAG Setup)
+1. **Extraction**: Before sending a prompt/plan to the generation engine, the backend strips the text using Regex `\[(.*?)\]\(entity:(.*?):(.*?)\)` to isolate all explicit `node_id`s.
+2. **Deterministic Context**: The backend uses these IDs to query the Neo4j KG (e.g., `MATCH (n) WHERE n.id IN $extracted_ids`), pulling exact Character profiles, states, and beliefs into the context window.
+3. **Vector Filtering**: The extracted IDs are passed to ChromaDB as `entity_refs` filters (`{"entity_refs": {"$in": extracted_ids}}`) to fetch relevant historical scenes without risking generic name collisions.
+4. **LLM Enforcement**: The Drafting LLM is explicitly instructed to maintain and output this same `[Name](entity:Type:ID)` format for all entities it generates or references, guaranteeing the backend can parse the newly generated scene back into the KG seamlessly.
