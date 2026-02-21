@@ -50,6 +50,17 @@ class CharacterService:
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(data.model_dump_json(indent=4))
 
+    def _load_debug_response(self, model_class, filename: str) -> Optional[Any]:
+        file_path = Path("backend/debug") / filename
+        if file_path.exists():
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                    return model_class.model_validate_json(content)
+            except Exception as e:
+                logger.warning(f"Failed to load cache {filename}: {e}")
+        return None
+
     def init_character_anchor(self, character_name: str, bio: Optional[str] = None) -> Node:
         """
         Creates the base Anchor node for a character deterministically.
@@ -65,11 +76,18 @@ class CharacterService:
         graph_manager.add_node(node)
         return node
 
-    async def generate_questions(self, character_name: str, character_id: str, bio: str) -> CharacterQuestionSheet:
+    async def generate_questions(self, character_name: str, character_id: str, bio: str, use_cache: bool = False) -> CharacterQuestionSheet:
         """
         Generates a list of questions to flesh out a character based on a basic bio.
         (Workflow Step 3)
         """
+        cache_filename = f"questions_{character_id}.json"
+        if use_cache:
+            cached = self._load_debug_response(CharacterQuestionSheet, cache_filename)
+            if cached:
+                logger.info(f"Loaded questions from cache: {cache_filename}")
+                return cached
+                
         # 1. RAG Sweep: Find contextual nodes based on the bio
         context_str = "No existing relevant Knowledge Graph context found."
         context_nodes = []
@@ -127,15 +145,14 @@ class CharacterService:
         self._save_debug_response(parsed, f"questions_{character_id}.json")
         return parsed
 
-    async def process_answers(self, character_name: str, character_id: str, chapter_number: int, answers: Dict[str, str]) -> GraphUpdate:
-        """
-        Converts user answers into Knowledge Graph nodes and edges using the modular architecture.
-        (Workflow Step 4)
-
-        TODO: Add RAG for existing events, locations, and characters
-        """
-        answers_text = "\n".join([f"Q: {q}\nA: {a}" for q, a in answers.items()])
-        
+    async def _fetch_raw_graph_update(self, character_name: str, character_id: str, chapter_number: int, answers_text: str, use_cache: bool = False) -> GraphUpdate:
+        cache_filename = f"graph_update_{character_id}_ch{chapter_number}_raw.json"
+        if use_cache:
+            cached = self._load_debug_response(GraphUpdate, cache_filename)
+            if cached:
+                logger.info(f"Loaded raw graph update from cache: {cache_filename}")
+                return cached
+                
         # 1. RAG Sweep: Find contextual nodes based on the answers
         context_str = "No existing relevant Knowledge Graph context found."
         context_nodes = []
@@ -200,8 +217,19 @@ class CharacterService:
         )
 
         parsed = response.choices[0].message.parsed
-        self._save_debug_response(parsed, f"graph_update_{character_id}_ch{chapter_number}_raw.json")
+        self._save_debug_response(parsed, cache_filename)
+        return parsed
+
+    async def process_answers(self, character_name: str, character_id: str, chapter_number: int, answers: Dict[str, str], use_cache: bool = False) -> GraphUpdate:
+        """
+        Converts user answers into Knowledge Graph nodes and edges using the modular architecture.
+        (Workflow Step 4)
+
+        TODO: Add RAG for existing events, locations, and characters
+        """
+        answers_text = "\n".join([f"Q: {q}\nA: {a}" for q, a in answers.items()])
         
+        parsed = await self._fetch_raw_graph_update(character_name, character_id, chapter_number, answers_text, use_cache)
         
         # Post-process IDs to ensure uniqueness and character linking
         for node in parsed.nodes:

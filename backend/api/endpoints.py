@@ -212,12 +212,14 @@ class QuestionsRequest(BaseModel):
     id: str
     name: str
     bio: str
+    use_cache: bool = False
 
 class AnswersRequest(BaseModel):
     id: str
     name: str
     answers: Dict[str, str]
     chapter: int
+    use_cache: bool = False
 
 @router.post("/characters/init")
 async def init_character(request: CharacterInitRequest):
@@ -227,14 +229,14 @@ async def init_character(request: CharacterInitRequest):
 
 @router.post("/characters/generate-questions")
 async def generate_questions(request: QuestionsRequest):
-    """Workflow Step 2 & 3: Generate questions via GPT-4o"""
-    questions = await character_service.generate_questions(request.name, request.id, request.bio)
+    """Workflow Step 2 & 3: Generate questions via GPT-4o or cache"""
+    questions = await character_service.generate_questions(request.name, request.id, request.bio, request.use_cache)
     return questions
 
 @router.post("/characters/process-answers")
 async def process_answers(request: AnswersRequest):
     """Workflow Step 4: Convert answers to KG format and update graph"""
-    update = await character_service.process_answers(request.name, request.id, request.chapter, request.answers)
+    update = await character_service.process_answers(request.name, request.id, request.chapter, request.answers, request.use_cache)
     
     # Apply updates to graph
     for node_data in update.nodes:
