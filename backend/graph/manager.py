@@ -103,6 +103,25 @@ class GraphManager:
                 return node_data
             return None
 
+    def update_node(self, node: Node) -> Optional[Dict[str, Any]]:
+        query = """
+        MATCH (n:Entity {id: $id})
+        SET n += $properties
+        RETURN n, labels(n) as labels
+        """
+        with self.driver.session() as session:
+            result = session.run(query, id=node.id, properties=node.properties)
+            record = result.single()
+            if record:
+                node_data = dict(record["n"])
+                labels = [l for l in record["labels"] if l != "Entity"]
+                if labels:
+                    node_data["type"] = labels[0]
+                elif record["labels"]:
+                    node_data["type"] = record["labels"][0]
+                return node_data
+            return None
+
     def get_neighbors(self, node_id: str, edge_type: Optional[str] = None) -> List[Dict[str, Any]]:
         # Validate edge_type if provided to prevent injection
         if edge_type:
@@ -132,6 +151,56 @@ class GraphManager:
                 neighbors.append(neighbor_data)
         return neighbors
 
+    def get_edges(self, node_id: str) -> List[Dict[str, Any]]:
+        query = """
+        MATCH (n:Entity {id: $id})-[r]->(m:Entity)
+        RETURN
+            n.id AS source,
+            m.id AS target,
+            type(r) AS type,
+            properties(r) AS properties
+        UNION
+        MATCH (n:Entity {id: $id})<-[r]-(m:Entity)
+        RETURN
+            m.id AS source,
+            n.id AS target,
+            type(r) AS type,
+            properties(r) AS properties
+        """
+        edges = []
+        with self.driver.session() as session:
+            result = session.run(query, id=node_id)
+            for record in result:
+                edges.append({
+                    "source": record["source"],
+                    "target": record["target"],
+                    "type": record["type"],
+                    "properties": record["properties"]
+                })
+        return edges
+
+    def get_edge(self, source_id: str, target_id: str, edge_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        rel_clause = f":{self._validate_identifier(edge_type)}" if edge_type else ""
+        query = f"""
+        MATCH (a:Entity {{id: $source_id}})-[r{rel_clause}]->(b:Entity {{id: $target_id}})
+        RETURN
+            a.id AS source,
+            b.id AS target,
+            type(r) AS type,
+            properties(r) AS properties
+        """
+        edges = []
+        with self.driver.session() as session:
+            result = session.run(query, source_id=source_id, target_id=target_id)
+            for record in result:
+                edges.append({
+                    "source": record["source"],
+                    "target": record["target"],
+                    "type": record["type"],
+                    "properties": record["properties"]
+                })
+        return edges
+
     def execute_cypher(self, query: str, params: Dict[str, Any] = None):
         if params is None:
             params = {}
@@ -139,26 +208,26 @@ class GraphManager:
             result = session.run(query, **params)
             return [record.data() for record in result]
 
-    def get_node_by_type_and_name(self, node_type: str, name: str) -> Optional[Dict[str, Any]]:
-        # Validate and sanitize node_type to prevent injection
-        node_type = self._validate_identifier(node_type)
-        
+    def get_nodes(self, node_type: Optional[str] = None, node_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        if node_type:
+            node_type = self._validate_identifier(node_type)
+            node_type = f":{node_type}"
+        else:
+            node_type = ""
+
+        if node_id:
+            node_id = self._validate_identifier(node_id)
+            node_id = f"{{id: $node_id}}"
+        else:
+            node_id = ""
+
         query = f"""
-        MATCH (n:Entity:{node_type} {{name: $name}})
+        MATCH (n:Entity{node_type} {node_id})
         RETURN n, labels(n) as labels
         """
         with self.driver.session() as session:
-            result = session.run(query, name=name)
-            record = result.single()
-            if record:
-                node_data = dict(record["n"])
-                labels = [l for l in record["labels"] if l != "Entity"]
-                if labels:
-                    node_data["type"] = labels[0]
-                elif record["labels"]:
-                    node_data["type"] = record["labels"][0]
-                return node_data
-            return None
+            result = session.run(query, node_id=node_id)
+            return [record.data() for record in result]
 
     def get_top_10_nodes_by_name_and_type(self, node_type: str, name: str) -> List[Dict[str, Any]]:
         # Validate and sanitize node_type to prevent injection

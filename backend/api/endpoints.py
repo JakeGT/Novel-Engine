@@ -3,7 +3,10 @@ from backend.graph.manager import graph_manager
 from backend.graph.schema import Node, Edge, NodeType, schema_registry
 from backend.core.vector_store import vector_store
 from backend.services.character_service import CharacterService
-from backend.services.context_service import context_service
+from backend.graph.resolver import extract_entity_ids
+from backend.graph.policies import get_policy
+from backend.graph.traversal import context_traversal
+from backend.graph.summarizer import summarize_context
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
@@ -75,7 +78,7 @@ def get_node(node_id: str):
         raise HTTPException(status_code=404, detail="Node not found")
     return node
 
-@router.get("/graph/nodes/search")
+@router.get("/graph/nodes/search/")
 def search_nodes(query: str, type: Optional[str] = None):
     """
     Fast fuzzy search across node names (or IDs if no name) for the given query.
@@ -86,21 +89,35 @@ def search_nodes(query: str, type: Optional[str] = None):
         
     return graph_manager.search_nodes_by_name(query.strip(), type)
 
-@router.get("/graph/nodes/entities")
+@router.get("/graph/nodes/entities/")
 def get_entities(type: str = None):
     if type:
-        return graph_manager.get_nodes_by_type(type)
+        return graph_manager.get_nodes(node_type=type)
     return []
 
 @router.put("/graph/nodes/{node_id}")
-def update_node(node_id: str, node: CreateNodeRequest):
+def update_node(node_id: str, node_request: CreateNodeRequest):
+    node = graph_manager.get_node(node_id)
+    print(node)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+    node["type"] = node_request.type
+    node["properties"] = node_request.properties
+    node = Node(id=node["id"], type=node["type"], properties=node["properties"])
+    print(node)
+    graph_manager.update_node(node)
+    return {"message": "Node updated", "node": node}
+
+@router.get("/graph/nodes/{node_id}/edges")
+def get_node_edges(node_id: str):
     node = graph_manager.get_node(node_id)
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
-    node.type = node.type
-    node.properties = node.properties
-    graph_manager.update_node(node)
-    return {"message": "Node updated", "node": node}
+    return graph_manager.get_edges(node_id)
+
+@router.get("/graph/edges/")
+def get_specific_edge(source_id: str, target_id: str, type: Optional[str] = None):
+    return graph_manager.get_edge(source_id, target_id, type)
 
 @router.post("/graph/edges/")
 def create_edge(edge: CreateEdgeRequest):
@@ -144,16 +161,34 @@ def rag_query(request: QueryRequest):
 
 class ContextRequest(BaseModel):
     text: str
+    context_type: str = "scene_generation" # Default to scene parsing policy
 
 @router.post("/rag/context")
 def extract_context_from_tags(request: ContextRequest):
     """
     Takes a chunk of text (e.g., a user's prompt or scene drafted in the frontend),
-    finds all [DisplayName](entity:Type:ID) tags, and returns their full
-    Knowledge Graph data (and immediate sub-modules) as context for the LLM.
+    finds all [DisplayName](entity:Type:ID) tags, and uses the active TraversalPolicy
+    to selectively query the Knowledge Graph for relevant context.
     """
-    context_data = context_service.get_context_for_prompt(request.text)
-    return context_data
+    # 1. Resolve explicit anchors
+    anchor_ids = extract_entity_ids(request.text)
+    if not anchor_ids:
+        return {"nodes": [], "summary": ""}
+        
+    # 2. Get active policy based on frontend usage type
+    policy = get_policy(request.context_type)
+    
+    # 3. Traverse graph using policy rules
+    scanned_subgraph = context_traversal.traverse(anchor_ids, policy)
+    
+    # 4. Summarize and format for LLM injection
+    formatted_context = summarize_context(scanned_subgraph)
+    
+    return {
+        "nodes": scanned_subgraph,
+        "summary": formatted_context,
+        "policy_used": policy.context_type
+    }
 
 # Character Creation Workflow Endpoints
 
@@ -169,6 +204,7 @@ class AnswersRequest(BaseModel):
     id: str
     name: str
     answers: Dict[str, str]
+    chapter: int
 
 @router.post("/characters/init")
 async def init_character(request: CharacterInitRequest):
@@ -185,7 +221,7 @@ async def generate_questions(request: QuestionsRequest):
 @router.post("/characters/process-answers")
 async def process_answers(request: AnswersRequest):
     """Workflow Step 4: Convert answers to KG format and update graph"""
-    update = await character_service.process_answers(request.name, request.id, 1, request.answers)
+    update = await character_service.process_answers(request.name, request.id, request.chapter, request.answers)
     
     # Apply updates to graph
     for node_data in update.nodes:

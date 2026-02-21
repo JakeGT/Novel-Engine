@@ -86,7 +86,6 @@ class EdgeType(str, Enum):
     FORBIDDEN_BY = "FORBIDDEN_BY"
     CAUSES = "CAUSES"
     DEPENDS_ON = "DEPENDS_ON"
-    CONTAINS = "CONTAINS"
     TRAUMATIZED_BY = "TRAUMATIZED_BY"
 
 class Node(BaseModel):
@@ -127,7 +126,7 @@ class SchemaRegistry:
     def _save(self):
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.config_path, "w", encoding="utf-8") as f:
-            json.write({
+            json.dump({
                 "node_types": list(self.custom_node_types),
                 "edge_types": list(self.custom_edge_types)
             }, f, indent=4)
