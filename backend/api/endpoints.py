@@ -3,6 +3,7 @@ from backend.graph.manager import graph_manager
 from backend.graph.schema import Node, Edge, NodeType, schema_registry
 from backend.core.vector_store import vector_store
 from backend.services.character_service import CharacterService
+from backend.services.context_service import context_service
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
@@ -140,6 +141,19 @@ def rag_query(request: QueryRequest):
         "graph_context": "Placeholder for Graph Traversal Results",
         "generated_answer": "Placeholder for LLM Generation"
     }
+
+class ContextRequest(BaseModel):
+    text: str
+
+@router.post("/rag/context")
+def extract_context_from_tags(request: ContextRequest):
+    """
+    Takes a chunk of text (e.g., a user's prompt or scene drafted in the frontend),
+    finds all [DisplayName](entity:Type:ID) tags, and returns their full
+    Knowledge Graph data (and immediate sub-modules) as context for the LLM.
+    """
+    context_data = context_service.get_context_for_prompt(request.text)
+    return context_data
 
 # Character Creation Workflow Endpoints
 
