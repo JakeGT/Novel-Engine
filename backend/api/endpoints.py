@@ -74,9 +74,22 @@ def get_node(node_id: str):
         raise HTTPException(status_code=404, detail="Node not found")
     return node
 
+@router.get("/graph/nodes/search")
+def search_nodes(query: str):
+    """
+    Fast fuzzy search across node names (or IDs if no name) for the given query.
+    Used for frontend @-mentions to provide quick autocomplete suggestions.
+    """
+    if not query or len(query.strip()) < 2:
+        return []
+        
+    return graph_manager.search_nodes_by_name(query.strip())
+
 @router.get("/graph/nodes/entities")
-def get_entities(type: NodeType):
-    return graph_manager.get_nodes_by_type(type)
+def get_entities(type: str = None):
+    if type:
+        return graph_manager.get_nodes_by_type(type)
+    return []
 
 @router.put("/graph/nodes/{node_id}")
 def update_node(node_id: str, node: CreateNodeRequest):

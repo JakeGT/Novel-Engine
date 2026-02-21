@@ -183,5 +183,32 @@ class GraphManager:
                 nodes.append(node_data)
             return nodes
 
+    def search_nodes_by_name(self, query_string: str) -> List[Dict[str, Any]]:
+        """
+        Performs a fast, case-insensitive fuzzy search on node names for frontend @-mentions.
+        Returns a lightweight dictionary with only id, name, and type for rendering badges.
+        """
+        # We search across all Entity nodes where the name or id contains the string
+        query = """
+        MATCH (n:Entity)
+        WHERE toLower(n.name) CONTAINS toLower($query_str) 
+           OR toLower(n.id) CONTAINS toLower($query_str)
+        RETURN n.id AS id, n.name AS name, labels(n) AS labels
+        LIMIT 20
+        """
+        with self.driver.session() as session:
+            result = session.run(query, query_str=query_string)
+            nodes = []
+            for record in result:
+                labels = [l for l in record["labels"] if l != "Entity"]
+                node_type = labels[0] if labels else "Unknown"
+                
+                nodes.append({
+                    "id": record["id"],
+                    "name": record["name"] or record["id"],
+                    "type": node_type
+                })
+            return nodes
+
 # Singleton instance
 graph_manager = GraphManager()
