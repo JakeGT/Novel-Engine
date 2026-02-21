@@ -1,11 +1,14 @@
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
-from backend.graph.schema import NodeType, EdgeType
+from backend.graph.schema import NodeType, EdgeType, schema_registry
 from openai import AsyncOpenAI
 from backend.core.config import settings
 from backend.graph.manager import graph_manager
 import json
 from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
 
 class CharacterQuestion(BaseModel):
     id: str = Field(description="Unique identifier for the question (e.g., personality_1)")
@@ -104,10 +107,14 @@ class CharacterService:
             "- Appearance: appearance"
             "- Personality: personality"
             "- State: state"
-            "- Beliefs: belief_{short_slug}"
-            "- Events: event_{short_slug}"
+            "- Beliefs: belief_{short_slug}\n"
+            "- Events: event_{short_slug}\n\n"
+            "AVAILABLE TYPES FOR CUSTOM NODES/EDGES:\n"
+            f"Node Types: {', '.join(schema_registry.get_all_node_types())}\n"
+            f"Edge Types: {', '.join(schema_registry.get_all_edge_types())}\n"
+            "You may ONLY use the types listed above."
         )
-        logging.info("Sending answered questions to LLM for processing")
+        logger.info("Sending answered questions to LLM for processing")
         response = await self.client.beta.chat.completions.parse(
             model=self.model,
             messages=[
@@ -143,13 +150,15 @@ class CharacterService:
                         # TODO: Implement this and consider embeddings search
                         pass
             else:
-                if node.type not in NodeType:
-                    raise ValueError(f"Unknown node type: {node.type}")
+                if not schema_registry.is_valid_node_type(node.type):
+                    # TODO: Consult user
+                    pass
                 node.id += f"{node.type}_{character_id}"
 
         for edge in parsed.edges:
-            if edge.type not in EdgeType:
-                raise ValueError(f"Unknown edge type: {edge.type}")
+            if not schema_registry.is_valid_edge_type(edge.type):
+                # TODO: Consult user
+                pass
             if edge.source != character_id:
                 raise ValueError(f"Edge source is not the character: {edge.source}")
             if edge.target not in [n.id for n in parsed.nodes]:

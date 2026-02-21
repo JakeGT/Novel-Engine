@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from backend.graph.manager import graph_manager
-from backend.graph.schema import Node, Edge, NodeType
+from backend.graph.schema import Node, Edge, NodeType, schema_registry
 from backend.core.vector_store import vector_store
 from backend.services.character_service import CharacterService
 from pydantic import BaseModel
@@ -12,7 +12,7 @@ router = APIRouter()
 
 class CreateNodeRequest(BaseModel):
     id: str
-    type: NodeType
+    type: str # Use string instead of Enum to support dynamic types
     properties: Dict[str, Any]
 
 class CreateEdgeRequest(BaseModel):
@@ -24,8 +24,42 @@ class CreateEdgeRequest(BaseModel):
 class QueryRequest(BaseModel):
     query: str
 
+class CustomTypeRequest(BaseModel):
+    type: str
+
+@router.get("/schema/nodes/")
+def get_custom_node_types():
+    return {"types": list(schema_registry.custom_node_types)}
+
+@router.post("/schema/nodes/")
+def add_custom_node_type(request: CustomTypeRequest):
+    schema_registry.add_custom_node_type(request.type)
+    return {"message": f"Custom node type '{request.type}' added.", "types": list(schema_registry.custom_node_types)}
+
+@router.delete("/schema/nodes/{node_type}")
+def remove_custom_node_type(node_type: str):
+    schema_registry.remove_custom_node_type(node_type)
+    return {"message": f"Custom node type '{node_type}' removed.", "types": list(schema_registry.custom_node_types)}
+
+@router.get("/schema/edges/")
+def get_custom_edge_types():
+    return {"types": list(schema_registry.custom_edge_types)}
+
+@router.post("/schema/edges/")
+def add_custom_edge_type(request: CustomTypeRequest):
+    schema_registry.add_custom_edge_type(request.type)
+    return {"message": f"Custom edge type '{request.type}' added.", "types": list(schema_registry.custom_edge_types)}
+
+@router.delete("/schema/edges/{edge_type}")
+def remove_custom_edge_type(edge_type: str):
+    schema_registry.remove_custom_edge_type(edge_type)
+    return {"message": f"Custom edge type '{edge_type}' removed.", "types": list(schema_registry.custom_edge_types)}
+
 @router.post("/graph/nodes/")
 def create_node(node: CreateNodeRequest):
+    if not schema_registry.is_valid_node_type(node.type):
+        schema_registry.add_custom_node_type(node.type)
+        
     try:
         new_node = Node(id=node.id, type=node.type, properties=node.properties)
         graph_manager.add_node(new_node)
@@ -59,6 +93,9 @@ def create_edge(edge: CreateEdgeRequest):
     # Basic validation
     if not graph_manager.get_node(edge.source) or not graph_manager.get_node(edge.target):
         raise HTTPException(status_code=400, detail="Source or Target node not found")
+        
+    if not schema_registry.is_valid_edge_type(edge.type):
+        schema_registry.add_custom_edge_type(edge.type)
     
     try:
         # In a real app, map string to EdgeType enum
