@@ -2,6 +2,8 @@ from enum import Enum
 from pydantic import BaseModel, Field
 from typing import List, Dict, Optional, Set
 
+# TODO: Dyanmic traversal policies based on user settings
+
 class ContextType(str, Enum):
     SCENE_GENERATION = "scene_generation"
     WORLD_CREATION = "world_creation"
@@ -29,6 +31,10 @@ class TraversalPolicy(BaseModel):
     # Limits
     max_nodes: int = Field(default=50, description="Hard cap on the total number of nodes returned.")
 
+    # Semantic Policies
+    semantic_min_score: float = Field(default=0.5, description="Minimum semantic similarity score for a node to be included.")
+    semantic_top_k: int = Field(default=5, description="Number of semantic anchors to retrieve if semantic search is used.")
+
 # Predefined Policies
 
 SCENE_GENERATION_POLICY = TraversalPolicy(
@@ -52,7 +58,9 @@ WORLD_CREATION_POLICY = TraversalPolicy(
     allowed_edge_types={"HAS_SYSTEM", "HAS_PRESSURE", "REQUIRES_RESOURCE", "FORBIDDEN_BY", "AFFECTS", "CAUSES", "LOCATED_AT", "PART_OF"},
     excluded_node_types={"Appearance", "PersonalityProfile", "State"}, # Ignore specific character states
     weight_depth=1.0,
-    max_nodes=100
+    max_nodes=100,
+    semantic_top_k = 15,
+    semantic_min_score = 0.3
 )
 
 CHARACTER_CREATION_POLICY = TraversalPolicy(
@@ -60,9 +68,11 @@ CHARACTER_CREATION_POLICY = TraversalPolicy(
     max_depth=2,
     # We want to pull what the character believes, their state, and their immediate relationships
     allowed_edge_types={"HAS_APPEARANCE", "HAS_PERSONALITY", "CURRENT_STATE", "BELIEVES", "KNOWS", "MEMBER_OF"},
-    excluded_node_types=set(),
+    excluded_node_types={'Character', 'Appearance', 'PersonalityProfile', 'State', 'Belief'},
     weight_depth=2.0, # Highly prioritize immediate depth 1 traits
-    max_nodes=20
+    max_nodes=20,
+    semantic_top_k = 5,
+    semantic_min_score = 0.4
 )
 
 GOD_HAND_POLICY = TraversalPolicy(
@@ -71,7 +81,7 @@ GOD_HAND_POLICY = TraversalPolicy(
     allowed_edge_types=None, # Traverse everything 1 step away to give the editor full surrounding context
     excluded_node_types=set(),
     weight_depth=1.0,
-    max_nodes=100
+    max_nodes=100,
 )
 
 def get_policy(context_type: str) -> TraversalPolicy:

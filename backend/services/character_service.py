@@ -6,6 +6,7 @@ from backend.core.config import settings
 from backend.graph.manager import graph_manager
 from backend.graph.vector_search import generate_query_embedding
 from backend.graph.resolver import extract_entity_ids
+from backend.graph.policies import CHARACTER_CREATION_POLICY
 import json
 from pathlib import Path
 import logging
@@ -67,7 +68,7 @@ class CharacterService:
         (Workflow Step 1)
         """
         character_id = f"char_{character_name.lower().replace(' ', '_')}"
-        properties = {"name": character_name}
+        properties = {"name": character_name, "description": bio}
         
         # Calculate initial semantic embedding for the anchor
         embedding = generate_node_embedding("Character", properties)
@@ -76,11 +77,17 @@ class CharacterService:
         graph_manager.add_node(node)
         return node
 
-    async def generate_questions(self, character_name: str, character_id: str, bio: str, use_cache: bool = False) -> CharacterQuestionSheet:
+    async def generate_questions(self, character_id: str, use_cache: bool = False) -> CharacterQuestionSheet:
         """
         Generates a list of questions to flesh out a character based on a basic bio.
         (Workflow Step 3)
         """
+        node = graph_manager.get_node(character_id)
+        if not node:
+            raise ValueError(f"Character node {character_id} not found")
+        bio = node.get("properties", {}).get("description", "")
+        character_name = node.get("properties", {}).get("name", "")
+        
         cache_filename = f"questions_{character_id}.json"
         if use_cache:
             cached = self._load_debug_response(CharacterQuestionSheet, cache_filename)
@@ -103,14 +110,14 @@ class CharacterService:
         bio_embedding = generate_query_embedding(bio)
         if bio_embedding:
             # Get top 5 most semantically relevant nodes from the whole graph
-            semantic_ids = graph_manager.search_semantic_nodes(bio_embedding, top_k=5, min_score=0.4)
+            semantic_ids = graph_manager.search_semantic_nodes(bio_embedding, top_k=CHARACTER_CREATION_POLICY.semantic_top_k, min_score=CHARACTER_CREATION_POLICY.semantic_min_score)
             if semantic_ids:
                 for n_id in semantic_ids:
                     if n_id in explicit_ids: continue # Skip if already caught explicitly
                     node = graph_manager.get_node(n_id)
                     if node:
                          # Exclude characters to focus on World/Events unless strictly necessary
-                         if node.get('type') not in ['Character', 'Appearance', 'PersonalityProfile', 'State', 'Belief']:
+                         if node.get('type') not in CHARACTER_CREATION_POLICY.excluded_node_types:
                             context_nodes.append(f"- Semantically Related {node.get('name', n_id)} ({node.get('type')}): {json.dumps(node.get('properties', {}))}")
                 
         if context_nodes:
@@ -220,16 +227,22 @@ class CharacterService:
         self._save_debug_response(parsed, cache_filename)
         return parsed
 
-    async def process_answers(self, character_name: str, character_id: str, chapter_number: int, answers: Dict[str, str], use_cache: bool = False) -> GraphUpdate:
+    async def process_answers(self, character_id: str, chapter_number: int, answers: Dict[str, str], use_cache: bool = False) -> GraphUpdate:
         """
         Converts user answers into Knowledge Graph nodes and edges using the modular architecture.
         (Workflow Step 4)
 
         TODO: Add RAG for existing events, locations, and characters
         """
+
+        node = graph_manager.get_node(character_id)
+        if not node:
+            raise ValueError(f"Character node {character_id} not found")
+        character_name = node.get("properties", {}).get("name", "")
+        
         answers_text = "\n".join([f"Q: {q}\nA: {a}" for q, a in answers.items()])
         
-        parsed = await self._fetch_raw_graph_update(character_name, character_id, chapter_number, answers_text, use_cache)
+        parsed = await self._fetch_raw_graph_update(character_name, character_id, answers_text, use_cache)
         
         # Post-process IDs to ensure uniqueness and character linking
         for node in parsed.nodes:
