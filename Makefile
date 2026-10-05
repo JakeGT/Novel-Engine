@@ -1,8 +1,14 @@
-.PHONY: help install install-dev infra-up infra-down api test lint format-check frontend-install frontend-lint frontend-build check
+UV_CACHE_DIR ?= $(CURDIR)/.cache/uv
+PNPM_STORE_DIR ?= $(CURDIR)/.cache/pnpm-store
+export UV_CACHE_DIR
+
+.PHONY: help install install-dev lock lock-check infra-up infra-down api test lint format-check frontend-install frontend-lint frontend-build check
 
 help:
 	@echo "install          Install runtime Python dependencies"
 	@echo "install-dev      Install runtime and development Python dependencies"
+	@echo "lock             Refresh the Python dependency lock"
+	@echo "lock-check       Verify the Python lock matches project metadata"
 	@echo "infra-up         Start Neo4j"
 	@echo "infra-down       Stop Neo4j"
 	@echo "api              Start the FastAPI development server"
@@ -15,10 +21,16 @@ help:
 	@echo "check            Run all local static checks and tests"
 
 install:
-	python -m pip install -r requirements.txt
+	uv sync --no-dev --locked
 
 install-dev:
-	python -m pip install -r requirements-dev.txt
+	uv sync --locked
+
+lock:
+	uv lock
+
+lock-check:
+	uv lock --check
 
 infra-up:
 	docker compose up -d neo4j
@@ -27,24 +39,24 @@ infra-down:
 	docker compose down
 
 api:
-	python -m uvicorn backend.main:app --reload
+	uv run --locked uvicorn backend.main:app --reload
 
 test:
-	python -m pytest -m "not integration and not llm"
+	uv run --locked pytest -m "not integration and not llm"
 
 lint:
-	python -m ruff check backend tests 2>/dev/null || python -m ruff check backend
+	uv run --locked ruff check backend
 
 format-check:
-	python -m ruff format --check backend tests 2>/dev/null || python -m ruff format --check backend
+	uv run --locked ruff format --check backend
 
 frontend-install:
-	npm --prefix frontend install
+	pnpm --dir frontend install --frozen-lockfile --store-dir "$(PNPM_STORE_DIR)"
 
 frontend-lint:
-	npm --prefix frontend run lint
+	pnpm --dir frontend run lint
 
 frontend-build:
-	npm --prefix frontend run build
+	pnpm --dir frontend run build
 
-check: lint format-check test frontend-lint frontend-build
+check: lock-check lint format-check test frontend-lint frontend-build

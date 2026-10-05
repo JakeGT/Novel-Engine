@@ -8,6 +8,8 @@ Build vertical slices in dependency order. Each phase must leave the application
 
 Goal: create a deterministic development baseline before expanding functionality.
 
+Execution checklist: [`phase-0-todo.md`](phase-0-todo.md).
+
 Work:
 
 - choose supported Python/Node versions and add CI

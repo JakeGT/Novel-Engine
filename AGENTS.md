@@ -37,15 +37,17 @@ The root `test_*.py` files are legacy live-integration scripts. Move or replace 
 ## Local setup
 
 1. Copy `.env.example` to `.env` and add local credentials.
-2. Create a Python 3.11 or 3.12 virtual environment.
-3. Run `make install-dev`.
-4. Run `make infra-up`.
-5. Run `make api`.
-6. In another terminal, run `make frontend-install` and then `npm --prefix frontend run dev`.
+2. Install Python 3.13, Node.js 24 LTS, `uv`, and pnpm 11. The repository's `.python-version`, `.nvmrc`, and package metadata are authoritative.
+3. Run `make install-dev`; `uv` creates and manages `.venv`.
+4. Run `make frontend-install` for a frozen frontend install.
+5. Run `make infra-up`.
+6. Run `make api`.
+7. In another terminal, run `pnpm --dir frontend run dev`.
 
 Useful validation commands:
 
 ```text
+make lock-check
 make lint
 make format-check
 make test
@@ -54,6 +56,10 @@ make frontend-build
 ```
 
 Run the smallest relevant checks during iteration and `make check` before handing over a cross-cutting change. Mark tests that contact Neo4j with `integration` and tests that spend model tokens with `llm`.
+
+Use `uv add`/`uv remove` for Python dependencies and `pnpm --dir frontend add`/`remove` for frontend dependencies. Do not restore requirements files or use unfrozen installs in CI. Refresh lock files in the same change as dependency metadata.
+
+The Makefile keeps tool caches under ignored `.cache/` so sandboxed coding agents need write access only inside the repository. Override `UV_CACHE_DIR` or `PNPM_STORE_DIR` when a workstation or CI runner has a preferred cache location.
 
 ## Design rules
 

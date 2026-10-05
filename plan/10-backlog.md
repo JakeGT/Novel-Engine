@@ -4,6 +4,8 @@ Each item is sized to be independently reviewable. IDs are stable references for
 
 ## Foundation
 
+Phase 0 execution details, sub-items, dependencies, and exit evidence are maintained in [`phase-0-todo.md`](phase-0-todo.md).
+
 - **FND-001 · P0 — Runtime lifecycle:** create Neo4j, vector, embedding, and AI clients through application lifespan and injected dependencies. Acceptance: importing `backend.main` performs no network connection or persistent write.
 - **FND-002 · P0 — Domain ports:** define repository, journal, vector, AI, clock, and ID interfaces with in-memory fakes. Acceptance: one application workflow runs entirely in memory.
 - **FND-003 · P0 — Stable DTOs:** define versioned entity/edge request and response models. Acceptance: create/read/search/update share one representation and OpenAPI examples.

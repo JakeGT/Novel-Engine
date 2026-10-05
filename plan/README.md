@@ -22,6 +22,8 @@ Read in this order:
 14. [SaaS platform](14-saas-platform.md) — tenancy, subscriptions, credits, BYOK, jobs, and collaboration boundaries.
 15. [Prose editor and memory](15-prose-editor-and-memory.md) — canonical manuscript versions, editing, external integrations, and prose retrieval.
 16. [OpenCodeReview adaptation](16-open-code-review-adaptation.md) — deterministic review bundles and bounded agents for long-form prose.
+17. [Phase 0 todo](phase-0-todo.md) — execution-ready stabilization checklist, dependencies, and exit evidence.
+18. [Phase 0 baseline](phase-0-baseline.md) — pre-refactor API, storage, workflow, and worktree inventory.
 
 Architectural decisions that become settled should be recorded in `decisions/` using [the ADR template](decisions/000-template.md).
 

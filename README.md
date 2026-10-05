@@ -17,27 +17,26 @@ This repository is currently a local prototype; SaaS identity, PostgreSQL operat
 
 Prerequisites:
 
-- Python 3.11 or 3.12
-- Node.js 20+
+- Python 3.13
+- Node.js 24 LTS with pnpm 11
+- [uv](https://docs.astral.sh/uv/) for Python environments and locked dependencies
 - Docker with Compose
 - an OpenAI API key for live AI workflows
 
 ```bash
 cp .env.example .env
-python -m venv .venv
-source .venv/bin/activate
 make install-dev
 make infra-up
 make api
 ```
 
-On Windows, activate the environment with `.venv\Scripts\activate` and run the equivalent commands directly if `make` is unavailable.
+`uv` creates and manages `.venv` automatically. On Windows, run the commands shown in `Makefile` directly if `make` is unavailable; no manual virtual-environment activation is required.
 
 Start the frontend separately:
 
 ```bash
 make frontend-install
-npm --prefix frontend run dev
+pnpm --dir frontend run dev
 ```
 
 The API is served at `http://localhost:8000`; interactive API documentation is at `http://localhost:8000/docs`. Neo4j Browser is at `http://localhost:7474` using the credentials configured in `.env`.
@@ -46,6 +45,7 @@ The API is served at `http://localhost:8000`; interactive API documentation is a
 
 ```bash
 make help
+make lock-check
 make lint
 make test
 make frontend-build

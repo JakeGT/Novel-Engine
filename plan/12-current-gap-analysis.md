@@ -7,15 +7,15 @@ This is a point-in-time map of the prototype to the target design. Update it whe
 Current:
 
 - small Python package with direct global singletons
-- dependencies in one unpinned requirements file
-- no CI, lock file, migrations, or formal API version
+- Python and frontend dependencies are now declared and locked by the in-progress P0-01 toolchain slice
+- no CI, migrations, or formal API version
 - broad line-ending churn across the worktree
 - no PostgreSQL, tenant, identity, subscription, credit, credential-vault, or hosted-worker foundation
 
 Target transition:
 
 - stabilize line endings and tool commands
-- choose/lock supported runtimes and dependencies
+- enforce the selected runtimes and locked dependencies in CI and clean-room checks
 - introduce injection seams before reorganizing packages
 - introduce PostgreSQL and tenant scope before new durable product records
 - add tests around current observable behavior

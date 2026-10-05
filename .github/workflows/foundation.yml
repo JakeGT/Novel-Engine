@@ -1,0 +1,66 @@
+name: Foundation checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - phase-0-stabilization
+
+permissions:
+  contents: read
+
+jobs:
+  python-foundation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          version: "0.11.16"
+          enable-cache: true
+
+      - name: Verify Python lock
+        run: uv lock --check
+
+      - name: Compile Python sources
+        run: python -m compileall -q backend
+
+  frontend-foundation:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.26.0
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint frontend
+        run: pnpm run lint
+
+      - name: Build frontend
+        run: pnpm run build
