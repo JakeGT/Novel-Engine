@@ -1,11 +1,13 @@
 # Novel Engine Architecture
 
+> Historical concept document. The maintained, implementation-oriented architecture and roadmap now start at [`plan/README.md`](plan/README.md). Preserve this file as the original design record; update `plan/` for new decisions.
+
 ## 1. Core Concept
 A RAG-based novel engine that maintains a consistent, evolving world state using a Knowledge Graph (KG). It differentiates between objective reality ("God View") and subjective character perspectives ("Beliefs").
 
 ## 2. Knowledge Graph Schema
 
-- **Entity**: [Character](file:///c:/Users/jaket/Personal%20Projects/Novel%20Engine/backend/services/character_service.py#39-173), `Location`, `Object`, `Faction`, `Concept`, `Resource`, `Appearance`, `PersonalityProfile`, `State`, `Belief`, `Goal`
+- **Entity**: `Character`, `Location`, `Object`, `Faction`, `Concept`, `Resource`, `Appearance`, `PersonalityProfile`, `State`, `Belief`, `Goal`
 - **World**: `System` (Magic, Political, Tech), `Pressure` (Conflict, Scarcity), `Law`, `Constraint`
 - **Event**: `Scene`, `Action`, `Flashback`, `Interaction` (Properties: `category`, `chapter`, `timeline_index`, `summary`, `flags`)
 - **Meta**: `StoryBranch`, `WorldState`, `Source` (e.g., "User Input", "Inference")
@@ -17,7 +19,7 @@ All edges should support **Temporal Properties** (`valid_from`, `valid_until`) a
 *   **Systemic**: `HAS_SYSTEM`, `HAS_PRESSURE`, `REQUIRES_RESOURCE`, `FORBIDDEN_BY`, `AFFECTS`, `CAUSES`, `DEPENDS_ON`
 *   **Social**: `KNOWS`, `LIKES`, `HATES`, `RELATED_TO` (properties: `intensity`, `secret_level`), `PARTICIPATED_IN`, `TRAUMATIZED_BY`
 *   **Epistemic (Beliefs)**:
-    *   **Direct**: [(Character) -[BELIEVES]-> (Statement)](file:///c:/Users/jaket/Personal%20Projects/Novel%20Engine/backend/graph/schema.py#98-105) 
+    *   **Direct**: `(Character)-[:BELIEVES]->(Statement)`
 ### 2.5. Character Architecture (Modular)
 Characters use a stable anchor node with dynamic sub-nodes:
 - **Character (Anchor)**: Identity-defining properties (id, name, role, archetype, birthdate).
@@ -105,8 +107,8 @@ A separate but connected subgraph representing **Narrative Intent**.
 
 ## 5. Security/Secrets
 *   **Secret Node**: `Secret(ID: 123, Content: "Bob stole the ring")`.
-*   **Access**: [(Bob)-[KNOWS]->(Secret 123)](file:///c:/Users/jaket/Personal%20Projects/Novel%20Engine/backend/graph/schema.py#98-105).
-*   **Leakage Risk**: If [(Alice)-[HEARS]->(Event: Bob talks to Self)](file:///c:/Users/jaket/Personal%20Projects/Novel%20Engine/backend/graph/schema.py#98-105), probabilistic check if the secret edge is created for Alice.
+*   **Access**: `(Bob)-[:KNOWS]->(Secret 123)`.
+*   **Leakage Risk**: If `(Alice)-[:HEARS]->(Event: Bob talks to Self)`, probabilistically check whether the secret edge should be created for Alice.
 
 ## 6. Dual-Database RAG Architecture
 The engine uses a "Two-Brain" approach. The Neo4j Knowledge Graph (KG) serves as the **deterministic source of truth**, while ChromaDB (Vector DB) stores semantic content, stylistic recall, and narrative summaries. The Vector DB **never overrides** the KG.
@@ -115,7 +117,7 @@ The engine uses a "Two-Brain" approach. The Neo4j Knowledge Graph (KG) serves as
 The Vector DB stores immutable, append-only chunks. Old versions are marked with `active=false`. It determines if the "God Hand" should target the KG (hard facts) or Vector DB (stylistic/semantic facts).
 **Vector Schema**:
 *   `ID`: Shared stable ID with the KG where applicable (e.g., `event_brother_execution`).
-*   [Type](file:///c:/Users/jaket/Personal%20Projects/Novel%20Engine/backend/graph/schema.py#11-42): `scene summary`, `character summary`, `rule summary`, `world summary`, `timeline summary`, `faction summary`, `item summary`, `planning document`.
+*   **Type**: `scene summary`, `character summary`, `rule summary`, `world summary`, `timeline summary`, `faction summary`, `item summary`, `planning document`.
 *   `entity_refs`: List of KG Node IDs involved.
 *   `timeline_position`: Chronological anchor.
 *   `world_arc`: The overarching storyline/branch.
