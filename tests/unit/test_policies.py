@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from backend.graph.policies import (
     CHARACTER_CREATION_POLICY,
@@ -65,25 +66,26 @@ def test_god_hand_policy_traverses_all_edge_types() -> None:
     assert GOD_HAND_POLICY.excluded_node_types == set()
 
 
-def test_default_semantic_top_k_reflects_last_field_declaration() -> None:
-    """Characterizes FND-008.9: ``semantic_top_k`` is declared twice, so the
-    later default (5) wins over the earlier one (3)."""
-
+def test_default_semantic_top_k_is_five() -> None:
     policy = TraversalPolicy(context_type=ContextType.SCENE_GENERATION)
 
     assert policy.semantic_top_k == 5
 
 
-def test_traversal_policy_bounds_are_not_validated_yet() -> None:
-    """Characterizes current behavior: out-of-range policy values are accepted."""
-
-    policy = TraversalPolicy(
-        context_type=ContextType.SCENE_GENERATION,
-        max_depth=-1,
-        max_nodes=10**9,
-        semantic_top_k=-5,
-    )
-
-    assert policy.max_depth == -1
-    assert policy.max_nodes == 10**9
-    assert policy.semantic_top_k == -5
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"max_depth": -1},
+        {"max_depth": 11},
+        {"max_nodes": 0},
+        {"max_nodes": 1001},
+        {"semantic_top_k": -1},
+        {"semantic_top_k": 101},
+        {"semantic_min_score": 1.5},
+        {"pagerank_damping": 0.0},
+        {"weight_depth": -0.1},
+    ],
+)
+def test_traversal_policy_rejects_out_of_range_values(overrides) -> None:
+    with pytest.raises(ValidationError):
+        TraversalPolicy(context_type=ContextType.SCENE_GENERATION, **overrides)

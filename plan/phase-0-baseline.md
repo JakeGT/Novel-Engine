@@ -167,3 +167,15 @@ After introducing the stable API v1 DTO and problem contracts:
 - Contract evidence: `tests/contract/test_v1_entities.py`, `test_v1_schema.py`, `test_v1_context.py`, `test_v1_characters.py`, `test_v1_errors.py`, and `test_openapi.py` (exact `openapi_snapshot.json`, generated without services). Route resolution (`/entities/search` before `/entities/{entity_id}`) is covered.
 - Verification: 129 hermetic tests (up from 101), 2 integration tests, live v1 smoke against Compose (create 201 with no embedding leak, get/search/context 200, rag 501, legacy 200, health/ready 200), typecheck and import-check green, 109 backend Ruff findings.
 - Remaining 0F gap: legacy `/api` schema routes still auto-register unknown types and the legacy routers still expose prototype shapes; migrating/removing them is 0G. The graph/RAG routes are otherwise not on the container port surface yet.
+
+## P0-08 (0G) verification snapshot
+
+Prototype defect repairs in committed code (FND-008.1–22, 28–32), each with a regression test:
+
+- **Graph/schema:** `get_nodes` parameter handling fixed and flattened to the same shape as `get_node`; `_to_node` mapper characterized (`test_node_mapper.py`); node type changes rejected (v1 409, legacy 409); node deletion added across port/adapter/manager and exposed as `DELETE /api/v1/entities/{id}`; unknown/invalid types rejected without silent registration; `World` node type added; custom schema types sorted in output and on disk; duplicate `semantic_top_k` removed and traversal-policy bounds validated; traversal query extracted to `build_traversal_query` and characterized for directionality/exclusions (`test_traversal_query.py`).
+- **API routing/behavior:** legacy static `/search` and `/entities` routes declared before `/{node_id}`; debug `print` removed; placeholder RAG returns 501 on both surfaces; v1 delete/update reflect real affected records.
+- **Character workflow:** full temporary→durable ID map with edge-endpoint rewriting; unknown node/edge types rejected with actionable messages; duplicate normalized IDs, missing edge targets, non-character sources, and conflicting existing-entity types rejected before any write; filesystem debug cache replaced by the injected artifact store.
+- **Embeddings:** deterministic `None` behavior when embeddings are disabled, covered by `DisabledEmbeddingProvider`; lazy model/collection behavior retained.
+- **Explicit deferrals:** FND-008.21 (atomic mutation application → Phase 1 mutation review) and FND-008.23–27 (world workflow → parked `world_service.py` reconciliation) are documented in the checklist; edge validity is explicitly excluded from the v1 contract.
+- Verification: 155 hermetic tests (up from 129), 2 integration tests, live smoke confirmed legacy route resolution (200), legacy RAG 501, v1 delete 204 → get 404, legacy unknown type 400, legacy type change 409. Type-check scope now includes `policies.py` (4 files, clean). Backend Ruff debt down from 109 to 72 findings; 3 files need formatting.
+- 0G remains in progress only for the world-workflow defects blocked on the parked worktree edit.

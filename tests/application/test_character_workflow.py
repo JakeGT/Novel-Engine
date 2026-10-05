@@ -99,3 +99,78 @@ async def test_generate_questions_propagates_normalized_ai_error(fake_container)
 
     with pytest.raises(AIProviderError):
         await service.generate_questions("char_arin")
+
+
+@pytest.mark.asyncio
+async def test_process_answers_rewrites_edge_endpoints_via_id_map(fake_container) -> None:
+    service = fake_container.character_service
+    service.init_character_anchor("Arin", bio="A scout.")
+    fake_container.ai.queue(
+        GraphUpdate(
+            nodes=[NodeUpdate(id="shadow", type="Appearance", properties={})],
+            edges=[
+                EdgeUpdate(
+                    source="char_arin",
+                    target="shadow",
+                    type="HAS_APPEARANCE",
+                    properties={},
+                )
+            ],
+        )
+    )
+
+    result = await service.process_answers("char_arin", 1, {"Q": "A"})
+
+    assert result.edges[0].target == "app_char_arin"
+
+
+@pytest.mark.asyncio
+async def test_process_answers_rejects_unknown_node_type(fake_container) -> None:
+    service = fake_container.character_service
+    service.init_character_anchor("Arin", bio="A scout.")
+    fake_container.ai.queue(
+        GraphUpdate(nodes=[NodeUpdate(id="x", type="Alien", properties={})], edges=[])
+    )
+
+    with pytest.raises(ValueError, match="Unknown node type"):
+        await service.process_answers("char_arin", 1, {"Q": "A"})
+
+
+@pytest.mark.asyncio
+async def test_process_answers_rejects_duplicate_normalized_ids(fake_container) -> None:
+    service = fake_container.character_service
+    service.init_character_anchor("Arin", bio="A scout.")
+    fake_container.ai.queue(
+        GraphUpdate(
+            nodes=[
+                NodeUpdate(id="a", type="Appearance", properties={}),
+                NodeUpdate(id="b", type="Appearance", properties={}),
+            ],
+            edges=[],
+        )
+    )
+
+    with pytest.raises(ValueError, match="Duplicate"):
+        await service.process_answers("char_arin", 1, {"Q": "A"})
+
+
+@pytest.mark.asyncio
+async def test_process_answers_rejects_missing_edge_target(fake_container) -> None:
+    service = fake_container.character_service
+    service.init_character_anchor("Arin", bio="A scout.")
+    fake_container.ai.queue(
+        GraphUpdate(
+            nodes=[NodeUpdate(id="x", type="Appearance", properties={})],
+            edges=[
+                EdgeUpdate(
+                    source="char_arin",
+                    target="ghost",
+                    type="HAS_APPEARANCE",
+                    properties={},
+                )
+            ],
+        )
+    )
+
+    with pytest.raises(ValueError, match="Edge target"):
+        await service.process_answers("char_arin", 1, {"Q": "A"})

@@ -2,7 +2,8 @@ import re
 from typing import List
 
 # Matches [Display Name](entity:NodeType:NodeID)
-TAG_REGEX = re.compile(r'\[([^\]]+)\]\(entity:([^:]+):([^)]+)\)')
+TAG_REGEX = re.compile(r"\[([^\]]+)\]\(entity:([^:]+):([^)]+)\)")
+
 
 def extract_entity_ids(text: str) -> List[str]:
     """
@@ -11,10 +12,10 @@ def extract_entity_ids(text: str) -> List[str]:
     """
     if not text:
         return []
-        
+
     matches = TAG_REGEX.findall(text)
     # matches is a list of tuples: (Display Name, Type, ID)
-    
+
     # Deduplicate IDs while preserving order
     seen = set()
     ids = []
@@ -22,5 +23,5 @@ def extract_entity_ids(text: str) -> List[str]:
         if node_id not in seen:
             seen.add(node_id)
             ids.append(node_id)
-    
+
     return ids

@@ -288,29 +288,52 @@ class CharacterService:
             character_name, character_id, chapter_number, answers_text, use_cache
         )
 
+        id_map: dict[str, str] = {}
+        new_ids: set[str] = set()
         for node_update in parsed.nodes:
+            original_id = node_update.id
             if node_update.type == "Appearance":
-                node_update.id = f"app_{character_id}"
+                new_id = f"app_{character_id}"
             elif node_update.type == "PersonalityProfile":
-                node_update.id = f"pers_{character_id}"
+                new_id = f"pers_{character_id}"
             elif node_update.type == "State":
-                node_update.id = f"state_{character_id}_ch{chapter_number}"
+                new_id = f"state_{character_id}_ch{chapter_number}"
             elif node_update.type == "Belief":
-                node_update.id = f"belief_{node_update.id}_{character_id}"
+                new_id = f"belief_{original_id}_{character_id}"
             elif node_update.type in ["Event", "Location", "Faction", "System", "Concept"]:
-                node_update.id = node_update.id.lower().replace(" ", "_")
+                new_id = original_id.lower().replace(" ", "_")
             else:
                 if not self.schema_registry.is_valid_node_type(node_update.type):
-                    pass
-                node_update.id += f"_{node_update.type}_{character_id}"
+                    raise ValueError(
+                        f"Unknown node type '{node_update.type}'. Allowed types: "
+                        f"{', '.join(self.schema_registry.get_all_node_types())}"
+                    )
+                new_id = f"{original_id}_{node_update.type}_{character_id}"
+
+            if new_id in new_ids:
+                raise ValueError(f"Duplicate node id after normalization: {new_id}")
+            new_ids.add(new_id)
+            id_map[original_id] = new_id
+
+            existing = self.graph.get_node(new_id)
+            if existing is not None and existing.type != node_update.type:
+                raise ValueError(f"Entity {new_id!r} already exists with type {existing.type!r}")
+            node_update.id = new_id
 
         for edge in parsed.edges:
             if not self.schema_registry.is_valid_edge_type(edge.type):
-                pass
-            if edge.source != character_id:
-                raise ValueError(f"Edge source is not the character: {edge.source}")
-            if edge.target not in [n.id for n in parsed.nodes]:
-                raise ValueError(f"Edge target is not a node: {edge.target}")
+                raise ValueError(
+                    f"Unknown edge type '{edge.type}'. Allowed types: "
+                    f"{', '.join(self.schema_registry.get_all_edge_types())}"
+                )
+            resolved_source = id_map.get(edge.source, edge.source)
+            resolved_target = id_map.get(edge.target, edge.target)
+            if resolved_source != character_id:
+                raise ValueError(f"Edge source must be the character: {edge.source}")
+            if resolved_target not in new_ids:
+                raise ValueError(f"Edge target is not a node in this update: {edge.target}")
+            edge.source = resolved_source
+            edge.target = resolved_target
 
         self._save_debug_response(parsed, f"graph_update_{character_id}_ch{chapter_number}.json")
         return parsed

@@ -81,6 +81,9 @@ class Neo4jGraphRepository:
 
         return ContextTraversal(self.manager).traverse(list(anchor_ids), policy)
 
+    def delete_node(self, node_id: str) -> bool:
+        return self.manager.delete_node(node_id)
+
     def ping(self) -> bool:
         try:
             self.manager.driver.verify_connectivity()

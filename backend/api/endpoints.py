@@ -9,7 +9,6 @@ from backend.api.dependencies import (
     get_schema_registry,
 )
 from backend.container import Container
-from backend.core.vector_store import vector_store
 from backend.graph.manager import graph_manager
 from backend.graph.policies import get_policy
 from backend.graph.resolver import extract_entity_ids
@@ -46,7 +45,7 @@ class CustomTypeRequest(BaseModel):
 
 @router.get("/schema/nodes/")
 def get_custom_node_types(registry: SchemaRegistryPort = Depends(get_schema_registry)):
-    return {"types": list(registry.custom_node_types)}
+    return {"types": sorted(registry.custom_node_types)}
 
 
 @router.post("/schema/nodes/")
@@ -56,7 +55,7 @@ def add_custom_node_type(
     registry.add_custom_node_type(request.type)
     return {
         "message": f"Custom node type '{request.type}' added.",
-        "types": list(registry.custom_node_types),
+        "types": sorted(registry.custom_node_types),
     }
 
 
@@ -67,13 +66,13 @@ def remove_custom_node_type(
     registry.remove_custom_node_type(node_type)
     return {
         "message": f"Custom node type '{node_type}' removed.",
-        "types": list(registry.custom_node_types),
+        "types": sorted(registry.custom_node_types),
     }
 
 
 @router.get("/schema/edges/")
 def get_custom_edge_types(registry: SchemaRegistryPort = Depends(get_schema_registry)):
-    return {"types": list(registry.custom_edge_types)}
+    return {"types": sorted(registry.custom_edge_types)}
 
 
 @router.post("/schema/edges/")
@@ -83,7 +82,7 @@ def add_custom_edge_type(
     registry.add_custom_edge_type(request.type)
     return {
         "message": f"Custom edge type '{request.type}' added.",
-        "types": list(registry.custom_edge_types),
+        "types": sorted(registry.custom_edge_types),
     }
 
 
@@ -94,14 +93,17 @@ def remove_custom_edge_type(
     registry.remove_custom_edge_type(edge_type)
     return {
         "message": f"Custom edge type '{edge_type}' removed.",
-        "types": list(registry.custom_edge_types),
+        "types": sorted(registry.custom_edge_types),
     }
 
 
 @router.post("/graph/nodes/")
 def create_node(node: CreateNodeRequest):
     if not schema_registry.is_valid_node_type(node.type):
-        schema_registry.add_custom_node_type(node.type)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown node type '{node.type}'. Register it via /schema/nodes/ first.",
+        )
 
     try:
         embedding = generate_node_embedding(node.type, node.properties)
@@ -110,14 +112,6 @@ def create_node(node: CreateNodeRequest):
         return {"message": "Node created", "node": new_node}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-
-
-@router.get("/graph/nodes/{node_id}")
-def get_node(node_id: str):
-    node = graph_manager.get_node(node_id)
-    if not node:
-        raise HTTPException(status_code=404, detail="Node not found")
-    return node
 
 
 @router.get("/graph/nodes/search/")
@@ -139,12 +133,21 @@ def get_entities(type: str = None):
     return []
 
 
+@router.get("/graph/nodes/{node_id}")
+def get_node(node_id: str):
+    node = graph_manager.get_node(node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+    return node
+
+
 @router.put("/graph/nodes/{node_id}")
 def update_node(node_id: str, node_request: CreateNodeRequest):
     node = graph_manager.get_node(node_id)
-    print(node)
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
+    if node.get("type") and node["type"] != node_request.type:
+        raise HTTPException(status_code=409, detail="Changing an entity's type is not supported")
     node["type"] = node_request.type
     node["properties"] = node_request.properties
     embedding = generate_node_embedding(node["type"], node["properties"])
@@ -175,7 +178,10 @@ def create_edge(edge: CreateEdgeRequest):
         raise HTTPException(status_code=400, detail="Source or Target node not found")
 
     if not schema_registry.is_valid_edge_type(edge.type):
-        schema_registry.add_custom_edge_type(edge.type)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown edge type '{edge.type}'. Register it via /schema/edges/ first.",
+        )
 
     try:
         # In a real app, map string to EdgeType enum
@@ -199,18 +205,10 @@ def delete_edge(edge_id: str):
 
 @router.post("/rag/query")
 def rag_query(request: QueryRequest):
-    # 1. Retrieve relevant text chunks
-    docs = vector_store.query(request.query)
-
-    # 2. (Placeholder) Logic to traverse Graph based on entities in query
-    # entities = extract_entities(request.query)
-    # graph_context = graph_manager.get_subgraph(entities)
-
-    return {
-        "vector_results": docs,
-        "graph_context": "Placeholder for Graph Traversal Results",
-        "generated_answer": "Placeholder for LLM Generation",
-    }
+    raise HTTPException(
+        status_code=501,
+        detail="RAG answer generation is not implemented; use /api/v1/context for retrieval.",
+    )
 
 
 class ContextRequest(BaseModel):

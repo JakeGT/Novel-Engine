@@ -87,3 +87,24 @@ def test_missing_config_file_starts_with_empty_custom_types(tmp_path) -> None:
 
     assert registry.custom_node_types == set()
     assert registry.custom_edge_types == set()
+
+
+def test_world_type_is_recognized(tmp_path) -> None:
+    registry = _registry(tmp_path)
+
+    assert registry.is_valid_node_type("World")
+
+
+def test_custom_types_are_sorted_in_output_and_persistence(tmp_path) -> None:
+    registry = _registry(tmp_path)
+    registry.add_custom_node_type("Zeta")
+    registry.add_custom_node_type("Alpha")
+    registry.add_custom_edge_type("ZED")
+    registry.add_custom_edge_type("ABC")
+
+    declared = [member.value for member in NodeType]
+    assert registry.get_all_node_types()[len(declared) :] == ["Alpha", "Zeta"]
+
+    payload = json.loads((tmp_path / "schema.json").read_text(encoding="utf-8"))
+    assert payload["node_types"] == ["Alpha", "Zeta"]
+    assert payload["edge_types"] == ["ABC", "ZED"]

@@ -61,7 +61,7 @@ Phase 0 may introduce `workspace_id` and `project_id` primitives/interfaces so l
 | 0D. PostgreSQL/Neo4j infrastructure and migrations | FND-005, FND-005A | In progress | 0A–0B |
 | 0E. Application lifecycle and ports | FND-001, FND-002 | In progress | 0C–0D |
 | 0F. Stable DTOs and errors | FND-003, FND-004 | In progress | 0C, 0E |
-| 0G. Prototype repairs | FND-008 | Not started | 0C, 0E–0F |
+| 0G. Prototype repairs | FND-008 | In progress | 0C, 0E–0F |
 | 0H. Integration fixtures and seed world | FND-006, FND-009, QLT-001 | Not started | 0D–0G |
 | 0I. Diagnostics, health, and CI | OPS-001, FND-007 | Not started | 0B–0H |
 | 0J. Documentation and exit audit | All Phase 0 | Not started | 0A–0I |
@@ -325,57 +325,57 @@ Each repair must have a failing regression test first or in the same change.
 
 ### Graph and schema
 
-- [ ] **FND-008.1:** fix `get_node`/service property-shape mismatch; use explicit mapper rather than ad hoc `.get("properties")` assumptions.
-- [ ] **FND-008.2:** correct `get_nodes` parameter handling and return DTOs instead of raw Neo4j records.
-- [ ] **FND-008.3:** define and test node type-change behavior; relabel safely or reject type changes.
-- [ ] **FND-008.4:** persist edge validity/provenance fields or explicitly remove unsupported fields from the prototype contract until implemented.
-- [ ] **FND-008.5:** define node retirement/deletion and make manual/integration cleanup use an existing operation.
-- [ ] **FND-008.6:** reject invalid/unknown content types unless they were created through an explicit schema operation.
-- [ ] **FND-008.7:** add missing `World` type or resolve the world-anchor representation consistently.
-- [ ] **FND-008.8:** return deterministic ordering for custom schema types and persisted registry output.
-- [ ] **FND-008.9:** fix duplicate `semantic_top_k` declaration and validate traversal-policy bounds.
-- [ ] **FND-008.10:** correct traversal depth/PageRank naming and query construction; characterize directionality and exclusions.
+- [x] **FND-008.1:** fix `get_node`/service property-shape mismatch; use explicit mapper rather than ad hoc `.get("properties")` assumptions (`_to_node` mapper + `tests/unit/test_node_mapper.py`).
+- [x] **FND-008.2:** correct `get_nodes` parameter handling and return DTOs instead of raw Neo4j records.
+- [x] **FND-008.3:** define and test node type-change behavior; reject type changes (v1 409 conflict, legacy 409).
+- [x] **FND-008.4:** persist edge validity/provenance fields or explicitly remove unsupported fields from the prototype contract until implemented (explicitly excluded from the v1 `EdgeModel`; domain fields remain unpersisted and are documented in `plan/api-surface.md`).
+- [x] **FND-008.5:** define node retirement/deletion and make manual/integration cleanup use an existing operation (`GraphRepository.delete_node` + `DELETE /api/v1/entities/{id}`).
+- [x] **FND-008.6:** reject invalid/unknown content types unless they were created through an explicit schema operation (v1 and legacy reject; no silent registration).
+- [x] **FND-008.7:** add missing `World` type or resolve the world-anchor representation consistently.
+- [x] **FND-008.8:** return deterministic ordering for custom schema types and persisted registry output (sorted output and persistence).
+- [x] **FND-008.9:** fix duplicate `semantic_top_k` declaration and validate traversal-policy bounds.
+- [x] **FND-008.10:** correct traversal depth/PageRank naming and query construction; characterize directionality and exclusions (`build_traversal_query` + `tests/unit/test_traversal_query.py`).
 
 ### API routing and behavior
 
-- [ ] **FND-008.11:** declare static `/search` and `/entities` routes before `/{node_id}` or restructure routers to eliminate ambiguity.
-- [ ] **FND-008.12:** remove debugging `print` calls and use redacted structured logging.
-- [ ] **FND-008.13:** remove or return `501 Not Implemented` for placeholder RAG generation instead of returning fake success data.
-- [ ] **FND-008.14:** validate source/target existence and project scope through application services, not repeated endpoint queries.
-- [ ] **FND-008.15:** make delete/update responses reflect actual affected records and missing-target behavior.
+- [x] **FND-008.11:** declare static `/search` and `/entities` routes before `/{node_id}` or restructure routers to eliminate ambiguity (legacy reordered; v1 ordered by design).
+- [x] **FND-008.12:** remove debugging `print` calls and use redacted structured logging.
+- [x] **FND-008.13:** remove or return `501 Not Implemented` for placeholder RAG generation instead of returning fake success data (v1 and legacy return 501).
+- [x] **FND-008.14:** validate source/target existence and project scope through application services, not repeated endpoint queries (v1 validates through the graph port; project scope is Phase 1).
+- [x] **FND-008.15:** make delete/update responses reflect actual affected records and missing-target behavior (v1 204/404 and updated entity; legacy returns 409/404 appropriately).
 
 ### Character workflow
 
-- [ ] **FND-008.16:** accept and persist the bio expected by question generation, with one authoritative request contract.
-- [ ] **FND-008.17:** read character name/bio through the stable entity DTO.
-- [ ] **FND-008.18:** build a complete temporary-ID → durable-ID map and rewrite edge endpoints after node ID normalization.
-- [ ] **FND-008.19:** reject unknown LLM node/edge types with actionable validation errors.
-- [ ] **FND-008.20:** validate duplicate IDs, missing targets, source constraints, and existing-entity references before any write.
-- [ ] **FND-008.21:** make graph proposal application atomic/idempotent enough for the prototype or leave it explicitly uncommitted for later mutation review.
-- [ ] **FND-008.22:** replace filesystem debug cache coupling with an injected optional development artefact store.
+- [x] **FND-008.16:** accept and persist the bio expected by question generation, with one authoritative request contract.
+- [x] **FND-008.17:** read character name/bio through the stable entity DTO.
+- [x] **FND-008.18:** build a complete temporary-ID → durable-ID map and rewrite edge endpoints after node ID normalization.
+- [x] **FND-008.19:** reject unknown LLM node/edge types with actionable validation errors.
+- [x] **FND-008.20:** validate duplicate IDs, missing targets, source constraints, and existing-entity references before any write.
+- [ ] **FND-008.21:** make graph proposal application atomic/idempotent enough for the prototype or leave it explicitly uncommitted for later mutation review (deferred: the prototype applies validated proposals immediately; atomic/idempotent application belongs to the Phase 1 mutation-review journal).
+- [x] **FND-008.22:** replace filesystem debug cache coupling with an injected optional development artefact store.
 
 ### World workflow
 
-- [ ] **FND-008.23:** fix `explitict_ids`/`explicit_ids` mismatch.
-- [ ] **FND-008.24:** add the missing JSON import or replace ad hoc serialization with the shared context renderer.
-- [ ] **FND-008.25:** reconcile the unfinished world-service work already present in the worktree.
-- [ ] **FND-008.26:** reuse shared question/proposal DTOs and retrieval helpers instead of duplicating character-service structures.
-- [ ] **FND-008.27:** expose only the world endpoints that have complete, tested behavior; document unfinished answer processing.
+- [ ] **FND-008.23:** fix `explitict_ids`/`explicit_ids` mismatch (deferred: parked `world_service.py` worktree edit not yet reconciled).
+- [ ] **FND-008.24:** add the missing JSON import or replace ad hoc serialization with the shared context renderer (deferred with FND-008.25).
+- [ ] **FND-008.25:** reconcile the unfinished world-service work already present in the worktree (deferred to an owner decision on the parked edit).
+- [ ] **FND-008.26:** reuse shared question/proposal DTOs and retrieval helpers instead of duplicating character-service structures (deferred with FND-008.25).
+- [ ] **FND-008.27:** expose only the world endpoints that have complete, tested behavior; document unfinished answer processing (deferred with FND-008.25).
 
 ### Embeddings and vector behavior
 
-- [ ] **FND-008.28:** remove model download/loading from import and make embedding capability explicit.
-- [ ] **FND-008.29:** version embedding model and dimension in vector metadata/index configuration.
-- [ ] **FND-008.30:** define deterministic behavior when embeddings are disabled.
-- [ ] **FND-008.31:** prevent Chroma collection creation on import; isolate it as transitional until pgvector replacement.
-- [ ] **FND-008.32:** validate semantic score thresholds consistently across API and service calls.
+- [x] **FND-008.28:** remove model download/loading from import and make embedding capability explicit.
+- [x] **FND-008.29:** version embedding model and dimension in vector metadata/index configuration.
+- [x] **FND-008.30:** define deterministic behavior when embeddings are disabled (deterministic `None`; `DisabledEmbeddingProvider` contract test).
+- [x] **FND-008.31:** prevent Chroma collection creation on import; isolate it as transitional until pgvector replacement.
+- [x] **FND-008.32:** validate semantic score thresholds consistently across API and service calls (policies carry `semantic_min_score`; v1 context and character service use it).
 
 ### 0G acceptance
 
-- [ ] Every numbered defect is repaired, deliberately deferred with a documented contract, or moved to a later backlog item with rationale.
-- [ ] Every repaired defect has a deterministic regression test.
-- [ ] Character and world question generation can be exercised with fake AI and no live database.
-- [ ] Graph CRUD/context endpoints have stable documented success/failure behavior.
+- [x] Every numbered defect is repaired, deliberately deferred with a documented contract, or moved to a later backlog item with rationale.
+- [x] Every repaired defect has a deterministic regression test.
+- [ ] Character and world question generation can be exercised with fake AI and no live database (character done; world blocked on FND-008.25).
+- [x] Graph CRUD/context endpoints have stable documented success/failure behavior (v1 surface).
 
 ---
 

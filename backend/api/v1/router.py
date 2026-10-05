@@ -113,14 +113,29 @@ def update_entity(
         raise ValidationError(
             f"Unknown node type {body.type!r}. Register it via the schema API first."
         )
-    if graph.get_node(entity_id) is None:
+    existing = graph.get_node(entity_id)
+    if existing is None:
         raise NotFoundError(f"Entity {entity_id!r} not found")
+    if existing.type != body.type:
+        raise ConflictError(
+            f"Entity {entity_id!r} is of type {existing.type!r}; changing type is not supported."
+        )
     embedding = embeddings.embed_node(body.type, body.properties)
     node = Node(id=entity_id, type=body.type, properties=body.properties, embedding=embedding)
     updated = graph.update_node(node)
     if updated is None:
         raise NotFoundError(f"Entity {entity_id!r} not found")
     return s.entity_from_node(updated)
+
+
+@router.delete(
+    "/entities/{entity_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["entities"],
+)
+def delete_entity(entity_id: str, graph: GraphRepository = Depends(get_graph)) -> None:
+    if not graph.delete_node(entity_id):
+        raise NotFoundError(f"Entity {entity_id!r} not found")
 
 
 @router.get("/entities/{entity_id}/edges", response_model=s.EdgeList, tags=["entities"])

@@ -1,14 +1,16 @@
-from typing import List, Optional, Dict, Any, Set
-from pydantic import BaseModel, Field
-from enum import Enum
-from datetime import datetime
 import json
-from pathlib import Path
 import logging
+from datetime import datetime
+from enum import StrEnum
+from pathlib import Path
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-class NodeType(str, Enum):
+
+class NodeType(StrEnum):
     CHARACTER = "Character"
     LOCATION = "Location"
     OBJECT = "Object"
@@ -28,6 +30,7 @@ class NodeType(str, Enum):
     CONFLICT = "Conflict"
     SECRET = "Secret"
     WORLD_STATE = "WorldState"
+    WORLD = "World"
     # World Building
     SYSTEM = "System"
     PRESSURE = "Pressure"
@@ -40,7 +43,8 @@ class NodeType(str, Enum):
     STATE = "State"
     BELIEF = "Belief"
 
-class EdgeType(str, Enum):
+
+class EdgeType(StrEnum):
     # Structural
     LOCATED_AT = "LOCATED_AT"
     PART_OF = "PART_OF"
@@ -88,36 +92,42 @@ class EdgeType(str, Enum):
     DEPENDS_ON = "DEPENDS_ON"
     TRAUMATIZED_BY = "TRAUMATIZED_BY"
 
+
 class Node(BaseModel):
     id: str
-    type: str # Allow dynamic strings
-    properties: Dict[str, Any] = Field(default_factory=dict)
-    embedding: Optional[List[float]] = Field(default=None, description="Vector representation of the node for semantic search.")
+    type: str  # Allow dynamic strings
+    properties: dict[str, Any] = Field(default_factory=dict)
+    embedding: list[float] | None = Field(
+        default=None, description="Vector representation of the node for semantic search."
+    )
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
 
 class Edge(BaseModel):
     source: str
     target: str
-    type: str # Allow dynamic strings
-    properties: Dict[str, Any] = Field(default_factory=dict)
-    valid_from: Optional[datetime] = None
-    valid_until: Optional[datetime] = None
+    type: str  # Allow dynamic strings
+    properties: dict[str, Any] = Field(default_factory=dict)
+    valid_from: datetime | None = None
+    valid_until: datetime | None = None
+
 
 class SchemaRegistry:
     """
     Manages a hybrid schema combining core hardcoded Enums (NodeType, EdgeType)
     with user-defined custom strings loaded from a JSON config file.
     """
+
     def __init__(self, config_path: str = "backend/config/custom_schema.json"):
         self.config_path = Path(config_path)
-        self.custom_node_types: Set[str] = set()
-        self.custom_edge_types: Set[str] = set()
+        self.custom_node_types: set[str] = set()
+        self.custom_edge_types: set[str] = set()
         self._load()
 
     def _load(self):
         if self.config_path.exists():
             try:
-                with open(self.config_path, "r", encoding="utf-8") as f:
+                with open(self.config_path, encoding="utf-8") as f:
                     data = json.load(f)
                     self.custom_node_types = set(data.get("node_types", []))
                     self.custom_edge_types = set(data.get("edge_types", []))
@@ -127,10 +137,14 @@ class SchemaRegistry:
     def _save(self):
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.config_path, "w", encoding="utf-8") as f:
-            json.dump({
-                "node_types": list(self.custom_node_types),
-                "edge_types": list(self.custom_edge_types)
-            }, f, indent=4)
+            json.dump(
+                {
+                    "node_types": sorted(self.custom_node_types),
+                    "edge_types": sorted(self.custom_edge_types),
+                },
+                f,
+                indent=4,
+            )
 
     def add_custom_node_type(self, node_type: str):
         if node_type not in self.custom_node_types and node_type not in [e.value for e in NodeType]:
@@ -158,10 +172,11 @@ class SchemaRegistry:
     def is_valid_edge_type(self, edge_type: str) -> bool:
         return edge_type in self.custom_edge_types or edge_type in [e.value for e in EdgeType]
 
-    def get_all_node_types(self) -> List[str]:
-        return [e.value for e in NodeType] + list(self.custom_node_types)
+    def get_all_node_types(self) -> list[str]:
+        return [e.value for e in NodeType] + sorted(self.custom_node_types)
 
-    def get_all_edge_types(self) -> List[str]:
-        return [e.value for e in EdgeType] + list(self.custom_edge_types)
+    def get_all_edge_types(self) -> list[str]:
+        return [e.value for e in EdgeType] + sorted(self.custom_edge_types)
+
 
 schema_registry = SchemaRegistry()

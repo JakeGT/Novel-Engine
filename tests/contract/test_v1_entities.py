@@ -138,3 +138,42 @@ def test_create_edge_rejects_unknown_type_and_missing_nodes(api_client) -> None:
         },
     )
     assert missing.status_code == 400
+
+
+def test_delete_entity(api_client) -> None:
+    _create(api_client)
+
+    deleted = api_client.delete("/api/v1/entities/char_arin")
+
+    assert deleted.status_code == 204
+    assert api_client.get("/api/v1/entities/char_arin").status_code == 404
+
+
+def test_delete_missing_entity_returns_problem(api_client) -> None:
+    response = api_client.delete("/api/v1/entities/ghost")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "not_found"
+
+
+def test_update_rejects_type_change(api_client) -> None:
+    _create(api_client, entity_id="char_arin", type_="Character")
+
+    response = api_client.put(
+        "/api/v1/entities/char_arin",
+        json={"type": "Location", "properties": {}},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "conflict"
+
+
+def test_create_entity_without_embeddings(api_client, fake_container) -> None:
+    from tests.doubles import DisabledEmbeddingProvider
+
+    fake_container.embeddings = DisabledEmbeddingProvider()
+
+    response = _create(api_client, entity_id="char_arin")
+
+    assert response.status_code == 201
+    assert "embedding" not in response.json()["properties"]

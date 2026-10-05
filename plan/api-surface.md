@@ -48,7 +48,13 @@ They are retained only for continuity and are not covered by the v1 contract tes
 
 ## Pending
 
-- Edge deletion/retirement (`FND-008.5`) is not yet exposed.
+- Edge validity/provenance (`valid_from`/`valid_until`) exists on the domain model but is
+  not persisted; it is explicitly excluded from the v1 `EdgeModel` until temporal
+  semantics land (FND-008.4).
+- Edge deletion/retirement (`FND-008.5`) is exposed for nodes (`DELETE /entities/{id}`)
+  but not yet for edges.
 - The graph and RAG answer generation pipeline is future-phase work; `/api/v1/rag/query`
   is deliberately 501 so placeholder text cannot be mistaken for generated output.
+- Character graph proposals are validated and applied immediately; atomic, reviewable
+  mutation application is Phase 1.
 - Authentication, tenant/project scoping, and pagination cursors are Phase 1.

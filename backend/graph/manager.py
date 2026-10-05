@@ -211,26 +211,39 @@ class GraphManager:
 
     def get_nodes(
         self, node_type: Optional[str] = None, node_id: Optional[str] = None
-    ) -> Optional[Dict[str, Any]]:
+    ) -> List[Dict[str, Any]]:
+        label_clause = ""
         if node_type:
-            node_type = self._validate_identifier(node_type)
-            node_type = f":{node_type}"
-        else:
-            node_type = ""
+            label_clause = ":" + self._validate_identifier(node_type)
 
+        id_clause = ""
+        params: Dict[str, Any] = {}
         if node_id:
-            node_id = self._validate_identifier(node_id)
-            node_id = f"{{id: $node_id}}"
-        else:
-            node_id = ""
+            id_clause = "{id: $node_id}"
+            params["node_id"] = node_id
 
         query = f"""
-        MATCH (n:Entity{node_type} {node_id})
+        MATCH (n:Entity{label_clause} {id_clause})
         RETURN n, labels(n) as labels
         """
         with self.driver.session() as session:
-            result = session.run(query, node_id=node_id)
-            return [record.data() for record in result]
+            result = session.run(query, **params)
+            nodes = []
+            for record in result:
+                node_data = dict(record["n"])
+                labels = [label for label in record["labels"] if label != "Entity"]
+                if labels:
+                    node_data["type"] = labels[0]
+                elif record["labels"]:
+                    node_data["type"] = record["labels"][0]
+                nodes.append(node_data)
+            return nodes
+
+    def delete_node(self, node_id: str) -> bool:
+        query = "MATCH (n:Entity {id: $id}) DETACH DELETE n"
+        with self.driver.session() as session:
+            result = session.run(query, id=node_id)
+            return result.consume().counters.nodes_deleted > 0
 
     def get_top_10_nodes_by_name_and_type(self, node_type: str, name: str) -> List[Dict[str, Any]]:
         # Validate and sanitize node_type to prevent injection

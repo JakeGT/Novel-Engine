@@ -144,6 +144,15 @@ class InMemoryGraphRepository:
     def ping(self) -> bool:
         return True
 
+    def delete_node(self, node_id: str) -> bool:
+        if node_id not in self.nodes:
+            return False
+        del self.nodes[node_id]
+        self.edges = [
+            edge for edge in self.edges if edge.source != node_id and edge.target != node_id
+        ]
+        return True
+
     def delete_edge(self, edge_id: str) -> None:
         self.edges = [edge for edge in self.edges if getattr(edge, "id", None) != edge_id]
 
@@ -206,6 +215,27 @@ class FakeEmbeddingProvider:
 
     def embed_node(self, node_type: str, properties: dict[str, Any]) -> list[float]:
         return self.embed(f"{node_type}:{sorted(properties.items())}")
+
+
+class DisabledEmbeddingProvider:
+    """Embedding provider fake representing a disabled/unavailable capability."""
+
+    def __init__(self, dimension: int = 384, model: str = "disabled", version: str = "0"):
+        self.dimension = dimension
+        self.model = model
+        self.version = version
+
+    def available(self) -> bool:
+        return False
+
+    def loaded(self) -> bool:
+        return False
+
+    def embed(self, text: str) -> None:
+        return None
+
+    def embed_node(self, node_type: str, properties: dict[str, Any]) -> None:
+        return None
 
 
 class ScriptedAIGateway:
