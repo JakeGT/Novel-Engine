@@ -34,6 +34,18 @@ jobs:
       - name: Compile Python sources
         run: python -m compileall -q backend
 
+      - name: Install locked dependencies
+        run: uv sync --locked
+
+      - name: Type-check hermetic scope
+        run: uv run --locked mypy backend/graph/resolver.py backend/graph/summarizer.py backend/graph/schema.py
+
+      - name: Run hermetic tests
+        run: uv run --locked pytest -m "not integration and not llm"
+
+      - name: Ruff check tests
+        run: uv run --locked ruff check tests
+
   frontend-foundation:
     runs-on: ubuntu-latest
     defaults:
