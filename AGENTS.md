@@ -26,13 +26,19 @@ Do not describe a planned capability as implemented. When changing a capability,
 | `backend/api/` | HTTP transport and request/response contracts |
 | `backend/services/` | Application workflows such as character and world creation |
 | `backend/graph/` | Graph schema, Neo4j persistence, resolution, traversal, and summarization |
-| `backend/core/` | Configuration and vector-store infrastructure |
+| `backend/core/` | Configuration, database engine/session, and vector-store infrastructure |
+| `backend/ports.py` | Application/domain port protocols (graph, vector, embedding, AI, clock, IDs, schema, migration, database, artifacts) |
+| `backend/adapters/` | Concrete port adapters (Neo4j, Chroma, sentence-transformers, OpenAI, PostgreSQL, system clock/IDs, artifacts) |
+| `backend/container.py` | Dependency container built from explicit settings; owns adapters and lifecycle |
+| `backend/migrate.py` | `make migrate` CLI; Alembic plus Neo4j migration verification |
+| `migrations/` | Alembic environment and PostgreSQL/pgvector revisions |
+| `scripts/manual/` | Non-hermetic manual scripts; never collected by pytest |
 | `frontend/` | React application |
-| `tests/` | Target home for automated tests |
+| `tests/` | Automated tests: `unit`, `application`, `contract`, `integration`, `e2e` |
 | `plan/` | Product, architecture, delivery, and decision records |
 | `data/` | Generated local databases; never commit |
 
-The root `test_*.py` files are legacy live-integration scripts. Move or replace them incrementally; do not assume they are hermetic tests.
+Root-level `test_*.py` scripts have moved to `scripts/manual/` and are no longer collected by pytest.
 
 ## Local setup
 
@@ -40,9 +46,10 @@ The root `test_*.py` files are legacy live-integration scripts. Move or replace 
 2. Install Python 3.13, Node.js 24 LTS, `uv`, and pnpm 11. The repository's `.python-version`, `.nvmrc`, and package metadata are authoritative.
 3. Run `make install-dev`; `uv` creates and manages `.venv`.
 4. Run `make frontend-install` for a frozen frontend install.
-5. Run `make infra-up`.
-6. Run `make api`.
-7. In another terminal, run `pnpm --dir frontend run dev`.
+5. Run `make infra-up`; it starts PostgreSQL/pgvector and Neo4j and waits for healthy.
+6. Run `make migrate` to apply Alembic and Neo4j migrations.
+7. Run `make api`.
+8. In another terminal, run `pnpm --dir frontend run dev`.
 
 Useful validation commands:
 
@@ -50,12 +57,15 @@ Useful validation commands:
 make lock-check
 make lint
 make format-check
+make typecheck
+make import-check
 make test
+make test-integration
 make frontend-lint
 make frontend-build
 ```
 
-Run the smallest relevant checks during iteration and `make check` before handing over a cross-cutting change. Mark tests that contact Neo4j with `integration` and tests that spend model tokens with `llm`.
+Run the smallest relevant checks during iteration and `make check` before handing over a cross-cutting change. `make test` is hermetic (no services, network, API keys, model downloads, or persistent writes); mark tests that contact PostgreSQL or Neo4j with `integration` and tests that spend model tokens with `llm`. Start the disposable test Neo4j with `docker compose --profile test up -d --wait neo4j-test` before `make test-integration`.
 
 Use `uv add`/`uv remove` for Python dependencies and `pnpm --dir frontend add`/`remove` for frontend dependencies. Do not restore requirements files or use unfrozen installs in CI. Refresh lock files in the same change as dependency metadata.
 

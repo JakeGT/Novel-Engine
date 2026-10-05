@@ -5,6 +5,7 @@ Novel Engine is a planned hosted AI-assisted fiction SaaS designed to preserve c
 The project combines:
 
 - Neo4j for canonical, queryable story state
+- PostgreSQL with pgvector for operational state and future vector retrieval
 - semantic retrieval for prose, summaries, and stylistic memory
 - structured model workflows for authoring and extraction
 - explicit provenance, temporal validity, and branch-aware state
@@ -27,10 +28,11 @@ Prerequisites:
 cp .env.example .env
 make install-dev
 make infra-up
+make migrate
 make api
 ```
 
-`uv` creates and manages `.venv` automatically. On Windows, run the commands shown in `Makefile` directly if `make` is unavailable; no manual virtual-environment activation is required.
+`make infra-up` starts PostgreSQL/pgvector and Neo4j and waits for both to be healthy. `make migrate` applies explicit Alembic and Neo4j migrations; application startup verifies migration state but never mutates schemas. `uv` creates and manages `.venv` automatically. On Windows, run the commands shown in `Makefile` directly if `make` is unavailable; no manual virtual-environment activation is required.
 
 Start the frontend separately:
 
@@ -48,17 +50,18 @@ make help
 make lock-check
 make lint
 make test
+make test-integration
 make frontend-build
 ```
 
-Tests that require live infrastructure or spend model tokens must be explicitly marked and are excluded from the default unit-test command.
+`make test` runs the hermetic unit/application/contract suite with no services, network, API keys, model downloads, or persistent writes. `make test-integration` targets disposable PostgreSQL and Neo4j services (start the test Neo4j with `docker compose --profile test up -d --wait neo4j-test`). Tests that spend model tokens are marked `llm` and excluded from both commands.
 
 For coding-agent conventions and project boundaries, read [AGENTS.md](AGENTS.md). For architecture, scope, roadmap, and open decisions, start with [plan/README.md](plan/README.md).
 
 ## Current limitations
 
 - The React application is still the default Vite scaffold.
-- Neo4j and ChromaDB clients are created globally and need dependency-injection boundaries.
-- Existing root-level tests are live-server scripts rather than isolated automated tests.
+- The application factory, container, ports, adapters, and health endpoints exist; stable API v1 DTOs and the problem error contract are still pending (Phase 0 workstream 0F).
+- Character and schema routes use the injected container; graph and RAG routes still use legacy module singletons pending 0F.
 - The world workflow and generic RAG answer endpoint are incomplete.
 - The architecture document at the repository root records the original concept; `plan/` is the maintained implementation plan.

@@ -1,135 +1,160 @@
-from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
-from backend.graph.schema import NodeType, EdgeType, schema_registry, Node
-from openai import AsyncOpenAI
-from backend.core.config import settings
-from backend.graph.manager import graph_manager
-from backend.graph.vector_search import generate_query_embedding
-from backend.graph.resolver import extract_entity_ids
-from backend.graph.policies import CHARACTER_CREATION_POLICY
+from __future__ import annotations
+
 import json
-from pathlib import Path
 import logging
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+from backend.graph.policies import CHARACTER_CREATION_POLICY
+from backend.graph.resolver import extract_entity_ids
+from backend.graph.schema import Node
+from backend.ports import (
+    AIGateway,
+    ArtifactStore,
+    EmbeddingPort,
+    GraphRepository,
+    SchemaRegistryPort,
+)
 
 logger = logging.getLogger(__name__)
+
 
 class CharacterQuestion(BaseModel):
     id: str = Field(description="Unique identifier for the question (e.g., personality_1)")
     question: str
     category: str = Field(description="e.g., personality, appearance, motivation, secret")
-    context_required: bool = Field(default=False, description="Whether this question needs context from the Knowledge Graph")
+    context_required: bool = Field(
+        default=False, description="Whether this question needs context from the Knowledge Graph"
+    )
+
 
 class CharacterQuestionSheet(BaseModel):
     character_name: str
     character_id: str
-    questions: List[CharacterQuestion]
+    questions: list[CharacterQuestion]
+
 
 class NodeUpdate(BaseModel):
     id: str
-    type: str # Use string for flexibility with Pydantic validation
-    properties: Dict[str, Any]
+    type: str
+    properties: dict[str, Any]
+
 
 class EdgeUpdate(BaseModel):
     source: str
     target: str
     type: str
-    properties: Dict[str, Any]
+    properties: dict[str, Any]
+
 
 class GraphUpdate(BaseModel):
-    nodes: List[NodeUpdate] = Field(description="List of node data to create or update")
-    edges: List[EdgeUpdate] = Field(description="List of edge data to create")
+    nodes: list[NodeUpdate] = Field(description="List of node data to create or update")
+    edges: list[EdgeUpdate] = Field(description="List of edge data to create")
+
 
 class CharacterService:
-    def __init__(self, model: str = "gpt-4o"):
-        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+    def __init__(
+        self,
+        graph: GraphRepository,
+        ai: AIGateway,
+        embeddings: EmbeddingPort,
+        schema_registry: SchemaRegistryPort,
+        artifacts: ArtifactStore,
+        model: str = "gpt-4o",
+    ) -> None:
+        self.graph = graph
+        self.ai = ai
+        self.embeddings = embeddings
+        self.schema_registry = schema_registry
+        self.artifacts = artifacts
         self.model = model
 
-    def _save_debug_response(self, data: BaseModel, filename: str):
-        debug_dir = Path("backend/debug")
-        debug_dir.mkdir(parents=True, exist_ok=True)
-        file_path = debug_dir / filename
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(data.model_dump_json(indent=4))
+    def _save_debug_response(self, data: BaseModel, filename: str) -> None:
+        self.artifacts.save(filename, data.model_dump_json(indent=4))
 
-    def _load_debug_response(self, model_class, filename: str) -> Optional[Any]:
-        file_path = Path("backend/debug") / filename
-        if file_path.exists():
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                    return model_class.model_validate_json(content)
-            except Exception as e:
-                logger.warning(f"Failed to load cache {filename}: {e}")
-        return None
+    def _load_debug_response(self, model_class: type[BaseModel], filename: str) -> Any | None:
+        payload = self.artifacts.load(filename)
+        if payload is None:
+            return None
+        try:
+            return model_class.model_validate_json(payload)
+        except Exception as e:
+            logger.warning(f"Failed to load cache {filename}: {e}")
+            return None
 
-    def init_character_anchor(self, character_name: str, bio: Optional[str] = None) -> Node:
-        """
-        Creates the base Anchor node for a character deterministically.
-        (Workflow Step 1)
-        """
+    def init_character_anchor(self, character_name: str, bio: str | None = None) -> Node:
         character_id = f"char_{character_name.lower().replace(' ', '_')}"
         properties = {"name": character_name, "description": bio}
-        
-        # Calculate initial semantic embedding for the anchor
-        embedding = generate_node_embedding("Character", properties)
-            
+        embedding = self.embeddings.embed_node("Character", properties)
         node = Node(id=character_id, type="Character", properties=properties, embedding=embedding)
-        graph_manager.add_node(node)
+        self.graph.add_node(node)
         return node
 
-    async def generate_questions(self, character_id: str, use_cache: bool = False) -> CharacterQuestionSheet:
-        """
-        Generates a list of questions to flesh out a character based on a basic bio.
-        (Workflow Step 3)
-        """
-        node = graph_manager.get_node(character_id)
-        if not node:
+    async def generate_questions(
+        self, character_id: str, use_cache: bool = False
+    ) -> CharacterQuestionSheet:
+        node = self.graph.get_node(character_id)
+        if node is None:
             raise ValueError(f"Character node {character_id} not found")
-        bio = node.get("properties", {}).get("description", "")
-        character_name = node.get("properties", {}).get("name", "")
-        
+        bio = node.properties.get("description", "") or ""
+        character_name = node.properties.get("name", "") or ""
+
         cache_filename = f"questions_{character_id}.json"
         if use_cache:
             cached = self._load_debug_response(CharacterQuestionSheet, cache_filename)
             if cached:
                 logger.info(f"Loaded questions from cache: {cache_filename}")
                 return cached
-                
-        # 1. RAG Sweep: Find contextual nodes based on the bio
+
         context_str = "No existing relevant Knowledge Graph context found."
         context_nodes = []
-        
-        # 1a. Explicit Anchors
+
         explicit_ids = extract_entity_ids(bio)
         for n_id in explicit_ids:
-            node = graph_manager.get_node(n_id)
-            if node:
-                 context_nodes.append(f"- Explicitly Tagged [{n_id}] ({node.get('type')}): {json.dumps(node.get('properties', {}))}")
-                 
-        # 1b. Semantic Anchors
-        bio_embedding = generate_query_embedding(bio)
-        if bio_embedding:
-            # Get top 5 most semantically relevant nodes from the whole graph
-            semantic_ids = graph_manager.search_semantic_nodes(bio_embedding, top_k=CHARACTER_CREATION_POLICY.semantic_top_k, min_score=CHARACTER_CREATION_POLICY.semantic_min_score)
-            if semantic_ids:
-                for n_id in semantic_ids:
-                    if n_id in explicit_ids: continue # Skip if already caught explicitly
-                    node = graph_manager.get_node(n_id)
-                    if node:
-                         # Exclude characters to focus on World/Events unless strictly necessary
-                         if node.get('type') not in CHARACTER_CREATION_POLICY.excluded_node_types:
-                            context_nodes.append(f"- Semantically Related {node.get('name', n_id)} ({node.get('type')}): {json.dumps(node.get('properties', {}))}")
-                
-        if context_nodes:
-            context_str = "Existing Knowledge Graph Context (Use this to anchor your questions in the established world lore):\n" + "\n".join(context_nodes)
+            context_node = self.graph.get_node(n_id)
+            if context_node:
+                context_nodes.append(
+                    f"- Explicitly Tagged [{n_id}] ({context_node.type}): "
+                    f"{json.dumps(context_node.properties)}"
+                )
 
-        prompt = f"Character Name: {character_name} (ID: {character_id})\nCharacter Bio: {bio}\n\n{context_str}"
-        
-        response = await self.client.beta.chat.completions.parse(
+        bio_embedding = self.embeddings.embed(bio)
+        if bio_embedding:
+            semantic_ids = self.graph.search_semantic_nodes(
+                bio_embedding,
+                top_k=CHARACTER_CREATION_POLICY.semantic_top_k,
+                min_score=CHARACTER_CREATION_POLICY.semantic_min_score,
+            )
+            for n_id in semantic_ids:
+                if n_id in explicit_ids:
+                    continue
+                context_node = self.graph.get_node(n_id)
+                if (
+                    context_node
+                    and context_node.type not in CHARACTER_CREATION_POLICY.excluded_node_types
+                ):
+                    context_nodes.append(
+                        f"- Semantically Related {context_node.properties.get('name', n_id)} "
+                        f"({context_node.type}): {json.dumps(context_node.properties)}"
+                    )
+
+        if context_nodes:
+            context_str = (
+                "Existing Knowledge Graph Context (Use this to anchor your questions in the "
+                "established world lore):\n" + "\n".join(context_nodes)
+            )
+
+        prompt = (
+            f"Character Name: {character_name} (ID: {character_id})\n"
+            f"Character Bio: {bio}\n\n{context_str}"
+        )
+
+        response = await self.ai.generate_structured(
             model=self.model,
             messages=[
                 {
-                    "role": "system", 
+                    "role": "system",
                     "content": (
                         "You are a character creation assistant. Your goal is to generate deep, specific questions "
                         "that reveal a character's stable identity, appearance, personality, current state, and beliefs.\n\n"
@@ -139,57 +164,75 @@ class CharacterService:
                         "3. State: Current emotions, relationships/trust, chapter context.\n"
                         "4. Beliefs: Core claims about the world or others.\n"
                         "5. Backstory: Major events they participated in."
-                    )
+                    ),
                 },
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": prompt},
             ],
             response_format=CharacterQuestionSheet,
         )
-        # Inject the ID into the parsed object
-        parsed = response.choices[0].message.parsed
+        parsed = response.parsed
         parsed.character_id = character_id
-        
+
         self._save_debug_response(parsed, f"questions_{character_id}.json")
         return parsed
 
-    async def _fetch_raw_graph_update(self, character_name: str, character_id: str, chapter_number: int, answers_text: str, use_cache: bool = False) -> GraphUpdate:
+    async def _fetch_raw_graph_update(
+        self,
+        character_name: str,
+        character_id: str,
+        chapter_number: int,
+        answers_text: str,
+        use_cache: bool = False,
+    ) -> GraphUpdate:
         cache_filename = f"graph_update_{character_id}_ch{chapter_number}_raw.json"
         if use_cache:
             cached = self._load_debug_response(GraphUpdate, cache_filename)
             if cached:
                 logger.info(f"Loaded raw graph update from cache: {cache_filename}")
                 return cached
-                
-        # 1. RAG Sweep: Find contextual nodes based on the answers
+
         context_str = "No existing relevant Knowledge Graph context found."
         context_nodes = []
-        
-        # 1a. Explicit Anchors
+
         explicit_ids = extract_entity_ids(answers_text)
         for n_id in explicit_ids:
-            node = graph_manager.get_node(n_id)
+            node = self.graph.get_node(n_id)
             if node:
-                 context_nodes.append(f"- ID: {n_id} (EXPLICIT MATCH), Name: {node.get('name', 'Unknown')} ({node.get('type')}): {json.dumps(node.get('properties', {}))}")
-                 
-        # 1b. Semantic Anchors
-        answers_embedding = generate_query_embedding(answers_text)
-        if answers_embedding:
-            # Broader sweep for answers to catch Events, Locations, Factions, etc.
-            semantic_ids = graph_manager.search_semantic_nodes(answers_embedding, top_k=10, min_score=0.4)
-            if semantic_ids:
-                for n_id in semantic_ids:
-                    if n_id in explicit_ids: continue # Skip if already caught explicitly
-                    node = graph_manager.get_node(n_id)
-                    if node:
-                        # Exclude subjective/internal states of other characters to prevent leaking secrets,
-                        # but allow public nodes like Events, Locations, Factions, Concepts
-                        if node.get('type') not in ['Appearance', 'PersonalityProfile', 'State', 'Belief']:
-                            context_nodes.append(f"- ID: {n_id}, Name: {node.get('name', 'Unknown')} ({node.get('type')}): {json.dumps(node.get('properties', {}))}")
-                
-        if context_nodes:
-            context_str = "Existing Knowledge Graph Entities (If the user mentions one of these, reuse its exact ID instead of creating a new node):\n" + "\n".join(context_nodes)
+                context_nodes.append(
+                    f"- ID: {n_id} (EXPLICIT MATCH), Name: {node.properties.get('name', 'Unknown')} "
+                    f"({node.type}): {json.dumps(node.properties)}"
+                )
 
-        prompt = f"Character: {character_name} (ID: {character_id}) Chapter Number: {chapter_number}\n\nUser Answers:\n{answers_text}\n\n{context_str}"
+        answers_embedding = self.embeddings.embed(answers_text)
+        if answers_embedding:
+            semantic_ids = self.graph.search_semantic_nodes(
+                answers_embedding, top_k=10, min_score=0.4
+            )
+            for n_id in semantic_ids:
+                if n_id in explicit_ids:
+                    continue
+                node = self.graph.get_node(n_id)
+                if node and node.type not in [
+                    "Appearance",
+                    "PersonalityProfile",
+                    "State",
+                    "Belief",
+                ]:
+                    context_nodes.append(
+                        f"- ID: {n_id}, Name: {node.properties.get('name', 'Unknown')} "
+                        f"({node.type}): {json.dumps(node.properties)}"
+                    )
+
+        if context_nodes:
+            context_str = (
+                "Existing Knowledge Graph Entities (If the user mentions one of these, reuse its "
+                "exact ID instead of creating a new node):\n" + "\n".join(context_nodes)
+            )
+
+        prompt = (
+            f"Character: {character_name} (ID: {character_id}) Chapter Number: {chapter_number}\n\n"
+            f"User Answers:\n{answers_text}\n\n{context_str}"
+        )
 
         system_message = (
             "You are a Knowledge Graph specialist. Your task is to convert character details into a modular Graph format.\n\n"
@@ -209,73 +252,65 @@ class CharacterService:
             "- Beliefs: belief_{short_slug}\n"
             "- New Events: event_{short_slug}\n\n"
             "AVAILABLE TYPES FOR CUSTOM NODES/EDGES:\n"
-            f"Node Types: {', '.join(schema_registry.get_all_node_types())}\n"
-            f"Edge Types: {', '.join(schema_registry.get_all_edge_types())}\n"
+            f"Node Types: {', '.join(self.schema_registry.get_all_node_types())}\n"
+            f"Edge Types: {', '.join(self.schema_registry.get_all_edge_types())}\n"
             "You may ONLY use the types listed above."
         )
         logger.info("Sending answered questions to LLM for processing")
-        response = await self.client.beta.chat.completions.parse(
+        response = await self.ai.generate_structured(
             model=self.model,
             messages=[
                 {"role": "system", "content": system_message},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": prompt},
             ],
             response_format=GraphUpdate,
         )
 
-        parsed = response.choices[0].message.parsed
+        parsed = response.parsed
         self._save_debug_response(parsed, cache_filename)
         return parsed
 
-    async def process_answers(self, character_id: str, chapter_number: int, answers: Dict[str, str], use_cache: bool = False) -> GraphUpdate:
-        """
-        Converts user answers into Knowledge Graph nodes and edges using the modular architecture.
-        (Workflow Step 4)
-
-        TODO: Add RAG for existing events, locations, and characters
-        """
-
-        node = graph_manager.get_node(character_id)
-        if not node:
+    async def process_answers(
+        self,
+        character_id: str,
+        chapter_number: int,
+        answers: dict[str, str],
+        use_cache: bool = False,
+    ) -> GraphUpdate:
+        node = self.graph.get_node(character_id)
+        if node is None:
             raise ValueError(f"Character node {character_id} not found")
-        character_name = node.get("properties", {}).get("name", "")
-        
+        character_name = node.properties.get("name", "") or ""
+
         answers_text = "\n".join([f"Q: {q}\nA: {a}" for q, a in answers.items()])
-        
-        parsed = await self._fetch_raw_graph_update(character_name, character_id, answers_text, use_cache)
-        
-        # Post-process IDs to ensure uniqueness and character linking
-        for node in parsed.nodes:
-            if node.type == "Appearance":
-                node.id = f"app_{character_id}"
-            elif node.type == "PersonalityProfile":
-                node.id = f"pers_{character_id}"
-            elif node.type == "State":
-                node.id = f"state_{character_id}_ch{chapter_number}"
-            elif node.type == "Belief":
-                node.id = f"belief_{node.id}_{character_id}"
-            elif node.type in ["Event", "Location", "Faction", "System", "Concept"]:
-                # The LLM is instructed to reuse existing IDs for these public nodes if they match the context.
-                # If it generated a new ID, we just ensure it's slugified.
-                node.id = node.id.lower().replace(" ", "_")
+
+        parsed = await self._fetch_raw_graph_update(
+            character_name, character_id, chapter_number, answers_text, use_cache
+        )
+
+        for node_update in parsed.nodes:
+            if node_update.type == "Appearance":
+                node_update.id = f"app_{character_id}"
+            elif node_update.type == "PersonalityProfile":
+                node_update.id = f"pers_{character_id}"
+            elif node_update.type == "State":
+                node_update.id = f"state_{character_id}_ch{chapter_number}"
+            elif node_update.type == "Belief":
+                node_update.id = f"belief_{node_update.id}_{character_id}"
+            elif node_update.type in ["Event", "Location", "Faction", "System", "Concept"]:
+                node_update.id = node_update.id.lower().replace(" ", "_")
             else:
-                if not schema_registry.is_valid_node_type(node.type):
-                    # TODO: Consult user
+                if not self.schema_registry.is_valid_node_type(node_update.type):
                     pass
-                node.id += f"_{node.type}_{character_id}"
+                node_update.id += f"_{node_update.type}_{character_id}"
 
         for edge in parsed.edges:
-            if not schema_registry.is_valid_edge_type(edge.type):
-                # TODO: Consult user
+            if not self.schema_registry.is_valid_edge_type(edge.type):
                 pass
             if edge.source != character_id:
                 raise ValueError(f"Edge source is not the character: {edge.source}")
             if edge.target not in [n.id for n in parsed.nodes]:
                 raise ValueError(f"Edge target is not a node: {edge.target}")
-
-        # Final validation of IDs and types
-        existing_node_ids = {n.id for n in parsed.nodes}
-        existing_node_ids.add(character_id) # Character is usually the source/base
 
         self._save_debug_response(parsed, f"graph_update_{character_id}_ch{chapter_number}.json")
         return parsed

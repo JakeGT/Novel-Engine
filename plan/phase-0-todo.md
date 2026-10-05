@@ -57,9 +57,9 @@ Phase 0 may introduce `workspace_id` and `project_id` primitives/interfaces so l
 | --- | --- | --- | --- |
 | 0A. Baseline and decisions | FND-007 | Implemented | — |
 | 0B. Reproducible toolchain | FND-007 | In progress | 0A |
-| 0C. Test harness and characterization | FND-006 | Not started | 0A–0B |
-| 0D. PostgreSQL/Neo4j infrastructure and migrations | FND-005, FND-005A | Not started | 0A–0B |
-| 0E. Application lifecycle and ports | FND-001, FND-002 | Not started | 0C–0D |
+| 0C. Test harness and characterization | FND-006 | In progress | 0A–0B |
+| 0D. PostgreSQL/Neo4j infrastructure and migrations | FND-005, FND-005A | In progress | 0A–0B |
+| 0E. Application lifecycle and ports | FND-001, FND-002 | In progress | 0C–0D |
 | 0F. Stable DTOs and errors | FND-003, FND-004 | Not started | 0C, 0E |
 | 0G. Prototype repairs | FND-008 | Not started | 0C, 0E–0F |
 | 0H. Integration fixtures and seed world | FND-006, FND-009, QLT-001 | Not started | 0D–0G |
@@ -114,10 +114,10 @@ Update this table when a workstream enters progress or passes its acceptance gat
 - [ ] Remove unused dependencies only after repository-wide import/search confirmation.
 - [x] Generate a reproducible Python dependency lock; commit it with P0-01.
 - [ ] Ensure install works from a clean virtual environment.
-- [ ] Configure Ruff lint and formatting rules for the whole maintained Python tree.
-- [ ] Add type checking configuration and select the initial enforcement scope; do not block Phase 0 on typing every legacy module.
-- [ ] Add coverage configuration with separate unit/application and integration reporting.
-- [ ] Add a command that validates imports without connecting to services.
+- [x] Configure Ruff lint and formatting rules for the whole maintained Python tree (enforced over `backend` and `tests`; 143 tracked backend defects remain under FND-008).
+- [x] Add type checking configuration and select the initial enforcement scope; do not block Phase 0 on typing every legacy module.
+- [x] Add coverage configuration with separate unit/application and integration reporting.
+- [x] Add a command that validates imports without connecting to services.
 
 ### Frontend
 
@@ -125,14 +125,14 @@ Update this table when a workstream enters progress or passes its acceptance gat
 - [x] Confirm a clean frozen install succeeds (workstation Node 26 warned; Node 24 CI proof remains outstanding).
 - [x] Confirm lint and production build succeed from the clean frozen install.
 - [ ] Remove unused Vite starter assets only in a dedicated cleanup change.
-- [ ] Do not begin product UI or TypeScript migration unless separately scoped; Phase 0 only needs a deterministic build baseline.
+- [x] Do not begin product UI or TypeScript migration unless separately scoped; Phase 0 only needs a deterministic build baseline.
 
 ### Repository commands
 
-- [ ] Make `make install-dev`, `make test`, `make lint`, `make format-check`, `make frontend-lint`, and `make frontend-build` accurate and non-fallback-masking.
-- [ ] Add `make integration-test`, `make migrate`, `make seed`, `make reset-dev`, and `make check`.
+- [x] Make `make install-dev`, `make test`, `make lint`, `make format-check`, `make frontend-lint`, and `make frontend-build` accurate and non-fallback-masking.
+- [ ] Add `make integration-test`, `make migrate`, `make seed`, `make reset-dev`, and `make check` (integration-test and check added; migrate added under 0D; seed/reset-dev depend on 0H).
 - [x] Remove fallback-masking from current commands so failures propagate.
-- [ ] Add Windows-equivalent instructions or scripts for contributors without `make`.
+- [x] Add Windows-equivalent instructions or scripts for contributors without `make` (README instructs running the `Makefile` commands directly).
 - [x] Ignore current generated/local paths, including `.opencode/`, databases, caches, builds, logs, debug responses, and credentials.
 - [ ] Add a staged-secret check or equivalent CI guard.
 
@@ -149,42 +149,42 @@ Update this table when a workstream enters progress or passes its acceptance gat
 
 ### Test organization
 
-- [ ] Create `tests/unit`, `tests/application`, `tests/contract`, `tests/integration`, and `tests/e2e` directories with documented responsibilities.
-- [ ] Move `test_endpoints.py` into the integration suite or replace it with in-process API tests.
-- [ ] Move interactive `test_character_creation.py`, `test_context.py`, and `run_test_query.py` into `scripts/manual/` with names that pytest will not collect.
-- [ ] Mark service-dependent tests `integration` and paid/live-model tests `llm`.
-- [ ] Prevent test collection from running HTTP calls, opening databases, loading embedding models, or reading interactive input.
-- [ ] Add deterministic clock and ID fixtures.
-- [ ] Add settings factories that never read a developer's `.env` unless explicitly requested.
+- [x] Create `tests/unit`, `tests/application`, `tests/contract`, `tests/integration`, and `tests/e2e` directories with documented responsibilities.
+- [ ] Move `test_endpoints.py` into the integration suite or replace it with in-process API tests (removed from collection to `scripts/manual/legacy_endpoint_suite.py`; in-process replacement tracked under 0F).
+- [x] Move interactive `test_character_creation.py`, `test_context.py`, and `run_test_query.py` into `scripts/manual/` with names that pytest will not collect.
+- [ ] Mark service-dependent tests `integration` and paid/live-model tests `llm` (markers declared; no service-dependent tests exist yet).
+- [x] Prevent test collection from running HTTP calls, opening databases, loading embedding models, or reading interactive input.
+- [x] Add deterministic clock and ID fixtures.
+- [x] Add settings factories that never read a developer's `.env` unless explicitly requested.
 
 ### Characterization tests before refactoring
 
-- [ ] Entity tag extraction: ordering, deduplication, malformed links, Unicode names, IDs containing safe punctuation, and ordinary Markdown links.
-- [ ] Schema registry: core/custom recognition, persistence behavior, invalid identifiers, duplicate operations, and deterministic ordering.
-- [ ] Context policies: default selection, allowed edges, exclusions, semantic flags, limits, and unknown context type.
-- [ ] Context summarizer: stable ordering, empty context, missing names, nested values, and exclusion of storage-only properties.
-- [ ] Graph identifier validation: accepted identifiers and injection attempts.
-- [ ] Entity/edge DTO serialization: datetimes, empty properties, embeddings excluded from ordinary responses, and consistent nesting.
-- [ ] API route resolution: static `search`/`entities` routes are not captured as node IDs.
-- [ ] Character workflow with fake graph and fake AI: init, question generation, proposal extraction, ID resolution, and validation failure.
-- [ ] World workflow with fake graph and fake AI: init and question generation, including empty/no semantic context.
-- [ ] Application import test: importing settings, routers, services, and `backend.main` performs no external work.
+- [x] Entity tag extraction: ordering, deduplication, malformed links, Unicode names, IDs containing safe punctuation, and ordinary Markdown links.
+- [x] Schema registry: core/custom recognition, persistence behavior, invalid identifiers, duplicate operations, and deterministic ordering.
+- [x] Context policies: default selection, allowed edges, exclusions, semantic flags, limits, and unknown context type.
+- [x] Context summarizer: stable ordering, empty context, missing names, nested values; current inclusion of storage-only properties is characterized (exclusion is pending 0F).
+- [x] Graph identifier validation: accepted identifiers and injection attempts.
+- [x] Entity/edge DTO serialization: datetimes, empty properties, and consistent nesting; current presence of embeddings in domain dumps and naive `created_at` are characterized (exclusion and UTC normalization are pending 0F).
+- [ ] API route resolution: static `search`/`entities` routes are not captured as node IDs (deferred to 0F; needs the application factory to avoid startup side effects).
+- [x] Character workflow with fake graph and fake AI: init, question generation, proposal extraction, ID resolution, and validation failure (`tests/application/test_character_workflow.py`).
+- [ ] World workflow with fake graph and fake AI: init and question generation, including empty/no semantic context (deferred to 0G/FND-008.25; parked worktree edit).
+- [x] Application import test: importing settings, routers, services, and `backend.main` performs no external work.
 
 ### Test doubles
 
-- [ ] In-memory graph repository fake with explicit behavior, not a mock of Neo4j driver calls.
-- [ ] In-memory vector store fake with deterministic scoring/results supplied by the test.
-- [ ] Scripted AI gateway fake for structured success, invalid output, refusal, timeout, and provider error.
-- [ ] Fake embedding provider returning fixed-dimension deterministic vectors.
-- [ ] Fake clock and ordered ID generator.
-- [ ] Fake migration/version checker for app startup tests.
+- [x] In-memory graph repository fake with explicit behavior, not a mock of Neo4j driver calls.
+- [x] In-memory vector store fake with deterministic scoring/results supplied by the test.
+- [x] Scripted AI gateway fake for structured success, invalid output, refusal, timeout, and provider error.
+- [x] Fake embedding provider returning fixed-dimension deterministic vectors.
+- [x] Fake clock and ordered ID generator.
+- [x] Fake migration/version checker for app startup tests.
 
 ### 0C acceptance
 
-- [ ] `make test` runs without Docker, network, API keys, model downloads, or persistent writes.
+- [x] `make test` runs without Docker, network, API keys, model downloads, or persistent writes.
 - [ ] Existing intended behavior has characterization coverage before adapters are replaced.
-- [ ] External failures can be simulated deterministically through fakes.
-- [ ] Root-level manual scripts are no longer pytest tests.
+- [x] External failures can be simulated deterministically through fakes.
+- [x] Root-level manual scripts are no longer pytest tests.
 
 ---
 
@@ -192,51 +192,51 @@ Update this table when a workstream enters progress or passes its acceptance gat
 
 ### Development infrastructure
 
-- [ ] Add PostgreSQL with pgvector support to Compose using a pinned supported image/version.
-- [ ] Keep Neo4j in Compose and pin a version compatible with required constraints and vector indexes.
-- [ ] Remove static container names unless there is a documented reason; allow parallel project/test stacks.
-- [ ] Use health checks and dependency readiness rather than sleeps.
-- [ ] Move development credentials into environment interpolation with safe local defaults only.
-- [ ] Add named/profiled development and integration-test storage so tests never touch normal development volumes.
-- [ ] Document ports and allow overrides to prevent local collisions.
+- [x] Add PostgreSQL with pgvector support to Compose using a pinned supported image/version (`pgvector/pgvector:pg17`).
+- [x] Keep Neo4j in Compose and pin a version compatible with required constraints and vector indexes (`neo4j:5.26`).
+- [x] Remove static container names unless there is a documented reason; allow parallel project/test stacks.
+- [x] Use health checks and dependency readiness rather than sleeps (`--wait` on `infra-up`).
+- [x] Move development credentials into environment interpolation with safe local defaults only.
+- [x] Add named/profiled development and integration-test storage so tests never touch normal development volumes.
+- [x] Document ports and allow overrides to prevent local collisions.
 
 ### Settings
 
-- [ ] Replace class-based Pydantic settings config with current settings configuration.
-- [ ] Introduce `APP_ENV` with explicit `development`, `test`, and `production` behavior.
-- [ ] Add PostgreSQL DSN/pool settings and Neo4j/vector/object/AI settings.
-- [ ] Validate required production settings and reject unsafe default credentials.
-- [ ] Keep optional AI/embedding settings optional for non-AI workflows.
-- [ ] Ensure settings can be instantiated explicitly in tests without global mutation.
+- [x] Replace class-based Pydantic settings config with current settings configuration.
+- [x] Introduce `APP_ENV` with explicit `development`, `test`, and `production` behavior.
+- [x] Add PostgreSQL DSN/pool settings and Neo4j/vector/object/AI settings.
+- [x] Validate required production settings and reject unsafe default credentials.
+- [x] Keep optional AI/embedding settings optional for non-AI workflows.
+- [x] Ensure settings can be instantiated explicitly in tests without global mutation.
 
 ### PostgreSQL foundation
 
-- [ ] Add async engine/session factory with bounded pool settings and clean shutdown.
-- [ ] Add Alembic configuration that imports metadata without importing the FastAPI app or connecting.
-- [ ] Create initial migration enabling required extensions, including pgvector.
-- [ ] Add minimal infrastructure metadata needed for migration/health verification; do not prematurely build Phase 1 account tables.
-- [ ] Add transaction/unit-of-work primitive and rollback tests.
-- [ ] Add database readiness check that is separate from liveness.
-- [ ] Verify upgrade from empty database and repeated current-version checks.
-- [ ] Verify downgrade policy or explicitly adopt tested forward-only/restore behavior.
+- [x] Add async engine/session factory with bounded pool settings and clean shutdown.
+- [x] Add Alembic configuration that imports metadata without importing the FastAPI app or connecting.
+- [x] Create initial migration enabling required extensions, including pgvector.
+- [x] Add minimal infrastructure metadata needed for migration/health verification; do not prematurely build Phase 1 account tables.
+- [x] Add transaction/unit-of-work primitive and rollback tests.
+- [x] Add database readiness check that is separate from liveness.
+- [x] Verify upgrade from empty database and repeated current-version checks.
+- [x] Verify downgrade policy or explicitly adopt tested forward-only/restore behavior.
 
 ### Neo4j migrations
 
-- [ ] Remove constraint and vector-index creation from `GraphManager.__init__` and normal application startup.
-- [ ] Create ordered Neo4j migrations for current uniqueness constraints and required indexes.
-- [ ] Store applied migration IDs/checksums and fail clearly on checksum drift.
-- [ ] Verify migrations against a clean disposable Neo4j instance.
-- [ ] Verify applying migrations twice is safe.
-- [ ] Add a schema/index verification command used by readiness and CI.
-- [ ] Keep prototype vector index migration only if its embedding dimension/provider is explicitly versioned; otherwise defer/recreate it safely.
+- [x] Remove constraint and vector-index creation from `GraphManager.__init__` and normal application startup.
+- [x] Create ordered Neo4j migrations for current uniqueness constraints and required indexes.
+- [x] Store applied migration IDs/checksums and fail clearly on checksum drift.
+- [x] Verify migrations against a clean disposable Neo4j instance.
+- [x] Verify applying migrations twice is safe.
+- [x] Add a schema/index verification command used by readiness and CI.
+- [x] Keep prototype vector index migration only if its embedding dimension/provider is explicitly versioned; otherwise defer/recreate it safely.
 
 ### 0D acceptance
 
-- [ ] `make infra-up` starts healthy PostgreSQL/pgvector and Neo4j services.
-- [ ] `make migrate` upgrades both stores from empty state without starting the API.
-- [ ] Application startup verifies migration versions but does not mutate schemas.
-- [ ] Integration databases are disposable and isolated from developer data.
-- [ ] Migration verification and idempotency tests pass in CI.
+- [x] `make infra-up` starts healthy PostgreSQL/pgvector and Neo4j services.
+- [x] `make migrate` upgrades both stores from empty state without starting the API.
+- [x] Application startup verifies migration versions but does not mutate schemas.
+- [x] Integration databases are disposable and isolated from developer data.
+- [ ] Migration verification and idempotency tests pass in CI (tests pass locally; CI integration job is 0I).
 
 ---
 
@@ -244,40 +244,40 @@ Update this table when a workstream enters progress or passes its acceptance gat
 
 ### Application construction
 
-- [ ] Replace module-global application construction with `create_app(...)` while retaining a conventional ASGI export.
-- [ ] Build an application container/dependency provider from explicit settings.
-- [ ] Open PostgreSQL, Neo4j, vector, embedding, and AI resources only during lifespan or first authorized use.
-- [ ] Close pools/drivers/workers deterministically during shutdown.
-- [ ] Make startup failure explicit for required dependencies and graceful for optional AI/embedding capabilities.
-- [ ] Provide FastAPI dependency overrides for tests.
-- [ ] Separate liveness, readiness, and capability/degradation responses.
+- [x] Replace module-global application construction with `create_app(...)` while retaining a conventional ASGI export.
+- [x] Build an application container/dependency provider from explicit settings.
+- [x] Open PostgreSQL, Neo4j, vector, embedding, and AI resources only during lifespan or first authorized use (container is built inside lifespan; adapters are lazy).
+- [x] Close pools/drivers/workers deterministically during shutdown.
+- [x] Make startup failure explicit for required dependencies and graceful for optional AI/embedding capabilities.
+- [x] Provide FastAPI dependency overrides for tests.
+- [x] Separate liveness, readiness, and capability/degradation responses.
 
 ### Ports
 
-- [ ] Define graph repository port in application/domain terms rather than Cypher/driver records.
-- [ ] Define PostgreSQL unit-of-work/journal port at the minimum Phase 0 boundary.
-- [ ] Define vector port: add/upsert, query with filters, delete/deactivate, health, and rebuild hooks.
-- [ ] Define embedding port with model/version/dimension metadata.
-- [ ] Define AI gateway port for structured output and normalized errors/usage without binding to one SDK.
-- [ ] Define clock and ID-generator ports.
-- [ ] Define schema registry port instead of direct process-global JSON mutation.
-- [ ] Define migration/version and health ports where useful.
+- [x] Define graph repository port in application/domain terms rather than Cypher/driver records.
+- [ ] Define PostgreSQL unit-of-work/journal port at the minimum Phase 0 boundary (`session_scope` exists in `core/database.py` but is not yet surfaced through the container/handlers).
+- [ ] Define vector port: add/upsert, query with filters, delete/deactivate, health, and rebuild hooks (add/delete/health defined; filters, upsert, and rebuild deferred to the pgvector adapter).
+- [x] Define embedding port with model/version/dimension metadata.
+- [x] Define AI gateway port for structured output and normalized errors/usage without binding to one SDK.
+- [x] Define clock and ID-generator ports.
+- [x] Define schema registry port instead of direct process-global JSON mutation.
+- [x] Define migration/version and health ports where useful.
 
 ### Adapters
 
-- [ ] Wrap existing Neo4j behavior behind the graph port before significant query redesign.
-- [ ] Replace the global Chroma singleton with an injected transitional adapter; new target implementation is pgvector.
-- [ ] Move sentence-transformer initialization behind an embedding adapter and lazy lifecycle.
-- [ ] Move AsyncOpenAI construction behind the AI adapter; API key absence must not break non-AI startup.
-- [ ] Prevent debug response cache directories/files from being created during import or read-only workflows.
+- [x] Wrap existing Neo4j behavior behind the graph port before significant query redesign.
+- [x] Replace the global Chroma singleton with an injected transitional adapter; new target implementation is pgvector.
+- [x] Move sentence-transformer initialization behind an embedding adapter and lazy lifecycle.
+- [x] Move AsyncOpenAI construction behind the AI adapter; API key absence must not break non-AI startup.
+- [x] Prevent debug response cache directories/files from being created during import or read-only workflows.
 
 ### 0E acceptance
 
-- [ ] Import-side-effect test passes with network/filesystem/database calls instrumented to fail.
-- [ ] One representative application workflow runs entirely with in-memory fakes.
-- [ ] API tests override every external adapter cleanly.
-- [ ] Startup/shutdown tests verify resources open and close once.
-- [ ] Capability health clearly distinguishes required-store failure from optional-AI degradation.
+- [x] Import-side-effect test passes with network/filesystem/database calls instrumented to fail.
+- [x] One representative application workflow runs entirely with in-memory fakes (character workflow).
+- [ ] API tests override every external adapter cleanly (character, schema, and health routes use the container; graph and RAG routes still use legacy singletons pending 0F).
+- [x] Startup/shutdown tests verify resources open and close once.
+- [x] Capability health clearly distinguishes required-store failure from optional-AI degradation.
 
 ---
 
