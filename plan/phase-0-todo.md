@@ -60,7 +60,7 @@ Phase 0 may introduce `workspace_id` and `project_id` primitives/interfaces so l
 | 0C. Test harness and characterization | FND-006 | In progress | 0A–0B |
 | 0D. PostgreSQL/Neo4j infrastructure and migrations | FND-005, FND-005A | In progress | 0A–0B |
 | 0E. Application lifecycle and ports | FND-001, FND-002 | In progress | 0C–0D |
-| 0F. Stable DTOs and errors | FND-003, FND-004 | Not started | 0C, 0E |
+| 0F. Stable DTOs and errors | FND-003, FND-004 | In progress | 0C, 0E |
 | 0G. Prototype repairs | FND-008 | Not started | 0C, 0E–0F |
 | 0H. Integration fixtures and seed world | FND-006, FND-009, QLT-001 | Not started | 0D–0G |
 | 0I. Diagnostics, health, and CI | OPS-001, FND-007 | Not started | 0B–0H |
@@ -285,37 +285,37 @@ Update this table when a workstream enters progress or passes its acceptance gat
 
 ### DTOs
 
-- [ ] Introduce `/api/v1` routing while documenting any temporary compatibility aliases.
-- [ ] Define stable `Entity`, `Edge`, schema-type, context, question-sheet, and graph-update DTOs.
-- [ ] Use one nested `properties` shape consistently for create/read/update/search.
-- [ ] Separate domain models, persistence records, and API DTOs.
-- [ ] Exclude embeddings and internal storage metadata from ordinary API responses.
-- [ ] Normalize timestamps to timezone-aware UTC.
-- [ ] Define update semantics: full replacement versus patch; reject path/body ID mismatch.
-- [ ] Define list/search response shape and pagination placeholder even if prototype queries remain small.
-- [ ] Add examples and descriptions to generated OpenAPI.
+- [x] Introduce `/api/v1` routing while documenting any temporary compatibility aliases (`plan/api-surface.md`; legacy `/api` routes retained as deprecated aliases).
+- [x] Define stable `Entity`, `Edge`, schema-type, context, question-sheet, and graph-update DTOs.
+- [x] Use one nested `properties` shape consistently for create/read/update/search.
+- [x] Separate domain models, persistence records, and API DTOs (domain in `backend.graph.schema`, service models in `backend.services`, external contract in `backend.api.v1.schemas`).
+- [x] Exclude embeddings and internal storage metadata from ordinary API responses.
+- [x] Normalize timestamps to timezone-aware UTC.
+- [x] Define update semantics: full replacement versus patch; reject path/body ID mismatch.
+- [x] Define list/search response shape and pagination placeholder even if prototype queries remain small.
+- [x] Add examples and descriptions to generated OpenAPI.
 
 ### Errors
 
-- [ ] Define domain errors for validation, not found, conflict, unavailable capability, provider failure, and persistence failure.
-- [ ] Implement a consistent problem response with `type`, `title`, `status`, `code`, `detail`, `field_errors`, and `correlation_id`.
-- [ ] Add exception handlers that redact internal exceptions and secrets.
-- [ ] Return deterministic 4xx errors for invalid schema identifiers and unknown types instead of mutating schema silently.
-- [ ] Map unavailable optional AI/embedding capability to an explicit response rather than a generic 500.
+- [x] Define domain errors for validation, not found, conflict, unavailable capability, provider failure, and persistence failure.
+- [x] Implement a consistent problem response with `type`, `title`, `status`, `code`, `detail`, `field_errors`, and `correlation_id`.
+- [x] Add exception handlers that redact internal exceptions and secrets.
+- [ ] Return deterministic 4xx errors for invalid schema identifiers and unknown types instead of mutating schema silently (`/api/v1` enforces this; legacy `/api` schema routes still auto-register and must be removed/migrated in 0G).
+- [x] Map unavailable optional AI/embedding capability to an explicit response rather than a generic 500 (`AIError` → 502 `provider_failure`; capability degradation reported by `/health/capabilities`).
 
 ### Contract evidence
 
-- [ ] Add in-process API tests for every current endpoint's success and primary failure cases.
-- [ ] Save or validate an OpenAPI snapshot to catch accidental contract drift.
-- [ ] Document which prototype endpoints are retained, deprecated, admin-only, or placeholder-disabled.
-- [ ] Ensure placeholder RAG answers cannot be mistaken for generated production output.
+- [x] Add in-process API tests for every current endpoint's success and primary failure cases (v1 surface; legacy aliases documented as deprecated).
+- [x] Save or validate an OpenAPI snapshot to catch accidental contract drift.
+- [x] Document which prototype endpoints are retained, deprecated, admin-only, or placeholder-disabled (`plan/api-surface.md`).
+- [x] Ensure placeholder RAG answers cannot be mistaken for generated production output (`/api/v1/rag/query` returns 501 `not_implemented`).
 
 ### 0F acceptance
 
-- [ ] Create/read/update/search return the same entity representation.
-- [ ] All known failures use the problem contract and correlation ID.
-- [ ] Static and dynamic routes resolve correctly.
-- [ ] OpenAPI generation works with no external services.
+- [x] Create/read/update/search return the same entity representation.
+- [x] All known failures use the problem contract and correlation ID.
+- [x] Static and dynamic routes resolve correctly (`/entities/search` declared before `/entities/{entity_id}`).
+- [x] OpenAPI generation works with no external services.
 
 ---
 

@@ -154,3 +154,16 @@ An audit of P0-03 through P0-05 found several checked claims stronger than the i
 - **Checklist honesty (medium):** the 0C items claiming storage-only property and embedding exclusion were reworded to "current behavior characterized"; exclusion/UTC normalization remain pending 0F.
 
 Post-repair verification: 101 hermetic tests, 2 disposable integration tests, read-only `health/ready` 200 against Compose, no driver at import, no `data/chroma` side effect, 109 backend Ruff findings (unchanged), 7 files needing formatting.
+
+## P0-07 (0F) verification snapshot
+
+After introducing the stable API v1 DTO and problem contracts:
+
+- `/api/v1` is the canonical surface (`plan/api-surface.md`). The original prototype routes remain mounted at `/api` as documented deprecated aliases; new work must use v1.
+- `backend/api/v1/schemas.py` defines `Entity`, `EdgeModel`, create/update/list/search DTOs, schema-type, context, question-sheet, and graph-update DTOs. Create/read/update/search return one `{id,type,properties,created_at}` shape; embeddings and storage-only fields are excluded and `created_at` is normalized to timezone-aware UTC.
+- `backend/domain/errors.py` defines validation, not-found, conflict, capability-unavailable, provider-failure, persistence, and not-implemented errors. `backend/api/problems.py` maps them, request-validation errors, HTTP exceptions, `AIError`, and unhandled exceptions to `application/problem+json` with `correlation_id`. `backend/api/middleware.py` propagates/generates `X-Correlation-ID` and stores it on `request.state`.
+- `/api/v1` rejects unknown node/edge types and invalid identifiers with 400 (no silent schema mutation), rejects path/body id mismatch, validates edge endpoints, and returns 501 `not_implemented` for `/api/v1/rag/query`.
+- `GraphRepository.traverse` was added to the port so `/api/v1/context` runs on injected ports rather than legacy singletons.
+- Contract evidence: `tests/contract/test_v1_entities.py`, `test_v1_schema.py`, `test_v1_context.py`, `test_v1_characters.py`, `test_v1_errors.py`, and `test_openapi.py` (exact `openapi_snapshot.json`, generated without services). Route resolution (`/entities/search` before `/entities/{entity_id}`) is covered.
+- Verification: 129 hermetic tests (up from 101), 2 integration tests, live v1 smoke against Compose (create 201 with no embedding leak, get/search/context 200, rag 501, legacy 200, health/ready 200), typecheck and import-check green, 109 backend Ruff findings.
+- Remaining 0F gap: legacy `/api` schema routes still auto-register unknown types and the legacy routers still expose prototype shapes; migrating/removing them is 0G. The graph/RAG routes are otherwise not on the container port surface yet.

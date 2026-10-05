@@ -125,6 +125,22 @@ class InMemoryGraphRepository:
     ) -> list[str]:
         return list(self.semantic_anchors[:top_k])
 
+    def traverse(self, anchor_ids: list[str], policy: Any) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        for node_id in anchor_ids:
+            node = self.get_node(node_id)
+            if node is not None:
+                results.append(
+                    {
+                        "id": node.id,
+                        "type": node.type,
+                        "depth": 0,
+                        "relevance_score": 100.0,
+                        "properties": dict(node.properties),
+                    }
+                )
+        return results
+
     def ping(self) -> bool:
         return True
 

@@ -89,3 +89,14 @@ def fake_container(settings_factory, tmp_path):
         database=FakeDatabase(ready=True),
         character_service=service,
     )
+
+
+@pytest.fixture
+def api_client(fake_container):
+    from fastapi.testclient import TestClient
+
+    from backend.main import create_app
+
+    app = create_app(container=fake_container)
+    with TestClient(app) as client:
+        yield client

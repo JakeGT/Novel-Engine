@@ -76,6 +76,11 @@ class Neo4jGraphRepository:
     ) -> list[str]:
         return self.manager.search_semantic_nodes(list(embedding), top_k=top_k, min_score=min_score)
 
+    def traverse(self, anchor_ids: Sequence[str], policy: Any) -> list[dict[str, Any]]:
+        from backend.graph.traversal import ContextTraversal
+
+        return ContextTraversal(self.manager).traverse(list(anchor_ids), policy)
+
     def ping(self) -> bool:
         try:
             self.manager.driver.verify_connectivity()

@@ -41,7 +41,7 @@ make frontend-install
 pnpm --dir frontend run dev
 ```
 
-The API is served at `http://localhost:8000`; interactive API documentation is at `http://localhost:8000/docs`. Neo4j Browser is at `http://localhost:7474` using the credentials configured in `.env`.
+The API is served at `http://localhost:8000`; canonical routes are under `/api/v1` and interactive API documentation is at `http://localhost:8000/docs`. Neo4j Browser is at `http://localhost:7474` using the credentials configured in `.env`.
 
 ## Development
 
@@ -61,7 +61,7 @@ For coding-agent conventions and project boundaries, read [AGENTS.md](AGENTS.md)
 ## Current limitations
 
 - The React application is still the default Vite scaffold.
-- The application factory, container, ports, adapters, and health endpoints exist; stable API v1 DTOs and the problem error contract are still pending (Phase 0 workstream 0F).
-- Character and schema routes use the injected container; graph and RAG routes still use legacy module singletons pending 0F.
-- The world workflow and generic RAG answer endpoint are incomplete.
+- Canonical API routes live under `/api/v1` with stable DTOs and an `application/problem+json` error contract; the original prototype routes remain at `/api` as deprecated aliases pending migration.
+- Character and schema routes use the injected container; graph and RAG routes still use legacy module singletons pending 0G.
+- The world workflow and generic RAG answer endpoint are incomplete (`/api/v1/rag/query` returns 501).
 - The architecture document at the repository root records the original concept; `plan/` is the maintained implementation plan.
