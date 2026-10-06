@@ -6,7 +6,7 @@ Continuously identify continuity violations without sending the entire manuscrip
 
 Consistency checking is a pipeline that produces evidence-backed findings. It is not an autonomous rewriting system.
 
-The default automation boundary is deterministic: Tier 0/1 runs with each generation, while Tier 2/3 model calls require a user action unless the user explicitly enables a budgeted schedule. The UI recommends a compact check after an accepted scene and a deep check at chapter/act boundaries, showing estimated credits and reasons.
+The default automation boundary is deterministic: Tier 0/1 runs with each generation, while Tier 2/3 model calls require a user action unless the user explicitly enables a budgeted schedule. The UI recommends a compact check after an accepted scene and a deep check at chapter/act boundaries, showing estimated provider usage/cost and reasons.
 
 The grouping/review harness takes architectural inspiration from Alibaba OpenCodeReview. The domain-specific mapping and proposed bundle algorithm are specified in `16-open-code-review-adaptation.md`.
 
@@ -157,7 +157,7 @@ score =
   - redundancy_penalty
 ```
 
-Weights are policy-versioned and evaluated empirically. `branch_validity` and `visibility_gate` are hard filters rather than soft preferences. Recency uses both narrative distance and world-time distance; flashbacks demonstrate why one clock is inadequate. Author-pinned passages bypass ordinary ranking but still obey tenant/branch access rules.
+Weights are policy-versioned and evaluated empirically. `branch_validity` and `visibility_gate` are hard filters rather than soft preferences. Recency uses both narrative distance and world-time distance; flashbacks demonstrate why one clock is inadequate. Author-pinned passages bypass ordinary ranking but still obey workspace/project/branch access rules.
 
 Recommended prose units:
 
@@ -203,7 +203,7 @@ Agent corrections always produce diffs and never overwrite the accepted prose ve
 
 - deterministic checks run synchronously when fast, otherwise as high-priority jobs
 - group model checks by affected scenes and task, not by arbitrary token maximum
-- estimate and reserve credits before paid checks
+- estimate provider tokens/cost and enforce the author's limit before model-assisted checks
 - skip unchanged evidence through fingerprints
 - prefer summaries for distant context, but fetch exact prose before issuing a high-severity finding
 - calibrate thresholds using labeled reference-world cases

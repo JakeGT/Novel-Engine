@@ -7,7 +7,7 @@
 
 ## Context
 
-The prototype has no dependency locks, runs infrastructure work at import time, mixes schema administration with application startup, and provides commands that can hide failures. Phase 0 needs one reproducible contributor contract before behavior is refactored. The chosen stack must support a hosted SaaS later without forcing Phase 0 to implement accounts, billing, or production operations.
+The prototype has no dependency locks, runs infrastructure work at import time, mixes schema administration with application startup, and provides commands that can hide failures. Phase 0 needs one reproducible contributor contract before behavior is refactored. The chosen stack must support a hosted multi-tenant profile later without forcing Phase 0 to implement identity or production operations.
 
 ## Decision
 
@@ -61,7 +61,7 @@ They minimize wiring but currently cause network connections, local writes, and 
 - Clean checkouts have one backend and one frontend install path.
 - CI and contributors resolve the same dependency graphs.
 - Import safety, deterministic tests, and disposable integration environments become enforceable.
-- Persistence choices align with the accepted hosted SaaS architecture.
+- Persistence choices support both self-hosting and the accepted invite-only multi-tenant architecture.
 
 ### Negative
 

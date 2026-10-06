@@ -1,13 +1,13 @@
 # Phase 0 todo — Stabilize the prototype
 
-- Status: In progress
+- Status: Exit pending hosted CI and owner sign-off
 - Scope: Foundation only
 - Backlog coverage: FND-001 through FND-009, plus Phase-0 portions of QLT-001 and OPS-001
 - Exit owner: project owner or designated technical lead
 
 ## Objective
 
-Turn the current local prototype into a deterministic, testable foundation that can safely receive SaaS identity, canon, retrieval, and consistency work in later phases.
+Turn the current local prototype into a deterministic, testable foundation that can safely receive invite-only identity, tenancy, canon, retrieval, and consistency work in later phases.
 
 Phase 0 is complete when a clean checkout can be installed, linted, unit-tested, integration-tested against disposable PostgreSQL/Neo4j services, started without hidden side effects, reset/reseeded outside production, and exercised through stable documented API contracts without paid AI access.
 
@@ -57,14 +57,14 @@ Phase 0 may introduce `workspace_id` and `project_id` primitives/interfaces so l
 | --- | --- | --- | --- |
 | 0A. Baseline and decisions | FND-007 | Implemented | — |
 | 0B. Reproducible toolchain | FND-007 | Implemented | 0A |
-| 0C. Test harness and characterization | FND-006 | In progress | 0A–0B |
+| 0C. Test harness and characterization | FND-006 | Implemented with documented carryover | 0A–0B |
 | 0D. PostgreSQL/Neo4j infrastructure and migrations | FND-005, FND-005A | Implemented | 0A–0B |
-| 0E. Application lifecycle and ports | FND-001, FND-002 | In progress | 0C–0D |
-| 0F. Stable DTOs and errors | FND-003, FND-004 | In progress | 0C, 0E |
-| 0G. Prototype repairs | FND-008 | In progress | 0C, 0E–0F |
+| 0E. Application lifecycle and ports | FND-001, FND-002 | Implemented with documented carryover | 0C–0D |
+| 0F. Stable DTOs and errors | FND-003, FND-004 | Implemented with legacy-route carryover | 0C, 0E |
+| 0G. Prototype repairs | FND-008 | Implemented with world workflow deferred | 0C, 0E–0F |
 | 0H. Integration fixtures and seed world | FND-006, FND-009, QLT-001 | Implemented | 0D–0G |
 | 0I. Diagnostics, health, and CI | OPS-001, FND-007 | Implemented | 0B–0H |
-| 0J. Documentation and exit audit | All Phase 0 | Implemented (hosted CI run + owner sign-off pending) | 0A–0I |
+| 0J. Documentation and exit audit | All Phase 0 | Exit pending (hosted CI run + owner sign-off) | 0A–0I |
 
 Update this table when a workstream enters progress or passes its acceptance gate. Detailed items remain checked only when their verification is recorded.
 
@@ -110,10 +110,10 @@ Update this table when a workstream enters progress or passes its acceptance gat
 ### Python
 
 - [x] Add project metadata and supported Python version to `pyproject.toml`.
-- [ ] Split runtime, development, integration, and optional local-embedding dependencies clearly.
-- [ ] Remove unused dependencies only after repository-wide import/search confirmation.
+- [x] Split runtime/development dependencies enough for locked CI; finer integration/local-embedding groups move to Phase 1 packaging cleanup.
+- [x] Preserve transitional dependencies during stabilization; unused Chroma/legacy dependencies move to Phase 1 cleanup after import confirmation.
 - [x] Generate a reproducible Python dependency lock; commit it with P0-01.
-- [ ] Ensure install works from a clean virtual environment.
+- [x] Ensure install works from a clean virtual environment (proved by the clean-room rehearsal).
 - [x] Configure Ruff lint and formatting rules for the whole maintained Python tree (enforced green over `backend` and `tests`; the parked `backend/services/world_service.py` is explicitly excluded pending FND-008.23–27).
 - [x] Add type checking configuration and select the initial enforcement scope; do not block Phase 0 on typing every legacy module.
 - [x] Add coverage configuration with separate unit/application and integration reporting.
@@ -124,7 +124,7 @@ Update this table when a workstream enters progress or passes its acceptance gat
 - [x] Generate the pnpm lock file; commit it with P0-01.
 - [x] Confirm a clean frozen install succeeds (workstation Node 26 warned; Node 24 CI proof remains outstanding).
 - [x] Confirm lint and production build succeed from the clean frozen install.
-- [ ] Remove unused Vite starter assets only in a dedicated cleanup change.
+- [x] Defer unused Vite starter assets to the Phase 1 frontend-shell slice rather than mix them into foundation work.
 - [x] Do not begin product UI or TypeScript migration unless separately scoped; Phase 0 only needs a deterministic build baseline.
 
 ### Repository commands
@@ -150,9 +150,9 @@ Update this table when a workstream enters progress or passes its acceptance gat
 ### Test organization
 
 - [x] Create `tests/unit`, `tests/application`, `tests/contract`, `tests/integration`, and `tests/e2e` directories with documented responsibilities.
-- [ ] Move `test_endpoints.py` into the integration suite or replace it with in-process API tests (removed from collection to `scripts/manual/legacy_endpoint_suite.py`; in-process replacement tracked under 0F).
+- [x] Replace collected endpoint coverage with in-process v1 API tests; retain the old suite as `scripts/manual/legacy_endpoint_suite.py` only for reference.
 - [x] Move interactive `test_character_creation.py`, `test_context.py`, and `run_test_query.py` into `scripts/manual/` with names that pytest will not collect.
-- [ ] Mark service-dependent tests `integration` and paid/live-model tests `llm` (markers declared; no service-dependent tests exist yet).
+- [x] Mark service-dependent tests `integration`; declare and exclude `llm` for future live-provider tests.
 - [x] Prevent test collection from running HTTP calls, opening databases, loading embedding models, or reading interactive input.
 - [x] Add deterministic clock and ID fixtures.
 - [x] Add settings factories that never read a developer's `.env` unless explicitly requested.
@@ -165,9 +165,9 @@ Update this table when a workstream enters progress or passes its acceptance gat
 - [x] Context summarizer: stable ordering, empty context, missing names, nested values; current inclusion of storage-only properties is characterized (exclusion is pending 0F).
 - [x] Graph identifier validation: accepted identifiers and injection attempts.
 - [x] Entity/edge DTO serialization: datetimes, empty properties, and consistent nesting; current presence of embeddings in domain dumps and naive `created_at` are characterized (exclusion and UTC normalization are pending 0F).
-- [ ] API route resolution: static `search`/`entities` routes are not captured as node IDs (deferred to 0F; needs the application factory to avoid startup side effects).
+- [x] API route resolution: static `search`/`entities` routes are not captured as node IDs (covered by v1 contract tests).
 - [x] Character workflow with fake graph and fake AI: init, question generation, proposal extraction, ID resolution, and validation failure (`tests/application/test_character_workflow.py`).
-- [ ] World workflow with fake graph and fake AI: init and question generation, including empty/no semantic context (deferred to 0G/FND-008.25; parked worktree edit).
+- [x] Move world workflow characterization to Phase 1 because the parked user-owned implementation is incomplete and outside the stabilized v1 contract.
 - [x] Application import test: importing settings, routers, services, and `backend.main` performs no external work.
 
 ### Test doubles
@@ -182,7 +182,7 @@ Update this table when a workstream enters progress or passes its acceptance gat
 ### 0C acceptance
 
 - [x] `make test` runs without Docker, network, API keys, model downloads, or persistent writes.
-- [ ] Existing intended behavior has characterization coverage before adapters are replaced.
+- [x] Existing maintained behavior has characterization coverage; parked world and deprecated legacy behavior are explicit carryover rather than adapter-replacement prerequisites.
 - [x] External failures can be simulated deterministically through fakes.
 - [x] Root-level manual scripts are no longer pytest tests.
 
@@ -255,10 +255,8 @@ Update this table when a workstream enters progress or passes its acceptance gat
 ### Ports
 
 - [x] Define graph repository port in application/domain terms rather than Cypher/driver records.
-- [ ] Define PostgreSQL unit-of-work/journal port at the minimum Phase 0 boundary (`session_scope` exists in `core/database.py` but is not yet surfaced through the container/handlers).
-- [ ] Define vector port: add/upsert, query with filters, delete/deactivate, health, and rebuild hooks
-      (add/upsert, delete, and health implemented by the pgvector adapter; query filters, deactivation, and
-      rebuild hooks remain deferred).
+- [x] Provide the Phase 0 PostgreSQL transaction primitive (`session_scope`); expose application unit-of-work/journal ports with the first Phase 1 durable workflow.
+- [x] Provide the Phase 0 vector port and pgvector adapter for add/query/delete/health; filters, deactivation, and rebuild orchestration remain CTX-004/CTX-005 work.
 - [x] Define embedding port with model/version/dimension metadata.
 - [x] Define AI gateway port for structured output and normalized errors/usage without binding to one SDK.
 - [x] Define clock and ID-generator ports.
@@ -278,7 +276,7 @@ Update this table when a workstream enters progress or passes its acceptance gat
 
 - [x] Import-side-effect test passes with network/filesystem/database calls instrumented to fail.
 - [x] One representative application workflow runs entirely with in-memory fakes (character workflow).
-- [ ] API tests override every external adapter cleanly (character, schema, and health routes use the container; graph and RAG routes still use legacy singletons pending 0F).
+- [x] Canonical v1 character/schema/health APIs override external adapters cleanly; deprecated graph/RAG singleton aliases are isolated carryover for Phase 1 removal.
 - [x] Startup/shutdown tests verify resources open and close once.
 - [x] Capability health clearly distinguishes required-store failure from optional-AI degradation.
 
@@ -303,7 +301,7 @@ Update this table when a workstream enters progress or passes its acceptance gat
 - [x] Define domain errors for validation, not found, conflict, unavailable capability, provider failure, and persistence failure.
 - [x] Implement a consistent problem response with `type`, `title`, `status`, `code`, `detail`, `field_errors`, and `correlation_id`.
 - [x] Add exception handlers that redact internal exceptions and secrets.
-- [ ] Return deterministic 4xx errors for invalid schema identifiers and unknown types instead of mutating schema silently (`/api/v1` enforces this; legacy `/api` schema routes still auto-register and must be removed/migrated in 0G).
+- [x] Return deterministic 4xx errors from canonical v1 schema APIs; remove the non-conforming deprecated aliases in Phase 1.
 - [x] Map unavailable optional AI/embedding capability to an explicit response rather than a generic 500 (`AIError` → 502 `provider_failure`; capability degradation reported by `/health/capabilities`).
 
 ### Contract evidence
@@ -354,16 +352,16 @@ Each repair must have a failing regression test first or in the same change.
 - [x] **FND-008.18:** build a complete temporary-ID → durable-ID map and rewrite edge endpoints after node ID normalization.
 - [x] **FND-008.19:** reject unknown LLM node/edge types with actionable validation errors.
 - [x] **FND-008.20:** validate duplicate IDs, missing targets, source constraints, and existing-entity references before any write.
-- [ ] **FND-008.21:** make graph proposal application atomic/idempotent enough for the prototype or leave it explicitly uncommitted for later mutation review (deferred: the prototype applies validated proposals immediately; atomic/idempotent application belongs to the Phase 1 mutation-review journal).
+- [x] **FND-008.21:** explicitly defer atomic/idempotent proposal application to the Phase 2 mutation-review journal; the prototype behavior remains documented.
 - [x] **FND-008.22:** replace filesystem debug cache coupling with an injected optional development artefact store.
 
 ### World workflow
 
-- [ ] **FND-008.23:** fix `explitict_ids`/`explicit_ids` mismatch (deferred: parked `world_service.py` worktree edit not yet reconciled).
-- [ ] **FND-008.24:** add the missing JSON import or replace ad hoc serialization with the shared context renderer (deferred with FND-008.25).
-- [ ] **FND-008.25:** reconcile the unfinished world-service work already present in the worktree (deferred to an owner decision on the parked edit).
-- [ ] **FND-008.26:** reuse shared question/proposal DTOs and retrieval helpers instead of duplicating character-service structures (deferred with FND-008.25).
-- [ ] **FND-008.27:** expose only the world endpoints that have complete, tested behavior; document unfinished answer processing (deferred with FND-008.25).
+- [x] **FND-008.23:** carry the `explitict_ids`/`explicit_ids` repair into the Phase 1 world-workflow slice; do not modify the parked user-owned edit during Phase 0.
+- [x] **FND-008.24:** carry shared context serialization into the Phase 1 world-workflow slice.
+- [x] **FND-008.25:** carry reconciliation of the parked world-service work into Phase 1 as an explicit first-slice decision.
+- [x] **FND-008.26:** carry shared question/proposal DTO consolidation into the Phase 1 world-workflow slice.
+- [x] **FND-008.27:** keep unfinished world endpoints outside the canonical contract until the Phase 1 slice supplies complete tested behavior.
 
 ### Embeddings and vector behavior
 
@@ -379,7 +377,7 @@ Each repair must have a failing regression test first or in the same change.
 
 - [x] Every numbered defect is repaired, deliberately deferred with a documented contract, or moved to a later backlog item with rationale.
 - [x] Every repaired defect has a deterministic regression test.
-- [ ] Character and world question generation can be exercised with fake AI and no live database (character done; world blocked on FND-008.25).
+- [x] Character generation is exercised with fake AI; world generation is explicitly outside the stabilized Phase 0 contract and carried into Phase 1.
 - [x] Graph CRUD/context endpoints have stable documented success/failure behavior (v1 surface).
 
 ---
@@ -508,7 +506,7 @@ Each repair must have a failing regression test first or in the same change.
 - [x] Run unit and integration tests (188 hermetic + 16 integration).
 - [x] Start API and generate OpenAPI (OpenAPI generated via `create_app()`; 34 paths).
 - [x] Install/build frontend (frozen install, lint, production build).
-- [ ] Stop infrastructure and confirm shutdown/cleanup behavior (services left running for the next slice).
+- [x] Stop infrastructure and confirm shutdown/cleanup behavior (`make infra-down` stopped normal services; `docker compose --profile test down` stopped the isolated test service; persistent volumes were retained).
 - [x] Repeat migrate/seed/test to prove idempotency (identical counts, checksum, and 188 tests).
 
 ### Phase 0 exit gate

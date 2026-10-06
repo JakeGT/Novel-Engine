@@ -57,4 +57,4 @@ They are retained only for continuity and are not covered by the v1 contract tes
   is deliberately 501 so placeholder text cannot be mistaken for generated output.
 - Character graph proposals are validated and applied immediately; atomic, reviewable
   mutation application is Phase 1.
-- Authentication, tenant/project scoping, and pagination cursors are Phase 1.
+- Shared OIDC authentication, invitation-derived workspace/project scoping, and pagination cursors are Phase 1.

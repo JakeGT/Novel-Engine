@@ -22,8 +22,8 @@ Current (post-Phase 0):
 
 Remaining gaps to the target:
 
-- no tenant/project scoping at persistence, cache, vector, job, or event boundaries
-- no journal/outbox, credit ledger, encrypted BYOK credential vault, or hosted workers
+- no shared OIDC/session integration, invitations, or workspace/project scoping at persistence, cache, vector, job, or event boundaries
+- no journal/outbox, encrypted hosted OpenRouter credential vault, or hosted workers
 - legacy `/api` prototype routes remain as deprecated aliases pending migration/removal
 - final fact/belief/event/branch domain redesign and the consistency engine are not started
 - the parked world workflow (`backend/services/world_service.py`) is unreconciled
@@ -39,7 +39,7 @@ Current:
 
 Target:
 
-- tenant-scoped request context and per-request unit of work
+- OIDC/local identity adapters, invitation-derived workspace/project context, and per-request unit of work
 - startup readiness that distinguishes required stores from optional providers (partially done)
 - background worker lifecycle separate from the API process
 
@@ -56,7 +56,7 @@ Current:
 
 Target:
 
-- remove or fully port legacy routes; enforce tenant scope on every endpoint
+- remove or fully port legacy routes; enforce workspace/project scope on every endpoint
 - cursor pagination, idempotency keys, and rate limiting
 - streaming generation and review endpoints
 
@@ -138,9 +138,10 @@ Target:
 
 Phase 1 should proceed in this order without reopening Phase 0 foundations:
 
-1. tenant/project scope primitives and enforcement at every boundary
-2. journal/outbox and unit-of-work around canon mutations
-3. fact/belief/event/branch domain redesign with validity intervals
-4. mutation review and atomic application (FND-008.21)
-5. consistency preflight/postflight harness (ADR-006)
-6. legacy `/api` route removal once v1 parity is confirmed
+1. OIDC/local identity ports, invitation lifecycle, and workspace/project scope primitives
+2. workspace/project enforcement at every persistence and asynchronous boundary
+3. journal/outbox and unit-of-work around canon mutations
+4. fact/belief/event/branch domain redesign with validity intervals
+5. mutation review and atomic application (FND-008.21)
+6. consistency preflight/postflight harness (ADR-006)
+7. legacy `/api` route removal once v1 parity is confirmed

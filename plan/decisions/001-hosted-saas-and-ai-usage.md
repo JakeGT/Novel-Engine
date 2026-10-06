@@ -1,11 +1,13 @@
 # ADR-001: Hosted SaaS and AI usage model
 
-- Status: Accepted
+- Status: Superseded in part by ADR-008
 - Date: 2026-10-05
 - Owners: project owner
 - Related backlog: SaaS-001–SaaS-010, OPS-002, OPS-004
 
 ## Context
+
+> Historical decision: ADR-008 replaces the subscription and platform-credit model with an open-source core and free portfolio deployment. ADR-009 retains invite-only multi-tenancy and collaboration as first-class hosted requirements.
 
 Novel Engine is intended to be a product users can sign up for, not only a local authoring tool. AI inference has variable cost, and users may prefer platform-managed usage or their own provider account.
 

@@ -3,15 +3,15 @@
 - Status: Accepted
 - Date: 2026-10-05
 - Owners: project owner
-- Related backlog: FND-005, CAN-008, SCN-001, SaaS-001–SaaS-010
+- Related backlog: FND-005, CAN-008, SCN-001, IDN-001–IDN-006, SaaS-006
 
 ## Context
 
-The hosted product needs transactional account, subscription, credit, job, journal, review, and idempotency data. Deferring PostgreSQL would create a costly migration from local-only assumptions.
+The invite-only hosted profile needs transactional external-identity mapping, workspace, invitation, membership, credential, job, journal, review, and idempotency data. Deferring PostgreSQL would create a costly migration from local-only assumptions.
 
 ## Decision
 
-Use PostgreSQL from the foundation phase for identity references, tenancy, project metadata, memberships, subscription state, credit ledger, provider credentials, jobs, outbox, mutation journal, reviews, and operational audit.
+Use PostgreSQL from the foundation phase for identity references, workspaces, invitations, project metadata, memberships, provider credentials, jobs, outbox, mutation journal, reviews, and operational audit. Subscription and credit-ledger tables are not required unless a later commercial ADR reintroduces them.
 
 Neo4j remains the authoritative query model for accepted story canon and graph relationships. Exact authored prose lives in versioned text/blob records referenced from PostgreSQL. Use pgvector initially for derived vector data, behind a replaceable vector port.
 

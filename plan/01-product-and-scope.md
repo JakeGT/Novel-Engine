@@ -4,11 +4,13 @@
 
 Novel Engine helps a fiction author build a world, plan a story, draft scenes, and evolve canon without losing continuity. Its advantage is not generic text generation; it is the ability to explain what is true, when it is true, on which branch it is true, who knows it, and why the system supplied it to a model.
 
-## Primary user and business model
+## Primary user and distribution model
 
-The initial user is a long-form fiction author working on one or more projects. Novel Engine is a hosted, multi-tenant SaaS with account signup and subscriptions. Users can fund AI work through platform-managed credits or bring an OpenRouter API key. Project sharing and collaboration depth remain to be specified, but all data access is tenant- and project-scoped from the start.
+The initial user is a long-form fiction author working on one or more projects. Novel Engine is open-source-first and self-hostable, with a free invite-only deployment in the owner's portfolio under `apps.jaketalling.com`. An author can run it for personal use, call an OpenAI-compatible local model, or provide an OpenRouter API key. The core product does not require a subscription or platform credits.
 
-The author chooses an autonomy profile. AI may draft, analyze, retrieve, and propose changes; approval requirements depend on policy and risk. Destructive, billing-sensitive, schema-changing, secret-exposing, and conflicted-merge actions retain explicit safeguards.
+The hosted profile is multi-tenant from the start: a shared portfolio identity service authenticates users, while Novel Engine owns invitations, workspaces, memberships, roles, and project authorization. There is no open self-registration into Novel Engine. The self-hosted profile supports a trusted single-user mode without changing canon semantics.
+
+The author chooses an autonomy profile. AI may draft, analyze, retrieve, and propose changes; approval requirements depend on policy and risk. Destructive, cost-sensitive, schema-changing, secret-exposing, and conflicted-merge actions retain explicit safeguards.
 
 ## Core jobs to be done
 
@@ -55,8 +57,11 @@ This is the minimum coherent product. A questionnaire without the review-and-com
 - Structured model outputs with retry and validation
 - User-configurable autonomy with recorded approvals and overrides
 - Tiered consistency checks and POV secret-leakage validation
-- Account, subscription, platform-credit, and BYOK usage flows
-- Project membership roles appropriate to the selected collaboration scope
+- Local provider configuration and user-supplied OpenRouter credentials
+- Invite-only multi-tenancy with owner/editor/viewer workspace and project roles
+- OIDC integration with the shared `apps.jaketalling.com` identity service
+- A no-account single-user mode for self-hosters
+- Reproducible self-hosted installation, upgrades, backup, and restore
 - Export and backup of all user-authored and canonical data
 - Deterministic test fixtures and offline development mode
 
@@ -71,6 +76,8 @@ This is the minimum coherent product. A questionnaire without the review-and-com
 - Mobile-native applications
 - Marketplace or public sharing of worlds
 - Sophisticated graph visualization as the primary editor
+- Subscription billing, token resale, and a platform-credit ledger
+- Open public signup or free platform-funded inference
 
 ## Success measures
 
@@ -83,8 +90,11 @@ Product quality should be evaluated with tasks, not only model preference scores
 - Rebuilding derived indexes produces equivalent retrieval results within documented tolerance.
 - A new contributor can run deterministic tests without an API key.
 - The system provides a useful explanation for every reported contradiction.
-- Cross-tenant access attempts fail at API, repository, job, graph, vector, and export boundaries.
-- Purchased credits and provider usage reconcile without double charging on retries.
+- A complete project can be installed, used, backed up, restored, and exported in self-hosted mode without a Novel Engine account.
+- A portfolio identity without a valid Novel Engine invitation cannot access a workspace or project.
+- Cross-tenant access attempts fail at API, repository, job, graph, vector, object, event, and export boundaries.
+- Provider retries cannot duplicate a generation or silently exceed the author's configured cost/token limits.
+- No telemetry or manuscript content leaves a self-hosted installation unless the operator enables it or invokes a configured model provider.
 
 ## Non-functional goals
 

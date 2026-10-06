@@ -4,7 +4,7 @@ This file is the operating contract for coding agents working in this repository
 
 ## Mission
 
-Novel Engine is a hosted, multi-tenant SaaS authoring system that combines a deterministic knowledge graph with semantic retrieval and model-assisted workflows. Its defining constraint is continuity: generated prose and proposed world changes must respect objective canon, timeline state, branch state, and each point-of-view character's knowledge.
+Novel Engine is an open-source fiction authoring system with self-hosted and free invite-only multi-tenant deployment profiles. The hosted instance belongs within `apps.jaketalling.com` and delegates authentication to a shared OIDC identity service while retaining its own invitations and authorization. Its defining constraint is continuity: generated prose and proposed world changes must respect objective canon, timeline state, branch state, and each point-of-view character's knowledge.
 
 ## Current maturity
 
@@ -101,8 +101,8 @@ The Makefile keeps tool caches under ignored `.cache/` so sandboxed coding agent
 8. Make long-running or expensive operations observable and retryable. Record model, prompt version, latency, token usage, and outcome without logging secret story text by default.
 9. Return one stable API representation for graph entities. Do not alternate between flattened Neo4j properties and nested domain properties.
 10. Add a test for every repaired defect and every domain invariant.
-11. Tenant and project scope are mandatory at every persistence, job, cache, vector, object, export, and event boundary.
-12. Paid AI operations reserve and reconcile credits idempotently. BYOK credentials must remain encrypted/redacted and are accessed only through the credential port.
+11. Workspace and project scope are mandatory at every hosted persistence, job, cache, vector, object, export, and event boundary. Self-hosted local mode supplies explicit local scope through the same contracts.
+12. User-funded AI operations enforce configured limits and record provider usage idempotently. Hosted OpenRouter credentials must remain encrypted/redacted and are accessed only through the credential port.
 13. Run deterministic consistency preflight/postflight around generation. Model critics produce evidence-backed findings and never silently rewrite accepted prose or canon.
 
 ## Change workflow

@@ -49,7 +49,7 @@ From the upstream architecture:
 | Git range/commit/workspace diff | prose version delta, scene group, chapter range, or canon revision range |
 | changed file | changed passage/scene plus proposed mutation operations |
 | file metadata | scene, POV, location, time, entities, threads, size, change kind |
-| file include/exclude rules | tenant/branch/visibility gates and consistency profile |
+| file include/exclude rules | workspace/project/branch/visibility gates and consistency profile |
 | language/path rule | entity/schema/world-law/POV/thread rule set |
 | semantic file group | dependency-connected prose review bundle |
 | source file/diff tools | read-only prose, canon, timeline, belief, event, and search tools |
@@ -98,7 +98,7 @@ Edges:
 - preceding/following prose adjacency
 - shared rule or constraint
 
-Hard gates remove anything outside tenant, project, selected branch ancestry, allowed visibility, or review scope.
+Hard gates remove anything outside workspace, project, selected branch ancestry, allowed visibility, or review scope.
 
 ## Deterministic bundle algorithm
 
@@ -146,8 +146,8 @@ Each model reviewer gets:
 - one immutable bundle manifest
 - a narrow task-specific prompt and output schema
 - deterministic findings already produced for the bundle
-- read-only tools with tenant/project/branch/visibility enforcement
-- a strict token, tool-call, round, and credit budget
+- read-only tools with workspace/project/branch/visibility enforcement
+- a strict token, tool-call, round, and provider-usage budget
 - permission to report findings only against bundle prose ranges
 
 Recommended read-only tools:
@@ -163,7 +163,7 @@ Recommended read-only tools:
 - `get_thread_history`
 - `semantic_search_prose`
 
-Tool results are structured and provenance-bearing. The reviewer cannot mutate prose, canon, schema, branch state, autonomy policy, credentials, or billing.
+Tool results are structured and provenance-bearing. The reviewer cannot mutate prose, canon, schema, branch state, autonomy policy, credentials, or identity/membership state.
 
 ## Complexity-gated planning and effort
 
@@ -171,7 +171,7 @@ Skip the model entirely for deterministic-only runs. When a user requests a mode
 
 - small single-rule bundle: one direct review pass
 - multi-unit or multi-rule bundle: one bounded plan/checklist followed by review
-- high effort: additional review rounds with confirmed findings supplied, stopping when no new finding appears or the credit budget is reached
+- high effort: additional review rounds with confirmed findings supplied, stopping when no new finding appears or the provider-usage budget is reached
 
 The planning phase must not become a coverage ceiling. Mandatory checks come from the deterministic manifest, not from the model's plan.
 
@@ -214,7 +214,7 @@ Before a paid model run, show:
 - dependency expansions and rule families
 - proposed bundles and duplicate coverage
 - deterministic findings already available
-- estimated tokens/credits per bundle and total cap
+- estimated tokens/provider cost per bundle and total cap
 - warnings for oversized, ambiguous, stale-index, or unanchored units
 - selected effort/profile and expected passes
 
@@ -226,7 +226,7 @@ Users may exclude optional bundles or lower effort, but cannot unknowingly disab
 - One failed bundle does not discard successful bundle findings.
 - Over-budget bundles split; they are not silently skipped.
 - Missing vector service degrades to graph/direct-source retrieval.
-- Missing model/BYOK/credits still returns deterministic findings and the preview.
+- Missing model/credential still returns deterministic findings and the preview.
 - Stale base revisions cause re-bundling before review or correction.
 - Unsupported findings are filtered, not rewritten until they sound plausible.
 
@@ -252,4 +252,4 @@ Before committing fully, implement an offline experiment against the seeded refe
 
 ## Reuse boundary
 
-OpenCodeReview is Apache-2.0, but direct code reuse is not currently recommended. Novel Engine needs Python/PostgreSQL/Neo4j services, structured-document anchoring, tenant isolation, financial controls, and graph-based overlapping bundles. Reuse the tested architecture pattern and cite upstream inspiration; implement domain-native components and preserve upstream attribution if any source code is later adapted.
+OpenCodeReview is Apache-2.0, but direct code reuse is not currently recommended. Novel Engine needs Python/PostgreSQL/Neo4j services, structured-document anchoring, tenant isolation, provider-usage controls, and graph-based overlapping bundles. Reuse the tested architecture pattern and cite upstream inspiration; implement domain-native components and preserve upstream attribution if any source code is later adapted.

@@ -144,6 +144,14 @@ Performed on a copy of the working tree with no `.env`, `.venv`, caches, `node_m
   188 passing tests, proving idempotency.
 - Only warning observed: the local workstation runs Node 26 while CI pins Node 24.
 
+## Shutdown rehearsal
+
+On 2026-10-06, `make infra-down` stopped and removed the normal PostgreSQL/Neo4j
+containers. The intentionally separate `neo4j-test` profile remained healthy until
+`docker compose --profile test down` stopped it. Compose removed the shared network after
+the test service exited and retained persistent volumes. This verifies that ordinary and
+test services have explicit, non-destructive shutdown paths.
+
 ## Unresolved warnings, deferred defects, and Phase 1 prerequisites
 
 - **Warnings:** Pydantic emits a `datetime.utcnow()` deprecation warning from the domain
@@ -157,6 +165,7 @@ Performed on a copy of the working tree with no `.env`, `.venv`, caches, `node_m
   - Vector port filters, deactivation, and rebuild hooks remain deferred; the legacy Chroma
     module is retained but unused by the container.
   - Legacy `/api` routes remain as deprecated aliases and must be migrated or removed.
-- **Phase 1 prerequisites:** tenant/project scoping at every boundary, journal/outbox,
-  credit reservation, encrypted BYOK credentials, mutation review, and the consistency
-  preflight/postflight harness.
+- **Phase 1 prerequisites after ADR-008/ADR-009:** shared OIDC integration, invitation and
+  workspace/project scoping at every boundary, secure application sessions, encrypted hosted
+  OpenRouter credentials, local/self-hosted identity separation, and distribution/backup
+  foundations. Billing and platform-credit work is no longer planned.

@@ -1,6 +1,6 @@
 # Novel Engine
 
-Novel Engine is a planned hosted AI-assisted fiction SaaS designed to preserve continuity across world facts, character beliefs, timelines, story plans, and generated scenes.
+Novel Engine is a planned open-source AI-assisted fiction system designed to preserve continuity across world facts, character beliefs, timelines, story plans, and generated scenes. It will support self-hosting and a free, invite-only multi-tenant deployment within `apps.jaketalling.com`.
 
 The project combines:
 
@@ -10,9 +10,9 @@ The project combines:
 - structured model workflows for authoring and extraction
 - explicit provenance, temporal validity, and branch-aware state
 - a review boundary between AI proposals and accepted canon
-- user-controlled AI autonomy, platform credits or OpenRouter BYOK, and tiered consistency checking
+- user-controlled AI autonomy, local models or user-supplied OpenRouter access, and tiered consistency checking
 
-This repository is currently a local prototype; SaaS identity, PostgreSQL operations, billing, and hosted deployment are planned but not implemented. Graph CRUD, tagged-entity context retrieval, and part of the character creation workflow exist; the frontend and most planning/generation workflows are not yet implemented. See [the implementation plan](plan/README.md) for the accepted target architecture and delivery sequence.
+This repository is currently a stabilized local prototype; shared OIDC identity, invitations, multi-tenant authorization, and hosted deployment are planned but not implemented. PostgreSQL/pgvector foundations exist alongside graph CRUD, tagged-entity context retrieval, and part of the character creation workflow; the frontend and most planning/generation workflows are not yet implemented. See [the implementation plan](plan/README.md) for the target architecture and delivery sequence.
 
 ## Quick start
 

@@ -36,11 +36,11 @@ Use a stable problem format with `type`, `title`, `status`, `code`, `detail`, `f
 - ETags or explicit revision fields for mutable resources.
 - `Idempotency-Key` for job creation and commits.
 - Project and branch are explicit in scoped URLs or resolved from a verified workspace context.
-- Tenant/user identity comes only from the authenticated server context, never a trusted client-supplied ID.
+- Workspace/user identity comes only from the validated OIDC/local server session, never a trusted client-supplied ID.
 
 ## Proposed resource groups
 
-- `/api/v1/account`, `/api/v1/subscription`, `/api/v1/usage`
+- `/api/v1/session`, `/api/v1/workspaces`, `/api/v1/invitations`, `/api/v1/usage`
 - `/api/v1/provider-credentials` (write-only secret input; responses never return keys)
 - `/api/v1/projects`
 - `/api/v1/projects/{project_id}/members`
@@ -66,7 +66,7 @@ Use a stable problem format with `type`, `title`, `status`, `code`, `detail`, `f
 
 ### Generation job
 
-`POST .../jobs` creates an asynchronous job from a frozen context-preview revision. It resolves BYOK/platform-credit funding, estimates and reserves usage where required, and applies autonomy/consistency policy. `GET .../jobs/{id}` returns stage, progress, cost estimate/actual, artefacts, and classified failure. An event endpoint streams progress.
+`POST .../jobs` creates an asynchronous job from a frozen context-preview revision. It resolves the authorized user's OpenRouter/local provider route, enforces configured usage limits, and applies autonomy/consistency policy. `GET .../jobs/{id}` returns stage, progress, token/cost estimate and actual usage, artefacts, and classified failure. An event endpoint streams progress.
 
 ### Mutation review
 
@@ -81,7 +81,7 @@ Use a stable problem format with `type`, `title`, `status`, `code`, `detail`, `f
 ### Project shell
 
 - project switcher
-- subscription, credit balance/usage, and BYOK status
+- workspace/member status, provider configuration, and usage
 - branch and timeline selector
 - global entity search/command palette
 - job activity and errors
@@ -151,7 +151,7 @@ State ownership:
 ## UX safeguards
 
 - Clearly label draft, proposed, and canonical content.
-- Clearly label platform-credit versus BYOK execution and show estimates/reservations/actual usage.
+- Clearly label local versus user-funded OpenRouter execution and show estimated/actual usage.
 - Show branch and timeline context beside every mutation review.
 - Preview destructive or broad changes.
 - Make model cost and context visible before expensive actions.

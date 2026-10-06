@@ -2,10 +2,10 @@
 
 ## Recommended shape
 
-Start as a hosted modular monolith: one FastAPI application, scalable background workers, one React application, PostgreSQL, Neo4j, object/text storage, and a vector index. Keep internal boundaries strict enough that workers, consistency analysis, or provider adapters can later move out of process without redesigning the domain.
+Start as a modular monolith that supports two profiles: an invite-only multi-tenant deployment under `apps.jaketalling.com`, and a trusted single-user self-hosted deployment. Both use one FastAPI application, background worker capability, one React application, PostgreSQL with pgvector, Neo4j, and object/text storage. Keep internal boundaries strict enough that workers or consistency analysis can later move out of process without redesigning the domain.
 
 ```text
-React SaaS application
+React authoring application
       |
       v
 HTTP API / job events
@@ -34,8 +34,8 @@ The arrows indicate dependency direction. Domain models and policies do not impo
 Responsibilities:
 
 - HTTP and event-stream endpoints
-- authentication and project-scope resolution
-- subscription entitlement, credit, and autonomy-policy resolution
+- OIDC or local identity plus workspace/project-scope resolution
+- provider configuration, cost limits, and autonomy-policy resolution
 - request validation and response serialization
 - mapping known domain errors to stable problem responses
 
@@ -55,7 +55,7 @@ Use-case coordinators such as:
 - `CreateBranch`
 - `MergeBranch`
 - `RunConsistencyCheck`
-- `ReserveUsageCredits`
+- `AuthorizeModelUsage`
 
 They define transaction boundaries and call domain services through ports.
 
@@ -90,7 +90,7 @@ Model-extracted changes enter a staging area as a mutation set. Domain validator
 
 ### Persistence adapters
 
-- PostgreSQL repositories for accounts, tenancy, memberships, subscriptions, credit ledger, credentials, jobs, reviews, mutation journal, outbox, and operational audit
+- PostgreSQL repositories for external-identity mappings, workspaces, invitations, memberships, projects, settings, jobs, reviews, mutation journal, outbox, and operational audit
 - Neo4j repository for canonical entities, relations, facts, beliefs, story structure, and query projections
 - vector adapter for derived embeddings and chunks
 - blob/text storage for exact scene versions and import/export artefacts where graph properties are unsuitable
@@ -112,11 +112,11 @@ Large immutable prose versions and imports/exports use object storage with Postg
 
 1. Create a job with immutable input references.
 2. Build and persist a context manifest.
-3. resolve BYOK or reserve platform credits and select a model route.
+3. resolve the configured local/OpenRouter credential, enforce the author's limits, and select a model route.
 4. run deterministic consistency preflight and attach the constraint packet.
 5. call the model through an adapter.
-6. validate the structured response and reconcile actual usage.
-7. retry only safe, classified failures without duplicate charging.
+6. validate the structured response and record normalized usage.
+7. retry only safe, classified failures without duplicate generation or exceeding limits.
 8. store output as a draft or proposed mutation set.
 9. run deterministic postflight rules and policy-selected model critique.
 10. present the proposal and findings for review.
@@ -156,13 +156,13 @@ This should be reached incrementally. Avoid a wholesale move before characteriza
 ## Architectural constraints
 
 - No external connection or persistent write at module import time.
-- Every request, job, object, graph record, vector record, and billing entry is tenant/project scoped.
+- Every request, job, object, graph record, vector record, export, and event is workspace/project scoped in hosted mode. Self-hosted local mode supplies one explicit local workspace/user context through the same contracts.
 - Every repository method requires project scope; branch/timeline scope where relevant.
 - Canon writes happen only through the commit service.
 - The vector store never authoritatively resolves a conflict with the graph.
 - A model cannot introduce an unknown type or edge without an explicit schema-extension decision.
 - Long-running AI calls return job IDs rather than holding a fragile browser request indefinitely.
-- Paid jobs reserve credits before execution and reconcile actual use exactly once.
+- Model jobs estimate usage, enforce configured limits, and record actual usage exactly once.
 - BYOK secrets are never placed in prompts, logs, graph records, or vector metadata.
 - Every stored AI artefact identifies provider, model, prompt version, schema version, and input manifest.
 - API and persisted formats are versioned before the first user project becomes irreplaceable.
