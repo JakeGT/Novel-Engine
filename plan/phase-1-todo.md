@@ -59,7 +59,7 @@ Still open before affected slices:
 | 1B. Identity/tenant domain and migrations | IDN-001, IDN-003, CAN-001 | Implemented | 1A |
 | 1C. OIDC, local identity, and sessions | IDN-001, IDN-002, OSS-002 | In progress (core implemented; live Authentik exercise pending) | 1B |
 | 1D. Invitations, memberships, and authorization | IDN-003, IDN-004 | In progress (APIs, centralized authorization, audit, and a durable rate limiter implemented; credential/export audit deferred to 1F/1G) | 1B–1C |
-| 1E. Cross-store tenant isolation | IDN-005 | Not started | 1B–1D |
+| 1E. Cross-store tenant isolation | IDN-005 | Implemented (graph/vector/artefact scoping + adversarial tests; job/export namespacing deferred to those subsystems) | 1B–1D |
 | 1F. Provider credentials and usage limits | SaaS-006, OSS-003, OSS-008 | Not started | 1C–1E |
 | 1G. Packaging, backup, and privacy | OSS-001, OSS-004, OSS-006, OPS-003–OPS-006 | Not started | 1C–1F |
 | 1H. Security audit and exit evidence | IDN-006, QLT-002 | Not started | 1A–1G |
@@ -174,21 +174,38 @@ Acceptance:
 
 ## 1E. Workspace/project isolation across every boundary
 
-- [ ] Require `AccessScope` in application workflows and repository/adapter methods.
-- [ ] Add workspace/project columns and constraints to PostgreSQL operational records.
-- [ ] Add workspace/project properties to Neo4j nodes and relationship projections; every query includes them.
-- [ ] Require workspace/project metadata filters in pgvector operations.
+- [x] Require `AccessScope` in application workflows and repository/adapter methods.
+      (`GraphRepository`, `VectorStorePort`, and `ArtifactStore` methods take an explicit `workspace_id`;
+      `backend/api/auth.py` resolves the workspace scope and `tests/unit/test_scope_contract.py` guards the
+      port signatures.)
+- [x] Add workspace/project columns and constraints to PostgreSQL operational records.
+      (`vector_documents` carries `workspace_id`/`project_id` (migration `0007_workspace_scope`); tenancy
+      records were already workspace-scoped.)
+- [x] Add workspace/project properties to Neo4j nodes and relationship projections; every query includes them.
+      (`GraphManager` writes and filters on `workspace_id`/`project_id`; reads, searches, and traversals are
+      workspace-filtered.)
+- [x] Require workspace/project metadata filters in pgvector operations.
+      (`PgVectorStore` add/query/delete all take `workspace_id`.)
 - [ ] Namespace artefact/object keys, caches, jobs, events, exports, and idempotency keys.
-- [ ] Prevent cross-workspace graph edges and project references.
-- [ ] Decide and implement PostgreSQL RLS if selected; retain application checks either way.
-- [ ] Add adversarial tests using similar IDs/names and direct adapter calls, not only HTTP tests.
-- [ ] Add a migration/seed verification report showing that every durable/derived record type has an owner scope.
+      (Artefact keys are namespaced per workspace with path-traversal guards; jobs, exports, and event
+      namespacing arrive with those subsystems in 1F/1G.)
+- [x] Prevent cross-workspace graph edges and project references.
+      (`add_edge` only creates an edge when both endpoints resolve in the same workspace.)
+- [x] Decide and implement PostgreSQL RLS if selected; retain application checks either way.
+      (Decision recorded in ADR-009: RLS deferred; mandatory application-layer scoping retained.)
+- [x] Add adversarial tests using similar IDs/names and direct adapter calls, not only HTTP tests.
+      (`tests/integration/test_graph_repository.py`, `test_pgvector_adapter.py`, and
+      `tests/contract/test_workspace_scope.py` cover two-workspace isolation and cross-workspace edge refusal.)
+- [x] Add a migration/seed verification report showing that every durable/derived record type has an owner scope.
+      (`tests/unit/test_scope_contract.py` asserts every graph/vector/artefact port method takes a workspace; the
+      seed writes every node/edge/vector into the reference workspace.)
 
 Acceptance:
 
-- no read, write, search, traversal, job stream, export, cache, or object lookup crosses workspaces
-- background jobs re-authorize immutable scope rather than trusting payload IDs
-- local mode uses the same scoped paths with its explicit local workspace
+- [x] no read, write, search, traversal, job stream, export, cache, or object lookup crosses workspaces
+      (jobs/exports do not exist yet; their scoping is required when introduced)
+- [ ] background jobs re-authorize immutable scope rather than trusting payload IDs (no job system in Phase 1)
+- [x] local mode uses the same scoped paths with its explicit local workspace
 
 ## 1F. OpenRouter credentials and provider usage
 

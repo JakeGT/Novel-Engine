@@ -3,17 +3,17 @@ import pytest
 pytestmark = pytest.mark.contract
 
 
-def _seed_character(api_client) -> None:
-    api_client.post(
+def _seed_character(auth_client) -> None:
+    auth_client.post(
         "/api/v1/entities",
         json={"id": "char_arin", "type": "Character", "properties": {"name": "Arin"}},
     )
 
 
-def test_context_with_explicit_anchor(api_client) -> None:
-    _seed_character(api_client)
+def test_context_with_explicit_anchor(auth_client) -> None:
+    _seed_character(auth_client)
 
-    response = api_client.post(
+    response = auth_client.post(
         "/api/v1/context",
         json={
             "text": "[Arin](entity:Character:char_arin) arrives at the gate.",
@@ -28,8 +28,8 @@ def test_context_with_explicit_anchor(api_client) -> None:
     assert "EXTERNAL KNOWLEDGE CONTEXT" in body["summary"]
 
 
-def test_context_without_anchors_is_empty(api_client) -> None:
-    response = api_client.post("/api/v1/context", json={"text": "no entity tags here"})
+def test_context_without_anchors_is_empty(auth_client) -> None:
+    response = auth_client.post("/api/v1/context", json={"text": "no entity tags here"})
 
     assert response.status_code == 200
     assert response.json()["nodes"] == []

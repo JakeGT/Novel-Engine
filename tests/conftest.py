@@ -154,6 +154,20 @@ def api_client(fake_container):
 
 
 @pytest.fixture
+def auth_client(api_client, fake_container):
+    """Local-mode client with a session and the CSRF header pre-set.
+
+    Graph/context/character operations are workspace-scoped and require an
+    authenticated scope; this fixture provides the local workspace session.
+    """
+    api_client.get("/auth/login", follow_redirects=False)
+    csrf = api_client.cookies.get(fake_container.settings.CSRF_COOKIE_NAME)
+    assert csrf, "local login did not set a CSRF cookie"
+    api_client.headers["X-CSRF-Token"] = csrf
+    return api_client
+
+
+@pytest.fixture
 def hosted_client(hosted_container):
     from fastapi.testclient import TestClient
 

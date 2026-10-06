@@ -9,17 +9,20 @@ from backend.graph.policies import TraversalPolicy
 logger = logging.getLogger(__name__)
 
 
-def build_traversal_query(policy: TraversalPolicy) -> str:
+def build_traversal_query(policy: TraversalPolicy, *, workspace_id: str | None = None) -> str:
     """Build the policy-bounded Cypher traversal.
 
     Traversal is intentionally undirected (``-[r*..]-``) so incoming relationships
-    are considered, and excluded node types are filtered by label.
+    are considered, and excluded node types are filtered by label. When
+    ``workspace_id`` is provided, results are confined to that workspace.
     """
     allowed_rels = ""
     if policy.allowed_edge_types:
         allowed_rels = ":" + "|".join(sorted(policy.allowed_edge_types))
 
     where_conditions = ["anchor.id IN $anchor_ids"]
+    if workspace_id is not None:
+        where_conditions.append("n.workspace_id = $workspace_id")
     for node_type in sorted(policy.excluded_node_types):
         where_conditions.append(f"NOT '{node_type}' IN labels(n)")
     where_clause = " AND ".join(where_conditions)
@@ -75,11 +78,13 @@ class ContextTraversal:
     def __init__(self, manager: Any = None) -> None:
         self.manager = manager
 
-    def traverse(self, anchor_ids: list[str], policy: TraversalPolicy) -> list[dict[str, Any]]:
+    def traverse(
+        self, anchor_ids: list[str], policy: TraversalPolicy, *, workspace_id: str
+    ) -> list[dict[str, Any]]:
         if not anchor_ids:
             return []
 
-        query = build_traversal_query(policy)
+        query = build_traversal_query(policy, workspace_id=workspace_id)
         manager = self.manager or get_graph_manager()
         try:
             with manager.driver.session() as session:
@@ -89,6 +94,7 @@ class ContextTraversal:
                     weight_depth=policy.weight_depth,
                     max_nodes=policy.max_nodes,
                     damping_factor=policy.pagerank_damping,
+                    workspace_id=workspace_id,
                 )
 
                 scanned_nodes = []

@@ -102,6 +102,8 @@ class Node(BaseModel):
     embedding: list[float] | None = Field(
         default=None, description="Vector representation of the node for semantic search."
     )
+    workspace_id: str | None = None
+    project_id: str | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -110,6 +112,8 @@ class Edge(BaseModel):
     target: str
     type: str  # Allow dynamic strings
     properties: dict[str, Any] = Field(default_factory=dict)
+    workspace_id: str | None = None
+    project_id: str | None = None
     valid_from: datetime | None = None
     valid_until: datetime | None = None
 

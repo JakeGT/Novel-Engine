@@ -37,39 +37,51 @@ def test_ordered_id_generator_is_deterministic() -> None:
 
 def test_in_memory_graph_repository_node_and_edge_roundtrip() -> None:
     graph = InMemoryGraphRepository()
-    graph.add_node(Node(id="char_arin", type="Character", properties={"name": "Arin"}))
-    graph.add_node(Node(id="loc_gate", type="Location", properties={"name": "Gate"}))
-    graph.add_edge(Edge(source="char_arin", target="loc_gate", type="LOCATED_AT"))
+    graph.add_node(
+        Node(id="char_arin", type="Character", properties={"name": "Arin"}, workspace_id="ws")
+    )
+    graph.add_node(
+        Node(id="loc_gate", type="Location", properties={"name": "Gate"}, workspace_id="ws")
+    )
+    graph.add_edge(
+        Edge(source="char_arin", target="loc_gate", type="LOCATED_AT", workspace_id="ws")
+    )
 
-    stored = graph.get_node("char_arin")
+    stored = graph.get_node("char_arin", workspace_id="ws")
     assert stored is not None
     assert stored.type == "Character"
     assert stored.properties["name"] == "Arin"
+    # Cross-workspace reads do not resolve.
+    assert graph.get_node("char_arin", workspace_id="other") is None
 
-    edges = graph.get_edges("char_arin")
+    edges = graph.get_edges("char_arin", workspace_id="ws")
     assert edges[0].target == "loc_gate"
     assert edges[0].type == "LOCATED_AT"
 
-    assert graph.get_neighbors("char_arin")[0].id == "loc_gate"
+    assert graph.get_neighbors("char_arin", workspace_id="ws")[0].id == "loc_gate"
 
 
 def test_in_memory_graph_repository_updates_and_searches() -> None:
     graph = InMemoryGraphRepository()
-    graph.add_node(Node(id="char_arin", type="Character", properties={"name": "Arin"}))
-    graph.update_node(Node(id="char_arin", type="Character", properties={"role": "scout"}))
+    graph.add_node(
+        Node(id="char_arin", type="Character", properties={"name": "Arin"}, workspace_id="ws")
+    )
+    graph.update_node(
+        Node(id="char_arin", type="Character", properties={"role": "scout"}, workspace_id="ws")
+    )
 
-    stored = graph.get_node("char_arin")
+    stored = graph.get_node("char_arin", workspace_id="ws")
     assert stored is not None
     assert stored.properties["role"] == "scout"
-    assert graph.search_nodes_by_name("ari")[0]["id"] == "char_arin"
-    assert graph.get_nodes(node_type="Character")[0].id == "char_arin"
+    assert graph.search_nodes_by_name("ari", workspace_id="ws")[0]["id"] == "char_arin"
+    assert graph.get_nodes(workspace_id="ws", node_type="Character")[0].id == "char_arin"
 
 
 def test_in_memory_vector_store_returns_scripted_results() -> None:
     store = InMemoryVectorStore(results=[{"id": "doc1", "score": 0.9}])
-    store.add_documents(["hello"], [{"kind": "prose"}], ["doc1"])
+    store.add_documents(["hello"], [{"kind": "prose"}], ["doc1"], workspace_id="ws")
 
-    assert store.query("hello") == [{"id": "doc1", "score": 0.9}]
+    assert store.query("hello", workspace_id="ws") == [{"id": "doc1", "score": 0.9}]
     assert store.queries == ["hello"]
     assert store.health()
 

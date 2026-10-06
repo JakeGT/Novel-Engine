@@ -26,7 +26,15 @@ def test_node_dump_uses_one_nested_properties_shape() -> None:
 
     dumped = node.model_dump()
 
-    assert set(dumped) == {"id", "type", "properties", "embedding", "created_at"}
+    assert set(dumped) == {
+        "id",
+        "type",
+        "properties",
+        "embedding",
+        "workspace_id",
+        "project_id",
+        "created_at",
+    }
     assert dumped["id"] == "n1"
     assert dumped["type"] == "Character"
     assert dumped["properties"] == {"name": "Arin", "role": "scout"}
@@ -51,6 +59,8 @@ def test_edge_dump_exposes_properties_and_validity_fields() -> None:
         "target",
         "type",
         "properties",
+        "workspace_id",
+        "project_id",
         "valid_from",
         "valid_until",
     }

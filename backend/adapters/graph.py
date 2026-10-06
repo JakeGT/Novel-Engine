@@ -32,6 +32,8 @@ def _to_node(data: dict[str, Any]) -> Node:
     labels = payload.pop("labels", None)
     embedding = payload.pop("embedding", None)
     created_at = _parse_created_at(payload.pop("created_at", None))
+    workspace_id = payload.pop("workspace_id", None)
+    project_id = payload.pop("project_id", None)
     if node_type is None and labels:
         domain = [label for label in labels if label != "Entity"]
         node_type = domain[0] if domain else (labels[0] if labels else "Unknown")
@@ -40,6 +42,8 @@ def _to_node(data: dict[str, Any]) -> Node:
         type=node_type or "Unknown",
         properties=payload,
         embedding=embedding,
+        workspace_id=workspace_id,
+        project_id=project_id,
     )
     if created_at is not None:
         node = node.model_copy(update={"created_at": created_at})
@@ -47,7 +51,7 @@ def _to_node(data: dict[str, Any]) -> Node:
 
 
 class Neo4jGraphRepository:
-    """Adapts the existing Neo4j manager to the graph repository port."""
+    """Adapts the existing Neo4j manager to the scoped graph repository port."""
 
     def __init__(self, manager: GraphManager) -> None:
         self.manager = manager
@@ -57,8 +61,8 @@ class Neo4jGraphRepository:
         self.manager.add_node(node)
 
     @instrument("graph.get_node", logger)
-    def get_node(self, node_id: str) -> Node | None:
-        data = self.manager.get_node(node_id)
+    def get_node(self, node_id: str, *, workspace_id: str) -> Node | None:
+        data = self.manager.get_node(node_id, workspace_id=workspace_id)
         return _to_node(data) if data else None
 
     @instrument("graph.update_node", logger)
@@ -71,21 +75,31 @@ class Neo4jGraphRepository:
         self.manager.add_edge(edge)
 
     @instrument("graph.get_edges", logger)
-    def get_edges(self, node_id: str) -> list[Edge]:
+    def get_edges(self, node_id: str, *, workspace_id: str) -> list[Edge]:
         return [
             Edge(
                 source=record["source"],
                 target=record["target"],
                 type=record["type"],
                 properties=record.get("properties") or {},
+                workspace_id=workspace_id,
             )
-            for record in self.manager.get_edges(node_id)
+            for record in self.manager.get_edges(node_id, workspace_id=workspace_id)
         ]
 
     @instrument("graph.get_nodes", logger)
-    def get_nodes(self, node_type: str | None = None, node_id: str | None = None) -> list[Node]:
+    def get_nodes(
+        self,
+        *,
+        workspace_id: str,
+        node_type: str | None = None,
+        node_id: str | None = None,
+    ) -> list[Node]:
         nodes: list[Node] = []
-        for record in self.manager.get_nodes(node_type=node_type, node_id=node_id) or []:
+        records = self.manager.get_nodes(
+            workspace_id=workspace_id, node_type=node_type, node_id=node_id
+        )
+        for record in records or []:
             if "n" in record:
                 data = dict(record["n"])
                 data["labels"] = record.get("labels")
@@ -95,24 +109,37 @@ class Neo4jGraphRepository:
         return nodes
 
     @instrument("graph.search_nodes_by_name", logger)
-    def search_nodes_by_name(self, query: str, type: str | None = None) -> list[dict[str, Any]]:
-        return self.manager.search_nodes_by_name(query, type)
+    def search_nodes_by_name(
+        self, query: str, *, workspace_id: str, type: str | None = None
+    ) -> list[dict[str, Any]]:
+        return self.manager.search_nodes_by_name(query, workspace_id=workspace_id, type=type)
 
     @instrument("graph.search_semantic_nodes", logger)
     def search_semantic_nodes(
-        self, embedding: Sequence[float], top_k: int = 5, min_score: float = 0.5
+        self,
+        embedding: Sequence[float],
+        *,
+        workspace_id: str,
+        top_k: int = 5,
+        min_score: float = 0.5,
     ) -> list[str]:
-        return self.manager.search_semantic_nodes(list(embedding), top_k=top_k, min_score=min_score)
+        return self.manager.search_semantic_nodes(
+            list(embedding), workspace_id=workspace_id, top_k=top_k, min_score=min_score
+        )
 
     @instrument("graph.traverse", logger)
-    def traverse(self, anchor_ids: Sequence[str], policy: Any) -> list[dict[str, Any]]:
+    def traverse(
+        self, anchor_ids: Sequence[str], policy: Any, *, workspace_id: str
+    ) -> list[dict[str, Any]]:
         from backend.graph.traversal import ContextTraversal
 
-        return ContextTraversal(self.manager).traverse(list(anchor_ids), policy)
+        return ContextTraversal(self.manager).traverse(
+            list(anchor_ids), policy, workspace_id=workspace_id
+        )
 
     @instrument("graph.delete_node", logger)
-    def delete_node(self, node_id: str) -> bool:
-        return self.manager.delete_node(node_id)
+    def delete_node(self, node_id: str, *, workspace_id: str) -> bool:
+        return self.manager.delete_node(node_id, workspace_id=workspace_id)
 
     def ping(self) -> bool:
         try:

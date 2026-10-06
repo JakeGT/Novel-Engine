@@ -91,6 +91,10 @@ class TenancyService:
     async def list_workspaces(self, scope: AccessScope) -> list[Workspace]:
         return await self._store.list_workspaces_for_user(scope.actor_user_id)
 
+    async def require_membership(self, scope: AccessScope, workspace_id: str) -> Membership:
+        """Assert the actor is a member of the workspace (any role); used to scope requests."""
+        return await self._authorize(scope, workspace_id, Permission.WORKSPACE_READ)
+
     async def create_workspace(self, scope: AccessScope, *, slug: str, name: str) -> Workspace:
         workspace = await self._store.create_workspace(slug=slug, name=name)
         await self._store.add_membership(

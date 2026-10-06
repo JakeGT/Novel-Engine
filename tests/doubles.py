@@ -72,7 +72,7 @@ class OrderedIdGenerator:
 
 
 class InMemoryGraphRepository:
-    """Graph repository fake with explicit behavior, not driver-call mocks."""
+    """Graph repository fake with explicit workspace-scoped behavior."""
 
     def __init__(self, semantic_anchors: list[str] | None = None) -> None:
         self.nodes: dict[str, Node] = {}
@@ -83,6 +83,9 @@ class InMemoryGraphRepository:
     def add_node(self, node: Node) -> None:
         existing = self.nodes.get(node.id)
         if existing is not None:
+            if existing.workspace_id != node.workspace_id:
+                # A node id is owned by one workspace; never mutate another's.
+                return
             merged = dict(existing.properties)
             merged.update(node.properties)
             node = node.model_copy(
@@ -93,16 +96,29 @@ class InMemoryGraphRepository:
             )
         self.nodes[node.id] = node
 
-    def get_node(self, node_id: str) -> Node | None:
-        return self.nodes.get(node_id)
+    def get_node(self, node_id: str, *, workspace_id: str) -> Node | None:
+        node = self.nodes.get(node_id)
+        if node is not None and node.workspace_id == workspace_id:
+            return node
+        return None
 
     def update_node(self, node: Node) -> Node | None:
-        if node.id not in self.nodes:
+        existing = self.nodes.get(node.id)
+        if existing is None or existing.workspace_id != node.workspace_id:
             return None
         self.add_node(node)
         return self.nodes[node.id]
 
     def add_edge(self, edge: Edge) -> None:
+        source = self.nodes.get(edge.source)
+        target = self.nodes.get(edge.target)
+        if (
+            source is None
+            or target is None
+            or source.workspace_id != edge.workspace_id
+            or target.workspace_id != edge.workspace_id
+        ):
+            return
         for existing in self.edges:
             if (existing.source, existing.target, existing.type) == (
                 edge.source,
@@ -113,35 +129,51 @@ class InMemoryGraphRepository:
                 return
         self.edges.append(edge)
 
-    def get_edges(self, node_id: str) -> list[Edge]:
-        return [edge for edge in self.edges if edge.source == node_id or edge.target == node_id]
+    def get_edges(self, node_id: str, *, workspace_id: str) -> list[Edge]:
+        return [
+            edge
+            for edge in self.edges
+            if (edge.source == node_id or edge.target == node_id)
+            and edge.workspace_id == workspace_id
+        ]
 
-    def get_neighbors(self, node_id: str, edge_type: str | None = None) -> list[Node]:
+    def get_neighbors(
+        self, node_id: str, *, workspace_id: str, edge_type: str | None = None
+    ) -> list[Node]:
         neighbors: list[Node] = []
         for edge in self.edges:
-            if edge.source != node_id:
+            if edge.source != node_id or edge.workspace_id != workspace_id:
                 continue
             if edge_type is not None and edge.type != edge_type:
                 continue
-            target = self.get_node(edge.target)
+            target = self.get_node(edge.target, workspace_id=workspace_id)
             if target is not None:
                 neighbors.append(target)
         return neighbors
 
-    def get_nodes(self, node_type: str | None = None, node_id: str | None = None) -> list[Node]:
+    def get_nodes(
+        self,
+        *,
+        workspace_id: str,
+        node_type: str | None = None,
+        node_id: str | None = None,
+    ) -> list[Node]:
         return [
             node
             for node in self.nodes.values()
-            if (node_type is None or node.type == node_type)
+            if node.workspace_id == workspace_id
+            and (node_type is None or node.type == node_type)
             and (node_id is None or node.id == node_id)
         ]
 
     def search_nodes_by_name(
-        self, query_string: str, type: str | None = None
+        self, query_string: str, *, workspace_id: str, type: str | None = None
     ) -> list[dict[str, Any]]:
         needle = query_string.lower()
         results: list[dict[str, Any]] = []
         for node in self.nodes.values():
+            if node.workspace_id != workspace_id:
+                continue
             if type is not None and node.type != type:
                 continue
             name = str(node.properties.get("name") or node.id)
@@ -150,14 +182,26 @@ class InMemoryGraphRepository:
         return results
 
     def search_semantic_nodes(
-        self, embedding: list[float], top_k: int = 5, min_score: float = 0.5
+        self,
+        embedding: list[float],
+        *,
+        workspace_id: str,
+        top_k: int = 5,
+        min_score: float = 0.5,
     ) -> list[str]:
-        return list(self.semantic_anchors[:top_k])
+        scoped = [
+            node_id
+            for node_id in self.semantic_anchors
+            if node_id not in self.nodes or self.nodes[node_id].workspace_id == workspace_id
+        ]
+        return scoped[:top_k]
 
-    def traverse(self, anchor_ids: list[str], policy: Any) -> list[dict[str, Any]]:
+    def traverse(
+        self, anchor_ids: list[str], policy: Any, *, workspace_id: str
+    ) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
         for node_id in anchor_ids:
-            node = self.get_node(node_id)
+            node = self.get_node(node_id, workspace_id=workspace_id)
             if node is not None:
                 results.append(
                     {
@@ -173,8 +217,9 @@ class InMemoryGraphRepository:
     def ping(self) -> bool:
         return True
 
-    def delete_node(self, node_id: str) -> bool:
-        if node_id not in self.nodes:
+    def delete_node(self, node_id: str, *, workspace_id: str) -> bool:
+        node = self.nodes.get(node_id)
+        if node is None or node.workspace_id != workspace_id:
             return False
         del self.nodes[node_id]
         self.edges = [
@@ -194,6 +239,7 @@ class InMemoryGraphRepository:
 class _StoredDocument:
     document: str
     metadata: dict[str, Any]
+    workspace_id: str = ""
 
 
 class InMemoryVectorStore:
@@ -205,18 +251,35 @@ class InMemoryVectorStore:
         self.queries: list[str] = []
 
     def add_documents(
-        self, documents: list[str], metadatas: list[dict[str, Any]], ids: list[str]
+        self,
+        documents: list[str],
+        metadatas: list[dict[str, Any]],
+        ids: list[str],
+        *,
+        workspace_id: str,
     ) -> None:
         for doc_id, document, metadata in zip(ids, documents, metadatas, strict=True):
-            self.documents[doc_id] = _StoredDocument(document=document, metadata=metadata)
+            self.documents[doc_id] = _StoredDocument(
+                document=document, metadata=metadata, workspace_id=workspace_id
+            )
 
-    def query(self, query_text: str, n_results: int = 5) -> list[dict[str, Any]]:
+    def query(
+        self, query_text: str, *, workspace_id: str, n_results: int = 5
+    ) -> list[dict[str, Any]]:
         self.queries.append(query_text)
-        return list(self.results[:n_results])
+        scoped = [
+            result
+            for result in self.results
+            if result.get("id") not in self.documents
+            or self.documents[result["id"]].workspace_id == workspace_id
+        ]
+        return scoped[:n_results]
 
-    def delete(self, ids: list[str]) -> None:
+    def delete(self, ids: list[str], *, workspace_id: str) -> None:
         for doc_id in ids:
-            self.documents.pop(doc_id, None)
+            stored = self.documents.get(doc_id)
+            if stored is not None and stored.workspace_id == workspace_id:
+                self.documents.pop(doc_id, None)
 
     def health(self) -> bool:
         return True

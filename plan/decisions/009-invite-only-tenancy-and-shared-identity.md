@@ -102,3 +102,19 @@ Authentik is selected; these remain the acceptance criteria it must satisfy.
   remains host-only.
 - Session ids are stored only as SHA-256 hashes; CSRF uses a server-validated token exposed to the
   SPA via a non-`HttpOnly` cookie.
+
+## Cross-store workspace scoping (1E)
+
+- Every graph (Neo4j), vector (pgvector), and artefact operation takes an explicit `workspace_id`;
+  the port protocols enforce this so a caller cannot omit scope.
+- The scope field is authoritative: `add_node` writes `workspace_id`/`project_id` after applying
+  caller properties, so a node's owning workspace cannot be altered through entity properties.
+- Local mode uses the explicit `AUTH_LOCAL_WORKSPACE_ID` workspace. Hosted mode requires an
+  `X-Workspace-Id` header naming a workspace the actor is a member of (validated before the
+  request reaches a repository).
+- Cross-workspace graph edges are refused: `add_edge` only creates an edge when both endpoints
+  resolve within the same workspace. Cross-workspace reads, searches, traversals, and vector
+  queries return nothing.
+- **PostgreSQL row-level security is deferred, not selected for Phase 1.** Application-layer
+  scoping is mandatory at every boundary; RLS would be defense-in-depth and can be added later
+  behind the same scope contract without changing callers.

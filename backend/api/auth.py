@@ -11,12 +11,13 @@ import logging
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from backend.api.dependencies import get_auth_service, get_settings
+from backend.api.dependencies import get_auth_service, get_settings, get_tenancy_service
 from backend.core.config import Settings
 from backend.core.logging import log_event
 from backend.domain.errors import ForbiddenError, UnauthorizedError, ValidationError
 from backend.domain.identity import AccessScope, AuthMode, Session
 from backend.services.auth_service import AuthenticatedSession, AuthService
+from backend.services.tenancy_service import TenancyService
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +95,59 @@ async def require_scope(
 ) -> AccessScope:
     """CSRF-protected scope for cookie-authenticated mutations."""
     return _build_scope(request, auth_session, settings)
+
+
+async def _resolve_workspace_scope(
+    request: Request,
+    auth_session: AuthenticatedSession,
+    settings: Settings,
+    tenancy: TenancyService,
+) -> AccessScope:
+    """Resolve the active workspace and assert membership in hosted mode.
+
+    Local mode uses the explicit local workspace. Hosted mode requires an
+    ``X-Workspace-Id`` header naming a workspace the actor belongs to.
+    """
+    mode = AuthMode.HOSTED if settings.is_hosted else AuthMode.LOCAL
+    correlation_id = getattr(request.state, "correlation_id", "")
+    base = AccessScope(
+        actor_user_id=auth_session.user.id, auth_mode=mode, correlation_id=correlation_id
+    )
+    if mode is AuthMode.HOSTED:
+        workspace_id = request.headers.get("X-Workspace-Id") or request.headers.get(
+            "x-workspace-id"
+        )
+        if not workspace_id:
+            raise ValidationError("X-Workspace-Id header is required in hosted mode.")
+        await tenancy.require_membership(base, workspace_id)
+    else:
+        workspace_id = settings.AUTH_LOCAL_WORKSPACE_ID
+    return AccessScope(
+        actor_user_id=auth_session.user.id,
+        auth_mode=mode,
+        correlation_id=correlation_id,
+        workspace_id=workspace_id,
+    )
+
+
+async def get_workspace_scope(
+    request: Request,
+    auth_session: AuthenticatedSession = Depends(require_session),
+    settings: Settings = Depends(get_settings),
+    tenancy: TenancyService = Depends(get_tenancy_service),
+) -> AccessScope:
+    """Read-only workspace scope for graph/vector reads."""
+    return await _resolve_workspace_scope(request, auth_session, settings, tenancy)
+
+
+async def require_workspace_scope(
+    request: Request,
+    auth_session: AuthenticatedSession = Depends(require_csrf),
+    settings: Settings = Depends(get_settings),
+    tenancy: TenancyService = Depends(get_tenancy_service),
+) -> AccessScope:
+    """CSRF-protected workspace scope for graph/vector mutations."""
+    return await _resolve_workspace_scope(request, auth_session, settings, tenancy)
 
 
 @router.get("/login")
