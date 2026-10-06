@@ -2,7 +2,7 @@ import requests
 import json
 import sys
 
-BASE_URL = "http://localhost:8000/api"
+BASE_URL = "http://localhost:8000/api/v1"
 
 def main():
     print("--- Novel Engine: Character Creation Tester ---")

@@ -45,7 +45,6 @@ def _guard_open(file, mode="r", *args, **kwargs):
 
 builtins.open = _guard_open
 
-import backend.api.endpoints  # noqa: E402
 import backend.adapters.ai  # noqa: E402
 import backend.adapters.artifacts  # noqa: E402
 import backend.adapters.embedding  # noqa: E402
@@ -58,7 +57,6 @@ import backend.graph.vector_search  # noqa: E402
 import backend.main  # noqa: E402
 import backend.ports  # noqa: E402
 import backend.services.character_service  # noqa: E402
-import backend.services.world_service  # noqa: E402
 
 print("IMPORT_SAFE")
 """

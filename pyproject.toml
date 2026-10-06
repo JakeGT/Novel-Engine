@@ -53,10 +53,7 @@ markers = [
 [tool.ruff]
 target-version = "py313"
 line-length = 100
-# backend/services/world_service.py is a parked, user-owned edit whose world
-# workflow is deferred (FND-008.23-27); it is excluded from lint/format until
-# the owner reconciles it. Remove this exclusion when the world workflow lands.
-extend-exclude = ["data", "backend/services/world_service.py"]
+extend-exclude = ["data"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

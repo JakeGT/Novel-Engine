@@ -55,7 +55,7 @@ Still open before affected slices:
 
 | Workstream | Backlog | Status | Depends on |
 | --- | --- | --- | --- |
-| 1A. Phase 0 handoff and cleanup | FND carryover, OSS-005 | Not started | Phase 0 exit |
+| 1A. Phase 0 handoff and cleanup | FND carryover, OSS-005 | In progress (world/legacy/Chroma cleanup done; optional-dep split + frontend shell + evidence pending) | Phase 0 exit |
 | 1B. Identity/tenant domain and migrations | IDN-001, IDN-003, CAN-001 | In progress (domain, migration `0005`, store, policy, and seed implemented; identity unlinking/workspace deletion deferred to 1D/1E) | 1A |
 | 1C. OIDC, local identity, and sessions | IDN-001, IDN-002, OSS-002 | In progress (core implemented; live Authentik exercise pending) | 1B |
 | 1D. Invitations, memberships, and authorization | IDN-003, IDN-004 | In progress (workspace/member/project/invitation APIs, centralized authorization, and audit implemented; shared-limiter + credential/export audit deferred) | 1B–1C |
@@ -67,9 +67,14 @@ Still open before affected slices:
 ## 1A. Phase 0 handoff and cleanup
 
 - [x] Record the green hosted Phase 0 CI run and owner sign-off (PR #1, merged as `8d7a599`).
-- [ ] Reconcile `backend/services/world_service.py` as an explicit change: port it onto injected ports with tests, or preserve it outside the maintained contract until a later product slice.
-- [ ] Remove the temporary Ruff exclusion only when the world-service file is reconciled.
-- [ ] Remove deprecated `/api` aliases once v1 parity/caller migration is verified; no new feature may be added only to a legacy route.
+- [x] Reconcile `backend/services/world_service.py`: the owner elected to discard the parked edit and
+      rebuild world authoring later, so the unfinished service and its imports were removed rather than
+      ported. The `World` node type, `world_creation` traversal policy, and world-type schema support
+      remain.
+- [x] Remove the temporary Ruff exclusion (the parked file is gone; `backend`/`tests` lint clean).
+- [x] Remove deprecated `/api` aliases once v1 parity/caller migration is verified; no new feature may be added only to a legacy route.
+      (`backend/api/endpoints.py` removed; the sole legacy-only contract test was deleted and the manual
+      scripts now target `/api/v1`. The OpenAPI snapshot was regenerated.)
 - [x] Confirm Chroma is unused, then remove its dependency and transitional module in one tested change.
       (Confirmed: only the transitional module, the import-safety test, config/env, and the dependency referenced
       it. Removed `backend/core/vector_store.py`, the `chromadb` dependency, and `CHROMA_PERSISTENCE_PATH`; the

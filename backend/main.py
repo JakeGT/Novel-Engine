@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from backend.api.auth import router as auth_router
-from backend.api.endpoints import router as legacy_api_router
 from backend.api.health import router as health_router
 from backend.api.middleware import CorrelationIdMiddleware
 from backend.api.problems import register_exception_handlers
@@ -106,7 +105,6 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.state.container = container
     app.include_router(v1_router, prefix="/api/v1")
     app.include_router(tenancy_router, prefix="/api/v1")
-    app.include_router(legacy_api_router, prefix="/api")
     app.include_router(health_router)
     app.include_router(auth_router)
 

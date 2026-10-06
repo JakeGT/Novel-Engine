@@ -39,12 +39,11 @@ and `created_at` is normalized to timezone-aware UTC.
 PostgreSQL readiness + migration; 503 when degraded), `/health/capabilities`
 (optional embeddings/AI/vector availability; no secrets, no model load, no writes).
 
-## Deprecated aliases
+## Legacy aliases
 
-The original prototype routes remain mounted at `/api` as temporary aliases
-(`/api/graph/nodes/`, `/api/schema/nodes/`, `/api/rag/context`, `/api/characters/...`).
-They are retained only for continuity and are not covered by the v1 contract tests;
-0F/0G will migrate callers and remove them. New work must use `/api/v1`.
+The original prototype `/api` routes were removed in Phase 1 (1A) once `/api/v1`
+covered the maintained surface. Only `/api/v1`, `/health/*`, and `/auth/*` are served;
+there is no `/api` alias router.
 
 ## Pending
 
