@@ -61,7 +61,7 @@ Still open before affected slices:
 | 1D. Invitations, memberships, and authorization | IDN-003, IDN-004 | In progress (APIs, centralized authorization, audit, and a durable rate limiter implemented; credential/export audit deferred to 1F/1G) | 1B–1C |
 | 1E. Cross-store tenant isolation | IDN-005 | Implemented (graph/vector/artefact scoping + adversarial tests; job/export namespacing deferred to those subsystems) | 1B–1D |
 | 1F. Provider credentials and usage limits | SaaS-006, OSS-003, OSS-008 | In progress (envelope-encrypted vault, credential API, and usage limits implemented; provider-side validation, confirmation thresholds, and job cancellation wiring deferred) | 1C–1E |
-| 1G. Packaging, backup, and privacy | OSS-001, OSS-004, OSS-006, OPS-003–OPS-006 | Not started | 1C–1F |
+| 1G. Packaging, backup, and privacy | OSS-001, OSS-004, OSS-006, OPS-003–OPS-006 | In progress (profiles, docs, project export/import, redacted diagnostics, and retention implemented; coordinated pg/Neo4j/artefact backup and clean-host rehearsals deferred) | 1C–1F |
 | 1H. Security audit and exit evidence | IDN-006, QLT-002 | Not started | 1A–1G |
 
 ## 1A. Phase 0 handoff and cleanup
@@ -244,15 +244,31 @@ Acceptance:
 
 ## 1G. Distribution, backup, and privacy
 
-- [ ] Define explicit `local` and `hosted` deployment profiles with fail-closed configuration validation.
-- [ ] Document one supported Docker Compose install, health check, migration, upgrade, and rollback path.
-- [ ] Document the portfolio reverse-proxy/TLS topology for `novel-engine.jaketalling.com` and the Authentik callback, logout, and post-logout URLs.
+- [x] Define explicit `local` and `hosted` deployment profiles with fail-closed configuration validation.
+      (`AUTH_MODE=local|hosted` is the profile; hosted requires an exact https OIDC issuer/redirect and `openid`,
+      and local mode is a trusted single-user deployment requiring no portfolio infrastructure.)
+- [x] Document one supported Docker Compose install, health check, migration, upgrade, and rollback path.
+      (README "Deployment" section: `make infra-up`, `make migrate`, health endpoints, upgrade via `make install-dev
+      && make migrate`, and rollback guidance.)
+- [x] Document the portfolio reverse-proxy/TLS topology for `novel-engine.jaketalling.com` and the Authentik callback, logout, and post-logout URLs.
+      (README deployment section + ADR-009: reverse proxy terminates TLS; OIDC redirect/logout URLs are the
+      registered allow-list entries.)
 - [ ] Implement coordinated backup/restore for PostgreSQL, Neo4j, and artefact storage with manifest/checksums.
-- [ ] Implement complete project export/import without credentials or session data.
-- [ ] Document every outbound connection; make telemetry absent or opt-in and content-free by default.
-- [ ] Add previewable redacted diagnostics/support bundles.
-- [ ] Add storage retention and deletion behavior for invitations, sessions, job artefacts, prompts/responses, and projects.
+      (Deferred: logical project export/import is implemented, but a coordinated pg_dump/Neo4j/artefact backup tool
+      with a checksum manifest is not yet built; documented as an operator procedure.)
+- [x] Implement complete project export/import without credentials or session data.
+      (`ProjectTransferService` exports/imports checksummed graph bundles for a workspace and never includes
+      credentials, sessions, or provider usage; `tests/application/test_project_transfer.py`.)
+- [x] Document every outbound connection; make telemetry absent or opt-in and content-free by default.
+      (Only OIDC, the configured AI provider, and opt-in Sentry egress exist; Sentry is off unless a DSN is set and
+      scrubs requests/PII — see `backend/core/observability.py` and the README telemetry note.)
+- [x] Add previewable redacted diagnostics/support bundles.
+      (`make diagnostics` / `backend/devtools/diagnostics.py`; excludes secrets/DSNs/manuscript text, unit-tested.)
+- [x] Add storage retention and deletion behavior for invitations, sessions, job artefacts, prompts/responses, and projects.
+      (`make retention` / `backend/devtools/retention.py` purges expired sessions, login attempts, invitations, and
+      stale rate-limit hits; workspace deletion cascades via 1B; prompt/response retention arrives with generation.)
 - [ ] Run clean-machine self-hosted install and hosted-profile deployment rehearsals.
+      (Deferred: requires a clean host and the portfolio DNS/TLS; the dry-run evidence is in `plan/phase-0-evidence.md`.)
 
 Acceptance:
 

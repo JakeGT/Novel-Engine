@@ -94,6 +94,38 @@ Error monitoring is opt-in and disabled when `SENTRY_DSN_BACKEND` is empty. When
 
 For coding-agent conventions and project boundaries, read [AGENTS.md](AGENTS.md). For architecture, scope, roadmap, and open decisions, start with [plan/README.md](plan/README.md).
 
+## Deployment, backup, and privacy
+
+Two deployment profiles are selected by `AUTH_MODE`:
+
+- `local` (default) is a trusted single-user self-hosted install. It needs no portfolio
+  identity service and uses an explicit local workspace.
+- `hosted` delegates authentication to the shared Authentik OIDC provider. It fails closed
+  unless `OIDC_ISSUER`/`OIDC_REDIRECT_URI` are exact `https://` URLs and `OIDC_SCOPES`
+  includes `openid`. Session cookies are host-only, `Secure`, and `HttpOnly`.
+
+The supported install is Docker Compose: `make infra-up` (PostgreSQL/pgvector + Neo4j,
+health-gated), `make migrate`, `make seed`, then `make api`. Upgrade with
+`make install-dev && make migrate`; roll back with `git checkout <previous-tag>` and
+`make install-dev` (schema rollback uses the store's native restore, not downgrades). The
+portfolio reverse proxy terminates TLS for `novel-engine.jaketalling.com`; the OIDC
+redirect/logout URLs are the registered allow-list entries (see ADR-009).
+
+Operational tooling:
+
+- `make diagnostics` prints a redacted support bundle (versions, capability flags, safe host
+  names; no secrets or manuscript text).
+- `make retention` purges expired sessions, login attempts, invitations, and stale rate-limit
+  hits without touching canonical data.
+- Project export/import is available through `ProjectTransferService` (checksummed graph
+  bundles, no credentials or sessions); a coordinated PostgreSQL/Neo4j/artefact backup
+  procedure is documented but not yet automated.
+
+Privacy: the only outbound connections are the configured OIDC provider, the AI provider
+(OpenRouter/OpenAI), and opt-in Sentry. Sentry is disabled unless a DSN is set and scrubs
+request data, headers, and PII (`backend/core/observability.py`). Provider credentials are
+stored envelope-encrypted and never returned by the API; logs redact `sk-`/`sk-or-` keys.
+
 ## Current limitations
 
 - The React application is still the default Vite scaffold.
