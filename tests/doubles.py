@@ -15,9 +15,29 @@ from backend.domain.identity import (
     IdentityClaims,
     InvalidIdentityToken,
     LoginAttempt,
+    Role,
     Session,
     User,
     utcnow,
+)
+from backend.domain.tenancy import (
+    AuditEvent,
+    Invitation,
+    InvitationConflict,
+    InvitationNotAcceptable,
+    InvitationNotFound,
+    Membership,
+    MembershipConflict,
+    Permission,
+    Project,
+    ProjectSlugConflict,
+    RoleTransitionError,
+    Workspace,
+    WorkspaceSlugConflict,
+    ensure_member_removable,
+    ensure_ownership_transfer,
+    ensure_role_change_allowed,
+    role_allows,
 )
 from backend.graph.schema import Edge, Node
 from backend.ports import MigrationStatus, StructuredResponse
@@ -553,3 +573,184 @@ class InMemoryLoginAttemptStore:
         if attempt.expires_at <= utcnow():
             return None
         return attempt
+
+
+class InMemoryTenancyStore:
+    """In-memory tenancy store implementing ``TenancyStorePort`` with the same invariants."""
+
+    def __init__(self) -> None:
+        self.workspaces: dict[str, Workspace] = {}
+        self.memberships: dict[tuple[str, str], Membership] = {}
+        self.projects: dict[str, Project] = {}
+        self.invitations: dict[str, Invitation] = {}
+        self.audit: list[AuditEvent] = []
+        self._counter = 0
+
+    def _next(self, prefix: str) -> str:
+        self._counter += 1
+        return f"{prefix}_{self._counter:04d}"
+
+    async def create_workspace(self, *, slug: str, name: str) -> Workspace:
+        if any(w.slug == slug for w in self.workspaces.values()):
+            raise WorkspaceSlugConflict(f"workspace slug {slug!r} already exists")
+        workspace = Workspace(id=self._next("ws"), slug=slug, name=name)
+        self.workspaces[workspace.id] = workspace
+        return workspace
+
+    async def get_workspace(self, workspace_id: str) -> Workspace | None:
+        return self.workspaces.get(workspace_id)
+
+    async def get_workspace_by_slug(self, slug: str) -> Workspace | None:
+        return next((w for w in self.workspaces.values() if w.slug == slug), None)
+
+    async def list_workspaces_for_user(self, user_id: str) -> list[Workspace]:
+        ids = [ws_id for (ws_id, uid) in self.memberships if uid == user_id]
+        return [self.workspaces[ws_id] for ws_id in sorted(ids) if ws_id in self.workspaces]
+
+    async def add_membership(self, *, workspace_id: str, user_id: str, role: Role) -> Membership:
+        if (workspace_id, user_id) in self.memberships:
+            raise MembershipConflict("user is already a member of the workspace")
+        membership = Membership(workspace_id=workspace_id, user_id=user_id, role=role)
+        self.memberships[(workspace_id, user_id)] = membership
+        return membership
+
+    async def get_membership(self, workspace_id: str, user_id: str) -> Membership | None:
+        return self.memberships.get((workspace_id, user_id))
+
+    async def list_memberships(self, workspace_id: str) -> list[Membership]:
+        return sorted(
+            (m for (ws_id, _uid), m in self.memberships.items() if ws_id == workspace_id),
+            key=lambda m: m.user_id,
+        )
+
+    async def set_role(self, *, workspace_id: str, user_id: str, role: Role) -> Membership:
+        target = self.memberships.get((workspace_id, user_id))
+        if target is None:
+            raise MembershipConflict("user is not a member of the workspace")
+        ensure_role_change_allowed(await self.list_memberships(workspace_id), user_id, role)
+        updated = target.model_copy(update={"role": role, "updated_at": utcnow()})
+        self.memberships[(workspace_id, user_id)] = updated
+        return updated
+
+    async def remove_membership(self, *, workspace_id: str, user_id: str) -> bool:
+        if (workspace_id, user_id) not in self.memberships:
+            return False
+        ensure_member_removable(await self.list_memberships(workspace_id), user_id)
+        del self.memberships[(workspace_id, user_id)]
+        return True
+
+    async def transfer_ownership(
+        self, *, workspace_id: str, from_user_id: str, to_user_id: str
+    ) -> None:
+        ensure_ownership_transfer(
+            await self.list_memberships(workspace_id), from_user_id, to_user_id
+        )
+        for user_id, role in ((from_user_id, Role.EDITOR), (to_user_id, Role.OWNER)):
+            current = self.memberships[(workspace_id, user_id)]
+            self.memberships[(workspace_id, user_id)] = current.model_copy(
+                update={"role": role, "updated_at": utcnow()}
+            )
+
+    async def create_project(self, *, workspace_id: str, slug: str, name: str) -> Project:
+        if any(p.workspace_id == workspace_id and p.slug == slug for p in self.projects.values()):
+            raise ProjectSlugConflict("project slug already exists in the workspace")
+        project = Project(id=self._next("prj"), workspace_id=workspace_id, slug=slug, name=name)
+        self.projects[project.id] = project
+        return project
+
+    async def get_project(self, project_id: str) -> Project | None:
+        return self.projects.get(project_id)
+
+    async def list_projects(self, workspace_id: str) -> list[Project]:
+        return sorted(
+            (p for p in self.projects.values() if p.workspace_id == workspace_id),
+            key=lambda p: p.id,
+        )
+
+    async def create_invitation(
+        self,
+        *,
+        workspace_id: str,
+        role: Role,
+        token_hash: str,
+        created_by_user_id: str,
+        ttl_seconds: int,
+        email: str | None = None,
+    ) -> Invitation:
+        if any(i.token_hash == token_hash for i in self.invitations.values()):
+            raise InvitationConflict("invitation token already exists")
+        from datetime import timedelta
+
+        invitation = Invitation(
+            id=self._next("inv"),
+            workspace_id=workspace_id,
+            role=role,
+            token_hash=token_hash,
+            created_by_user_id=created_by_user_id,
+            email=email,
+            expires_at=utcnow() + timedelta(seconds=ttl_seconds),
+        )
+        self.invitations[invitation.id] = invitation
+        return invitation
+
+    async def get_invitation_by_token_hash(self, token_hash: str) -> Invitation | None:
+        return next((i for i in self.invitations.values() if i.token_hash == token_hash), None)
+
+    async def list_invitations(self, workspace_id: str) -> list[Invitation]:
+        return sorted(
+            (i for i in self.invitations.values() if i.workspace_id == workspace_id),
+            key=lambda i: i.id,
+        )
+
+    async def revoke_invitation(self, *, workspace_id: str, invitation_id: str) -> bool:
+        invitation = self.invitations.get(invitation_id)
+        if invitation is None or invitation.workspace_id != workspace_id:
+            return False
+        if invitation.accepted_at is not None or invitation.revoked_at is not None:
+            return False
+        self.invitations[invitation_id] = invitation.model_copy(update={"revoked_at": utcnow()})
+        return True
+
+    async def accept_invitation(self, *, token_hash: str, user_id: str) -> Membership:
+        invitation = await self.get_invitation_by_token_hash(token_hash)
+        if invitation is None:
+            raise InvitationNotFound("no invitation matches the supplied token")
+        if not invitation.is_acceptable():
+            raise InvitationNotAcceptable("invitation is not acceptable")
+        inviter = self.memberships.get((invitation.workspace_id, invitation.created_by_user_id))
+        if inviter is None or not role_allows(inviter.role, Permission.MEMBER_INVITE):
+            raise RoleTransitionError("inviter is no longer authorized to invite")
+        if (invitation.workspace_id, user_id) in self.memberships:
+            raise MembershipConflict("user is already a member of the workspace")
+        membership = Membership(
+            workspace_id=invitation.workspace_id, user_id=user_id, role=invitation.role
+        )
+        self.memberships[(invitation.workspace_id, user_id)] = membership
+        self.invitations[invitation.id] = invitation.model_copy(
+            update={"accepted_at": utcnow(), "accepted_by_user_id": user_id}
+        )
+        return membership
+
+    async def record_audit(
+        self,
+        *,
+        workspace_id: str,
+        actor_user_id: str,
+        action: str,
+        target_type: str,
+        target_id: str,
+        detail: dict | None = None,
+        correlation_id: str = "",
+    ) -> AuditEvent:
+        event = AuditEvent(
+            id=self._next("audit"),
+            workspace_id=workspace_id,
+            actor_user_id=actor_user_id,
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+            detail=dict(detail or {}),
+            correlation_id=correlation_id,
+        )
+        self.audit.append(event)
+        return event

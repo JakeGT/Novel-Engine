@@ -11,6 +11,7 @@ from backend.api.health import router as health_router
 from backend.api.middleware import CorrelationIdMiddleware
 from backend.api.problems import register_exception_handlers
 from backend.api.v1.router import router as v1_router
+from backend.api.v1.tenancy import router as tenancy_router
 from backend.container import Container, build_container
 from backend.core.config import Settings
 from backend.core.config import settings as default_settings
@@ -104,6 +105,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
 
     app.state.container = container
     app.include_router(v1_router, prefix="/api/v1")
+    app.include_router(tenancy_router, prefix="/api/v1")
     app.include_router(legacy_api_router, prefix="/api")
     app.include_router(health_router)
     app.include_router(auth_router)

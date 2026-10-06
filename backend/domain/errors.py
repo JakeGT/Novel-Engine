@@ -66,3 +66,9 @@ class FeatureNotImplementedError(DomainError):
     status_code = 501
     code = "not_implemented"
     title = "Not implemented"
+
+
+class RateLimitedError(DomainError):
+    status_code = 429
+    code = "rate_limited"
+    title = "Too many requests"

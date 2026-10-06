@@ -58,7 +58,7 @@ Still open before affected slices:
 | 1A. Phase 0 handoff and cleanup | FND carryover, OSS-005 | Not started | Phase 0 exit |
 | 1B. Identity/tenant domain and migrations | IDN-001, IDN-003, CAN-001 | In progress (domain, migration `0005`, store, policy, and seed implemented; identity unlinking/workspace deletion deferred to 1D/1E) | 1A |
 | 1C. OIDC, local identity, and sessions | IDN-001, IDN-002, OSS-002 | In progress (core implemented; live Authentik exercise pending) | 1B |
-| 1D. Invitations, memberships, and authorization | IDN-003, IDN-004 | Not started | 1B–1C |
+| 1D. Invitations, memberships, and authorization | IDN-003, IDN-004 | In progress (workspace/member/project/invitation APIs, centralized authorization, and audit implemented; shared-limiter + credential/export audit deferred) | 1B–1C |
 | 1E. Cross-store tenant isolation | IDN-005 | Not started | 1B–1D |
 | 1F. Provider credentials and usage limits | SaaS-006, OSS-003, OSS-008 | Not started | 1C–1E |
 | 1G. Packaging, backup, and privacy | OSS-001, OSS-004, OSS-006, OPS-003–OPS-006 | Not started | 1C–1F |
@@ -135,20 +135,24 @@ Acceptance:
 
 ## 1D. Invitations, memberships, and authorization
 
-- [ ] Add invitation create/list/revoke/accept endpoints and stable problem responses.
+- [x] Add invitation create/list/revoke/accept endpoints and stable problem responses (`backend/api/v1/tenancy.py`; tenancy errors map to 409/404).
 - [ ] Generate high-entropy invitation tokens, store only hashes, show the raw token once, and rate-limit acceptance.
-- [ ] Make invitations expiring, single-use, revocable, role-bound, workspace-bound, and optionally email-bound.
-- [ ] Recheck inviter authority and recipient identity transactionally at acceptance.
-- [ ] Add workspace/member/project APIs required for administration and switching.
-- [ ] Centralize authorization policy; endpoints delegate instead of duplicating role checks.
+      (Tokens use `generate_token`/`hash_token`, are returned once, and never listed; acceptance is
+      rate-limited in-process, which is single-worker only until a shared limiter lands in 1F/1G.)
+- [x] Make invitations expiring, single-use, revocable, role-bound, workspace-bound, and optionally email-bound.
+- [x] Recheck inviter authority and recipient identity transactionally at acceptance (store rechecks the inviter membership; the service enforces the email-bound recipient when the account email is known).
+- [x] Add workspace/member/project APIs required for administration and switching.
+- [x] Centralize authorization policy; endpoints delegate instead of duplicating role checks (`TenancyService` + `role_allows`).
 - [ ] Record security audit events for invitation, membership, role, credential, export, and deletion actions.
-- [ ] Avoid revealing workspace existence or invitation validity to unauthenticated callers.
+      (Invitation, membership, role, workspace, and project events are recorded; credential and export
+      audit events arrive with 1F/1G.)
+- [x] Avoid revealing workspace existence or invitation validity to unauthenticated callers.
 
 Acceptance:
 
-- replay, expiry, revocation, identity mismatch, removed inviter, and concurrent acceptance tests pass
-- role matrix tests cover every exposed command/query
-- audit records contain identifiers and outcomes but never raw invitation/session tokens
+- [x] replay, expiry, revocation, identity mismatch, removed inviter, and double-acceptance tests pass (`tests/application/test_tenancy_workflow.py`).
+- [x] role matrix tests cover the exposed command/query surface (`tests/unit/test_tenancy_policy.py`, `tests/contract/test_tenancy.py`).
+- [x] audit records contain identifiers and outcomes but never raw invitation/session tokens.
 
 ## 1E. Workspace/project isolation across every boundary
 

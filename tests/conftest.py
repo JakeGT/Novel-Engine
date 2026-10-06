@@ -53,6 +53,7 @@ def _build_fake_container(settings, tmp_path):
     from backend.graph.schema import SchemaRegistry
     from backend.services.auth_service import AuthService
     from backend.services.character_service import CharacterService
+    from backend.services.tenancy_service import TenancyService
     from tests.doubles import (
         FakeClock,
         FakeDatabase,
@@ -63,6 +64,7 @@ def _build_fake_container(settings, tmp_path):
         InMemoryIdentityStore,
         InMemoryLoginAttemptStore,
         InMemorySessionStore,
+        InMemoryTenancyStore,
         InMemoryVectorStore,
         OrderedIdGenerator,
         ScriptedAIGateway,
@@ -82,13 +84,16 @@ def _build_fake_container(settings, tmp_path):
         artifacts=artifacts,
     )
     identity_provider = FakeIdentityProvider(issuer=settings.OIDC_ISSUER or HOSTED_ISSUER)
+    identity_store = InMemoryIdentityStore()
     auth_service = AuthService(
         settings=settings,
         identity_provider=identity_provider,
-        identity_store=InMemoryIdentityStore(),
+        identity_store=identity_store,
         session_store=InMemorySessionStore(),
         login_attempt_store=InMemoryLoginAttemptStore(),
     )
+    tenancy = InMemoryTenancyStore()
+    tenancy_service = TenancyService(tenancy, identity_store=identity_store)
     return Container(
         settings=settings,
         graph=graph,
@@ -104,6 +109,8 @@ def _build_fake_container(settings, tmp_path):
         character_service=service,
         identity_provider=identity_provider,
         auth_service=auth_service,
+        tenancy=tenancy,
+        tenancy_service=tenancy_service,
     )
 
 

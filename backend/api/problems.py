@@ -10,6 +10,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from backend.api.middleware import get_correlation_id
 from backend.domain.errors import DomainError
 from backend.domain.identity import IdentityError, IdentityProviderUnavailable
+from backend.domain.tenancy import InvitationNotFound, TenancyError
 from backend.ports import AIError
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
@@ -133,6 +134,34 @@ def register_exception_handlers(app: FastAPI) -> None:
                 title="Authentication failed",
                 code="unauthorized",
                 detail="The authentication request could not be completed.",
+                correlation_id=_correlation_id(request),
+            ),
+        )
+
+    @app.exception_handler(InvitationNotFound)
+    async def _handle_invitation_not_found(
+        request: Request, exc: InvitationNotFound
+    ) -> JSONResponse:
+        return _problem_response(
+            404,
+            problem_body(
+                status=404,
+                title="Not found",
+                code="not_found",
+                detail=str(exc),
+                correlation_id=_correlation_id(request),
+            ),
+        )
+
+    @app.exception_handler(TenancyError)
+    async def _handle_tenancy_error(request: Request, exc: TenancyError) -> JSONResponse:
+        return _problem_response(
+            409,
+            problem_body(
+                status=409,
+                title="Conflict",
+                code="conflict",
+                detail=str(exc),
                 correlation_id=_correlation_id(request),
             ),
         )

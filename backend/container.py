@@ -47,6 +47,7 @@ class Container:
     identity_provider: Any = None
     auth_service: Any = None
     tenancy: Any = None
+    tenancy_service: Any = None
 
     async def aclose(self) -> None:
         self.graph.close()
@@ -105,7 +106,9 @@ def build_container(settings: Settings | None = None) -> Container:
     from backend.adapters.tenancy_store import PostgresTenancyStore
     from backend.services.auth_service import AuthService
     from backend.services.character_service import CharacterService
+    from backend.services.tenancy_service import TenancyService
 
+    identity_store = PostgresIdentityStore(database.session_factory)
     container.character_service = CharacterService(
         graph=container.graph,
         ai=container.ai,
@@ -116,9 +119,10 @@ def build_container(settings: Settings | None = None) -> Container:
     container.auth_service = AuthService(
         settings=resolved,
         identity_provider=identity_provider,
-        identity_store=PostgresIdentityStore(database.session_factory),
+        identity_store=identity_store,
         session_store=PostgresSessionStore(database.session_factory),
         login_attempt_store=PostgresLoginAttemptStore(database.session_factory),
     )
     container.tenancy = PostgresTenancyStore(database.session_factory)
+    container.tenancy_service = TenancyService(container.tenancy, identity_store=identity_store)
     return container

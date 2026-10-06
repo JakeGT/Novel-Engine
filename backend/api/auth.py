@@ -15,7 +15,7 @@ from backend.api.dependencies import get_auth_service, get_settings
 from backend.core.config import Settings
 from backend.core.logging import log_event
 from backend.domain.errors import ForbiddenError, UnauthorizedError, ValidationError
-from backend.domain.identity import Session
+from backend.domain.identity import AccessScope, AuthMode, Session
 from backend.services.auth_service import AuthenticatedSession, AuthService
 
 logger = logging.getLogger(__name__)
@@ -61,6 +61,35 @@ async def require_csrf(
     if not AuthService.csrf_valid(auth_session.session, token):
         raise ForbiddenError("CSRF token missing or invalid.")
     return auth_session
+
+
+def _build_scope(
+    request: Request, auth_session: AuthenticatedSession, settings: Settings
+) -> AccessScope:
+    mode = AuthMode.HOSTED if settings.is_hosted else AuthMode.LOCAL
+    return AccessScope(
+        actor_user_id=auth_session.user.id,
+        auth_mode=mode,
+        correlation_id=getattr(request.state, "correlation_id", ""),
+    )
+
+
+async def get_access_scope(
+    request: Request,
+    auth_session: AuthenticatedSession = Depends(require_session),
+    settings: Settings = Depends(get_settings),
+) -> AccessScope:
+    """Read-only scope for the authenticated actor."""
+    return _build_scope(request, auth_session, settings)
+
+
+async def require_scope(
+    request: Request,
+    auth_session: AuthenticatedSession = Depends(require_csrf),
+    settings: Settings = Depends(get_settings),
+) -> AccessScope:
+    """CSRF-protected scope for cookie-authenticated mutations."""
+    return _build_scope(request, auth_session, settings)
 
 
 @router.get("/login")
