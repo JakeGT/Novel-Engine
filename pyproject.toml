@@ -16,11 +16,15 @@ dependencies = [
   "pydantic>=2.6.0",
   "pydantic-settings>=2.1.0",
   "python-dotenv>=1.0.0",
-  "sentence-transformers>=2.3.1",
   "sentry-sdk[fastapi]>=2.0",
   "sqlalchemy[asyncio]>=2.0",
   "uvicorn[standard]>=0.27.0",
 ]
+
+[project.optional-dependencies]
+# Local semantic embeddings. Optional so the base API install stays small and
+# degrades gracefully; install with `uv sync --locked --extra embeddings`.
+embeddings = ["sentence-transformers>=2.3.1"]
 
 [dependency-groups]
 dev = [

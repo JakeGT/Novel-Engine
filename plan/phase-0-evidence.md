@@ -1,6 +1,6 @@
 # Phase 0 exit evidence
 
-- Status: Accepted; clean-room rehearsal and hosted CI passed; PR #1 pending merge
+- Status: Accepted and merged; clean-room rehearsal and hosted CI passed
 - Owner: project owner or designated technical lead
 - Branch: `phase-0-stabilization`
 - Date: 2026-10-06
@@ -172,3 +172,17 @@ test services have explicit, non-destructive shutdown paths.
   workspace/project scoping at every boundary, secure application sessions, encrypted hosted
   OpenRouter credentials, local/self-hosted identity separation, and distribution/backup
   foundations. Billing and platform-credit work is no longer planned.
+
+## Phase 1 carryover (2026-10-06)
+
+Phase 0 merged to `main` in PR #1 (`8d7a599`). The following Phase 0 items carried into
+Phase 1 and were resolved there:
+
+- The parked, unfinished `backend/services/world_service.py` was discarded by owner decision and
+  removed (world authoring will be rebuilt); the temporary Ruff exclusion was removed with it.
+- The deprecated `/api` alias router (`backend/api/endpoints.py`) was removed once `/api/v1` covered
+  the maintained surface.
+- The transitional Chroma module, dependency, and `CHROMA_PERSISTENCE_PATH` setting were removed;
+  PostgreSQL/pgvector is the sole vector store.
+- Local embeddings (`sentence-transformers`) moved to the optional `embeddings` extra so the base
+  install stays small and degrades gracefully.

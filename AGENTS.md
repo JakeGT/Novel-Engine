@@ -56,7 +56,7 @@ Root-level `test_*.py` scripts have moved to `scripts/manual/` and are no longer
 
 1. Copy `.env.example` to `.env` and add local credentials.
 2. Install Python 3.13, Node.js 24 LTS, `uv`, and pnpm 11. The repository's `.python-version`, `.nvmrc`, and package metadata are authoritative.
-3. Run `make install-dev`; `uv` creates and manages `.venv`.
+3. Run `make install-dev`; `uv` creates and manages `.venv`. Local semantic embeddings are an optional extra: `uv sync --locked --extra embeddings`.
 4. Run `make frontend-install` for a frozen frontend install.
 5. Run `make infra-up`; it starts PostgreSQL/pgvector and Neo4j and waits for healthy.
 6. Run `make migrate` to apply Alembic and Neo4j migrations.

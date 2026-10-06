@@ -35,6 +35,11 @@ make api
 
 `make infra-up` starts PostgreSQL/pgvector and Neo4j and waits for both to be healthy. `make migrate` applies explicit Alembic and Neo4j migrations; application startup verifies migration state but never mutates schemas. `make seed` applies the deterministic reference world (idempotent; graph always, vector documents only when embeddings are available). `make reset-dev` clears development stores first and refuses to run in production or against non-local stores. `uv` creates and manages `.venv` automatically. On Windows, run the commands shown in `Makefile` directly if `make` is unavailable; no manual virtual-environment activation is required.
 
+Local semantic embeddings are optional. The base install is small and degrades gracefully;
+install `sentence-transformers` with `uv sync --locked --extra embeddings` when you need
+semantic search, `make seed --vectors`, or real vector retrieval. All automated tests use
+deterministic fakes and run without it.
+
 The full clean-checkout sequence used for Phase 0 verification is:
 
 ```bash

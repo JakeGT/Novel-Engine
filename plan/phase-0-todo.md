@@ -1,6 +1,6 @@
 # Phase 0 todo — Stabilize the prototype
 
-- Status: Implemented on `phase-0-stabilization`; PR #1 pending review/merge
+- Status: Implemented and merged to `main` in PR #1
 - Scope: Foundation only
 - Backlog coverage: FND-001 through FND-009, plus Phase-0 portions of QLT-001 and OPS-001
 - Exit owner: project owner or designated technical lead
