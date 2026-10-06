@@ -2,7 +2,8 @@
 
 Resets Neo4j canonical entities, derived pgvector documents, the seed ledger,
 and (when enabled) local debug artifacts. Schema and migration ledgers are
-preserved. Production is always refused by the guard.
+preserved. Production and non-local stores are always refused by the guard, and
+artifact cleanup is confined to the repository.
 """
 
 from __future__ import annotations
@@ -16,7 +17,11 @@ from pathlib import Path
 import psycopg
 
 from backend.core.config import settings as default_settings
-from backend.devtools.guard import ensure_reset_allowed
+from backend.devtools.guard import (
+    ResetNotAllowed,
+    ensure_artifact_dir_allowed,
+    ensure_reset_allowed,
+)
 from backend.graph.manager import GraphManager
 from backend.seed.ledger import clear_seed
 
@@ -78,7 +83,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"postgres: cleared {ledger_rows} seed ledger rows")
 
     if settings.ENABLE_DEBUG_ARTIFACTS:
-        artifacts_removed = reset_artifacts(settings.ARTIFACT_STORE_DIR)
+        try:
+            artifact_root = ensure_artifact_dir_allowed(settings.ARTIFACT_STORE_DIR)
+        except ResetNotAllowed as error:
+            print(f"artifacts: refused ({error})")
+            return 2
+        artifacts_removed = reset_artifacts(str(artifact_root))
         print(f"artifacts: removed {artifacts_removed} files")
     else:
         print("artifacts: disabled (ENABLE_DEBUG_ARTIFACTS=false)")

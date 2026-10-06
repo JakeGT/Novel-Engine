@@ -14,14 +14,23 @@ from backend.ports import EmbeddingPort
 
 logger = logging.getLogger(__name__)
 
-EMBEDDING_DIMENSION = 384
+# Must match migrations/versions/0002_vector_documents.py (vector(384)). Changing
+# the schema dimension requires a new migration, so a mismatch is refused rather
+# than allowed to fail at insert time.
+SCHEMA_VECTOR_DIMENSION = 384
+EMBEDDING_DIMENSION = SCHEMA_VECTOR_DIMENSION
+
+
+class VectorStoreError(RuntimeError):
+    """Raised when the vector store cannot satisfy the configured embedding contract."""
 
 
 class PgVectorStore:
     """Production vector store backed by PostgreSQL/pgvector.
 
     Documents are derived and rebuildable. Embeddings are produced through the
-    injected embedding port, so this adapter never loads a model itself.
+    injected embedding port, so this adapter never loads a model itself. Each row
+    records the embedding model, version, and dimension for provenance.
     """
 
     def __init__(
@@ -34,6 +43,16 @@ class PgVectorStore:
         self._embeddings = embeddings
         self._dimension = dimension
 
+    def dimension_supported(self) -> bool:
+        return self._dimension == SCHEMA_VECTOR_DIMENSION
+
+    def _require_supported_dimension(self) -> None:
+        if not self.dimension_supported():
+            raise VectorStoreError(
+                f"configured EMBEDDING_DIMENSION={self._dimension} does not match the "
+                f"vector({SCHEMA_VECTOR_DIMENSION}) schema; add a migration before changing it"
+            )
+
     def _connect(self) -> psycopg.Connection:
         connection = psycopg.connect(self._dsn)
         register_vector(connection)
@@ -43,35 +62,57 @@ class PgVectorStore:
     def add_documents(
         self, documents: list[str], metadatas: list[dict[str, Any]], ids: list[str]
     ) -> None:
+        self._require_supported_dimension()
         with self._connect() as connection:
             for document_id, document, metadata in zip(ids, documents, metadatas, strict=True):
                 embedding = self._embeddings.embed(document)
                 if embedding is None:
-                    raise RuntimeError(
+                    raise VectorStoreError(
                         "Embedding provider returned no vector; cannot index document "
                         f"{document_id!r}"
                     )
+                if len(embedding) != self._dimension:
+                    raise VectorStoreError(
+                        f"embedding provider returned dimension {len(embedding)}, "
+                        f"expected {self._dimension}"
+                    )
                 connection.execute(
                     """
-                    INSERT INTO vector_documents (id, document, metadata, embedding)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO vector_documents (
+                        id, document, metadata, embedding,
+                        embedding_model, embedding_version, embedding_dimension
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO UPDATE
                         SET document = EXCLUDED.document,
                             metadata = EXCLUDED.metadata,
-                            embedding = EXCLUDED.embedding
+                            embedding = EXCLUDED.embedding,
+                            embedding_model = EXCLUDED.embedding_model,
+                            embedding_version = EXCLUDED.embedding_version,
+                            embedding_dimension = EXCLUDED.embedding_dimension
                     """,
-                    (document_id, document, Jsonb(metadata), Vector(embedding)),
+                    (
+                        document_id,
+                        document,
+                        Jsonb(metadata),
+                        Vector(embedding),
+                        self._embeddings.model,
+                        self._embeddings.version,
+                        self._dimension,
+                    ),
                 )
 
     @instrument("vector.query", logger)
     def query(self, query_text: str, n_results: int = 5) -> list[dict[str, Any]]:
+        self._require_supported_dimension()
         embedding = self._embeddings.embed(query_text)
         if embedding is None:
             return []
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                SELECT id, document, metadata, 1 - (embedding <=> %s) AS score
+                SELECT id, document, metadata, 1 - (embedding <=> %s) AS score,
+                       embedding_model, embedding_version, embedding_dimension
                 FROM vector_documents
                 ORDER BY embedding <=> %s
                 LIMIT %s
@@ -79,7 +120,16 @@ class PgVectorStore:
                 (Vector(embedding), Vector(embedding), n_results),
             ).fetchall()
         return [
-            {"id": row[0], "document": row[1], "metadata": row[2], "score": row[3]} for row in rows
+            {
+                "id": row[0],
+                "document": row[1],
+                "metadata": row[2],
+                "score": row[3],
+                "embedding_model": row[4],
+                "embedding_version": row[5],
+                "embedding_dimension": row[6],
+            }
+            for row in rows
         ]
 
     @instrument("vector.delete", logger)
@@ -90,6 +140,8 @@ class PgVectorStore:
             connection.execute("DELETE FROM vector_documents WHERE id = ANY(%s)", (list(ids),))
 
     def health(self) -> bool:
+        if not self.dimension_supported():
+            return False
         try:
             with self._connect() as connection:
                 connection.execute("SELECT 1 FROM vector_documents LIMIT 1")

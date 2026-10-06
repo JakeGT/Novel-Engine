@@ -45,4 +45,7 @@ def test_ai_failure_maps_to_provider_failure(api_client, fake_container) -> None
     response = api_client.post("/api/v1/characters/generate-questions", json={"id": "char_arin"})
 
     assert response.status_code == 502
-    assert response.json()["code"] == "provider_failure"
+    body = response.json()
+    assert body["code"] == "provider_failure"
+    assert body["detail"] == "The AI provider request failed."
+    assert "upstream" not in body["detail"]

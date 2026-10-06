@@ -216,3 +216,31 @@ Documentation, exit evidence, and the clean-room exit audit:
 - **Clean-room rehearsal:** on a copy with no `.env`, `.venv`, caches, `node_modules`, or databases, `make install-dev`, `make migrate`, `make reset-dev`, `make seed`, `make test` (188), `make test-integration` (16), OpenAPI generation (34 paths), `make import-check`, and `make frontend-install/lint/build` all passed; repeating `migrate/seed/test` reproduced identical counts and checksum.
 - **Verification:** 188 hermetic tests, 16 integration tests, `make check` green, secret scan clean.
 - **0J residual:** the first hosted CI run and the project-owner sign-off remain external actions.
+
+## P0-13 (audit repair) verification snapshot
+
+An external Phase 0 audit reopened reset safety, readiness degradation, stable-DTO persistence,
+embedding versioning, and exit evidence. All are repaired with regression tests:
+
+- **Reset safety (critical):** `ensure_reset_allowed` refuses non-local PostgreSQL/Neo4j hosts on
+  every path, not only when `APP_ENV` is undeclared; an explicit `APP_ENV=development|test` can no
+  longer authorize a remote reset. `ensure_artifact_dir_allowed` requires `ARTIFACT_STORE_DIR` to
+  resolve inside the repository before recursive cleanup. `tests/unit/test_reset_guard.py` adds
+  remote-host and artifact-path cases.
+- **Readiness (high):** `/health/ready` wraps each Neo4j/PostgreSQL check; a raising migration
+  verifier or store probe now yields `503 degraded` with a typed reason. `tests/contract/test_health.py`
+  adds three raising-check cases.
+- **Injected-settings verification (high):** `PostgresDatabase.migration_status` reads
+  `alembic_version` through its own engine; `tests/integration/test_postgres_migrations.py` proves a
+  missing owned database is not masked by the migrated global one.
+- **Stable DTOs (medium):** `GraphManager.add_node` persists `created_at` (`ON CREATE SET`) and the
+  graph mapper parses it back, so create/read agree against real Neo4j;
+  `tests/integration/test_graph_repository.py` covers the round-trip and merge stability.
+- **Embedding provenance (medium):** migration `0003_embedding_provenance` records
+  model/version/dimension per vector row; `PgVectorStore` validates the configured dimension against
+  the `vector(384)` schema and reports it in `/health/capabilities`.
+- **AI error redaction (medium):** `OpenAIGateway` raises a generic provider error (original as
+  cause) and the `AIError` handler returns fixed detail text; upstream provider strings never reach
+  the API.
+- **Verification:** 200 hermetic tests, 20 integration tests, `make check` green, PostgreSQL head
+  advanced to `0003_embedding_provenance`.

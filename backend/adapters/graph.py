@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Any
 
 from backend.core.logging import instrument, log_event
@@ -13,21 +14,36 @@ from backend.ports import MigrationStatus
 logger = logging.getLogger(__name__)
 
 
+def _parse_created_at(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+
+
 def _to_node(data: dict[str, Any]) -> Node:
     payload = dict(data)
     node_id = payload.pop("id", None)
     node_type = payload.pop("type", None)
     labels = payload.pop("labels", None)
     embedding = payload.pop("embedding", None)
+    created_at = _parse_created_at(payload.pop("created_at", None))
     if node_type is None and labels:
         domain = [label for label in labels if label != "Entity"]
         node_type = domain[0] if domain else (labels[0] if labels else "Unknown")
-    return Node(
+    node = Node(
         id=node_id or "",
         type=node_type or "Unknown",
         properties=payload,
         embedding=embedding,
     )
+    if created_at is not None:
+        node = node.model_copy(update={"created_at": created_at})
+    return node
 
 
 class Neo4jGraphRepository:

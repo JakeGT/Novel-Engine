@@ -46,3 +46,22 @@ def test_vector_store_health_false_when_table_missing(disposable_database) -> No
 
     store = PgVectorStore(disposable_database.psycopg_dsn, FakeEmbeddingProvider())
     assert store.health() is False
+
+
+def test_vector_store_records_embedding_provenance(disposable_database) -> None:
+    embeddings = FakeEmbeddingProvider(model="fake-embedder", version="7")
+    store = PgVectorStore(disposable_database.psycopg_dsn, embeddings)
+
+    store.add_documents(["provenance check"], [{"entity": "char_mara"}], ["doc_prov"])
+
+    result = store.query("provenance check", n_results=1)[0]
+    assert result["embedding_model"] == "fake-embedder"
+    assert result["embedding_version"] == "7"
+    assert result["embedding_dimension"] == 384
+
+    with psycopg.connect(disposable_database.psycopg_dsn) as connection:
+        row = connection.execute(
+            "SELECT embedding_model, embedding_version, embedding_dimension "
+            "FROM vector_documents WHERE id = 'doc_prov'"
+        ).fetchone()
+    assert row == ("fake-embedder", "7", 384)

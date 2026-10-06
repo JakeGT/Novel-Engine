@@ -45,10 +45,28 @@ class PostgresDatabase:
         return result
 
     async def migration_status(self) -> MigrationStatus:
-        from backend.migrate import postgres_current_revision, postgres_head_revision
+        from alembic.runtime.migration import MigrationContext
+
+        from backend.migrate import postgres_head_revision
 
         head = postgres_head_revision()
-        current = postgres_current_revision()
+        try:
+            async with self._engine.connect() as connection:
+                current = await connection.run_sync(
+                    lambda sync_connection: MigrationContext.configure(
+                        sync_connection
+                    ).get_current_revision()
+                )
+        except Exception as error:
+            log_event(
+                logger,
+                "postgres.migration_status.error",
+                level=logging.WARNING,
+                error_type=type(error).__name__,
+            )
+            return MigrationStatus(
+                current=False, detail=f"migration check failed: {type(error).__name__}"
+            )
         if head is not None and current == head:
             return MigrationStatus(current=True, detail=current or "")
         return MigrationStatus(current=False, detail=f"current={current} head={head}")

@@ -100,7 +100,9 @@ def register_exception_handlers(app: FastAPI) -> None:
                 status=502,
                 title="AI provider failure",
                 code="provider_failure",
-                detail=str(exc),
+                # Never echo provider text; upstream messages may contain
+                # account, request, or prompt details.
+                detail="The AI provider request failed.",
                 correlation_id=_correlation_id(request),
             ),
         )

@@ -369,6 +369,8 @@ Each repair must have a failing regression test first or in the same change.
 
 - [x] **FND-008.28:** remove model download/loading from import and make embedding capability explicit.
 - [x] **FND-008.29:** version embedding model and dimension in vector metadata/index configuration.
+      (Migration `0003_embedding_provenance` records model/version/dimension per row; the adapter
+      validates the configured dimension against the `vector(384)` schema.)
 - [x] **FND-008.30:** define deterministic behavior when embeddings are disabled (deterministic `None`; `DisabledEmbeddingProvider` contract test).
 - [x] **FND-008.31:** prevent Chroma collection creation on import; isolate it as transitional until pgvector replacement.
 - [x] **FND-008.32:** validate semantic score thresholds consistently across API and service calls (policies carry `semantic_min_score`; v1 context and character service use it).
@@ -414,13 +416,15 @@ Each repair must have a failing regression test first or in the same change.
 
 - [x] Implement `reset-dev` with an explicit environment guard and confirmation or force flag.
 - [x] Refuse reset if environment is production, production-like, or cannot be determined safely.
-      (Guard is fail-closed: production is always refused, unknown environments are refused, and an undeclared
-      `APP_ENV` with non-local stores is refused.)
+      (Guard is fail-closed: production is always refused, unknown environments are refused, explicit
+      confirmation is required, and non-local PostgreSQL/Neo4j hosts are refused regardless of how
+      `APP_ENV` was declared. Artifact cleanup must resolve inside the repository.)
 - [x] Reset PostgreSQL, Neo4j, pgvector-derived rows, object fixtures, and development artefacts in a known order.
 - [x] Implement idempotent `seed-dev` and `seed-test` commands.
       (One idempotent `make seed` serves both environments and refuses production.)
 - [x] Print exactly which environment/stores were reset and seeded.
-- [x] Add a CI test proving the production guard cannot be bypassed by missing environment variables.
+- [x] Add a CI test proving the production guard cannot be bypassed by missing environment variables or
+      by an explicit non-production `APP_ENV` pointed at remote stores.
 
 ### 0H acceptance
 
@@ -447,7 +451,8 @@ Each repair must have a failing regression test first or in the same change.
 - [x] `/health/live` checks only that the process/event loop is alive.
 - [x] `/health/ready` verifies configuration, required migration versions, PostgreSQL, and Neo4j connectivity without writes.
 - [x] `/health/capabilities` reports optional vector/embedding/AI availability and reasons for degradation without secrets.
-- [x] Test healthy, required-store-down, migration-mismatch, and optional-provider-down cases (`tests/contract/test_health.py`).
+- [x] Test healthy, required-store-down, migration-mismatch, and optional-provider-down cases
+      (`tests/contract/test_health.py`; includes raising Neo4j/PostgreSQL checks returning 503).
 
 ### CI
 

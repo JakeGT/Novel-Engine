@@ -62,7 +62,9 @@ class OpenAIGateway:
                 duration_ms=round((time.perf_counter() - start) * 1000, 3),
                 error_type=type(error).__name__,
             )
-            raise AIProviderError(str(error)) from error
+            # Provider text can contain request/account details; keep it as the
+            # cause for logs but do not surface it through the API contract.
+            raise AIProviderError("model provider request failed") from error
 
         parsed = response.choices[0].message.parsed
         if parsed is None:

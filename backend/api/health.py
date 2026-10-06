@@ -20,25 +20,44 @@ async def readiness(
     checks: dict[str, dict[str, object]] = {}
     ok = True
 
-    migration = container.neo4j_migrations.status()
-    checks["neo4j_migrations"] = {"ok": migration.current, "detail": migration.detail}
-    ok = ok and migration.current
+    def record(name: str, check_ok: bool, detail: str | None = None) -> None:
+        nonlocal ok
+        entry: dict[str, object] = {"ok": check_ok}
+        if detail:
+            entry["detail"] = detail
+        checks[name] = entry
+        ok = ok and check_ok
 
-    graph_ok = container.graph.ping()
-    checks["neo4j"] = {"ok": graph_ok}
-    ok = ok and graph_ok
+    try:
+        migration = container.neo4j_migrations.status()
+        record("neo4j_migrations", migration.current, migration.detail or None)
+    except Exception as error:
+        record("neo4j_migrations", False, f"migration check failed: {type(error).__name__}")
+
+    try:
+        record("neo4j", container.graph.ping())
+    except Exception as error:
+        record("neo4j", False, f"connectivity check failed: {type(error).__name__}")
 
     if container.database is not None:
-        database_ok = await container.database.ready()
-        checks["postgres"] = {"ok": database_ok}
-        ok = ok and database_ok
+        try:
+            record("postgres", await container.database.ready())
+        except Exception as error:
+            record("postgres", False, f"readiness check failed: {type(error).__name__}")
 
-        database_migration = await container.database.migration_status()
-        checks["postgres_migrations"] = {
-            "ok": database_migration.current,
-            "detail": database_migration.detail,
-        }
-        ok = ok and database_migration.current
+        try:
+            database_migration = await container.database.migration_status()
+            record(
+                "postgres_migrations",
+                database_migration.current,
+                database_migration.detail or None,
+            )
+        except Exception as error:
+            record(
+                "postgres_migrations",
+                False,
+                f"migration check failed: {type(error).__name__}",
+            )
 
     if not ok:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
@@ -51,6 +70,7 @@ def capabilities(container: Container = Depends(get_container)) -> dict[str, obj
     embeddings_ok = container.embeddings.available()
     ai_ok = container.ai.is_available()
     vectors_ok = container.vectors.health()
+    vectors_dimension_ok = getattr(container.vectors, "dimension_supported", lambda: True)()
 
     return {
         "status": "ok",
@@ -72,8 +92,14 @@ def capabilities(container: Container = Depends(get_container)) -> dict[str, obj
             "vector": {
                 "available": vectors_ok,
                 "optional": True,
-                "detail": "pgvector-backed store",
-                "reason": None if vectors_ok else "vector_documents table is unreachable",
+                "dimension_supported": vectors_dimension_ok,
+                "detail": "pgvector-backed store with recorded embedding provenance",
+                "reason": (
+                    None
+                    if vectors_ok
+                    else "vector_documents is unreachable or the configured embedding "
+                    "dimension does not match the schema"
+                ),
             },
         },
     }

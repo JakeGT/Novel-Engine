@@ -24,9 +24,9 @@ Dependency installs are lock-enforced: `uv sync --locked` and
 
 ## Test counts and coverage baseline
 
-- Hermetic suite (unit + application + contract): **188 passed** (`make test`), no
+- Hermetic suite (unit + application + contract): **200 passed** (`make test`), no
   services, network, API keys, model downloads, or persistent writes.
-- Integration suite (disposable PostgreSQL/pgvector + `neo4j-test`): **16 passed**
+- Integration suite (disposable PostgreSQL/pgvector + `neo4j-test`): **20 passed**
   (`make integration-test`), run twice consecutively with isolated per-run databases.
 - Hermetic line coverage baseline: **63%** (`--cov=backend`), used only as a floor to
   detect regressions, not as a completion target.
@@ -62,10 +62,12 @@ documents only when the embedding provider is available; graph seeding always ru
 
 ## Migration versions and checksums
 
-- PostgreSQL (Alembic) head: `0002_vector_documents` (previous: `0001_initial`).
+- PostgreSQL (Alembic) head: `0003_embedding_provenance` (previous: `0002_vector_documents`).
   - `0001_initial`: enables the `vector` extension and creates `infrastructure_metadata`.
   - `0002_vector_documents`: creates the derived `vector_documents` table (dimension 384,
     HNSW cosine index) and its downgrade.
+  - `0003_embedding_provenance`: adds nullable `embedding_model`, `embedding_version`, and
+    `embedding_dimension` columns so derived vectors record their embedding provenance.
 - Neo4j ordered migration: `0001_initial_graph_schema`.
   - Statements: entity `id` uniqueness constraint; `entity_embeddings` vector index
     (384 dimensions, cosine).
@@ -86,8 +88,8 @@ documents only when the embedding provider is available; graph seeding always ru
 
 - Structured JSON logs include a correlation ID and redact API keys, bearer tokens, DSN
   passwords, and secret-named fields (`tests/unit/test_logging_redaction.py`).
-- `make secret-scan` scans tracked/staged files and is clean (144 files checked at time of
-  writing); `tests/unit/test_secret_scan.py` covers detection and allowlisting.
+- `make secret-scan` scans tracked/staged files and is clean; `tests/unit/test_secret_scan.py`
+  covers detection and allowlisting.
 - CI uploads only `coverage.xml` and `openapi_snapshot.json`; no manuscript content or
   credentials are cached or uploaded.
 
@@ -98,6 +100,30 @@ documents only when the embedding provider is available; graph seeding always ru
 - Hosted run links: **pending** — no pull request has been opened against this branch yet.
 - Local equivalents of every job step pass; the deliberate-failure acceptance checks are
   unverified until the first hosted run.
+
+## Post-audit repairs (2026-10-06)
+
+An external audit reopened four items; each is now repaired with a regression test:
+
+- **Reset safety (critical):** `ensure_reset_allowed` now refuses non-local PostgreSQL or Neo4j
+  hosts regardless of how `APP_ENV` is declared, so an explicit `APP_ENV=development|test` can
+  no longer authorize a reset against remote stores. Artifact cleanup additionally requires
+  `ARTIFACT_STORE_DIR` to resolve inside the repository. Covered by `tests/unit/test_reset_guard.py`.
+- **Readiness degradation (high):** `/health/ready` wraps each Neo4j and PostgreSQL check so a
+  real connection/migration failure returns `503 degraded` with a typed reason instead of a
+  `500`. Covered by `tests/contract/test_health.py`.
+- **PostgreSQL migration verification (high):** `PostgresDatabase.migration_status` reads
+  `alembic_version` through its own injected engine instead of process-global settings.
+  Covered by `tests/integration/test_postgres_migrations.py`.
+- **Stable DTO persistence (medium):** Neo4j now persists `created_at` on first create and the
+  graph mapper reads it back, so create and subsequent reads agree. Covered by
+  `tests/integration/test_graph_repository.py`.
+- **Embedding provenance (medium):** migration `0003` records model/version/dimension per row and
+  the adapter refuses a configured dimension that does not match the `vector(384)` schema.
+  Covered by `tests/unit/test_vector_dimension.py` and `tests/integration/test_pgvector_adapter.py`.
+- **AI error redaction (medium):** the provider adapter and the `AIError` handler no longer echo
+  upstream provider text. Covered by `tests/unit/test_ai_adapter.py` and
+  `tests/contract/test_v1_errors.py`.
 
 ## Clean-room rehearsal
 

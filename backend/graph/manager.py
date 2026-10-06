@@ -38,9 +38,11 @@ class GraphManager:
         label = self._validate_identifier(node.type)
 
         # Merge on generic Entity label + ID to ensure global uniqueness check
-        # Then set the specific logic label
+        # Then set the specific logic label. created_at is written only on first
+        # creation so reads return a stable timestamp.
         query = f"""
         MERGE (n:Entity {{id: $id}})
+        ON CREATE SET n.created_at = $created_at
         SET n:{label}, n += $properties
         """
 
@@ -50,7 +52,13 @@ class GraphManager:
         query += "RETURN n"
 
         with self.driver.session() as session:
-            session.run(query, id=node.id, properties=node.properties, embedding=node.embedding)
+            session.run(
+                query,
+                id=node.id,
+                properties=node.properties,
+                embedding=node.embedding,
+                created_at=node.created_at.isoformat(),
+            )
 
     def add_edge(self, edge: Edge):
         # Validate and sanitize relationship type

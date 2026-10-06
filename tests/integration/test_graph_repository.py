@@ -84,3 +84,38 @@ def test_delete_node_removes_attached_edges(repository: Neo4jGraphRepository) ->
 
 def test_ping(repository: Neo4jGraphRepository) -> None:
     assert repository.ping() is True
+
+
+def test_created_at_is_persisted_and_stable(repository: Neo4jGraphRepository) -> None:
+    from datetime import datetime
+
+    created = datetime(2024, 1, 1, 12, 0, 0)
+    repository.add_node(
+        Node(
+            id="char_mara",
+            type="Character",
+            properties={"name": "Mara"},
+            created_at=created,
+        )
+    )
+
+    first = repository.get_node("char_mara")
+    second = repository.get_node("char_mara")
+    assert first is not None and second is not None
+    assert first.created_at == created
+    assert second.created_at == created
+    assert "created_at" not in first.properties
+
+    # Re-adding (MERGE) must not overwrite the original timestamp.
+    repository.add_node(
+        Node(
+            id="char_mara",
+            type="Character",
+            properties={"age": 34},
+            created_at=datetime(2030, 1, 1),
+        )
+    )
+    third = repository.get_node("char_mara")
+    assert third is not None
+    assert third.created_at == created
+    assert third.properties["age"] == 34

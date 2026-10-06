@@ -101,6 +101,57 @@ def test_health_capabilities_report_degradation_reasons(fake_container, monkeypa
     assert capabilities["vector"]["reason"]
 
 
+def test_health_ready_returns_503_when_migration_check_raises(fake_container, monkeypatch) -> None:
+    app = create_app(container=fake_container)
+
+    with TestClient(app) as client:
+
+        def boom():
+            raise RuntimeError("neo4j unreachable")
+
+        monkeypatch.setattr(fake_container.neo4j_migrations, "status", boom)
+        response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["status"] == "degraded"
+    assert body["checks"]["neo4j_migrations"]["ok"] is False
+    assert "RuntimeError" in body["checks"]["neo4j_migrations"]["detail"]
+
+
+def test_health_ready_returns_503_when_graph_ping_raises(fake_container, monkeypatch) -> None:
+    app = create_app(container=fake_container)
+
+    with TestClient(app) as client:
+
+        def boom():
+            raise RuntimeError("driver down")
+
+        monkeypatch.setattr(fake_container.graph, "ping", boom)
+        response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    assert response.json()["checks"]["neo4j"]["ok"] is False
+
+
+def test_health_ready_returns_503_when_postgres_checks_raise(fake_container, monkeypatch) -> None:
+    app = create_app(container=fake_container)
+
+    with TestClient(app) as client:
+
+        async def boom():
+            raise RuntimeError("pg down")
+
+        monkeypatch.setattr(fake_container.database, "ready", boom)
+        monkeypatch.setattr(fake_container.database, "migration_status", boom)
+        response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    checks = response.json()["checks"]
+    assert checks["postgres"]["ok"] is False
+    assert checks["postgres_migrations"]["ok"] is False
+
+
 def test_health_capabilities(fake_container) -> None:
     app = create_app(container=fake_container)
 
