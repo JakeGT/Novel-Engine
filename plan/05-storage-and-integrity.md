@@ -6,9 +6,9 @@
 
 Store projects, branches, stable entities, facts, beliefs, events, story structures, provenance links, and review/commit references. Optimize projections for the queries the product actually runs.
 
-### PostgreSQL: SaaS operations, durable audit, and recovery
+### PostgreSQL: identity mapping, operations, durable audit, and recovery
 
-Use PostgreSQL from the start for tenant/account references, project metadata, membership, subscriptions, entitlements, platform-credit ledger, encrypted provider credentials, jobs, review state, idempotency, outbox, consistency runs/findings, and ordered immutable commit envelopes. The mutation journal is the recovery boundary for canonical changes.
+Use PostgreSQL from the start for external-identity mappings, workspaces, invitations, memberships, project metadata, encrypted hosted provider credentials, jobs, review state, idempotency, outbox, consistency runs/findings, and ordered immutable commit envelopes. The mutation journal is the recovery boundary for canonical changes.
 
 ### Text/blob store: authored artefacts
 
@@ -16,7 +16,7 @@ Store exact structured scene versions, rendered text projections, imports, expor
 
 ### Vector index: derived retrieval data
 
-Use PostgreSQL with pgvector for the first SaaS implementation, behind a replaceable vector adapter. Every entry points back to a canonical source/version. The complete index can be deleted and rebuilt.
+Use PostgreSQL with pgvector for the first implementation, behind a replaceable vector adapter. Every entry points back to a canonical source/version. The complete index can be deleted and rebuilt.
 
 ## Canonical write protocol
 
@@ -62,7 +62,7 @@ Migrations cover Neo4j constraints/indexes, core schema, custom schema formats, 
 - Branch heads use optimistic revision checks.
 - Mutation-set commits are idempotent.
 - Job creation accepts a client idempotency key.
-- Credit reservation, provider completion, refund, and reconciliation are idempotent by job/attempt.
+- Provider attempts, usage recording, cancellation, and output acceptance are idempotent by job/attempt.
 - Derived workers record source revision and content hash.
 - Duplicate model callbacks or retries must not duplicate facts or edges.
 - UI conflict responses include current head and a rebase/review path.
@@ -99,4 +99,4 @@ Embeddings are optional because they are derived. A restore test must create a c
 - Replace the process-local JSON schema registry with project-scoped durable schema records.
 - Add migrations for constraints and the vector index.
 - Isolate the current Chroma client behind the vector port so it can be replaced by the selected pgvector adapter without affecting retrieval workflows.
-- Introduce PostgreSQL migrations, tenant context, journal/outbox, and seed data; current prototype databases may be reset.
+- Introduce PostgreSQL migrations, workspace/project context, journal/outbox, and seed data; current prototype databases may be reset.

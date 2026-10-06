@@ -59,7 +59,7 @@ Index prose at multiple resolutions:
 - character dialogue/voice excerpts
 - passages tied to active objects, rules, secrets, promises, or threads
 
-Every unit points to exact manuscript/version/range and includes tenant/project, branch, narrative/world positions, POV, entities, visibility, content hash, embedding model, and active state.
+Every unit points to exact manuscript/version/range and includes workspace/project, branch, narrative/world positions, POV, entities, visibility, content hash, embedding model, and active state.
 
 Semantic vectors represent content meaning. Dynamic weights remain metadata:
 
@@ -85,7 +85,7 @@ Always consider:
 - older high-impact prose linked to active facts/threads
 - voice samples appropriate to speaking/POV characters
 
-Apply hard tenant/project/branch/visibility filters first. Then rank, deduplicate overlapping ranges, allocate token budgets, and show included/excluded passages in the context inspector. Authors may pin, suppress, or adjust importance with provenance.
+Apply hard workspace/project/branch/visibility filters first. Then rank, deduplicate overlapping ranges, allocate token budgets, and show included/excluded passages in the context inspector. Authors may pin, suppress, or adjust importance with provenance.
 
 ## External editor integrations
 
@@ -118,7 +118,7 @@ Provide reliable versioned import/export and sidecar metadata for entity IDs whe
 
 ## Export and ownership
 
-Authors can export the manuscript without AI metadata in common readable formats, plus a full fidelity project archive containing versions, annotations, provenance, plans, and canon. Subscription failure must not trap author prose. Published/exported artefacts never require Novel Engine to remain readable.
+Authors can export the manuscript without AI metadata in common readable formats, plus a full fidelity project archive containing versions, annotations, provenance, plans, and canon. Identity-provider or hosted-service failure must not trap author prose. Published/exported artefacts never require Novel Engine to remain readable.
 
 ## Open implementation decisions
 
@@ -127,4 +127,4 @@ Authors can export the manuscript without AI metadata in common readable formats
 - scene/chapter split rules and user override
 - Google Docs integration priority and synchronization direction
 - supported LaTeX/Markdown round-trip guarantees
-- retention limits for immutable draft/generation versions by subscription tier
+- operator/user-configurable retention limits for immutable draft/generation versions

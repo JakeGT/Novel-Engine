@@ -1,30 +1,99 @@
-from fastapi import FastAPI
+from __future__ import annotations
+
+import logging
 from contextlib import asynccontextmanager
-from backend.core.config import settings
-from backend.api.endpoints import router as api_router
-from backend.graph.manager import graph_manager
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup: Ensure graph constraints exist
-    graph_manager.create_constraints()
-    yield
-    # Shutdown: Close driver connection
-    graph_manager.close()
+from fastapi import FastAPI
 
-app = FastAPI(
-    title=settings.PROJECT_NAME,
-    version=settings.PROJECT_VERSION,
-    description="Novel Engine API with Knowledge Graph and RAG",
-    lifespan=lifespan
-)
+from backend.api.endpoints import router as legacy_api_router
+from backend.api.health import router as health_router
+from backend.api.middleware import CorrelationIdMiddleware
+from backend.api.problems import register_exception_handlers
+from backend.api.v1.router import router as v1_router
+from backend.container import Container, build_container
+from backend.core.config import Settings
+from backend.core.config import settings as default_settings
+from backend.core.logging import configure_logging, log_event
 
-app.include_router(api_router, prefix="/api")
+logger = logging.getLogger("backend.main")
 
-@app.get("/")
-def read_root():
-    return {"message": "Welcome to the Novel Engine API"}
+
+def create_app(settings: Settings | None = None, container: Container | None = None) -> FastAPI:
+    resolved_settings = settings or default_settings
+    configure_logging(resolved_settings.LOG_LEVEL)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        active = container or build_container(resolved_settings)
+        app.state.container = active
+        try:
+            neo4j_status = active.neo4j_migrations.status()
+            if not neo4j_status.current:
+                log_event(
+                    logger,
+                    "app.startup.failed",
+                    level=logging.ERROR,
+                    reason="neo4j_migrations_pending",
+                    detail=neo4j_status.detail,
+                )
+                raise RuntimeError(
+                    "Neo4j schema is not migrated; run 'make migrate'. " + neo4j_status.detail
+                )
+
+            if active.database is not None:
+                database_status = await active.database.migration_status()
+                if not database_status.current:
+                    log_event(
+                        logger,
+                        "app.startup.failed",
+                        level=logging.ERROR,
+                        reason="postgres_migrations_pending",
+                        detail=database_status.detail,
+                    )
+                    raise RuntimeError(
+                        "PostgreSQL schema is not migrated; run 'make migrate'. "
+                        + database_status.detail
+                    )
+
+            log_event(
+                logger,
+                "app.startup",
+                env=resolved_settings.APP_ENV,
+                ai_available=active.ai.is_available(),
+                embeddings_available=active.embeddings.available(),
+            )
+            yield
+        finally:
+            await active.aclose()
+            log_event(logger, "app.shutdown", env=resolved_settings.APP_ENV)
+
+    app = FastAPI(
+        title=resolved_settings.PROJECT_NAME,
+        version=resolved_settings.PROJECT_VERSION,
+        description=(
+            "Novel Engine API. Canonical routes are under /api/v1. Legacy prototype "
+            "routes remain mounted at /api as temporary, deprecated aliases."
+        ),
+        lifespan=lifespan,
+    )
+    app.add_middleware(CorrelationIdMiddleware)
+    register_exception_handlers(app)
+
+    app.state.container = container
+    app.include_router(v1_router, prefix="/api/v1")
+    app.include_router(legacy_api_router, prefix="/api")
+    app.include_router(health_router)
+
+    @app.get("/")
+    def read_root():
+        return {"message": "Welcome to the Novel Engine API"}
+
+    return app
+
+
+app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)

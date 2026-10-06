@@ -1,18 +1,62 @@
-version: '3.8'
-
 services:
-  neo4j:
-    image: neo4j:5.14.0
-    container_name: novel_engine_neo4j
-    ports:
-      - "7474:7474" # HTTP
-      - "7687:7687" # Bolt
+  postgres:
+    image: pgvector/pgvector:0.8.0-pg17
     environment:
-      - NEO4J_AUTH=neo4j/password
-      - NEO4J_PLUGINS=["apoc", "graph-data-science"]
+      POSTGRES_USER: ${POSTGRES_USER:-novel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-novel_engine}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - ./data/neo4j/data:/data
-      - ./data/neo4j/logs:/logs
-      - ./data/neo4j/import:/var/lib/neo4j/import
-      - ./data/neo4j/plugins:/plugins
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-novel} -d ${POSTGRES_DB:-novel_engine}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
     restart: unless-stopped
+
+  neo4j:
+    image: neo4j:5.26.0
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-password}
+      NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
+    ports:
+      - "${NEO4J_HTTP_PORT:-7474}:7474"
+      - "${NEO4J_BOLT_PORT:-7687}:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_plugins:/plugins
+    healthcheck:
+      test:
+        ["CMD-SHELL", "cypher-shell -u ${NEO4J_USER:-neo4j} -p ${NEO4J_PASSWORD:-password} 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+    restart: unless-stopped
+
+  neo4j-test:
+    image: neo4j:5.26.0
+    profiles: ["test"]
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-password}
+    ports:
+      - "${NEO4J_TEST_HTTP_PORT:-7475}:7474"
+      - "${NEO4J_TEST_BOLT_PORT:-7688}:7687"
+    volumes:
+      - neo4j_test_data:/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "cypher-shell -u ${NEO4J_USER:-neo4j} -p ${NEO4J_PASSWORD:-password} 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  neo4j_data:
+  neo4j_logs:
+  neo4j_plugins:
+  neo4j_test_data:

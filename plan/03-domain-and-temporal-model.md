@@ -147,4 +147,4 @@ Project extensions use a safe declarative schema language rather than Python sou
 6. Resolve entity references and run domain invariants.
 7. Validate again at canonical commit against the exact schema version reviewed.
 
-Compiled models are process-local caches keyed by tenant/project/schema-version hash. They are never treated as executable user code or serialized as the durable schema. A schema change creates a new version and an explicit migration/projection plan; it never mutates the meaning of historical records silently.
+Compiled models are process-local caches keyed by workspace/project/schema-version hash. They are never treated as executable user code or serialized as the durable schema. A schema change creates a new version and an explicit migration/projection plan; it never mutates the meaning of historical records silently.

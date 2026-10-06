@@ -40,7 +40,7 @@ This enables debugging, replay, cost analysis, and regression testing.
 2. **Load deterministic state.** Query branch/tick-active facts, beliefs, constraints, goals, and narrative requirements.
 3. **Apply visibility.** Separate POV-accessible knowledge, public knowledge, and author-only direction.
 4. **Expand structurally.** Traverse only predicates allowed by the workflow policy with depth and result caps.
-5. **Expand semantically.** Search relevant summaries and previous-prose chunks, filtered by tenant/project, branch ancestry, active version, entity IDs, and visibility.
+5. **Expand semantically.** Search relevant summaries and previous-prose chunks, filtered by workspace/project, branch ancestry, active version, entity IDs, and visibility.
 6. **Rank and deduplicate.** Combine explicit priority, graph distance, semantic relevance, narrative/world-time distance, author-assigned importance, continuity impact, unresolved threads, and diversity. Keep changing weights as metadata rather than modifying semantic vectors.
 7. **Budget.** Allocate tokens by category, preserving hard constraints before stylistic examples.
 8. **Render.** Build distinct sections for canon, POV beliefs, story intent, relevant history, style, and task instructions.
@@ -78,7 +78,7 @@ Never overwrite a version in place. Mark it inactive and index the replacement. 
 2. Run deterministic consistency preflight and build its constraint packet.
 3. Build a context package including relevant previous prose.
 4. Show the author a context preview and allow pin/exclude/importance operations.
-5. Resolve the autonomy/consistency profile, credential route, and credit reservation.
+5. Resolve the autonomy/consistency profile, authorized credential route, and token/cost limit.
 6. Create an immutable generation job.
 7. Generate one or more drafts.
 8. Store each draft separately with lineage and reconcile usage.
@@ -133,7 +133,7 @@ Findings have severity, category, evidence, affected records, suggested resoluti
 - Retry transient failures with bounded exponential backoff and idempotency keys.
 - Repair structured output only through a bounded validation loop.
 - Estimate tokens/cost before execution and expose limits to the author.
-- Reserve platform credits before provider calls and reconcile actual cost idempotently; BYOK calls do not consume platform AI credits.
+- Check the user's configured limit before provider calls and record actual usage idempotently; OpenRouter charges the user's account directly.
 - Cache embeddings by content hash and embedding model.
 - Allow cancellation between pipeline stages.
 

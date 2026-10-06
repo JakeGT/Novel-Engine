@@ -1,210 +1,147 @@
 # Current gap analysis
 
-This is a point-in-time map of the prototype to the target design. Update it when a subsystem crosses from prototype to planned architecture.
+This is a point-in-time map of the prototype to the target design. It was rewritten after
+Phase 0 stabilization (see `plan/phase-0-evidence.md`). Update it when a subsystem crosses
+from prototype to planned architecture.
 
 ## Repository-wide
 
-Current:
+Current (post-Phase 0):
 
-- small Python package with direct global singletons
-- dependencies in one unpinned requirements file
-- no CI, lock file, migrations, or formal API version
-- broad line-ending churn across the worktree
-- no PostgreSQL, tenant, identity, subscription, credit, credential-vault, or hosted-worker foundation
+- application factory (`create_app(settings, container)`) with a dependency container and
+  lifespan-owned external resources; imports perform no external work
+- ports for graph, vector, embedding, AI, schema, clock, ID, artifacts, migrations, and
+  database; Neo4j, pgvector, sentence-transformers, OpenAI, PostgreSQL, and system adapters
+- explicit Alembic and ordered Neo4j migrations with read-only verification and checksum drift
+  detection
+- stable `/api/v1` DTOs and an `application/problem+json` error contract with correlation IDs
+- deterministic hermetic tests (188) and disposable integration tests (16)
+- reference-world seed manifest and fail-closed reset/seed commands
+- structured, redacted logging; health/readiness/capabilities; CI with a disposable
+  integration job
 
-Target transition:
+Remaining gaps to the target:
 
-- stabilize line endings and tool commands
-- choose/lock supported runtimes and dependencies
-- introduce injection seams before reorganizing packages
-- introduce PostgreSQL and tenant scope before new durable product records
-- add tests around current observable behavior
-- migrate one vertical slice at a time
+- no shared OIDC/session integration, invitations, or workspace/project scoping at persistence, cache, vector, job, or event boundaries
+- no journal/outbox, encrypted hosted OpenRouter credential vault, or hosted workers
+- legacy `/api` prototype routes remain as deprecated aliases pending migration/removal
+- final fact/belief/event/branch domain redesign and the consistency engine are not started
+- the parked world workflow (`backend/services/world_service.py`) is unreconciled
 
-Do not start by moving every file. First make import and workflow boundaries testable; then relocate code as part of behavior changes.
-
-## `backend/main.py`
-
-Current:
-
-- FastAPI app includes one router
-- graph constraint creation occurs during lifespan, but the graph singleton already did work during import
-
-Target:
-
-- application factory with settings and dependency overrides
-- infrastructure initialized/closed only in lifespan
-- readiness endpoint and migration version verification
-- versioned API router and consistent exception handling
-
-## `backend/api/endpoints.py`
+## Application lifecycle
 
 Current:
 
-- graph/schema/RAG/character routes share one module
-- endpoints call graph and AI services directly
-- generic graph writes silently create schema types
-- static node routes are declared after a dynamic `/{node_id}` route
-- generic RAG answer generation is placeholder behavior
+- `backend/main.py` builds the container inside the lifespan, verifies Neo4j and PostgreSQL
+  migration state in a `try/finally`, and closes resources on shutdown
+- `app = create_app()` provides the conventional ASGI export without import-time side effects
+- `backend/container.py` wires adapters from explicit settings
 
 Target:
 
-- routers by resource/workflow
-- application commands/queries behind dependency injection
-- versioned DTO and problem contracts
-- project/branch scoping, pagination, concurrency, idempotency
-- admin-only generic graph tools separated from product workflows
+- OIDC/local identity adapters, invitation-derived workspace/project context, and per-request unit of work
+- startup readiness that distinguishes required stores from optional providers (partially done)
+- background worker lifecycle separate from the API process
 
-## `backend/graph/schema.py`
+## API and transport
 
 Current:
 
-- useful initial enum vocabulary
-- generic property bags
-- process-global JSON custom schema registry
-- edge temporal fields exist in models but are not persisted by the manager
-- `World` is created by a service but is absent from `NodeType`
+- canonical `/api/v1` router with entity/edge/schema/context/character endpoints and a
+  `rag/query` endpoint that returns 501
+- `backend/api/problems.py` maps domain, validation, HTTP, AI, and unhandled errors to
+  `application/problem+json`
+- `CorrelationIdMiddleware` propagates/generates `X-Correlation-ID`
+- legacy `/api` router still uses module singletons for graph and RAG
 
 Target:
 
-- domain-owned core schema and project-scoped extension schema
-- declared properties, cardinality, endpoint types, time and visibility behavior
-- migration/version support
-- fact/belief/provenance models independent of Neo4j serialization
+- remove or fully port legacy routes; enforce workspace/project scope on every endpoint
+- cursor pagination, idempotency keys, and rate limiting
+- streaming generation and review endpoints
 
-## `backend/graph/manager.py`
+## Graph, schema, and traversal
 
 Current:
 
-- one class combines lifecycle, migrations, commands, queries, search, and raw Cypher
-- creates driver/index at import through a singleton
-- catches startup failures, allowing partially degraded startup without a clear status
-- inconsistent return shapes and direct driver values
-- update does not reconcile labels; delete support is incomplete
+- `GraphManager` is lazy; no DDL at import or startup
+- `Neo4jGraphRepository` maps Neo4j records to the stable `Node`/`Edge` domain shape and
+  instruments calls
+- schema registry rejects unknown types on writes, orders custom types deterministically, and
+  persists sorted lists; `World` node type exists
+- `build_traversal_query` is a characterized pure function; `ContextTraversal` runs on the
+  repository port
 
 Target:
 
-- narrow project-scoped repositories implementing application ports
-- separate migration/index administration
-- explicit transaction and unit-of-work boundaries
-- domain DTO mapping at the adapter boundary
-- no raw Cypher in user-facing services
+- objective-fact vs character-belief separation enforced in traversal and context assembly
+- branch/timeline-aware traversal with validity intervals
+- pagination and streaming for large graphs
 
-## Retrieval modules
+## Retrieval and vectors
 
 Current:
 
-- explicit markdown entity tags are a useful deterministic anchor
-- traversal policies constrain relation sets and result counts
-- semantic graph anchors use Neo4j's vector index
-- score logic is heuristic; PageRank naming does not represent Graph Data Science PageRank
-- no project/branch/timeline/visibility filtering
-- context summary is an unbudgeted text formatter
+- `PgVectorStore` implements the vector port over PostgreSQL/pgvector, embedding through the
+  injected embedding port; the derived `vector_documents` table is rebuildable
+- embeddings are optional and report honest availability/loaded state
+- the legacy Chroma module remains but is unused by the container
 
 Target:
 
-- keep explicit entity mentions as one input format
-- return a structured context manifest before rendering text
-- apply deterministic visibility and temporal policy before semantic ranking
-- version policies and score components
-- introduce token budgets, deduplication, source traces, and evaluations
+- vector port filters (by type, project, branch), deactivation, and rebuild hooks
+- hybrid keyword + semantic retrieval with provenance
+- rebuild tooling and index versioning
 
-## `backend/core/vector_store.py`
+## Character and world workflows
 
 Current:
 
-- Chroma persistent client and one collection created globally
-- minimal add/query wrapper
-- no version lifecycle, scoping, filtering contract, deletion, or rebuild
+- character workflow runs on injected ports with a full temporary→durable ID map, edge
+  endpoint rewriting, and validation of unknown types, duplicates, missing targets, and
+  conflicting entities
+- world workflow is parked and excluded from lint/format pending owner reconciliation
+  (FND-008.23–27)
 
 Target:
 
-- injected vector port with Chroma adapter
-- versioned metadata contract and strict filters
-- index outbox, lag, health, deletion, and deterministic rebuild
-- content-hash embedding cache
-
-## Character service
-
-Current strengths:
-
-- structured model outputs
-- useful separation of stable anchor from appearance/personality/state/belief concepts
-- explicit and semantic entity reuse attempts
-- cached debug responses for development
-
-Current defects/risks:
-
-- graph reads are treated as nested `properties`, but the manager returns flattened properties
-- init endpoint does not accept/store the bio expected by the CLI test
-- post-processing rewrites node IDs without rewriting matching edge targets
-- unknown output types are noticed but not rejected
-- model, graph, filesystem cache, prompt assembly, and domain processing are coupled
-- debug model responses are not a safe durable job/replay mechanism
-
-Target:
-
-- guided questionnaire as an application workflow
-- provider adapter and versioned prompt
-- typed proposal with temporary IDs and deterministic resolution
-- review screen before mutation commit
-- offline fake responses and separate live evaluations
-
-## World service
-
-Current:
-
-- unfinished question-generation workflow
-- undefined `explicit_ids` due to spelling mismatch and missing `json` import
-- no API route or answer-to-graph flow
-- duplicates character-service models and logic
-
-Target:
-
-- share generic guided-discovery and proposal infrastructure
-- world-specific question policy/schema only
-- deliver after canon/schema foundations, not as a second bespoke pipeline
+- world workflow repaired and port-injected
+- mutation proposals validated against branch/timeline invariants and committed atomically
+  (FND-008.21, Phase 1)
+- review boundary between proposals and accepted canon
 
 ## Frontend
 
 Current:
 
-- unmodified Vite/React starter
-- no API integration, navigation, domain screens, or tests
-- no signup/session, subscription, usage, BYOK, membership, or job-funding surfaces
+- default Vite React scaffold with lint and production build in CI
 
-Target transition:
+Target:
 
-1. adopt TypeScript, routing, generated API client, and server-state library
-2. build account/session, subscription/usage, BYOK, and project-membership foundations
-3. create project shell and error/job surfaces
-4. build entity and character workflows
-5. build story, consistency, and scene studio workflows
-6. add branch/history and operational settings
+- product UI for graph browsing, context inspection, character/world authoring, and review
 
 ## Tests and scripts
 
 Current:
 
-- endpoint tests call a separately running localhost API and persistent database
-- context and character files are interactive/manual scripts but named as tests
-- cleanup calls node-delete endpoints that do not exist
-- the historical checked-in pytest output has been removed; there is not yet CI reporting to replace it
+- `tests/{unit,application,contract,integration,e2e}` with documented responsibilities and
+  hermetic-by-default execution
+- `scripts/manual/` holds non-hermetic manual scripts excluded from pytest collection
+- `scripts/ci/secret_scan.py` provides the credential guard
 
-Target transition:
+Target:
 
-- preserve scripts under `scripts/manual/` if still useful
-- create hermetic unit/application tests first
-- use disposable integration infrastructure
-- mark live provider evaluations explicitly
-- publish current results through CI rather than checked-in output
+- coverage floors per package, mutation testing for domain invariants, and recorded
+  model-quality evaluations behind the `llm` marker
 
 ## Refactor order
 
-1. Characterize resolver/schema/DTO behavior.
-2. Add PostgreSQL, ports, and an application factory; remove import side effects.
-3. Establish tenant/project scope, identity seams, and a deterministic seed world.
-4. Standardize API/domain representations.
-5. Repair the existing character slice through injected fakes and repositories.
-6. Add journal and fact/belief semantics.
-7. Build new workflows on those foundations rather than extending current singleton services.
+Phase 1 should proceed in this order without reopening Phase 0 foundations:
+
+1. OIDC/local identity ports, invitation lifecycle, and workspace/project scope primitives
+2. workspace/project enforcement at every persistence and asynchronous boundary
+3. journal/outbox and unit-of-work around canon mutations
+4. fact/belief/event/branch domain redesign with validity intervals
+5. mutation review and atomic application (FND-008.21)
+6. consistency preflight/postflight harness (ADR-006)
+7. legacy `/api` route removal once v1 parity is confirmed

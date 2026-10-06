@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-05
 - Owners: project owner
-- Related backlog: SCN-002, SCN-003, SCN-006, SaaS-006–SaaS-009
+- Related backlog: SCN-002, SCN-002A, SCN-003, SCN-006, OSS-003, OSS-007, OSS-008, SaaS-006
 
 ## Context
 
@@ -11,7 +11,7 @@ Users need access to multiple cloud models through one integration and should ev
 
 ## Decision
 
-Use OpenRouter as the cloud-model gateway. Keep an internal capability-based AI port rather than exposing OpenRouter response types to the domain. Add an authenticated local companion that maintains an outbound connection to the SaaS and invokes OpenAI-compatible Ollama or llama.cpp endpoints on the user's network.
+Use OpenRouter as the cloud-model gateway. Keep an internal capability-based AI port rather than exposing OpenRouter response types to the domain. Self-hosted deployments call configured OpenAI-compatible Ollama or llama.cpp endpoints directly. An authenticated outbound local companion is deferred unless the hosted portfolio application later needs to invoke models on a user's device.
 
 Represent autonomy as a user/project/workflow policy. Release one includes delegated low-risk canon writes. Protected/high-impact actions—such as conflicted merges, schema changes, broad destructive changes, secret-policy changes, and spend above limits—retain a human-review boundary.
 
@@ -19,8 +19,8 @@ Represent autonomy as a user/project/workflow policy. Release one includes deleg
 
 - Model selection, availability, pricing, context limits, structured output, and retry behavior are normalized at the adapter boundary.
 - Jobs record actual upstream provider/model identifiers even when requested through a router.
-- Platform-credit and BYOK requests share workflow code but use different billing and credential paths.
-- Local inference needs a trusted connector or self-hosted topology; it cannot be treated as a normal hosted worker endpoint.
+- OpenRouter and local requests share workflow code but use different credential/capability paths; the application records usage without maintaining a platform balance.
+- Local inference is native to self-hosting. It needs a trusted connector before a remote hosted worker may reach a user's device.
 - Evaluation baselines are capability/task-specific rather than tied to one model name.
 
 ## Validation

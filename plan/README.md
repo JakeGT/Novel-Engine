@@ -19,9 +19,13 @@ Read in this order:
 11. [Decisions and questions](11-decisions-and-questions.md) — provisional choices that require owner confirmation.
 12. [Current gap analysis](12-current-gap-analysis.md) — how the prototype maps to the target and where refactoring starts.
 13. [Consistency system](13-consistency-system.md) — deterministic, incremental, and model-assisted continuity validation.
-14. [SaaS platform](14-saas-platform.md) — tenancy, subscriptions, credits, BYOK, jobs, and collaboration boundaries.
+14. [Distribution and invite-only hosting](14-saas-platform.md) — OIDC identity, invitations, tenancy, self-hosting, provider keys, and packaging. The legacy filename is retained for stable links.
 15. [Prose editor and memory](15-prose-editor-and-memory.md) — canonical manuscript versions, editing, external integrations, and prose retrieval.
 16. [OpenCodeReview adaptation](16-open-code-review-adaptation.md) — deterministic review bundles and bounded agents for long-form prose.
+17. [Phase 0 todo](phase-0-todo.md) — execution-ready stabilization checklist, dependencies, and exit evidence.
+18. [API surface](api-surface.md) — canonical `/api/v1` routes, deprecated aliases, and the problem error contract.
+19. [Phase 0 baseline](phase-0-baseline.md) — pre-refactor API, storage, workflow, and worktree inventory.
+20. [Phase 1 todo](phase-1-todo.md) — execution-ready identity, tenancy, distribution, provider-credential, and isolation checklist.
 
 Architectural decisions that become settled should be recorded in `decisions/` using [the ADR template](decisions/000-template.md).
 
@@ -34,7 +38,8 @@ Architectural decisions that become settled should be recorded in `decisions/` u
 - **Derived stores are disposable.** Neo4j plus the mutation journal can reconstruct search indexes and summaries.
 - **One vertical slice at a time.** Each delivery phase ends in a user-observable workflow, not only infrastructure.
 - **Local development is first-class.** A contributor or agent should be able to validate most changes without paid APIs.
-- **Tenant and financial correctness are product invariants.** Isolation, credential custody, and idempotent credit accounting are designed before launch.
+- **Open source and hosted use share one core.** Self-hosted local identity and invite-only portfolio identity enter the same scoped application contracts.
+- **Tenancy is explicit; commerce is absent.** Hosted workspace isolation is foundational, while billing and platform-funded inference are not release dependencies.
 - **Consistency is tiered.** Cheap deterministic checks run continuously; paid model audits escalate only where they add value.
 
 ## Status vocabulary
@@ -47,7 +52,7 @@ Architectural decisions that become settled should be recorded in `decisions/` u
 | Implemented | Acceptance criteria and quality gates pass. |
 | Deferred | Intentionally excluded from the current release. |
 
-Core product decisions are now accepted and recorded under `decisions/`. Remaining decisions are listed in `11-decisions-and-questions.md`.
+Core domain decisions are recorded under `decisions/`. ADR-008 proposes the open-source/free distribution pivot and ADR-009 accepts invite-only tenancy through shared portfolio identity. Licensing, identity-provider selection, and governance remain owner decisions in `11-decisions-and-questions.md`.
 
 ## Current repository baseline
 

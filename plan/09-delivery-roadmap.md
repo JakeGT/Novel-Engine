@@ -8,6 +8,8 @@ Build vertical slices in dependency order. Each phase must leave the application
 
 Goal: create a deterministic development baseline before expanding functionality.
 
+Execution checklist: [`phase-0-todo.md`](phase-0-todo.md).
+
 Work:
 
 - choose supported Python/Node versions and add CI
@@ -33,32 +35,36 @@ Exit criteria:
 - lint, unit tests, and frontend build run in CI
 - current workflows have documented, stable responses
 
-## Phase 1 — SaaS identity, tenancy, and usage foundation
+## Phase 1 — Identity, tenancy, distribution, and project foundation
 
-Goal: establish secure hosted-product boundaries before storing valuable manuscripts or spending user funds.
+Goal: make the stabilized prototype installable and establish invite-only hosted tenant boundaries before storing valuable manuscripts.
 
 Work:
 
-- account authentication, secure sessions, recovery, and deletion states
-- tenant/project membership and owner/editor/viewer authorization baseline
-- PostgreSQL tenant-scoped repositories and audit records
-- subscription entitlement model and payment-provider boundary
-- append-only platform-credit ledger, reservation, reconciliation, cancellation, and refund flows
-- encrypted OpenRouter BYOK credential lifecycle
-- job funding-source resolution and model-usage normalization
-- rate limits, abuse controls, quotas, and spend caps
-- seeded development tenants/users/projects
-- cross-tenant, billing-idempotency, and key-redaction tests
+- documented Docker Compose self-hosted installation and upgrade path
+- shared OIDC identity-provider port and secure application sessions for the portfolio deployment
+- invite-only workspace membership with owner/editor/viewer authorization
+- explicit local/single-user identity mode that hosted mode cannot enable
+- workspace/project-scoped PostgreSQL repositories and audit records
+- local secret configuration for OpenRouter and OpenAI-compatible endpoints
+- model-usage normalization plus per-job token/cost estimates and caps
+- backup, restore, export, and deterministic seed workflows
+- offline fake-provider mode and local-model capability discovery
+- contributor-facing configuration, diagnostics, and troubleshooting
+- invitation, cross-tenant, key-redaction, backup, and upgrade tests
 
 Exit criteria:
 
-- authentication and tenant isolation are enforced through every implemented persistence path
-- payment/provider retries cannot double-credit, double-charge, or double-spend
-- API responses and logs never expose provider keys
+- a clean machine can install and start the supported stack from the documentation
+- every hosted persistence path enforces workspace/project scope
+- a portfolio identity receives no Novel Engine access without a valid invitation
+- hosted mode refuses unsafe local-identity configuration
+- API responses, logs, and exports never expose provider keys
 - deterministic seed data boots a clean development environment
-- account/project deletion and export behavior is specified
+- a project survives backup/restore and complete archive export/import
+- no core request depends on a billing API or project-funded inference service
 
-## Phase 2 — Projects and trustworthy canon
+## Phase 2 — Trustworthy canon
 
 Goal: authors can safely create and maintain isolated project canon.
 
@@ -142,7 +148,7 @@ Work:
 - scene readiness checks
 - async job framework, progress stream, cancellation, and budgets
 - provider-neutral generation gateway
-- OpenRouter platform-credit/BYOK routing and usage reconciliation
+- OpenRouter BYOK/local-provider routing and normalized usage records
 - versioned generation prompts and fake adapter
 - scene editor, entity mentions, context preview, and draft variants
 - immutable scene versions and lineage
@@ -159,7 +165,7 @@ Exit criteria:
 - plan requirements and findings are visible beside the draft
 - failures do not lose plans or manual prose
 - deterministic consistency runs on each generation without paid inference
-- paid jobs reserve and reconcile usage exactly once
+- provider attempts and actual usage are recorded exactly once
 
 ## Phase 6 — Extraction, review, and commit loop
 
@@ -185,23 +191,23 @@ Exit criteria:
 - stale reviews receive a conflict rather than overwriting newer state
 - full release-one workflow passes from a clean project
 
-## Phase 7 — Product hardening and beta
+## Phase 7 — Open-source release hardening
 
 Goal: make user data dependable and operation understandable.
 
 Work:
 
-- production authentication/authorization hardening and collaboration scope
+- portfolio OIDC, session, invitation, and authorization hardening
 - backup/restore automation and runbooks
 - migration compatibility tests
-- telemetry, cost controls, diagnostics, and privacy settings
+- opt-in telemetry, cost controls, diagnostics, and privacy settings
 - performance profiling and query/index tuning
 - accessibility and keyboard workflow audit
 - dependency/security scanning
 - onboarding, sample project, and recovery UX
 - Tier 3 scheduled/on-demand chapter, act, and project audits
-- hosted SaaS deployment, payment reconciliation, support, and incident tooling
-- authenticated local-model companion and OpenAI-compatible inference route
+- reproducible release artefacts, upgrade notes, contributor/security policies, and license notices
+- direct OpenAI-compatible local inference route and provider capability diagnostics
 
 Exit criteria:
 
@@ -209,6 +215,7 @@ Exit criteria:
 - recovery drills and upgrade tests pass
 - known data-loss/security risks are resolved or explicitly accepted
 - beta users can complete the workflow without developer assistance
+- the self-hosted profile operates without a project-operated cloud dependency
 
 ## Later options
 
@@ -220,18 +227,20 @@ Exit criteria:
 - manuscript-wide revision and continuity reports
 - importers for common writing tools
 - agentic planning assistants operating strictly on proposals
+- public demo or managed multi-user hosting, with a separate funding/privacy/operations decision
+- open signup or public community hosting beyond the invite-only portfolio deployment
 
 ## Dependency chain
 
 ```text
 stable boundaries
-  -> SaaS identity + tenancy + usage ledger
+  -> OIDC identity + invite-only tenancy + self-hosted packaging
     -> project-scoped canon + journal
       -> time/branch/knowledge semantics
         -> explainable context + indexing
           -> planning + consistency + generation jobs
             -> extraction + review + commit
-              -> SaaS hardening
+              -> open-source release hardening
 ```
 
 Skipping an earlier semantic layer creates expensive ambiguity later. In particular, generation should not precede a stable review/commit model, and branching should not be bolted onto unscoped mutable graph records.

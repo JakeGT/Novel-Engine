@@ -1,32 +1,66 @@
 # Dependency-ordered backlog
 
-Each item is sized to be independently reviewable. IDs are stable references for issues and agent assignments. `P0` blocks later architecture; `P1` is release-one essential; `P2` is valuable but deferrable.
+Each item is sized to be independently reviewable. IDs are stable references for issues and agent assignments. `P0` blocks later architecture; `P1` is release-one essential; `P2` is valuable but deferrable; `Deferred` is outside the current release sequence.
 
 ## Foundation
 
+Phase 0 execution details, sub-items, dependencies, and exit evidence are maintained in [`phase-0-todo.md`](phase-0-todo.md).
+
 - **FND-001 · P0 — Runtime lifecycle:** create Neo4j, vector, embedding, and AI clients through application lifespan and injected dependencies. Acceptance: importing `backend.main` performs no network connection or persistent write.
+  - **Status:** Implemented (P0-05, commit `24f32cd`). Verified by `tests/unit/test_import_safety.py` and `tests/contract/test_lifecycle.py`.
 - **FND-002 · P0 — Domain ports:** define repository, journal, vector, AI, clock, and ID interfaces with in-memory fakes. Acceptance: one application workflow runs entirely in memory.
+  - **Status:** Implemented (P0-06, commit `24f32cd`; `backend/ports.py`). Verified by `tests/application/test_character_workflow.py`.
 - **FND-003 · P0 — Stable DTOs:** define versioned entity/edge request and response models. Acceptance: create/read/search/update share one representation and OpenAPI examples.
+  - **Status:** Implemented (P0-07, commit `576c859`). Verified by `tests/contract/test_openapi.py` and the v1 contract tests.
 - **FND-004 · P0 — Error contract:** implement typed domain errors and API problem responses. Acceptance: validation, not-found, conflict, provider, and persistence cases are covered.
+  - **Status:** Implemented (P0-07, commit `576c859`). Verified by `tests/contract/test_v1_errors.py`.
 - **FND-005 · P0 — Migrations:** add explicit graph constraint/index migrations and version check. Acceptance: apply twice safely and verify expected schema.
+  - **Status:** Implemented (P0-04, commit `24f32cd`). Verified by `tests/integration/test_neo4j_migrations.py`.
 - **FND-005A · P0 — PostgreSQL foundation:** add PostgreSQL configuration, migrations, health, transaction boundary, and disposable test fixture.
+  - **Status:** Implemented (P0-03, commit `24f32cd`; pgvector store added in P0-09). Verified by `tests/integration/test_postgres_*.py` and `test_pgvector_adapter.py`.
 - **FND-006 · P0 — Test layout:** create deterministic unit/application suites and disposable integration fixtures. Acceptance: default tests need no services or secrets.
+  - **Status:** Implemented (P0-02/P0-05, commits `24f32cd`/`c052079`; integration fixtures in P0-09). 188 hermetic + 16 integration tests.
 - **FND-007 · P0 — Reproducible toolchain:** pin supported runtimes, lock dependencies, and configure CI. Acceptance: clean Linux runner passes static checks and unit tests.
+  - **Status:** Implemented (P0-01/P0-11, commit `24f32cd`; full CI in the P0-11 worktree). Hosted CI run link pending first PR.
 - **FND-008 · P0 — Prototype repairs:** fix property-shape mismatch, route specificity, world-service errors, character bio flow, rewritten edge targets, temporal edge persistence, and update-label behavior. Acceptance: each defect has a regression test.
-- **FND-009 · P0 — Seed environment:** create deterministic PostgreSQL/Neo4j/vector/object fixtures for two tenants and the reference world, with reset/reseed commands safe only outside production.
+  - **Status:** Partially implemented (P0-08, commit `c0476a0`; FND-008.1–22, 28–32). Deferred: FND-008.21 (atomic mutation → Phase 1) and FND-008.23–27 (world workflow → parked `world_service.py`).
+- **FND-009 · P0 — Seed environment:** create deterministic PostgreSQL/Neo4j/vector/object fixtures for multiple isolated projects and the reference world, with reset/reseed commands safe only outside production.
+  - **Status:** Implemented (P0-09). Two placeholder workspaces/projects support isolation fixtures without requiring production tenancy; verified by `tests/integration/test_seed_world.py` and `tests/unit/test_reset_guard.py`.
 
-## SaaS platform
+## Open-source distribution
 
-- **SaaS-001 · P0 — Accounts and sessions:** signup, verification policy, login, secure session lifecycle, recovery, and deletion states.
-- **SaaS-002 · P0 — Tenant and membership:** tenant/project ownership plus owner/editor/viewer authorization baseline.
-- **SaaS-003 · P0 — Isolation enforcement:** tenant-scoped PostgreSQL, Neo4j, vector, object, job, and export adapters with adversarial tests.
-- **SaaS-004 · P0 — Subscription boundary:** plans, entitlements, subscription state, and verified idempotent webhook processing.
-- **SaaS-005 · P0 — Credit ledger:** append-only grants, purchases, reservations, releases, reconciliations, refunds, and balance projection.
-- **SaaS-006 · P0 — Provider credentials:** encrypted OpenRouter BYOK storage, rotation, revocation, worker access, and redaction.
-- **SaaS-007 · P0 — Usage normalization:** requested route, upstream provider/model, input/output/cache usage, provider cost, and policy version.
-- **SaaS-008 · P0 — Funded job execution:** choose BYOK/platform funding, reserve before execution, reconcile once, and recover failures.
-- **SaaS-009 · P1 — Autonomy policy:** manual/assisted/delegated workflow decisions with mandatory-review categories and audit.
-- **SaaS-010 · P1 — Abuse/spend controls:** rate limits, quotas, confirmation thresholds, anomaly alerts, and support overrides.
+- **OSS-001 · P0 — Reference deployment:** one documented Docker Compose path with health checks, persistent volumes, safe network defaults, and an upgrade contract.
+- **OSS-002 · P0 — Local identity mode:** a no-signup single-user mode that is explicit, safe by default, and cannot be enabled in the hosted profile.
+- **OSS-003 · P0 — Provider configuration:** redacted environment/config handling for user-supplied OpenRouter keys and OpenAI-compatible local endpoints.
+- **OSS-004 · P1 — Data ownership:** versioned project export/import plus tested backup, restore, and migration instructions.
+- **OSS-005 · P1 — Release and community:** license, notices, contribution guide, security policy, issue templates, changelog, and reproducible release artefacts.
+- **OSS-006 · P1 — Privacy contract:** opt-in telemetry only, documented outbound connections, content-free diagnostics by default, and a no-provider workflow.
+- **OSS-007 · P1 — Autonomy policy:** manual/assisted/delegated workflow decisions with mandatory-review categories and audit.
+- **OSS-008 · P1 — Usage limits:** per-job estimates, configurable token/cost caps, cancellation, normalized usage, and retry safeguards.
+
+## Invite-only identity and tenancy
+
+- **IDN-001 · P0 — OIDC boundary:** provider-neutral authorization-code/PKCE integration, issuer/audience validation, external `(issuer, subject)` mapping, and fake development provider.
+- **IDN-002 · P0 — Application sessions:** host-only secure cookies, CSRF protection, rotation, logout, expiry, revocation, and hosted-safe configuration guards.
+- **IDN-003 · P0 — Workspace membership:** workspace plus owner/editor/viewer roles, least-privilege policy checks, and explicit project grants where needed.
+- **IDN-004 · P0 — Invitations:** create, bind, expire, revoke, accept once, and audit workspace invitations without leaking tenant existence.
+- **IDN-005 · P0 — Isolation enforcement:** workspace/project scope in PostgreSQL, Neo4j, vector, object, job, export, cache, and event adapters with adversarial tests.
+- **IDN-006 · P1 — Identity operations:** recovery/admin expectations, MFA requirements for privileged users, account unlinking/deletion behavior, and runbooks for the shared portfolio IdP.
+
+## Deferred commercial platform
+
+These IDs are retained for traceability from ADR-001. Identity and isolation work has moved to IDN-001–IDN-006; billing and platform-funded inference remain deferred by ADR-008.
+
+- **SaaS-001 · Superseded — Accounts and sessions:** replaced by shared OIDC and IDN-001/IDN-002; open signup is not planned.
+- **SaaS-002 · Superseded — Tenant and membership:** replaced by IDN-003/IDN-004.
+- **SaaS-003 · Superseded — Isolation enforcement:** replaced by IDN-005.
+- **SaaS-004 · Deferred — Subscription boundary:** plans, entitlements, subscription state, and verified idempotent webhook processing.
+- **SaaS-005 · Deferred — Credit ledger:** grants, purchases, reservations, releases, reconciliations, refunds, and balance projection.
+- **SaaS-006 · P1 — Hosted credential vault:** encrypted user-owned OpenRouter credential storage, rotation, revocation, worker access, and redaction; no platform funding.
+- **SaaS-007 · Deferred — Hosted usage accounting:** provider cost and policy records needed by a managed service.
+- **SaaS-008 · Deferred — Platform-funded jobs:** funding selection, reservation, reconciliation, and failure recovery.
+- **SaaS-009 · Deferred — Hosted autonomy policy:** workspace-level constraints layered over project/user choices.
+- **SaaS-010 · Deferred — Hosted abuse controls:** rate limits, quotas, anomaly alerts, and support overrides.
 
 ## Canon and schema
 
@@ -112,9 +146,9 @@ Each item is sized to be independently reviewable. IDs are stable references for
 ## Operations and product quality
 
 - **OPS-001 · P0 — Structured diagnostics:** correlation IDs, redaction, workflow/job/provider metrics.
-- **OPS-002 · P1 — Cost controls:** estimates, caps, confirmation thresholds, and per-job actuals.
+- **OPS-002 · P1 — Usage controls:** token/cost estimates, author-defined caps, confirmation thresholds, and per-job actuals.
 - **OPS-003 · P1 — Backup/restore:** automated operation, verification, and runbook.
-- **OPS-004 · P0 — Hosted identity operations:** production session security, verification/recovery, roles, audit, and development identity adapter.
+- **OPS-004 · P1 — Hosted identity operations:** OIDC/session security, invitation and role audit, recovery runbooks, and a clearly separated local identity adapter.
 - **OPS-005 · P1 — Privacy controls:** retention and deletion for drafts/model artefacts/log content.
 - **OPS-006 · P1 — Health/degradation:** readiness and clear graph/vector/provider/worker status.
 - **QLT-001 · P0 — Reference world:** synthetic cross-layer fixture with branches, secrets, and false beliefs.
@@ -124,6 +158,6 @@ Each item is sized to be independently reviewable. IDs are stable references for
 
 ## Suggested first implementation sequence
 
-`FND-005A → FND-001 → FND-002 → FND-003 → FND-006 → FND-008 → SaaS-001 → SaaS-002 → SaaS-003 → SaaS-005 → CAN-001 → CAN-002 → CAN-008 → QLT-001 → CON-001 → CON-002`
+`FND-005A → FND-001 → FND-002 → FND-003 → FND-006 → FND-008 → IDN-001 → IDN-002 → IDN-003 → IDN-004 → IDN-005 → OSS-001 → OSS-003 → CAN-001 → CAN-002 → CAN-008 → QLT-001 → CON-001 → CON-002`
 
 This sequence creates safe seams and tests before changing durable data semantics.

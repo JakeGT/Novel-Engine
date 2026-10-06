@@ -1,77 +1,137 @@
-from fastapi import APIRouter, HTTPException
-from backend.graph.manager import graph_manager
-from backend.graph.schema import Node, Edge, NodeType, schema_registry
-from backend.core.vector_store import vector_store
-from backend.services.character_service import CharacterService
-from backend.graph.resolver import extract_entity_ids
-from backend.graph.policies import get_policy
-from backend.graph.traversal import context_traversal
-from backend.graph.summarizer import summarize_context
-from backend.graph.vector_search import generate_node_embedding, generate_query_embedding
-from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
+from typing import Any
 
-character_service = CharacterService()
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+from backend.api.dependencies import (
+    get_character_service,
+    get_container,
+    get_schema_registry,
+)
+from backend.container import Container
+from backend.graph.manager import graph_manager
+from backend.graph.policies import get_policy
+from backend.graph.resolver import extract_entity_ids
+from backend.graph.schema import Edge, Node, schema_registry
+from backend.graph.summarizer import summarize_context
+from backend.graph.traversal import context_traversal
+from backend.graph.vector_search import generate_node_embedding, generate_query_embedding
+from backend.ports import SchemaRegistryPort
+from backend.services.character_service import CharacterService
 
 router = APIRouter()
 
+
 class CreateNodeRequest(BaseModel):
     id: str
-    type: str # Use string instead of Enum to support dynamic types
-    properties: Dict[str, Any]
+    type: str  # Use string instead of Enum to support dynamic types
+    properties: dict[str, Any]
+
 
 class CreateEdgeRequest(BaseModel):
     source: str
     target: str
-    type: str # Simplified for flexibility, ideally EdgeType
-    properties: Dict[str, Any]
+    type: str  # Simplified for flexibility, ideally EdgeType
+    properties: dict[str, Any]
+
 
 class QueryRequest(BaseModel):
     query: str
 
+
 class CustomTypeRequest(BaseModel):
     type: str
 
+
 @router.get("/schema/nodes/")
-def get_custom_node_types():
-    return {"types": list(schema_registry.custom_node_types)}
+def get_custom_node_types(registry: SchemaRegistryPort = Depends(get_schema_registry)):
+    return {"types": sorted(registry.custom_node_types)}
+
 
 @router.post("/schema/nodes/")
-def add_custom_node_type(request: CustomTypeRequest):
-    schema_registry.add_custom_node_type(request.type)
-    return {"message": f"Custom node type '{request.type}' added.", "types": list(schema_registry.custom_node_types)}
+def add_custom_node_type(
+    request: CustomTypeRequest, registry: SchemaRegistryPort = Depends(get_schema_registry)
+):
+    registry.add_custom_node_type(request.type)
+    return {
+        "message": f"Custom node type '{request.type}' added.",
+        "types": sorted(registry.custom_node_types),
+    }
+
 
 @router.delete("/schema/nodes/{node_type}")
-def remove_custom_node_type(node_type: str):
-    schema_registry.remove_custom_node_type(node_type)
-    return {"message": f"Custom node type '{node_type}' removed.", "types": list(schema_registry.custom_node_types)}
+def remove_custom_node_type(
+    node_type: str, registry: SchemaRegistryPort = Depends(get_schema_registry)
+):
+    registry.remove_custom_node_type(node_type)
+    return {
+        "message": f"Custom node type '{node_type}' removed.",
+        "types": sorted(registry.custom_node_types),
+    }
+
 
 @router.get("/schema/edges/")
-def get_custom_edge_types():
-    return {"types": list(schema_registry.custom_edge_types)}
+def get_custom_edge_types(registry: SchemaRegistryPort = Depends(get_schema_registry)):
+    return {"types": sorted(registry.custom_edge_types)}
+
 
 @router.post("/schema/edges/")
-def add_custom_edge_type(request: CustomTypeRequest):
-    schema_registry.add_custom_edge_type(request.type)
-    return {"message": f"Custom edge type '{request.type}' added.", "types": list(schema_registry.custom_edge_types)}
+def add_custom_edge_type(
+    request: CustomTypeRequest, registry: SchemaRegistryPort = Depends(get_schema_registry)
+):
+    registry.add_custom_edge_type(request.type)
+    return {
+        "message": f"Custom edge type '{request.type}' added.",
+        "types": sorted(registry.custom_edge_types),
+    }
+
 
 @router.delete("/schema/edges/{edge_type}")
-def remove_custom_edge_type(edge_type: str):
-    schema_registry.remove_custom_edge_type(edge_type)
-    return {"message": f"Custom edge type '{edge_type}' removed.", "types": list(schema_registry.custom_edge_types)}
+def remove_custom_edge_type(
+    edge_type: str, registry: SchemaRegistryPort = Depends(get_schema_registry)
+):
+    registry.remove_custom_edge_type(edge_type)
+    return {
+        "message": f"Custom edge type '{edge_type}' removed.",
+        "types": sorted(registry.custom_edge_types),
+    }
+
 
 @router.post("/graph/nodes/")
 def create_node(node: CreateNodeRequest):
     if not schema_registry.is_valid_node_type(node.type):
-        schema_registry.add_custom_node_type(node.type)
-        
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown node type '{node.type}'. Register it via /schema/nodes/ first.",
+        )
+
     try:
         embedding = generate_node_embedding(node.type, node.properties)
         new_node = Node(id=node.id, type=node.type, properties=node.properties, embedding=embedding)
         graph_manager.add_node(new_node)
         return {"message": "Node created", "node": new_node}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get("/graph/nodes/search/")
+def search_nodes(query: str, type: str | None = None):
+    """
+    Fast fuzzy search across node names (or IDs if no name) for the given query.
+    Used for frontend @-mentions to provide quick autocomplete suggestions.
+    """
+    if not query or len(query.strip()) < 2:
+        return []
+
+    return graph_manager.search_nodes_by_name(query.strip(), type)
+
+
+@router.get("/graph/nodes/entities/")
+def get_entities(type: str = None):
+    if type:
+        return graph_manager.get_nodes(node_type=type)
+    return []
+
 
 @router.get("/graph/nodes/{node_id}")
 def get_node(node_id: str):
@@ -80,35 +140,23 @@ def get_node(node_id: str):
         raise HTTPException(status_code=404, detail="Node not found")
     return node
 
-@router.get("/graph/nodes/search/")
-def search_nodes(query: str, type: Optional[str] = None):
-    """
-    Fast fuzzy search across node names (or IDs if no name) for the given query.
-    Used for frontend @-mentions to provide quick autocomplete suggestions.
-    """
-    if not query or len(query.strip()) < 2:
-        return []
-        
-    return graph_manager.search_nodes_by_name(query.strip(), type)
-
-@router.get("/graph/nodes/entities/")
-def get_entities(type: str = None):
-    if type:
-        return graph_manager.get_nodes(node_type=type)
-    return []
 
 @router.put("/graph/nodes/{node_id}")
 def update_node(node_id: str, node_request: CreateNodeRequest):
     node = graph_manager.get_node(node_id)
-    print(node)
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
+    if node.get("type") and node["type"] != node_request.type:
+        raise HTTPException(status_code=409, detail="Changing an entity's type is not supported")
     node["type"] = node_request.type
     node["properties"] = node_request.properties
     embedding = generate_node_embedding(node["type"], node["properties"])
-    node = Node(id=node["id"], type=node["type"], properties=node["properties"], embedding=embedding)
+    node = Node(
+        id=node["id"], type=node["type"], properties=node["properties"], embedding=embedding
+    )
     graph_manager.update_node(node)
     return {"message": "Node updated", "node": node}
+
 
 @router.get("/graph/nodes/{node_id}/edges")
 def get_node_edges(node_id: str):
@@ -117,26 +165,34 @@ def get_node_edges(node_id: str):
         raise HTTPException(status_code=404, detail="Node not found")
     return graph_manager.get_edges(node_id)
 
+
 @router.get("/graph/edges/")
-def get_specific_edge(source_id: str, target_id: str, type: Optional[str] = None):
+def get_specific_edge(source_id: str, target_id: str, type: str | None = None):
     return graph_manager.get_edge(source_id, target_id, type)
+
 
 @router.post("/graph/edges/")
 def create_edge(edge: CreateEdgeRequest):
     # Basic validation
     if not graph_manager.get_node(edge.source) or not graph_manager.get_node(edge.target):
         raise HTTPException(status_code=400, detail="Source or Target node not found")
-        
+
     if not schema_registry.is_valid_edge_type(edge.type):
-        schema_registry.add_custom_edge_type(edge.type)
-    
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown edge type '{edge.type}'. Register it via /schema/edges/ first.",
+        )
+
     try:
         # In a real app, map string to EdgeType enum
-        new_edge = Edge(source=edge.source, target=edge.target, type=edge.type, properties=edge.properties)
+        new_edge = Edge(
+            source=edge.source, target=edge.target, type=edge.type, properties=edge.properties
+        )
         graph_manager.add_edge(new_edge)
         return {"message": "Edge created", "edge": new_edge}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
 
 @router.delete("/graph/edges/{edge_id}")
 def delete_edge(edge_id: str):
@@ -144,26 +200,21 @@ def delete_edge(edge_id: str):
         graph_manager.delete_edge(edge_id)
         return {"message": "Edge deleted", "edge_id": edge_id}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-        
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
 @router.post("/rag/query")
 def rag_query(request: QueryRequest):
-    # 1. Retrieve relevant text chunks
-    docs = vector_store.query(request.query)
-    
-    # 2. (Placeholder) Logic to traverse Graph based on entities in query
-    # entities = extract_entities(request.query)
-    # graph_context = graph_manager.get_subgraph(entities)
-    
-    return {
-        "vector_results": docs,
-        "graph_context": "Placeholder for Graph Traversal Results",
-        "generated_answer": "Placeholder for LLM Generation"
-    }
+    raise HTTPException(
+        status_code=501,
+        detail="RAG answer generation is not implemented; use /api/v1/context for retrieval.",
+    )
+
 
 class ContextRequest(BaseModel):
     text: str
-    context_type: str = "scene_generation" # Default to scene parsing policy
+    context_type: str = "scene_generation"  # Default to scene parsing policy
+
 
 @router.post("/rag/context")
 def extract_context_from_tags(request: ContextRequest):
@@ -174,75 +225,105 @@ def extract_context_from_tags(request: ContextRequest):
     """
     # 1. Resolve explicit anchors
     explicit_anchors = extract_entity_ids(request.text)
-        
+
     # 2. Get active policy based on frontend usage type
     policy = get_policy(request.context_type)
-    
+
     # 3. Resolve semantic anchors
     semantic_anchors = []
     if policy.use_semantic_search:
         query_embedding = generate_query_embedding(request.text)
         if query_embedding:
-            semantic_anchors = graph_manager.search_semantic_nodes(query_embedding, top_k=policy.semantic_top_k)
-            
+            semantic_anchors = graph_manager.search_semantic_nodes(
+                query_embedding, top_k=policy.semantic_top_k
+            )
+
     # Combine anchors (deduplicated)
     combined_anchors = list(set(explicit_anchors + semantic_anchors))
-    
+
     if not combined_anchors:
         return {"nodes": [], "summary": "", "policy_used": policy.context_type}
-    
+
     # 4. Traverse graph using policy rules
     scanned_subgraph = context_traversal.traverse(combined_anchors, policy)
-    
+
     # 4. Summarize and format for LLM injection
     formatted_context = summarize_context(scanned_subgraph)
-    
+
     return {
         "nodes": scanned_subgraph,
         "summary": formatted_context,
-        "policy_used": policy.context_type
+        "policy_used": policy.context_type,
     }
+
 
 # Character Creation Workflow Endpoints
 
+
 class CharacterInitRequest(BaseModel):
     name: str
+
 
 class QuestionsRequest(BaseModel):
     id: str
     use_cache: bool = False
 
+
 class AnswersRequest(BaseModel):
     id: str
-    answers: Dict[str, str]
+    answers: dict[str, str]
     chapter: int
     use_cache: bool = False
 
+
 @router.post("/characters/init")
-async def init_character(request: CharacterInitRequest):
+async def init_character(
+    request: CharacterInitRequest,
+    service: CharacterService = Depends(get_character_service),
+):
     """Workflow Step 1: Create initial node"""
-    node = character_service.init_character_anchor(request.name)
+    node = service.init_character_anchor(request.name)
     return {"message": "Character initialized", "node": node}
 
+
 @router.post("/characters/generate-questions")
-async def generate_questions(request: QuestionsRequest):
+async def generate_questions(
+    request: QuestionsRequest,
+    service: CharacterService = Depends(get_character_service),
+):
     """Workflow Step 2 & 3: Generate questions via GPT-4o or cache"""
-    questions = await character_service.generate_questions(request.id, request.use_cache)
+    questions = await service.generate_questions(request.id, request.use_cache)
     return questions
 
+
 @router.post("/characters/process-answers")
-async def process_answers(request: AnswersRequest):
+async def process_answers(
+    request: AnswersRequest,
+    service: CharacterService = Depends(get_character_service),
+    container: Container = Depends(get_container),
+):
     """Workflow Step 4: Convert answers to KG format and update graph"""
-    update = await character_service.process_answers(request.id, request.chapter, request.answers, request.use_cache)
-    
-    # Apply updates to graph
+    update = await service.process_answers(
+        request.id, request.chapter, request.answers, request.use_cache
+    )
+
     for node_data in update.nodes:
-        embedding = generate_node_embedding(node_data.type, node_data.properties)
-        node = Node(id=node_data.id, type=node_data.type, properties=node_data.properties, embedding=embedding)
-        graph_manager.add_node(node)
-    
+        embedding = container.embeddings.embed_node(node_data.type, node_data.properties)
+        node = Node(
+            id=node_data.id,
+            type=node_data.type,
+            properties=node_data.properties,
+            embedding=embedding,
+        )
+        container.graph.add_node(node)
+
     for edge_data in update.edges:
-        edge = Edge(source=edge_data.source, target=edge_data.target, type=edge_data.type, properties=edge_data.properties)
-        graph_manager.add_edge(edge)
-        
+        edge = Edge(
+            source=edge_data.source,
+            target=edge_data.target,
+            type=edge_data.type,
+            properties=edge_data.properties,
+        )
+        container.graph.add_edge(edge)
+
     return {"message": "Character graph updated", "update": update}

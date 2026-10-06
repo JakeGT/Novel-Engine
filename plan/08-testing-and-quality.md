@@ -4,7 +4,7 @@
 
 ### Domain unit tests
 
-Fast, service-free tests for IDs, schema compilation/validation, facts, intervals, branches, belief visibility, autonomy policy, mutation validation, consistency rules, context budgeting, credit-ledger transitions, and state transitions. These should form the majority of the suite.
+Fast, service-free tests for IDs, schema compilation/validation, facts, intervals, branches, belief visibility, invitation and autonomy policies, mutation validation, consistency rules, context budgeting, and state transitions. These should form the majority of the suite.
 
 ### Application workflow tests
 
@@ -39,7 +39,8 @@ Offline contract tests use recorded or synthetic structured responses. Live-prov
 | --- | --- |
 | Project isolation | no read/write/reference across projects |
 | Tenant isolation | no API/job/graph/vector/object/export access across tenants |
-| Billing | reservation, reconciliation, cancellation, retry, refund, webhook idempotency |
+| Identity | OIDC validation, host-only sessions, local/hosted mode guard, invitation expiry/revocation/replay |
+| Provider usage | limits, cancellation, retry idempotency, and actual-usage recording |
 | Branches | inheritance, fork isolation, merge conflicts, head concurrency |
 | Time | interval boundaries, replacement, unknown dates, flashback ordering |
 | Beliefs | false belief retained, secret visibility, acquisition/expiry |
@@ -88,7 +89,7 @@ For a release candidate:
 - migration from the previous supported version passes
 - AI evaluation metrics meet the approved baseline
 - security dependency scan has no unaccepted critical issue
-- tenant-isolation, credit-reconciliation, and key-redaction suites pass
+- tenant-isolation, identity/invitation, provider-usage, and key-redaction suites pass
 - manual release-one workflow is completed with a fresh project
 
 ## Immediate test cleanup

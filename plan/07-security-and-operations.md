@@ -2,14 +2,14 @@
 
 ## Threat model
 
-Protected assets include passwords/sessions, OpenRouter BYOK credentials, payment/subscription data, platform credits, unpublished manuscript text, private world notes, secrets within the story graph, provider request history, and project exports. Relevant threats include cross-tenant access, prompt injection from imported text, credential theft, billing fraud/double charges, accidental secret leakage into POV context, unsafe dynamic Cypher, excessive model spend, dependency compromise, and loss/corruption of author data.
+Protected assets include OIDC/application sessions, invitations, OpenRouter credentials, unpublished manuscript text, private world notes, secrets within the story graph, provider request history, and project exports. Relevant threats include cross-tenant access, invitation replay, identity/session confusion across sibling portfolio apps, prompt injection from imported text, credential theft, accidental secret leakage into POV context, unsafe dynamic Cypher, excessive model spend, dependency compromise, and loss/corruption of author data.
 
 ## Security controls
 
 ### Application boundaries
 
 - Scope every repository operation to a verified project.
-- Resolve tenant and user from authentication; enforce membership/role both in application policy and repository queries.
+- Resolve workspace and user from the validated OIDC/local session; enforce invitation-derived membership and role in application policy and repository queries.
 - Use allow-listed schema identifiers; parameters cannot protect interpolated Cypher labels by themselves.
 - Keep unrestricted Cypher and raw graph administration out of user-facing APIs.
 - Validate uploads by size, type, extension, and content; scan when hosted.
@@ -34,24 +34,26 @@ Protected assets include passwords/sessions, OpenRouter BYOK credentials, paymen
 
 ## Authentication and tenancy
 
-Hosted mode is authoritative: verified accounts, secure sessions, project membership/roles, audit, abuse controls, account recovery, and deletion. Local development uses seeded test identities through an explicit development adapter, never a production authentication bypass.
+Hosted mode delegates authentication to the shared portfolio OIDC service and owns host-only application sessions, invitation acceptance, workspace/project membership, roles, audit, and deletion/ownership-transfer behavior. A valid portfolio identity alone grants no Novel Engine access. Local/self-hosted mode uses an explicit local identity adapter that hosted configuration refuses to enable.
 
 Use defense in depth: application authorization, tenant-scoped repository methods, database constraints/policies where suitable, tenant metadata in Neo4j/vector/object keys, and cross-tenant integration tests.
 
-## Billing and credits
+Do not share an authentication cookie across `.jaketalling.com`. Give each application its own OIDC client, redirect URI allow-list, and host-only session cookie. Use authorization code flow with PKCE and validate issuer, audience, signature, state, nonce, and token lifetime.
 
-- Maintain an append-only ledger; never mutate balances without ledger entries.
-- Reserve estimated platform credits before a paid job, then reconcile or release exactly once.
-- Record model route, input/output/cache usage, provider cost, markup policy version, and currency/credit conversion version.
-- BYOK jobs do not consume platform inference credits but may remain subject to subscription entitlements and platform limits.
-- Webhooks are verified, replay-safe, ordered/idempotent, and reconciled.
-- Insufficient funds, cancellation, retry, timeout, partial provider response, and refund behavior are explicit state transitions.
+Invitations are high-entropy, hashed at rest, single-use, expiring, revocable, and transactionally accepted. Audit creation, revocation, attempted acceptance, successful acceptance, role changes, and removal without logging raw tokens.
+
+## Provider usage and limits
+
+- Record model route, input/output/cache usage, provider-reported cost, and policy version.
+- Enforce author/project token and cost limits immediately before a provider attempt.
+- OpenRouter bills the user's account directly; Novel Engine has no balance, markup, purchase, or refund state.
+- Cancellation, retry, timeout, and partial provider responses are explicit state transitions and cannot create duplicate accepted output.
 
 ## Background jobs
 
-Job records contain tenant/project, type, immutable inputs, stage, attempts, lease/heartbeat, cancellation flag, progress, funding source/reservation, provider usage, outputs, and classified error. Workers use idempotency keys and bounded retries. Jobs that may spend money check cancellation and budget immediately before provider calls.
+Job records contain workspace/project, initiating identity, type, immutable inputs, stage, attempts, lease/heartbeat, cancellation flag, progress, credential reference, provider usage, outputs, and classified error. Workers use idempotency keys and bounded retries. Jobs that may spend the user's provider funds check cancellation and limits immediately before provider calls.
 
-Start with PostgreSQL-backed job/outbox coordination suitable for the first hosted deployment. Adopt a dedicated broker only when throughput or distributed scheduling demands it.
+Start with PostgreSQL-backed job/outbox coordination suitable for the invite-only hosted deployment. Adopt a dedicated broker only when throughput or distributed scheduling demands it.
 
 ## Observability
 
@@ -60,7 +62,7 @@ Use structured logs with correlation, project, job, workflow, prompt version, mo
 - HTTP latency/error rate
 - job queue time, execution time, retries, and cancellations
 - provider latency, token usage, spend, and invalid-output rate
-- credit reservations, reconciliation drift, webhook failures, and BYOK/platform routing
+- provider route, token/cost-limit rejection, usage-record failures, and credential selection
 - graph/vector query latency and result count
 - context size, truncation, and retrieval source mix
 - mutation validation/commit failures
@@ -85,9 +87,9 @@ Add tracing across API → workflow → retrieval/provider → persistence when 
 
 FastAPI and frontend on the host; PostgreSQL and Neo4j in Compose; local vector/object adapters. Seeded development identities and the fake AI adapter are default for tests.
 
-### Hosted SaaS
+### Invite-only portfolio deployment
 
-Reverse proxy/TLS, application instances, workers, managed PostgreSQL and Neo4j, vector capability, object storage, key/secret management, payment webhooks, backups, monitoring, and explicit tenant isolation.
+Dedicated application hostname/path behind reverse proxy/TLS, shared OIDC identity service, application instances, workers, PostgreSQL and Neo4j, vector capability, object storage, key/secret management, backups, monitoring, invitation administration, and explicit tenant isolation.
 
 ### Local inference connector
 
@@ -104,5 +106,5 @@ If selected, a separately authenticated companion makes outbound connections fro
 - key rotation
 - data deletion
 - spend spike investigation
-- credit/provider reconciliation and payment webhook replay
-- suspected BYOK or tenant-data exposure
+- shared IdP outage/key rotation and invitation abuse
+- suspected provider-key or tenant-data exposure
