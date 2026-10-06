@@ -68,6 +68,12 @@ class TenancyService:
             raise ForbiddenError("You do not have permission for this action.")
         return membership
 
+    async def require_permission(
+        self, scope: AccessScope, workspace_id: str, permission: Permission
+    ) -> Membership:
+        """Public authorization gate for other services (never reveals membership)."""
+        return await self._authorize(scope, workspace_id, permission)
+
     async def _audit(
         self,
         scope: AccessScope,

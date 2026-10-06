@@ -12,6 +12,13 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
+from backend.domain.credentials import (
+    Credential,
+    CredentialNotFound,
+    CredentialProvider,
+    CredentialStatus,
+    CredentialUnavailable,
+)
 from backend.domain.identity import (
     IdentityClaims,
     InvalidIdentityToken,
@@ -40,6 +47,7 @@ from backend.domain.tenancy import (
     ensure_role_change_allowed,
     role_allows,
 )
+from backend.domain.usage import UsageRecord, UsageTotals
 from backend.graph.schema import Edge, Node
 from backend.ports import MigrationStatus, StructuredResponse
 
@@ -857,3 +865,150 @@ class InMemoryRateLimiter:
         hits.append(now)
         self._hits[key] = hits
         return True
+
+
+class InMemoryCredentialVault:
+    """Deterministic credential vault fake; keeps plaintext in memory only."""
+
+    def __init__(self, *, configured: bool = True) -> None:
+        from backend.core.crypto import key_fingerprint, key_last4
+
+        self._configured = configured
+        self._key_fingerprint = key_fingerprint
+        self._key_last4 = key_last4
+        self._credentials: dict[str, Credential] = {}
+        self._secrets: dict[str, str] = {}
+        self._counter = 0
+
+    @property
+    def is_configured(self) -> bool:
+        return self._configured
+
+    def _next(self) -> str:
+        self._counter += 1
+        return f"cred_{self._counter:04d}"
+
+    def _require(self) -> None:
+        if not self._configured:
+            raise CredentialUnavailable("vault not configured")
+
+    async def store(
+        self,
+        *,
+        workspace_id: str,
+        owner_user_id: str,
+        provider: CredentialProvider,
+        label: str,
+        plaintext_key: str,
+    ) -> Credential:
+        self._require()
+        credential = Credential(
+            id=self._next(),
+            workspace_id=workspace_id,
+            owner_user_id=owner_user_id,
+            provider=provider,
+            label=label,
+            key_fingerprint=self._key_fingerprint(plaintext_key),
+            key_last4=self._key_last4(plaintext_key),
+            key_version=1,
+        )
+        self._credentials[credential.id] = credential
+        self._secrets[credential.id] = plaintext_key
+        return credential
+
+    async def list_for_workspace(self, workspace_id: str) -> list[Credential]:
+        return [c for c in self._credentials.values() if c.workspace_id == workspace_id]
+
+    async def get(self, *, workspace_id: str, credential_id: str) -> Credential | None:
+        credential = self._credentials.get(credential_id)
+        if credential is None or credential.workspace_id != workspace_id:
+            return None
+        return credential
+
+    async def rotate(
+        self, *, workspace_id: str, credential_id: str, plaintext_key: str
+    ) -> Credential:
+        credential = await self.get(workspace_id=workspace_id, credential_id=credential_id)
+        if credential is None:
+            raise CredentialNotFound("Credential not found.")
+        updated = credential.model_copy(
+            update={
+                "key_fingerprint": self._key_fingerprint(plaintext_key),
+                "key_last4": self._key_last4(plaintext_key),
+                "rotated_at": datetime.now(UTC),
+                "status": CredentialStatus.ACTIVE,
+                "revoked_at": None,
+            }
+        )
+        self._credentials[credential_id] = updated
+        self._secrets[credential_id] = plaintext_key
+        return updated
+
+    async def revoke(self, *, workspace_id: str, credential_id: str) -> Credential:
+        credential = await self.get(workspace_id=workspace_id, credential_id=credential_id)
+        if credential is None:
+            raise CredentialNotFound("Credential not found.")
+        updated = credential.model_copy(
+            update={"status": CredentialStatus.REVOKED, "revoked_at": datetime.now(UTC)}
+        )
+        self._credentials[credential_id] = updated
+        return updated
+
+    async def delete(self, *, workspace_id: str, credential_id: str) -> bool:
+        credential = self._credentials.get(credential_id)
+        if credential is None or credential.workspace_id != workspace_id:
+            return False
+        del self._credentials[credential_id]
+        self._secrets.pop(credential_id, None)
+        return True
+
+    async def resolve_plaintext(
+        self, *, workspace_id: str, credential_id: str, actor_user_id: str
+    ) -> str:
+        credential = await self.get(workspace_id=workspace_id, credential_id=credential_id)
+        if credential is None or credential.status != CredentialStatus.ACTIVE:
+            raise CredentialNotFound("Active credential not found.")
+        return self._secrets[credential_id]
+
+    async def mark_used(self, *, workspace_id: str, credential_id: str) -> None:
+        credential = await self.get(workspace_id=workspace_id, credential_id=credential_id)
+        if credential is not None:
+            self._credentials[credential_id] = credential.model_copy(
+                update={"last_used_at": datetime.now(UTC)}
+            )
+
+
+class InMemoryProviderUsageStore:
+    def __init__(self) -> None:
+        self.records: list[UsageRecord] = []
+
+    async def record(self, record: UsageRecord) -> UsageRecord:
+        self.records.append(record)
+        return record
+
+    async def totals(
+        self, *, workspace_id: str, actor_user_id: str, since: datetime
+    ) -> UsageTotals:
+        matches = [
+            r
+            for r in self.records
+            if r.workspace_id == workspace_id
+            and r.actor_user_id == actor_user_id
+            and r.created_at >= since
+        ]
+        return self._sum(matches)
+
+    async def totals_for_job(self, *, idempotency_key: str) -> UsageTotals:
+        return self._sum([r for r in self.records if r.idempotency_key == idempotency_key])
+
+    async def has_idempotency_key(self, *, idempotency_key: str) -> bool:
+        return any(r.idempotency_key == idempotency_key for r in self.records)
+
+    @staticmethod
+    def _sum(records: list[UsageRecord]) -> UsageTotals:
+        return UsageTotals(
+            request_count=len(records),
+            prompt_tokens=sum(r.prompt_tokens for r in records),
+            completion_tokens=sum(r.completion_tokens for r in records),
+            provider_cost_usd=sum(r.provider_cost_usd or 0.0 for r in records),
+        )

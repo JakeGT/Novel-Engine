@@ -118,3 +118,23 @@ Authentik is selected; these remain the acceptance criteria it must satisfy.
 - **PostgreSQL row-level security is deferred, not selected for Phase 1.** Application-layer
   scoping is mandatory at every boundary; RLS would be defense-in-depth and can be added later
   behind the same scope contract without changing callers.
+
+## Provider credential encryption (1F)
+
+Hosted users may store their own OpenRouter key so inference is billed to their
+own account. There is no platform balance, credit, or markup state.
+
+- Credentials are workspace-scoped and owned by the user who created them.
+- Keys are stored with envelope encryption: a key-encryption key (KEK) from
+  configuration (`CREDENTIAL_KEK`, base64 32-byte) wraps a per-credential data key
+  (DEK); AES-256-GCM encrypts the secret. Only ciphertext, the wrapped DEK, and
+  `key_version` are persisted; the KEK is never stored in the database.
+- The vault exposes metadata only. Plaintext is obtainable solely through the
+  worker path (`CredentialService.resolve_for_use`), which is workspace-admin
+  gated in hosted mode; local single-user mode is trusted.
+- An empty `CREDENTIAL_KEK` disables credential storage; the base install and all
+  deterministic tests run without any credential.
+- Usage is recorded immutably (`provider_usage`) with requested/actual route, token
+  counts, latency, attempt, outcome, and provider-reported cost, and is bounded by
+  per-job and rolling-period token/cost limits (`ProviderUsageService`).
+- Redaction masks `sk-`/`sk-or-` keys and secret-named fields in logs and errors.

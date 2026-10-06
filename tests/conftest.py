@@ -50,19 +50,24 @@ HOSTED_ISSUER = "https://idp.test/application/o/novel-engine/"
 def _build_fake_container(settings, tmp_path):
     from backend.adapters.artifacts import NullArtifactStore
     from backend.container import Container
+    from backend.domain.usage import UsageLimit
     from backend.graph.schema import SchemaRegistry
     from backend.services.auth_service import AuthService
     from backend.services.character_service import CharacterService
+    from backend.services.credential_service import CredentialService
     from backend.services.tenancy_service import TenancyService
+    from backend.services.usage_service import ProviderUsageService
     from tests.doubles import (
         FakeClock,
         FakeDatabase,
         FakeEmbeddingProvider,
         FakeIdentityProvider,
         FakeMigrationVerifier,
+        InMemoryCredentialVault,
         InMemoryGraphRepository,
         InMemoryIdentityStore,
         InMemoryLoginAttemptStore,
+        InMemoryProviderUsageStore,
         InMemoryRateLimiter,
         InMemorySessionStore,
         InMemoryTenancyStore,
@@ -102,6 +107,13 @@ def _build_fake_container(settings, tmp_path):
         session_store=session_store,
         rate_limiter=rate_limiter,
     )
+    vault = InMemoryCredentialVault()
+    credential_service = CredentialService(vault, tenancy=tenancy_service)
+    usage_store = InMemoryProviderUsageStore()
+    usage_service = ProviderUsageService(
+        usage_store,
+        limit=UsageLimit(per_job_token_limit=200_000, period_token_limit=2_000_000),
+    )
     return Container(
         settings=settings,
         graph=graph,
@@ -120,6 +132,10 @@ def _build_fake_container(settings, tmp_path):
         tenancy=tenancy,
         tenancy_service=tenancy_service,
         rate_limiter=rate_limiter,
+        credentials=vault,
+        credential_service=credential_service,
+        usage=usage_store,
+        usage_service=usage_service,
     )
 
 

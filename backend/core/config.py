@@ -68,6 +68,15 @@ class Settings(BaseSettings):
     SESSION_ROTATION_SECONDS: int = 60 * 60
     CSRF_COOKIE_NAME: str = "novel_csrf"
 
+    # Provider credentials and usage limits. An empty KEK disables credential storage.
+    CREDENTIAL_KEK: str = ""
+    CREDENTIAL_KEK_VERSION: int = 1
+    PROVIDER_PER_JOB_TOKEN_LIMIT: int = 200_000
+    PROVIDER_PER_JOB_COST_LIMIT: float = 0.0
+    PROVIDER_PERIOD_TOKEN_LIMIT: int = 2_000_000
+    PROVIDER_PERIOD_COST_LIMIT: float = 0.0
+    PROVIDER_PERIOD_SECONDS: int = 60 * 60 * 24
+
     @property
     def is_production(self) -> bool:
         return self.APP_ENV == "production"

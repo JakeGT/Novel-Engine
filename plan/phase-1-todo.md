@@ -60,7 +60,7 @@ Still open before affected slices:
 | 1C. OIDC, local identity, and sessions | IDN-001, IDN-002, OSS-002 | In progress (core implemented; live Authentik exercise pending) | 1B |
 | 1D. Invitations, memberships, and authorization | IDN-003, IDN-004 | In progress (APIs, centralized authorization, audit, and a durable rate limiter implemented; credential/export audit deferred to 1F/1G) | 1B–1C |
 | 1E. Cross-store tenant isolation | IDN-005 | Implemented (graph/vector/artefact scoping + adversarial tests; job/export namespacing deferred to those subsystems) | 1B–1D |
-| 1F. Provider credentials and usage limits | SaaS-006, OSS-003, OSS-008 | Not started | 1C–1E |
+| 1F. Provider credentials and usage limits | SaaS-006, OSS-003, OSS-008 | In progress (envelope-encrypted vault, credential API, and usage limits implemented; provider-side validation, confirmation thresholds, and job cancellation wiring deferred) | 1C–1E |
 | 1G. Packaging, backup, and privacy | OSS-001, OSS-004, OSS-006, OPS-003–OPS-006 | Not started | 1C–1F |
 | 1H. Security audit and exit evidence | IDN-006, QLT-002 | Not started | 1A–1G |
 
@@ -209,15 +209,32 @@ Acceptance:
 
 ## 1F. OpenRouter credentials and provider usage
 
-- [ ] Define a credential-vault port and local/hosted implementations.
-- [ ] Envelope-encrypt hosted OpenRouter keys with versioned key metadata and authorized worker-only decryption.
+- [x] Define a credential-vault port and local/hosted implementations.
+      (`CredentialVaultPort`; `PostgresCredentialVault` for both profiles with a KEK from configuration, plus an
+      in-memory fake. An empty KEK disables the feature.)
+- [x] Envelope-encrypt hosted OpenRouter keys with versioned key metadata and authorized worker-only decryption.
+      (AES-256-GCM: a KEK wraps a per-credential DEK; only ciphertext + wrapped DEK are stored, with
+      `key_version`. `resolve_for_use` is the worker path and is workspace-admin gated.)
 - [ ] Support validate, label, rotate, revoke, delete, and last-used status without ever returning the key.
-- [ ] Scrub secrets from logs, traces, errors, support bundles, job payloads, and exports.
-- [ ] Resolve credentials from authenticated actor, workspace/project policy, and job scope immediately before provider use.
-- [ ] Record requested/actual route, token usage, latency, attempt, and provider-reported cost without creating a platform balance.
-- [ ] Implement author/project per-job and periodic token/cost limits plus confirmation thresholds.
+      (Label, rotate, revoke, delete, and last-used are implemented and never return the secret; provider-side
+      key **validation** — a live check against OpenRouter — is deferred to the generation pipeline.)
+- [x] Scrub secrets from logs, traces, errors, support bundles, job payloads, and exports.
+      (Redaction masks `sk-`/`sk-or-` keys and secret-named fields; the vault never logs plaintext; API responses
+      carry metadata only.)
+- [x] Resolve credentials from authenticated actor, workspace/project policy, and job scope immediately before provider use.
+      (`CredentialService.resolve_for_use` authorizes workspace admin in hosted mode and local mode is trusted.
+      Wiring into the actual model-call path arrives with the generation pipeline.)
+- [x] Record requested/actual route, token usage, latency, attempt, and provider-reported cost without creating a platform balance.
+      (`ProviderUsagePort` + `PostgresProviderUsageStore`, migration `0009_provider_usage`; records are immutable
+      and cost is provider-reported. Recording is called by the pipeline when it lands.)
+- [x] Implement author/project per-job and periodic token/cost limits plus confirmation thresholds.
+      (`ProviderUsageService` enforces per-job and rolling-period token/cost limits. Interactive confirmation
+      thresholds are deferred with the generation pipeline.)
 - [ ] Ensure cancellation/retry cannot duplicate accepted output or bypass a limit.
-- [ ] Keep manual authoring, deterministic checks, and fake-provider workflows available with no credential.
+      (Idempotency keys are recorded and queryable; enforcement inside a job runner is deferred as no job system
+      exists yet.)
+- [x] Keep manual authoring, deterministic checks, and fake-provider workflows available with no credential.
+      (The base install and all tests run with no credential; the vault is optional.)
 
 Acceptance:
 

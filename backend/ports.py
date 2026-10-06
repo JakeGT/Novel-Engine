@@ -11,8 +11,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
+from backend.domain.credentials import Credential, CredentialProvider
 from backend.domain.identity import IdentityClaims, LoginAttempt, Role, Session, User
 from backend.domain.tenancy import AuditEvent, Invitation, Membership, Project, Workspace
+from backend.domain.usage import UsageRecord, UsageTotals
 from backend.graph.schema import Edge, Node
 
 
@@ -359,3 +361,54 @@ class TenancyStorePort(Protocol):
         detail: dict[str, Any] | None = None,
         correlation_id: str = "",
     ) -> AuditEvent: ...
+
+
+@runtime_checkable
+class CredentialVaultPort(Protocol):
+    """Workspace-scoped provider credential storage (envelope-encrypted at rest)."""
+
+    @property
+    def is_configured(self) -> bool: ...
+
+    async def store(
+        self,
+        *,
+        workspace_id: str,
+        owner_user_id: str,
+        provider: CredentialProvider,
+        label: str,
+        plaintext_key: str,
+    ) -> Credential: ...
+
+    async def list_for_workspace(self, workspace_id: str) -> list[Credential]: ...
+
+    async def get(self, *, workspace_id: str, credential_id: str) -> Credential | None: ...
+
+    async def rotate(
+        self, *, workspace_id: str, credential_id: str, plaintext_key: str
+    ) -> Credential: ...
+
+    async def revoke(self, *, workspace_id: str, credential_id: str) -> Credential: ...
+
+    async def delete(self, *, workspace_id: str, credential_id: str) -> bool: ...
+
+    async def resolve_plaintext(
+        self, *, workspace_id: str, credential_id: str, actor_user_id: str
+    ) -> str: ...
+
+    async def mark_used(self, *, workspace_id: str, credential_id: str) -> None: ...
+
+
+@runtime_checkable
+class ProviderUsagePort(Protocol):
+    """Immutable provider-usage records for limits, retries, and audit."""
+
+    async def record(self, record: UsageRecord) -> UsageRecord: ...
+
+    async def totals(
+        self, *, workspace_id: str, actor_user_id: str, since: datetime
+    ) -> UsageTotals: ...
+
+    async def totals_for_job(self, *, idempotency_key: str) -> UsageTotals: ...
+
+    async def has_idempotency_key(self, *, idempotency_key: str) -> bool: ...

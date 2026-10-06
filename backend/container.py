@@ -49,6 +49,10 @@ class Container:
     tenancy: Any = None
     tenancy_service: Any = None
     rate_limiter: Any = None
+    credentials: Any = None
+    credential_service: Any = None
+    usage: Any = None
+    usage_service: Any = None
 
     async def aclose(self) -> None:
         self.graph.close()
@@ -134,5 +138,31 @@ def build_container(settings: Settings | None = None) -> Container:
         identity_store=identity_store,
         session_store=session_store,
         rate_limiter=container.rate_limiter,
+    )
+
+    from backend.adapters.credentials import PostgresCredentialVault
+    from backend.adapters.usage import PostgresProviderUsageStore
+    from backend.domain.usage import UsageLimit
+    from backend.services.credential_service import CredentialService
+    from backend.services.usage_service import ProviderUsageService
+
+    container.credentials = PostgresCredentialVault(
+        database.session_factory,
+        kek=resolved.CREDENTIAL_KEK,
+        key_version=resolved.CREDENTIAL_KEK_VERSION,
+    )
+    container.credential_service = CredentialService(
+        container.credentials, tenancy=container.tenancy_service
+    )
+    container.usage = PostgresProviderUsageStore(database.session_factory)
+    container.usage_service = ProviderUsageService(
+        container.usage,
+        limit=UsageLimit(
+            per_job_token_limit=resolved.PROVIDER_PER_JOB_TOKEN_LIMIT,
+            per_job_cost_limit=resolved.PROVIDER_PER_JOB_COST_LIMIT,
+            period_seconds=resolved.PROVIDER_PERIOD_SECONDS,
+            period_token_limit=resolved.PROVIDER_PERIOD_TOKEN_LIMIT,
+            period_cost_limit=resolved.PROVIDER_PERIOD_COST_LIMIT,
+        ),
     )
     return container
