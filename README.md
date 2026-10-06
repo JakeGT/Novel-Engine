@@ -29,10 +29,37 @@ cp .env.example .env
 make install-dev
 make infra-up
 make migrate
+make seed
 make api
 ```
 
-`make infra-up` starts PostgreSQL/pgvector and Neo4j and waits for both to be healthy. `make migrate` applies explicit Alembic and Neo4j migrations; application startup verifies migration state but never mutates schemas. `uv` creates and manages `.venv` automatically. On Windows, run the commands shown in `Makefile` directly if `make` is unavailable; no manual virtual-environment activation is required.
+`make infra-up` starts PostgreSQL/pgvector and Neo4j and waits for both to be healthy. `make migrate` applies explicit Alembic and Neo4j migrations; application startup verifies migration state but never mutates schemas. `make seed` applies the deterministic reference world (idempotent; graph always, vector documents only when embeddings are available). `make reset-dev` clears development stores first and refuses to run in production or against non-local stores. `uv` creates and manages `.venv` automatically. On Windows, run the commands shown in `Makefile` directly if `make` is unavailable; no manual virtual-environment activation is required.
+
+The full clean-checkout sequence used for Phase 0 verification is:
+
+```bash
+make install-dev
+make frontend-install
+make infra-up
+make migrate
+make reset-dev
+make seed
+make check
+make integration-test
+make api
+```
+
+### Migrations
+
+- PostgreSQL uses Alembic (`migrations/versions/`); the head revision creates the
+  `vector_documents` table. Author a new revision with `uv run alembic revision -m "..."`,
+  implement `upgrade`/`downgrade`, and run `make migrate`.
+- Neo4j uses the ordered runner in `backend/graph/migrations.py`. Add a `Migration` to
+  `NEO4J_MIGRATIONS`; the runner records applied IDs and checksums and fails on drift.
+- `make migrate-verify` checks both stores without mutating them; application startup and
+  `/health/ready` perform the same read-only verification.
+- Migrations never run implicitly inside application startup; `make migrate` is the explicit
+  command.
 
 Start the frontend separately:
 
@@ -55,6 +82,8 @@ make frontend-build
 ```
 
 `make test` runs the hermetic unit/application/contract suite with no services, network, API keys, model downloads, or persistent writes. `make test-integration` targets disposable PostgreSQL and Neo4j services (start the test Neo4j with `docker compose --profile test up -d --wait neo4j-test`). Tests that spend model tokens are marked `llm` and excluded from both commands.
+
+Logs are emitted as single-line JSON with a correlation ID and are redacted by default: API keys, bearer tokens, DSN passwords, and secret-named fields are masked, and adapters log only timings, counts, and error types rather than manuscript or prompt content. Set `LOG_LEVEL=DEBUG` in `.env` for development diagnostics; debug logs may include synthetic entity IDs but still never include secrets or manuscript text.
 
 For coding-agent conventions and project boundaries, read [AGENTS.md](AGENTS.md). For architecture, scope, roadmap, and open decisions, start with [plan/README.md](plan/README.md).
 

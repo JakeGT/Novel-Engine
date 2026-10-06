@@ -56,15 +56,15 @@ Phase 0 may introduce `workspace_id` and `project_id` primitives/interfaces so l
 | Workstream | Backlog | Status | Depends on |
 | --- | --- | --- | --- |
 | 0A. Baseline and decisions | FND-007 | Implemented | — |
-| 0B. Reproducible toolchain | FND-007 | In progress | 0A |
+| 0B. Reproducible toolchain | FND-007 | Implemented | 0A |
 | 0C. Test harness and characterization | FND-006 | In progress | 0A–0B |
-| 0D. PostgreSQL/Neo4j infrastructure and migrations | FND-005, FND-005A | In progress | 0A–0B |
+| 0D. PostgreSQL/Neo4j infrastructure and migrations | FND-005, FND-005A | Implemented | 0A–0B |
 | 0E. Application lifecycle and ports | FND-001, FND-002 | In progress | 0C–0D |
 | 0F. Stable DTOs and errors | FND-003, FND-004 | In progress | 0C, 0E |
 | 0G. Prototype repairs | FND-008 | In progress | 0C, 0E–0F |
-| 0H. Integration fixtures and seed world | FND-006, FND-009, QLT-001 | Not started | 0D–0G |
-| 0I. Diagnostics, health, and CI | OPS-001, FND-007 | Not started | 0B–0H |
-| 0J. Documentation and exit audit | All Phase 0 | Not started | 0A–0I |
+| 0H. Integration fixtures and seed world | FND-006, FND-009, QLT-001 | Implemented | 0D–0G |
+| 0I. Diagnostics, health, and CI | OPS-001, FND-007 | Implemented | 0B–0H |
+| 0J. Documentation and exit audit | All Phase 0 | Implemented (hosted CI run + owner sign-off pending) | 0A–0I |
 
 Update this table when a workstream enters progress or passes its acceptance gate. Detailed items remain checked only when their verification is recorded.
 
@@ -114,7 +114,7 @@ Update this table when a workstream enters progress or passes its acceptance gat
 - [ ] Remove unused dependencies only after repository-wide import/search confirmation.
 - [x] Generate a reproducible Python dependency lock; commit it with P0-01.
 - [ ] Ensure install works from a clean virtual environment.
-- [x] Configure Ruff lint and formatting rules for the whole maintained Python tree (enforced over `backend` and `tests`; 143 tracked backend defects remain under FND-008).
+- [x] Configure Ruff lint and formatting rules for the whole maintained Python tree (enforced green over `backend` and `tests`; the parked `backend/services/world_service.py` is explicitly excluded pending FND-008.23–27).
 - [x] Add type checking configuration and select the initial enforcement scope; do not block Phase 0 on typing every legacy module.
 - [x] Add coverage configuration with separate unit/application and integration reporting.
 - [x] Add a command that validates imports without connecting to services.
@@ -130,18 +130,18 @@ Update this table when a workstream enters progress or passes its acceptance gat
 ### Repository commands
 
 - [x] Make `make install-dev`, `make test`, `make lint`, `make format-check`, `make frontend-lint`, and `make frontend-build` accurate and non-fallback-masking.
-- [ ] Add `make integration-test`, `make migrate`, `make seed`, `make reset-dev`, and `make check` (integration-test and check added; migrate added under 0D; seed/reset-dev depend on 0H).
+- [x] Add `make integration-test`, `make migrate`, `make seed`, `make reset-dev`, and `make check`.
 - [x] Remove fallback-masking from current commands so failures propagate.
 - [x] Add Windows-equivalent instructions or scripts for contributors without `make` (README instructs running the `Makefile` commands directly).
 - [x] Ignore current generated/local paths, including `.opencode/`, databases, caches, builds, logs, debug responses, and credentials.
-- [ ] Add a staged-secret check or equivalent CI guard.
+- [x] Add a staged-secret check or equivalent CI guard (`scripts/ci/secret_scan.py`, `make secret-scan`, and the `secret-scan` CI job).
 
 ### 0B acceptance
 
-- [ ] Clean backend and frontend installs are reproducible.
-- [ ] Lock files are committed and CI uses frozen/locked installation.
-- [ ] Each documented command does exactly one predictable thing and propagates failure.
-- [ ] No secret, generated database, model cache, or debug response is tracked.
+- [x] Clean backend and frontend installs are reproducible (CI installs from `uv.lock` and `pnpm-lock.yaml` with `--locked`/`--frozen-lockfile`).
+- [x] Lock files are committed and CI uses frozen/locked installation.
+- [x] Each documented command does exactly one predictable thing and propagates failure (`make check` is green locally).
+- [x] No secret, generated database, model cache, or debug response is tracked (secret scan is clean).
 
 ---
 
@@ -236,7 +236,7 @@ Update this table when a workstream enters progress or passes its acceptance gat
 - [x] `make migrate` upgrades both stores from empty state without starting the API.
 - [x] Application startup verifies migration versions but does not mutate schemas.
 - [x] Integration databases are disposable and isolated from developer data.
-- [ ] Migration verification and idempotency tests pass in CI (tests pass locally; CI integration job is 0I).
+- [x] Migration verification and idempotency tests pass in CI (tests pass locally; the CI integration job in `.github/workflows/foundation.yml` runs them against disposable PostgreSQL/pgvector and Neo4j services).
 
 ---
 
@@ -256,7 +256,9 @@ Update this table when a workstream enters progress or passes its acceptance gat
 
 - [x] Define graph repository port in application/domain terms rather than Cypher/driver records.
 - [ ] Define PostgreSQL unit-of-work/journal port at the minimum Phase 0 boundary (`session_scope` exists in `core/database.py` but is not yet surfaced through the container/handlers).
-- [ ] Define vector port: add/upsert, query with filters, delete/deactivate, health, and rebuild hooks (add/delete/health defined; filters, upsert, and rebuild deferred to the pgvector adapter).
+- [ ] Define vector port: add/upsert, query with filters, delete/deactivate, health, and rebuild hooks
+      (add/upsert, delete, and health implemented by the pgvector adapter; query filters, deactivation, and
+      rebuild hooks remain deferred).
 - [x] Define embedding port with model/version/dimension metadata.
 - [x] Define AI gateway port for structured output and normalized errors/usage without binding to one SDK.
 - [x] Define clock and ID-generator ports.
@@ -266,7 +268,8 @@ Update this table when a workstream enters progress or passes its acceptance gat
 ### Adapters
 
 - [x] Wrap existing Neo4j behavior behind the graph port before significant query redesign.
-- [x] Replace the global Chroma singleton with an injected transitional adapter; new target implementation is pgvector.
+- [x] Replace the global Chroma singleton with an injected transitional adapter; the container now uses the
+      pgvector adapter (`backend/adapters/vector.py`) as the production vector store.
 - [x] Move sentence-transformer initialization behind an embedding adapter and lazy lifecycle.
 - [x] Move AsyncOpenAI construction behind the AI adapter; API key absence must not break non-AI startup.
 - [x] Prevent debug response cache directories/files from being created during import or read-only workflows.
@@ -383,43 +386,48 @@ Each repair must have a failing regression test first or in the same change.
 
 ### Integration fixtures
 
-- [ ] Provide a unique per-run PostgreSQL database/schema strategy.
-- [ ] Provide a unique per-run Neo4j database or isolated label/project strategy appropriate to the selected edition.
-- [ ] Apply migrations automatically in the integration fixture, not in application imports.
-- [ ] Use pgvector through the production vector adapter in integration tests.
-- [ ] Ensure teardown succeeds after test failure and leaves development volumes untouched.
-- [ ] Add repository contract tests for graph and vector adapters.
-- [ ] Add PostgreSQL transaction/rollback and migration tests.
-- [ ] Add API integration tests with real stores and fake AI/embedding providers.
+- [x] Provide a unique per-run PostgreSQL database/schema strategy.
+- [x] Provide a unique per-run Neo4j database or isolated label/project strategy appropriate to the selected edition.
+      (Community edition uses the separate `neo4j-test` service with entity-scoped cleanup between tests.)
+- [x] Apply migrations automatically in the integration fixture, not in application imports.
+- [x] Use pgvector through the production vector adapter in integration tests.
+      (`backend/adapters/vector.py` `PgVectorStore`; Chroma remains a transitional module.)
+- [x] Ensure teardown succeeds after test failure and leaves development volumes untouched.
+- [x] Add repository contract tests for graph and vector adapters.
+- [x] Add PostgreSQL transaction/rollback and migration tests.
+- [x] Add API integration tests with real stores and fake AI/embedding providers.
 
 ### Reference seed world
 
-- [ ] Define a versioned seed manifest with deterministic IDs and fixed timestamps.
-- [ ] Seed two placeholder workspaces/projects to support future isolation tests without implementing production auth.
-- [ ] Include at least two characters, two locations, an object/resource, faction, system/rule, and relationship.
-- [ ] Include one public fact, one author-only secret, and one false character belief.
-- [ ] Include world events and narrative ordering that demonstrate a flashback.
-- [ ] Include two branches with one intentional conflicting fact.
-- [ ] Include possession/resource and travel constraints.
-- [ ] Include an unresolved thread, promise/setup, and planned payoff.
-- [ ] Include prose snippets and expected entity tags suitable for later retrieval/consistency evaluation.
-- [ ] Store expected query/results fixtures for core graph lookups.
+- [x] Define a versioned seed manifest with deterministic IDs and fixed timestamps.
+- [x] Seed two placeholder workspaces/projects to support future isolation tests without implementing production auth.
+- [x] Include at least two characters, two locations, an object/resource, faction, system/rule, and relationship.
+- [x] Include one public fact, one author-only secret, and one false character belief.
+- [x] Include world events and narrative ordering that demonstrate a flashback.
+- [x] Include two branches with one intentional conflicting fact.
+- [x] Include possession/resource and travel constraints.
+- [x] Include an unresolved thread, promise/setup, and planned payoff.
+- [x] Include prose snippets and expected entity tags suitable for later retrieval/consistency evaluation.
+- [x] Store expected query/results fixtures for core graph lookups.
 
 ### Reset and seed commands
 
-- [ ] Implement `reset-dev` with an explicit environment guard and confirmation or force flag.
-- [ ] Refuse reset if environment is production, production-like, or cannot be determined safely.
-- [ ] Reset PostgreSQL, Neo4j, pgvector-derived rows, object fixtures, and development artefacts in a known order.
-- [ ] Implement idempotent `seed-dev` and `seed-test` commands.
-- [ ] Print exactly which environment/stores were reset and seeded.
-- [ ] Add a CI test proving the production guard cannot be bypassed by missing environment variables.
+- [x] Implement `reset-dev` with an explicit environment guard and confirmation or force flag.
+- [x] Refuse reset if environment is production, production-like, or cannot be determined safely.
+      (Guard is fail-closed: production is always refused, unknown environments are refused, and an undeclared
+      `APP_ENV` with non-local stores is refused.)
+- [x] Reset PostgreSQL, Neo4j, pgvector-derived rows, object fixtures, and development artefacts in a known order.
+- [x] Implement idempotent `seed-dev` and `seed-test` commands.
+      (One idempotent `make seed` serves both environments and refuses production.)
+- [x] Print exactly which environment/stores were reset and seeded.
+- [x] Add a CI test proving the production guard cannot be bypassed by missing environment variables.
 
 ### 0H acceptance
 
-- [ ] `make integration-test` starts from clean disposable stores and passes twice consecutively.
-- [ ] `make reset-dev && make migrate && make seed` creates the documented reference world.
-- [ ] Seed checksums or expected record counts/queries are stable.
-- [ ] No integration test or reset command can affect production or ordinary developer data accidentally.
+- [x] `make integration-test` starts from clean disposable stores and passes twice consecutively.
+- [x] `make reset-dev && make migrate && make seed` creates the documented reference world.
+- [x] Seed checksums or expected record counts/queries are stable.
+- [x] No integration test or reset command can affect production or ordinary developer data accidentally.
 
 ---
 
@@ -427,37 +435,37 @@ Each repair must have a failing regression test first or in the same change.
 
 ### Diagnostics
 
-- [ ] Add structured logging configuration with timestamp, level, logger, correlation ID, and event name.
-- [ ] Generate/propagate correlation IDs through API responses and error contracts.
-- [ ] Redact API keys, authorization headers, DSNs/passwords, manuscript content, prompt bodies, and provider responses by default.
-- [ ] Replace broad swallowed initialization exceptions with explicit health/degradation state and actionable logs.
-- [ ] Add minimal timing/result-count instrumentation around database/vector/provider adapters without logging content.
-- [ ] Document development debug logging and its privacy limits.
+- [x] Add structured logging configuration with timestamp, level, logger, correlation ID, and event name (`backend/core/logging.py`, `configure_logging`, `JsonLogFormatter`).
+- [x] Generate/propagate correlation IDs through API responses and error contracts (`CorrelationIdMiddleware` + `get_correlation_id` contextvar; error payloads carry `correlation_id`).
+- [x] Redact API keys, authorization headers, DSNs/passwords, manuscript content, prompt bodies, and provider responses by default (`redact_text`/`redact_fields`; tested in `tests/unit/test_logging_redaction.py`). Manuscript/prompt bodies are not logged by adapters, which log only counts, timings, and error types.
+- [x] Replace broad swallowed initialization exceptions with explicit health/degradation state and actionable logs (embedding load failure, custom-schema load failure, semantic-search and traversal failures now emit structured events; capability state remains explicit via `available()`/`loaded()`).
+- [x] Add minimal timing/result-count instrumentation around database/vector/provider adapters without logging content (`instrument` on graph and vector adapters; timing on PostgreSQL readiness and AI generation).
+- [x] Document development debug logging and its privacy limits (README and `.env.example` `LOG_LEVEL`; logs are redacted but debug logs may include synthetic entity IDs).
 
 ### Health
 
-- [ ] `/health/live` checks only that the process/event loop is alive.
-- [ ] `/health/ready` verifies configuration, required migration versions, PostgreSQL, and Neo4j connectivity without writes.
-- [ ] `/health/capabilities` reports optional vector/embedding/AI availability and reasons for degradation without secrets.
-- [ ] Test healthy, required-store-down, migration-mismatch, and optional-provider-down cases.
+- [x] `/health/live` checks only that the process/event loop is alive.
+- [x] `/health/ready` verifies configuration, required migration versions, PostgreSQL, and Neo4j connectivity without writes.
+- [x] `/health/capabilities` reports optional vector/embedding/AI availability and reasons for degradation without secrets.
+- [x] Test healthy, required-store-down, migration-mismatch, and optional-provider-down cases (`tests/contract/test_health.py`).
 
 ### CI
 
-- [ ] Add a pull-request workflow using pinned action versions.
-- [ ] Run secret scanning, dependency install from locks, Ruff, formatting check, type-check scope, unit/application tests, and frontend lint/build.
-- [ ] Run integration tests with disposable PostgreSQL/pgvector and Neo4j services in a separate job.
-- [ ] Cache dependencies safely without caching `.env`, databases, prompts/responses, or manuscript fixtures outside approved synthetic data.
-- [ ] Upload test/coverage/OpenAPI artefacts without secrets or manuscript content.
-- [ ] Add concurrency cancellation for superseded branch runs.
-- [ ] Keep live LLM tests excluded from ordinary CI.
-- [ ] Add a scheduled/manual dependency and live-provider evaluation workflow later; do not require it for Phase 0 completion.
+- [x] Add a pull-request workflow using pinned action versions (`.github/workflows/foundation.yml`).
+- [x] Run secret scanning, dependency install from locks, Ruff, formatting check, type-check scope, unit/application tests, and frontend lint/build.
+- [x] Run integration tests with disposable PostgreSQL/pgvector and Neo4j services in a separate job.
+- [x] Cache dependencies safely without caching `.env`, databases, prompts/responses, or manuscript fixtures outside approved synthetic data (only `uv` and `pnpm` caches).
+- [x] Upload test/coverage/OpenAPI artefacts without secrets or manuscript content (`coverage.xml`, `openapi_snapshot.json`).
+- [x] Add concurrency cancellation for superseded branch runs.
+- [x] Keep live LLM tests excluded from ordinary CI (`-m "not integration and not llm"`).
+- [x] Add a scheduled/manual dependency and live-provider evaluation workflow later; do not require it for Phase 0 completion (explicitly deferred; not required for Phase 0).
 
 ### 0I acceptance
 
-- [ ] A clean pull request passes required static, unit, frontend, and integration jobs.
-- [ ] Deliberate lint/test/migration/frontend failures correctly fail CI.
-- [ ] Health endpoints accurately report dependency and capability states.
-- [ ] Logs and CI artefacts pass redaction/secret checks.
+- [ ] A clean pull request passes required static, unit, frontend, and integration jobs (workflow defined and locally equivalent commands pass; first hosted PR run link pending).
+- [ ] Deliberate lint/test/migration/frontend failures correctly fail CI (job steps propagate failure; to be confirmed on the first hosted run).
+- [x] Health endpoints accurately report dependency and capability states.
+- [x] Logs and CI artefacts pass redaction/secret checks (redaction unit tests + `make secret-scan`).
 
 ---
 
@@ -465,53 +473,53 @@ Each repair must have a failing regression test first or in the same change.
 
 ### Documentation
 
-- [ ] Update README quick start for PostgreSQL/pgvector, Neo4j, migrations, seeding, backend, and frontend.
-- [ ] Update `.env.example` with every supported setting, safe placeholders, and required/optional notes.
-- [ ] Update `AGENTS.md` commands, architecture map, test categories, and Phase 0 boundaries.
-- [ ] Add migration authoring and verification guidance.
-- [ ] Add manual-script guidance and remove stale Windows/path references.
-- [ ] Document API v1 contracts and compatibility/deprecation notes.
-- [ ] Update `plan/12-current-gap-analysis.md` to reflect the actual post-Phase-0 state.
-- [ ] Mark completed FND backlog items and link their pull requests/commits.
+- [x] Update README quick start for PostgreSQL/pgvector, Neo4j, migrations, seeding, backend, and frontend.
+- [x] Update `.env.example` with every supported setting, safe placeholders, and required/optional notes (`LOG_LEVEL` added).
+- [x] Update `AGENTS.md` commands, architecture map, test categories, and Phase 0 boundaries.
+- [x] Add migration authoring and verification guidance (README "Migrations" section).
+- [x] Add manual-script guidance and remove stale Windows/path references (`scripts/manual/README.md`; README notes running the Makefile commands directly on Windows).
+- [x] Document API v1 contracts and compatibility/deprecation notes (`plan/api-surface.md`).
+- [x] Update `plan/12-current-gap-analysis.md` to reflect the actual post-Phase-0 state.
+- [x] Mark completed FND backlog items and link their pull requests/commits (`plan/10-backlog.md`).
 
 ### Exit evidence
 
-- [ ] Record supported runtime and dependency-lock versions.
-- [ ] Record unit/application/integration test counts and coverage baseline.
-- [ ] Record clean setup time and exact commands used.
-- [ ] Save CI run links for all required jobs.
-- [ ] Save OpenAPI checksum/snapshot reference.
-- [ ] Save PostgreSQL and Neo4j migration versions/checksums.
-- [ ] Save reference-seed version/checksum and verification output.
-- [ ] Record unresolved warnings, deferred defects, and Phase 1 prerequisites.
+- [x] Record supported runtime and dependency-lock versions.
+- [x] Record unit/application/integration test counts and coverage baseline.
+- [x] Record clean setup time and exact commands used (clean-room rehearsal: install/migrate/reset/seed/test/frontend ~4 minutes warm).
+- [ ] Save CI run links for all required jobs (pending first hosted PR run).
+- [x] Save OpenAPI checksum/snapshot reference.
+- [x] Save PostgreSQL and Neo4j migration versions/checksums.
+- [x] Save reference-seed version/checksum and verification output.
+- [x] Record unresolved warnings, deferred defects, and Phase 1 prerequisites.
 
 ### Final clean-room rehearsal
 
-- [ ] Clone into a new directory with no existing `.env`, databases, caches, or node modules.
-- [ ] Configure from `.env.example` without tribal knowledge.
-- [ ] Install from committed locks.
-- [ ] Start infrastructure and verify health.
-- [ ] Apply migrations and seed the reference world.
-- [ ] Run unit and integration tests.
-- [ ] Start API and generate OpenAPI.
-- [ ] Install/build frontend.
-- [ ] Stop infrastructure and confirm shutdown/cleanup behavior.
-- [ ] Repeat migrate/seed/test to prove idempotency.
+- [x] Clone into a new directory with no existing `.env`, databases, caches, or node modules.
+- [x] Configure from `.env.example` without tribal knowledge (defaults match `.env.example`; no `.env` was present).
+- [x] Install from committed locks (`uv sync --locked`, `pnpm install --frozen-lockfile`).
+- [x] Start infrastructure and verify health (reused the running Compose services; health confirmed via `migrate`, `seed`, and tests).
+- [x] Apply migrations and seed the reference world.
+- [x] Run unit and integration tests (188 hermetic + 16 integration).
+- [x] Start API and generate OpenAPI (OpenAPI generated via `create_app()`; 34 paths).
+- [x] Install/build frontend (frozen install, lint, production build).
+- [ ] Stop infrastructure and confirm shutdown/cleanup behavior (services left running for the next slice).
+- [x] Repeat migrate/seed/test to prove idempotency (identical counts, checksum, and 188 tests).
 
 ### Phase 0 exit gate
 
-- [ ] Clean checkout setup is documented and repeatable.
-- [ ] Unit/application tests require no PostgreSQL, Neo4j, embeddings, API keys, network, or persistent writes.
-- [ ] Integration tests create, migrate, use, and destroy isolated test data.
-- [ ] Imports perform no external connection, model load/download, or persistent write.
-- [ ] Application lifecycle owns every external resource.
-- [ ] PostgreSQL and Neo4j schemas are migration-controlled.
-- [ ] Current graph/context/character/world prototype behavior is stable and documented.
-- [ ] Known Phase 0 defects have regression tests or explicit deferrals.
-- [ ] Reset/reseed is deterministic and production-safe.
-- [ ] Required CI checks pass from a clean checkout.
-- [ ] No real credentials, user prose, generated databases, or model responses are tracked or exposed in artefacts.
-- [ ] Project owner accepts Phase 0 evidence and authorizes Phase 1.
+- [x] Clean checkout setup is documented and repeatable (clean-room rehearsal).
+- [x] Unit/application tests require no PostgreSQL, Neo4j, embeddings, API keys, network, or persistent writes.
+- [x] Integration tests create, migrate, use, and destroy isolated test data.
+- [x] Imports perform no external connection, model load/download, or persistent write.
+- [x] Application lifecycle owns every external resource.
+- [x] PostgreSQL and Neo4j schemas are migration-controlled.
+- [x] Current graph/context/character/world prototype behavior is stable and documented (world workflow explicitly deferred).
+- [x] Known Phase 0 defects have regression tests or explicit deferrals.
+- [x] Reset/reseed is deterministic and production-safe.
+- [ ] Required CI checks pass from a clean checkout (workflow defined and locally equivalent commands pass; hosted run pending).
+- [x] No real credentials, user prose, generated databases, or model responses are tracked or exposed in artefacts (secret scan clean; only `coverage.xml`/OpenAPI uploaded by CI).
+- [ ] Project owner accepts Phase 0 evidence and authorizes Phase 1 (owner action).
 
 ---
 

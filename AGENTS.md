@@ -8,31 +8,43 @@ Novel Engine is a hosted, multi-tenant SaaS authoring system that combines a det
 
 ## Current maturity
 
-The repository is a prototype, not a production application.
+The repository is a stabilized prototype, not a production application. Phase 0
+(foundation) is implemented; see `plan/phase-0-evidence.md` and the dashboard in
+`plan/phase-0-todo.md`.
 
-- The FastAPI/Neo4j graph layer and character questionnaire are partially implemented.
-- ChromaDB exists behind a minimal wrapper.
-- Context retrieval from explicit entity tags is partially implemented.
-- The world workflow is unfinished.
-- The React frontend is the Vite starter.
-- Story planning, generation, review, temporal branching, and production operations are planned work.
+- Application lifecycle, dependency container, ports, and adapters exist; imports perform no
+  external work.
+- Neo4j and PostgreSQL/pgvector schemas are migration-controlled with read-only verification.
+- Stable `/api/v1` DTOs and an `application/problem+json` error contract exist; legacy `/api`
+  routes remain as deprecated aliases.
+- Graph CRUD, tagged-entity context retrieval, and the character questionnaire are implemented;
+  the world workflow is parked and unfinished.
+- The vector store is PostgreSQL/pgvector behind the vector port; Chroma remains as an unused
+  transitional module.
+- The React frontend is still the Vite starter.
+- Story planning, generation, review, temporal branching, multi-tenancy, and production
+  operations are planned work.
 
-Do not describe a planned capability as implemented. When changing a capability, update its status in `plan/`.
+Do not describe a planned capability as implemented. When changing a capability, update its
+status in `plan/`.
 
 ## Source map
 
 | Path | Responsibility |
 | --- | --- |
-| `backend/api/` | HTTP transport and request/response contracts |
+| `backend/api/` | HTTP transport and request/response contracts (`v1/` canonical, legacy deprecated) |
 | `backend/services/` | Application workflows such as character and world creation |
-| `backend/graph/` | Graph schema, Neo4j persistence, resolution, traversal, and summarization |
-| `backend/core/` | Configuration, database engine/session, and vector-store infrastructure |
+| `backend/graph/` | Graph schema, Neo4j persistence, resolution, traversal, summarization, migrations |
+| `backend/core/` | Configuration, database engine/session, structured logging/redaction, transitional Chroma wrapper |
 | `backend/ports.py` | Application/domain port protocols (graph, vector, embedding, AI, clock, IDs, schema, migration, database, artifacts) |
-| `backend/adapters/` | Concrete port adapters (Neo4j, Chroma, sentence-transformers, OpenAI, PostgreSQL, system clock/IDs, artifacts) |
+| `backend/adapters/` | Concrete port adapters (Neo4j, pgvector, sentence-transformers, OpenAI, PostgreSQL, system clock/IDs, artifacts) |
 | `backend/container.py` | Dependency container built from explicit settings; owns adapters and lifecycle |
 | `backend/migrate.py` | `make migrate` CLI; Alembic plus Neo4j migration verification |
+| `backend/seed/` | Versioned reference-world manifest and idempotent seed application |
+| `backend/devtools/` | Guarded `seed`/`reset-dev` developer CLIs |
 | `migrations/` | Alembic environment and PostgreSQL/pgvector revisions |
 | `scripts/manual/` | Non-hermetic manual scripts; never collected by pytest |
+| `scripts/ci/` | CI guards such as the credential secret scanner |
 | `frontend/` | React application |
 | `tests/` | Automated tests: `unit`, `application`, `contract`, `integration`, `e2e` |
 | `plan/` | Product, architecture, delivery, and decision records |
@@ -48,8 +60,12 @@ Root-level `test_*.py` scripts have moved to `scripts/manual/` and are no longer
 4. Run `make frontend-install` for a frozen frontend install.
 5. Run `make infra-up`; it starts PostgreSQL/pgvector and Neo4j and waits for healthy.
 6. Run `make migrate` to apply Alembic and Neo4j migrations.
-7. Run `make api`.
-8. In another terminal, run `pnpm --dir frontend run dev`.
+7. Run `make seed` to load the deterministic reference world (idempotent).
+8. Run `make api`.
+9. In another terminal, run `pnpm --dir frontend run dev`.
+
+Use `make reset-dev` to clear development stores before reseeding; it is fail-closed against
+production and non-local stores.
 
 Useful validation commands:
 
@@ -57,10 +73,12 @@ Useful validation commands:
 make lock-check
 make lint
 make format-check
+make secret-scan
 make typecheck
 make import-check
 make test
 make test-integration
+make migrate-verify
 make frontend-lint
 make frontend-build
 ```

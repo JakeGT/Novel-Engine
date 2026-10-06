@@ -32,3 +32,6 @@ frontend/dist/
 .opencode/
 .DS_Store
 Thumbs.db
+
+# CodeGraph local index
+.codegraph/
