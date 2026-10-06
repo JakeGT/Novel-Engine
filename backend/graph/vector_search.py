@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from backend.core.config import settings
 
@@ -37,7 +37,7 @@ def is_embedding_available() -> bool:
     return _get_model() is not None
 
 
-def generate_node_embedding(node_type: str, properties: Dict[str, Any]) -> Optional[List[float]]:
+def generate_node_embedding(node_type: str, properties: dict[str, Any]) -> list[float] | None:
     """
     Creates a semantic representation of a node based on its type and top-level properties.
     """
@@ -63,7 +63,7 @@ def generate_node_embedding(node_type: str, properties: Dict[str, Any]) -> Optio
         return None
 
 
-def generate_query_embedding(query_text: str) -> Optional[List[float]]:
+def generate_query_embedding(query_text: str) -> list[float] | None:
     """
     Embeds a free-form text query for semantic search against Node embeddings.
     """

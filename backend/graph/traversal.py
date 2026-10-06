@@ -113,7 +113,15 @@ class ContextTraversal:
                 return scanned_nodes
 
         except Exception as e:
-            logger.error(f"Traversal failed for anchors {anchor_ids}: {e}")
+            from backend.core.logging import log_event
+
+            log_event(
+                logger,
+                "graph.traversal_failed",
+                level=logging.ERROR,
+                anchor_count=len(anchor_ids),
+                error_type=type(e).__name__,
+            )
             return []
 
 

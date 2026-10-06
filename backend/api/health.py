@@ -62,12 +62,18 @@ def capabilities(container: Container = Depends(get_container)) -> dict[str, obj
                 "model": container.embeddings.model,
                 "version": container.embeddings.version,
                 "dimension": container.embeddings.dimension,
+                "reason": None if embeddings_ok else "sentence-transformers is not importable",
             },
-            "ai": {"available": ai_ok, "optional": True},
+            "ai": {
+                "available": ai_ok,
+                "optional": True,
+                "reason": None if ai_ok else "OPENAI_API_KEY is not configured",
+            },
             "vector": {
                 "available": vectors_ok,
                 "optional": True,
-                "detail": "transitional Chroma adapter; pgvector is the target implementation",
+                "detail": "pgvector-backed store",
+                "reason": None if vectors_ok else "vector_documents table is unreachable",
             },
         },
     }

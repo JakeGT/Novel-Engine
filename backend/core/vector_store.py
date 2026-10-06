@@ -1,6 +1,6 @@
 import os
 from collections.abc import Sequence
-from typing import Any, Dict, List
+from typing import Any
 
 import chromadb
 
@@ -25,18 +25,11 @@ class VectorStore:
             self._collection = self.client.get_or_create_collection(name="novel_engine")
         return self._collection
 
-    def add_documents(self, documents: List[str], metadatas: List[Dict[str, Any]], ids: List[str]):
-        self.collection.add(
-            documents=documents,
-            metadatas=metadatas,
-            ids=ids
-        )
+    def add_documents(self, documents: list[str], metadatas: list[dict[str, Any]], ids: list[str]):
+        self.collection.add(documents=documents, metadatas=metadatas, ids=ids)
 
-    def query(self, query_text: str, n_results: int = 5) -> List[Dict[str, Any]]:
-        results = self.collection.query(
-            query_texts=[query_text],
-            n_results=n_results
-        )
+    def query(self, query_text: str, n_results: int = 5) -> list[dict[str, Any]]:
+        results = self.collection.query(query_texts=[query_text], n_results=n_results)
         return results
 
     def delete(self, ids: Sequence[str]) -> None:

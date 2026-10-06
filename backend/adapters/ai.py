@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import logging
+import time
 from typing import Any
 
+from backend.core.logging import log_event
 from backend.ports import AIInvalidOutputError, AIProviderError, AIUsage, StructuredResponse
+
+logger = logging.getLogger(__name__)
 
 
 class OpenAIGateway:
@@ -41,6 +46,7 @@ class OpenAIGateway:
         from openai import OpenAIError
 
         resolved_model = model or self._default_model
+        start = time.perf_counter()
         try:
             response = await self.client.beta.chat.completions.parse(
                 model=resolved_model,
@@ -48,6 +54,14 @@ class OpenAIGateway:
                 response_format=response_format,
             )
         except OpenAIError as error:
+            log_event(
+                logger,
+                "ai.generate.error",
+                level=logging.WARNING,
+                model=resolved_model,
+                duration_ms=round((time.perf_counter() - start) * 1000, 3),
+                error_type=type(error).__name__,
+            )
             raise AIProviderError(str(error)) from error
 
         parsed = response.choices[0].message.parsed
@@ -55,11 +69,20 @@ class OpenAIGateway:
             raise AIInvalidOutputError("provider returned no structured output")
 
         usage = getattr(response, "usage", None)
+        usage_model = AIUsage(
+            prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+            completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
+        )
+        log_event(
+            logger,
+            "ai.generate",
+            model=resolved_model,
+            duration_ms=round((time.perf_counter() - start) * 1000, 3),
+            prompt_tokens=usage_model.prompt_tokens,
+            completion_tokens=usage_model.completion_tokens,
+        )
         return StructuredResponse(
             parsed=parsed,
             model=resolved_model,
-            usage=AIUsage(
-                prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
-                completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
-            ),
+            usage=usage_model,
         )

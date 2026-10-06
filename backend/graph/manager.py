@@ -1,10 +1,13 @@
-from functools import lru_cache
-from neo4j import GraphDatabase
-from typing import List, Optional, Dict, Any
-from backend.graph.schema import Node, Edge, NodeType, EdgeType
-from backend.core.config import Settings, settings as default_settings
 import logging
 import re
+from functools import lru_cache
+from typing import Any
+
+from neo4j import GraphDatabase
+
+from backend.core.config import Settings
+from backend.core.config import settings as default_settings
+from backend.graph.schema import Edge, Node
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +74,7 @@ class GraphManager:
         with self.driver.session() as session:
             session.run(query, edge_id=edge_id)
 
-    def get_node(self, node_id: str) -> Optional[Dict[str, Any]]:
+    def get_node(self, node_id: str) -> dict[str, Any] | None:
         query = """
         MATCH (n:Entity {id: $id})
         RETURN n, labels(n) as labels
@@ -82,7 +85,7 @@ class GraphManager:
             if record:
                 node_data = dict(record["n"])
                 # filter out the generic 'Entity' label to find the specific type
-                labels = [l for l in record["labels"] if l != "Entity"]
+                labels = [label for label in record["labels"] if label != "Entity"]
                 if labels:
                     node_data["type"] = labels[0]
                 elif record["labels"]:
@@ -91,7 +94,7 @@ class GraphManager:
                 return node_data
             return None
 
-    def update_node(self, node: Node) -> Optional[Dict[str, Any]]:
+    def update_node(self, node: Node) -> dict[str, Any] | None:
         query = """
         MATCH (n:Entity {id: $id})
         SET n += $properties
@@ -109,7 +112,7 @@ class GraphManager:
             record = result.single()
             if record:
                 node_data = dict(record["n"])
-                labels = [l for l in record["labels"] if l != "Entity"]
+                labels = [label for label in record["labels"] if label != "Entity"]
                 if labels:
                     node_data["type"] = labels[0]
                 elif record["labels"]:
@@ -117,7 +120,7 @@ class GraphManager:
                 return node_data
             return None
 
-    def get_neighbors(self, node_id: str, edge_type: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_neighbors(self, node_id: str, edge_type: str | None = None) -> list[dict[str, Any]]:
         # Validate edge_type if provided to prevent injection
         if edge_type:
             edge_type = self._validate_identifier(edge_type)
@@ -133,7 +136,7 @@ class GraphManager:
             for record in result:
                 neighbor_data = dict(record["m"])
                 # Extract type from labels
-                labels = [l for l in record["labels"] if l != "Entity"]
+                labels = [label for label in record["labels"] if label != "Entity"]
                 if labels:
                     neighbor_data["type"] = labels[0]
                 elif record["labels"]:
@@ -146,7 +149,7 @@ class GraphManager:
                 neighbors.append(neighbor_data)
         return neighbors
 
-    def get_edges(self, node_id: str) -> List[Dict[str, Any]]:
+    def get_edges(self, node_id: str) -> list[dict[str, Any]]:
         query = """
         MATCH (n:Entity {id: $id})-[r]->(m:Entity)
         RETURN
@@ -177,8 +180,8 @@ class GraphManager:
         return edges
 
     def get_edge(
-        self, source_id: str, target_id: str, edge_type: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+        self, source_id: str, target_id: str, edge_type: str | None = None
+    ) -> list[dict[str, Any]]:
         rel_clause = f":{self._validate_identifier(edge_type)}" if edge_type else ""
         query = f"""
         MATCH (a:Entity {{id: $source_id}})-[r{rel_clause}]->(b:Entity {{id: $target_id}})
@@ -202,7 +205,7 @@ class GraphManager:
                 )
         return edges
 
-    def execute_cypher(self, query: str, params: Dict[str, Any] = None):
+    def execute_cypher(self, query: str, params: dict[str, Any] = None):
         if params is None:
             params = {}
         with self.driver.session() as session:
@@ -210,14 +213,14 @@ class GraphManager:
             return [record.data() for record in result]
 
     def get_nodes(
-        self, node_type: Optional[str] = None, node_id: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+        self, node_type: str | None = None, node_id: str | None = None
+    ) -> list[dict[str, Any]]:
         label_clause = ""
         if node_type:
             label_clause = ":" + self._validate_identifier(node_type)
 
         id_clause = ""
-        params: Dict[str, Any] = {}
+        params: dict[str, Any] = {}
         if node_id:
             id_clause = "{id: $node_id}"
             params["node_id"] = node_id
@@ -245,7 +248,7 @@ class GraphManager:
             result = session.run(query, id=node_id)
             return result.consume().counters.nodes_deleted > 0
 
-    def get_top_10_nodes_by_name_and_type(self, node_type: str, name: str) -> List[Dict[str, Any]]:
+    def get_top_10_nodes_by_name_and_type(self, node_type: str, name: str) -> list[dict[str, Any]]:
         # Validate and sanitize node_type to prevent injection
         node_type = self._validate_identifier(node_type)
 
@@ -260,7 +263,7 @@ class GraphManager:
             nodes = []
             for record in result:
                 node_data = dict(record["n"])
-                labels = [l for l in record["labels"] if l != "Entity"]
+                labels = [label for label in record["labels"] if label != "Entity"]
                 if labels:
                     node_data["type"] = labels[0]
                 elif record["labels"]:
@@ -269,8 +272,8 @@ class GraphManager:
             return nodes
 
     def search_nodes_by_name(
-        self, query_string: str, type: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+        self, query_string: str, type: str | None = None
+    ) -> list[dict[str, Any]]:
         """
         Performs a fast, case-insensitive fuzzy search on node names for frontend @-mentions.
         Returns a lightweight dictionary with only id, name, and type for rendering badges.
@@ -292,7 +295,7 @@ class GraphManager:
             result = session.run(query, query_str=query_string)
             nodes = []
             for record in result:
-                labels = [l for l in record["labels"] if l != "Entity"]
+                labels = [label for label in record["labels"] if label != "Entity"]
                 node_type = labels[0] if labels else "Unknown"
 
                 nodes.append(
@@ -301,8 +304,8 @@ class GraphManager:
             return nodes
 
     def search_semantic_nodes(
-        self, embedding: List[float], top_k: int = 5, min_score: float = 0.5
-    ) -> List[str]:
+        self, embedding: list[float], top_k: int = 5, min_score: float = 0.5
+    ) -> list[str]:
         """
         Uses the native Neo4j vector index to find the most semantically similar nodes.
         Returns a list of node IDs.
@@ -320,7 +323,14 @@ class GraphManager:
                 for record in result:
                     anchor_ids.append(record["id"])
         except Exception as e:
-            logger.error(f"Semantic search failed: {e}")
+            from backend.core.logging import log_event
+
+            log_event(
+                logger,
+                "graph.semantic_search_failed",
+                level=logging.ERROR,
+                error_type=type(e).__name__,
+            )
         return anchor_ids
 
 

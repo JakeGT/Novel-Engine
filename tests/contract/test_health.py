@@ -53,6 +53,54 @@ def test_health_ready_degrades_when_store_down(fake_container) -> None:
     assert response.json()["checks"]["postgres"]["ok"] is False
 
 
+def test_health_ready_degrades_when_neo4j_unreachable(fake_container, monkeypatch) -> None:
+    app = create_app(container=fake_container)
+
+    with TestClient(app) as client:
+        monkeypatch.setattr(fake_container.graph, "ping", lambda: False)
+        response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["status"] == "degraded"
+    assert body["checks"]["neo4j"]["ok"] is False
+
+
+def test_health_ready_stays_ready_when_optional_providers_down(fake_container) -> None:
+    from tests.doubles import DisabledEmbeddingProvider, ScriptedAIGateway
+
+    app = create_app(container=fake_container)
+
+    with TestClient(app) as client:
+        fake_container.embeddings = DisabledEmbeddingProvider()
+        fake_container.ai = ScriptedAIGateway(available=False)
+        response = client.get("/health/ready")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
+
+
+def test_health_capabilities_report_degradation_reasons(fake_container, monkeypatch) -> None:
+    from tests.doubles import DisabledEmbeddingProvider, ScriptedAIGateway
+
+    app = create_app(container=fake_container)
+
+    with TestClient(app) as client:
+        fake_container.embeddings = DisabledEmbeddingProvider()
+        fake_container.ai = ScriptedAIGateway(available=False)
+        monkeypatch.setattr(fake_container.vectors, "health", lambda: False)
+        response = client.get("/health/capabilities")
+
+    assert response.status_code == 200
+    capabilities = response.json()["capabilities"]
+    assert capabilities["embeddings"]["available"] is False
+    assert capabilities["embeddings"]["reason"]
+    assert capabilities["ai"]["available"] is False
+    assert capabilities["ai"]["reason"]
+    assert capabilities["vector"]["available"] is False
+    assert capabilities["vector"]["reason"]
+
+
 def test_health_capabilities(fake_container) -> None:
     app = create_app(container=fake_container)
 

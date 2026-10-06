@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import logging
+import time
+
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from backend.core.config import Settings
 from backend.core.database import check_database_ready, create_engine, create_session_factory
+from backend.core.logging import log_event
 from backend.ports import MigrationStatus
+
+logger = logging.getLogger(__name__)
 
 
 class PostgresDatabase:
@@ -17,7 +23,26 @@ class PostgresDatabase:
         )
 
     async def ready(self) -> bool:
-        return await check_database_ready(self._engine)
+        start = time.perf_counter()
+        try:
+            result = await check_database_ready(self._engine)
+        except Exception as error:
+            log_event(
+                logger,
+                "postgres.ready.error",
+                level=logging.WARNING,
+                duration_ms=round((time.perf_counter() - start) * 1000, 3),
+                error_type=type(error).__name__,
+            )
+            return False
+        log_event(
+            logger,
+            "postgres.ready",
+            level=logging.DEBUG,
+            duration_ms=round((time.perf_counter() - start) * 1000, 3),
+            ready=result,
+        )
+        return result
 
     async def migration_status(self) -> MigrationStatus:
         from backend.migrate import postgres_current_revision, postgres_head_revision

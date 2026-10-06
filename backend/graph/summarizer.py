@@ -1,7 +1,7 @@
-from typing import List, Dict, Any
+from typing import Any
 
 
-def summarize_context(nodes: List[Dict[str, Any]]) -> str:
+def summarize_context(nodes: list[dict[str, Any]]) -> str:
     """
     Takes the scored, deduplicated list of nodes returned by the ContextTraversal engine
     and formats them into a tight, readable string block for LLM system message injection.

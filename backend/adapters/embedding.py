@@ -5,6 +5,8 @@ import json
 import logging
 from typing import Any
 
+from backend.core.logging import log_event
+
 logger = logging.getLogger(__name__)
 
 
@@ -53,7 +55,13 @@ class SentenceTransformerEmbedding:
 
                 self._model = SentenceTransformer(self._model_name)
             except Exception as error:  # pragma: no cover - depends on local model cache
-                logger.warning("sentence-transformers failed to load: %s", error)
+                log_event(
+                    logger,
+                    "embedding.load_failed",
+                    level=logging.WARNING,
+                    model=self._model_name,
+                    error_type=type(error).__name__,
+                )
                 self._model = None
         return self._model
 
@@ -64,7 +72,13 @@ class SentenceTransformerEmbedding:
         try:
             return model.encode(text).tolist()
         except Exception as error:  # pragma: no cover - provider dependent
-            logger.error("Failed to generate embedding: %s", error)
+            log_event(
+                logger,
+                "embedding.generate_failed",
+                level=logging.ERROR,
+                model=self._model_name,
+                error_type=type(error).__name__,
+            )
             return None
 
     def embed_node(self, node_type: str, properties: dict[str, Any]) -> list[float] | None:

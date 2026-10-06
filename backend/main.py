@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -12,10 +13,14 @@ from backend.api.v1.router import router as v1_router
 from backend.container import Container, build_container
 from backend.core.config import Settings
 from backend.core.config import settings as default_settings
+from backend.core.logging import configure_logging, log_event
+
+logger = logging.getLogger("backend.main")
 
 
 def create_app(settings: Settings | None = None, container: Container | None = None) -> FastAPI:
     resolved_settings = settings or default_settings
+    configure_logging(resolved_settings.LOG_LEVEL)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -24,6 +29,13 @@ def create_app(settings: Settings | None = None, container: Container | None = N
         try:
             neo4j_status = active.neo4j_migrations.status()
             if not neo4j_status.current:
+                log_event(
+                    logger,
+                    "app.startup.failed",
+                    level=logging.ERROR,
+                    reason="neo4j_migrations_pending",
+                    detail=neo4j_status.detail,
+                )
                 raise RuntimeError(
                     "Neo4j schema is not migrated; run 'make migrate'. " + neo4j_status.detail
                 )
@@ -31,13 +43,29 @@ def create_app(settings: Settings | None = None, container: Container | None = N
             if active.database is not None:
                 database_status = await active.database.migration_status()
                 if not database_status.current:
+                    log_event(
+                        logger,
+                        "app.startup.failed",
+                        level=logging.ERROR,
+                        reason="postgres_migrations_pending",
+                        detail=database_status.detail,
+                    )
                     raise RuntimeError(
                         "PostgreSQL schema is not migrated; run 'make migrate'. "
                         + database_status.detail
                     )
+
+            log_event(
+                logger,
+                "app.startup",
+                env=resolved_settings.APP_ENV,
+                ai_available=active.ai.is_available(),
+                embeddings_available=active.embeddings.available(),
+            )
             yield
         finally:
             await active.aclose()
+            log_event(logger, "app.shutdown", env=resolved_settings.APP_ENV)
 
     app = FastAPI(
         title=resolved_settings.PROJECT_NAME,

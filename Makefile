@@ -4,7 +4,7 @@ export UV_CACHE_DIR
 
 TYPE_CHECK_TARGETS = backend/graph/resolver.py backend/graph/summarizer.py backend/graph/policies.py backend/graph/schema.py
 
-.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify seed reset-dev api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check frontend-install frontend-lint frontend-build check
+.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify seed reset-dev api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check secret-scan frontend-install frontend-lint frontend-build check
 
 help:
 	@echo "install             Install runtime Python dependencies"
@@ -26,6 +26,7 @@ help:
 	@echo "import-check        Verify application imports without external work"
 	@echo "lint                Run Python lint checks"
 	@echo "format-check        Check Python formatting"
+	@echo "secret-scan         Scan tracked files for credential shapes"
 	@echo "frontend-install    Install frontend dependencies"
 	@echo "frontend-lint       Lint the frontend"
 	@echo "frontend-build      Build the frontend"
@@ -90,6 +91,9 @@ lint:
 format-check:
 	uv run --locked ruff format --check backend tests
 
+secret-scan:
+	uv run --locked python -m scripts.ci.secret_scan
+
 frontend-install:
 	pnpm --dir frontend install --frozen-lockfile --store-dir "$(PNPM_STORE_DIR)"
 
@@ -99,4 +103,4 @@ frontend-lint:
 frontend-build:
 	pnpm --dir frontend run build
 
-check: lock-check lint format-check typecheck test frontend-lint frontend-build
+check: lock-check lint format-check secret-scan typecheck test frontend-lint frontend-build

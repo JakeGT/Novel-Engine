@@ -7,6 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from backend.core.logging import log_event
+
 logger = logging.getLogger(__name__)
 
 
@@ -132,7 +134,13 @@ class SchemaRegistry:
                     self.custom_node_types = set(data.get("node_types", []))
                     self.custom_edge_types = set(data.get("edge_types", []))
             except Exception as e:
-                logger.error(f"Failed to load custom schema: {e}")
+                log_event(
+                    logger,
+                    "schema.custom_load_failed",
+                    level=logging.WARNING,
+                    path=str(self.config_path),
+                    error_type=type(e).__name__,
+                )
 
     def _save(self):
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
