@@ -11,7 +11,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
-from backend.domain.identity import IdentityClaims, LoginAttempt, Session, User
+from backend.domain.identity import IdentityClaims, LoginAttempt, Role, Session, User
+from backend.domain.tenancy import AuditEvent, Invitation, Membership, Project, Workspace
 from backend.graph.schema import Edge, Node
 
 
@@ -252,3 +253,74 @@ class LoginAttemptStorePort(Protocol):
     ) -> LoginAttempt: ...
 
     async def consume(self, state: str) -> LoginAttempt | None: ...
+
+
+@runtime_checkable
+class TenancyStorePort(Protocol):
+    """Workspace, membership, project, invitation, and audit persistence.
+
+    Implementations enforce the invariants (unique slug/membership/token hash,
+    last-owner protection) and raise the typed tenancy errors from
+    ``backend.domain.tenancy``.
+    """
+
+    async def create_workspace(self, *, slug: str, name: str) -> Workspace: ...
+
+    async def get_workspace(self, workspace_id: str) -> Workspace | None: ...
+
+    async def get_workspace_by_slug(self, slug: str) -> Workspace | None: ...
+
+    async def list_workspaces_for_user(self, user_id: str) -> list[Workspace]: ...
+
+    async def add_membership(
+        self, *, workspace_id: str, user_id: str, role: Role
+    ) -> Membership: ...
+
+    async def get_membership(self, workspace_id: str, user_id: str) -> Membership | None: ...
+
+    async def list_memberships(self, workspace_id: str) -> list[Membership]: ...
+
+    async def set_role(self, *, workspace_id: str, user_id: str, role: Role) -> Membership: ...
+
+    async def remove_membership(self, *, workspace_id: str, user_id: str) -> bool: ...
+
+    async def transfer_ownership(
+        self, *, workspace_id: str, from_user_id: str, to_user_id: str
+    ) -> None: ...
+
+    async def create_project(self, *, workspace_id: str, slug: str, name: str) -> Project: ...
+
+    async def get_project(self, project_id: str) -> Project | None: ...
+
+    async def list_projects(self, workspace_id: str) -> list[Project]: ...
+
+    async def create_invitation(
+        self,
+        *,
+        workspace_id: str,
+        role: Role,
+        token_hash: str,
+        created_by_user_id: str,
+        ttl_seconds: int,
+        email: str | None = None,
+    ) -> Invitation: ...
+
+    async def get_invitation_by_token_hash(self, token_hash: str) -> Invitation | None: ...
+
+    async def list_invitations(self, workspace_id: str) -> list[Invitation]: ...
+
+    async def revoke_invitation(self, *, workspace_id: str, invitation_id: str) -> bool: ...
+
+    async def accept_invitation(self, *, token_hash: str, user_id: str) -> Membership: ...
+
+    async def record_audit(
+        self,
+        *,
+        workspace_id: str,
+        actor_user_id: str,
+        action: str,
+        target_type: str,
+        target_id: str,
+        detail: dict[str, Any] | None = None,
+        correlation_id: str = "",
+    ) -> AuditEvent: ...
