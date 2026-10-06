@@ -55,8 +55,8 @@ Still open before affected slices:
 
 | Workstream | Backlog | Status | Depends on |
 | --- | --- | --- | --- |
-| 1A. Phase 0 handoff and cleanup | FND carryover, OSS-005 | In progress (world/legacy/Chroma cleanup done; optional-dep split + frontend shell + evidence pending) | Phase 0 exit |
-| 1B. Identity/tenant domain and migrations | IDN-001, IDN-003, CAN-001 | In progress (domain, migration `0005`, store, policy, and seed implemented; identity unlinking/workspace deletion deferred to 1D/1E) | 1A |
+| 1A. Phase 0 handoff and cleanup | FND carryover, OSS-005 | Implemented | Phase 0 exit |
+| 1B. Identity/tenant domain and migrations | IDN-001, IDN-003, CAN-001 | Implemented | 1A |
 | 1C. OIDC, local identity, and sessions | IDN-001, IDN-002, OSS-002 | In progress (core implemented; live Authentik exercise pending) | 1B |
 | 1D. Invitations, memberships, and authorization | IDN-003, IDN-004 | In progress (workspace/member/project/invitation APIs, centralized authorization, and audit implemented; shared-limiter + credential/export audit deferred) | 1B–1C |
 | 1E. Cross-store tenant isolation | IDN-005 | Not started | 1B–1D |
@@ -79,15 +79,19 @@ Still open before affected slices:
       (Confirmed: only the transitional module, the import-safety test, config/env, and the dependency referenced
       it. Removed `backend/core/vector_store.py`, the `chromadb` dependency, and `CHROMA_PERSISTENCE_PATH`; the
       pgvector adapter is the sole vector store.)
-- [ ] Split optional local-embedding and integration dependencies where this improves install size without creating multiple ambiguous setup paths.
-- [ ] Replace the Vite starter screen/assets with the minimal authenticated application shell; do not build product workspaces yet.
-- [ ] Update Phase 0 evidence with final commit, CI, and carryover links.
+- [x] Split optional local-embedding and integration dependencies where this improves install size without creating multiple ambiguous setup paths.
+      (`sentence-transformers` moved to the `[project.optional-dependencies].embeddings` extra; the base
+      install and CI run without it and degrade gracefully. `uv sync --locked --extra embeddings` enables it.)
+- [x] Replace the Vite starter screen/assets with the minimal authenticated application shell; do not build product workspaces yet.
+      (Frontend now shows session state via `/auth/me`, with sign-in/sign-out wired to `/auth/*` and a Vite dev
+      proxy for same-origin cookies; starter assets removed.)
+- [x] Update Phase 0 evidence with final commit, CI, and carryover links (`plan/phase-0-evidence.md` "Phase 1 carryover").
 
-Acceptance:
+### 1A acceptance
 
-- the maintained tree has no parked-file lint exclusion or unexplained legacy singleton route
-- dependency/import scans prove removed packages are unused
-- the current v1 contract remains green
+- [x] the maintained tree has no parked-file lint exclusion or unexplained legacy singleton route
+- [x] dependency/import scans prove removed packages are unused
+- [x] the current v1 contract remains green
 
 ## 1B. Identity, workspace, and project domain
 
@@ -97,9 +101,11 @@ Acceptance:
 - [x] Define a request/job `AccessScope` containing actor, workspace, project, authentication mode, and correlation ID (`backend/domain/identity.py`).
 - [x] Add PostgreSQL migrations, constraints, indexes, and timestamps for the new records (migration `0005_tenancy`).
 - [x] Enforce unique external identity, membership, workspace slug, invitation-token hash, and project-within-workspace invariants (`PostgresTenancyStore`).
-- [ ] Define ownership transfer, last-owner removal, member removal, identity unlinking, and deletion behavior.
-      (Transfer, last-owner protection, role changes, and member removal are implemented and tested;
-      identity unlinking and workspace deletion remain for 1D/1E.)
+- [x] Define ownership transfer, last-owner removal, member removal, identity unlinking, and deletion behavior.
+      (Transfer, last-owner protection, role changes, and member removal are implemented and tested.
+      Workspace deletion is owner-only (`DELETE /api/v1/workspaces/{id}`) and cascades memberships/projects/
+      invitations while retaining audit events; identity unlinking removes an external link without deleting the
+      local user (`IdentityStorePort.unlink_identity`).)
 - [x] Update deterministic seed data with two users, two workspaces, similar project names/IDs, roles, and expired/revoked invitations (`backend/seed/tenancy.py`; applied by `make seed`, cleared by `make reset-dev`).
 
 Acceptance:

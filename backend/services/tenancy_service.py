@@ -97,6 +97,21 @@ class TenancyService:
             raise NotFoundError("Workspace not found.")
         return workspace
 
+    async def delete_workspace(self, scope: AccessScope, workspace_id: str) -> bool:
+        await self._authorize(scope, workspace_id, Permission.WORKSPACE_ADMIN)
+        existing = await self._store.get_workspace(workspace_id)
+        if existing is None:
+            raise NotFoundError("Workspace not found.")
+        await self._audit(
+            scope,
+            workspace_id=workspace_id,
+            action="workspace.deleted",
+            target_type="workspace",
+            target_id=workspace_id,
+            detail={"slug": existing.slug},
+        )
+        return await self._store.delete_workspace(workspace_id)
+
     async def list_members(self, scope: AccessScope, workspace_id: str) -> list[Membership]:
         await self._authorize(scope, workspace_id, Permission.WORKSPACE_READ)
         return await self._store.list_memberships(workspace_id)

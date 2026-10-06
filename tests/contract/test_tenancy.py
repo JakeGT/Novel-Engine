@@ -98,3 +98,22 @@ def test_non_member_cannot_read_workspace(api_client, fake_container) -> None:
     # unauthenticated listing does not reveal workspace existence
     api_client.cookies.clear()
     assert api_client.get("/api/v1/workspaces").status_code == 401
+
+
+def test_delete_workspace_requires_csrf_and_removes_workspace(api_client) -> None:
+    csrf = _login(api_client)
+    created = api_client.post(
+        "/api/v1/workspaces",
+        json={"slug": "del-api", "name": "Delete API"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert created.status_code == 201
+    workspace_id = created.json()["id"]
+
+    assert api_client.delete(f"/api/v1/workspaces/{workspace_id}").status_code == 403
+    deleted = api_client.delete(
+        f"/api/v1/workspaces/{workspace_id}", headers={"X-CSRF-Token": csrf}
+    )
+    assert deleted.status_code == 204
+    # After deletion the actor is no longer a member, so reads stay hidden (403), not 404.
+    assert api_client.get(f"/api/v1/workspaces/{workspace_id}").status_code == 403

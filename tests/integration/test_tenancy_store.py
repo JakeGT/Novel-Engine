@@ -182,3 +182,32 @@ async def test_invitation_revoke_and_audit(session_factory) -> None:
     )
     assert event.detail == {"role": "editor"}
     assert event.correlation_id == "cid-1"
+
+
+@pytest.mark.asyncio
+async def test_delete_workspace_cascades_memberships_and_projects(session_factory) -> None:
+    store = PostgresTenancyStore(session_factory)
+    owner = await _make_user(session_factory, "owner-del")
+    workspace = await store.create_workspace(slug="del-ws", name="Delete Me")
+    await store.add_membership(workspace_id=workspace.id, user_id=owner, role=Role.OWNER)
+    await store.create_project(workspace_id=workspace.id, slug="p", name="P")
+
+    assert await store.delete_workspace(workspace.id) is True
+    assert await store.get_workspace(workspace.id) is None
+    assert await store.list_memberships(workspace.id) == []
+    assert await store.list_projects(workspace.id) == []
+    assert await store.delete_workspace(workspace.id) is False
+
+
+@pytest.mark.asyncio
+async def test_delete_workspace_leaves_other_workspaces_intact(session_factory) -> None:
+    store = PostgresTenancyStore(session_factory)
+    owner = await _make_user(session_factory, "owner-two")
+    keep = await store.create_workspace(slug="keep-ws", name="Keep")
+    drop = await store.create_workspace(slug="drop-ws", name="Drop")
+    await store.add_membership(workspace_id=keep.id, user_id=owner, role=Role.OWNER)
+    await store.add_membership(workspace_id=drop.id, user_id=owner, role=Role.OWNER)
+
+    assert await store.delete_workspace(drop.id) is True
+    assert await store.get_workspace(keep.id) is not None
+    assert len(await store.list_memberships(keep.id)) == 1

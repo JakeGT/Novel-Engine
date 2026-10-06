@@ -221,6 +221,8 @@ class IdentityStorePort(Protocol):
 
     async def get_user_for_identity(self, issuer: str, subject: str) -> User | None: ...
 
+    async def unlink_identity(self, issuer: str, subject: str) -> bool: ...
+
 
 @runtime_checkable
 class SessionStorePort(Protocol):
@@ -271,6 +273,8 @@ class TenancyStorePort(Protocol):
     async def get_workspace_by_slug(self, slug: str) -> Workspace | None: ...
 
     async def list_workspaces_for_user(self, user_id: str) -> list[Workspace]: ...
+
+    async def delete_workspace(self, workspace_id: str) -> bool: ...
 
     async def add_membership(
         self, *, workspace_id: str, user_id: str, role: Role

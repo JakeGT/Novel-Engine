@@ -148,6 +148,17 @@ class PostgresIdentityStore:
             ).scalar_one_or_none()
             return _to_user(row) if row else None
 
+    async def unlink_identity(self, issuer: str, subject: str) -> bool:
+        """Remove an external identity link without deleting the local user."""
+        async with session_scope(self._session_factory) as session:
+            result = await session.execute(
+                delete(ExternalIdentityRow).where(
+                    ExternalIdentityRow.issuer == issuer,
+                    ExternalIdentityRow.subject == subject,
+                )
+            )
+            return bool(result.rowcount)
+
 
 class PostgresSessionStore:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:

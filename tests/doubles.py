@@ -492,6 +492,9 @@ class InMemoryIdentityStore:
         user_id = self.identities.get((issuer, subject))
         return self.users.get(user_id) if user_id else None
 
+    async def unlink_identity(self, issuer: str, subject: str) -> bool:
+        return self.identities.pop((issuer, subject), None) is not None
+
 
 class InMemorySessionStore:
     def __init__(self) -> None:
@@ -606,6 +609,25 @@ class InMemoryTenancyStore:
     async def list_workspaces_for_user(self, user_id: str) -> list[Workspace]:
         ids = [ws_id for (ws_id, uid) in self.memberships if uid == user_id]
         return [self.workspaces[ws_id] for ws_id in sorted(ids) if ws_id in self.workspaces]
+
+    async def delete_workspace(self, workspace_id: str) -> bool:
+        if workspace_id not in self.workspaces:
+            return False
+        del self.workspaces[workspace_id]
+        self.memberships = {
+            key: value for key, value in self.memberships.items() if key[0] != workspace_id
+        }
+        self.projects = {
+            pid: project
+            for pid, project in self.projects.items()
+            if project.workspace_id != workspace_id
+        }
+        self.invitations = {
+            iid: invitation
+            for iid, invitation in self.invitations.items()
+            if invitation.workspace_id != workspace_id
+        }
+        return True
 
     async def add_membership(self, *, workspace_id: str, user_id: str, role: Role) -> Membership:
         if (workspace_id, user_id) in self.memberships:

@@ -214,6 +214,18 @@ class PostgresTenancyStore:
             ).scalar_one_or_none()
             return _to_workspace(row) if row else None
 
+    async def delete_workspace(self, workspace_id: str) -> bool:
+        """Delete a workspace; memberships, projects, and invitations cascade.
+
+        Audit events are intentionally retained as a security record even after
+        the workspace is gone.
+        """
+        async with session_scope(self._session_factory) as session:
+            result = await session.execute(
+                delete(WorkspaceRow).where(WorkspaceRow.id == workspace_id)
+            )
+            return bool(result.rowcount)
+
     async def list_workspaces_for_user(self, user_id: str) -> list[Workspace]:
         async with session_scope(self._session_factory) as session:
             rows = (

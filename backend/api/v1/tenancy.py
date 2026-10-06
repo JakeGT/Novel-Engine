@@ -128,6 +128,15 @@ async def get_workspace(
     return WorkspaceModel.model_validate(workspace)
 
 
+@router.delete("/workspaces/{workspace_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_workspace(
+    workspace_id: str,
+    scope: AccessScope = Depends(require_scope),
+    service: TenancyService = Depends(get_tenancy_service),
+) -> None:
+    await service.delete_workspace(scope, workspace_id)
+
+
 @router.get("/workspaces/{workspace_id}/members", response_model=list[MembershipModel])
 async def list_members(
     workspace_id: str,

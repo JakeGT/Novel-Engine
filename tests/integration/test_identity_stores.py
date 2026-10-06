@@ -107,3 +107,15 @@ async def test_login_attempt_expires(session_factory) -> None:
         state="s2", nonce="n", code_verifier="v", redirect_uri="https://x/cb", ttl_seconds=-1
     )
     assert await store.consume("s2") is None
+
+
+@pytest.mark.asyncio
+async def test_unlink_identity_removes_link_but_keeps_user(session_factory) -> None:
+    store = PostgresIdentityStore(session_factory)
+    user_id = await _make_user(session_factory, "unlink-subject")
+    assert await store.get_user_for_identity(ISSUER, "unlink-subject") is not None
+
+    assert await store.unlink_identity(ISSUER, "unlink-subject") is True
+    assert await store.get_user_for_identity(ISSUER, "unlink-subject") is None
+    assert await store.get_user(user_id) is not None
+    assert await store.unlink_identity(ISSUER, "unlink-subject") is False
