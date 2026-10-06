@@ -13,7 +13,7 @@ prototype. It intentionally distinguishes verified facts from outstanding items.
 | Component | Version | Source |
 | --- | --- | --- |
 | Python | 3.13 (verified 3.13.13) | `.python-version`, `pyproject.toml` |
-| uv | 0.11.16 | `uv.lock`, CI `astral-sh/setup-uv@v10` |
+| uv | 0.11.16 | `uv.lock`, CI `astral-sh/setup-uv@v10.2.0` |
 | Node.js | 24 LTS | `.nvmrc`, `frontend/package.json`, CI `actions/setup-node@v7` |
 | pnpm | 11.26.0 | `frontend/pnpm-lock.yaml`, CI `pnpm/action-setup@v6` |
 | PostgreSQL + pgvector | `pgvector/pgvector:0.8.0-pg17` | `docker-compose.yml` |
