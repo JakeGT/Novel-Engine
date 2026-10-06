@@ -65,6 +65,7 @@ class Settings(BaseSettings):
 
     SESSION_COOKIE_NAME: str = "novel_session"
     SESSION_TTL_SECONDS: int = 60 * 60 * 24 * 14
+    SESSION_ROTATION_SECONDS: int = 60 * 60
     CSRF_COOKIE_NAME: str = "novel_csrf"
 
     @property

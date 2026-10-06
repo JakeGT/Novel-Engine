@@ -125,7 +125,10 @@ Not blocked by Authentik provisioning:
 - [x] Implement OIDC authorization-code flow with PKCE, state, nonce, exact redirect allow-list, issuer/audience/signature/time validation, and bounded JWKS caching (`backend/adapters/oidc.py`, joserfc; Authentik enforces the registered redirect allow-list and the app uses one exact configured redirect URI).
 - [x] Register Novel Engine as its own client; do not accept a shared parent-domain session cookie (Authentik client provisioned; session cookie is host-only with no `Domain` attribute).
 - [x] Create a host-only, `Secure`, `HttpOnly`, appropriate-`SameSite` application session with rotation and server-side revocation (host-only `Secure`+`HttpOnly`+`SameSite=Lax` cookie; sessions persisted server-side with `revoke`/`revoke_all_for_user`).
-  - [ ] Add automatic session-id rotation on privilege change or TTL boundary.
+  - [x] Add automatic session-id rotation on privilege change or TTL boundary.
+        (`AuthService.resolve` rotates the session id and revokes the old one past `SESSION_ROTATION_SECONDS`; the
+        `require_session` dependency re-issues the cookie. Role change, member removal, and ownership transfer
+        revoke the affected users' sessions so roles re-evaluate.)
 - [x] Apply CSRF protection to cookie-authenticated mutations (`require_csrf` dependency; server-validated token).
 - [x] Map valid OIDC claims to the local external-identity record without granting workspace membership (`PostgresIdentityStore.get_or_create_user`).
 - [x] Implement deterministic fake OIDC and session adapters for tests, plus a checked-in redacted Authentik discovery/JWKS fixture for offline contract tests (`tests/doubles.py`, `tests/fixtures/oidc/`).

@@ -20,7 +20,7 @@ from backend.domain.tenancy import (
     Workspace,
     role_allows,
 )
-from backend.ports import IdentityStorePort, TenancyStorePort
+from backend.ports import IdentityStorePort, SessionStorePort, TenancyStorePort
 
 INVITATION_TTL_SECONDS = 60 * 60 * 24 * 7
 ACCEPT_RATE_LIMIT = 10
@@ -33,16 +33,25 @@ class TenancyService:
         store: TenancyStorePort,
         *,
         identity_store: IdentityStorePort | None = None,
+        session_store: SessionStorePort | None = None,
         invitation_ttl_seconds: int = INVITATION_TTL_SECONDS,
         accept_rate_limit: int = ACCEPT_RATE_LIMIT,
         accept_rate_window_seconds: int = ACCEPT_RATE_WINDOW_SECONDS,
     ) -> None:
         self._store = store
         self._identity_store = identity_store
+        self._session_store = session_store
         self._invitation_ttl_seconds = invitation_ttl_seconds
         self._accept_rate_limit = accept_rate_limit
         self._accept_rate_window_seconds = accept_rate_window_seconds
         self._accept_hits: dict[str, list[float]] = {}
+
+    async def _revoke_sessions(self, *user_ids: str) -> None:
+        """Invalidate active sessions after a privilege change so roles re-evaluate."""
+        if self._session_store is None:
+            return
+        for user_id in set(user_ids):
+            await self._session_store.revoke_all_for_user(user_id)
 
     async def _authorize(
         self, scope: AccessScope, workspace_id: str, permission: Permission
@@ -123,6 +132,7 @@ class TenancyService:
         membership = await self._store.set_role(
             workspace_id=workspace_id, user_id=user_id, role=role
         )
+        await self._revoke_sessions(user_id)
         await self._audit(
             scope,
             workspace_id=workspace_id,
@@ -137,6 +147,7 @@ class TenancyService:
         await self._authorize(scope, workspace_id, Permission.MEMBER_REMOVE)
         removed = await self._store.remove_membership(workspace_id=workspace_id, user_id=user_id)
         if removed:
+            await self._revoke_sessions(user_id)
             await self._audit(
                 scope,
                 workspace_id=workspace_id,
@@ -155,6 +166,7 @@ class TenancyService:
             from_user_id=scope.actor_user_id,
             to_user_id=to_user_id,
         )
+        await self._revoke_sessions(to_user_id, scope.actor_user_id)
         await self._audit(
             scope,
             workspace_id=workspace_id,

@@ -85,15 +85,18 @@ def _build_fake_container(settings, tmp_path):
     )
     identity_provider = FakeIdentityProvider(issuer=settings.OIDC_ISSUER or HOSTED_ISSUER)
     identity_store = InMemoryIdentityStore()
+    session_store = InMemorySessionStore()
     auth_service = AuthService(
         settings=settings,
         identity_provider=identity_provider,
         identity_store=identity_store,
-        session_store=InMemorySessionStore(),
+        session_store=session_store,
         login_attempt_store=InMemoryLoginAttemptStore(),
     )
     tenancy = InMemoryTenancyStore()
-    tenancy_service = TenancyService(tenancy, identity_store=identity_store)
+    tenancy_service = TenancyService(
+        tenancy, identity_store=identity_store, session_store=session_store
+    )
     return Container(
         settings=settings,
         graph=graph,

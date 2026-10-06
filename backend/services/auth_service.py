@@ -8,6 +8,7 @@ a trusted single-user session for self-hosting. Sessions are always server-side.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC
 
 from backend.core.config import Settings
 from backend.core.security import constant_time_equals, generate_pkce_pair, generate_token
@@ -17,6 +18,7 @@ from backend.domain.identity import (
     InvalidIdentityToken,
     Session,
     User,
+    utcnow,
 )
 from backend.ports import (
     IdentityProviderPort,
@@ -32,6 +34,9 @@ LOGIN_ATTEMPT_TTL_SECONDS = 600
 class AuthenticatedSession:
     user: User
     session: Session
+    # Populated when the session id was rotated during resolution; the caller must
+    # re-issue the cookie for the new session.
+    rotated_session: Session | None = None
 
 
 class AuthService:
@@ -49,6 +54,7 @@ class AuthService:
         self._identity_store = identity_store
         self._session_store = session_store
         self._login_attempt_store = login_attempt_store
+        self._session_rotation_seconds = settings.SESSION_ROTATION_SECONDS
 
     @property
     def is_hosted(self) -> bool:
@@ -64,6 +70,20 @@ class AuthService:
         if user is None or not user.is_active:
             await self._session_store.revoke(raw_session_id)
             return None
+
+        created_at = session.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=UTC)
+        if (utcnow() - created_at).total_seconds() >= self._session_rotation_seconds:
+            rotated = await self._session_store.create(
+                user_id=session.user_id,
+                ttl_seconds=self._settings.SESSION_TTL_SECONDS,
+                csrf_token=generate_token(24),
+                rotated_from=session.id,
+            )
+            await self._session_store.revoke(session.id)
+            return AuthenticatedSession(user=user, session=rotated, rotated_session=rotated)
+
         return AuthenticatedSession(user=user, session=session)
 
     async def start_hosted_login(self) -> str:

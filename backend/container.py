@@ -109,6 +109,7 @@ def build_container(settings: Settings | None = None) -> Container:
     from backend.services.tenancy_service import TenancyService
 
     identity_store = PostgresIdentityStore(database.session_factory)
+    session_store = PostgresSessionStore(database.session_factory)
     container.character_service = CharacterService(
         graph=container.graph,
         ai=container.ai,
@@ -120,9 +121,11 @@ def build_container(settings: Settings | None = None) -> Container:
         settings=resolved,
         identity_provider=identity_provider,
         identity_store=identity_store,
-        session_store=PostgresSessionStore(database.session_factory),
+        session_store=session_store,
         login_attempt_store=PostgresLoginAttemptStore(database.session_factory),
     )
     container.tenancy = PostgresTenancyStore(database.session_factory)
-    container.tenancy_service = TenancyService(container.tenancy, identity_store=identity_store)
+    container.tenancy_service = TenancyService(
+        container.tenancy, identity_store=identity_store, session_store=session_store
+    )
     return container

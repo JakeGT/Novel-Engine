@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from backend.api.dependencies import get_auth_service, get_settings
@@ -44,12 +44,16 @@ def _clear_session_cookies(response: RedirectResponse | JSONResponse, settings: 
 
 async def require_session(
     request: Request,
+    response: Response,
     auth: AuthService = Depends(get_auth_service),
     settings: Settings = Depends(get_settings),
 ) -> AuthenticatedSession:
     resolved = await auth.resolve(request.cookies.get(settings.SESSION_COOKIE_NAME))
     if resolved is None:
         raise UnauthorizedError("A valid session is required.")
+    if resolved.rotated_session is not None:
+        # TTL-boundary rotation: re-issue the cookie for the new session id.
+        _set_session_cookies(response, settings, resolved.rotated_session)
     return resolved
 
 
