@@ -29,13 +29,13 @@ Local mode supplies an explicit local workspace/user identity through the same s
 
 ### Hosted: invite-only portfolio application
 
-The production instance is one application within `apps.jaketalling.com`. Prefer a dedicated host such as `novel-engine.apps.jaketalling.com`, with `apps.jaketalling.com` acting as the launcher. Authentication is delegated to a shared OIDC identity service; Novel Engine owns authorization and does not grant access merely because an identity exists.
+The production instance is one application within `apps.jaketalling.com`, served from the dedicated host `novel-engine.jaketalling.com` (`apps.jaketalling.com` acts as the launcher). Authentication is delegated to the shared **Authentik** identity service at `https://auth.jaketalling.com` (issuer `https://auth.jaketalling.com/application/o/novel-engine/`); Novel Engine owns authorization and does not grant access merely because an identity exists. Authentik is provisioned at `https://auth.jaketalling.com` with a Novel Engine application and confidential OIDC client; see ADR-009 for the topology and provisioning status.
 
 ```text
 Browser
   |  OIDC authorization code + PKCE
   v
-Shared identity service (for example auth.jaketalling.com)
+Shared identity service: Authentik (auth.jaketalling.com)
   |
   v
 Novel Engine host-only session
@@ -72,7 +72,7 @@ A one-command installer, desktop wrapper, and Kubernetes manifests are later pac
 
 Local mode uses a deliberate single-user principal so application policies do not depend on anonymous `None` values. Its UI and diagnostics clearly say that it is suitable only for a trusted host.
 
-Hosted mode uses OIDC authorization code flow with PKCE. Validate issuer, audience, signature, nonce, state, redirect URI, and token lifetime. Map `(issuer, subject)` to a local identity; do not use email as the durable key. Each portfolio application uses its own OIDC client and host-only session cookie rather than a cookie scoped to `.jaketalling.com`.
+Hosted mode uses the shared Authentik OIDC provider with the authorization-code flow and PKCE (see ADR-009 for the issuer, client, redirect, and logout URLs). Validate issuer, audience, signature, nonce, state, redirect URI, and token lifetime. Map `(issuer, subject)` to a local identity; do not use email as the durable key. Each portfolio application uses its own OIDC client and host-only session cookie rather than a cookie scoped to `.jaketalling.com`.
 
 An authenticated identity has no Novel Engine access until an invitation is accepted. Invitations are random, hashed at rest, time-limited, single-use, revocable, optionally email-bound, and audited. Acceptance rechecks the authenticated identity and the inviter's current authority in one transaction.
 
@@ -122,6 +122,7 @@ Every delegated action records the policy version and why approval was or was no
 ## Privacy and outbound connections
 
 - Telemetry is off by default and opt-in when implemented.
+- Error monitoring (Sentry) is opt-in via a configured DSN; when enabled it sends scrubbed, content-free events (no request bodies, cookies, sensitive headers, user PII, or breadcrumbs), and the web client uses a separate `VITE_` variable.
 - Logs are metadata-first and omit manuscript/prompt content by default.
 - Imports and exports remain local unless the author selects an external integration.
 - The context preview identifies what will be sent to a configured remote model.

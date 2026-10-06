@@ -40,12 +40,12 @@ Phase 0 execution details, sub-items, dependencies, and exit evidence are mainta
 
 ## Invite-only identity and tenancy
 
-- **IDN-001 · P0 — OIDC boundary:** provider-neutral authorization-code/PKCE integration, issuer/audience validation, external `(issuer, subject)` mapping, and fake development provider.
+- **IDN-001 · P0 — OIDC boundary:** provider-neutral authorization-code/PKCE integration, issuer/audience validation, external `(issuer, subject)` mapping, and fake development provider. The portfolio deployment uses Authentik (ADR-009); provisioning gates only the hosted wiring, not the port/fake work.
 - **IDN-002 · P0 — Application sessions:** host-only secure cookies, CSRF protection, rotation, logout, expiry, revocation, and hosted-safe configuration guards.
 - **IDN-003 · P0 — Workspace membership:** workspace plus owner/editor/viewer roles, least-privilege policy checks, and explicit project grants where needed.
 - **IDN-004 · P0 — Invitations:** create, bind, expire, revoke, accept once, and audit workspace invitations without leaking tenant existence.
 - **IDN-005 · P0 — Isolation enforcement:** workspace/project scope in PostgreSQL, Neo4j, vector, object, job, export, cache, and event adapters with adversarial tests.
-- **IDN-006 · P1 — Identity operations:** recovery/admin expectations, MFA requirements for privileged users, account unlinking/deletion behavior, and runbooks for the shared portfolio IdP.
+- **IDN-006 · P1 — Identity operations:** recovery/admin expectations, MFA requirements for privileged users, account unlinking/deletion behavior, and runbooks for the shared portfolio IdP (Authentik).
 
 ## Deferred commercial platform
 

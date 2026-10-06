@@ -11,7 +11,7 @@ The project owner answered the original architecture questionnaires on 2026-10-0
 | Access | Shared portfolio identity followed by a Novel Engine invitation; no public app signup, subscription, or payment system |
 | AI usage | User-supplied OpenRouter key or OpenAI-compatible local inference; fake/no-provider workflows remain supported |
 | Project funding | No token resale or platform-credit ledger in the current roadmap |
-| Identity | Standard OIDC provider shared across portfolio apps; Novel Engine owns application sessions and authorization |
+| Identity | Authentik (self-hosted) shared across `*.jaketalling.com`; Novel Engine owns application sessions and authorization. See ADR-009 |
 | Collaboration | Workspaces and project sharing use owner/editor/viewer roles; real-time co-editing is not initially required |
 | First complete workflow | Plan scene → preview context → draft → review mutations → commit canon |
 | Context | Include previous prose using semantic, temporal, narrative, continuity, and author-importance signals |
@@ -44,8 +44,8 @@ The project owner answered the original architecture questionnaires on 2026-10-0
 These choices materially affect public release and should be answered before OSS-005/IDN-006 are complete:
 
 1. **Source license.** Recommended default: AGPL-3.0 if network-hosted modifications should remain open. Choose Apache-2.0 if maximizing permissive commercial adoption matters more. A custom “source available” restriction should not be called open source.
-2. **Shared identity implementation.** Select a managed or self-hosted OIDC service for `apps.jaketalling.com`; confirm whether that service itself is invite-only and who administers recovery.
-3. **Portfolio host topology.** Choose the Novel Engine hostname/path and reverse-proxy boundary. Recommended: a dedicated application host plus `auth.jaketalling.com`, not cookies shared across `.jaketalling.com`.
+2. **Shared identity implementation.** Resolved: Authentik (self-hosted) at `auth.jaketalling.com`; see ADR-009. Remaining sub-decision: whether Authentik enrollment is open, controlled, or invite-only, and who administers recovery.
+3. **Portfolio host topology.** Resolved: `novel-engine.jaketalling.com` with host-only application cookies; no cookie shared across `.jaketalling.com`.
 4. **Invitation authority.** Decide whether only you can invite initial users, or workspace owners can invite members after you provision the workspace.
 5. **Governance.** Decide whether the project uses a single-maintainer/BDFL model initially or a documented multi-maintainer decision process.
 6. **Packaging target.** Confirm Docker Compose as the supported first install; desktop bundles and Kubernetes can remain later work.

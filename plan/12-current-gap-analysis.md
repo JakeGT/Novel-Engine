@@ -39,7 +39,7 @@ Current:
 
 Target:
 
-- OIDC/local identity adapters, invitation-derived workspace/project context, and per-request unit of work
+- OIDC/local identity adapters (Authentik in the portfolio deployment), invitation-derived workspace/project context, and per-request unit of work
 - startup readiness that distinguishes required stores from optional providers (partially done)
 - background worker lifecycle separate from the API process
 

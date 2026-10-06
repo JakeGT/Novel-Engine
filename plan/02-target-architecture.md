@@ -34,7 +34,7 @@ The arrows indicate dependency direction. Domain models and policies do not impo
 Responsibilities:
 
 - HTTP and event-stream endpoints
-- OIDC or local identity plus workspace/project-scope resolution
+- shared OIDC (Authentik in the portfolio deployment) or local identity plus workspace/project-scope resolution
 - provider configuration, cost limits, and autonomy-policy resolution
 - request validation and response serialization
 - mapping known domain errors to stable problem responses

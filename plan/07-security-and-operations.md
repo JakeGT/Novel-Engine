@@ -34,7 +34,7 @@ Protected assets include OIDC/application sessions, invitations, OpenRouter cred
 
 ## Authentication and tenancy
 
-Hosted mode delegates authentication to the shared portfolio OIDC service and owns host-only application sessions, invitation acceptance, workspace/project membership, roles, audit, and deletion/ownership-transfer behavior. A valid portfolio identity alone grants no Novel Engine access. Local/self-hosted mode uses an explicit local identity adapter that hosted configuration refuses to enable.
+Hosted mode delegates authentication to the shared portfolio OIDC service (Authentik) and owns host-only application sessions, invitation acceptance, workspace/project membership, roles, audit, and deletion/ownership-transfer behavior. A valid portfolio identity alone grants no Novel Engine access. Local/self-hosted mode uses an explicit local identity adapter that hosted configuration refuses to enable.
 
 Use defense in depth: application authorization, tenant-scoped repository methods, database constraints/policies where suitable, tenant metadata in Neo4j/vector/object keys, and cross-tenant integration tests.
 
@@ -89,7 +89,7 @@ FastAPI and frontend on the host; PostgreSQL and Neo4j in Compose; local vector/
 
 ### Invite-only portfolio deployment
 
-Dedicated application hostname/path behind reverse proxy/TLS, shared OIDC identity service, application instances, workers, PostgreSQL and Neo4j, vector capability, object storage, key/secret management, backups, monitoring, invitation administration, and explicit tenant isolation.
+Dedicated application hostname/path behind reverse proxy/TLS, shared Authentik OIDC identity service, application instances, workers, PostgreSQL and Neo4j, vector capability, object storage, key/secret management, backups, monitoring, invitation administration, and explicit tenant isolation.
 
 ### Local inference connector
 

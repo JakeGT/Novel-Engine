@@ -48,7 +48,7 @@ The source license is intentionally left open pending owner selection. “Free t
 2. Define the supported self-hosted installation and upgrade contract.
 3. Add explicit local/single-user identity and secret-storage behavior.
 4. Make telemetry opt-in and document every outbound connection.
-5. Select and operate the shared OIDC identity service for the portfolio deployment.
+5. Operate the shared **Authentik** OIDC identity service for the portfolio deployment (ADR-009).
 6. Define project governance, contribution policy, security reporting, and release ownership.
 
 ## Validation
