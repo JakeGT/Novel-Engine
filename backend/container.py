@@ -9,9 +9,9 @@ from backend.adapters.embedding import SentenceTransformerEmbedding
 from backend.adapters.graph import Neo4jGraphRepository, Neo4jMigrationVerifier
 from backend.adapters.postgres import PostgresDatabase
 from backend.adapters.system import SystemClock, TimeOrderedIdGenerator
+from backend.adapters.vector import PgVectorStore
 from backend.core.config import Settings
 from backend.core.config import settings as default_settings
-from backend.core.vector_store import VectorStore
 from backend.graph.manager import GraphManager
 from backend.graph.migrations import Neo4jMigrationRunner
 from backend.graph.schema import SchemaRegistry
@@ -60,14 +60,20 @@ def build_container(settings: Settings | None = None) -> Container:
         else NullArtifactStore()
     )
 
+    embeddings = SentenceTransformerEmbedding(
+        model_name=resolved.EMBEDDING_MODEL_NAME,
+        dimension=resolved.EMBEDDING_DIMENSION,
+    )
+
     container = Container(
         settings=resolved,
         graph=Neo4jGraphRepository(manager),
-        vectors=VectorStore(resolved.CHROMA_PERSISTENCE_PATH),
-        embeddings=SentenceTransformerEmbedding(
-            model_name=resolved.EMBEDDING_MODEL_NAME,
+        vectors=PgVectorStore(
+            resolved.postgres_dsn_psycopg,
+            embeddings,
             dimension=resolved.EMBEDDING_DIMENSION,
         ),
+        embeddings=embeddings,
         ai=OpenAIGateway(api_key=resolved.OPENAI_API_KEY, default_model=resolved.AI_MODEL),
         schema_registry=SchemaRegistry(resolved.CUSTOM_SCHEMA_PATH),
         clock=SystemClock(),

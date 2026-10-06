@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Novel Engine"
     PROJECT_VERSION: str = "0.1.0"
     APP_ENV: Literal["development", "test", "production"] = "development"
+    LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
 
     OPENAI_API_KEY: str = ""
     AI_MODEL: str = "gpt-4o"
@@ -48,14 +49,23 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.APP_ENV == "production"
 
-    @property
-    def postgres_dsn(self) -> str:
+    def _postgres_dsn(self, scheme: str) -> str:
         user = quote_plus(self.POSTGRES_USER)
         password = quote_plus(self.POSTGRES_PASSWORD)
         return (
-            f"postgresql+psycopg://{user}:{password}"
+            f"{scheme}://{user}:{password}"
             f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         )
+
+    @property
+    def postgres_dsn(self) -> str:
+        """SQLAlchemy async DSN used by the operational database adapter."""
+        return self._postgres_dsn("postgresql+psycopg")
+
+    @property
+    def postgres_dsn_psycopg(self) -> str:
+        """Plain psycopg DSN for synchronous infrastructure such as the pgvector adapter."""
+        return self._postgres_dsn("postgresql")
 
     @model_validator(mode="after")
     def _reject_unsafe_production_defaults(self) -> "Settings":

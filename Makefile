@@ -4,7 +4,7 @@ export UV_CACHE_DIR
 
 TYPE_CHECK_TARGETS = backend/graph/resolver.py backend/graph/summarizer.py backend/graph/policies.py backend/graph/schema.py
 
-.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check frontend-install frontend-lint frontend-build check
+.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify seed reset-dev api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check frontend-install frontend-lint frontend-build check
 
 help:
 	@echo "install             Install runtime Python dependencies"
@@ -15,6 +15,8 @@ help:
 	@echo "infra-down          Stop infrastructure services"
 	@echo "migrate             Apply PostgreSQL and Neo4j migrations"
 	@echo "migrate-verify      Verify migration state without mutating stores"
+	@echo "seed                Seed the deterministic reference world"
+	@echo "reset-dev           Reset development stores (guarded; refuses production)"
 	@echo "api                 Start the FastAPI development server"
 	@echo "test                Run hermetic tests (unit, application, contract)"
 	@echo "test-integration    Run tests marked integration against disposable services"
@@ -52,6 +54,12 @@ migrate:
 
 migrate-verify:
 	uv run --locked python -m backend.migrate --verify
+
+seed:
+	uv run --locked python -m backend.devtools.seed
+
+reset-dev:
+	uv run --locked python -m backend.devtools.reset --force
 
 api:
 	uv run --locked uvicorn backend.main:app --reload
