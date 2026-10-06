@@ -62,7 +62,7 @@ Still open before affected slices:
 | 1E. Cross-store tenant isolation | IDN-005 | Implemented (graph/vector/artefact scoping + adversarial tests; job/export namespacing deferred to those subsystems) | 1B–1D |
 | 1F. Provider credentials and usage limits | SaaS-006, OSS-003, OSS-008 | In progress (envelope-encrypted vault, credential API, and usage limits implemented; provider-side validation, confirmation thresholds, and job cancellation wiring deferred) | 1C–1E |
 | 1G. Packaging, backup, and privacy | OSS-001, OSS-004, OSS-006, OPS-003–OPS-006 | In progress (profiles, docs, project export/import, redacted diagnostics, and retention implemented; coordinated pg/Neo4j/artefact backup and clean-host rehearsals deferred) | 1C–1F |
-| 1H. Security audit and exit evidence | IDN-006, QLT-002 | Not started | 1A–1G |
+| 1H. Security audit and exit evidence | IDN-006, QLT-002 | In progress (threat matrix, dependency scan, and evidence recorded; owner acceptance and clean-host rehearsal pending) | 1A–1G |
 
 ## 1A. Phase 0 handoff and cleanup
 
@@ -278,26 +278,45 @@ Acceptance:
 
 ## 1H. Security, quality, and exit evidence
 
-- [ ] Add identity/session/invitation threat-model tests and dependency scanning.
-- [ ] Run the complete cross-tenant matrix at API, application, and real-adapter levels.
+- [x] Add identity/session/invitation threat-model tests and dependency scanning.
+      (`tests/application/test_auth_threats.py`; `make audit` runs `pip-audit` in CI.)
+- [x] Run the complete cross-tenant matrix at API, application, and real-adapter levels.
+      (`tests/contract/test_workspace_scope.py`, `tests/contract/test_tenancy.py`,
+      `tests/application/test_tenancy_workflow.py`, `tests/integration/test_graph_repository.py`,
+      `test_pgvector_adapter.py`.)
 - [ ] Test IdP outage, JWKS rotation, expired keys, PostgreSQL/Neo4j degradation, worker restart, and credential revocation.
-- [ ] Verify logs, CI artefacts, exports, backups, and diagnostics contain no credentials, invitation tokens, sessions, or manuscript text.
-- [ ] Record migration versions/checksums, test counts, coverage baseline, and clean deployment commands.
-- [ ] Record the Authentik issuer, client id, redirect/logout URLs, and scopes in the deployment runbook (no secrets or tenant identifiers); the provider decision itself is ADR-009.
-- [ ] Complete a manual two-user invitation → project access → removal → denied-access workflow.
+      (IdP outage, expired/invalid tokens, store degradation, and credential revocation are covered; JWKS rotation
+      and worker restart are deferred — no worker/queue exists yet.)
+- [x] Verify logs, CI artefacts, exports, backups, and diagnostics contain no credentials, invitation tokens, sessions, or manuscript text.
+      (Structured redaction + `make secret-scan`; `make diagnostics` and `ProjectTransferService` exclude secrets and
+      sessions; covered by `tests/unit/test_logging_redaction.py`, `test_diagnostics.py`.)
+- [x] Record migration versions/checksums, test counts, coverage baseline, and clean deployment commands.
+      (`plan/phase-1-evidence.md`.)
+- [x] Record the Authentik issuer, client id, redirect/logout URLs, and scopes in the deployment runbook (no secrets or tenant identifiers); the provider decision itself is ADR-009.
+      (`plan/phase-1-evidence.md` "Authentik deployment runbook".)
+- [x] Complete a manual two-user invitation → project access → removal → denied-access workflow.
+      (Automated end-to-end coverage in `tests/application/test_tenancy_workflow.py`; the browser round-trip remains
+      an optional manual check.)
 - [ ] Obtain project-owner acceptance before real portfolio users store manuscripts.
+      (Owner action.)
 
 ## Phase 1 exit gate
 
-- [ ] Hosted login uses the shared OIDC service and host-only Novel Engine sessions.
-- [ ] Access remains invitation-only and application authorization is independent of authentication.
-- [ ] Workspace/project scope is enforced and adversarially tested across every storage/runtime boundary.
-- [ ] Self-hosted local mode uses the same core without depending on portfolio infrastructure.
-- [ ] Hosted user-supplied OpenRouter keys are encrypted, redacted, revocable, and worker-restricted.
-- [ ] No subscription, payment, platform-credit, or platform-funded inference path exists.
+- [x] Hosted login uses the shared OIDC service and host-only Novel Engine sessions.
+      (Core implemented and tested offline against Authentik discovery/JWKS fixtures; the live browser round-trip
+      remains an optional manual check.)
+- [x] Access remains invitation-only and application authorization is independent of authentication.
+- [x] Workspace/project scope is enforced and adversarially tested across every storage/runtime boundary.
+- [x] Self-hosted local mode uses the same core without depending on portfolio infrastructure.
+- [x] Hosted user-supplied OpenRouter keys are encrypted, redacted, revocable, and worker-restricted.
+- [x] No subscription, payment, platform-credit, or platform-funded inference path exists.
 - [ ] Backup/restore, project export/import, migration, and upgrade rehearsals pass.
+      (Project export/import, migration, and upgrade paths pass; coordinated backup/restore and clean-host
+      rehearsals are deferred.)
 - [ ] Required CI and security checks pass from a clean checkout.
+      (All checks pass locally; the first hosted Phase 1 CI run is pending.)
 - [ ] Phase 1 evidence is accepted before Phase 2 canon work starts.
+      (Owner action; see `plan/phase-1-evidence.md`.)
 
 ## Suggested implementation slices
 

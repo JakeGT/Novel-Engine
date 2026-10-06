@@ -73,6 +73,9 @@ jobs:
           backend/graph/policies.py
           backend/graph/schema.py
 
+      - name: Audit dependencies
+        run: uv run --locked pip-audit
+
       - name: Run hermetic tests with coverage
         run: >
           uv run --locked pytest -m "not integration and not llm"

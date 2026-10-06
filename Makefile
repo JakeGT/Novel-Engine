@@ -4,7 +4,7 @@ export UV_CACHE_DIR
 
 TYPE_CHECK_TARGETS = backend/graph/resolver.py backend/graph/summarizer.py backend/graph/policies.py backend/graph/schema.py
 
-.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify seed reset-dev diagnostics retention api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check secret-scan frontend-install frontend-lint frontend-build check
+.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify seed reset-dev diagnostics retention audit api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check secret-scan frontend-install frontend-lint frontend-build check
 
 help:
 	@echo "install             Install runtime Python dependencies"
@@ -19,6 +19,7 @@ help:
 	@echo "reset-dev           Reset development stores (guarded; refuses production)"
 	@echo "diagnostics         Print a redacted diagnostics/support bundle"
 	@echo "retention           Purge expired sessions, attempts, invitations, and rate-limit hits"
+	@echo "audit               Audit Python dependencies for known vulnerabilities"
 	@echo "api                 Start the FastAPI development server"
 	@echo "test                Run hermetic tests (unit, application, contract)"
 	@echo "test-integration    Run tests marked integration against disposable services"
@@ -69,6 +70,9 @@ diagnostics:
 
 retention:
 	uv run --locked python -m backend.devtools.retention
+
+audit:
+	uv run --locked pip-audit
 
 api:
 	uv run --locked uvicorn backend.main:app --reload
