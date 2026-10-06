@@ -24,6 +24,7 @@ from backend.devtools.guard import (
 )
 from backend.graph.manager import GraphManager
 from backend.seed.ledger import clear_seed
+from backend.seed.tenancy import clear_tenancy
 
 
 def reset_neo4j(manager: GraphManager) -> int:
@@ -81,6 +82,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     ledger_rows = clear_seed(dsn)
     print(f"postgres: cleared {ledger_rows} seed ledger rows")
+
+    if clear_tenancy(dsn):
+        print("postgres: cleared identity/tenancy rows")
+    else:
+        print("postgres: identity/tenancy tables not migrated (skipped)")
 
     if settings.ENABLE_DEBUG_ARTIFACTS:
         try:

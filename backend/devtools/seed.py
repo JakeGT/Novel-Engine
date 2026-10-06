@@ -16,6 +16,7 @@ from backend.devtools.guard import ensure_seed_allowed
 from backend.graph.manager import GraphManager
 from backend.seed.apply import apply_manifest
 from backend.seed.ledger import record_seed
+from backend.seed.tenancy import apply_tenancy
 from backend.seed.world import REFERENCE_WORLD
 
 
@@ -69,10 +70,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         counts=report.counts,
     )
 
+    tenancy = apply_tenancy(settings.postgres_dsn_psycopg)
+
     print(f"seed version: {report.version}")
     print(f"seed checksum: {report.checksum}")
     print(f"applied nodes: {report.applied_nodes}")
     print(f"applied edges: {report.applied_edges}")
+    print(f"identity/tenancy: inserted {tenancy.inserted} rows ({tenancy.counts})")
     if args.vectors:
         print(f"indexed documents: {report.indexed_documents} (skipped {report.skipped_documents})")
     else:

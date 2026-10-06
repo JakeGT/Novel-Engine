@@ -56,7 +56,7 @@ Still open before affected slices:
 | Workstream | Backlog | Status | Depends on |
 | --- | --- | --- | --- |
 | 1A. Phase 0 handoff and cleanup | FND carryover, OSS-005 | Not started | Phase 0 exit |
-| 1B. Identity/tenant domain and migrations | IDN-001, IDN-003, CAN-001 | In progress (domain, migration `0005`, store, and policy implemented; seed + unlinking/deletion pending) | 1A |
+| 1B. Identity/tenant domain and migrations | IDN-001, IDN-003, CAN-001 | In progress (domain, migration `0005`, store, policy, and seed implemented; identity unlinking/workspace deletion deferred to 1D/1E) | 1A |
 | 1C. OIDC, local identity, and sessions | IDN-001, IDN-002, OSS-002 | In progress (core implemented; live Authentik exercise pending) | 1B |
 | 1D. Invitations, memberships, and authorization | IDN-003, IDN-004 | Not started | 1B–1C |
 | 1E. Cross-store tenant isolation | IDN-005 | Not started | 1B–1D |
@@ -92,7 +92,7 @@ Acceptance:
 - [ ] Define ownership transfer, last-owner removal, member removal, identity unlinking, and deletion behavior.
       (Transfer, last-owner protection, role changes, and member removal are implemented and tested;
       identity unlinking and workspace deletion remain for 1D/1E.)
-- [ ] Update deterministic seed data with two users, two workspaces, similar project names/IDs, roles, and expired/revoked invitations.
+- [x] Update deterministic seed data with two users, two workspaces, similar project names/IDs, roles, and expired/revoked invitations (`backend/seed/tenancy.py`; applied by `make seed`, cleared by `make reset-dev`).
 
 Acceptance:
 
