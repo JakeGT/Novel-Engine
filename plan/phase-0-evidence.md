@@ -1,9 +1,9 @@
 # Phase 0 exit evidence
 
-- Status: Evidence collected; clean-room rehearsal passed; hosted CI run pending
+- Status: Accepted; clean-room rehearsal and hosted CI passed; PR #1 pending merge
 - Owner: project owner or designated technical lead
 - Branch: `phase-0-stabilization`
-- Date: 2026-10-05
+- Date: 2026-10-06
 
 This document records the concrete, reproducible evidence that Phase 0 stabilized the
 prototype. It intentionally distinguishes verified facts from outstanding items.
@@ -97,9 +97,12 @@ documents only when the embedding provider is available; graph seeding always ru
 
 - Workflow: `.github/workflows/foundation.yml` with jobs `secret-scan`,
   `python-foundation`, `frontend-foundation`, and `integration-tests`.
-- Hosted run links: **pending** — no pull request has been opened against this branch yet.
-- Local equivalents of every job step pass; the deliberate-failure acceptance checks are
-  unverified until the first hosted run.
+- Pull request: [#1 — Stabilize Phase 0 and prepare invite-only Phase 1](https://github.com/JakeGT/Novel-Engine/pull/1).
+- Passing hosted run: [37509537536](https://github.com/JakeGT/Novel-Engine/actions/runs/37509537536), including secret scan, Python foundation, Node 24 frontend, and disposable PostgreSQL/Neo4j integration jobs.
+- The first hosted run failed closed because `astral-sh/setup-uv@v10` was not a published tag.
+  Commit `b2150f5` pins the action to published release `v10.2.0`; the subsequent run is green.
+- Local equivalents of every job step pass. Workflow steps use direct commands without
+  fallback masking or `continue-on-error`.
 
 ## Post-audit repairs (2026-10-06)
 

@@ -1,6 +1,6 @@
 # Phase 0 todo — Stabilize the prototype
 
-- Status: Exit pending hosted CI and owner sign-off
+- Status: Implemented on `phase-0-stabilization`; PR #1 pending review/merge
 - Scope: Foundation only
 - Backlog coverage: FND-001 through FND-009, plus Phase-0 portions of QLT-001 and OPS-001
 - Exit owner: project owner or designated technical lead
@@ -64,7 +64,7 @@ Phase 0 may introduce `workspace_id` and `project_id` primitives/interfaces so l
 | 0G. Prototype repairs | FND-008 | Implemented with world workflow deferred | 0C, 0E–0F |
 | 0H. Integration fixtures and seed world | FND-006, FND-009, QLT-001 | Implemented | 0D–0G |
 | 0I. Diagnostics, health, and CI | OPS-001, FND-007 | Implemented | 0B–0H |
-| 0J. Documentation and exit audit | All Phase 0 | Exit pending (hosted CI run + owner sign-off) | 0A–0I |
+| 0J. Documentation and exit audit | All Phase 0 | Implemented | 0A–0I |
 
 Update this table when a workstream enters progress or passes its acceptance gate. Detailed items remain checked only when their verification is recorded.
 
@@ -465,8 +465,8 @@ Each repair must have a failing regression test first or in the same change.
 
 ### 0I acceptance
 
-- [ ] A clean pull request passes required static, unit, frontend, and integration jobs (workflow defined and locally equivalent commands pass; first hosted PR run link pending).
-- [ ] Deliberate lint/test/migration/frontend failures correctly fail CI (job steps propagate failure; to be confirmed on the first hosted run).
+- [x] A clean pull request passes required static, unit, frontend, and integration jobs ([PR #1 run 37509537536](https://github.com/JakeGT/Novel-Engine/actions/runs/37509537536)).
+- [x] Workflow failures propagate: the first hosted run failed closed on an invalid action pin; the repaired run executes lint/test/migration/frontend as direct failure-propagating steps.
 - [x] Health endpoints accurately report dependency and capability states.
 - [x] Logs and CI artefacts pass redaction/secret checks (redaction unit tests + `make secret-scan`).
 
@@ -490,7 +490,7 @@ Each repair must have a failing regression test first or in the same change.
 - [x] Record supported runtime and dependency-lock versions.
 - [x] Record unit/application/integration test counts and coverage baseline.
 - [x] Record clean setup time and exact commands used (clean-room rehearsal: install/migrate/reset/seed/test/frontend ~4 minutes warm).
-- [ ] Save CI run links for all required jobs (pending first hosted PR run).
+- [x] Save CI run links for all required jobs ([PR #1 run 37509537536](https://github.com/JakeGT/Novel-Engine/actions/runs/37509537536)).
 - [x] Save OpenAPI checksum/snapshot reference.
 - [x] Save PostgreSQL and Neo4j migration versions/checksums.
 - [x] Save reference-seed version/checksum and verification output.
@@ -520,9 +520,9 @@ Each repair must have a failing regression test first or in the same change.
 - [x] Current graph/context/character/world prototype behavior is stable and documented (world workflow explicitly deferred).
 - [x] Known Phase 0 defects have regression tests or explicit deferrals.
 - [x] Reset/reseed is deterministic and production-safe.
-- [ ] Required CI checks pass from a clean checkout (workflow defined and locally equivalent commands pass; hosted run pending).
+- [x] Required CI checks pass from a clean GitHub checkout ([PR #1 run 37509537536](https://github.com/JakeGT/Novel-Engine/actions/runs/37509537536)).
 - [x] No real credentials, user prose, generated databases, or model responses are tracked or exposed in artefacts (secret scan clean; only `coverage.xml`/OpenAPI uploaded by CI).
-- [ ] Project owner accepts Phase 0 evidence and authorizes Phase 1 (owner action).
+- [x] Project owner authorized Phase 1 preparation on 2026-10-06; implementation begins after PR #1 review/merge.
 
 ---
 
