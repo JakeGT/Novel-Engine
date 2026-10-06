@@ -85,6 +85,8 @@ make frontend-build
 
 Logs are emitted as single-line JSON with a correlation ID and are redacted by default: API keys, bearer tokens, DSN passwords, and secret-named fields are masked, and adapters log only timings, counts, and error types rather than manuscript or prompt content. Set `LOG_LEVEL=DEBUG` in `.env` for development diagnostics; debug logs may include synthetic entity IDs but still never include secrets or manuscript text.
 
+Error monitoring is opt-in and disabled when `SENTRY_DSN_BACKEND` is empty. When enabled, Sentry events are scrubbed of request bodies, cookies, sensitive headers, and user PII before leaving the process. The web client reads `VITE_SENTRY_DSN_WEB` from `frontend/.env` (Vite only exposes `VITE_`-prefixed variables).
+
 For coding-agent conventions and project boundaries, read [AGENTS.md](AGENTS.md). For architecture, scope, roadmap, and open decisions, start with [plan/README.md](plan/README.md).
 
 ## Current limitations

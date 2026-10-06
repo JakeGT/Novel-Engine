@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     APP_ENV: Literal["development", "test", "production"] = "development"
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
 
+    # Error monitoring (optional; an empty backend DSN disables it entirely).
+    # See backend/core/observability.py for the privacy scrubbing applied.
+    SENTRY_DSN_BACKEND: str = ""
+    SENTRY_DSN_WEB: str = ""
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.0
+
     OPENAI_API_KEY: str = ""
     AI_MODEL: str = "gpt-4o"
 
