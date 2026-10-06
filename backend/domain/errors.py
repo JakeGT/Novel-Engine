@@ -20,6 +20,18 @@ class ValidationError(DomainError):
     title = "Validation failed"
 
 
+class UnauthorizedError(DomainError):
+    status_code = 401
+    code = "unauthorized"
+    title = "Authentication required"
+
+
+class ForbiddenError(DomainError):
+    status_code = 403
+    code = "forbidden"
+    title = "Forbidden"
+
+
 class NotFoundError(DomainError):
     status_code = 404
     code = "not_found"

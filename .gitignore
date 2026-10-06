@@ -35,3 +35,6 @@ Thumbs.db
 
 # CodeGraph local index
 .codegraph/
+
+# envsitter local state
+.envsitter/

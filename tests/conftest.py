@@ -44,24 +44,30 @@ def scripted_ai() -> Callable[[list[Any]], ScriptedAIClient]:
     return _factory
 
 
-@pytest.fixture
-def fake_container(settings_factory, tmp_path):
+HOSTED_ISSUER = "https://idp.test/application/o/novel-engine/"
+
+
+def _build_fake_container(settings, tmp_path):
     from backend.adapters.artifacts import NullArtifactStore
     from backend.container import Container
     from backend.graph.schema import SchemaRegistry
+    from backend.services.auth_service import AuthService
     from backend.services.character_service import CharacterService
     from tests.doubles import (
         FakeClock,
         FakeDatabase,
         FakeEmbeddingProvider,
+        FakeIdentityProvider,
         FakeMigrationVerifier,
         InMemoryGraphRepository,
+        InMemoryIdentityStore,
+        InMemoryLoginAttemptStore,
+        InMemorySessionStore,
         InMemoryVectorStore,
         OrderedIdGenerator,
         ScriptedAIGateway,
     )
 
-    settings = settings_factory(APP_ENV="test")
     graph = InMemoryGraphRepository()
     vectors = InMemoryVectorStore()
     embeddings = FakeEmbeddingProvider()
@@ -74,6 +80,14 @@ def fake_container(settings_factory, tmp_path):
         embeddings=embeddings,
         schema_registry=registry,
         artifacts=artifacts,
+    )
+    identity_provider = FakeIdentityProvider(issuer=settings.OIDC_ISSUER or HOSTED_ISSUER)
+    auth_service = AuthService(
+        settings=settings,
+        identity_provider=identity_provider,
+        identity_store=InMemoryIdentityStore(),
+        session_store=InMemorySessionStore(),
+        login_attempt_store=InMemoryLoginAttemptStore(),
     )
     return Container(
         settings=settings,
@@ -88,7 +102,28 @@ def fake_container(settings_factory, tmp_path):
         neo4j_migrations=FakeMigrationVerifier(current=True),
         database=FakeDatabase(ready=True),
         character_service=service,
+        identity_provider=identity_provider,
+        auth_service=auth_service,
     )
+
+
+@pytest.fixture
+def fake_container(settings_factory, tmp_path):
+    return _build_fake_container(settings_factory(APP_ENV="test"), tmp_path)
+
+
+@pytest.fixture
+def hosted_container(settings_factory, tmp_path):
+    settings = settings_factory(
+        APP_ENV="test",
+        AUTH_MODE="hosted",
+        OIDC_ISSUER=HOSTED_ISSUER,
+        OIDC_CLIENT_ID="test-client",
+        OIDC_CLIENT_SECRET="test-secret",
+        OIDC_REDIRECT_URI="https://novel-engine.jaketalling.com/auth/callback",
+        OIDC_POST_LOGOUT_REDIRECT_URI="https://novel-engine.jaketalling.com/",
+    )
+    return _build_fake_container(settings, tmp_path)
 
 
 @pytest.fixture
@@ -99,4 +134,16 @@ def api_client(fake_container):
 
     app = create_app(container=fake_container)
     with TestClient(app) as client:
+        yield client
+
+
+@pytest.fixture
+def hosted_client(hosted_container):
+    from fastapi.testclient import TestClient
+
+    from backend.main import create_app
+
+    app = create_app(container=hosted_container)
+    # HTTPS base URL so Secure session cookies are stored and resent by the client.
+    with TestClient(app, base_url="https://testserver") as client:
         yield client

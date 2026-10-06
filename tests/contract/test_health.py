@@ -162,6 +162,7 @@ def test_health_capabilities(fake_container) -> None:
     capabilities = response.json()["capabilities"]
     assert capabilities["embeddings"]["available"] is True
     assert capabilities["ai"]["available"] is True
+    assert capabilities["telemetry"]["sentry_backend"] is False
 
 
 def test_startup_fails_when_migrations_pending(fake_container) -> None:

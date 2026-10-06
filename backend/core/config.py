@@ -51,9 +51,39 @@ class Settings(BaseSettings):
     ENABLE_DEBUG_ARTIFACTS: bool = False
     ARTIFACT_STORE_DIR: str = "backend/debug"
 
+    # Authentication. "local" is the trusted single-user self-hosted mode;
+    # "hosted" delegates to a shared OIDC provider (Authentik).
+    AUTH_MODE: Literal["local", "hosted"] = "local"
+    AUTH_LOCAL_USER_ID: str = "local-user"
+    AUTH_LOCAL_WORKSPACE_ID: str = "local-workspace"
+
+    OIDC_ISSUER: str = ""
+    OIDC_CLIENT_ID: str = ""
+    OIDC_CLIENT_SECRET: str = ""
+    OIDC_REDIRECT_URI: str = ""
+    OIDC_POST_LOGOUT_REDIRECT_URI: str = ""
+    OIDC_SCOPES: str = "openid profile email"
+
+    SESSION_COOKIE_NAME: str = "novel_session"
+    SESSION_TTL_SECONDS: int = 60 * 60 * 24 * 14
+    CSRF_COOKIE_NAME: str = "novel_csrf"
+
     @property
     def is_production(self) -> bool:
         return self.APP_ENV == "production"
+
+    @property
+    def is_hosted(self) -> bool:
+        return self.AUTH_MODE == "hosted"
+
+    @property
+    def oidc_scopes(self) -> list[str]:
+        return [scope for scope in self.OIDC_SCOPES.split() if scope]
+
+    @property
+    def session_cookie_secure(self) -> bool:
+        """Cookies are always Secure under hosted/production; plain only in local dev/test."""
+        return self.AUTH_MODE == "hosted" or self.APP_ENV == "production"
 
     def _postgres_dsn(self, scheme: str) -> str:
         user = quote_plus(self.POSTGRES_USER)
@@ -84,6 +114,31 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "POSTGRES_PASSWORD must not use the development default in production"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_auth_configuration(self) -> "Settings":
+        if self.AUTH_MODE == "hosted":
+            missing = [
+                name
+                for name, value in (
+                    ("OIDC_ISSUER", self.OIDC_ISSUER),
+                    ("OIDC_CLIENT_ID", self.OIDC_CLIENT_ID),
+                    ("OIDC_CLIENT_SECRET", self.OIDC_CLIENT_SECRET),
+                    ("OIDC_REDIRECT_URI", self.OIDC_REDIRECT_URI),
+                )
+                if not value
+            ]
+            if missing:
+                raise ValueError(
+                    "AUTH_MODE=hosted requires OIDC configuration: " + ", ".join(missing)
+                )
+            if not self.OIDC_ISSUER.startswith("https://") or "*" in self.OIDC_ISSUER:
+                raise ValueError("OIDC_ISSUER must be an exact https:// issuer URL")
+            if not self.OIDC_REDIRECT_URI.startswith("https://") or "*" in self.OIDC_REDIRECT_URI:
+                raise ValueError("OIDC_REDIRECT_URI must be an exact https:// URL")
+            if "openid" not in self.oidc_scopes:
+                raise ValueError("OIDC_SCOPES must include 'openid'")
         return self
 
 

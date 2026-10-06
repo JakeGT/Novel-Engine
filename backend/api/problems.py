@@ -9,6 +9,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from backend.api.middleware import get_correlation_id
 from backend.domain.errors import DomainError
+from backend.domain.identity import IdentityError, IdentityProviderUnavailable
 from backend.ports import AIError
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
@@ -103,6 +104,35 @@ def register_exception_handlers(app: FastAPI) -> None:
                 # Never echo provider text; upstream messages may contain
                 # account, request, or prompt details.
                 detail="The AI provider request failed.",
+                correlation_id=_correlation_id(request),
+            ),
+        )
+
+    @app.exception_handler(IdentityProviderUnavailable)
+    async def _handle_identity_unavailable(
+        request: Request, exc: IdentityProviderUnavailable
+    ) -> JSONResponse:
+        return _problem_response(
+            503,
+            problem_body(
+                status=503,
+                title="Identity provider unavailable",
+                code="capability_unavailable",
+                detail="The identity provider is not configured or unreachable.",
+                correlation_id=_correlation_id(request),
+            ),
+        )
+
+    @app.exception_handler(IdentityError)
+    async def _handle_identity_error(request: Request, exc: IdentityError) -> JSONResponse:
+        # Never echo token/claim details back to the client.
+        return _problem_response(
+            401,
+            problem_body(
+                status=401,
+                title="Authentication failed",
+                code="unauthorized",
+                detail="The authentication request could not be completed.",
                 correlation_id=_correlation_id(request),
             ),
         )

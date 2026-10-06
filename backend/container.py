@@ -7,6 +7,7 @@ from backend.adapters.ai import OpenAIGateway
 from backend.adapters.artifacts import FilesystemArtifactStore, NullArtifactStore
 from backend.adapters.embedding import SentenceTransformerEmbedding
 from backend.adapters.graph import Neo4jGraphRepository, Neo4jMigrationVerifier
+from backend.adapters.oidc import OIDCIdentityProvider
 from backend.adapters.postgres import PostgresDatabase
 from backend.adapters.system import SystemClock, TimeOrderedIdGenerator
 from backend.adapters.vector import PgVectorStore
@@ -43,10 +44,14 @@ class Container:
     neo4j_migrations: MigrationVerifier
     database: DatabasePort | None = None
     character_service: Any = None
+    identity_provider: Any = None
+    auth_service: Any = None
 
     async def aclose(self) -> None:
         self.graph.close()
         await self.ai.aclose()
+        if self.identity_provider is not None:
+            await self.identity_provider.aclose()
         if self.database is not None:
             await self.database.aclose()
 
@@ -64,6 +69,13 @@ def build_container(settings: Settings | None = None) -> Container:
         model_name=resolved.EMBEDDING_MODEL_NAME,
         dimension=resolved.EMBEDDING_DIMENSION,
     )
+    database = PostgresDatabase(resolved)
+    identity_provider = OIDCIdentityProvider(
+        issuer=resolved.OIDC_ISSUER,
+        client_id=resolved.OIDC_CLIENT_ID,
+        client_secret=resolved.OIDC_CLIENT_SECRET,
+        scopes=resolved.oidc_scopes,
+    )
 
     container = Container(
         settings=resolved,
@@ -80,9 +92,16 @@ def build_container(settings: Settings | None = None) -> Container:
         ids=TimeOrderedIdGenerator(),
         artifacts=artifacts,
         neo4j_migrations=Neo4jMigrationVerifier(Neo4jMigrationRunner(manager.driver)),
-        database=PostgresDatabase(resolved),
+        database=database,
+        identity_provider=identity_provider,
     )
 
+    from backend.adapters.identity_store import (
+        PostgresIdentityStore,
+        PostgresLoginAttemptStore,
+        PostgresSessionStore,
+    )
+    from backend.services.auth_service import AuthService
     from backend.services.character_service import CharacterService
 
     container.character_service = CharacterService(
@@ -91,5 +110,12 @@ def build_container(settings: Settings | None = None) -> Container:
         embeddings=container.embeddings,
         schema_registry=container.schema_registry,
         artifacts=container.artifacts,
+    )
+    container.auth_service = AuthService(
+        settings=resolved,
+        identity_provider=identity_provider,
+        identity_store=PostgresIdentityStore(database.session_factory),
+        session_store=PostgresSessionStore(database.session_factory),
+        login_attempt_store=PostgresLoginAttemptStore(database.session_factory),
     )
     return container

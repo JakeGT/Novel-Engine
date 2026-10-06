@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import Depends, Request
 
 from backend.container import Container
+from backend.core.config import Settings
 from backend.ports import (
     AIGateway,
     EmbeddingPort,
@@ -10,11 +11,20 @@ from backend.ports import (
     SchemaRegistryPort,
     VectorStorePort,
 )
+from backend.services.auth_service import AuthService
 from backend.services.character_service import CharacterService
 
 
 def get_container(request: Request) -> Container:
     return request.app.state.container
+
+
+def get_settings(container: Container = Depends(get_container)) -> Settings:
+    return container.settings
+
+
+def get_auth_service(container: Container = Depends(get_container)) -> AuthService:
+    return container.auth_service
 
 
 def get_graph(container: Container = Depends(get_container)) -> GraphRepository:

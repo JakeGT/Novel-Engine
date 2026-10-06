@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from backend.api.auth import router as auth_router
 from backend.api.endpoints import router as legacy_api_router
 from backend.api.health import router as health_router
 from backend.api.middleware import CorrelationIdMiddleware
@@ -19,7 +20,12 @@ logger = logging.getLogger("backend.main")
 
 
 def create_app(settings: Settings | None = None, container: Container | None = None) -> FastAPI:
-    resolved_settings = settings or default_settings
+    if settings is not None:
+        resolved_settings = settings
+    elif container is not None:
+        resolved_settings = container.settings
+    else:
+        resolved_settings = default_settings
     configure_logging(resolved_settings.LOG_LEVEL)
 
     @asynccontextmanager
@@ -55,10 +61,27 @@ def create_app(settings: Settings | None = None, container: Container | None = N
                         + database_status.detail
                     )
 
+            from backend.core.observability import init_sentry
+
+            telemetry_enabled = init_sentry(resolved_settings)
+
+            oidc_configured = bool(
+                active.identity_provider is not None and active.identity_provider.is_available()
+            )
+            if resolved_settings.is_hosted and not oidc_configured:
+                log_event(
+                    logger,
+                    "app.startup.auth_degraded",
+                    level=logging.ERROR,
+                    reason="hosted mode without a configured OIDC provider",
+                )
             log_event(
                 logger,
                 "app.startup",
                 env=resolved_settings.APP_ENV,
+                auth_mode=resolved_settings.AUTH_MODE,
+                oidc_configured=oidc_configured,
+                sentry_enabled=telemetry_enabled,
                 ai_available=active.ai.is_available(),
                 embeddings_available=active.embeddings.available(),
             )
@@ -83,6 +106,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.include_router(v1_router, prefix="/api/v1")
     app.include_router(legacy_api_router, prefix="/api")
     app.include_router(health_router)
+    app.include_router(auth_router)
 
     @app.get("/")
     def read_root():

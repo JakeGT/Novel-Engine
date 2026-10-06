@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Response, status
 
 from backend.api.dependencies import get_container
 from backend.container import Container
+from backend.core.observability import sentry_enabled
 
 router = APIRouter(tags=["health"])
 
@@ -71,6 +72,9 @@ def capabilities(container: Container = Depends(get_container)) -> dict[str, obj
     ai_ok = container.ai.is_available()
     vectors_ok = container.vectors.health()
     vectors_dimension_ok = getattr(container.vectors, "dimension_supported", lambda: True)()
+    sentry_ok = sentry_enabled(container.settings)
+    identity_provider = getattr(container, "identity_provider", None)
+    oidc_configured = bool(identity_provider is not None and identity_provider.is_available())
 
     return {
         "status": "ok",
@@ -88,6 +92,16 @@ def capabilities(container: Container = Depends(get_container)) -> dict[str, obj
                 "available": ai_ok,
                 "optional": True,
                 "reason": None if ai_ok else "OPENAI_API_KEY is not configured",
+            },
+            "telemetry": {
+                "sentry_backend": sentry_ok,
+                "optional": True,
+                "reason": None if sentry_ok else "SENTRY_DSN_BACKEND is not configured",
+            },
+            "auth": {
+                "mode": container.settings.AUTH_MODE,
+                "oidc_configured": oidc_configured,
+                "optional": False,
             },
             "vector": {
                 "available": vectors_ok,

@@ -11,6 +11,14 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
+from backend.domain.identity import (
+    IdentityClaims,
+    InvalidIdentityToken,
+    LoginAttempt,
+    Session,
+    User,
+    utcnow,
+)
 from backend.graph.schema import Edge, Node
 from backend.ports import MigrationStatus, StructuredResponse
 
@@ -362,3 +370,186 @@ class FakeDatabase:
 
     async def aclose(self) -> None:
         self.closed = True
+
+
+DEFAULT_TEST_ISSUER = "https://idp.test/application/o/novel-engine/"
+
+
+class FakeIdentityProvider:
+    """Deterministic OIDC provider fake: no network, no vendor SDK."""
+
+    def __init__(
+        self,
+        *,
+        issuer: str = DEFAULT_TEST_ISSUER,
+        authorized_code: str = "code-123",
+        claims: IdentityClaims | None = None,
+        available: bool = True,
+    ) -> None:
+        self.issuer = issuer
+        self._authorized_code = authorized_code
+        self._claims = claims or IdentityClaims(
+            issuer=issuer, subject="subject-1", email="user@example.com", display_name="Test User"
+        )
+        self._available = available
+        self.authorization_calls: list[dict[str, str]] = []
+        self.exchange_calls: list[dict[str, str]] = []
+        self.closed = False
+
+    def is_available(self) -> bool:
+        return self._available
+
+    async def authorization_url(
+        self, *, state: str, nonce: str, code_challenge: str, redirect_uri: str
+    ) -> str:
+        self.authorization_calls.append(
+            {
+                "state": state,
+                "nonce": nonce,
+                "code_challenge": code_challenge,
+                "redirect_uri": redirect_uri,
+            }
+        )
+        return (
+            f"https://idp.test/authorize?state={state}&nonce={nonce}"
+            f"&code_challenge={code_challenge}&code_challenge_method=S256"
+            f"&redirect_uri={redirect_uri}"
+        )
+
+    async def exchange_code(
+        self, *, code: str, code_verifier: str, redirect_uri: str, expected_nonce: str
+    ) -> IdentityClaims:
+        self.exchange_calls.append(
+            {
+                "code": code,
+                "code_verifier": code_verifier,
+                "redirect_uri": redirect_uri,
+                "expected_nonce": expected_nonce,
+            }
+        )
+        if code != self._authorized_code:
+            raise InvalidIdentityToken("authorization code rejected")
+        return self._claims
+
+    async def logout_url(
+        self,
+        *,
+        post_logout_redirect_uri: str,
+        id_token_hint: str | None = None,
+        state: str | None = None,
+    ) -> str:
+        return f"https://idp.test/end-session?post_logout_redirect_uri={post_logout_redirect_uri}"
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+class InMemoryIdentityStore:
+    def __init__(self) -> None:
+        self.users: dict[str, User] = {}
+        self.identities: dict[tuple[str, str], str] = {}
+
+    async def get_or_create_user(self, claims: IdentityClaims) -> User:
+        key = (claims.issuer, claims.subject)
+        if key in self.identities:
+            user = self.users[self.identities[key]]
+            user.email = claims.email
+            user.display_name = claims.display_name
+            return user
+        user = User(
+            id=f"user_{len(self.users) + 1:04d}",
+            email=claims.email,
+            display_name=claims.display_name,
+        )
+        self.users[user.id] = user
+        self.identities[key] = user.id
+        return user
+
+    async def get_user(self, user_id: str) -> User | None:
+        return self.users.get(user_id)
+
+    async def get_user_for_identity(self, issuer: str, subject: str) -> User | None:
+        user_id = self.identities.get((issuer, subject))
+        return self.users.get(user_id) if user_id else None
+
+
+class InMemorySessionStore:
+    def __init__(self) -> None:
+        self.sessions: dict[str, Session] = {}
+
+    async def create(
+        self,
+        *,
+        user_id: str,
+        ttl_seconds: int,
+        csrf_token: str,
+        rotated_from: str | None = None,
+    ) -> Session:
+        from datetime import timedelta
+
+        raw = f"sess_{len(self.sessions) + 1:04d}"
+        now = utcnow()
+        session = Session(
+            id=raw,
+            user_id=user_id,
+            csrf_token=csrf_token,
+            created_at=now,
+            expires_at=now + timedelta(seconds=ttl_seconds),
+            rotated_from=rotated_from,
+        )
+        self.sessions[raw] = session
+        return session
+
+    async def get(self, session_id: str) -> Session | None:
+        session = self.sessions.get(session_id)
+        if session is None:
+            return None
+        if session.expires_at <= utcnow():
+            del self.sessions[session_id]
+            return None
+        return session
+
+    async def revoke(self, session_id: str) -> bool:
+        return self.sessions.pop(session_id, None) is not None
+
+    async def revoke_all_for_user(self, user_id: str) -> int:
+        ids = [key for key, value in self.sessions.items() if value.user_id == user_id]
+        for key in ids:
+            del self.sessions[key]
+        return len(ids)
+
+
+class InMemoryLoginAttemptStore:
+    def __init__(self) -> None:
+        self.attempts: dict[str, LoginAttempt] = {}
+
+    async def create(
+        self,
+        *,
+        state: str,
+        nonce: str,
+        code_verifier: str,
+        redirect_uri: str,
+        ttl_seconds: int,
+    ) -> LoginAttempt:
+        from datetime import timedelta
+
+        now = utcnow()
+        attempt = LoginAttempt(
+            state=state,
+            nonce=nonce,
+            code_verifier=code_verifier,
+            redirect_uri=redirect_uri,
+            created_at=now,
+            expires_at=now + timedelta(seconds=ttl_seconds),
+        )
+        self.attempts[state] = attempt
+        return attempt
+
+    async def consume(self, state: str) -> LoginAttempt | None:
+        attempt = self.attempts.pop(state, None)
+        if attempt is None:
+            return None
+        if attempt.expires_at <= utcnow():
+            return None
+        return attempt

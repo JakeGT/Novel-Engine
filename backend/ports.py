@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
+from backend.domain.identity import IdentityClaims, LoginAttempt, Session, User
 from backend.graph.schema import Edge, Node
 
 
@@ -176,3 +177,78 @@ class DatabasePort(Protocol):
     async def migration_status(self) -> MigrationStatus: ...
 
     async def aclose(self) -> None: ...
+
+
+@runtime_checkable
+class IdentityProviderPort(Protocol):
+    """Provider-neutral OIDC boundary. No vendor SDK object crosses this port."""
+
+    def is_available(self) -> bool: ...
+
+    async def authorization_url(
+        self,
+        *,
+        state: str,
+        nonce: str,
+        code_challenge: str,
+        redirect_uri: str,
+    ) -> str: ...
+
+    async def exchange_code(
+        self,
+        *,
+        code: str,
+        code_verifier: str,
+        redirect_uri: str,
+        expected_nonce: str,
+    ) -> IdentityClaims: ...
+
+    async def logout_url(
+        self,
+        *,
+        post_logout_redirect_uri: str,
+        id_token_hint: str | None = None,
+        state: str | None = None,
+    ) -> str: ...
+
+
+@runtime_checkable
+class IdentityStorePort(Protocol):
+    async def get_or_create_user(self, claims: IdentityClaims) -> User: ...
+
+    async def get_user(self, user_id: str) -> User | None: ...
+
+    async def get_user_for_identity(self, issuer: str, subject: str) -> User | None: ...
+
+
+@runtime_checkable
+class SessionStorePort(Protocol):
+    async def create(
+        self,
+        *,
+        user_id: str,
+        ttl_seconds: int,
+        csrf_token: str,
+        rotated_from: str | None = None,
+    ) -> Session: ...
+
+    async def get(self, session_id: str) -> Session | None: ...
+
+    async def revoke(self, session_id: str) -> bool: ...
+
+    async def revoke_all_for_user(self, user_id: str) -> int: ...
+
+
+@runtime_checkable
+class LoginAttemptStorePort(Protocol):
+    async def create(
+        self,
+        *,
+        state: str,
+        nonce: str,
+        code_verifier: str,
+        redirect_uri: str,
+        ttl_seconds: int,
+    ) -> LoginAttempt: ...
+
+    async def consume(self, state: str) -> LoginAttempt | None: ...

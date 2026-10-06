@@ -1,6 +1,6 @@
 # Phase 1 todo — Identity, tenancy, distribution, and project foundation
 
-- Status: Ready after Phase 0 hosted CI and owner sign-off
+- Status: Ready to start; Phase 0 merged in PR #1
 - Scope: IDN-001–IDN-006, OSS-001–OSS-004, OSS-006–OSS-008, SaaS-006, OPS-002–OPS-006, CAN-001
 - Architecture: ADR-008 and ADR-009
 - Exit owner: project owner or designated technical lead
@@ -36,15 +36,20 @@ Phase 1 does **not** include:
 - real-time co-editing
 - a hosted-to-local-model companion
 
-## Decisions required before affected slices
+## Decisions
 
-1. Select the shared OIDC provider and its recovery/MFA administration model before 1C integration.
-2. Select the production application hostname; recommended: `novel-engine.apps.jaketalling.com` with a separate identity issuer.
-3. Decide whether the central identity service permits general enrollment or is itself invite-only. Novel Engine remains invitation-gated either way.
-4. Decide whether only the portfolio owner provisions workspaces or workspace owners may invite members.
-5. Select server-side session storage and encryption/key-management mechanisms for the hosted deployment.
-6. Decide whether PostgreSQL row-level security supplements mandatory application scoping.
-7. Confirm Docker Compose as the supported initial self-hosted package.
+Resolved (recorded in ADR-009):
+
+- Shared OIDC provider: **Authentik** (self-hosted), shared across `*.jaketalling.com`. Provisioned 2026-10-06 at `https://auth.jaketalling.com` with a Novel Engine application and confidential OIDC client; the port, fake adapter, local identity mode, and the live client wiring are all actionable.
+- Production host: `novel-engine.jaketalling.com` behind the portfolio reverse proxy; identity issuer `https://auth.jaketalling.com`.
+- Docker Compose is the supported initial self-hosted package.
+
+Still open before affected slices:
+
+- Whether Authentik enrollment is open, controlled, or invite-only. Novel Engine remains invitation-gated either way.
+- Whether only the portfolio owner provisions workspaces or workspace owners may also invite members.
+- Server-side session storage and encryption/key-management mechanisms for the hosted deployment.
+- Whether PostgreSQL row-level security supplements mandatory application scoping.
 
 ## Completion dashboard
 
@@ -52,7 +57,7 @@ Phase 1 does **not** include:
 | --- | --- | --- | --- |
 | 1A. Phase 0 handoff and cleanup | FND carryover, OSS-005 | Not started | Phase 0 exit |
 | 1B. Identity/tenant domain and migrations | IDN-001, IDN-003, CAN-001 | Not started | 1A |
-| 1C. OIDC, local identity, and sessions | IDN-001, IDN-002, OSS-002 | Not started | 1B |
+| 1C. OIDC, local identity, and sessions | IDN-001, IDN-002, OSS-002 | In progress (core implemented; live Authentik exercise pending) | 1B |
 | 1D. Invitations, memberships, and authorization | IDN-003, IDN-004 | Not started | 1B–1C |
 | 1E. Cross-store tenant isolation | IDN-005 | Not started | 1B–1D |
 | 1F. Provider credentials and usage limits | SaaS-006, OSS-003, OSS-008 | Not started | 1C–1E |
@@ -61,7 +66,7 @@ Phase 1 does **not** include:
 
 ## 1A. Phase 0 handoff and cleanup
 
-- [ ] Record the green hosted Phase 0 CI run and owner sign-off.
+- [x] Record the green hosted Phase 0 CI run and owner sign-off (PR #1, merged as `8d7a599`).
 - [ ] Reconcile `backend/services/world_service.py` as an explicit change: port it onto injected ports with tests, or preserve it outside the maintained contract until a later product slice.
 - [ ] Remove the temporary Ruff exclusion only when the world-service file is reconciled.
 - [ ] Remove deprecated `/api` aliases once v1 parity/caller migration is verified; no new feature may be added only to a legacy route.
@@ -95,15 +100,29 @@ Acceptance:
 
 ## 1C. OIDC, local identity, and application sessions
 
-- [ ] Define an identity-provider port for login start, callback validation, stable claims, logout, and key refresh.
-- [ ] Implement OIDC authorization-code flow with PKCE, state, nonce, exact redirect allow-list, issuer/audience/signature/time validation, and bounded JWKS caching.
-- [ ] Register Novel Engine as its own client; do not accept a shared parent-domain session cookie.
-- [ ] Create a host-only, `Secure`, `HttpOnly`, appropriate-`SameSite` application session with rotation and server-side revocation.
-- [ ] Apply CSRF protection to cookie-authenticated mutations.
-- [ ] Map valid OIDC claims to the local external-identity record without granting workspace membership.
-- [ ] Implement deterministic fake OIDC and session adapters for tests.
-- [ ] Implement explicit self-hosted local identity with stable local workspace/user IDs.
-- [ ] Make hosted mode fail startup if local identity, unsafe cookies, wildcard redirects, or insecure issuer settings are enabled.
+The items under "Not blocked by Authentik provisioning" have no external dependency. The
+"Authentik integration" items use the live provider (provisioned 2026-10-06; see ADR-009).
+
+Not blocked by Authentik provisioning:
+
+- [x] Define an identity-provider port for login start, callback validation, stable claims, logout, and key refresh (`IdentityProviderPort` in `backend/ports.py`).
+- [x] Implement OIDC authorization-code flow with PKCE, state, nonce, exact redirect allow-list, issuer/audience/signature/time validation, and bounded JWKS caching (`backend/adapters/oidc.py`, joserfc; Authentik enforces the registered redirect allow-list and the app uses one exact configured redirect URI).
+- [x] Register Novel Engine as its own client; do not accept a shared parent-domain session cookie (Authentik client provisioned; session cookie is host-only with no `Domain` attribute).
+- [x] Create a host-only, `Secure`, `HttpOnly`, appropriate-`SameSite` application session with rotation and server-side revocation (host-only `Secure`+`HttpOnly`+`SameSite=Lax` cookie; sessions persisted server-side with `revoke`/`revoke_all_for_user`).
+  - [ ] Add automatic session-id rotation on privilege change or TTL boundary.
+- [x] Apply CSRF protection to cookie-authenticated mutations (`require_csrf` dependency; server-validated token).
+- [x] Map valid OIDC claims to the local external-identity record without granting workspace membership (`PostgresIdentityStore.get_or_create_user`).
+- [x] Implement deterministic fake OIDC and session adapters for tests, plus a checked-in redacted Authentik discovery/JWKS fixture for offline contract tests (`tests/doubles.py`, `tests/fixtures/oidc/`).
+- [x] Implement explicit self-hosted local identity with stable local workspace/user IDs (local mode creates a stable user keyed by `issuer="local"`; the explicit local workspace record arrives with 1B).
+- [x] Make hosted mode fail startup if local identity, unsafe cookies, wildcard redirects, or insecure issuer settings are enabled (`Settings._validate_auth_configuration`; hosted requires exact `https://` issuer/redirect with no wildcard).
+- [x] Add a startup diagnostic that reports an unconfigured OIDC provider without breaking local mode (`app.startup` logs `auth_mode`/`oidc_configured`; `app.startup.auth_degraded` when hosted without a provider).
+
+Authentik integration (provider provisioned 2026-10-06; see ADR-009):
+
+- [x] Wire the OIDC client to the shared Authentik issuer for application `novel-engine`, validating the exact issuer including the trailing slash and `aud` == client id.
+- [x] Load `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI`, and `OIDC_POST_LOGOUT_REDIRECT_URI` from hosted secret configuration; never commit them (loaded from `.env`; `.env.example` carries placeholders).
+- [ ] Exercise the real flow against Authentik (hosted or an optional Compose `authentik-dev` profile) including login, callback, JWKS rotation, and RP-initiated logout (pending the test user and a browser round-trip).
+- [x] Document that Authentik logout is portfolio-wide while the Novel Engine session stays host-only and is revoked locally.
 
 Acceptance:
 
@@ -169,7 +188,7 @@ Acceptance:
 
 - [ ] Define explicit `local` and `hosted` deployment profiles with fail-closed configuration validation.
 - [ ] Document one supported Docker Compose install, health check, migration, upgrade, and rollback path.
-- [ ] Document the portfolio reverse-proxy/TLS/OIDC callback topology.
+- [ ] Document the portfolio reverse-proxy/TLS topology for `novel-engine.jaketalling.com` and the Authentik callback, logout, and post-logout URLs.
 - [ ] Implement coordinated backup/restore for PostgreSQL, Neo4j, and artefact storage with manifest/checksums.
 - [ ] Implement complete project export/import without credentials or session data.
 - [ ] Document every outbound connection; make telemetry absent or opt-in and content-free by default.
@@ -190,7 +209,7 @@ Acceptance:
 - [ ] Test IdP outage, JWKS rotation, expired keys, PostgreSQL/Neo4j degradation, worker restart, and credential revocation.
 - [ ] Verify logs, CI artefacts, exports, backups, and diagnostics contain no credentials, invitation tokens, sessions, or manuscript text.
 - [ ] Record migration versions/checksums, test counts, coverage baseline, and clean deployment commands.
-- [ ] Record OIDC provider/configuration decision in a dedicated ADR without committing secrets or tenant identifiers.
+- [ ] Record the Authentik issuer, client id, redirect/logout URLs, and scopes in the deployment runbook (no secrets or tenant identifiers); the provider decision itself is ADR-009.
 - [ ] Complete a manual two-user invitation → project access → removal → denied-access workflow.
 - [ ] Obtain project-owner acceptance before real portfolio users store manuscripts.
 
