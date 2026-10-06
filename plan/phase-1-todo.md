@@ -58,7 +58,7 @@ Still open before affected slices:
 | 1A. Phase 0 handoff and cleanup | FND carryover, OSS-005 | Implemented | Phase 0 exit |
 | 1B. Identity/tenant domain and migrations | IDN-001, IDN-003, CAN-001 | Implemented | 1A |
 | 1C. OIDC, local identity, and sessions | IDN-001, IDN-002, OSS-002 | In progress (core implemented; live Authentik exercise pending) | 1B |
-| 1D. Invitations, memberships, and authorization | IDN-003, IDN-004 | In progress (APIs, centralized authorization, audit, and a durable rate limiter implemented; credential/export audit deferred to 1F/1G) | 1B–1C |
+| 1D. Invitations, memberships, and authorization | IDN-003, IDN-004 | In progress (APIs, centralized authorization, audit incl. credentials, and a durable rate limiter implemented; project-export audit remains) | 1B–1C |
 | 1E. Cross-store tenant isolation | IDN-005 | Implemented (graph/vector/artefact scoping + adversarial tests; job/export namespacing deferred to those subsystems) | 1B–1D |
 | 1F. Provider credentials and usage limits | SaaS-006, OSS-003, OSS-008 | In progress (envelope-encrypted vault, credential API, and usage limits implemented; provider-side validation, confirmation thresholds, and job cancellation wiring deferred) | 1C–1E |
 | 1G. Packaging, backup, and privacy | OSS-001, OSS-004, OSS-006, OPS-003–OPS-006 | In progress (profiles, docs, project export/import, redacted diagnostics, and retention implemented; coordinated pg/Neo4j/artefact backup and clean-host rehearsals deferred) | 1C–1F |
@@ -162,8 +162,9 @@ Acceptance:
 - [x] Add workspace/member/project APIs required for administration and switching.
 - [x] Centralize authorization policy; endpoints delegate instead of duplicating role checks (`TenancyService` + `role_allows`).
 - [ ] Record security audit events for invitation, membership, role, credential, export, and deletion actions.
-      (Invitation, membership, role, workspace, and project events are recorded; credential and export
-      audit events arrive with 1F/1G.)
+      (Invitation, membership, role, workspace, project, and credential create/rotate/revoke/delete events are
+      recorded with identifiers and outcomes only; project export/import still runs as an operator path with no
+      audit sink.)
 - [x] Avoid revealing workspace existence or invitation validity to unauthenticated callers.
 
 Acceptance:

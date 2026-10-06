@@ -42,13 +42,22 @@ class CredentialService:
         plaintext_key: str,
     ) -> Credential:
         await self._require_admin(scope, workspace_id)
-        return await self._vault.store(
+        credential = await self._vault.store(
             workspace_id=workspace_id,
             owner_user_id=scope.actor_user_id,
             provider=provider,
             label=label,
             plaintext_key=plaintext_key,
         )
+        await self._tenancy.record_workspace_audit(
+            scope,
+            workspace_id=workspace_id,
+            action="credential.created",
+            target_type="credential",
+            target_id=credential.id,
+            detail={"provider": provider.value},
+        )
+        return credential
 
     async def list(self, scope: AccessScope, workspace_id: str) -> list[Credential]:
         await self._require_admin(scope, workspace_id)
@@ -58,17 +67,44 @@ class CredentialService:
         self, scope: AccessScope, workspace_id: str, credential_id: str, plaintext_key: str
     ) -> Credential:
         await self._require_admin(scope, workspace_id)
-        return await self._vault.rotate(
+        credential = await self._vault.rotate(
             workspace_id=workspace_id, credential_id=credential_id, plaintext_key=plaintext_key
         )
+        await self._tenancy.record_workspace_audit(
+            scope,
+            workspace_id=workspace_id,
+            action="credential.rotated",
+            target_type="credential",
+            target_id=credential_id,
+        )
+        return credential
 
     async def revoke(self, scope: AccessScope, workspace_id: str, credential_id: str) -> Credential:
         await self._require_admin(scope, workspace_id)
-        return await self._vault.revoke(workspace_id=workspace_id, credential_id=credential_id)
+        credential = await self._vault.revoke(
+            workspace_id=workspace_id, credential_id=credential_id
+        )
+        await self._tenancy.record_workspace_audit(
+            scope,
+            workspace_id=workspace_id,
+            action="credential.revoked",
+            target_type="credential",
+            target_id=credential_id,
+        )
+        return credential
 
     async def delete(self, scope: AccessScope, workspace_id: str, credential_id: str) -> bool:
         await self._require_admin(scope, workspace_id)
-        return await self._vault.delete(workspace_id=workspace_id, credential_id=credential_id)
+        deleted = await self._vault.delete(workspace_id=workspace_id, credential_id=credential_id)
+        if deleted:
+            await self._tenancy.record_workspace_audit(
+                scope,
+                workspace_id=workspace_id,
+                action="credential.deleted",
+                target_type="credential",
+                target_id=credential_id,
+            )
+        return deleted
 
     async def resolve_for_use(
         self, scope: AccessScope, workspace_id: str, credential_id: str

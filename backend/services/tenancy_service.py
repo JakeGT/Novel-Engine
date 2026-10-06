@@ -94,6 +94,26 @@ class TenancyService:
             correlation_id=scope.correlation_id,
         )
 
+    async def record_workspace_audit(
+        self,
+        scope: AccessScope,
+        *,
+        workspace_id: str,
+        action: str,
+        target_type: str,
+        target_id: str,
+        detail: dict | None = None,
+    ) -> None:
+        """Public audit sink for other workspace-scoped services (e.g. credentials)."""
+        await self._audit(
+            scope,
+            workspace_id=workspace_id,
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+            detail=detail,
+        )
+
     async def list_workspaces(self, scope: AccessScope) -> list[Workspace]:
         return await self._store.list_workspaces_for_user(scope.actor_user_id)
 

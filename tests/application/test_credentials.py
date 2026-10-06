@@ -102,3 +102,29 @@ async def test_local_mode_is_trusted_without_membership() -> None:
         plaintext_key="sk-or-v1-local-key",
     )
     assert credential.workspace_id == "local-workspace"
+
+
+@pytest.mark.asyncio
+async def test_credential_actions_are_audited() -> None:
+    tenancy = InMemoryTenancyStore()
+    identity = InMemoryIdentityStore()
+    tenancy_service = TenancyService(tenancy, identity_store=identity)
+    owner = await identity.get_or_create_user(IdentityClaims(issuer="local", subject="owner"))
+    scope = AccessScope(actor_user_id=owner.id, auth_mode=AuthMode.HOSTED)
+    workspace = await tenancy_service.create_workspace(scope, slug="ws", name="WS")
+    service = CredentialService(InMemoryCredentialVault(), tenancy=tenancy_service)
+
+    credential = await service.create(
+        scope,
+        workspace_id=workspace.id,
+        provider=CredentialProvider.OPENROUTER,
+        label="mine",
+        plaintext_key="sk-or-v1-aaaaaaaa",
+    )
+    await service.revoke(scope, workspace.id, credential.id)
+
+    actions = [event.action for event in tenancy.audit]
+    assert "credential.created" in actions
+    assert "credential.revoked" in actions
+    # Audit detail never contains the secret.
+    assert all("sk-or-" not in str(event.detail) for event in tenancy.audit)
