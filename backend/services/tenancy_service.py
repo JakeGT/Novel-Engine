@@ -20,7 +20,12 @@ from backend.domain.tenancy import (
     Workspace,
     role_allows,
 )
-from backend.ports import IdentityStorePort, SessionStorePort, TenancyStorePort
+from backend.ports import (
+    IdentityStorePort,
+    RateLimiterPort,
+    SessionStorePort,
+    TenancyStorePort,
+)
 
 INVITATION_TTL_SECONDS = 60 * 60 * 24 * 7
 ACCEPT_RATE_LIMIT = 10
@@ -34,6 +39,7 @@ class TenancyService:
         *,
         identity_store: IdentityStorePort | None = None,
         session_store: SessionStorePort | None = None,
+        rate_limiter: RateLimiterPort | None = None,
         invitation_ttl_seconds: int = INVITATION_TTL_SECONDS,
         accept_rate_limit: int = ACCEPT_RATE_LIMIT,
         accept_rate_window_seconds: int = ACCEPT_RATE_WINDOW_SECONDS,
@@ -41,6 +47,7 @@ class TenancyService:
         self._store = store
         self._identity_store = identity_store
         self._session_store = session_store
+        self._rate_limiter = rate_limiter
         self._invitation_ttl_seconds = invitation_ttl_seconds
         self._accept_rate_limit = accept_rate_limit
         self._accept_rate_window_seconds = accept_rate_window_seconds
@@ -244,7 +251,17 @@ class TenancyService:
             )
         return revoked
 
-    def _check_accept_rate(self, actor_user_id: str) -> None:
+    async def _check_accept_rate(self, actor_user_id: str) -> None:
+        if self._rate_limiter is not None:
+            allowed = await self._rate_limiter.allow(
+                f"invitation-accept:{actor_user_id}",
+                limit=self._accept_rate_limit,
+                window_seconds=self._accept_rate_window_seconds,
+            )
+            if not allowed:
+                raise RateLimitedError("Too many invitation acceptance attempts; try again later.")
+            return
+        # Fallback in-memory limiter for single-worker deployments/tests without a shared limiter.
         now = time.monotonic()
         window = self._accept_rate_window_seconds
         hits = [hit for hit in self._accept_hits.get(actor_user_id, []) if now - hit < window]
@@ -254,7 +271,7 @@ class TenancyService:
         self._accept_hits[actor_user_id] = hits
 
     async def accept_invitation(self, scope: AccessScope, *, token: str) -> Membership:
-        self._check_accept_rate(scope.actor_user_id)
+        await self._check_accept_rate(scope.actor_user_id)
         token_hash = hash_token(token)
         invitation = await self._store.get_invitation_by_token_hash(token_hash)
         if invitation is not None and invitation.email and self._identity_store is not None:

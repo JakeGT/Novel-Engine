@@ -6,6 +6,7 @@ not mock Neo4j driver calls, OpenAI SDK internals, or filesystem layouts.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -776,3 +777,20 @@ class InMemoryTenancyStore:
         )
         self.audit.append(event)
         return event
+
+
+class InMemoryRateLimiter:
+    """Deterministic sliding-window limiter for tests."""
+
+    def __init__(self) -> None:
+        self._hits: dict[str, list[float]] = {}
+
+    async def allow(self, key: str, *, limit: int, window_seconds: int) -> bool:
+        now = time.monotonic()
+        hits = [hit for hit in self._hits.get(key, []) if now - hit < window_seconds]
+        if len(hits) >= limit:
+            self._hits[key] = hits
+            return False
+        hits.append(now)
+        self._hits[key] = hits
+        return True

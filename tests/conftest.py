@@ -63,6 +63,7 @@ def _build_fake_container(settings, tmp_path):
         InMemoryGraphRepository,
         InMemoryIdentityStore,
         InMemoryLoginAttemptStore,
+        InMemoryRateLimiter,
         InMemorySessionStore,
         InMemoryTenancyStore,
         InMemoryVectorStore,
@@ -94,8 +95,12 @@ def _build_fake_container(settings, tmp_path):
         login_attempt_store=InMemoryLoginAttemptStore(),
     )
     tenancy = InMemoryTenancyStore()
+    rate_limiter = InMemoryRateLimiter()
     tenancy_service = TenancyService(
-        tenancy, identity_store=identity_store, session_store=session_store
+        tenancy,
+        identity_store=identity_store,
+        session_store=session_store,
+        rate_limiter=rate_limiter,
     )
     return Container(
         settings=settings,
@@ -114,6 +119,7 @@ def _build_fake_container(settings, tmp_path):
         auth_service=auth_service,
         tenancy=tenancy,
         tenancy_service=tenancy_service,
+        rate_limiter=rate_limiter,
     )
 
 

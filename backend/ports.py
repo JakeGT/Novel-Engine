@@ -243,6 +243,13 @@ class SessionStorePort(Protocol):
 
 
 @runtime_checkable
+class RateLimiterPort(Protocol):
+    """Shared sliding-window limiter usable across workers (durable backing store)."""
+
+    async def allow(self, key: str, *, limit: int, window_seconds: int) -> bool: ...
+
+
+@runtime_checkable
 class LoginAttemptStorePort(Protocol):
     async def create(
         self,

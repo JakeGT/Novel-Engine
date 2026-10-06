@@ -48,6 +48,7 @@ class Container:
     auth_service: Any = None
     tenancy: Any = None
     tenancy_service: Any = None
+    rate_limiter: Any = None
 
     async def aclose(self) -> None:
         self.graph.close()
@@ -125,7 +126,13 @@ def build_container(settings: Settings | None = None) -> Container:
         login_attempt_store=PostgresLoginAttemptStore(database.session_factory),
     )
     container.tenancy = PostgresTenancyStore(database.session_factory)
+    from backend.adapters.rate_limit import PostgresRateLimiter
+
+    container.rate_limiter = PostgresRateLimiter(database.session_factory)
     container.tenancy_service = TenancyService(
-        container.tenancy, identity_store=identity_store, session_store=session_store
+        container.tenancy,
+        identity_store=identity_store,
+        session_store=session_store,
+        rate_limiter=container.rate_limiter,
     )
     return container
