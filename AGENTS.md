@@ -19,8 +19,8 @@ The repository is a stabilized prototype, not a production application. Phase 0
   routes remain as deprecated aliases.
 - Graph CRUD, tagged-entity context retrieval, and the character questionnaire are implemented;
   the world workflow is parked and unfinished.
-- The vector store is PostgreSQL/pgvector behind the vector port; Chroma remains as an unused
-  transitional module.
+- The vector store is PostgreSQL/pgvector behind the vector port; the transitional Chroma
+  module has been removed.
 - The React frontend is still the Vite starter.
 - Story planning, generation, review, temporal branching, multi-tenancy, and production
   operations are planned work.
@@ -35,7 +35,7 @@ status in `plan/`.
 | `backend/api/` | HTTP transport and request/response contracts (`v1/` canonical, legacy deprecated) |
 | `backend/services/` | Application workflows such as character and world creation |
 | `backend/graph/` | Graph schema, Neo4j persistence, resolution, traversal, summarization, migrations |
-| `backend/core/` | Configuration, database engine/session, structured logging/redaction, transitional Chroma wrapper |
+| `backend/core/` | Configuration, database engine/session, structured logging/redaction |
 | `backend/ports.py` | Application/domain port protocols (graph, vector, embedding, AI, clock, IDs, schema, migration, database, artifacts) |
 | `backend/adapters/` | Concrete port adapters (Neo4j, pgvector, sentence-transformers, OpenAI, PostgreSQL, system clock/IDs, artifacts) |
 | `backend/container.py` | Dependency container built from explicit settings; owns adapters and lifecycle |

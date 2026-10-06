@@ -46,7 +46,6 @@ class Settings(BaseSettings):
 
     EMBEDDING_MODEL_NAME: str = "all-MiniLM-L6-v2"
     EMBEDDING_DIMENSION: int = 384
-    CHROMA_PERSISTENCE_PATH: str = "./data/chroma"
     CUSTOM_SCHEMA_PATH: str = "backend/config/custom_schema.json"
     ENABLE_DEBUG_ARTIFACTS: bool = False
     ARTIFACT_STORE_DIR: str = "backend/debug"

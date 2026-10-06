@@ -70,7 +70,10 @@ Still open before affected slices:
 - [ ] Reconcile `backend/services/world_service.py` as an explicit change: port it onto injected ports with tests, or preserve it outside the maintained contract until a later product slice.
 - [ ] Remove the temporary Ruff exclusion only when the world-service file is reconciled.
 - [ ] Remove deprecated `/api` aliases once v1 parity/caller migration is verified; no new feature may be added only to a legacy route.
-- [ ] Confirm Chroma is unused, then remove its dependency and transitional module in one tested change.
+- [x] Confirm Chroma is unused, then remove its dependency and transitional module in one tested change.
+      (Confirmed: only the transitional module, the import-safety test, config/env, and the dependency referenced
+      it. Removed `backend/core/vector_store.py`, the `chromadb` dependency, and `CHROMA_PERSISTENCE_PATH`; the
+      pgvector adapter is the sole vector store.)
 - [ ] Split optional local-embedding and integration dependencies where this improves install size without creating multiple ambiguous setup paths.
 - [ ] Replace the Vite starter screen/assets with the minimal authenticated application shell; do not build product workspaces yet.
 - [ ] Update Phase 0 evidence with final commit, CI, and carryover links.

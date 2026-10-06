@@ -85,7 +85,7 @@ Current:
 - `PgVectorStore` implements the vector port over PostgreSQL/pgvector, embedding through the
   injected embedding port; the derived `vector_documents` table is rebuildable
 - embeddings are optional and report honest availability/loaded state
-- the legacy Chroma module remains but is unused by the container
+- the transitional Chroma module and dependency have been removed; pgvector is the sole vector store
 
 Target:
 

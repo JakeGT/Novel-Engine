@@ -52,7 +52,6 @@ import backend.adapters.embedding  # noqa: E402
 import backend.adapters.graph  # noqa: E402
 import backend.adapters.postgres  # noqa: E402
 import backend.container  # noqa: E402
-import backend.core.vector_store  # noqa: E402
 import backend.graph.manager  # noqa: E402
 import backend.graph.traversal  # noqa: E402
 import backend.graph.vector_search  # noqa: E402
