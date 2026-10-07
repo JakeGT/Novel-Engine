@@ -77,9 +77,12 @@ rows), `make audit` (dependency scan). No step requires a paid model call or pro
   (`tests/contract/test_auth.py`, `test_tenancy.py`, `test_credentials.py`).
 - **Authorization:** explicit owner/editor/viewer matrix centralized in `TenancyService`
   (`tests/unit/test_tenancy_policy.py`, `test_tenancy.py`).
-- **Isolation:** mandatory `workspace_id` across graph, pgvector, and artifacts; cross-workspace
-  edges and reads refused (`tests/unit/test_scope_contract.py`, `tests/contract/test_workspace_scope.py`,
-  `tests/integration/test_graph_repository.py`, `test_pgvector_adapter.py`).
+- **Isolation:** cross-workspace isolation is enforced and adversarially tested — mandatory
+  `workspace_id` across graph, pgvector, and the debug artifact store, with cross-workspace edges/reads
+  refused (`tests/unit/test_scope_contract.py`, `tests/contract/test_workspace_scope.py`,
+  `tests/integration/test_graph_repository.py`, `test_pgvector_adapter.py`). **Same-workspace
+  cross-project isolation is not yet enforced** (graph/vector/project scope is in progress; the media
+  object store and job/export namespacing do not exist yet).
 - **Credentials:** envelope-encrypted at rest (AES-256-GCM, KEK from config), metadata-only API,
   workspace-admin worker path (`tests/unit/test_crypto.py`, `tests/application/test_credentials.py`,
   `tests/integration/test_credential_vault.py`, `tests/contract/test_credentials.py`).
