@@ -1177,6 +1177,7 @@
         },
         "summary": "Character Generate Questions",
         "tags": [
+          "legacy",
           "characters"
         ]
       }
@@ -1218,6 +1219,7 @@
         },
         "summary": "Character Init",
         "tags": [
+          "legacy",
           "characters"
         ]
       }
@@ -1259,6 +1261,7 @@
         },
         "summary": "Character Process Answers",
         "tags": [
+          "legacy",
           "characters"
         ]
       }
@@ -1300,6 +1303,7 @@
         },
         "summary": "Build Context",
         "tags": [
+          "legacy",
           "context"
         ]
       }
@@ -1560,6 +1564,7 @@
         },
         "summary": "List Edges",
         "tags": [
+          "legacy",
           "edges"
         ]
       },
@@ -1599,6 +1604,7 @@
         },
         "summary": "Create Edge",
         "tags": [
+          "legacy",
           "edges"
         ]
       }
@@ -1671,6 +1677,7 @@
         },
         "summary": "List Entities",
         "tags": [
+          "legacy",
           "entities"
         ]
       },
@@ -1710,6 +1717,7 @@
         },
         "summary": "Create Entity",
         "tags": [
+          "legacy",
           "entities"
         ]
       }
@@ -1769,6 +1777,7 @@
         },
         "summary": "Search Entities",
         "tags": [
+          "legacy",
           "entities"
         ]
       }
@@ -1804,6 +1813,7 @@
         },
         "summary": "Delete Entity",
         "tags": [
+          "legacy",
           "entities"
         ]
       },
@@ -1844,6 +1854,7 @@
         },
         "summary": "Get Entity",
         "tags": [
+          "legacy",
           "entities"
         ]
       },
@@ -1894,6 +1905,7 @@
         },
         "summary": "Update Entity",
         "tags": [
+          "legacy",
           "entities"
         ]
       }
@@ -1936,6 +1948,7 @@
         },
         "summary": "List Entity Edges",
         "tags": [
+          "legacy",
           "entities"
         ]
       }
@@ -1981,6 +1994,876 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/characters/generate-questions": {
+      "post": {
+        "operationId": "character_generate_questions_api_v1_projects__project_id__characters_generate_questions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CharacterQuestionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionSheet"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Character Generate Questions",
+        "tags": [
+          "projects",
+          "characters"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/characters/init": {
+      "post": {
+        "operationId": "character_init_api_v1_projects__project_id__characters_init_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CharacterInitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Entity"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Character Init",
+        "tags": [
+          "projects",
+          "characters"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/characters/process-answers": {
+      "post": {
+        "operationId": "character_process_answers_api_v1_projects__project_id__characters_process_answers_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CharacterAnswersRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphUpdateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Character Process Answers",
+        "tags": [
+          "projects",
+          "characters"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/context": {
+      "post": {
+        "operationId": "build_context_api_v1_projects__project_id__context_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContextRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Build Context",
+        "tags": [
+          "projects",
+          "context"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/edges": {
+      "get": {
+        "operationId": "list_edges_api_v1_projects__project_id__edges_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Edges",
+        "tags": [
+          "projects",
+          "edges"
+        ]
+      },
+      "post": {
+        "operationId": "create_edge_api_v1_projects__project_id__edges_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EdgeCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Edge",
+        "tags": [
+          "projects",
+          "edges"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/entities": {
+      "get": {
+        "operationId": "list_entities_api_v1_projects__project_id__entities_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Entities",
+        "tags": [
+          "projects",
+          "entities"
+        ]
+      },
+      "post": {
+        "operationId": "create_entity_api_v1_projects__project_id__entities_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntityCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Entity"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Entity",
+        "tags": [
+          "projects",
+          "entities"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/entities/search": {
+      "get": {
+        "operationId": "search_entities_api_v1_projects__project_id__entities_search_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "minLength": 2,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntitySearchList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Entities",
+        "tags": [
+          "projects",
+          "entities"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/entities/{entity_id}": {
+      "delete": {
+        "operationId": "delete_entity_api_v1_projects__project_id__entities__entity_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entity_id",
+            "required": true,
+            "schema": {
+              "title": "Entity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Entity",
+        "tags": [
+          "projects",
+          "entities"
+        ]
+      },
+      "get": {
+        "operationId": "get_entity_api_v1_projects__project_id__entities__entity_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entity_id",
+            "required": true,
+            "schema": {
+              "title": "Entity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Entity"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Entity",
+        "tags": [
+          "projects",
+          "entities"
+        ]
+      },
+      "put": {
+        "operationId": "update_entity_api_v1_projects__project_id__entities__entity_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entity_id",
+            "required": true,
+            "schema": {
+              "title": "Entity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntityUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Entity"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Entity",
+        "tags": [
+          "projects",
+          "entities"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/entities/{entity_id}/edges": {
+      "get": {
+        "operationId": "list_entity_edges_api_v1_projects__project_id__entities__entity_id__edges_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entity_id",
+            "required": true,
+            "schema": {
+              "title": "Entity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Entity Edges",
+        "tags": [
+          "projects",
+          "entities"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/rag/query": {
+      "post": {
+        "operationId": "rag_query_api_v1_projects__project_id__rag_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rag Query",
+        "tags": [
+          "projects",
+          "rag"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/schema/edge-types": {
+      "get": {
+        "operationId": "list_edge_types_api_v1_projects__project_id__schema_edge_types_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchemaTypesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Edge Types",
+        "tags": [
+          "projects",
+          "schema"
+        ]
+      },
+      "post": {
+        "operationId": "add_edge_type_api_v1_projects__project_id__schema_edge_types_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SchemaTypeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchemaTypesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Edge Type",
+        "tags": [
+          "projects",
+          "schema"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/schema/edge-types/{edge_type}": {
+      "delete": {
+        "operationId": "remove_edge_type_api_v1_projects__project_id__schema_edge_types__edge_type__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edge_type",
+            "required": true,
+            "schema": {
+              "title": "Edge Type",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchemaTypesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Edge Type",
+        "tags": [
+          "projects",
+          "schema"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/schema/node-types": {
+      "get": {
+        "operationId": "list_node_types_api_v1_projects__project_id__schema_node_types_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchemaTypesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Node Types",
+        "tags": [
+          "projects",
+          "schema"
+        ]
+      },
+      "post": {
+        "operationId": "add_node_type_api_v1_projects__project_id__schema_node_types_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SchemaTypeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchemaTypesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Node Type",
+        "tags": [
+          "projects",
+          "schema"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/schema/node-types/{node_type}": {
+      "delete": {
+        "operationId": "remove_node_type_api_v1_projects__project_id__schema_node_types__node_type__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_type",
+            "required": true,
+            "schema": {
+              "title": "Node Type",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchemaTypesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Node Type",
+        "tags": [
+          "projects",
+          "schema"
+        ]
+      }
+    },
     "/api/v1/rag/query": {
       "post": {
         "operationId": "rag_query_api_v1_rag_query_post",
@@ -2016,6 +2899,7 @@
         },
         "summary": "Rag Query",
         "tags": [
+          "legacy",
           "rag"
         ]
       }
@@ -2037,6 +2921,7 @@
         },
         "summary": "List Edge Types",
         "tags": [
+          "legacy",
           "schema"
         ]
       },
@@ -2076,6 +2961,7 @@
         },
         "summary": "Add Edge Type",
         "tags": [
+          "legacy",
           "schema"
         ]
       }
@@ -2118,6 +3004,7 @@
         },
         "summary": "Remove Edge Type",
         "tags": [
+          "legacy",
           "schema"
         ]
       }
@@ -2139,6 +3026,7 @@
         },
         "summary": "List Node Types",
         "tags": [
+          "legacy",
           "schema"
         ]
       },
@@ -2178,6 +3066,7 @@
         },
         "summary": "Add Node Type",
         "tags": [
+          "legacy",
           "schema"
         ]
       }
@@ -2220,6 +3109,7 @@
         },
         "summary": "Remove Node Type",
         "tags": [
+          "legacy",
           "schema"
         ]
       }

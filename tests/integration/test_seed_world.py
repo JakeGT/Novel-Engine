@@ -5,7 +5,7 @@ import pytest
 from backend.adapters.graph import Neo4jGraphRepository
 from backend.devtools.reset import reset_neo4j, reset_vector_documents
 from backend.graph.manager import GraphManager
-from backend.seed.apply import SEED_WORKSPACE_ID, apply_manifest
+from backend.seed.apply import SEED_PROJECT_ID, SEED_WORKSPACE_ID, apply_manifest
 from backend.seed.ledger import clear_seed, read_seed, record_seed
 from backend.seed.world import REFERENCE_WORLD
 
@@ -29,7 +29,9 @@ def test_seed_is_idempotent_and_verifies(repository) -> None:
 
     assert first.ok, first.problems
     assert second.ok, second.problems
-    assert len(graph.get_nodes(workspace_id=SEED_WORKSPACE_ID)) == len(REFERENCE_WORLD.nodes)
+    assert len(graph.get_nodes(workspace_id=SEED_WORKSPACE_ID, project_id=SEED_PROJECT_ID)) == len(
+        REFERENCE_WORLD.nodes
+    )
 
 
 def test_reset_then_reseed_restores_reference_world(repository, disposable_database) -> None:
@@ -43,7 +45,7 @@ def test_reset_then_reseed_restores_reference_world(repository, disposable_datab
 
     deleted = reset_neo4j(manager)
     assert deleted == len(REFERENCE_WORLD.nodes)
-    assert graph.get_nodes(workspace_id=SEED_WORKSPACE_ID) == []
+    assert graph.get_nodes(workspace_id=SEED_WORKSPACE_ID, project_id=SEED_PROJECT_ID) == []
     assert clear_seed(dsn) == 4
     assert read_seed(dsn) == {}
 
@@ -51,4 +53,6 @@ def test_reset_then_reseed_restores_reference_world(repository, disposable_datab
 
     reseeded = apply_manifest(graph, REFERENCE_WORLD)
     assert reseeded.ok, reseeded.problems
-    assert len(graph.get_nodes(workspace_id=SEED_WORKSPACE_ID)) == len(REFERENCE_WORLD.nodes)
+    assert len(graph.get_nodes(workspace_id=SEED_WORKSPACE_ID, project_id=SEED_PROJECT_ID)) == len(
+        REFERENCE_WORLD.nodes
+    )

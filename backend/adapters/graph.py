@@ -61,8 +61,8 @@ class Neo4jGraphRepository:
         self.manager.add_node(node)
 
     @instrument("graph.get_node", logger)
-    def get_node(self, node_id: str, *, workspace_id: str) -> Node | None:
-        data = self.manager.get_node(node_id, workspace_id=workspace_id)
+    def get_node(self, node_id: str, *, workspace_id: str, project_id: str) -> Node | None:
+        data = self.manager.get_node(node_id, workspace_id=workspace_id, project_id=project_id)
         return _to_node(data) if data else None
 
     @instrument("graph.update_node", logger)
@@ -75,7 +75,7 @@ class Neo4jGraphRepository:
         self.manager.add_edge(edge)
 
     @instrument("graph.get_edges", logger)
-    def get_edges(self, node_id: str, *, workspace_id: str) -> list[Edge]:
+    def get_edges(self, node_id: str, *, workspace_id: str, project_id: str) -> list[Edge]:
         return [
             Edge(
                 source=record["source"],
@@ -83,8 +83,11 @@ class Neo4jGraphRepository:
                 type=record["type"],
                 properties=record.get("properties") or {},
                 workspace_id=workspace_id,
+                project_id=project_id,
             )
-            for record in self.manager.get_edges(node_id, workspace_id=workspace_id)
+            for record in self.manager.get_edges(
+                node_id, workspace_id=workspace_id, project_id=project_id
+            )
         ]
 
     @instrument("graph.get_nodes", logger)
@@ -92,12 +95,16 @@ class Neo4jGraphRepository:
         self,
         *,
         workspace_id: str,
+        project_id: str,
         node_type: str | None = None,
         node_id: str | None = None,
     ) -> list[Node]:
         nodes: list[Node] = []
         records = self.manager.get_nodes(
-            workspace_id=workspace_id, node_type=node_type, node_id=node_id
+            workspace_id=workspace_id,
+            project_id=project_id,
+            node_type=node_type,
+            node_id=node_id,
         )
         for record in records or []:
             if "n" in record:
@@ -110,9 +117,16 @@ class Neo4jGraphRepository:
 
     @instrument("graph.search_nodes_by_name", logger)
     def search_nodes_by_name(
-        self, query: str, *, workspace_id: str, type: str | None = None
+        self,
+        query: str,
+        *,
+        workspace_id: str,
+        project_id: str,
+        type: str | None = None,
     ) -> list[dict[str, Any]]:
-        return self.manager.search_nodes_by_name(query, workspace_id=workspace_id, type=type)
+        return self.manager.search_nodes_by_name(
+            query, workspace_id=workspace_id, project_id=project_id, type=type
+        )
 
     @instrument("graph.search_semantic_nodes", logger)
     def search_semantic_nodes(
@@ -120,26 +134,36 @@ class Neo4jGraphRepository:
         embedding: Sequence[float],
         *,
         workspace_id: str,
+        project_id: str,
         top_k: int = 5,
         min_score: float = 0.5,
     ) -> list[str]:
         return self.manager.search_semantic_nodes(
-            list(embedding), workspace_id=workspace_id, top_k=top_k, min_score=min_score
+            list(embedding),
+            workspace_id=workspace_id,
+            project_id=project_id,
+            top_k=top_k,
+            min_score=min_score,
         )
 
     @instrument("graph.traverse", logger)
     def traverse(
-        self, anchor_ids: Sequence[str], policy: Any, *, workspace_id: str
+        self,
+        anchor_ids: Sequence[str],
+        policy: Any,
+        *,
+        workspace_id: str,
+        project_id: str,
     ) -> list[dict[str, Any]]:
         from backend.graph.traversal import ContextTraversal
 
         return ContextTraversal(self.manager).traverse(
-            list(anchor_ids), policy, workspace_id=workspace_id
+            list(anchor_ids), policy, workspace_id=workspace_id, project_id=project_id
         )
 
     @instrument("graph.delete_node", logger)
-    def delete_node(self, node_id: str, *, workspace_id: str) -> bool:
-        return self.manager.delete_node(node_id, workspace_id=workspace_id)
+    def delete_node(self, node_id: str, *, workspace_id: str, project_id: str) -> bool:
+        return self.manager.delete_node(node_id, workspace_id=workspace_id, project_id=project_id)
 
     def ping(self) -> bool:
         try:

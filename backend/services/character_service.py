@@ -70,13 +70,25 @@ class CharacterService:
         self.artifacts = artifacts
         self.model = model
 
-    def _save_debug_response(self, data: BaseModel, filename: str, *, workspace_id: str) -> None:
-        self.artifacts.save(filename, data.model_dump_json(indent=4), workspace_id=workspace_id)
+    def _save_debug_response(
+        self, data: BaseModel, filename: str, *, workspace_id: str, project_id: str
+    ) -> None:
+        self.artifacts.save(
+            filename,
+            data.model_dump_json(indent=4),
+            workspace_id=workspace_id,
+            project_id=project_id,
+        )
 
     def _load_debug_response(
-        self, model_class: type[BaseModel], filename: str, *, workspace_id: str
+        self,
+        model_class: type[BaseModel],
+        filename: str,
+        *,
+        workspace_id: str,
+        project_id: str,
     ) -> Any | None:
-        payload = self.artifacts.load(filename, workspace_id=workspace_id)
+        payload = self.artifacts.load(filename, workspace_id=workspace_id, project_id=project_id)
         if payload is None:
             return None
         try:
@@ -86,7 +98,12 @@ class CharacterService:
             return None
 
     def init_character_anchor(
-        self, character_name: str, bio: str | None = None, *, workspace_id: str
+        self,
+        character_name: str,
+        bio: str | None = None,
+        *,
+        workspace_id: str,
+        project_id: str,
     ) -> Node:
         character_id = f"char_{character_name.lower().replace(' ', '_')}"
         properties = {"name": character_name, "description": bio}
@@ -97,14 +114,20 @@ class CharacterService:
             properties=properties,
             embedding=embedding,
             workspace_id=workspace_id,
+            project_id=project_id,
         )
         self.graph.add_node(node)
         return node
 
     async def generate_questions(
-        self, character_id: str, use_cache: bool = False, *, workspace_id: str
+        self,
+        character_id: str,
+        use_cache: bool = False,
+        *,
+        workspace_id: str,
+        project_id: str,
     ) -> CharacterQuestionSheet:
-        node = self.graph.get_node(character_id, workspace_id=workspace_id)
+        node = self.graph.get_node(character_id, workspace_id=workspace_id, project_id=project_id)
         if node is None:
             raise ValueError(f"Character node {character_id} not found")
         bio = node.properties.get("description", "") or ""
@@ -113,7 +136,10 @@ class CharacterService:
         cache_filename = f"questions_{character_id}.json"
         if use_cache:
             cached = self._load_debug_response(
-                CharacterQuestionSheet, cache_filename, workspace_id=workspace_id
+                CharacterQuestionSheet,
+                cache_filename,
+                workspace_id=workspace_id,
+                project_id=project_id,
             )
             if cached:
                 logger.info(f"Loaded questions from cache: {cache_filename}")
@@ -124,7 +150,9 @@ class CharacterService:
 
         explicit_ids = extract_entity_ids(bio)
         for n_id in explicit_ids:
-            context_node = self.graph.get_node(n_id, workspace_id=workspace_id)
+            context_node = self.graph.get_node(
+                n_id, workspace_id=workspace_id, project_id=project_id
+            )
             if context_node:
                 context_nodes.append(
                     f"- Explicitly Tagged [{n_id}] ({context_node.type}): "
@@ -136,13 +164,16 @@ class CharacterService:
             semantic_ids = self.graph.search_semantic_nodes(
                 bio_embedding,
                 workspace_id=workspace_id,
+                project_id=project_id,
                 top_k=CHARACTER_CREATION_POLICY.semantic_top_k,
                 min_score=CHARACTER_CREATION_POLICY.semantic_min_score,
             )
             for n_id in semantic_ids:
                 if n_id in explicit_ids:
                     continue
-                context_node = self.graph.get_node(n_id, workspace_id=workspace_id)
+                context_node = self.graph.get_node(
+                    n_id, workspace_id=workspace_id, project_id=project_id
+                )
                 if (
                     context_node
                     and context_node.type not in CHARACTER_CREATION_POLICY.excluded_node_types
@@ -187,7 +218,10 @@ class CharacterService:
         parsed.character_id = character_id
 
         self._save_debug_response(
-            parsed, f"questions_{character_id}.json", workspace_id=workspace_id
+            parsed,
+            f"questions_{character_id}.json",
+            workspace_id=workspace_id,
+            project_id=project_id,
         )
         return parsed
 
@@ -200,11 +234,12 @@ class CharacterService:
         use_cache: bool = False,
         *,
         workspace_id: str,
+        project_id: str,
     ) -> GraphUpdate:
         cache_filename = f"graph_update_{character_id}_ch{chapter_number}_raw.json"
         if use_cache:
             cached = self._load_debug_response(
-                GraphUpdate, cache_filename, workspace_id=workspace_id
+                GraphUpdate, cache_filename, workspace_id=workspace_id, project_id=project_id
             )
             if cached:
                 logger.info(f"Loaded raw graph update from cache: {cache_filename}")
@@ -215,7 +250,7 @@ class CharacterService:
 
         explicit_ids = extract_entity_ids(answers_text)
         for n_id in explicit_ids:
-            node = self.graph.get_node(n_id, workspace_id=workspace_id)
+            node = self.graph.get_node(n_id, workspace_id=workspace_id, project_id=project_id)
             if node:
                 context_nodes.append(
                     f"- ID: {n_id} (EXPLICIT MATCH), Name: {node.properties.get('name', 'Unknown')} "
@@ -225,12 +260,16 @@ class CharacterService:
         answers_embedding = self.embeddings.embed(answers_text)
         if answers_embedding:
             semantic_ids = self.graph.search_semantic_nodes(
-                answers_embedding, workspace_id=workspace_id, top_k=10, min_score=0.4
+                answers_embedding,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                top_k=10,
+                min_score=0.4,
             )
             for n_id in semantic_ids:
                 if n_id in explicit_ids:
                     continue
-                node = self.graph.get_node(n_id, workspace_id=workspace_id)
+                node = self.graph.get_node(n_id, workspace_id=workspace_id, project_id=project_id)
                 if node and node.type not in [
                     "Appearance",
                     "PersonalityProfile",
@@ -286,7 +325,9 @@ class CharacterService:
         )
 
         parsed = response.parsed
-        self._save_debug_response(parsed, cache_filename, workspace_id=workspace_id)
+        self._save_debug_response(
+            parsed, cache_filename, workspace_id=workspace_id, project_id=project_id
+        )
         return parsed
 
     async def process_answers(
@@ -297,8 +338,9 @@ class CharacterService:
         use_cache: bool = False,
         *,
         workspace_id: str,
+        project_id: str,
     ) -> GraphUpdate:
-        node = self.graph.get_node(character_id, workspace_id=workspace_id)
+        node = self.graph.get_node(character_id, workspace_id=workspace_id, project_id=project_id)
         if node is None:
             raise ValueError(f"Character node {character_id} not found")
         character_name = node.properties.get("name", "") or ""
@@ -312,6 +354,7 @@ class CharacterService:
             answers_text,
             use_cache,
             workspace_id=workspace_id,
+            project_id=project_id,
         )
 
         id_map: dict[str, str] = {}
@@ -341,7 +384,7 @@ class CharacterService:
             new_ids.add(new_id)
             id_map[original_id] = new_id
 
-            existing = self.graph.get_node(new_id, workspace_id=workspace_id)
+            existing = self.graph.get_node(new_id, workspace_id=workspace_id, project_id=project_id)
             if existing is not None and existing.type != node_update.type:
                 raise ValueError(f"Entity {new_id!r} already exists with type {existing.type!r}")
             node_update.id = new_id
@@ -365,5 +408,6 @@ class CharacterService:
             parsed,
             f"graph_update_{character_id}_ch{chapter_number}.json",
             workspace_id=workspace_id,
+            project_id=project_id,
         )
         return parsed

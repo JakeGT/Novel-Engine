@@ -4,7 +4,7 @@ import re
 
 from fastapi import APIRouter, Depends, Query, status
 
-from backend.api.auth import get_workspace_scope, require_workspace_scope
+from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import (
     get_character_service,
     get_container,
@@ -28,7 +28,7 @@ from backend.graph.summarizer import summarize_context
 from backend.ports import EmbeddingPort, GraphRepository, SchemaRegistryPort
 from backend.services.character_service import CharacterService
 
-router = APIRouter()
+project_router = APIRouter()
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9_]+$")
 
@@ -40,15 +40,17 @@ def _validate_identifier(value: str, kind: str) -> None:
         )
 
 
-@router.get("/entities", response_model=s.EntityList, tags=["entities"])
+@project_router.get("/entities", response_model=s.EntityList, tags=["entities"])
 def list_entities(
     type: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     graph: GraphRepository = Depends(get_graph),
-    scope: AccessScope = Depends(get_workspace_scope),
+    scope: AccessScope = Depends(get_project_scope),
 ) -> s.EntityList:
-    nodes = graph.get_nodes(workspace_id=scope.workspace_id or "", node_type=type)
+    nodes = graph.get_nodes(
+        workspace_id=scope.workspace_id or "", project_id=scope.project_id or "", node_type=type
+    )
     page = nodes[offset : offset + limit]
     return s.EntityList(
         items=[s.entity_from_node(node) for node in page],
@@ -58,19 +60,21 @@ def list_entities(
     )
 
 
-@router.get("/entities/search", response_model=s.EntitySearchList, tags=["entities"])
+@project_router.get("/entities/search", response_model=s.EntitySearchList, tags=["entities"])
 def search_entities(
     q: str = Query(min_length=2),
     type: str | None = Query(default=None),
     graph: GraphRepository = Depends(get_graph),
-    scope: AccessScope = Depends(get_workspace_scope),
+    scope: AccessScope = Depends(get_project_scope),
 ) -> s.EntitySearchList:
-    results = graph.search_nodes_by_name(q, workspace_id=scope.workspace_id or "", type=type)
+    results = graph.search_nodes_by_name(
+        q, workspace_id=scope.workspace_id or "", project_id=scope.project_id or "", type=type
+    )
     items = [s.EntitySearchItem(id=r["id"], name=r["name"], type=r["type"]) for r in results]
     return s.EntitySearchList(items=items, total=len(items))
 
 
-@router.post(
+@project_router.post(
     "/entities",
     response_model=s.Entity,
     status_code=status.HTTP_201_CREATED,
@@ -81,7 +85,7 @@ def create_entity(
     graph: GraphRepository = Depends(get_graph),
     embeddings: EmbeddingPort = Depends(get_embeddings),
     registry: SchemaRegistryPort = Depends(get_schema_registry),
-    scope: AccessScope = Depends(require_workspace_scope),
+    scope: AccessScope = Depends(require_project_scope),
 ) -> s.Entity:
     _validate_identifier(body.id, "entity id")
     _validate_identifier(body.type, "entity type")
@@ -96,31 +100,34 @@ def create_entity(
         properties=body.properties,
         embedding=embedding,
         workspace_id=scope.workspace_id,
+        project_id=scope.project_id,
     )
     graph.add_node(node)
     return s.entity_from_node(node)
 
 
-@router.get("/entities/{entity_id}", response_model=s.Entity, tags=["entities"])
+@project_router.get("/entities/{entity_id}", response_model=s.Entity, tags=["entities"])
 def get_entity(
     entity_id: str,
     graph: GraphRepository = Depends(get_graph),
-    scope: AccessScope = Depends(get_workspace_scope),
+    scope: AccessScope = Depends(get_project_scope),
 ) -> s.Entity:
-    node = graph.get_node(entity_id, workspace_id=scope.workspace_id or "")
+    node = graph.get_node(
+        entity_id, workspace_id=scope.workspace_id or "", project_id=scope.project_id or ""
+    )
     if node is None:
         raise NotFoundError(f"Entity {entity_id!r} not found")
     return s.entity_from_node(node)
 
 
-@router.put("/entities/{entity_id}", response_model=s.Entity, tags=["entities"])
+@project_router.put("/entities/{entity_id}", response_model=s.Entity, tags=["entities"])
 def update_entity(
     entity_id: str,
     body: s.EntityUpdate,
     graph: GraphRepository = Depends(get_graph),
     embeddings: EmbeddingPort = Depends(get_embeddings),
     registry: SchemaRegistryPort = Depends(get_schema_registry),
-    scope: AccessScope = Depends(require_workspace_scope),
+    scope: AccessScope = Depends(require_project_scope),
 ) -> s.Entity:
     if body.id is not None and body.id != entity_id:
         raise ValidationError("Body id does not match the path id.")
@@ -130,7 +137,8 @@ def update_entity(
             f"Unknown node type {body.type!r}. Register it via the schema API first."
         )
     workspace_id = scope.workspace_id or ""
-    existing = graph.get_node(entity_id, workspace_id=workspace_id)
+    project_id = scope.project_id or ""
+    existing = graph.get_node(entity_id, workspace_id=workspace_id, project_id=project_id)
     if existing is None:
         raise NotFoundError(f"Entity {entity_id!r} not found")
     if existing.type != body.type:
@@ -144,6 +152,7 @@ def update_entity(
         properties=body.properties,
         embedding=embedding,
         workspace_id=scope.workspace_id,
+        project_id=scope.project_id,
     )
     updated = graph.update_node(node)
     if updated is None:
@@ -151,7 +160,7 @@ def update_entity(
     return s.entity_from_node(updated)
 
 
-@router.delete(
+@project_router.delete(
     "/entities/{entity_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     tags=["entities"],
@@ -159,22 +168,25 @@ def update_entity(
 def delete_entity(
     entity_id: str,
     graph: GraphRepository = Depends(get_graph),
-    scope: AccessScope = Depends(require_workspace_scope),
+    scope: AccessScope = Depends(require_project_scope),
 ) -> None:
-    if not graph.delete_node(entity_id, workspace_id=scope.workspace_id or ""):
+    if not graph.delete_node(
+        entity_id, workspace_id=scope.workspace_id or "", project_id=scope.project_id or ""
+    ):
         raise NotFoundError(f"Entity {entity_id!r} not found")
 
 
-@router.get("/entities/{entity_id}/edges", response_model=s.EdgeList, tags=["entities"])
+@project_router.get("/entities/{entity_id}/edges", response_model=s.EdgeList, tags=["entities"])
 def list_entity_edges(
     entity_id: str,
     graph: GraphRepository = Depends(get_graph),
-    scope: AccessScope = Depends(get_workspace_scope),
+    scope: AccessScope = Depends(get_project_scope),
 ) -> s.EdgeList:
     workspace_id = scope.workspace_id or ""
-    if graph.get_node(entity_id, workspace_id=workspace_id) is None:
+    project_id = scope.project_id or ""
+    if graph.get_node(entity_id, workspace_id=workspace_id, project_id=project_id) is None:
         raise NotFoundError(f"Entity {entity_id!r} not found")
-    edges = graph.get_edges(entity_id, workspace_id=workspace_id)
+    edges = graph.get_edges(entity_id, workspace_id=workspace_id, project_id=project_id)
     return s.EdgeList(
         items=[s.edge_from_domain(edge) for edge in edges],
         total=len(edges),
@@ -183,7 +195,7 @@ def list_entity_edges(
     )
 
 
-@router.post(
+@project_router.post(
     "/edges",
     response_model=s.EdgeModel,
     status_code=status.HTTP_201_CREATED,
@@ -193,7 +205,7 @@ def create_edge(
     body: s.EdgeCreate,
     graph: GraphRepository = Depends(get_graph),
     registry: SchemaRegistryPort = Depends(get_schema_registry),
-    scope: AccessScope = Depends(require_workspace_scope),
+    scope: AccessScope = Depends(require_project_scope),
 ) -> s.EdgeModel:
     _validate_identifier(body.type, "edge type")
     if not registry.is_valid_edge_type(body.type):
@@ -201,9 +213,10 @@ def create_edge(
             f"Unknown edge type {body.type!r}. Register it via the schema API first."
         )
     workspace_id = scope.workspace_id or ""
-    if graph.get_node(body.source, workspace_id=workspace_id) is None:
+    project_id = scope.project_id or ""
+    if graph.get_node(body.source, workspace_id=workspace_id, project_id=project_id) is None:
         raise ValidationError(f"Source entity {body.source!r} not found")
-    if graph.get_node(body.target, workspace_id=workspace_id) is None:
+    if graph.get_node(body.target, workspace_id=workspace_id, project_id=project_id) is None:
         raise ValidationError(f"Target entity {body.target!r} not found")
     edge = Edge(
         source=body.source,
@@ -211,22 +224,25 @@ def create_edge(
         type=body.type,
         properties=body.properties,
         workspace_id=scope.workspace_id,
+        project_id=scope.project_id,
     )
     graph.add_edge(edge)
     return s.edge_from_domain(edge)
 
 
-@router.get("/edges", response_model=s.EdgeList, tags=["edges"])
+@project_router.get("/edges", response_model=s.EdgeList, tags=["edges"])
 def list_edges(
     source_id: str = Query(...),
     target_id: str = Query(...),
     type: str | None = Query(default=None),
     graph: GraphRepository = Depends(get_graph),
-    scope: AccessScope = Depends(get_workspace_scope),
+    scope: AccessScope = Depends(get_project_scope),
 ) -> s.EdgeList:
     edges = [
         edge
-        for edge in graph.get_edges(source_id, workspace_id=scope.workspace_id or "")
+        for edge in graph.get_edges(
+            source_id, workspace_id=scope.workspace_id or "", project_id=scope.project_id or ""
+        )
         if edge.target == target_id and (type is None or edge.type == type)
     ]
     return s.EdgeList(
@@ -237,14 +253,14 @@ def list_edges(
     )
 
 
-@router.get("/schema/node-types", response_model=s.SchemaTypesResponse, tags=["schema"])
+@project_router.get("/schema/node-types", response_model=s.SchemaTypesResponse, tags=["schema"])
 def list_node_types(
     registry: SchemaRegistryPort = Depends(get_schema_registry),
 ) -> s.SchemaTypesResponse:
     return s.SchemaTypesResponse(types=sorted(set(registry.get_all_node_types())))
 
 
-@router.post(
+@project_router.post(
     "/schema/node-types",
     response_model=s.SchemaTypesResponse,
     status_code=status.HTTP_201_CREATED,
@@ -260,7 +276,7 @@ def add_node_type(
     return s.SchemaTypesResponse(types=sorted(set(registry.get_all_node_types())))
 
 
-@router.delete(
+@project_router.delete(
     "/schema/node-types/{node_type}", response_model=s.SchemaTypesResponse, tags=["schema"]
 )
 def remove_node_type(
@@ -272,14 +288,14 @@ def remove_node_type(
     return s.SchemaTypesResponse(types=sorted(set(registry.get_all_node_types())))
 
 
-@router.get("/schema/edge-types", response_model=s.SchemaTypesResponse, tags=["schema"])
+@project_router.get("/schema/edge-types", response_model=s.SchemaTypesResponse, tags=["schema"])
 def list_edge_types(
     registry: SchemaRegistryPort = Depends(get_schema_registry),
 ) -> s.SchemaTypesResponse:
     return s.SchemaTypesResponse(types=sorted(set(registry.get_all_edge_types())))
 
 
-@router.post(
+@project_router.post(
     "/schema/edge-types",
     response_model=s.SchemaTypesResponse,
     status_code=status.HTTP_201_CREATED,
@@ -295,7 +311,7 @@ def add_edge_type(
     return s.SchemaTypesResponse(types=sorted(set(registry.get_all_edge_types())))
 
 
-@router.delete(
+@project_router.delete(
     "/schema/edge-types/{edge_type}", response_model=s.SchemaTypesResponse, tags=["schema"]
 )
 def remove_edge_type(
@@ -307,15 +323,16 @@ def remove_edge_type(
     return s.SchemaTypesResponse(types=sorted(set(registry.get_all_edge_types())))
 
 
-@router.post("/context", response_model=s.ContextResponse, tags=["context"])
+@project_router.post("/context", response_model=s.ContextResponse, tags=["context"])
 def build_context(
     body: s.ContextRequest,
     graph: GraphRepository = Depends(get_graph),
     embeddings: EmbeddingPort = Depends(get_embeddings),
-    scope: AccessScope = Depends(get_workspace_scope),
+    scope: AccessScope = Depends(get_project_scope),
 ) -> s.ContextResponse:
     policy = get_policy(body.context_type)
     workspace_id = scope.workspace_id or ""
+    project_id = scope.project_id or ""
     explicit_anchors = extract_entity_ids(body.text)
 
     semantic_anchors: list[str] = []
@@ -325,6 +342,7 @@ def build_context(
             semantic_anchors = graph.search_semantic_nodes(
                 embedding,
                 workspace_id=workspace_id,
+                project_id=project_id,
                 top_k=policy.semantic_top_k,
                 min_score=policy.semantic_min_score,
             )
@@ -333,7 +351,7 @@ def build_context(
     if not anchors:
         return s.ContextResponse(nodes=[], summary="", policy_used=policy.context_type.value)
 
-    subgraph = graph.traverse(anchors, policy, workspace_id=workspace_id)
+    subgraph = graph.traverse(anchors, policy, workspace_id=workspace_id, project_id=project_id)
     nodes = [
         s.ContextNode(
             id=item["id"],
@@ -351,14 +369,14 @@ def build_context(
     )
 
 
-@router.post("/rag/query", tags=["rag"])
+@project_router.post("/rag/query", tags=["rag"])
 def rag_query(body: s.QueryRequest) -> None:
     raise FeatureNotImplementedError(
         "RAG answer generation is not implemented. Use /api/v1/context for retrieval."
     )
 
 
-@router.post(
+@project_router.post(
     "/characters/init",
     response_model=s.Entity,
     status_code=status.HTTP_201_CREATED,
@@ -367,21 +385,31 @@ def rag_query(body: s.QueryRequest) -> None:
 def character_init(
     body: s.CharacterInitRequest,
     service: CharacterService = Depends(get_character_service),
-    scope: AccessScope = Depends(require_workspace_scope),
+    scope: AccessScope = Depends(require_project_scope),
 ) -> s.Entity:
-    node = service.init_character_anchor(body.name, body.bio, workspace_id=scope.workspace_id or "")
+    node = service.init_character_anchor(
+        body.name,
+        body.bio,
+        workspace_id=scope.workspace_id or "",
+        project_id=scope.project_id or "",
+    )
     return s.entity_from_node(node)
 
 
-@router.post("/characters/generate-questions", response_model=s.QuestionSheet, tags=["characters"])
+@project_router.post(
+    "/characters/generate-questions", response_model=s.QuestionSheet, tags=["characters"]
+)
 async def character_generate_questions(
     body: s.CharacterQuestionsRequest,
     service: CharacterService = Depends(get_character_service),
-    scope: AccessScope = Depends(get_workspace_scope),
+    scope: AccessScope = Depends(get_project_scope),
 ) -> s.QuestionSheet:
     try:
         sheet = await service.generate_questions(
-            body.id, body.use_cache, workspace_id=scope.workspace_id or ""
+            body.id,
+            body.use_cache,
+            workspace_id=scope.workspace_id or "",
+            project_id=scope.project_id or "",
         )
     except ValueError as error:
         raise NotFoundError(str(error)) from error
@@ -400,19 +428,25 @@ async def character_generate_questions(
     )
 
 
-@router.post(
+@project_router.post(
     "/characters/process-answers", response_model=s.GraphUpdateResponse, tags=["characters"]
 )
 async def character_process_answers(
     body: s.CharacterAnswersRequest,
     service: CharacterService = Depends(get_character_service),
     container: Container = Depends(get_container),
-    scope: AccessScope = Depends(require_workspace_scope),
+    scope: AccessScope = Depends(require_project_scope),
 ) -> s.GraphUpdateResponse:
     workspace_id = scope.workspace_id or ""
+    project_id = scope.project_id or ""
     try:
         update = await service.process_answers(
-            body.id, body.chapter, body.answers, body.use_cache, workspace_id=workspace_id
+            body.id,
+            body.chapter,
+            body.answers,
+            body.use_cache,
+            workspace_id=workspace_id,
+            project_id=project_id,
         )
     except ValueError as error:
         raise NotFoundError(str(error)) from error
@@ -426,6 +460,7 @@ async def character_process_answers(
                 properties=node_data.properties,
                 embedding=embedding,
                 workspace_id=scope.workspace_id,
+                project_id=scope.project_id,
             )
         )
     for edge_data in update.edges:
@@ -436,6 +471,7 @@ async def character_process_answers(
                 type=edge_data.type,
                 properties=edge_data.properties,
                 workspace_id=scope.workspace_id,
+                project_id=scope.project_id,
             )
         )
 
@@ -443,3 +479,11 @@ async def character_process_answers(
         nodes=[s.NodeUpdateItem(**node.model_dump()) for node in update.nodes],
         edges=[s.EdgeUpdateItem(**edge.model_dump()) for edge in update.edges],
     )
+
+
+# Canonical surface: /api/v1/projects/{project_id}/...
+# Temporary compatibility aliases keep the pre-project paths but still resolve a
+# specific project (path, X-Project-Id header, or the local project).
+router = APIRouter()
+router.include_router(project_router, prefix="/projects/{project_id}", tags=["projects"])
+router.include_router(project_router, tags=["legacy"])

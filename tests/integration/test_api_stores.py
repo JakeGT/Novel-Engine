@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from backend.adapters.artifacts import NullArtifactStore
 from backend.adapters.graph import Neo4jGraphRepository, Neo4jMigrationVerifier
 from backend.adapters.vector import PgVectorStore
-from backend.api.auth import get_workspace_scope, require_workspace_scope
+from backend.api.auth import get_project_scope, require_project_scope
 from backend.container import Container
 from backend.domain.identity import AccessScope, AuthMode
 from backend.graph.manager import GraphManager
@@ -61,13 +61,18 @@ def container(neo4j_driver, neo4j_settings, disposable_database, tmp_path) -> It
 @pytest.fixture
 def client(container: Container) -> Iterator[TestClient]:
     app = create_app(container=container)
-    scope = AccessScope(actor_user_id="tester", auth_mode=AuthMode.LOCAL, workspace_id="ws-test")
+    scope = AccessScope(
+        actor_user_id="tester",
+        auth_mode=AuthMode.LOCAL,
+        workspace_id="ws-test",
+        project_id="prj-test",
+    )
 
     async def _scope() -> AccessScope:
         return scope
 
-    app.dependency_overrides[get_workspace_scope] = _scope
-    app.dependency_overrides[require_workspace_scope] = _scope
+    app.dependency_overrides[get_project_scope] = _scope
+    app.dependency_overrides[require_project_scope] = _scope
     with TestClient(app) as test_client:
         yield test_client
 

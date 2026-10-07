@@ -16,6 +16,7 @@ from backend.core.config import Settings
 from backend.core.logging import log_event
 from backend.domain.errors import ForbiddenError, UnauthorizedError, ValidationError
 from backend.domain.identity import AccessScope, AuthMode, Session
+from backend.domain.tenancy import Permission
 from backend.services.auth_service import AuthenticatedSession, AuthService
 from backend.services.tenancy_service import TenancyService
 
@@ -148,6 +149,79 @@ async def require_workspace_scope(
 ) -> AccessScope:
     """CSRF-protected workspace scope for graph/vector mutations."""
     return await _resolve_workspace_scope(request, auth_session, settings, tenancy)
+
+
+async def _resolve_project_scope(
+    request: Request,
+    auth_session: AuthenticatedSession,
+    settings: Settings,
+    tenancy: TenancyService,
+    *,
+    permission: Permission,
+) -> AccessScope:
+    """Resolve and authorize the active workspace **and** project.
+
+    Local mode uses the explicit local workspace/project (trusted single user).
+    Hosted mode requires ``X-Workspace-Id`` and takes the project from the
+    ``/projects/{project_id}`` path (or an ``X-Project-Id`` header on aliases),
+    then authorizes membership in the workspace and proves the project belongs to it.
+    """
+    mode = AuthMode.HOSTED if settings.is_hosted else AuthMode.LOCAL
+    correlation_id = getattr(request.state, "correlation_id", "")
+    if mode is AuthMode.LOCAL:
+        return AccessScope(
+            actor_user_id=auth_session.user.id,
+            auth_mode=mode,
+            correlation_id=correlation_id,
+            workspace_id=settings.AUTH_LOCAL_WORKSPACE_ID,
+            project_id=settings.AUTH_LOCAL_PROJECT_ID,
+        )
+
+    workspace_id = request.headers.get("X-Workspace-Id") or request.headers.get("x-workspace-id")
+    if not workspace_id:
+        raise ValidationError("X-Workspace-Id header is required in hosted mode.")
+    project_id = (
+        request.path_params.get("project_id")
+        or request.headers.get("X-Project-Id")
+        or request.headers.get("x-project-id")
+    )
+    if not project_id:
+        raise ValidationError(
+            "X-Project-Id header or a /projects/{project_id} path is required in hosted mode."
+        )
+    scope = AccessScope(
+        actor_user_id=auth_session.user.id,
+        auth_mode=mode,
+        correlation_id=correlation_id,
+        workspace_id=workspace_id,
+        project_id=project_id,
+    )
+    await tenancy.require_project(scope, workspace_id, project_id, permission)
+    return scope
+
+
+async def get_project_scope(
+    request: Request,
+    auth_session: AuthenticatedSession = Depends(require_session),
+    settings: Settings = Depends(get_settings),
+    tenancy: TenancyService = Depends(get_tenancy_service),
+) -> AccessScope:
+    """Read-only project scope for project-owned routes."""
+    return await _resolve_project_scope(
+        request, auth_session, settings, tenancy, permission=Permission.PROJECT_READ
+    )
+
+
+async def require_project_scope(
+    request: Request,
+    auth_session: AuthenticatedSession = Depends(require_csrf),
+    settings: Settings = Depends(get_settings),
+    tenancy: TenancyService = Depends(get_tenancy_service),
+) -> AccessScope:
+    """CSRF-protected project scope for project-owned mutations."""
+    return await _resolve_project_scope(
+        request, auth_session, settings, tenancy, permission=Permission.PROJECT_WRITE
+    )
 
 
 @router.get("/login")

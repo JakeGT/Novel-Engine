@@ -57,5 +57,8 @@ def test_character_process_answers_writes_graph(auth_client, fake_container) -> 
     assert response.status_code == 200
     assert response.json()["nodes"][0]["id"] == "app_char_arin"
     assert (
-        fake_container.graph.get_node("app_char_arin", workspace_id="local-workspace") is not None
+        fake_container.graph.get_node(
+            "app_char_arin", workspace_id="local-workspace", project_id="local-project"
+        )
+        is not None
     )

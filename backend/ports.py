@@ -30,28 +30,34 @@ class IdGenerator(Protocol):
 
 @runtime_checkable
 class GraphRepository(Protocol):
-    """Canonical story graph. Every operation is confined to one workspace."""
+    """Canonical story graph. Every operation is confined to one workspace and project."""
 
     def add_node(self, node: Node) -> None: ...
 
-    def get_node(self, node_id: str, *, workspace_id: str) -> Node | None: ...
+    def get_node(self, node_id: str, *, workspace_id: str, project_id: str) -> Node | None: ...
 
     def update_node(self, node: Node) -> Node | None: ...
 
     def add_edge(self, edge: Edge) -> None: ...
 
-    def get_edges(self, node_id: str, *, workspace_id: str) -> list[Edge]: ...
+    def get_edges(self, node_id: str, *, workspace_id: str, project_id: str) -> list[Edge]: ...
 
     def get_nodes(
         self,
         *,
         workspace_id: str,
+        project_id: str,
         node_type: str | None = None,
         node_id: str | None = None,
     ) -> list[Node]: ...
 
     def search_nodes_by_name(
-        self, query: str, *, workspace_id: str, type: str | None = None
+        self,
+        query: str,
+        *,
+        workspace_id: str,
+        project_id: str,
+        type: str | None = None,
     ) -> list[dict[str, Any]]: ...
 
     def search_semantic_nodes(
@@ -59,15 +65,21 @@ class GraphRepository(Protocol):
         embedding: Sequence[float],
         *,
         workspace_id: str,
+        project_id: str,
         top_k: int = 5,
         min_score: float = 0.5,
     ) -> list[str]: ...
 
     def traverse(
-        self, anchor_ids: Sequence[str], policy: Any, *, workspace_id: str
+        self,
+        anchor_ids: Sequence[str],
+        policy: Any,
+        *,
+        workspace_id: str,
+        project_id: str,
     ) -> list[dict[str, Any]]: ...
 
-    def delete_node(self, node_id: str, *, workspace_id: str) -> bool: ...
+    def delete_node(self, node_id: str, *, workspace_id: str, project_id: str) -> bool: ...
 
     def ping(self) -> bool: ...
 
@@ -83,13 +95,19 @@ class VectorStorePort(Protocol):
         ids: list[str],
         *,
         workspace_id: str,
+        project_id: str,
     ) -> None: ...
 
     def query(
-        self, query_text: str, *, workspace_id: str, n_results: int = 5
+        self,
+        query_text: str,
+        *,
+        workspace_id: str,
+        project_id: str,
+        n_results: int = 5,
     ) -> list[dict[str, Any]]: ...
 
-    def delete(self, ids: Sequence[str], *, workspace_id: str) -> None: ...
+    def delete(self, ids: Sequence[str], *, workspace_id: str, project_id: str) -> None: ...
 
     def health(self) -> bool: ...
 
@@ -181,9 +199,11 @@ class AIGateway(Protocol):
 
 @runtime_checkable
 class ArtifactStore(Protocol):
-    def save(self, key: str, payload: str, *, workspace_id: str) -> None: ...
+    """Debug artifact store (text payloads). Product object storage is the ObjectStorePort."""
 
-    def load(self, key: str, *, workspace_id: str) -> str | None: ...
+    def save(self, key: str, payload: str, *, workspace_id: str, project_id: str) -> None: ...
+
+    def load(self, key: str, *, workspace_id: str, project_id: str) -> str | None: ...
 
 
 @dataclass

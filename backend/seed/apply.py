@@ -2,8 +2,8 @@
 
 Seeding is idempotent: nodes and edges are upserted through the graph
 repository port, and vector documents are upserted by stable id. Every record is
-written into the reference workspace. Nothing here imports a driver or opens a
-connection at module import time.
+written into the reference workspace and project. Nothing here imports a driver or
+opens a connection at module import time.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from backend.seed.manifest import SeedManifest
 
 DOCUMENT_ID_PREFIX = "seed:"
 SEED_WORKSPACE_ID = "ws_seed_harbor"
+SEED_PROJECT_ID = "prj_seed_harbor"
 
 
 @dataclass
@@ -35,7 +36,11 @@ class SeedReport:
 
 
 def apply_graph(
-    graph: GraphRepository, manifest: SeedManifest, *, workspace_id: str = SEED_WORKSPACE_ID
+    graph: GraphRepository,
+    manifest: SeedManifest,
+    *,
+    workspace_id: str = SEED_WORKSPACE_ID,
+    project_id: str = SEED_PROJECT_ID,
 ) -> tuple[int, int]:
     for node in manifest.nodes:
         graph.add_node(
@@ -44,6 +49,7 @@ def apply_graph(
                 type=node.type,
                 properties=dict(node.properties),
                 workspace_id=workspace_id,
+                project_id=project_id,
             )
         )
     for edge in manifest.edges:
@@ -54,6 +60,7 @@ def apply_graph(
                 type=edge.type,
                 properties=dict(edge.properties),
                 workspace_id=workspace_id,
+                project_id=project_id,
             )
         )
     return len(manifest.nodes), len(manifest.edges)
@@ -65,6 +72,7 @@ def index_documents(
     manifest: SeedManifest,
     *,
     workspace_id: str = SEED_WORKSPACE_ID,
+    project_id: str = SEED_PROJECT_ID,
 ) -> tuple[int, int]:
     """Index prose snippets when embeddings are available; otherwise skip."""
     if not embeddings.available():
@@ -81,29 +89,43 @@ def index_documents(
         ids.append(f"{DOCUMENT_ID_PREFIX}{document.id}")
 
     vectors.add_documents(
-        documents=documents, metadatas=metadatas, ids=ids, workspace_id=workspace_id
+        documents=documents,
+        metadatas=metadatas,
+        ids=ids,
+        workspace_id=workspace_id,
+        project_id=project_id,
     )
     return len(ids), 0
 
 
 def run_expected_queries(
-    graph: GraphRepository, manifest: SeedManifest, *, workspace_id: str = SEED_WORKSPACE_ID
+    graph: GraphRepository,
+    manifest: SeedManifest,
+    *,
+    workspace_id: str = SEED_WORKSPACE_ID,
+    project_id: str = SEED_PROJECT_ID,
 ) -> dict[str, list[str]]:
     results: dict[str, list[str]] = {}
     for query in manifest.queries:
         if query.kind == "name_search":
             found = [
                 match["id"]
-                for match in graph.search_nodes_by_name(query.argument, workspace_id=workspace_id)
+                for match in graph.search_nodes_by_name(
+                    query.argument, workspace_id=workspace_id, project_id=project_id
+                )
             ]
         elif query.kind == "node_type":
             found = [
                 node.id
-                for node in graph.get_nodes(workspace_id=workspace_id, node_type=query.argument)
+                for node in graph.get_nodes(
+                    workspace_id=workspace_id, project_id=project_id, node_type=query.argument
+                )
             ]
         elif query.kind == "neighbors":
             found = []
-            for edge in graph.get_edges(query.argument, workspace_id=workspace_id):
+            for edge in graph.get_edges(
+                query.argument, workspace_id=workspace_id, project_id=project_id
+            ):
                 found.append(edge.target if edge.source == query.argument else edge.source)
         else:
             raise ValueError(f"Unknown seed query kind: {query.kind}")
@@ -112,19 +134,23 @@ def run_expected_queries(
 
 
 def verify_manifest(
-    graph: GraphRepository, manifest: SeedManifest, *, workspace_id: str = SEED_WORKSPACE_ID
+    graph: GraphRepository,
+    manifest: SeedManifest,
+    *,
+    workspace_id: str = SEED_WORKSPACE_ID,
+    project_id: str = SEED_PROJECT_ID,
 ) -> list[str]:
     problems: list[str] = []
 
     for node in manifest.nodes:
-        stored = graph.get_node(node.id, workspace_id=workspace_id)
+        stored = graph.get_node(node.id, workspace_id=workspace_id, project_id=project_id)
         if stored is None:
             problems.append(f"missing node {node.id}")
         elif stored.type != node.type:
             problems.append(f"node {node.id} type {stored.type!r} != {node.type!r}")
 
     for edge in manifest.edges:
-        edges = graph.get_edges(edge.source, workspace_id=workspace_id)
+        edges = graph.get_edges(edge.source, workspace_id=workspace_id, project_id=project_id)
         if not any(
             candidate.target == edge.target and candidate.type == edge.type for candidate in edges
         ):
@@ -132,7 +158,9 @@ def verify_manifest(
 
     for query in manifest.queries:
         expected = sorted(query.expected_ids)
-        actual = run_expected_queries(graph, manifest, workspace_id=workspace_id).get(query.id, [])
+        actual = run_expected_queries(
+            graph, manifest, workspace_id=workspace_id, project_id=project_id
+        ).get(query.id, [])
         if actual != expected:
             problems.append(f"query {query.id} expected {expected} got {actual}")
 
@@ -146,6 +174,7 @@ def apply_manifest(
     embeddings: EmbeddingPort | None = None,
     *,
     workspace_id: str = SEED_WORKSPACE_ID,
+    project_id: str = SEED_PROJECT_ID,
 ) -> SeedReport:
     report = SeedReport(
         version=manifest.version,
@@ -153,13 +182,15 @@ def apply_manifest(
         counts=manifest.counts(),
     )
     report.applied_nodes, report.applied_edges = apply_graph(
-        graph, manifest, workspace_id=workspace_id
+        graph, manifest, workspace_id=workspace_id, project_id=project_id
     )
 
     if vectors is not None and embeddings is not None:
         report.indexed_documents, report.skipped_documents = index_documents(
-            vectors, embeddings, manifest, workspace_id=workspace_id
+            vectors, embeddings, manifest, workspace_id=workspace_id, project_id=project_id
         )
 
-    report.problems = verify_manifest(graph, manifest, workspace_id=workspace_id)
+    report.problems = verify_manifest(
+        graph, manifest, workspace_id=workspace_id, project_id=project_id
+    )
     return report

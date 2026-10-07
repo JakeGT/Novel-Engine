@@ -66,6 +66,7 @@ class PgVectorStore:
         ids: list[str],
         *,
         workspace_id: str,
+        project_id: str,
     ) -> None:
         self._require_supported_dimension()
         with self._connect() as connection:
@@ -84,13 +85,12 @@ class PgVectorStore:
                 connection.execute(
                     """
                     INSERT INTO vector_documents (
-                        id, workspace_id, document, metadata, embedding,
+                        id, workspace_id, project_id, document, metadata, embedding,
                         embedding_model, embedding_version, embedding_dimension
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (id) DO UPDATE
-                        SET workspace_id = EXCLUDED.workspace_id,
-                            document = EXCLUDED.document,
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (workspace_id, project_id, id) DO UPDATE
+                        SET document = EXCLUDED.document,
                             metadata = EXCLUDED.metadata,
                             embedding = EXCLUDED.embedding,
                             embedding_model = EXCLUDED.embedding_model,
@@ -100,6 +100,7 @@ class PgVectorStore:
                     (
                         document_id,
                         workspace_id,
+                        project_id,
                         document,
                         Jsonb(metadata),
                         Vector(embedding),
@@ -111,7 +112,12 @@ class PgVectorStore:
 
     @instrument("vector.query", logger)
     def query(
-        self, query_text: str, *, workspace_id: str, n_results: int = 5
+        self,
+        query_text: str,
+        *,
+        workspace_id: str,
+        project_id: str,
+        n_results: int = 5,
     ) -> list[dict[str, Any]]:
         self._require_supported_dimension()
         embedding = self._embeddings.embed(query_text)
@@ -123,11 +129,11 @@ class PgVectorStore:
                 SELECT id, document, metadata, 1 - (embedding <=> %s) AS score,
                        embedding_model, embedding_version, embedding_dimension
                 FROM vector_documents
-                WHERE workspace_id = %s
+                WHERE workspace_id = %s AND project_id = %s
                 ORDER BY embedding <=> %s
                 LIMIT %s
                 """,
-                (Vector(embedding), workspace_id, Vector(embedding), n_results),
+                (Vector(embedding), workspace_id, project_id, Vector(embedding), n_results),
             ).fetchall()
         return [
             {
@@ -143,13 +149,14 @@ class PgVectorStore:
         ]
 
     @instrument("vector.delete", logger)
-    def delete(self, ids: Sequence[str], *, workspace_id: str) -> None:
+    def delete(self, ids: Sequence[str], *, workspace_id: str, project_id: str) -> None:
         if not ids:
             return
         with self._connect() as connection:
             connection.execute(
-                "DELETE FROM vector_documents WHERE id = ANY(%s) AND workspace_id = %s",
-                (list(ids), workspace_id),
+                "DELETE FROM vector_documents "
+                "WHERE id = ANY(%s) AND workspace_id = %s AND project_id = %s",
+                (list(ids), workspace_id, project_id),
             )
 
     def health(self) -> bool:

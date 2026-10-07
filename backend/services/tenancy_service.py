@@ -143,6 +143,20 @@ class TenancyService:
             raise NotFoundError("Workspace not found.")
         return workspace
 
+    async def require_project(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        permission: Permission = Permission.PROJECT_READ,
+    ) -> Project:
+        """Authorize the actor for a project and confirm it belongs to the workspace."""
+        await self._authorize(scope, workspace_id, permission)
+        project = await self._store.get_project(project_id)
+        if project is None or project.workspace_id != workspace_id:
+            raise NotFoundError("Project not found.")
+        return project
+
     async def delete_workspace(self, scope: AccessScope, workspace_id: str) -> bool:
         await self._authorize(scope, workspace_id, Permission.WORKSPACE_ADMIN)
         existing = await self._store.get_workspace(workspace_id)

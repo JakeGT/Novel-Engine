@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     AUTH_MODE: Literal["local", "hosted"] = "local"
     AUTH_LOCAL_USER_ID: str = "local-user"
     AUTH_LOCAL_WORKSPACE_ID: str = "local-workspace"
+    AUTH_LOCAL_PROJECT_ID: str = "local-project"
 
     OIDC_ISSUER: str = ""
     OIDC_CLIENT_ID: str = ""

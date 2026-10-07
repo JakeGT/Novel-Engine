@@ -13,11 +13,12 @@ logger = logging.getLogger(__name__)
 
 
 class GraphManager:
-    """Neo4j persistence with mandatory workspace scoping.
+    """Neo4j persistence with mandatory workspace + project scoping.
 
-    Every read and write is filtered by ``workspace_id``. ``add_node`` will not
-    mutate a node owned by another workspace (global entity IDs are unique), and
-    ``add_edge`` only creates edges when both endpoints are in the same workspace.
+    Every read and write is filtered by ``workspace_id`` and ``project_id``.
+    ``add_node`` will not mutate a node owned by another workspace or project
+    (global entity IDs are unique), and ``add_edge`` only creates edges when both
+    endpoints are in the same workspace and project.
     """
 
     def __init__(self, settings: Settings | None = None):
@@ -43,7 +44,9 @@ class GraphManager:
         MERGE (n:Entity {{id: $id}})
         ON CREATE SET n.created_at = $created_at
         WITH n
-        WHERE n.workspace_id IS NULL OR n.workspace_id = $workspace_id
+        WHERE n.workspace_id IS NULL
+           OR (n.workspace_id = $workspace_id
+               AND (n.project_id IS NULL OR n.project_id = $project_id))
         SET n:{label}, n += $properties
         SET n.workspace_id = $workspace_id, n.project_id = $project_id
         """
@@ -65,8 +68,8 @@ class GraphManager:
     def add_edge(self, edge: Edge):
         rel_type = self._validate_identifier(edge.type)
         query = f"""
-        MATCH (a:Entity {{id: $source, workspace_id: $workspace_id}}),
-              (b:Entity {{id: $target, workspace_id: $workspace_id}})
+        MATCH (a:Entity {{id: $source, workspace_id: $workspace_id, project_id: $project_id}}),
+              (b:Entity {{id: $target, workspace_id: $workspace_id, project_id: $project_id}})
         MERGE (a)-[r:{rel_type}]->(b)
         SET r += $properties, r.workspace_id = $workspace_id, r.project_id = $project_id
         RETURN r
@@ -90,20 +93,24 @@ class GraphManager:
         with self.driver.session() as session:
             session.run(query, edge_id=edge_id)
 
-    def get_node(self, node_id: str, *, workspace_id: str) -> dict[str, Any] | None:
+    def get_node(
+        self, node_id: str, *, workspace_id: str, project_id: str
+    ) -> dict[str, Any] | None:
         query = """
-        MATCH (n:Entity {id: $id, workspace_id: $workspace_id})
+        MATCH (n:Entity {id: $id, workspace_id: $workspace_id, project_id: $project_id})
         RETURN n, labels(n) as labels
         """
         with self.driver.session() as session:
-            record = session.run(query, id=node_id, workspace_id=workspace_id).single()
+            record = session.run(
+                query, id=node_id, workspace_id=workspace_id, project_id=project_id
+            ).single()
             if record:
                 return self._shape(record, "n", "labels")
             return None
 
     def update_node(self, node: Node) -> dict[str, Any] | None:
         query = """
-        MATCH (n:Entity {id: $id, workspace_id: $workspace_id})
+        MATCH (n:Entity {id: $id, workspace_id: $workspace_id, project_id: $project_id})
         SET n += $properties
         """
         if node.embedding is not None:
@@ -117,6 +124,7 @@ class GraphManager:
                 properties=node.properties,
                 embedding=node.embedding,
                 workspace_id=node.workspace_id,
+                project_id=node.project_id,
             ).single()
             if record:
                 return self._shape(record, "n", "labels")
@@ -132,19 +140,27 @@ class GraphManager:
         return node_data
 
     def get_neighbors(
-        self, node_id: str, *, workspace_id: str, edge_type: str | None = None
+        self,
+        node_id: str,
+        *,
+        workspace_id: str,
+        project_id: str,
+        edge_type: str | None = None,
     ) -> list[dict[str, Any]]:
         if edge_type:
             edge_type = self._validate_identifier(edge_type)
         rel_clause = f":{edge_type}" if edge_type else ""
         query = f"""
-        MATCH (n:Entity {{id: $id, workspace_id: $workspace_id}})-[r{rel_clause}]->
-              (m:Entity {{workspace_id: $workspace_id}})
+        MATCH (n:Entity {{id: $id, workspace_id: $workspace_id, project_id: $project_id}})
+              -[r{rel_clause}]->
+              (m:Entity {{workspace_id: $workspace_id, project_id: $project_id}})
         RETURN m, labels(m) as labels, type(r) as rel_type, properties(r) as rel_props
         """
         neighbors = []
         with self.driver.session() as session:
-            result = session.run(query, id=node_id, workspace_id=workspace_id)
+            result = session.run(
+                query, id=node_id, workspace_id=workspace_id, project_id=project_id
+            )
             for record in result:
                 neighbor_data = self._shape(record, "m", "labels")
                 neighbor_data["relationship"] = {
@@ -154,19 +170,23 @@ class GraphManager:
                 neighbors.append(neighbor_data)
         return neighbors
 
-    def get_edges(self, node_id: str, *, workspace_id: str) -> list[dict[str, Any]]:
+    def get_edges(
+        self, node_id: str, *, workspace_id: str, project_id: str
+    ) -> list[dict[str, Any]]:
         query = """
-        MATCH (n:Entity {id: $id, workspace_id: $workspace_id})-[r]->
-              (m:Entity {workspace_id: $workspace_id})
+        MATCH (n:Entity {id: $id, workspace_id: $workspace_id, project_id: $project_id})-[r]->
+              (m:Entity {workspace_id: $workspace_id, project_id: $project_id})
         RETURN n.id AS source, m.id AS target, type(r) AS type, properties(r) AS properties
         UNION
-        MATCH (n:Entity {id: $id, workspace_id: $workspace_id})<-[r]-
-              (m:Entity {workspace_id: $workspace_id})
+        MATCH (n:Entity {id: $id, workspace_id: $workspace_id, project_id: $project_id})<-[r]-
+              (m:Entity {workspace_id: $workspace_id, project_id: $project_id})
         RETURN m.id AS source, n.id AS target, type(r) AS type, properties(r) AS properties
         """
         edges = []
         with self.driver.session() as session:
-            result = session.run(query, id=node_id, workspace_id=workspace_id)
+            result = session.run(
+                query, id=node_id, workspace_id=workspace_id, project_id=project_id
+            )
             for record in result:
                 edges.append(
                     {
@@ -184,18 +204,24 @@ class GraphManager:
         target_id: str,
         *,
         workspace_id: str,
+        project_id: str,
         edge_type: str | None = None,
     ) -> list[dict[str, Any]]:
         rel_clause = f":{self._validate_identifier(edge_type)}" if edge_type else ""
         query = f"""
-        MATCH (a:Entity {{id: $source_id, workspace_id: $workspace_id}})-[r{rel_clause}]->
-              (b:Entity {{id: $target_id, workspace_id: $workspace_id}})
+        MATCH (a:Entity {{id: $source_id, workspace_id: $workspace_id, project_id: $project_id}})
+              -[r{rel_clause}]->
+              (b:Entity {{id: $target_id, workspace_id: $workspace_id, project_id: $project_id}})
         RETURN a.id AS source, b.id AS target, type(r) AS type, properties(r) AS properties
         """
         edges = []
         with self.driver.session() as session:
             result = session.run(
-                query, source_id=source_id, target_id=target_id, workspace_id=workspace_id
+                query,
+                source_id=source_id,
+                target_id=target_id,
+                workspace_id=workspace_id,
+                project_id=project_id,
             )
             for record in result:
                 edges.append(
@@ -219,6 +245,7 @@ class GraphManager:
         self,
         *,
         workspace_id: str,
+        project_id: str,
         node_type: str | None = None,
         node_id: str | None = None,
     ) -> list[dict[str, Any]]:
@@ -227,42 +254,53 @@ class GraphManager:
             label_clause = ":" + self._validate_identifier(node_type)
 
         id_clause = ""
-        params: dict[str, Any] = {"workspace_id": workspace_id}
+        params: dict[str, Any] = {"workspace_id": workspace_id, "project_id": project_id}
         if node_id:
             id_clause = "{id: $node_id}"
             params["node_id"] = node_id
 
         query = f"""
         MATCH (n:Entity{label_clause} {id_clause})
-        WHERE n.workspace_id = $workspace_id
+        WHERE n.workspace_id = $workspace_id AND n.project_id = $project_id
         RETURN n, labels(n) as labels
         """
         with self.driver.session() as session:
             result = session.run(query, **params)
             return [self._shape(record, "n", "labels") for record in result]
 
-    def delete_node(self, node_id: str, *, workspace_id: str) -> bool:
-        query = "MATCH (n:Entity {id: $id, workspace_id: $workspace_id}) DETACH DELETE n"
+    def delete_node(self, node_id: str, *, workspace_id: str, project_id: str) -> bool:
+        query = (
+            "MATCH (n:Entity {id: $id, workspace_id: $workspace_id, project_id: $project_id}) "
+            "DETACH DELETE n"
+        )
         with self.driver.session() as session:
-            result = session.run(query, id=node_id, workspace_id=workspace_id)
+            result = session.run(
+                query, id=node_id, workspace_id=workspace_id, project_id=project_id
+            )
             return result.consume().counters.nodes_deleted > 0
 
     def get_top_10_nodes_by_name_and_type(
-        self, node_type: str, name: str, *, workspace_id: str
+        self, node_type: str, name: str, *, workspace_id: str, project_id: str
     ) -> list[dict[str, Any]]:
         node_type = self._validate_identifier(node_type)
         query = f"""
         MATCH (n:Entity:{node_type})
-        WHERE n.workspace_id = $workspace_id AND toLower(n.name) CONTAINS toLower($name)
+        WHERE n.workspace_id = $workspace_id AND n.project_id = $project_id
+          AND toLower(n.name) CONTAINS toLower($name)
         RETURN n, labels(n) as labels
         LIMIT 10
         """
         with self.driver.session() as session:
-            result = session.run(query, name=name, workspace_id=workspace_id)
+            result = session.run(query, name=name, workspace_id=workspace_id, project_id=project_id)
             return [self._shape(record, "n", "labels") for record in result]
 
     def search_nodes_by_name(
-        self, query_string: str, *, workspace_id: str, type: str | None = None
+        self,
+        query_string: str,
+        *,
+        workspace_id: str,
+        project_id: str,
+        type: str | None = None,
     ) -> list[dict[str, Any]]:
         if type:
             type = self._validate_identifier(type)
@@ -271,14 +309,19 @@ class GraphManager:
             type = ""
         query = f"""
         MATCH (n:Entity{type})
-        WHERE n.workspace_id = $workspace_id
+        WHERE n.workspace_id = $workspace_id AND n.project_id = $project_id
           AND (toLower(n.name) CONTAINS toLower($query_str)
                OR toLower(n.id) CONTAINS toLower($query_str))
         RETURN n.id AS id, n.name AS name, labels(n) AS labels
         LIMIT 20
         """
         with self.driver.session() as session:
-            result = session.run(query, query_str=query_string, workspace_id=workspace_id)
+            result = session.run(
+                query,
+                query_str=query_string,
+                workspace_id=workspace_id,
+                project_id=project_id,
+            )
             nodes = []
             for record in result:
                 labels = [label for label in record["labels"] if label != "Entity"]
@@ -293,16 +336,17 @@ class GraphManager:
         embedding: list[float],
         *,
         workspace_id: str,
+        project_id: str,
         top_k: int = 5,
         min_score: float = 0.5,
     ) -> list[str]:
-        """Vector-index search restricted to the workspace."""
+        """Vector-index search restricted to the workspace and project."""
         query = """
         CALL db.index.vector.queryNodes('entity_embeddings', $top_k, $embedding)
         YIELD node, score
         WHERE score >= $min_score
         MATCH (e:Entity {id: node.id})
-        WHERE e.workspace_id = $workspace_id
+        WHERE e.workspace_id = $workspace_id AND e.project_id = $project_id
         RETURN e.id AS id, score
         ORDER BY score DESC
         """
@@ -315,6 +359,7 @@ class GraphManager:
                     embedding=embedding,
                     min_score=min_score,
                     workspace_id=workspace_id,
+                    project_id=project_id,
                 )
                 for record in result:
                     anchor_ids.append(record["id"])

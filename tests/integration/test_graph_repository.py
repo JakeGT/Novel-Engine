@@ -9,7 +9,9 @@ from backend.graph.schema import Edge, Node
 pytestmark = pytest.mark.integration
 
 WS = "ws-test"
-OTHER = "ws-other"
+PROJECT = "prj-test"
+OTHER_WS = "ws-other"
+OTHER_PROJECT = "prj-other"
 
 
 @pytest.fixture
@@ -21,31 +23,30 @@ def repository(neo4j_driver, neo4j_settings) -> Iterator[Neo4jGraphRepository]:
         manager.close()
 
 
-def test_node_roundtrip_preserves_type_and_properties(repository: Neo4jGraphRepository) -> None:
-    repository.add_node(
-        Node(
-            id="char_mara",
-            type="Character",
-            properties={"name": "Mara Voss", "age": 34},
-            workspace_id=WS,
-        )
+def _node(node_id: str, node_type: str, **properties: object) -> Node:
+    return Node(
+        id=node_id,
+        type=node_type,
+        properties=dict(properties),
+        workspace_id=WS,
+        project_id=PROJECT,
     )
 
-    node = repository.get_node("char_mara", workspace_id=WS)
+
+def test_node_roundtrip_preserves_type_and_properties(repository: Neo4jGraphRepository) -> None:
+    repository.add_node(_node("char_mara", "Character", name="Mara Voss", age=34))
+
+    node = repository.get_node("char_mara", workspace_id=WS, project_id=PROJECT)
     assert node is not None
     assert node.type == "Character"
     assert node.properties["name"] == "Mara Voss"
     assert node.properties["age"] == 34
-    assert repository.get_node("missing", workspace_id=WS) is None
+    assert repository.get_node("missing", workspace_id=WS, project_id=PROJECT) is None
 
 
 def test_update_node_merges_properties(repository: Neo4jGraphRepository) -> None:
-    repository.add_node(
-        Node(id="loc_harbor", type="Location", properties={"name": "Harbor"}, workspace_id=WS)
-    )
-    updated = repository.update_node(
-        Node(id="loc_harbor", type="Location", properties={"population": 900}, workspace_id=WS)
-    )
+    repository.add_node(_node("loc_harbor", "Location", name="Harbor"))
+    updated = repository.update_node(_node("loc_harbor", "Location", population=900))
 
     assert updated is not None
     assert updated.type == "Location"
@@ -54,12 +55,8 @@ def test_update_node_merges_properties(repository: Neo4jGraphRepository) -> None
 
 
 def test_edges_and_neighbors(repository: Neo4jGraphRepository) -> None:
-    repository.add_node(
-        Node(id="char_mara", type="Character", properties={"name": "Mara"}, workspace_id=WS)
-    )
-    repository.add_node(
-        Node(id="loc_harbor", type="Location", properties={"name": "Harbor"}, workspace_id=WS)
-    )
+    repository.add_node(_node("char_mara", "Character", name="Mara"))
+    repository.add_node(_node("loc_harbor", "Location", name="Harbor"))
     repository.add_edge(
         Edge(
             source="char_mara",
@@ -67,55 +64,54 @@ def test_edges_and_neighbors(repository: Neo4jGraphRepository) -> None:
             type="LOCATED_AT",
             properties={"since": 12},
             workspace_id=WS,
+            project_id=PROJECT,
         )
     )
 
-    edges = repository.get_edges("char_mara", workspace_id=WS)
+    edges = repository.get_edges("char_mara", workspace_id=WS, project_id=PROJECT)
     assert {(edge.source, edge.target, edge.type) for edge in edges} == {
         ("char_mara", "loc_harbor", "LOCATED_AT")
     }
     assert edges[0].properties["since"] == 12
-    assert [edge.source for edge in repository.get_edges("loc_harbor", workspace_id=WS)] == [
-        "char_mara"
-    ]
+    assert [
+        edge.source
+        for edge in repository.get_edges("loc_harbor", workspace_id=WS, project_id=PROJECT)
+    ] == ["char_mara"]
 
 
 def test_get_nodes_filters_and_search(repository: Neo4jGraphRepository) -> None:
-    repository.add_node(
-        Node(id="char_mara", type="Character", properties={"name": "Mara"}, workspace_id=WS)
-    )
-    repository.add_node(
-        Node(id="char_ivo", type="Character", properties={"name": "Ivo"}, workspace_id=WS)
-    )
-    repository.add_node(
-        Node(id="loc_harbor", type="Location", properties={"name": "Harbor"}, workspace_id=WS)
-    )
+    repository.add_node(_node("char_mara", "Character", name="Mara"))
+    repository.add_node(_node("char_ivo", "Character", name="Ivo"))
+    repository.add_node(_node("loc_harbor", "Location", name="Harbor"))
 
-    characters = repository.get_nodes(workspace_id=WS, node_type="Character")
+    characters = repository.get_nodes(workspace_id=WS, project_id=PROJECT, node_type="Character")
     assert {node.id for node in characters} == {"char_mara", "char_ivo"}
-    assert [node.id for node in repository.get_nodes(workspace_id=WS, node_id="loc_harbor")] == [
-        "loc_harbor"
-    ]
+    assert [
+        node.id
+        for node in repository.get_nodes(workspace_id=WS, project_id=PROJECT, node_id="loc_harbor")
+    ] == ["loc_harbor"]
 
-    matches = repository.search_nodes_by_name("mar", workspace_id=WS)
+    matches = repository.search_nodes_by_name("mar", workspace_id=WS, project_id=PROJECT)
     assert [match["id"] for match in matches] == ["char_mara"]
 
 
 def test_delete_node_removes_attached_edges(repository: Neo4jGraphRepository) -> None:
-    repository.add_node(
-        Node(id="char_mara", type="Character", properties={"name": "Mara"}, workspace_id=WS)
-    )
-    repository.add_node(
-        Node(id="loc_harbor", type="Location", properties={"name": "Harbor"}, workspace_id=WS)
-    )
+    repository.add_node(_node("char_mara", "Character", name="Mara"))
+    repository.add_node(_node("loc_harbor", "Location", name="Harbor"))
     repository.add_edge(
-        Edge(source="char_mara", target="loc_harbor", type="LOCATED_AT", workspace_id=WS)
+        Edge(
+            source="char_mara",
+            target="loc_harbor",
+            type="LOCATED_AT",
+            workspace_id=WS,
+            project_id=PROJECT,
+        )
     )
 
-    assert repository.delete_node("char_mara", workspace_id=WS) is True
-    assert repository.get_node("char_mara", workspace_id=WS) is None
-    assert repository.get_edges("loc_harbor", workspace_id=WS) == []
-    assert repository.delete_node("char_mara", workspace_id=WS) is False
+    assert repository.delete_node("char_mara", workspace_id=WS, project_id=PROJECT) is True
+    assert repository.get_node("char_mara", workspace_id=WS, project_id=PROJECT) is None
+    assert repository.get_edges("loc_harbor", workspace_id=WS, project_id=PROJECT) == []
+    assert repository.delete_node("char_mara", workspace_id=WS, project_id=PROJECT) is False
 
 
 def test_ping(repository: Neo4jGraphRepository) -> None:
@@ -126,18 +122,11 @@ def test_created_at_is_persisted_and_stable(repository: Neo4jGraphRepository) ->
     from datetime import datetime
 
     created = datetime(2024, 1, 1, 12, 0, 0)
-    repository.add_node(
-        Node(
-            id="char_mara",
-            type="Character",
-            properties={"name": "Mara"},
-            workspace_id=WS,
-            created_at=created,
-        )
-    )
+    node = _node("char_mara", "Character", name="Mara")
+    repository.add_node(node.model_copy(update={"created_at": created}))
 
-    first = repository.get_node("char_mara", workspace_id=WS)
-    second = repository.get_node("char_mara", workspace_id=WS)
+    first = repository.get_node("char_mara", workspace_id=WS, project_id=PROJECT)
+    second = repository.get_node("char_mara", workspace_id=WS, project_id=PROJECT)
     assert first is not None and second is not None
     assert first.created_at == created
     assert second.created_at == created
@@ -145,42 +134,96 @@ def test_created_at_is_persisted_and_stable(repository: Neo4jGraphRepository) ->
 
     # Re-adding (MERGE) must not overwrite the original timestamp.
     repository.add_node(
-        Node(
-            id="char_mara",
-            type="Character",
-            properties={"age": 34},
-            workspace_id=WS,
-            created_at=datetime(2030, 1, 1),
+        _node("char_mara", "Character", age=34).model_copy(
+            update={"created_at": datetime(2030, 1, 1)}
         )
     )
-    third = repository.get_node("char_mara", workspace_id=WS)
+    third = repository.get_node("char_mara", workspace_id=WS, project_id=PROJECT)
     assert third is not None
     assert third.created_at == created
     assert third.properties["age"] == 34
 
 
-def test_workspace_isolation_and_cross_workspace_edge_refusal(
-    repository: Neo4jGraphRepository,
-) -> None:
-    repository.add_node(
-        Node(id="char_same", type="Character", properties={"name": "A"}, workspace_id=WS)
-    )
-    # A node in another workspace is invisible to this workspace's reads.
-    assert repository.get_node("char_same", workspace_id=OTHER) is None
+def test_cross_workspace_isolation_and_edge_refusal(repository: Neo4jGraphRepository) -> None:
+    repository.add_node(_node("char_same", "Character", name="A"))
+    assert repository.get_node("char_same", workspace_id=OTHER_WS, project_id=PROJECT) is None
 
+    repository.add_node(_node("loc_a", "Location", name="A"))
     repository.add_node(
-        Node(id="loc_a", type="Location", properties={"name": "A"}, workspace_id=WS)
+        Node(
+            id="loc_b",
+            type="Location",
+            properties={"name": "B"},
+            workspace_id=OTHER_WS,
+            project_id=PROJECT,
+        )
     )
-    repository.add_node(
-        Node(id="loc_b", type="Location", properties={"name": "B"}, workspace_id=OTHER)
-    )
-    # An edge cannot be created across workspaces: the target is not visible.
     repository.add_edge(
-        Edge(source="char_same", target="loc_b", type="LOCATED_AT", workspace_id=WS)
+        Edge(
+            source="char_same",
+            target="loc_b",
+            type="LOCATED_AT",
+            workspace_id=WS,
+            project_id=PROJECT,
+        )
     )
-    assert repository.get_edges("char_same", workspace_id=WS) == []
+    assert repository.get_edges("char_same", workspace_id=WS, project_id=PROJECT) == []
 
     repository.add_edge(
-        Edge(source="char_same", target="loc_a", type="LOCATED_AT", workspace_id=WS)
+        Edge(
+            source="char_same",
+            target="loc_a",
+            type="LOCATED_AT",
+            workspace_id=WS,
+            project_id=PROJECT,
+        )
     )
-    assert len(repository.get_edges("char_same", workspace_id=WS)) == 1
+    assert len(repository.get_edges("char_same", workspace_id=WS, project_id=PROJECT)) == 1
+
+
+def test_cross_project_isolation_in_same_workspace(repository: Neo4jGraphRepository) -> None:
+    repository.add_node(_node("char_same", "Character", name="A"))
+
+    # Same workspace, different project: the node is invisible.
+    assert repository.get_node("char_same", workspace_id=WS, project_id=OTHER_PROJECT) is None
+    assert repository.get_nodes(workspace_id=WS, project_id=OTHER_PROJECT) == []
+    assert repository.search_nodes_by_name("A", workspace_id=WS, project_id=OTHER_PROJECT) == []
+    # It cannot be deleted through the other project either.
+    assert repository.delete_node("char_same", workspace_id=WS, project_id=OTHER_PROJECT) is False
+
+    # A cross-project edge is never created: the target is invisible in this project.
+    repository.add_node(_node("loc_a", "Location", name="A"))
+    repository.add_node(
+        Node(
+            id="loc_other",
+            type="Location",
+            properties={"name": "Other"},
+            workspace_id=WS,
+            project_id=OTHER_PROJECT,
+        )
+    )
+    repository.add_edge(
+        Edge(
+            source="char_same",
+            target="loc_other",
+            type="LOCATED_AT",
+            workspace_id=WS,
+            project_id=PROJECT,
+        )
+    )
+    assert repository.get_edges("char_same", workspace_id=WS, project_id=PROJECT) == []
+
+    # Entity ids are globally unique: adding the same id under another project must
+    # neither create a node there nor mutate this project's node.
+    repository.add_node(
+        Node(
+            id="char_same",
+            type="Character",
+            properties={"name": "B"},
+            workspace_id=WS,
+            project_id=OTHER_PROJECT,
+        )
+    )
+    still = repository.get_node("char_same", workspace_id=WS, project_id=PROJECT)
+    assert still is not None and still.properties["name"] == "A"
+    assert repository.get_node("char_same", workspace_id=WS, project_id=OTHER_PROJECT) is None

@@ -19,7 +19,7 @@ def test_unsupported_dimension_refused_without_connecting() -> None:
     assert store.dimension_supported() is False
     assert store.health() is False
     with pytest.raises(VectorStoreError, match="EMBEDDING_DIMENSION=768"):
-        store.add_documents(["x"], [{}], ["doc_x"], workspace_id="ws")
+        store.add_documents(["x"], [{}], ["doc_x"], workspace_id="ws", project_id="ws")
 
 
 def test_supported_dimension_reports_supported() -> None:
