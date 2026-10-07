@@ -11,6 +11,9 @@ from backend.graph.schema import Edge, Node
 
 logger = logging.getLogger(__name__)
 
+SEMANTIC_OVERSAMPLE = 10
+SEMANTIC_MAX_CANDIDATES = 1000
+
 
 class GraphManager:
     """Neo4j persistence with mandatory workspace + project scoping.
@@ -232,7 +235,7 @@ class GraphManager:
                 )
         return edges
 
-    def execute_cypher(self, query: str, params: dict[str, Any] = None):
+    def execute_cypher(self, query: str, params: dict[str, Any] | None = None):
         if params is None:
             params = {}
         with self.driver.session() as session:
@@ -356,21 +359,29 @@ class GraphManager:
         top_k: int = 5,
         min_score: float = 0.5,
     ) -> list[str]:
-        """Vector-index search restricted to the workspace and project."""
+        """Vector-index search restricted to the workspace and project.
+
+        The global index is oversampled, then filtered on the entity returned by
+        the index itself (never a re-match by id, which could collide across
+        projects) and trimmed back to ``top_k``.
+        """
+        candidate_k = min(max(top_k * SEMANTIC_OVERSAMPLE, top_k), SEMANTIC_MAX_CANDIDATES)
         query = """
-        CALL db.index.vector.queryNodes('entity_embeddings', $top_k, $embedding)
+        CALL db.index.vector.queryNodes('entity_embeddings', $candidate_k, $embedding)
         YIELD node, score
         WHERE score >= $min_score
-        MATCH (e:Entity {id: node.id})
-        WHERE e.workspace_id = $workspace_id AND e.project_id = $project_id
-        RETURN e.id AS id, score
+          AND node.workspace_id = $workspace_id
+          AND node.project_id = $project_id
+        RETURN node.id AS id, score
         ORDER BY score DESC
+        LIMIT $top_k
         """
         anchor_ids = []
         try:
             with self.driver.session() as session:
                 result = session.run(
                     query,
+                    candidate_k=candidate_k,
                     top_k=top_k,
                     embedding=embedding,
                     min_score=min_score,
@@ -400,7 +411,7 @@ class _LazyGraphManager:
     """Backwards-compatible, lazily constructed manager. No driver is created at import."""
 
     def __init__(self) -> None:
-        self._instance = None
+        self._instance: GraphManager | None = None
 
     def _resolve(self) -> GraphManager:
         if self._instance is None:

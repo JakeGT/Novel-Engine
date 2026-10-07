@@ -27,10 +27,18 @@ class CredentialService:
 
     async def _require_admin(self, scope: AccessScope, workspace_id: str) -> None:
         # Local mode is a trusted single-user deployment; hosted mode requires
-        # workspace-admin membership.
+        # workspace-admin membership. Managing credentials (create/rotate/revoke)
+        # is an administrative action.
         if scope.auth_mode == AuthMode.LOCAL:
             return
         await self._tenancy.require_permission(scope, workspace_id, Permission.WORKSPACE_ADMIN)
+
+    async def _require_use(self, scope: AccessScope, workspace_id: str) -> None:
+        # Using an existing credential for inference only needs project-write
+        # authority, so editors can run generation without workspace admin.
+        if scope.auth_mode == AuthMode.LOCAL:
+            return
+        await self._tenancy.require_permission(scope, workspace_id, Permission.PROJECT_WRITE)
 
     async def create(
         self,
@@ -110,7 +118,7 @@ class CredentialService:
         self, scope: AccessScope, workspace_id: str, credential_id: str
     ) -> str:
         """Worker-only path: return plaintext key material for immediate provider use."""
-        await self._require_admin(scope, workspace_id)
+        await self._require_use(scope, workspace_id)
         return await self._vault.resolve_plaintext(
             workspace_id=workspace_id,
             credential_id=credential_id,
@@ -125,8 +133,9 @@ class CredentialService:
     ) -> tuple[str, str] | None:
         """Return (credential_id, plaintext) for the workspace's active OpenRouter key.
 
-        Requires workspace-admin authority; returns None when no active credential
-        exists so the caller can decide the policy for that deployment.
+        Requires project-write authority (editors may run generation); returns None
+        when no active credential exists so the caller can decide the policy for
+        that deployment.
         """
         credentials = await self._vault.list_for_workspace(workspace_id)
         active = [c for c in credentials if c.status == CredentialStatus.ACTIVE]

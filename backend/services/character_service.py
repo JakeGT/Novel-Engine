@@ -131,6 +131,7 @@ class CharacterService:
         workspace_id: str,
         project_id: str,
         credential: str | None = None,
+        provider_base_url: str | None = None,
         usage_sink: UsageSink | None = None,
     ) -> CharacterQuestionSheet:
         node = self.graph.get_node(character_id, workspace_id=workspace_id, project_id=project_id)
@@ -220,6 +221,7 @@ class CharacterService:
             ],
             response_format=CharacterQuestionSheet,
             api_key=credential,
+            base_url=provider_base_url,
         )
         if usage_sink is not None:
             await usage_sink(response.usage, response.model)
@@ -245,6 +247,7 @@ class CharacterService:
         workspace_id: str,
         project_id: str,
         credential: str | None = None,
+        provider_base_url: str | None = None,
         usage_sink: UsageSink | None = None,
     ) -> GraphUpdate:
         cache_filename = f"graph_update_{character_id}_ch{chapter_number}_raw.json"
@@ -334,6 +337,7 @@ class CharacterService:
             ],
             response_format=GraphUpdate,
             api_key=credential,
+            base_url=provider_base_url,
         )
 
         if usage_sink is not None:
@@ -355,6 +359,7 @@ class CharacterService:
         workspace_id: str,
         project_id: str,
         credential: str | None = None,
+        provider_base_url: str | None = None,
         usage_sink: UsageSink | None = None,
     ) -> GraphUpdate:
         node = self.graph.get_node(character_id, workspace_id=workspace_id, project_id=project_id)
@@ -373,6 +378,7 @@ class CharacterService:
             workspace_id=workspace_id,
             project_id=project_id,
             credential=credential,
+            provider_base_url=provider_base_url,
             usage_sink=usage_sink,
         )
 

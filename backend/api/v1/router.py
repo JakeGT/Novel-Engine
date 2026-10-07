@@ -44,6 +44,8 @@ from backend.services.character_service import CharacterService
 from backend.services.credential_service import CredentialService
 from backend.services.usage_service import ProviderUsageService
 
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
 project_router = APIRouter()
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9_]+$")
@@ -62,7 +64,7 @@ async def _provider_context(
     credentials: CredentialService,
     usage: ProviderUsageService,
     scope: AccessScope,
-) -> tuple[str | None, str | None, Any]:
+) -> tuple[str | None, str | None, str | None, Any]:
     """Resolve the BYOK credential, enforce usage limits, and build a usage sink.
 
     Hosted deployments require a workspace credential (no platform-funded
@@ -72,6 +74,8 @@ async def _provider_context(
     project_id = scope.project_id or ""
     credential_id: str | None = None
     api_key: str | None = None
+    provider_base_url: str | None = None
+    provider = settings.AI_PROVIDER
     if settings.is_hosted:
         resolved = await credentials.resolve_active_for_use(scope, workspace_id)
         if resolved is None:
@@ -79,6 +83,8 @@ async def _provider_context(
                 "No provider credential is configured for this workspace."
             )
         credential_id, api_key = resolved
+        provider_base_url = OPENROUTER_BASE_URL
+        provider = "openrouter"
 
     await usage.ensure_within_limits(workspace_id=workspace_id, actor_user_id=scope.actor_user_id)
 
@@ -89,7 +95,7 @@ async def _provider_context(
                 workspace_id=workspace_id,
                 project_id=project_id or None,
                 actor_user_id=scope.actor_user_id,
-                provider="openrouter" if settings.is_hosted else "openai",
+                provider=provider,
                 model=model or "",
                 requested_route=model or "",
                 prompt_tokens=ai_usage.prompt_tokens,
@@ -98,7 +104,7 @@ async def _provider_context(
             )
         )
 
-    return credential_id, api_key, sink
+    return credential_id, api_key, provider_base_url, sink
 
 
 @project_router.get("/entities", response_model=s.EntityList, tags=["entities"])
@@ -478,7 +484,7 @@ async def character_generate_questions(
     settings: Settings = Depends(get_settings),
     scope: AccessScope = Depends(require_project_scope),
 ) -> s.QuestionSheet:
-    credential_id, api_key, usage_sink = await _provider_context(
+    credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
         settings=settings, credentials=credentials, usage=usage, scope=scope
     )
     try:
@@ -488,6 +494,7 @@ async def character_generate_questions(
             workspace_id=scope.workspace_id or "",
             project_id=scope.project_id or "",
             credential=api_key,
+            provider_base_url=provider_base_url,
             usage_sink=usage_sink,
         )
     except ValueError as error:
@@ -523,7 +530,7 @@ async def character_process_answers(
 ) -> s.GraphUpdateResponse:
     workspace_id = scope.workspace_id or ""
     project_id = scope.project_id or ""
-    credential_id, api_key, usage_sink = await _provider_context(
+    credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
         settings=settings, credentials=credentials, usage=usage, scope=scope
     )
     try:
@@ -535,6 +542,7 @@ async def character_process_answers(
             workspace_id=workspace_id,
             project_id=project_id,
             credential=api_key,
+            provider_base_url=provider_base_url,
             usage_sink=usage_sink,
         )
     except ValueError as error:

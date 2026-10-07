@@ -29,6 +29,10 @@ class Settings(BaseSettings):
 
     OPENAI_API_KEY: str = ""
     AI_MODEL: str = "gpt-4o"
+    # OpenAI-compatible provider label and optional base URL (OpenRouter,
+    # Ollama, llama.cpp, etc.). Empty base URL means the OpenAI default endpoint.
+    AI_PROVIDER: str = "openai"
+    AI_BASE_URL: str = ""
 
     NEO4J_URI: str = "bolt://localhost:7687"
     NEO4J_USER: str = "neo4j"

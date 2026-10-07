@@ -128,3 +128,30 @@ async def test_credential_actions_are_audited() -> None:
     assert "credential.revoked" in actions
     # Audit detail never contains the secret.
     assert all("sk-or-" not in str(event.detail) for event in tenancy.audit)
+
+
+@pytest.mark.asyncio
+async def test_editor_can_resolve_credential_but_not_manage_it() -> None:
+    service, owner_scope, editor_scope, workspace_id = await _setup()
+    await service.create(
+        owner_scope,
+        workspace_id=workspace_id,
+        provider=CredentialProvider.OPENROUTER,
+        label="shared",
+        plaintext_key="sk-or-v1-sharedkey123",
+    )
+
+    # Editors (PROJECT_WRITE) may use the workspace key for inference...
+    resolved = await service.resolve_active_for_use(editor_scope, workspace_id)
+    assert resolved is not None
+    assert resolved[1] == "sk-or-v1-sharedkey123"
+
+    # ...but only admins may manage credentials.
+    with pytest.raises(ForbiddenError):
+        await service.create(
+            editor_scope,
+            workspace_id=workspace_id,
+            provider=CredentialProvider.OPENROUTER,
+            label="editor-owned",
+            plaintext_key="sk-or-v1-editor",
+        )

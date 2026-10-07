@@ -449,6 +449,7 @@ class ScriptedAIGateway:
         response_format: type,
         model: str | None = None,
         api_key: str | None = None,
+        base_url: str | None = None,
     ) -> StructuredResponse:
         self.calls.append(
             {
@@ -456,6 +457,7 @@ class ScriptedAIGateway:
                 "response_format": response_format,
                 "model": model,
                 "api_key": api_key,
+                "base_url": base_url,
             }
         )
         if self._index >= len(self._responses):

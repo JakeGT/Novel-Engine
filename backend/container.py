@@ -97,7 +97,12 @@ def build_container(settings: Settings | None = None) -> Container:
             dimension=resolved.EMBEDDING_DIMENSION,
         ),
         embeddings=embeddings,
-        ai=OpenAIGateway(api_key=resolved.OPENAI_API_KEY, default_model=resolved.AI_MODEL),
+        ai=OpenAIGateway(
+            api_key=resolved.OPENAI_API_KEY,
+            default_model=resolved.AI_MODEL,
+            provider=resolved.AI_PROVIDER,
+            base_url=resolved.AI_BASE_URL,
+        ),
         schema_registry=SchemaRegistry(resolved.CUSTOM_SCHEMA_PATH),
         clock=SystemClock(),
         ids=TimeOrderedIdGenerator(),

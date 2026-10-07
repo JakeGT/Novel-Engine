@@ -17,29 +17,52 @@ logger = logging.getLogger(__name__)
 
 
 class OpenAIGateway:
-    """AsyncOpenAI adapter normalizing provider errors and usage."""
+    """AsyncOpenAI-compatible adapter.
 
-    def __init__(self, api_key: str, default_model: str = "gpt-4o") -> None:
+    The platform client is configured from settings (``OPENAI_API_KEY``,
+    ``AI_BASE_URL``, ``AI_PROVIDER``) for local/self-hosted or platform-funded
+    use. A per-call ``api_key``/``base_url`` overrides it for BYOK workloads, so a
+    hosted deployment never needs a platform key to run user-funded inference, and
+    OpenRouter/Ollama-compatible endpoints are selected by base URL.
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        default_model: str = "gpt-4o",
+        *,
+        provider: str = "openai",
+        base_url: str = "",
+    ) -> None:
         self._api_key = api_key
         self._default_model = default_model
+        self._provider = provider
+        self._base_url = base_url
         self._client: Any = None
+
+    def _build_client(self, api_key: str | None, base_url: str | None) -> Any:
+        from openai import AsyncOpenAI
+
+        resolved_base_url = base_url or self._base_url
+        kwargs: dict[str, Any] = {"api_key": api_key or self._api_key or "not-needed"}
+        if resolved_base_url:
+            kwargs["base_url"] = resolved_base_url
+        return AsyncOpenAI(**kwargs)
 
     @property
     def client(self) -> Any:
         if self._client is None:
-            if not self._api_key:
-                raise AIProviderError("OpenAI API key is not configured")
-            from openai import AsyncOpenAI
-
-            self._client = AsyncOpenAI(api_key=self._api_key)
+            if not self._api_key and not self._base_url:
+                raise AIProviderError("No AI provider credential or base URL is configured")
+            self._client = self._build_client(self._api_key, self._base_url)
         return self._client
 
     def is_available(self) -> bool:
-        return bool(self._api_key)
+        return bool(self._api_key or self._base_url)
 
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(
-            provider="openai",
+            provider=self._provider,
             model=self._default_model,
             input_modalities=frozenset({"text"}),
             output_modalities=frozenset({"text"}),
@@ -60,18 +83,19 @@ class OpenAIGateway:
         response_format: type,
         model: str | None = None,
         api_key: str | None = None,
+        base_url: str | None = None,
     ) -> StructuredResponse:
         from openai import OpenAIError
 
         resolved_model = model or self._default_model
         start = time.perf_counter()
-        client = self.client
         per_call_client: Any = None
-        if api_key:
-            from openai import AsyncOpenAI
-
-            per_call_client = AsyncOpenAI(api_key=api_key)
+        if api_key or base_url:
+            # BYOK path: never touch the platform client (which may be unconfigured).
+            per_call_client = self._build_client(api_key, base_url)
             client = per_call_client
+        else:
+            client = self.client
         try:
             response = await client.beta.chat.completions.parse(
                 model=resolved_model,
