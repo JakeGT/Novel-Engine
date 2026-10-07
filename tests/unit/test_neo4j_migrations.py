@@ -93,6 +93,18 @@ def test_initial_migration_versions_the_embedding_index() -> None:
     assert "all-MiniLM-L6-v2" in INITIAL_GRAPH_SCHEMA.description
 
 
+def test_entity_scope_migration_replaces_global_id_constraint() -> None:
+    from backend.graph.migrations import ENTITY_SCOPE_IDENTITY, NEO4J_MIGRATIONS
+
+    joined = " ".join(ENTITY_SCOPE_IDENTITY.statements)
+    assert "DROP CONSTRAINT entity_id_unique" in joined
+    assert "REQUIRE (n.workspace_id, n.project_id, n.id) IS UNIQUE" in joined
+    assert [migration.id for migration in NEO4J_MIGRATIONS] == [
+        "0001_initial_graph_schema",
+        "0002_entity_scope_identity",
+    ]
+
+
 def test_runner_applies_pending_and_records_ledger() -> None:
     driver = _FakeDriver()
     runner = Neo4jMigrationRunner(driver, [INITIAL_GRAPH_SCHEMA], clock=lambda: "t0")

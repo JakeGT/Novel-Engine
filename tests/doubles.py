@@ -80,20 +80,24 @@ class OrderedIdGenerator:
 
 
 class InMemoryGraphRepository:
-    """Graph repository fake with explicit workspace + project scoping."""
+    """Graph repository fake with explicit (workspace, project, id) identity."""
 
     def __init__(self, semantic_anchors: list[str] | None = None) -> None:
-        self.nodes: dict[str, Node] = {}
+        self.nodes: dict[tuple[str, str, str], Node] = {}
         self.edges: list[Edge] = []
         self.semantic_anchors = list(semantic_anchors or [])
         self.close_calls = 0
 
+    @staticmethod
+    def _key(
+        workspace_id: str | None, project_id: str | None, node_id: str
+    ) -> tuple[str, str, str]:
+        return (workspace_id or "", project_id or "", node_id)
+
     def add_node(self, node: Node) -> None:
-        existing = self.nodes.get(node.id)
+        key = self._key(node.workspace_id, node.project_id, node.id)
+        existing = self.nodes.get(key)
         if existing is not None:
-            if existing.workspace_id != node.workspace_id or existing.project_id != node.project_id:
-                # A node id is owned by one workspace/project; never mutate another's.
-                return
             merged = dict(existing.properties)
             merged.update(node.properties)
             node = node.model_copy(
@@ -102,43 +106,35 @@ class InMemoryGraphRepository:
                     "embedding": node.embedding or existing.embedding,
                 }
             )
-        self.nodes[node.id] = node
+        self.nodes[key] = node
 
     def get_node(self, node_id: str, *, workspace_id: str, project_id: str) -> Node | None:
-        node = self.nodes.get(node_id)
-        if node is not None and node.workspace_id == workspace_id and node.project_id == project_id:
-            return node
-        return None
+        return self.nodes.get(self._key(workspace_id, project_id, node_id))
 
     def update_node(self, node: Node) -> Node | None:
-        existing = self.nodes.get(node.id)
-        if (
-            existing is None
-            or existing.workspace_id != node.workspace_id
-            or existing.project_id != node.project_id
-        ):
+        key = self._key(node.workspace_id, node.project_id, node.id)
+        if key not in self.nodes:
             return None
         self.add_node(node)
-        return self.nodes[node.id]
+        return self.nodes[key]
 
     def add_edge(self, edge: Edge) -> None:
-        source = self.nodes.get(edge.source)
-        target = self.nodes.get(edge.target)
-        if (
-            source is None
-            or target is None
-            or source.workspace_id != edge.workspace_id
-            or target.workspace_id != edge.workspace_id
-            or source.project_id != edge.project_id
-            or target.project_id != edge.project_id
-        ):
+        source = self.get_node(
+            edge.source, workspace_id=edge.workspace_id or "", project_id=edge.project_id or ""
+        )
+        target = self.get_node(
+            edge.target, workspace_id=edge.workspace_id or "", project_id=edge.project_id or ""
+        )
+        if source is None or target is None:
             return
         for existing in self.edges:
-            if (existing.source, existing.target, existing.type) == (
-                edge.source,
-                edge.target,
-                edge.type,
-            ):
+            if (
+                existing.workspace_id,
+                existing.project_id,
+                existing.source,
+                existing.target,
+                existing.type,
+            ) == (edge.workspace_id, edge.project_id, edge.source, edge.target, edge.type):
                 existing.properties.update(edge.properties)
                 return
         self.edges.append(edge)
@@ -185,9 +181,9 @@ class InMemoryGraphRepository:
     ) -> list[Node]:
         return [
             node
-            for node in self.nodes.values()
-            if node.workspace_id == workspace_id
-            and node.project_id == project_id
+            for (ws, prj, _), node in self.nodes.items()
+            if ws == workspace_id
+            and prj == project_id
             and (node_type is None or node.type == node_type)
             and (node_id is None or node.id == node_id)
         ]
@@ -202,8 +198,8 @@ class InMemoryGraphRepository:
     ) -> list[dict[str, Any]]:
         needle = query_string.lower()
         results: list[dict[str, Any]] = []
-        for node in self.nodes.values():
-            if node.workspace_id != workspace_id or node.project_id != project_id:
+        for (ws, prj, _), node in self.nodes.items():
+            if ws != workspace_id or prj != project_id:
                 continue
             if type is not None and node.type != type:
                 continue
@@ -221,14 +217,11 @@ class InMemoryGraphRepository:
         top_k: int = 5,
         min_score: float = 0.5,
     ) -> list[str]:
+        any_id = {key[2] for key in self.nodes}
         scoped = [
             node_id
             for node_id in self.semantic_anchors
-            if node_id not in self.nodes
-            or (
-                self.nodes[node_id].workspace_id == workspace_id
-                and self.nodes[node_id].project_id == project_id
-            )
+            if self._key(workspace_id, project_id, node_id) in self.nodes or node_id not in any_id
         ]
         return scoped[:top_k]
 
@@ -259,12 +252,17 @@ class InMemoryGraphRepository:
         return True
 
     def delete_node(self, node_id: str, *, workspace_id: str, project_id: str) -> bool:
-        node = self.nodes.get(node_id)
-        if node is None or node.workspace_id != workspace_id or node.project_id != project_id:
+        if self._key(workspace_id, project_id, node_id) not in self.nodes:
             return False
-        del self.nodes[node_id]
+        del self.nodes[self._key(workspace_id, project_id, node_id)]
         self.edges = [
-            edge for edge in self.edges if edge.source != node_id and edge.target != node_id
+            edge
+            for edge in self.edges
+            if not (
+                (edge.source == node_id or edge.target == node_id)
+                and edge.workspace_id == workspace_id
+                and edge.project_id == project_id
+            )
         ]
         return True
 

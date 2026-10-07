@@ -40,13 +40,11 @@ class GraphManager:
 
     def add_node(self, node: Node):  # noqa: D401
         label = self._validate_identifier(node.type)
+        # Identity is (workspace_id, project_id, id): the same id in another project
+        # is a distinct node, so writes never silently collide across projects.
         query = f"""
-        MERGE (n:Entity {{id: $id}})
+        MERGE (n:Entity {{id: $id, workspace_id: $workspace_id, project_id: $project_id}})
         ON CREATE SET n.created_at = $created_at
-        WITH n
-        WHERE n.workspace_id IS NULL
-           OR (n.workspace_id = $workspace_id
-               AND (n.project_id IS NULL OR n.project_id = $project_id))
         SET n:{label}, n += $properties
         SET n.workspace_id = $workspace_id, n.project_id = $project_id
         """

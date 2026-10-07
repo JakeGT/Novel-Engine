@@ -85,7 +85,21 @@ INITIAL_GRAPH_SCHEMA = Migration(
     ),
 )
 
-NEO4J_MIGRATIONS: tuple[Migration, ...] = (INITIAL_GRAPH_SCHEMA,)
+ENTITY_SCOPE_IDENTITY = Migration(
+    id="0002_entity_scope_identity",
+    description=(
+        "Replace the global entity id uniqueness constraint with a composite "
+        "(workspace_id, project_id, id) constraint so identical ids in different "
+        "projects are distinct nodes."
+    ),
+    statements=(
+        "DROP CONSTRAINT entity_id_unique IF EXISTS",
+        "CREATE CONSTRAINT entity_scope_id_unique IF NOT EXISTS FOR (n:Entity) "
+        "REQUIRE (n.workspace_id, n.project_id, n.id) IS UNIQUE",
+    ),
+)
+
+NEO4J_MIGRATIONS: tuple[Migration, ...] = (INITIAL_GRAPH_SCHEMA, ENTITY_SCOPE_IDENTITY)
 
 
 class Neo4jMigrationRunner:

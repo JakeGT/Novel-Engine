@@ -213,8 +213,8 @@ def test_cross_project_isolation_in_same_workspace(repository: Neo4jGraphReposit
     )
     assert repository.get_edges("char_same", workspace_id=WS, project_id=PROJECT) == []
 
-    # Entity ids are globally unique: adding the same id under another project must
-    # neither create a node there nor mutate this project's node.
+    # Identity is scoped: the same id in another project is a distinct node and
+    # must not mutate this project's node.
     repository.add_node(
         Node(
             id="char_same",
@@ -224,6 +224,7 @@ def test_cross_project_isolation_in_same_workspace(repository: Neo4jGraphReposit
             project_id=OTHER_PROJECT,
         )
     )
-    still = repository.get_node("char_same", workspace_id=WS, project_id=PROJECT)
-    assert still is not None and still.properties["name"] == "A"
-    assert repository.get_node("char_same", workspace_id=WS, project_id=OTHER_PROJECT) is None
+    project_node = repository.get_node("char_same", workspace_id=WS, project_id=PROJECT)
+    other_node = repository.get_node("char_same", workspace_id=WS, project_id=OTHER_PROJECT)
+    assert project_node is not None and project_node.properties["name"] == "A"
+    assert other_node is not None and other_node.properties["name"] == "B"

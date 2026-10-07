@@ -4,7 +4,11 @@ import pytest
 from neo4j import Driver, GraphDatabase
 
 from backend.core.config import settings
-from backend.graph.migrations import INITIAL_GRAPH_SCHEMA, Neo4jMigrationRunner
+from backend.graph.migrations import (
+    ENTITY_SCOPE_IDENTITY,
+    INITIAL_GRAPH_SCHEMA,
+    Neo4jMigrationRunner,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -38,7 +42,7 @@ def driver() -> Driver:
 def test_migrations_apply_twice_and_report_current(driver: Driver) -> None:
     runner = Neo4jMigrationRunner(driver, clock=lambda: "t0")
 
-    assert runner.run() == [INITIAL_GRAPH_SCHEMA.id]
+    assert runner.run() == [INITIAL_GRAPH_SCHEMA.id, ENTITY_SCOPE_IDENTITY.id]
     assert runner.run() == []
     assert runner.verify().is_current
 
@@ -46,5 +50,6 @@ def test_migrations_apply_twice_and_report_current(driver: Driver) -> None:
         constraints = {record["name"] for record in session.run("SHOW CONSTRAINTS YIELD name")}
         indexes = {record["name"] for record in session.run("SHOW INDEXES YIELD name")}
 
-    assert "entity_id_unique" in constraints
+    assert "entity_scope_id_unique" in constraints
+    assert "entity_id_unique" not in constraints
     assert "entity_embeddings" in indexes

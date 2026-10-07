@@ -149,3 +149,38 @@ def test_hosted_cannot_span_projects_with_an_edge(hosted_client, hosted_containe
         headers=headers_a,
     )
     assert edge.status_code == 400
+
+
+def test_hosted_same_id_in_two_projects_coexists(hosted_client, hosted_container) -> None:
+    """The same entity id in two projects of one workspace must not interfere."""
+    csrf = _hosted_login(hosted_client, hosted_container)
+    workspace_id = _create_workspace(hosted_client, csrf, "same-id")
+    project_a = _create_project(hosted_client, csrf, workspace_id, "alpha")
+    project_b = _create_project(hosted_client, csrf, workspace_id, "beta")
+    write_headers = {"X-CSRF-Token": csrf, "X-Workspace-Id": workspace_id}
+
+    first = hosted_client.post(
+        f"/api/v1/projects/{project_a}/entities",
+        json={"id": "char_alice", "type": "Character", "properties": {"name": "Alice A"}},
+        headers=write_headers,
+    )
+    assert first.status_code == 201, first.text
+    second = hosted_client.post(
+        f"/api/v1/projects/{project_b}/entities",
+        json={"id": "char_alice", "type": "Character", "properties": {"name": "Alice B"}},
+        headers=write_headers,
+    )
+    assert second.status_code == 201, second.text
+
+    read_a = hosted_client.get(
+        f"/api/v1/projects/{project_a}/entities/char_alice",
+        headers={"X-Workspace-Id": workspace_id},
+    )
+    read_b = hosted_client.get(
+        f"/api/v1/projects/{project_b}/entities/char_alice",
+        headers={"X-Workspace-Id": workspace_id},
+    )
+    assert read_a.status_code == 200, read_a.text
+    assert read_b.status_code == 200, read_b.text
+    assert read_a.json()["properties"]["name"] == "Alice A"
+    assert read_b.json()["properties"]["name"] == "Alice B"
