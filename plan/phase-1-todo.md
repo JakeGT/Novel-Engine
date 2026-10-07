@@ -315,8 +315,10 @@ Acceptance:
       (Core implemented and tested offline against Authentik discovery/JWKS fixtures; the live browser round-trip
       remains an optional manual check.)
 - [x] Access remains invitation-only and application authorization is independent of authentication.
-- [ ] Workspace/project scope is enforced and adversarially tested across every storage/runtime boundary.
-      (Cross-workspace isolation is enforced and tested; same-workspace cross-project isolation is in progress.)
+- [x] Workspace/project scope is enforced and adversarially tested across every storage/runtime boundary.
+      (Workspace **and** project isolation are enforced across graph, pgvector, the debug artifact store, the
+      object store, routes, and export/import, with same-workspace cross-project adversarial tests. Caches and
+      events are not implemented yet and must adopt the scope contract when added.)
 - [x] Self-hosted local mode uses the same core without depending on portfolio infrastructure.
 - [x] Hosted user-supplied OpenRouter keys are encrypted, redacted, revocable, and worker-restricted.
 - [x] No subscription, payment, platform-credit, or platform-funded inference path exists.
