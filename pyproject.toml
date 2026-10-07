@@ -47,7 +47,13 @@ package = false
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 pythonpath = ["."]
-addopts = "-ra --strict-markers --timeout=120"
+addopts = "-ra --strict-markers"
+# Fail a hung test with a stack trace instead of blocking CI. The thread method
+# is used because the signal method does not interrupt a client library blocked in
+# a native wait; faulthandler dumps every thread's stack at the threshold.
+timeout = 60
+timeout_method = "thread"
+faulthandler_timeout = 60
 markers = [
   "unit: deterministic test with no services, network, or persistent writes",
   "application: workflow test using in-memory ports and fakes",

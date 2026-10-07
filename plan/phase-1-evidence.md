@@ -21,8 +21,9 @@ not exist.
 
 ## Tests and coverage baseline
 
-- Hermetic suite (unit + application + contract): **308 passed** (`make test`), no services,
-  network, API keys, or persistent writes.
+- Hermetic suite (unit + application + contract): **317 passed** on the committed tree in this
+  environment (`make test` / `make check`); no services, network, API keys, or persistent writes.
+  See the deadlock note below for the reproducibility caveat.
 - Integration suite (disposable PostgreSQL/pgvector + `neo4j-test`): **48 passed**
   (`make integration-test`).
 - Hermetic line coverage baseline: **~71%** (`--cov=backend`), a regression floor only.
@@ -100,7 +101,8 @@ rows), `make audit` (dependency scan). No step requires a paid model call or pro
 | job envelope / idempotency | `workspace_id`, `project_id` fields | `JobEnvelope` (re-validated by workers before acting) |
 | caches / events | — | not implemented in Phase 1; must adopt the same contract when added |
 - **Credentials:** envelope-encrypted at rest (AES-256-GCM, KEK from config), metadata-only API,
-  workspace-admin worker path (`tests/unit/test_crypto.py`, `tests/application/test_credentials.py`,
+  project-write worker path for use and workspace-admin for management
+  (`tests/unit/test_crypto.py`, `tests/application/test_credentials.py`,
   `tests/integration/test_credential_vault.py`, `tests/contract/test_credentials.py`).
 - **Rate limiting:** durable shared limiter for invitation acceptance
   (`tests/integration/test_rate_limiter.py`).
@@ -156,11 +158,15 @@ test (commits after the initial Phase 1 work):
   (no cross-store journal/rollback) and object keys are regenerated on import.
 - **Frontend:** the shell renders the nested `/auth/me` user.
 
-The reported TestClient deadlock was **not reproducible** in this environment: `make check` and the
-full hermetic suite complete in seconds. Two defensive mitigations were added regardless, because a
-developer `.env` carrying a Sentry DSN could otherwise start a background reporter during the test
-gate: Sentry is now disabled whenever pytest is running, and `pytest-timeout` (120s) bounds any
-future hang so CI fails with a traceback instead of hanging indefinitely.
+A reported TestClient deadlock is **not reproducible on the committed tree**: `make check` and the
+full hermetic suite complete in ~5–8 seconds here across `uv run pytest`, `python -m pytest`, closed
+stdin, and file-redirected output; the cited test name
+(`test_health_capabilities_include_provider_capabilities`) does not exist in this tree (the health
+capabilities test is `test_health_capabilities`). Because an environment-specific hang cannot be
+excluded, the gate now fails fast with diagnostics rather than hanging: Sentry is disabled whenever
+pytest is running, `pytest-timeout` uses the **thread** method (the signal method does not interrupt a
+protocol blocked in a native wait) with a 60s threshold, and `faulthandler_timeout = 60` dumps every
+thread's stack. This converts any future hang into a labelled failure with a traceback.
 
 ## Post-review corrections (2026-10-06)
 
@@ -172,10 +178,15 @@ overstated ones:
   `AI_PROVIDER`/`AI_BASE_URL` (OpenRouter `https://openrouter.ai/api/v1`, Ollama/llama.cpp-
   compatible), and capability reporting reflects the configured provider. Credential *use*
   (`resolve_active_for_use`) requires project-write, not workspace admin, so editors can generate.
-- **Semantic retrieval:** the Neo4j vector query oversamples and filters on the node returned by the
-  index (`node.workspace_id`/`node.project_id`) instead of re-matching by id, so other tenants cannot
-  crowd a project out and a colliding id in another project cannot contribute its score.
-- **Export/import:** object bytes are carried and re-written on import (above).
+- **Semantic retrieval:** the Neo4j vector query filters on the node returned by the index
+  (`node.workspace_id`/`node.project_id`) instead of re-matching by id, so a colliding id in another
+  project cannot contribute its score, and it deepens (bounded oversampling up to
+  `SEMANTIC_MAX_CANDIDATES`) when a project has fewer than `top_k` scoped hits. This is a best-effort
+  mitigation, **not a guarantee** — a global ANN index can still crowd a project out at the bound; an
+  exact scoped path (pgvector with workspace/project filters) is the planned guarantee.
+- **Export/import:** object bytes are carried, strict-base64-decoded, and verified against the recorded
+  sha256/byte length on import; node `created_at` is preserved; already-present object checksums are
+  skipped (idempotent retry). Graph writes remain sequential without a cross-store journal.
 - **Type checking:** `mypy backend` (76 files) is clean and enforced; scope widened from four files.
 - **Corrections:** the usage plan item is reopened (only successful calls recorded; latency, provider
   cost, attempts, failures, and idempotency not populated; estimates default to 0); workspace/project

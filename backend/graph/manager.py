@@ -361,11 +361,15 @@ class GraphManager:
     ) -> list[str]:
         """Vector-index search restricted to the workspace and project.
 
-        The global index is oversampled, then filtered on the entity returned by
-        the index itself (never a re-match by id, which could collide across
-        projects) and trimmed back to ``top_k``.
+        Neo4j's vector index is global and cannot filter during the ANN search, so
+        this oversamples candidates and deepens (up to ``SEMANTIC_MAX_CANDIDATES``)
+        until enough scoped results are found. Results are filtered on the entity
+        returned by the index itself (never a re-match by id, which could collide
+        across projects) and trimmed to ``top_k``. A *guaranteed* per-tenant result
+        set would require a workspace/project-scoped index; this is a best-effort
+        mitigation, and the scoped pgvector store is the planned exact path.
         """
-        candidate_k = min(max(top_k * SEMANTIC_OVERSAMPLE, top_k), SEMANTIC_MAX_CANDIDATES)
+        candidate_k = top_k
         query = """
         CALL db.index.vector.queryNodes('entity_embeddings', $candidate_k, $embedding)
         YIELD node, score
@@ -376,20 +380,25 @@ class GraphManager:
         ORDER BY score DESC
         LIMIT $top_k
         """
-        anchor_ids = []
+        anchor_ids: list[str] = []
         try:
             with self.driver.session() as session:
-                result = session.run(
-                    query,
-                    candidate_k=candidate_k,
-                    top_k=top_k,
-                    embedding=embedding,
-                    min_score=min_score,
-                    workspace_id=workspace_id,
-                    project_id=project_id,
-                )
-                for record in result:
-                    anchor_ids.append(record["id"])
+                while True:
+                    candidate_k = min(
+                        max(candidate_k * SEMANTIC_OVERSAMPLE, top_k), SEMANTIC_MAX_CANDIDATES
+                    )
+                    result = session.run(
+                        query,
+                        candidate_k=candidate_k,
+                        top_k=top_k,
+                        embedding=embedding,
+                        min_score=min_score,
+                        workspace_id=workspace_id,
+                        project_id=project_id,
+                    )
+                    anchor_ids = [record["id"] for record in result]
+                    if len(anchor_ids) >= top_k or candidate_k >= SEMANTIC_MAX_CANDIDATES:
+                        break
         except Exception as e:
             from backend.core.logging import log_event
 

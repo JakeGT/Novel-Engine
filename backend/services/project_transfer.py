@@ -11,8 +11,10 @@ a redesign when derived indexes arrive.
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import json
+from datetime import datetime
 from typing import Any
 
 from backend.graph.schema import Edge, Node
@@ -150,10 +152,21 @@ class ProjectTransferService:
         for raw in objects:
             if not isinstance(raw, dict) or not isinstance(raw.get("key"), str):
                 raise TransferError("object manifest entry is missing a key")
-            if not isinstance(raw.get("checksum"), str):
+            checksum = raw.get("checksum")
+            if not isinstance(checksum, str) or not checksum:
                 raise TransferError("object manifest entry is missing a checksum")
-            if not isinstance(raw.get("data"), str):
+            data = raw.get("data")
+            if not isinstance(data, str):
                 raise TransferError("object manifest entry is missing its payload")
+            try:
+                decoded = base64.b64decode(data, validate=True)
+            except (ValueError, binascii.Error) as error:
+                raise TransferError("object manifest entry has invalid base64 data") from error
+            if hashlib.sha256(decoded).hexdigest() != checksum:
+                raise TransferError("object checksum does not match its payload")
+            byte_length = raw.get("byte_length")
+            if byte_length is not None and int(byte_length) != len(decoded):
+                raise TransferError("object byte_length does not match its payload")
 
         return nodes, edges, objects
 
@@ -179,6 +192,11 @@ class ProjectTransferService:
                     workspace_id=target_workspace_id,
                     project_id=target_project_id,
                 )
+                created_at = raw.get("created_at")
+                if created_at:
+                    node = node.model_copy(
+                        update={"created_at": datetime.fromisoformat(created_at)}
+                    )
                 self._graph.add_node(node)
                 node_count += 1
         except Exception as error:  # pragma: no cover - adapter dependent
@@ -204,14 +222,25 @@ class ProjectTransferService:
 
         object_count = 0
         if self._objects is not None:
+            # Deduplicate by checksum so a retried import does not create duplicate
+            # objects for payloads already present in the target project.
+            existing_checksums = {
+                stat.checksum
+                for stat in self._objects.list_objects(
+                    workspace_id=target_workspace_id, project_id=target_project_id
+                )
+            }
             for raw in objects:
-                payload = base64.b64decode(raw["data"])
+                payload = base64.b64decode(raw["data"], validate=True)
+                if raw["checksum"] in existing_checksums:
+                    continue
                 self._objects.put(
                     payload,
                     workspace_id=target_workspace_id,
                     project_id=target_project_id,
                     content_type=raw.get("content_type", "application/octet-stream"),
                 )
+                existing_checksums.add(raw["checksum"])
                 object_count += 1
 
         return {

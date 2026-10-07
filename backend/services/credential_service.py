@@ -50,6 +50,12 @@ class CredentialService:
         plaintext_key: str,
     ) -> Credential:
         await self._require_admin(scope, workspace_id)
+        # Single active credential per (workspace, provider): revoke any existing
+        # active key so resolution is never ambiguous.
+        existing = await self._vault.list_for_workspace(workspace_id)
+        for credential in existing:
+            if credential.provider == provider and credential.status == CredentialStatus.ACTIVE:
+                await self._vault.revoke(workspace_id=workspace_id, credential_id=credential.id)
         credential = await self._vault.store(
             workspace_id=workspace_id,
             owner_user_id=scope.actor_user_id,
@@ -141,6 +147,8 @@ class CredentialService:
         active = [c for c in credentials if c.status == CredentialStatus.ACTIVE]
         if not active:
             return None
-        credential = active[0]
+        # Defensive: choose the most recently created active key. The create path
+        # already enforces a single active credential per (workspace, provider).
+        credential = max(active, key=lambda c: c.created_at)
         plaintext = await self.resolve_for_use(scope, workspace_id, credential.id)
         return credential.id, plaintext

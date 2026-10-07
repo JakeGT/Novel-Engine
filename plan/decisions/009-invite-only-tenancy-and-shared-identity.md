@@ -130,8 +130,9 @@ own account. There is no platform balance, credit, or markup state.
   (DEK); AES-256-GCM encrypts the secret. Only ciphertext, the wrapped DEK, and
   `key_version` are persisted; the KEK is never stored in the database.
 - The vault exposes metadata only. Plaintext is obtainable solely through the
-  worker path (`CredentialService.resolve_for_use`), which is workspace-admin
-  gated in hosted mode; local single-user mode is trusted.
+  worker path (`CredentialService.resolve_for_use`), which requires project-write
+  authority in hosted mode (credential management requires workspace-admin); local
+  single-user mode is trusted.
 - An empty `CREDENTIAL_KEK` disables credential storage; the base install and all
   deterministic tests run without any credential.
 - Usage is recorded immutably (`provider_usage`) with requested/actual route, token

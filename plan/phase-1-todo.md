@@ -223,7 +223,8 @@ Acceptance:
       in-memory fake. An empty KEK disables the feature.)
 - [x] Envelope-encrypt hosted OpenRouter keys with versioned key metadata and authorized worker-only decryption.
       (AES-256-GCM: a KEK wraps a per-credential DEK; only ciphertext + wrapped DEK are stored, with
-      `key_version`. `resolve_for_use` is the worker path and is workspace-admin gated.)
+      `key_version`. `resolve_for_use` is the worker path and requires project-write authority
+      (workspace-admin is required to manage credentials).)
 - [ ] Support validate, label, rotate, revoke, delete, and last-used status without ever returning the key.
       (Label, rotate, revoke, delete, and last-used are implemented and never return the secret; provider-side
       key **validation** — a live check against OpenRouter — is deferred to the generation pipeline.)
@@ -270,9 +271,11 @@ Acceptance:
       with a checksum manifest is not yet built; documented as an operator procedure.)
 - [x] Implement complete project export/import without credentials or session data.
       (`ProjectTransferService.export_project`/`import_project` are project-scoped, checksummed, and carry the
-      project's object bytes (base64) so import writes them back; credentials, sessions, and provider usage are
-      never included. Residual: graph import is a sequential best-effort write that raises with progress on
-      failure (no cross-store journal/rollback), and object keys are regenerated on import.)
+      project's object bytes (base64, strict-decoded and verified against the recorded sha256/byte length) so
+      import writes them back; node `created_at` is preserved; already-present object checksums are skipped so a
+      retried import does not duplicate objects; credentials, sessions, and provider usage are never included.
+      Residual: graph import is a sequential best-effort write that raises with progress on failure (no
+      cross-store journal/rollback).)
       (`tests/application/test_project_transfer.py`.)
 - [x] Document every outbound connection; make telemetry absent or opt-in and content-free by default.
       (Only OIDC, the configured AI provider, and opt-in Sentry egress exist; Sentry is off unless a DSN is set and

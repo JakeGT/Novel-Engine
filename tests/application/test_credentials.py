@@ -155,3 +155,32 @@ async def test_editor_can_resolve_credential_but_not_manage_it() -> None:
             label="editor-owned",
             plaintext_key="sk-or-v1-editor",
         )
+
+
+@pytest.mark.asyncio
+async def test_only_one_active_credential_per_provider() -> None:
+    service, owner_scope, _editor_scope, workspace_id = await _setup()
+
+    first = await service.create(
+        owner_scope,
+        workspace_id=workspace_id,
+        provider=CredentialProvider.OPENROUTER,
+        label="one",
+        plaintext_key="sk-or-v1-first",
+    )
+    second = await service.create(
+        owner_scope,
+        workspace_id=workspace_id,
+        provider=CredentialProvider.OPENROUTER,
+        label="two",
+        plaintext_key="sk-or-v1-second",
+    )
+
+    statuses = {c.id: c.status for c in await service.list(owner_scope, workspace_id)}
+    assert statuses[first.id] == CredentialStatus.REVOKED
+    assert statuses[second.id] == CredentialStatus.ACTIVE
+
+    resolved = await service.resolve_active_for_use(owner_scope, workspace_id)
+    assert resolved is not None
+    assert resolved[0] == second.id
+    assert resolved[1] == "sk-or-v1-second"

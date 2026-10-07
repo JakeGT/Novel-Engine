@@ -157,3 +157,115 @@ def test_export_carries_object_bytes_and_import_writes_them(tmp_path) -> None:
     imported = target.list_objects(workspace_id="ws-b", project_id="prj-9")
     assert len(imported) == 1
     assert target.open(imported[0].key, workspace_id="ws-b", project_id="prj-9") == b"cover"
+
+
+def test_import_rejects_object_checksum_mismatch(tmp_path) -> None:
+    from backend.adapters.objects import FilesystemObjectStore
+    from backend.services.project_transfer import _checksum
+
+    source = FilesystemObjectStore(str(tmp_path / "s"))
+    source.put(b"cover", workspace_id="ws-a", project_id="prj-1")
+    archive = ProjectTransferService(_seeded_graph(), objects=source).export_project(
+        "ws-a", "prj-1"
+    )
+    archive["objects"][0]["checksum"] = "0" * 64
+    archive["checksum"] = _checksum(archive)
+
+    target = FilesystemObjectStore(str(tmp_path / "d"))
+    with pytest.raises(TransferError, match="does not match"):
+        ProjectTransferService(InMemoryGraphRepository(), objects=target).import_project(
+            "ws-b", "prj-9", archive
+        )
+
+
+def test_import_rejects_invalid_base64(tmp_path) -> None:
+    from backend.adapters.objects import FilesystemObjectStore
+    from backend.services.project_transfer import _checksum
+
+    source = FilesystemObjectStore(str(tmp_path / "s"))
+    source.put(b"cover", workspace_id="ws-a", project_id="prj-1")
+    archive = ProjectTransferService(_seeded_graph(), objects=source).export_project(
+        "ws-a", "prj-1"
+    )
+    archive["objects"][0]["data"] = "not valid base64!!!"
+    archive["checksum"] = _checksum(archive)
+
+    target = FilesystemObjectStore(str(tmp_path / "d"))
+    with pytest.raises(TransferError, match="base64"):
+        ProjectTransferService(InMemoryGraphRepository(), objects=target).import_project(
+            "ws-b", "prj-9", archive
+        )
+
+
+def test_import_rejects_byte_length_mismatch(tmp_path) -> None:
+    from backend.adapters.objects import FilesystemObjectStore
+    from backend.services.project_transfer import _checksum
+
+    source = FilesystemObjectStore(str(tmp_path / "s"))
+    source.put(b"cover", workspace_id="ws-a", project_id="prj-1")
+    archive = ProjectTransferService(_seeded_graph(), objects=source).export_project(
+        "ws-a", "prj-1"
+    )
+    archive["objects"][0]["byte_length"] = 999
+    archive["checksum"] = _checksum(archive)
+
+    target = FilesystemObjectStore(str(tmp_path / "d"))
+    with pytest.raises(TransferError, match="byte_length"):
+        ProjectTransferService(InMemoryGraphRepository(), objects=target).import_project(
+            "ws-b", "prj-9", archive
+        )
+
+
+def test_import_preserves_node_created_at() -> None:
+    from datetime import datetime
+
+    created = datetime(2024, 1, 2, 3, 4, 5)
+    graph = InMemoryGraphRepository()
+    graph.add_node(
+        Node(
+            id="char_a",
+            type="Character",
+            properties={"name": "A"},
+            workspace_id="ws-a",
+            project_id="prj-1",
+            created_at=created,
+        )
+    )
+    archive = ProjectTransferService(graph).export_project("ws-a", "prj-1")
+
+    target = InMemoryGraphRepository()
+    ProjectTransferService(target).import_project("ws-b", "prj-9", archive)
+    node = target.get_node("char_a", workspace_id="ws-b", project_id="prj-9")
+
+    assert node is not None
+    assert node.created_at == created
+
+
+def test_import_is_idempotent_for_objects(tmp_path) -> None:
+    from backend.adapters.objects import FilesystemObjectStore
+
+    source = FilesystemObjectStore(str(tmp_path / "s"))
+    source.put(b"cover", workspace_id="ws-a", project_id="prj-1")
+    archive = ProjectTransferService(_seeded_graph(), objects=source).export_project(
+        "ws-a", "prj-1"
+    )
+
+    target = FilesystemObjectStore(str(tmp_path / "d"))
+    service = ProjectTransferService(InMemoryGraphRepository(), objects=target)
+    first = service.import_project("ws-b", "prj-9", archive)
+    second = service.import_project("ws-b", "prj-9", archive)
+
+    assert first["objects"] == 1
+    assert second["objects"] == 0
+    assert len(target.list_objects(workspace_id="ws-b", project_id="prj-9")) == 1
+
+
+def test_export_import_round_trip_preserves_graph_content() -> None:
+    archive = ProjectTransferService(_seeded_graph()).export_project("ws-a", "prj-1")
+
+    target = InMemoryGraphRepository()
+    ProjectTransferService(target).import_project("ws-b", "prj-9", archive)
+    reexported = ProjectTransferService(target).export_project("ws-b", "prj-9")
+
+    assert reexported["nodes"] == archive["nodes"]
+    assert reexported["edges"] == archive["edges"]
