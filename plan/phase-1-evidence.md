@@ -1,8 +1,8 @@
 # Phase 1 exit evidence
 
-- Status: Evidence collected; project-owner acceptance and a clean-host deployment rehearsal pending
+- Status: Evidence collected; project-owner acceptance, a clean-host deployment rehearsal, and the first hosted Phase 1 CI run pending
 - Owner: project owner or designated technical lead
-- Branch: `phase-1-stabilization` (Phase 0 merged as `8d7a599`)
+- Branch: `main` (Phase 0 merged as `8d7a599`; Phase 1 implemented on top)
 - Date: 2026-10-06
 
 This records the security and operational boundary for the invite-only deployment while
@@ -21,21 +21,21 @@ not exist.
 
 ## Tests and coverage baseline
 
-- Hermetic suite (unit + application + contract): **264 passed** (`make test`), no services,
+- Hermetic suite (unit + application + contract): **301 passed** (`make test`), no services,
   network, API keys, or persistent writes.
-- Integration suite (disposable PostgreSQL/pgvector + `neo4j-test`): **43 passed**
+- Integration suite (disposable PostgreSQL/pgvector + `neo4j-test`): **48 passed**
   (`make integration-test`).
-- Hermetic line coverage baseline: **71%** (`--cov=backend`), a regression floor only.
+- Hermetic line coverage baseline: **~71%** (`--cov=backend`), a regression floor only.
 - Static/quality: `make check` (lock-check, lint, format, secret-scan, typecheck, hermetic
   tests, frontend lint/build) is green; `make audit` (pip-audit) runs in CI.
 
 ## Migration versions and checksums
 
-- PostgreSQL (Alembic) head: `0009_provider_usage`
+- PostgreSQL (Alembic) head: `0010_vector_project_scope`
   (`0004_identity_and_sessions`, `0005_tenancy`, `0006_rate_limiter`, `0007_workspace_scope`,
-  `0008_credentials`, `0009_provider_usage`).
-- Neo4j ordered migration: `0001_initial_graph_schema`, checksum
-  `e5ec799c5aff2b16d2019b5e00d4b9921e4e9c919e845c64cab0a88b004eba5c`.
+  `0008_credentials`, `0009_provider_usage`, `0010_vector_project_scope`).
+- Neo4j ordered migrations: `0001_initial_graph_schema` and `0002_entity_scope_identity`
+  (composite `(workspace_id, project_id, id)` entity uniqueness).
 
 ## Clean deployment commands
 
@@ -124,3 +124,40 @@ and expired invitations, removed-inviter, and email-bound mismatch.
 - **Warnings:** Pydantic `datetime.utcnow()` deprecation in domain `Node`/`Edge` defaults.
 - **Prerequisites for Phase 2:** owner acceptance of this evidence, optional PostgreSQL RLS
   decision, and the canon mutation journal/temporal redesign.
+## Post-review hardening (2026-10-06)
+
+An external review reopened isolation/security claims. Each is now repaired with a regression
+test (commits after the initial Phase 1 work):
+
+- **Global schema authority:** schema listings require an authenticated session and mutations
+  require CSRF plus platform-admin authority (`PLATFORM_ADMIN_USER_IDS`); anonymous callers can no
+  longer read or mutate the shared schema.
+- **Scoped entity identity:** Neo4j now uses a composite `(workspace_id, project_id, id)`
+  uniqueness constraint (migration `0002_entity_scope_identity`), so the same id in two projects is
+  a distinct node rather than a silent no-op with a false 201.
+- **Provisioning:** hosted workspace creation requires platform-admin provisioning unless
+  `ALLOW_WORKSPACE_SELF_CREATION` is enabled; local mode is trusted.
+- **Deletion cascade:** workspace/project deletion purges Neo4j nodes, pgvector rows, credentials,
+  usage records, object storage, and debug artifacts (`WorkspacePurgePort`), and project deletion
+  is scoped to one project.
+- **Invitation concurrency and email binding:** acceptance atomically claims the invitation
+  (conditional `UPDATE ... RETURNING`); email-bound invitations reject accounts with no matching
+  email; the rate limiter serializes per key with a transaction-scoped advisory lock.
+- **Enforced BYOK pipeline:** AI endpoints require project-write authority plus CSRF; hosted calls
+  resolve the workspace credential and refuse with 503 when none exists (no platform-funded
+  inference); the AI port threads a per-call `api_key` and records provider usage.
+- **Sentry completeness:** scrubbing removes exception frame locals, extras, and contexts, with
+  `include_local_variables=False`.
+- **KEK rotation:** retired KEKs (`CREDENTIAL_PREVIOUS_KEKS`) keep existing credentials decryptable
+  after rotating `CREDENTIAL_KEK`.
+- **Export/import:** project archives include the object manifest (content_type/byte_length/
+  checksum) and validate the whole archive before writing.
+- **Frontend:** the shell renders the nested `/auth/me` user.
+
+Not reproducible here: the reported TestClient deadlock. `make check` and the full hermetic suite
+(301 tests) complete in seconds in this environment.
+
+**Still deferred/external:** first hosted CI run; project-owner acceptance; clean-host self-hosted
+and hosted rehearsals; coordinated PostgreSQL/Neo4j/artifact backup tooling; live Authentik browser
+round-trip; provider-side credential validation; interactive confirmation thresholds; job-runner
+cancellation enforcement; project export/import audit events; PostgreSQL RLS decision.

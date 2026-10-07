@@ -1,6 +1,6 @@
 # Phase 1 todo — Identity, tenancy, distribution, and project foundation
 
-- Status: Ready to start; Phase 0 merged in PR #1
+- Status: In progress; Phase 0 merged in PR #1, Phase 1 implemented with post-review hardening (see `phase-1-evidence.md`)
 - Scope: IDN-001–IDN-006, OSS-001–OSS-004, OSS-006–OSS-008, SaaS-006, OPS-002–OPS-006, CAN-001
 - Architecture: ADR-008 and ADR-009; preserve the tenant-scoped object/job/vector seams required by ADR-010 without implementing its media pipeline in Phase 1
 - Exit owner: project owner or designated technical lead
