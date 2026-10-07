@@ -21,13 +21,14 @@ not exist.
 
 ## Tests and coverage baseline
 
-- Hermetic suite (unit + application + contract): **301 passed** (`make test`), no services,
+- Hermetic suite (unit + application + contract): **308 passed** (`make test`), no services,
   network, API keys, or persistent writes.
 - Integration suite (disposable PostgreSQL/pgvector + `neo4j-test`): **48 passed**
   (`make integration-test`).
 - Hermetic line coverage baseline: **~71%** (`--cov=backend`), a regression floor only.
 - Static/quality: `make check` (lock-check, lint, format, secret-scan, typecheck, hermetic
-  tests, frontend lint/build) is green; `make audit` (pip-audit) runs in CI.
+  tests, frontend lint/build) is green; `make audit` (pip-audit) runs in CI. `mypy` now covers
+  the whole backend (`mypy backend`, 76 files), not a four-file subset.
 
 ## Migration versions and checksums
 
@@ -150,12 +151,36 @@ test (commits after the initial Phase 1 work):
   `include_local_variables=False`.
 - **KEK rotation:** retired KEKs (`CREDENTIAL_PREVIOUS_KEKS`) keep existing credentials decryptable
   after rotating `CREDENTIAL_KEK`.
-- **Export/import:** project archives include the object manifest (content_type/byte_length/
-  checksum) and validate the whole archive before writing.
+- **Export/import:** project archives include each object's base64 bytes (import writes them back)
+  and validate the whole archive before writing; graph import remains a sequential best-effort write
+  (no cross-store journal/rollback) and object keys are regenerated on import.
 - **Frontend:** the shell renders the nested `/auth/me` user.
 
-Not reproducible here: the reported TestClient deadlock. `make check` and the full hermetic suite
-(301 tests) complete in seconds in this environment.
+The reported TestClient deadlock was **not reproducible** in this environment: `make check` and the
+full hermetic suite complete in seconds. Two defensive mitigations were added regardless, because a
+developer `.env` carrying a Sentry DSN could otherwise start a background reporter during the test
+gate: Sentry is now disabled whenever pytest is running, and `pytest-timeout` (120s) bounds any
+future hang so CI fails with a traceback instead of hanging indefinitely.
+
+## Post-review corrections (2026-10-06)
+
+A second review reopened several claims; this pass fixed the blocking items and corrected the
+overstated ones:
+
+- **Hosted inference:** `OpenAIGateway` now builds a per-call client from the supplied key and base
+  URL **before** touching the platform client, so hosted BYOK runs with no platform key; added
+  `AI_PROVIDER`/`AI_BASE_URL` (OpenRouter `https://openrouter.ai/api/v1`, Ollama/llama.cpp-
+  compatible), and capability reporting reflects the configured provider. Credential *use*
+  (`resolve_active_for_use`) requires project-write, not workspace admin, so editors can generate.
+- **Semantic retrieval:** the Neo4j vector query oversamples and filters on the node returned by the
+  index (`node.workspace_id`/`node.project_id`) instead of re-matching by id, so other tenants cannot
+  crowd a project out and a colliding id in another project cannot contribute its score.
+- **Export/import:** object bytes are carried and re-written on import (above).
+- **Type checking:** `mypy backend` (76 files) is clean and enforced; scope widened from four files.
+- **Corrections:** the usage plan item is reopened (only successful calls recorded; latency, provider
+  cost, attempts, failures, and idempotency not populated; estimates default to 0); workspace/project
+  purge is documented as sequential with no journal/retry/compensation; project-export audit events
+  remain absent.
 
 **Still deferred/external:** first hosted CI run; project-owner acceptance; clean-host self-hosted
 and hosted rehearsals; coordinated PostgreSQL/Neo4j/artifact backup tooling; live Authentik browser

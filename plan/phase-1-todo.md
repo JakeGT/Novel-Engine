@@ -106,7 +106,9 @@ Still open before affected slices:
       (Transfer, last-owner protection, role changes, and member removal are implemented and tested.
       Workspace deletion is owner-only (`DELETE /api/v1/workspaces/{id}`) and cascades memberships/projects/
       invitations while retaining audit events; identity unlinking removes an external link without deleting the
-      local user (`IdentityStorePort.unlink_identity`).)
+      local user (`IdentityStorePort.unlink_identity`). Residual: cross-store purge (`StoreWorkspacePurge`) runs
+      sequentially across Neo4j/pgvector/credentials/usage/objects/artifacts with no journal, retry, or
+      compensation, so a mid-purge failure can leave the stores inconsistent (deferred to a later recovery pass).)
 - [x] Update deterministic seed data with two users, two workspaces, similar project names/IDs, roles, and expired/revoked invitations (`backend/seed/tenancy.py`; applied by `make seed`, cleared by `make reset-dev`).
 
 Acceptance:
@@ -229,14 +231,17 @@ Acceptance:
       (Redaction masks `sk-`/`sk-or-` keys and secret-named fields; the vault never logs plaintext; API responses
       carry metadata only.)
 - [x] Resolve credentials from authenticated actor, workspace/project policy, and job scope immediately before provider use.
-      (`CredentialService.resolve_for_use` authorizes workspace admin in hosted mode and local mode is trusted.
-      Wiring into the actual model-call path arrives with the generation pipeline.)
-- [x] Record requested/actual route, token usage, latency, attempt, and provider-reported cost without creating a platform balance.
-      (`ProviderUsagePort` + `PostgresProviderUsageStore`, migration `0009_provider_usage`; records are immutable
-      and cost is provider-reported. Recording is called by the pipeline when it lands.)
+      (`CredentialService.resolve_active_for_use`/`resolve_for_use` require project-write authority (editors may run
+      generation); credential management requires workspace admin. The hosted AI endpoints resolve the workspace key
+      immediately before the provider call.)
+- [ ] Record requested/actual route, token usage, latency, attempt, and provider-reported cost without creating a platform balance.
+      (Partial: `ProviderUsagePort` + `PostgresProviderUsageStore` (migration `0009_provider_usage`) persist immutable
+      records, but only successful calls are recorded and only provider/model/route/tokens/outcome are populated —
+      latency, provider-reported cost, attempt count, failure outcomes, and idempotency are not yet written.)
 - [x] Implement author/project per-job and periodic token/cost limits plus confirmation thresholds.
-      (`ProviderUsageService` enforces per-job and rolling-period token/cost limits. Interactive confirmation
-      thresholds are deferred with the generation pipeline.)
+      (`ProviderUsageService` enforces per-job and rolling-period token/cost limits; the API passes a zero estimate
+      today, so a single large request can still cross a configured limit. Interactive confirmation thresholds are
+      deferred with the generation pipeline.)
 - [ ] Ensure cancellation/retry cannot duplicate accepted output or bypass a limit.
       (Idempotency keys are recorded and queryable; enforcement inside a job runner is deferred as no job system
       exists yet.)
@@ -264,10 +269,11 @@ Acceptance:
       (Deferred: logical project export/import is implemented, but a coordinated pg_dump/Neo4j/artefact backup tool
       with a checksum manifest is not yet built; documented as an operator procedure.)
 - [x] Implement complete project export/import without credentials or session data.
-      (Currently exports an entire workspace and drops project identity on import; project-scoped
-      `export_project`/`import_project` with a forward-compatible archive format is in progress.)
-      (`ProjectTransferService` exports/imports checksummed graph bundles for a workspace and never includes
-      credentials, sessions, or provider usage; `tests/application/test_project_transfer.py`.)
+      (`ProjectTransferService.export_project`/`import_project` are project-scoped, checksummed, and carry the
+      project's object bytes (base64) so import writes them back; credentials, sessions, and provider usage are
+      never included. Residual: graph import is a sequential best-effort write that raises with progress on
+      failure (no cross-store journal/rollback), and object keys are regenerated on import.)
+      (`tests/application/test_project_transfer.py`.)
 - [x] Document every outbound connection; make telemetry absent or opt-in and content-free by default.
       (Only OIDC, the configured AI provider, and opt-in Sentry egress exist; Sentry is off unless a DSN is set and
       scrubs requests/PII — see `backend/core/observability.py` and the README telemetry note.)
