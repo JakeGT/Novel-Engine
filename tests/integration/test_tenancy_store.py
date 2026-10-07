@@ -211,3 +211,32 @@ async def test_delete_workspace_leaves_other_workspaces_intact(session_factory) 
     assert await store.delete_workspace(drop.id) is True
     assert await store.get_workspace(keep.id) is not None
     assert len(await store.list_memberships(keep.id)) == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_accept_only_one_wins(session_factory) -> None:
+    import asyncio
+
+    store = PostgresTenancyStore(session_factory)
+    owner = await _make_user(session_factory, "owner-conc")
+    accepter_a = await _make_user(session_factory, "accepter-a")
+    accepter_b = await _make_user(session_factory, "accepter-b")
+
+    workspace = await store.create_workspace(slug="concurrent", name="Concurrent")
+    await store.add_membership(workspace_id=workspace.id, user_id=owner, role=Role.OWNER)
+    await store.create_invitation(
+        workspace_id=workspace.id,
+        role=Role.EDITOR,
+        token_hash="hash-concurrent",
+        created_by_user_id=owner,
+        ttl_seconds=3600,
+    )
+
+    async def accept(user_id: str):
+        try:
+            return await store.accept_invitation(token_hash="hash-concurrent", user_id=user_id)
+        except InvitationNotAcceptable:
+            return None
+
+    results = await asyncio.gather(accept(accepter_a), accept(accepter_b))
+    assert sum(result is not None for result in results) == 1

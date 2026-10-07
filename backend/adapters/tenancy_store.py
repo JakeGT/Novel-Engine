@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from sqlalchemy import DateTime, ForeignKey, Index, Text, UniqueConstraint, delete, select
+from sqlalchemy import DateTime, ForeignKey, Index, Text, UniqueConstraint, delete, select, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -469,18 +469,36 @@ class PostgresTenancyStore:
     async def accept_invitation(self, *, token_hash: str, user_id: str) -> Membership:
         now = utcnow()
         async with session_scope(self._session_factory) as session:
-            row = (
+            # Atomically claim the invitation: the conditional UPDATE re-evaluates
+            # after a concurrent transaction releases the row lock, so two accepters
+            # cannot both succeed.
+            claimed = (
                 await session.execute(
-                    select(InvitationRow).where(InvitationRow.token_hash == token_hash)
+                    update(InvitationRow)
+                    .where(
+                        InvitationRow.token_hash == token_hash,
+                        InvitationRow.accepted_at.is_(None),
+                        InvitationRow.revoked_at.is_(None),
+                        InvitationRow.expires_at > now,
+                    )
+                    .values(accepted_at=now, accepted_by_user_id=user_id)
+                    .returning(InvitationRow)
                 )
             ).scalar_one_or_none()
-            if row is None:
-                raise InvitationNotFound("no invitation matches the supplied token")
-            invitation = _to_invitation(row)
-            if not invitation.is_acceptable(now):
+            if claimed is None:
+                existing_row = (
+                    await session.execute(
+                        select(InvitationRow).where(InvitationRow.token_hash == token_hash)
+                    )
+                ).scalar_one_or_none()
+                if existing_row is None:
+                    raise InvitationNotFound("no invitation matches the supplied token")
                 raise InvitationNotAcceptable(
-                    f"invitation is {invitation.status(now).value} and cannot be accepted"
+                    f"invitation is {_to_invitation(existing_row).status(now).value} "
+                    "and cannot be accepted"
                 )
+            row = claimed
+            invitation = _to_invitation(row)
 
             inviter = (
                 await session.execute(
@@ -520,8 +538,6 @@ class PostgresTenancyStore:
                     updated_at=now,
                 )
             )
-            row.accepted_at = now
-            row.accepted_by_user_id = user_id
             await session.flush()
             return membership
 

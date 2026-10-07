@@ -50,3 +50,29 @@ def test_scrub_event_removes_content_credentials_and_pii() -> None:
     assert scrubbed["request"]["headers"] == {"Accept": "application/json"}
     assert scrubbed["user"] == {"id": "u1"}
     assert "breadcrumbs" not in scrubbed
+
+
+def test_scrub_event_removes_locals_extras_and_contexts() -> None:
+    event = {
+        "exception": {
+            "values": [
+                {
+                    "type": "ValueError",
+                    "stacktrace": {
+                        "frames": [
+                            {"filename": "app.py", "vars": {"prompt": "secret manuscript"}},
+                            {"filename": "other.py"},
+                        ]
+                    },
+                }
+            ]
+        },
+        "extra": {"provider_response": "raw text"},
+        "contexts": {"manuscript": {"text": "chapter one"}},
+    }
+
+    scrubbed = scrub_event(event)
+
+    assert "vars" not in scrubbed["exception"]["values"][0]["stacktrace"]["frames"][0]
+    assert "extra" not in scrubbed
+    assert "contexts" not in scrubbed

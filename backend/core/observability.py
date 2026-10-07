@@ -2,9 +2,10 @@
 
 Error reporting is opt-in: it initializes only when a backend DSN is configured
 and the application is not running tests. Events are scrubbed before they leave
-the process — request bodies, query strings, cookies, sensitive headers, and user
-PII are removed, and breadcrumbs are dropped — so manuscript content, prompts,
-and credentials are never sent to the provider.
+the process — request bodies, query strings, cookies, sensitive headers, user
+PII, exception local variables, structured extras/contexts, and breadcrumbs are
+removed — so manuscript content, prompts, and credentials are never sent to the
+provider.
 """
 
 from __future__ import annotations
@@ -51,6 +52,23 @@ def scrub_event(event: dict[str, Any], hint: dict[str, Any] | None = None) -> di
         for key in _USER_PII_KEYS:
             user.pop(key, None)
 
+    # Exception frames can capture local variables (prompts, manuscript text,
+    # credentials); strip every local-variable scope.
+    exception = event.get("exception")
+    if isinstance(exception, dict):
+        for value in exception.get("values") or []:
+            if not isinstance(value, dict):
+                continue
+            stacktrace = value.get("stacktrace")
+            if isinstance(stacktrace, dict):
+                for frame in stacktrace.get("frames") or []:
+                    if isinstance(frame, dict):
+                        frame.pop("vars", None)
+
+    # Structured extras and contexts can carry arbitrary application data.
+    event.pop("extra", None)
+    event.pop("contexts", None)
+
     # Breadcrumbs can carry rendered log messages or request content.
     event.pop("breadcrumbs", None)
     return event
@@ -73,6 +91,7 @@ def init_sentry(settings: Settings) -> bool:
         traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
         send_default_pii=False,
         max_request_body_size="never",
+        include_local_variables=False,
         before_send=scrub_event,
         integrations=[
             FastApiIntegration(transaction_style="endpoint"),

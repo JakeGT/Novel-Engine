@@ -334,9 +334,13 @@ class TenancyService:
         await self._check_accept_rate(scope.actor_user_id)
         token_hash = hash_token(token)
         invitation = await self._store.get_invitation_by_token_hash(token_hash)
-        if invitation is not None and invitation.email and self._identity_store is not None:
-            user = await self._identity_store.get_user(scope.actor_user_id)
-            if user is not None and user.email and user.email.lower() != invitation.email.lower():
+        if invitation is not None and invitation.email:
+            user = (
+                await self._identity_store.get_user(scope.actor_user_id)
+                if self._identity_store is not None
+                else None
+            )
+            if user is None or not user.email or user.email.lower() != invitation.email.lower():
                 raise ForbiddenError("This invitation was issued to a different account.")
         membership = await self._store.accept_invitation(
             token_hash=token_hash, user_id=scope.actor_user_id

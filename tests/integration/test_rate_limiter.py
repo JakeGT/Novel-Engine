@@ -43,3 +43,14 @@ async def test_limiter_prunes_hits_outside_window(limiter) -> None:
 
     # The stale hit is outside the 60s window and must be pruned before counting.
     assert await rate_limiter.allow("accept:user-3", limit=1, window_seconds=60) is True
+
+
+@pytest.mark.asyncio
+async def test_concurrent_allows_respect_limit(limiter) -> None:
+    import asyncio
+
+    rate_limiter, _engine = limiter
+    results = await asyncio.gather(
+        *(rate_limiter.allow("accept:contended", limit=1, window_seconds=60) for _ in range(5))
+    )
+    assert sum(results) == 1

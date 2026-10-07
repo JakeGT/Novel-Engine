@@ -22,6 +22,11 @@ class PostgresRateLimiter:
     async def allow(self, key: str, *, limit: int, window_seconds: int) -> bool:
         cutoff = datetime.now(UTC) - timedelta(seconds=window_seconds)
         async with session_scope(self._session_factory) as session:
+            # Serialize checks for this key so concurrent workers cannot both pass
+            # the count check before either inserts.
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": key}
+            )
             await session.execute(
                 text("DELETE FROM rate_limit_hits WHERE key = :key AND occurred_at < :cutoff"),
                 {"key": key, "cutoff": cutoff},
