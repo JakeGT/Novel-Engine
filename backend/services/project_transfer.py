@@ -1,15 +1,16 @@
 """Portable project export and import.
 
-Exports one project's canonical graph (never credentials, sessions, or provider
-usage) into a checksummed, forward-compatible archive and re-imports it into a
-target workspace/project. The archive carries project identity, a schema version,
-an object manifest (empty until media exists), a derived-data section, and a
-free-form ``sections`` map so the format does not need a redesign when media or
-derived indexes arrive.
+Exports one project's canonical graph and its project-scoped objects (never
+credentials, sessions, or provider usage) into a checksummed, forward-compatible
+archive and re-imports it into a target workspace/project. The archive carries
+project identity, a schema version, an object manifest with base64 payloads, a
+derived-data section, and a free-form ``sections`` map so the format does not need
+a redesign when derived indexes arrive.
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from typing import Any
@@ -58,19 +59,24 @@ class ProjectTransferService:
 
         objects_manifest: list[dict[str, Any]] = []
         if self._objects is not None:
-            objects_manifest = [
-                {
-                    "key": stat.key,
-                    "content_type": stat.content_type,
-                    "byte_length": stat.byte_length,
-                    "checksum": stat.checksum,
-                    # Attribution/licence fields are reserved for source media.
-                    "attribution": {},
-                }
-                for stat in self._objects.list_objects(
-                    workspace_id=workspace_id, project_id=project_id
+            for stat in self._objects.list_objects(
+                workspace_id=workspace_id, project_id=project_id
+            ):
+                payload = self._objects.open(
+                    stat.key, workspace_id=workspace_id, project_id=project_id
                 )
-            ]
+                objects_manifest.append(
+                    {
+                        "key": stat.key,
+                        "content_type": stat.content_type,
+                        "byte_length": stat.byte_length,
+                        "checksum": stat.checksum,
+                        # Base64 payload so the archive is self-contained.
+                        "data": base64.b64encode(payload).decode("ascii"),
+                        # Attribution/licence fields are reserved for source media.
+                        "attribution": {},
+                    }
+                )
 
         body: dict[str, Any] = {
             "archive_version": ARCHIVE_VERSION,
@@ -146,6 +152,8 @@ class ProjectTransferService:
                 raise TransferError("object manifest entry is missing a key")
             if not isinstance(raw.get("checksum"), str):
                 raise TransferError("object manifest entry is missing a checksum")
+            if not isinstance(raw.get("data"), str):
+                raise TransferError("object manifest entry is missing its payload")
 
         return nodes, edges, objects
 
@@ -156,35 +164,59 @@ class ProjectTransferService:
         archive: dict[str, Any],
     ) -> dict[str, Any]:
         nodes, edges, objects = self._validate_archive(archive)
+        if objects and self._objects is None:
+            raise TransferError("object store is not configured for this deployment")
 
+        # Graph import is sequential; a partial failure raises with progress so the
+        # caller can retry. True multi-store atomicity is deferred (no journal).
         node_count = 0
-        for raw in nodes:
-            node = Node(
-                id=raw["id"],
-                type=raw["type"],
-                properties=dict(raw.get("properties", {})),
-                workspace_id=target_workspace_id,
-                project_id=target_project_id,
-            )
-            self._graph.add_node(node)
-            node_count += 1
+        try:
+            for raw in nodes:
+                node = Node(
+                    id=raw["id"],
+                    type=raw["type"],
+                    properties=dict(raw.get("properties", {})),
+                    workspace_id=target_workspace_id,
+                    project_id=target_project_id,
+                )
+                self._graph.add_node(node)
+                node_count += 1
+        except Exception as error:  # pragma: no cover - adapter dependent
+            raise TransferError(f"graph import failed after {node_count} nodes") from error
 
         edge_count = 0
-        for raw in edges:
-            edge = Edge(
-                source=raw["source"],
-                target=raw["target"],
-                type=raw["type"],
-                properties=dict(raw.get("properties", {})),
-                workspace_id=target_workspace_id,
-                project_id=target_project_id,
-            )
-            self._graph.add_edge(edge)
-            edge_count += 1
+        try:
+            for raw in edges:
+                edge = Edge(
+                    source=raw["source"],
+                    target=raw["target"],
+                    type=raw["type"],
+                    properties=dict(raw.get("properties", {})),
+                    workspace_id=target_workspace_id,
+                    project_id=target_project_id,
+                )
+                self._graph.add_edge(edge)
+                edge_count += 1
+        except Exception as error:  # pragma: no cover - adapter dependent
+            raise TransferError(
+                f"graph import failed after {node_count} nodes and {edge_count} edges"
+            ) from error
+
+        object_count = 0
+        if self._objects is not None:
+            for raw in objects:
+                payload = base64.b64decode(raw["data"])
+                self._objects.put(
+                    payload,
+                    workspace_id=target_workspace_id,
+                    project_id=target_project_id,
+                    content_type=raw.get("content_type", "application/octet-stream"),
+                )
+                object_count += 1
 
         return {
             "nodes": node_count,
             "edges": edge_count,
-            "objects": len(objects),
+            "objects": object_count,
             "checksum": archive["checksum"],
         }

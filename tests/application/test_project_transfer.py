@@ -132,3 +132,28 @@ def test_import_preflight_rejects_object_without_checksum() -> None:
 
     with pytest.raises(TransferError, match="checksum"):
         ProjectTransferService(InMemoryGraphRepository()).import_project("ws-b", "prj-9", archive)
+
+
+def test_export_carries_object_bytes_and_import_writes_them(tmp_path) -> None:
+    import base64
+
+    from backend.adapters.objects import FilesystemObjectStore
+
+    source = FilesystemObjectStore(str(tmp_path / "src"))
+    source.put(b"cover", workspace_id="ws-a", project_id="prj-1", content_type="image/png")
+    archive = ProjectTransferService(_seeded_graph(), objects=source).export_project(
+        "ws-a", "prj-1"
+    )
+
+    entry = archive["objects"][0]
+    assert base64.b64decode(entry["data"]) == b"cover"
+
+    target = FilesystemObjectStore(str(tmp_path / "dst"))
+    result = ProjectTransferService(InMemoryGraphRepository(), objects=target).import_project(
+        "ws-b", "prj-9", archive
+    )
+
+    assert result["objects"] == 1
+    imported = target.list_objects(workspace_id="ws-b", project_id="prj-9")
+    assert len(imported) == 1
+    assert target.open(imported[0].key, workspace_id="ws-b", project_id="prj-9") == b"cover"
