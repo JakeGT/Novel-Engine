@@ -143,6 +143,7 @@ def build_container(settings: Settings | None = None) -> Container:
         identity_store=identity_store,
         session_store=session_store,
         rate_limiter=container.rate_limiter,
+        settings=resolved,
     )
 
     from backend.adapters.credentials import PostgresCredentialVault

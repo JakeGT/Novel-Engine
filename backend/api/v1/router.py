@@ -4,7 +4,12 @@ import re
 
 from fastapi import APIRouter, Depends, Query, status
 
-from backend.api.auth import get_project_scope, require_project_scope
+from backend.api.auth import (
+    get_project_scope,
+    require_platform_admin,
+    require_project_scope,
+    require_session,
+)
 from backend.api.dependencies import (
     get_character_service,
     get_container,
@@ -26,6 +31,7 @@ from backend.graph.resolver import extract_entity_ids
 from backend.graph.schema import Edge, Node
 from backend.graph.summarizer import summarize_context
 from backend.ports import EmbeddingPort, GraphRepository, SchemaRegistryPort
+from backend.services.auth_service import AuthenticatedSession
 from backend.services.character_service import CharacterService
 
 project_router = APIRouter()
@@ -256,6 +262,7 @@ def list_edges(
 @project_router.get("/schema/node-types", response_model=s.SchemaTypesResponse, tags=["schema"])
 def list_node_types(
     registry: SchemaRegistryPort = Depends(get_schema_registry),
+    _session: AuthenticatedSession = Depends(require_session),
 ) -> s.SchemaTypesResponse:
     return s.SchemaTypesResponse(types=sorted(set(registry.get_all_node_types())))
 
@@ -267,7 +274,9 @@ def list_node_types(
     tags=["schema"],
 )
 def add_node_type(
-    body: s.SchemaTypeRequest, registry: SchemaRegistryPort = Depends(get_schema_registry)
+    body: s.SchemaTypeRequest,
+    registry: SchemaRegistryPort = Depends(get_schema_registry),
+    _admin: AuthenticatedSession = Depends(require_platform_admin),
 ) -> s.SchemaTypesResponse:
     _validate_identifier(body.type, "node type")
     if registry.is_valid_node_type(body.type):
@@ -280,7 +289,9 @@ def add_node_type(
     "/schema/node-types/{node_type}", response_model=s.SchemaTypesResponse, tags=["schema"]
 )
 def remove_node_type(
-    node_type: str, registry: SchemaRegistryPort = Depends(get_schema_registry)
+    node_type: str,
+    registry: SchemaRegistryPort = Depends(get_schema_registry),
+    _admin: AuthenticatedSession = Depends(require_platform_admin),
 ) -> s.SchemaTypesResponse:
     if node_type not in registry.custom_node_types:
         raise NotFoundError(f"Custom node type {node_type!r} not found")
@@ -291,6 +302,7 @@ def remove_node_type(
 @project_router.get("/schema/edge-types", response_model=s.SchemaTypesResponse, tags=["schema"])
 def list_edge_types(
     registry: SchemaRegistryPort = Depends(get_schema_registry),
+    _session: AuthenticatedSession = Depends(require_session),
 ) -> s.SchemaTypesResponse:
     return s.SchemaTypesResponse(types=sorted(set(registry.get_all_edge_types())))
 
@@ -302,7 +314,9 @@ def list_edge_types(
     tags=["schema"],
 )
 def add_edge_type(
-    body: s.SchemaTypeRequest, registry: SchemaRegistryPort = Depends(get_schema_registry)
+    body: s.SchemaTypeRequest,
+    registry: SchemaRegistryPort = Depends(get_schema_registry),
+    _admin: AuthenticatedSession = Depends(require_platform_admin),
 ) -> s.SchemaTypesResponse:
     _validate_identifier(body.type, "edge type")
     if registry.is_valid_edge_type(body.type):
@@ -315,7 +329,9 @@ def add_edge_type(
     "/schema/edge-types/{edge_type}", response_model=s.SchemaTypesResponse, tags=["schema"]
 )
 def remove_edge_type(
-    edge_type: str, registry: SchemaRegistryPort = Depends(get_schema_registry)
+    edge_type: str,
+    registry: SchemaRegistryPort = Depends(get_schema_registry),
+    _admin: AuthenticatedSession = Depends(require_platform_admin),
 ) -> s.SchemaTypesResponse:
     if edge_type not in registry.custom_edge_types:
         raise NotFoundError(f"Custom edge type {edge_type!r} not found")

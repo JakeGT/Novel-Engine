@@ -106,6 +106,7 @@ def _build_fake_container(settings, tmp_path):
         identity_store=identity_store,
         session_store=session_store,
         rate_limiter=rate_limiter,
+        settings=settings,
     )
     vault = InMemoryCredentialVault()
     credential_service = CredentialService(vault, tenancy=tenancy_service)

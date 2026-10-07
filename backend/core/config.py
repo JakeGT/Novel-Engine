@@ -70,6 +70,12 @@ class Settings(BaseSettings):
     SESSION_ROTATION_SECONDS: int = 60 * 60
     CSRF_COOKIE_NAME: str = "novel_csrf"
 
+    # Comma-separated local user ids granted platform-wide authority (global schema,
+    # workspace provisioning). Local mode always counts as platform administrator.
+    PLATFORM_ADMIN_USER_IDS: str = ""
+    # Hosted workspaces are invitation-gated: only platform admins may create one.
+    ALLOW_WORKSPACE_SELF_CREATION: bool = False
+
     # Provider credentials and usage limits. An empty KEK disables credential storage.
     CREDENTIAL_KEK: str = ""
     CREDENTIAL_KEK_VERSION: int = 1
@@ -95,6 +101,10 @@ class Settings(BaseSettings):
     def session_cookie_secure(self) -> bool:
         """Cookies are always Secure under hosted/production; plain only in local dev/test."""
         return self.AUTH_MODE == "hosted" or self.APP_ENV == "production"
+
+    @property
+    def platform_admin_user_ids(self) -> set[str]:
+        return {value.strip() for value in self.PLATFORM_ADMIN_USER_IDS.split(",") if value.strip()}
 
     def _postgres_dsn(self, scheme: str) -> str:
         user = quote_plus(self.POSTGRES_USER)

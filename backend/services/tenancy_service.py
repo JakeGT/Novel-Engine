@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import time
 
+from backend.core.config import Settings
 from backend.core.security import generate_token, hash_token
 from backend.domain.errors import ForbiddenError, NotFoundError, RateLimitedError
 from backend.domain.identity import AccessScope, Role
@@ -40,6 +41,7 @@ class TenancyService:
         identity_store: IdentityStorePort | None = None,
         session_store: SessionStorePort | None = None,
         rate_limiter: RateLimiterPort | None = None,
+        settings: Settings | None = None,
         invitation_ttl_seconds: int = INVITATION_TTL_SECONDS,
         accept_rate_limit: int = ACCEPT_RATE_LIMIT,
         accept_rate_window_seconds: int = ACCEPT_RATE_WINDOW_SECONDS,
@@ -48,6 +50,7 @@ class TenancyService:
         self._identity_store = identity_store
         self._session_store = session_store
         self._rate_limiter = rate_limiter
+        self._settings = settings
         self._invitation_ttl_seconds = invitation_ttl_seconds
         self._accept_rate_limit = accept_rate_limit
         self._accept_rate_window_seconds = accept_rate_window_seconds
@@ -114,6 +117,18 @@ class TenancyService:
             detail=detail,
         )
 
+    def _authorize_workspace_creation(self, scope: AccessScope) -> None:
+        """Hosted deployments are invitation-gated: only platform admins may create a workspace.
+
+        Local mode is a trusted single-user deployment and is always permitted.
+        """
+        settings = self._settings
+        if settings is None or not settings.is_hosted or settings.ALLOW_WORKSPACE_SELF_CREATION:
+            return
+        if scope.actor_user_id in settings.platform_admin_user_ids:
+            return
+        raise ForbiddenError("Workspace creation requires platform administrator provisioning.")
+
     async def list_workspaces(self, scope: AccessScope) -> list[Workspace]:
         return await self._store.list_workspaces_for_user(scope.actor_user_id)
 
@@ -122,6 +137,7 @@ class TenancyService:
         return await self._authorize(scope, workspace_id, Permission.WORKSPACE_READ)
 
     async def create_workspace(self, scope: AccessScope, *, slug: str, name: str) -> Workspace:
+        self._authorize_workspace_creation(scope)
         workspace = await self._store.create_workspace(slug=slug, name=name)
         await self._store.add_membership(
             workspace_id=workspace.id, user_id=scope.actor_user_id, role=Role.OWNER

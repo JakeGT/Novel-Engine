@@ -98,6 +98,16 @@ async def require_scope(
     return _build_scope(request, auth_session, settings)
 
 
+async def require_platform_admin(
+    auth_session: AuthenticatedSession = Depends(require_csrf),
+    settings: Settings = Depends(get_settings),
+) -> AuthenticatedSession:
+    """CSRF-protected authority for platform-wide actions (global schema, provisioning)."""
+    if settings.is_hosted and auth_session.user.id not in settings.platform_admin_user_ids:
+        raise ForbiddenError("Platform administrator authority is required.")
+    return auth_session
+
+
 async def _resolve_workspace_scope(
     request: Request,
     auth_session: AuthenticatedSession,
