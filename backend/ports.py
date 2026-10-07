@@ -13,6 +13,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from backend.domain.credentials import Credential, CredentialProvider
 from backend.domain.identity import IdentityClaims, LoginAttempt, Role, Session, User
+from backend.domain.objects import ObjectStat
 from backend.domain.tenancy import AuditEvent, Invitation, Membership, Project, Workspace
 from backend.domain.usage import UsageRecord, UsageTotals
 from backend.graph.schema import Edge, Node
@@ -170,6 +171,23 @@ class StructuredResponse:
     usage: AIUsage = field(default_factory=AIUsage)
 
 
+@dataclass(frozen=True)
+class ProviderCapabilities:
+    """Typed provider/model capability description (no media transfer).
+
+    Later adapters add image/audio/video modalities and limits without changing
+    configuration or diagnostics again. Multimodal payloads are Phase 4–5.
+    """
+
+    provider: str
+    model: str
+    input_modalities: frozenset[str] = frozenset({"text"})
+    output_modalities: frozenset[str] = frozenset({"text"})
+    structured_output: bool = True
+    max_context_tokens: int | None = None
+    supports_streaming: bool = False
+
+
 class AIError(RuntimeError):
     """Base class for normalized AI gateway failures."""
 
@@ -185,6 +203,8 @@ class AIInvalidOutputError(AIError):
 @runtime_checkable
 class AIGateway(Protocol):
     def is_available(self) -> bool: ...
+
+    def capabilities(self) -> ProviderCapabilities: ...
 
     async def generate_structured(
         self,
@@ -204,6 +224,28 @@ class ArtifactStore(Protocol):
     def save(self, key: str, payload: str, *, workspace_id: str, project_id: str) -> None: ...
 
     def load(self, key: str, *, workspace_id: str, project_id: str) -> str | None: ...
+
+
+@runtime_checkable
+class ObjectStorePort(Protocol):
+    """Immutable, project-scoped product object storage with server-generated keys."""
+
+    def put(
+        self,
+        data: bytes,
+        *,
+        workspace_id: str,
+        project_id: str,
+        content_type: str = "application/octet-stream",
+    ) -> ObjectStat: ...
+
+    def open(self, key: str, *, workspace_id: str, project_id: str) -> bytes: ...
+
+    def stat(self, key: str, *, workspace_id: str, project_id: str) -> ObjectStat | None: ...
+
+    def delete(self, key: str, *, workspace_id: str, project_id: str) -> bool: ...
+
+    def verify_checksum(self, key: str, *, workspace_id: str, project_id: str) -> bool: ...
 
 
 @dataclass

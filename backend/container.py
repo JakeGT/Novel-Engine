@@ -43,6 +43,7 @@ class Container:
     artifacts: ArtifactStore
     neo4j_migrations: MigrationVerifier
     database: DatabasePort | None = None
+    objects: Any = None
     character_service: Any = None
     identity_provider: Any = None
     auth_service: Any = None
@@ -71,6 +72,9 @@ def build_container(settings: Settings | None = None) -> Container:
         if resolved.ENABLE_DEBUG_ARTIFACTS
         else NullArtifactStore()
     )
+    from backend.adapters.objects import FilesystemObjectStore
+
+    objects = FilesystemObjectStore(resolved.OBJECT_STORE_DIR)
 
     embeddings = SentenceTransformerEmbedding(
         model_name=resolved.EMBEDDING_MODEL_NAME,
@@ -98,6 +102,7 @@ def build_container(settings: Settings | None = None) -> Container:
         clock=SystemClock(),
         ids=TimeOrderedIdGenerator(),
         artifacts=artifacts,
+        objects=objects,
         neo4j_migrations=Neo4jMigrationVerifier(Neo4jMigrationRunner(manager.driver)),
         database=database,
         identity_provider=identity_provider,

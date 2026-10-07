@@ -72,6 +72,7 @@ def capabilities(container: Container = Depends(get_container)) -> dict[str, obj
     ai_ok = container.ai.is_available()
     vectors_ok = container.vectors.health()
     vectors_dimension_ok = getattr(container.vectors, "dimension_supported", lambda: True)()
+    ai_caps = container.ai.capabilities() if hasattr(container.ai, "capabilities") else None
     sentry_ok = sentry_enabled(container.settings)
     identity_provider = getattr(container, "identity_provider", None)
     oidc_configured = bool(identity_provider is not None and identity_provider.is_available())
@@ -92,6 +93,17 @@ def capabilities(container: Container = Depends(get_container)) -> dict[str, obj
                 "available": ai_ok,
                 "optional": True,
                 "reason": None if ai_ok else "OPENAI_API_KEY is not configured",
+                "capabilities": None
+                if ai_caps is None
+                else {
+                    "provider": ai_caps.provider,
+                    "model": ai_caps.model,
+                    "input_modalities": sorted(ai_caps.input_modalities),
+                    "output_modalities": sorted(ai_caps.output_modalities),
+                    "structured_output": ai_caps.structured_output,
+                    "max_context_tokens": ai_caps.max_context_tokens,
+                    "supports_streaming": ai_caps.supports_streaming,
+                },
             },
             "telemetry": {
                 "sentry_backend": sentry_ok,

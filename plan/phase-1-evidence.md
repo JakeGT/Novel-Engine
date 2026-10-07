@@ -77,12 +77,27 @@ rows), `make audit` (dependency scan). No step requires a paid model call or pro
   (`tests/contract/test_auth.py`, `test_tenancy.py`, `test_credentials.py`).
 - **Authorization:** explicit owner/editor/viewer matrix centralized in `TenancyService`
   (`tests/unit/test_tenancy_policy.py`, `test_tenancy.py`).
-- **Isolation:** cross-workspace isolation is enforced and adversarially tested — mandatory
-  `workspace_id` across graph, pgvector, and the debug artifact store, with cross-workspace edges/reads
-  refused (`tests/unit/test_scope_contract.py`, `tests/contract/test_workspace_scope.py`,
-  `tests/integration/test_graph_repository.py`, `test_pgvector_adapter.py`). **Same-workspace
-  cross-project isolation is not yet enforced** (graph/vector/project scope is in progress; the media
-  object store and job/export namespacing do not exist yet).
+- **Isolation:** cross-workspace **and** same-workspace cross-project isolation are enforced and
+  adversarially tested — mandatory `workspace_id`+`project_id` across the graph repository, pgvector,
+  the debug artifact store, and the immutable object store; cross-workspace/cross-project edges and
+  reads refused; project-scoped export/import; the `JobEnvelope` contract carries the immutable scope
+  (`tests/unit/test_scope_contract.py`, `tests/contract/test_workspace_scope.py`,
+  `tests/integration/test_graph_repository.py`, `test_pgvector_adapter.py`, `test_object_store.py`,
+  `test_job_envelope.py`). Caches and events are not implemented yet.
+
+## Scope coverage
+
+| Durable / derived record | Scope columns | Enforced by |
+| --- | --- | --- |
+| Neo4j `Entity` nodes and relationships | `workspace_id`, `project_id` properties | `GraphManager` (all reads/writes; migration-controlled constraints) |
+| `vector_documents` (pgvector) | `workspace_id`, `project_id` (PK includes both + `id`) | migration `0010_vector_project_scope`, `PgVectorStore` |
+| `users`, `external_identities`, `sessions`, `login_attempts` | global (identity) | identity store; not project-owned |
+| `workspaces`, `memberships`, `projects`, `invitations`, `audit_events` | `workspace_id` (+ `project_id` on projects) | migration `0005_tenancy`, `PostgresTenancyStore` |
+| `credentials`, `provider_usage` | `workspace_id` | migrations `0008`/`0009`; vault/usage stores |
+| debug artifacts | `workspace_id`, `project_id` path namespace | `FilesystemArtifactStore` |
+| product objects | `workspace_id`, `project_id` path namespace | `FilesystemObjectStore` (`ObjectStorePort`) |
+| job envelope / idempotency | `workspace_id`, `project_id` fields | `JobEnvelope` (re-validated by workers before acting) |
+| caches / events | — | not implemented in Phase 1; must adopt the same contract when added |
 - **Credentials:** envelope-encrypted at rest (AES-256-GCM, KEK from config), metadata-only API,
   workspace-admin worker path (`tests/unit/test_crypto.py`, `tests/application/test_credentials.py`,
   `tests/integration/test_credential_vault.py`, `tests/contract/test_credentials.py`).

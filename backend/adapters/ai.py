@@ -5,7 +5,13 @@ import time
 from typing import Any
 
 from backend.core.logging import log_event
-from backend.ports import AIInvalidOutputError, AIProviderError, AIUsage, StructuredResponse
+from backend.ports import (
+    AIInvalidOutputError,
+    AIProviderError,
+    AIUsage,
+    ProviderCapabilities,
+    StructuredResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +36,17 @@ class OpenAIGateway:
 
     def is_available(self) -> bool:
         return bool(self._api_key)
+
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            provider="openai",
+            model=self._default_model,
+            input_modalities=frozenset({"text"}),
+            output_modalities=frozenset({"text"}),
+            structured_output=True,
+            max_context_tokens=None,
+            supports_streaming=False,
+        )
 
     async def aclose(self) -> None:
         if self._client is not None:

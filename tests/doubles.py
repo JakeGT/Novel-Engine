@@ -49,7 +49,7 @@ from backend.domain.tenancy import (
 )
 from backend.domain.usage import UsageRecord, UsageTotals
 from backend.graph.schema import Edge, Node
-from backend.ports import MigrationStatus, StructuredResponse
+from backend.ports import MigrationStatus, ProviderCapabilities, StructuredResponse
 
 
 @dataclass
@@ -400,6 +400,9 @@ class ScriptedAIGateway:
 
     def is_available(self) -> bool:
         return self._available
+
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(provider="scripted", model="scripted")
 
     async def aclose(self) -> None:
         self.closed = True

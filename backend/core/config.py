@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     CUSTOM_SCHEMA_PATH: str = "backend/config/custom_schema.json"
     ENABLE_DEBUG_ARTIFACTS: bool = False
     ARTIFACT_STORE_DIR: str = "backend/debug"
+    OBJECT_STORE_DIR: str = "data/objects"
 
     # Authentication. "local" is the trusted single-user self-hosted mode;
     # "hosted" delegates to a shared OIDC provider (Authentik).

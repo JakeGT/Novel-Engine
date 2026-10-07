@@ -60,7 +60,7 @@ Still open before affected slices:
 | 1B. Identity/tenant domain and migrations | IDN-001, IDN-003, CAN-001 | Implemented | 1A |
 | 1C. OIDC, local identity, and sessions | IDN-001, IDN-002, OSS-002 | In progress (core implemented; live Authentik exercise pending) | 1B |
 | 1D. Invitations, memberships, and authorization | IDN-003, IDN-004 | In progress (APIs, centralized authorization, audit incl. credentials, and a durable rate limiter implemented; project-export audit remains) | 1B–1C |
-| 1E. Cross-store tenant isolation | IDN-005 | In progress (cross-workspace isolation implemented and adversarially tested; same-workspace cross-project isolation, object store, job/export namespacing in progress) | 1B–1D |
+| 1E. Cross-store tenant isolation | IDN-005 | In progress (workspace **and project** isolation enforced across graph/vector/artefacts/routes; object store and job/export namespacing added; caches/events pending their subsystems) | 1B–1D |
 | 1F. Provider credentials and usage limits | SaaS-006, OSS-003, OSS-008 | In progress (envelope-encrypted vault, credential API, and usage limits implemented; provider-side validation, confirmation thresholds, and job cancellation wiring deferred) | 1C–1E |
 | 1G. Packaging, backup, and privacy | OSS-001, OSS-004, OSS-006, OPS-003–OPS-006 | In progress (profiles, docs, project export/import, redacted diagnostics, and retention implemented; coordinated pg/Neo4j/artefact backup and clean-host rehearsals deferred) | 1C–1F |
 | 1H. Security audit and exit evidence | IDN-006, QLT-002 | In progress (threat matrix, dependency scan, and evidence recorded; owner acceptance and clean-host rehearsal pending) | 1A–1G |
@@ -177,32 +177,35 @@ Acceptance:
 ## 1E. Workspace/project isolation across every boundary
 
 - [x] Require `AccessScope` in application workflows and repository/adapter methods.
-      (`GraphRepository`, `VectorStorePort`, and the debug `ArtifactStore` methods take an explicit
-      `workspace_id`; `backend/api/auth.py` resolves the workspace scope and
-      `tests/unit/test_scope_contract.py` guards the port signatures. **Project** scope on these ports is
-      not yet mandatory — see the project-isolation items below.)
+      (`GraphRepository`, `VectorStorePort`, the debug `ArtifactStore`, and the new `ObjectStorePort` require an
+      explicit `workspace_id` **and** `project_id`; `backend/api/auth.py` resolves the project scope (canonical
+      `/api/v1/projects/{project_id}/...` with aliases that still resolve a project) and
+      `tests/unit/test_scope_contract.py` guards the port signatures.)
 - [x] Add workspace/project columns and constraints to PostgreSQL operational records.
-      (`vector_documents` carries `workspace_id`/`project_id` (migration `0007_workspace_scope`) but the adapter
-      does not yet read or write `project_id`; tenancy records were already workspace-scoped.)
-- [ ] Add workspace **and project** properties to Neo4j nodes and relationship projections; every query includes them.
-      (`GraphManager` writes and filters on `workspace_id`; `project_id` is stored but reads/traversals are only
-      workspace-filtered. Project predicates and cross-project edge refusal are pending.)
-- [ ] Require workspace **and project** metadata filters in pgvector operations.
-      (`PgVectorStore` add/query/delete take `workspace_id` only; project predicates, the real column write, a
-      composite index, and per-project id isolation are pending.)
-- [ ] Namespace artefact/object keys, caches, jobs, events, exports, and idempotency keys.
-      (Artefact keys are namespaced per workspace with path-traversal guards; jobs, exports, and event
-      namespacing arrive with those subsystems in 1F/1G.)
-- [x] Prevent cross-workspace graph edges and project references.
-      (`add_edge` only creates an edge when both endpoints resolve in the same workspace.)
+      (`vector_documents` carries `workspace_id`/`project_id`; migration `0010_vector_project_scope` makes
+      `project_id` mandatory and moves the primary key to `(workspace_id, project_id, id)` so identical ids in
+      two projects cannot overwrite each other.)
+- [x] Add workspace **and project** properties to Neo4j nodes and relationship projections; every query includes them.
+      (`GraphManager` writes and filters on both `workspace_id` and `project_id`; reads, searches, semantic
+      search, and traversals all include both predicates, and cross-project edges/mutations are refused.)
+- [x] Require workspace **and project** metadata filters in pgvector operations.
+      (`PgVectorStore` add/query/delete take and filter `project_id`; the real column is written; a composite
+      index and per-project id isolation are in place.)
+- [x] Namespace object/artifact keys, exports, and idempotency keys by workspace/project.
+      (The debug `ArtifactStore` and the new immutable `ObjectStorePort` namespace keys per workspace+project;
+      `ProjectTransferService.export_project/import_project` are project-scoped with a forward-compatible
+      archive; `JobEnvelope` carries workspace/project. Caches and events arrive with those subsystems.)
+- [x] Prevent cross-workspace **and cross-project** graph edges and project references.
+      (`add_edge` only creates an edge when both endpoints resolve in the same workspace and project.)
 - [x] Decide and implement PostgreSQL RLS if selected; retain application checks either way.
       (Decision recorded in ADR-009: RLS deferred; mandatory application-layer scoping retained.)
 - [x] Add adversarial tests using similar IDs/names and direct adapter calls, not only HTTP tests.
-      (`tests/integration/test_graph_repository.py`, `test_pgvector_adapter.py`, and
-      `tests/contract/test_workspace_scope.py` cover two-workspace isolation and cross-workspace edge refusal.)
+      (`tests/integration/test_graph_repository.py` and `test_pgvector_adapter.py` cover same-workspace
+      cross-project isolation and cross-project edge refusal at the adapter level; `tests/contract/test_workspace_scope.py`
+      covers it through the API.)
 - [x] Add a migration/seed verification report showing that every durable/derived record type has an owner scope.
-      (`tests/unit/test_scope_contract.py` asserts every graph/vector/artefact port method takes a workspace; the
-      seed writes every node/edge/vector into the reference workspace.)
+      (See `plan/phase-1-evidence.md` "Scope coverage" — each durable/derived type and its scope columns are
+      listed; `tests/unit/test_scope_contract.py` guards the port signatures.)
 
 Acceptance:
 
