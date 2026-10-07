@@ -157,7 +157,7 @@ class PostgresIdentityStore:
                     ExternalIdentityRow.subject == subject,
                 )
             )
-            return bool(result.rowcount)
+            return bool(result.rowcount)  # type: ignore[attr-defined]
 
 
 class PostgresSessionStore:
@@ -220,12 +220,12 @@ class PostgresSessionStore:
             result = await session.execute(
                 delete(SessionRow).where(SessionRow.id_hash == hash_token(session_id))
             )
-            return (result.rowcount or 0) > 0
+            return (result.rowcount or 0) > 0  # type: ignore[attr-defined]
 
     async def revoke_all_for_user(self, user_id: str) -> int:
         async with session_scope(self._session_factory) as session:
             result = await session.execute(delete(SessionRow).where(SessionRow.user_id == user_id))
-            return int(result.rowcount or 0)
+            return int(result.rowcount or 0)  # type: ignore[attr-defined]
 
 
 class PostgresLoginAttemptStore:

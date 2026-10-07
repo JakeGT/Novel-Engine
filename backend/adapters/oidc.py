@@ -115,7 +115,7 @@ class OIDCIdentityProvider:
         return self._jwks or {}
 
     def _decode_and_validate(self, id_token: str) -> dict[str, Any]:
-        key_set = KeySet.import_key_set(self._jwks or {})
+        key_set = KeySet.import_key_set(self._jwks or {})  # type: ignore[arg-type]
         token = jwt.decode(id_token, key_set, algorithms=["RS256", "ES256", "PS256"])
         registry = JWTClaimsRegistry(
             iss={"essential": True, "value": self._issuer},

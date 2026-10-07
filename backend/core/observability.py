@@ -11,6 +11,8 @@ provider.
 from __future__ import annotations
 
 import logging
+import os
+import sys
 from typing import Any
 
 from backend.core.config import Settings
@@ -30,9 +32,19 @@ _USER_PII_KEYS = ("email", "username", "ip_address", "name", "geo")
 _initialized = False
 
 
+def _running_under_pytest() -> bool:
+    return bool(os.environ.get("PYTEST_CURRENT_TEST")) or "pytest" in sys.modules
+
+
 def sentry_enabled(settings: Settings) -> bool:
-    """Report whether backend error reporting is configured and permitted."""
-    return bool(settings.SENTRY_DSN_BACKEND) and settings.APP_ENV != "test"
+    """Report whether backend error reporting is configured and permitted.
+
+    Never enabled under pytest, so a developer ``.env`` with a DSN cannot start a
+    reporter (and its background transport thread) during the test gate.
+    """
+    if not settings.SENTRY_DSN_BACKEND or settings.APP_ENV == "test":
+        return False
+    return not _running_under_pytest()
 
 
 def scrub_event(event: dict[str, Any], hint: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -92,7 +104,8 @@ def init_sentry(settings: Settings) -> bool:
         send_default_pii=False,
         max_request_body_size="never",
         include_local_variables=False,
-        before_send=scrub_event,
+        shutdown_timeout=2.0,
+        before_send=scrub_event,  # type: ignore[arg-type]
         integrations=[
             FastApiIntegration(transaction_style="endpoint"),
             LoggingIntegration(level=logging.WARNING, event_level=None),

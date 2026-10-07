@@ -244,4 +244,4 @@ class PostgresCredentialVault:
             result = await session.execute(
                 delete(CredentialRow).where(CredentialRow.workspace_id == workspace_id)
             )
-            return result.rowcount or 0
+            return result.rowcount or 0  # type: ignore[attr-defined]

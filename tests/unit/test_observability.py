@@ -20,7 +20,17 @@ def test_sentry_disabled_in_test_environment() -> None:
     assert init_sentry(settings) is False
 
 
-def test_sentry_enabled_outside_test_with_dsn() -> None:
+def test_sentry_disabled_under_pytest() -> None:
+    # A developer .env may set a DSN; the test gate must never start the reporter.
+    settings = _settings(APP_ENV="development", SENTRY_DSN_BACKEND="https://key@sentry.example/1")
+    assert sentry_enabled(settings) is False
+    assert init_sentry(settings) is False
+
+
+def test_sentry_enabled_outside_test_with_dsn(monkeypatch) -> None:
+    import backend.core.observability as observability
+
+    monkeypatch.setattr(observability, "_running_under_pytest", lambda: False)
     settings = _settings(APP_ENV="development", SENTRY_DSN_BACKEND="https://key@sentry.example/1")
     assert sentry_enabled(settings) is True
 

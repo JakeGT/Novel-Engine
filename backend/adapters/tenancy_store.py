@@ -224,7 +224,7 @@ class PostgresTenancyStore:
             result = await session.execute(
                 delete(WorkspaceRow).where(WorkspaceRow.id == workspace_id)
             )
-            return bool(result.rowcount)
+            return bool(result.rowcount)  # type: ignore[attr-defined]
 
     async def delete_project(self, workspace_id: str, project_id: str) -> bool:
         async with session_scope(self._session_factory) as session:
@@ -233,7 +233,7 @@ class PostgresTenancyStore:
                     ProjectRow.id == project_id, ProjectRow.workspace_id == workspace_id
                 )
             )
-            return bool(result.rowcount)
+            return bool(result.rowcount)  # type: ignore[attr-defined]
 
     async def list_workspaces_for_user(self, user_id: str) -> list[Workspace]:
         async with session_scope(self._session_factory) as session:

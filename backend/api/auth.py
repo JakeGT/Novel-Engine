@@ -7,6 +7,7 @@ Session cookies are host-only and CSRF-protected for cookie-authenticated writes
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -25,10 +26,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def _set_session_cookies(
-    response: RedirectResponse | JSONResponse, settings: Settings, session: Session
-) -> None:
-    common = {
+def _set_session_cookies(response: Response, settings: Settings, session: Session) -> None:
+    common: dict[str, Any] = {
         "max_age": settings.SESSION_TTL_SECONDS,
         "secure": settings.session_cookie_secure,
         "samesite": "lax",

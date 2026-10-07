@@ -105,7 +105,7 @@ class PostgresProviderUsageStore:
                 text("DELETE FROM provider_usage WHERE workspace_id = :ws"),
                 {"ws": workspace_id},
             )
-            return result.rowcount or 0
+            return result.rowcount or 0  # type: ignore[attr-defined]
 
 
 def usage_record_from_row(row: Any) -> UsageRecord:

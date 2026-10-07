@@ -2,7 +2,7 @@ UV_CACHE_DIR ?= $(CURDIR)/.cache/uv
 PNPM_STORE_DIR ?= $(CURDIR)/.cache/pnpm-store
 export UV_CACHE_DIR
 
-TYPE_CHECK_TARGETS = backend/graph/resolver.py backend/graph/summarizer.py backend/graph/policies.py backend/graph/schema.py
+TYPE_CHECK_TARGETS = backend
 
 .PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify seed reset-dev diagnostics retention audit api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check secret-scan frontend-install frontend-lint frontend-build check
 

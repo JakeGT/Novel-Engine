@@ -65,13 +65,8 @@ jobs:
       - name: Check formatting
         run: uv run --locked ruff format --check backend tests
 
-      - name: Type-check hermetic scope
-        run: >
-          uv run --locked mypy
-          backend/graph/resolver.py
-          backend/graph/summarizer.py
-          backend/graph/policies.py
-          backend/graph/schema.py
+      - name: Type-check backend
+        run: uv run --locked mypy backend
 
       - name: Audit dependencies
         run: uv run --locked pip-audit
