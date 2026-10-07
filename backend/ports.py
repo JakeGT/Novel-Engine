@@ -220,6 +220,7 @@ class AIGateway(Protocol):
         messages: list[dict[str, str]],
         response_format: type,
         model: str | None = None,
+        api_key: str | None = None,
     ) -> StructuredResponse: ...
 
     async def aclose(self) -> None: ...

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query, status
 
+from backend.adapters.system import uuid7
 from backend.api.auth import (
     get_project_scope,
     require_platform_admin,
@@ -13,26 +15,34 @@ from backend.api.auth import (
 from backend.api.dependencies import (
     get_character_service,
     get_container,
+    get_credential_service,
     get_embeddings,
     get_graph,
     get_schema_registry,
+    get_settings,
+    get_usage_service,
 )
 from backend.api.v1 import schemas as s
 from backend.container import Container
+from backend.core.config import Settings
 from backend.domain.errors import (
+    CapabilityUnavailableError,
     ConflictError,
     FeatureNotImplementedError,
     NotFoundError,
     ValidationError,
 )
 from backend.domain.identity import AccessScope
+from backend.domain.usage import UsageOutcome, UsageRecord
 from backend.graph.policies import get_policy
 from backend.graph.resolver import extract_entity_ids
 from backend.graph.schema import Edge, Node
 from backend.graph.summarizer import summarize_context
-from backend.ports import EmbeddingPort, GraphRepository, SchemaRegistryPort
+from backend.ports import AIUsage, EmbeddingPort, GraphRepository, SchemaRegistryPort
 from backend.services.auth_service import AuthenticatedSession
 from backend.services.character_service import CharacterService
+from backend.services.credential_service import CredentialService
+from backend.services.usage_service import ProviderUsageService
 
 project_router = APIRouter()
 
@@ -44,6 +54,51 @@ def _validate_identifier(value: str, kind: str) -> None:
         raise ValidationError(
             f"Invalid {kind}: {value!r}. Use letters, digits, and underscores only."
         )
+
+
+async def _provider_context(
+    *,
+    settings: Settings,
+    credentials: CredentialService,
+    usage: ProviderUsageService,
+    scope: AccessScope,
+) -> tuple[str | None, str | None, Any]:
+    """Resolve the BYOK credential, enforce usage limits, and build a usage sink.
+
+    Hosted deployments require a workspace credential (no platform-funded
+    inference); local self-hosted mode uses the operator's server key.
+    """
+    workspace_id = scope.workspace_id or ""
+    project_id = scope.project_id or ""
+    credential_id: str | None = None
+    api_key: str | None = None
+    if settings.is_hosted:
+        resolved = await credentials.resolve_active_for_use(scope, workspace_id)
+        if resolved is None:
+            raise CapabilityUnavailableError(
+                "No provider credential is configured for this workspace."
+            )
+        credential_id, api_key = resolved
+
+    await usage.ensure_within_limits(workspace_id=workspace_id, actor_user_id=scope.actor_user_id)
+
+    async def sink(ai_usage: AIUsage, model: str) -> None:
+        await usage.record(
+            UsageRecord(
+                id=str(uuid7()),
+                workspace_id=workspace_id,
+                project_id=project_id or None,
+                actor_user_id=scope.actor_user_id,
+                provider="openrouter" if settings.is_hosted else "openai",
+                model=model or "",
+                requested_route=model or "",
+                prompt_tokens=ai_usage.prompt_tokens,
+                completion_tokens=ai_usage.completion_tokens,
+                outcome=UsageOutcome.SUCCESS,
+            )
+        )
+
+    return credential_id, api_key, sink
 
 
 @project_router.get("/entities", response_model=s.EntityList, tags=["entities"])
@@ -418,17 +473,27 @@ def character_init(
 async def character_generate_questions(
     body: s.CharacterQuestionsRequest,
     service: CharacterService = Depends(get_character_service),
-    scope: AccessScope = Depends(get_project_scope),
+    credentials: CredentialService = Depends(get_credential_service),
+    usage: ProviderUsageService = Depends(get_usage_service),
+    settings: Settings = Depends(get_settings),
+    scope: AccessScope = Depends(require_project_scope),
 ) -> s.QuestionSheet:
+    credential_id, api_key, usage_sink = await _provider_context(
+        settings=settings, credentials=credentials, usage=usage, scope=scope
+    )
     try:
         sheet = await service.generate_questions(
             body.id,
             body.use_cache,
             workspace_id=scope.workspace_id or "",
             project_id=scope.project_id or "",
+            credential=api_key,
+            usage_sink=usage_sink,
         )
     except ValueError as error:
         raise NotFoundError(str(error)) from error
+    if credential_id:
+        await credentials.mark_used(scope.workspace_id or "", credential_id)
     return s.QuestionSheet(
         character_name=sheet.character_name,
         character_id=sheet.character_id,
@@ -451,10 +516,16 @@ async def character_process_answers(
     body: s.CharacterAnswersRequest,
     service: CharacterService = Depends(get_character_service),
     container: Container = Depends(get_container),
+    credentials: CredentialService = Depends(get_credential_service),
+    usage: ProviderUsageService = Depends(get_usage_service),
+    settings: Settings = Depends(get_settings),
     scope: AccessScope = Depends(require_project_scope),
 ) -> s.GraphUpdateResponse:
     workspace_id = scope.workspace_id or ""
     project_id = scope.project_id or ""
+    credential_id, api_key, usage_sink = await _provider_context(
+        settings=settings, credentials=credentials, usage=usage, scope=scope
+    )
     try:
         update = await service.process_answers(
             body.id,
@@ -463,9 +534,13 @@ async def character_process_answers(
             body.use_cache,
             workspace_id=workspace_id,
             project_id=project_id,
+            credential=api_key,
+            usage_sink=usage_sink,
         )
     except ValueError as error:
         raise NotFoundError(str(error)) from error
+    if credential_id:
+        await credentials.mark_used(workspace_id, credential_id)
 
     for node_data in update.nodes:
         embedding = container.embeddings.embed_node(node_data.type, node_data.properties)

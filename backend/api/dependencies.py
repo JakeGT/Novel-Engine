@@ -15,6 +15,7 @@ from backend.services.auth_service import AuthService
 from backend.services.character_service import CharacterService
 from backend.services.credential_service import CredentialService
 from backend.services.tenancy_service import TenancyService
+from backend.services.usage_service import ProviderUsageService
 
 
 def get_container(request: Request) -> Container:
@@ -63,3 +64,9 @@ def get_credential_service(
     container: Container = Depends(get_container),
 ) -> CredentialService:
     return container.credential_service
+
+
+def get_usage_service(
+    container: Container = Depends(get_container),
+) -> ProviderUsageService:
+    return container.usage_service

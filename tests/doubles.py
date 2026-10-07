@@ -443,10 +443,20 @@ class ScriptedAIGateway:
         self._responses.append(item)
 
     async def generate_structured(
-        self, *, messages: list[dict[str, str]], response_format: type, model: str | None = None
+        self,
+        *,
+        messages: list[dict[str, str]],
+        response_format: type,
+        model: str | None = None,
+        api_key: str | None = None,
     ) -> StructuredResponse:
         self.calls.append(
-            {"messages": messages, "response_format": response_format, "model": model}
+            {
+                "messages": messages,
+                "response_format": response_format,
+                "model": model,
+                "api_key": api_key,
+            }
         )
         if self._index >= len(self._responses):
             raise AssertionError("ScriptedAIGateway has no response queued")

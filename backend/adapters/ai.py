@@ -59,13 +59,21 @@ class OpenAIGateway:
         messages: list[dict[str, str]],
         response_format: type,
         model: str | None = None,
+        api_key: str | None = None,
     ) -> StructuredResponse:
         from openai import OpenAIError
 
         resolved_model = model or self._default_model
         start = time.perf_counter()
+        client = self.client
+        per_call_client: Any = None
+        if api_key:
+            from openai import AsyncOpenAI
+
+            per_call_client = AsyncOpenAI(api_key=api_key)
+            client = per_call_client
         try:
-            response = await self.client.beta.chat.completions.parse(
+            response = await client.beta.chat.completions.parse(
                 model=resolved_model,
                 messages=messages,
                 response_format=response_format,
@@ -82,6 +90,9 @@ class OpenAIGateway:
             # Provider text can contain request/account details; keep it as the
             # cause for logs but do not surface it through the API contract.
             raise AIProviderError("model provider request failed") from error
+        finally:
+            if per_call_client is not None:
+                await per_call_client.close()
 
         parsed = response.choices[0].message.parsed
         if parsed is None:

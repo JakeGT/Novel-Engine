@@ -7,7 +7,7 @@ callers; the secret is never included in any response.
 
 from __future__ import annotations
 
-from backend.domain.credentials import Credential, CredentialProvider
+from backend.domain.credentials import Credential, CredentialProvider, CredentialStatus
 from backend.domain.identity import AccessScope, AuthMode
 from backend.domain.tenancy import Permission
 from backend.ports import CredentialVaultPort
@@ -119,3 +119,19 @@ class CredentialService:
 
     async def mark_used(self, workspace_id: str, credential_id: str) -> None:
         await self._vault.mark_used(workspace_id=workspace_id, credential_id=credential_id)
+
+    async def resolve_active_for_use(
+        self, scope: AccessScope, workspace_id: str
+    ) -> tuple[str, str] | None:
+        """Return (credential_id, plaintext) for the workspace's active OpenRouter key.
+
+        Requires workspace-admin authority; returns None when no active credential
+        exists so the caller can decide the policy for that deployment.
+        """
+        credentials = await self._vault.list_for_workspace(workspace_id)
+        active = [c for c in credentials if c.status == CredentialStatus.ACTIVE]
+        if not active:
+            return None
+        credential = active[0]
+        plaintext = await self.resolve_for_use(scope, workspace_id, credential.id)
+        return credential.id, plaintext

@@ -184,3 +184,19 @@ def test_hosted_same_id_in_two_projects_coexists(hosted_client, hosted_container
     assert read_b.status_code == 200, read_b.text
     assert read_a.json()["properties"]["name"] == "Alice A"
     assert read_b.json()["properties"]["name"] == "Alice B"
+
+
+def test_hosted_generate_questions_requires_credential(hosted_client, hosted_container) -> None:
+    """Hosted workspaces have no platform key: BYOK is required for inference."""
+    csrf = _hosted_login(hosted_client, hosted_container)
+    workspace_id = _create_workspace(hosted_client, csrf, "no-cred")
+    project_id = _create_project(hosted_client, csrf, workspace_id, "novel")
+
+    response = hosted_client.post(
+        f"/api/v1/projects/{project_id}/characters/generate-questions",
+        json={"id": "char_arin"},
+        headers={"X-CSRF-Token": csrf, "X-Workspace-Id": workspace_id},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["code"] == "capability_unavailable"

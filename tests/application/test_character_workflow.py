@@ -191,3 +191,31 @@ async def test_process_answers_rejects_missing_edge_target(fake_container) -> No
         await service.process_answers(
             "char_arin", 1, {"Q": "A"}, workspace_id=WS, project_id=PROJECT
         )
+
+
+@pytest.mark.asyncio
+async def test_generate_questions_threads_credential_and_records_usage(fake_container) -> None:
+    service = fake_container.character_service
+    service.init_character_anchor("Arin", bio="A scout.", workspace_id=WS, project_id=PROJECT)
+    fake_container.ai.queue(
+        CharacterQuestionSheet(
+            character_name="Arin",
+            character_id="",
+            questions=[CharacterQuestion(id="q1", question="Why?", category="motivation")],
+        )
+    )
+    seen: list[tuple[object, str]] = []
+
+    async def sink(usage, model) -> None:
+        seen.append((usage, model))
+
+    await service.generate_questions(
+        "char_arin",
+        workspace_id=WS,
+        project_id=PROJECT,
+        credential="sk-user-key",
+        usage_sink=sink,
+    )
+
+    assert fake_container.ai.calls[0]["api_key"] == "sk-user-key"
+    assert len(seen) == 1

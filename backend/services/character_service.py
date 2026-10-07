@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -11,6 +12,7 @@ from backend.graph.resolver import extract_entity_ids
 from backend.graph.schema import Node
 from backend.ports import (
     AIGateway,
+    AIUsage,
     ArtifactStore,
     EmbeddingPort,
     GraphRepository,
@@ -18,6 +20,8 @@ from backend.ports import (
 )
 
 logger = logging.getLogger(__name__)
+
+UsageSink = Callable[[AIUsage, str], Awaitable[None]]
 
 
 class CharacterQuestion(BaseModel):
@@ -126,6 +130,8 @@ class CharacterService:
         *,
         workspace_id: str,
         project_id: str,
+        credential: str | None = None,
+        usage_sink: UsageSink | None = None,
     ) -> CharacterQuestionSheet:
         node = self.graph.get_node(character_id, workspace_id=workspace_id, project_id=project_id)
         if node is None:
@@ -213,7 +219,10 @@ class CharacterService:
                 {"role": "user", "content": prompt},
             ],
             response_format=CharacterQuestionSheet,
+            api_key=credential,
         )
+        if usage_sink is not None:
+            await usage_sink(response.usage, response.model)
         parsed = response.parsed
         parsed.character_id = character_id
 
@@ -235,6 +244,8 @@ class CharacterService:
         *,
         workspace_id: str,
         project_id: str,
+        credential: str | None = None,
+        usage_sink: UsageSink | None = None,
     ) -> GraphUpdate:
         cache_filename = f"graph_update_{character_id}_ch{chapter_number}_raw.json"
         if use_cache:
@@ -322,7 +333,11 @@ class CharacterService:
                 {"role": "user", "content": prompt},
             ],
             response_format=GraphUpdate,
+            api_key=credential,
         )
+
+        if usage_sink is not None:
+            await usage_sink(response.usage, response.model)
 
         parsed = response.parsed
         self._save_debug_response(
@@ -339,6 +354,8 @@ class CharacterService:
         *,
         workspace_id: str,
         project_id: str,
+        credential: str | None = None,
+        usage_sink: UsageSink | None = None,
     ) -> GraphUpdate:
         node = self.graph.get_node(character_id, workspace_id=workspace_id, project_id=project_id)
         if node is None:
@@ -355,6 +372,8 @@ class CharacterService:
             use_cache,
             workspace_id=workspace_id,
             project_id=project_id,
+            credential=credential,
+            usage_sink=usage_sink,
         )
 
         id_map: dict[str, str] = {}
