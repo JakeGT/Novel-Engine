@@ -72,6 +72,7 @@ Do not treat chapters as indivisible “files.” Normalize changed material int
 - active rule, secret, goal, and thread references
 - estimated tokens
 - visibility classification
+- linked asset/segment/version IDs, authority, modality, and evidence regions/timestamps
 - author importance and continuity-impact metadata
 
 Units should follow semantic paragraph/event boundaries where possible. A single unit may participate in multiple check bundles because prose consistency dimensions overlap.
@@ -83,6 +84,7 @@ Construct a temporary review graph for the selected change set.
 Vertices:
 
 - changed prose units
+- changed or newly linked media segments and reviewed observations
 - affected canonical facts/beliefs/events/states
 - entities, locations, resources, rules, secrets, and threads
 - scene-plan requirements and intended mutations
@@ -92,6 +94,7 @@ Edges:
 - explicit mention or structured annotation
 - extracted subject/predicate/object reference
 - same character/location/object/thread
+- explicit media depiction/voice/map/evidence link or shared cross-modal retrieval cluster
 - temporal overlap or prerequisite order
 - causal, possession, relationship, or knowledge dependency
 - branch inheritance/merge conflict
@@ -162,6 +165,10 @@ Recommended read-only tools:
 - `get_scene_plan`
 - `get_thread_history`
 - `semantic_search_prose`
+- `get_linked_media`
+- `read_media_observations`
+- `semantic_search_media`
+- `inspect_media_segment` (only when the selected critic supports the modality)
 
 Tool results are structured and provenance-bearing. The reviewer cannot mutate prose, canon, schema, branch state, autonomy policy, credentials, or identity/membership state.
 
@@ -184,6 +191,7 @@ Source-code line numbers are unstable in rich text. Anchor each finding with:
 - start/end offsets in a deterministic plain-text projection
 - exact short evidence quote and surrounding hash
 - mentioned entity/fact/event IDs
+- asset/version plus image region, keyframe, or audio/video timestamp when media is evidence
 
 On a newer compatible version, use deterministic quote/context matching to relocate the finding. If ambiguous, mark it stale/unanchored rather than guessing. A bounded model relocation pass may suggest candidates but cannot silently change the anchor.
 
@@ -226,6 +234,7 @@ Users may exclude optional bundles or lower effort, but cannot unknowingly disab
 - One failed bundle does not discard successful bundle findings.
 - Over-budget bundles split; they are not silently skipped.
 - Missing vector service degrades to graph/direct-source retrieval.
+- Unsupported critic modality uses the previewed derived-text representation and reports reduced coverage; it never claims to have inspected the original.
 - Missing model/credential still returns deterministic findings and the preview.
 - Stale base revisions cause re-bundling before review or correction.
 - Unsupported findings are filtered, not rewritten until they sound plausible.

@@ -22,6 +22,10 @@ Use FastAPI's in-process test client with injected fakes for most cases. Verify 
 
 Use disposable containers for Neo4j and any journal store. Start the application as needed. Never depend on a developer's persistent `data/` directory or an already-running server.
 
+Media integration tests use small synthetic fixtures and disposable object storage/filesystem
+roots. Codec, scan, and embedding adapters have deterministic fakes; optional real-processor tests
+are separately marked and never download models during ordinary collection.
+
 ### Frontend tests
 
 - component tests for editors and mutation review
@@ -47,6 +51,9 @@ Offline contract tests use recorded or synthetic structured responses. Live-prov
 | Mutations | validation, per-operation review, atomicity, retry idempotency |
 | Context | anchors, filters, ranking, budgeting, explanations, no leakage |
 | Indexing | outbox retry, active versions, rebuild equivalence, stale warning |
+| Media assets | upload validation, immutable versions, scoped object access, variants/segments, authority, retention, and complete deletion |
+| Multimodal retrieval | explicit-link precedence, cross-modal relevance, representation clustering, embedding-generation isolation, and rebuild equivalence |
+| Provider media | capability negotiation, limits, original/fallback fidelity, remote transfer preview, and unsupported-modality rejection before spend |
 | AI | malformed output, refusal, timeout, rate limit, cancellation, cost cap |
 | Credentials | BYOK encryption, worker-only access, rotation, deletion, and redaction |
 | Autonomy | mandatory approvals cannot be bypassed by user/model/job state |
@@ -66,6 +73,8 @@ Create a compact reference world containing:
 - an unresolved thread and planned payoff
 - a selected author-only secret that must not leak into POV knowledge
 - deterministic continuity defects and labeled model-critic cases
+- branch/time-scoped character portraits, landscapes, objects/maps, multi-speaker audio, timestamped video, and visually similar hard negatives
+- a secret-bearing asset and misleading machine observation that must not become accessible truth or canon
 
 Seed at least two tenants with deliberately similar IDs/names so isolation tests cannot pass accidentally because records are absent.
 
@@ -88,9 +97,11 @@ For a release candidate:
 - export/restore drill passes
 - migration from the previous supported version passes
 - AI evaluation metrics meet the approved baseline
+- multimodal retrieval, provider-fallback fidelity, and media-consistency metrics meet the approved baseline
 - security dependency scan has no unaccepted critical issue
 - tenant-isolation, identity/invitation, provider-usage, and key-redaction suites pass
 - manual release-one workflow is completed with a fresh project
+- media export/restore/reindex/deletion and cross-tenant object-access drills pass
 
 ## Immediate test cleanup
 

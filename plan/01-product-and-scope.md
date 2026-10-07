@@ -18,10 +18,11 @@ The author chooses an autonomy profile. AI may draft, analyze, retrieve, and pro
 2. Ask the project useful questions that expose missing or contradictory world design.
 3. Plan arcs, beats, scenes, conflicts, promises, reveals, and payoffs against the current world state.
 4. Assemble trustworthy context for a scene from explicit entities, current state, point-of-view knowledge, relevant history, and narrative intent.
-5. Draft or revise prose while respecting constraints and established voice.
-6. Review proposed state changes before accepting them into canon.
-7. Explore alternatives on a branch without damaging the main timeline.
-8. Diagnose contradictions with evidence and choose a resolution.
+5. Organize and retrieve character, location, object, map, audio, and video references as scoped evidence rather than disconnected uploads.
+6. Draft or revise prose while respecting constraints and established voice.
+7. Review proposed state changes before accepting them into canon.
+8. Explore alternatives on a branch without damaging the main timeline.
+9. Diagnose contradictions with evidence and choose a resolution.
 
 ## Release-one workflow
 
@@ -31,14 +32,15 @@ Release one should support a complete author loop:
 2. Create and edit core world entities.
 3. Create characters with appearance, personality, beliefs, goals, and initial state.
 4. Plan a scene with point of view, participants, location, intent, conflict, and expected state changes.
-5. Preview the exact context selected for generation.
-6. Generate or paste a draft.
-7. Extract events and proposed canon mutations.
-8. Run consistency checks.
-9. Accept, amend, or reject each mutation.
-10. Commit the scene and advance project state.
-11. Reopen the scene and inspect its sources, decisions, and resulting state.
-12. Run or schedule deeper continuity audits and apply reviewed correction proposals.
+5. Attach or select applicable prose and media references with authority, time, branch, and visibility.
+6. Preview the exact text and media context selected for generation, including any provider fallback.
+7. Generate or paste a draft.
+8. Extract events and proposed canon mutations.
+9. Run consistency checks.
+10. Accept, amend, or reject each mutation.
+11. Commit the scene and advance project state.
+12. Reopen the scene and inspect its sources, decisions, and resulting state.
+13. Run or schedule deeper continuity audits and apply reviewed correction proposals.
 
 This is the minimum coherent product. A questionnaire without the review-and-commit loop is a utility, not yet the engine described by the product thesis.
 
@@ -52,6 +54,8 @@ This is the minimum coherent product. A questionnaire without the review-and-com
 - Linear timeline plus branch creation and comparison
 - Story hierarchy: story, arc, beat, scene plan, scene
 - Context preview with inclusion reasons and token budget
+- Project media library for images, audio, and video with explicit entity/scene links, provenance, authority, and branch/time/POV applicability
+- Cross-modal retrieval and capability-aware context delivery with visible caption/transcript fallback
 - One primary model provider behind an internal provider interface
 - OpenRouter cloud routing plus an OpenAI-compatible local-provider path
 - Structured model outputs with retry and validation
@@ -75,6 +79,7 @@ This is the minimum coherent product. A questionnaire without the review-and-com
 - Arbitrary user-authored executable rules
 - Mobile-native applications
 - Marketplace or public sharing of worlds
+- Generative image, music, voice-cloning, or video creation; release one consumes author-provided media as context
 - Sophisticated graph visualization as the primary editor
 - Subscription billing, token resale, and a platform-credit ledger
 - Open public signup or free platform-funded inference
@@ -88,6 +93,7 @@ Product quality should be evaluated with tasks, not only model preference scores
 - Point-of-view context contains no known secret leakage in the curated evaluation set.
 - Branch changes never appear in another branch unless inherited or merged explicitly.
 - Rebuilding derived indexes produces equivalent retrieval results within documented tolerance.
+- Text-to-media and media-to-text retrieval returns applicable evidence without tenant, branch, timeline, or POV leakage.
 - A new contributor can run deterministic tests without an API key.
 - The system provides a useful explanation for every reported contradiction.
 - A complete project can be installed, used, backed up, restored, and exported in self-hosted mode without a Novel Engine account.
@@ -103,5 +109,6 @@ Product quality should be evaluated with tasks, not only model preference scores
 - No silent loss of accepted canon changes.
 - All long model operations cancellable and retryable.
 - Graceful operation when embeddings or a model provider are unavailable.
+- Graceful, visible degradation when media processing or a selected model modality is unavailable.
 - Export format documented and versioned.
 - Deterministic consistency checks run on each generation without a paid model call.

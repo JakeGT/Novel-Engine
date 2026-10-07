@@ -5,7 +5,7 @@
 Start as a modular monolith that supports two profiles: an invite-only multi-tenant deployment under `apps.jaketalling.com`, and a trusted single-user self-hosted deployment. Both use one FastAPI application, background worker capability, one React application, PostgreSQL with pgvector, Neo4j, and object/text storage. Keep internal boundaries strict enough that workers or consistency analysis can later move out of process without redesigning the domain.
 
 ```text
-React authoring application
+React authoring application + media library
       |
       v
 HTTP API / job events
@@ -21,7 +21,7 @@ Domain   Context  AI ports  Review/commit  Consistency
        Persistence interfaces
        |          |           |          |
        v          v           v          v
-  PostgreSQL    Neo4j    Vector index  Object/text
+  PostgreSQL    Neo4j    Vector index  Object/media
   journal/jobs  canon      derived       versions
 ```
 
@@ -73,12 +73,21 @@ Builds a traceable, token-budgeted context package from:
 - narrative requirements
 - semantic history
 - style references
+- explicitly linked and semantically relevant images, audio, and video
 
-It returns structured context items plus a rendered prompt section. Retrieval and rendering are separate operations.
+It returns typed text/media context parts plus rendered text sections and an exact delivery
+manifest. Retrieval, authority/visibility filtering, representation fallback, and provider
+rendering are separate operations. See `17-multimodal-context.md`.
 
 ### AI gateway
 
-Defines provider-neutral operations such as structured completion, text generation, embeddings, and optional vision analysis. OpenRouter is the cloud adapter; an OpenAI-compatible adapter supports an approved local-connector topology. Provider adapters translate internal requests to SDK calls. Prompts, schemas, retry policy, model selection, upstream provider identity, and usage accounting are versioned.
+Defines provider-neutral operations such as structured completion, long-form generation,
+multimodal embeddings, media understanding, and critique/ranking. Model routes declare accepted
+modalities and media limits. OpenRouter is the cloud adapter; an OpenAI-compatible adapter supports
+an approved local-connector topology. Provider adapters translate the internal discriminated
+`TextPart | ImagePart | AudioPart | VideoPart` context into SDK calls or declare an explicit
+derived-text fallback. Prompts, schemas, retry policy, model selection, upstream provider identity,
+media delivery, and usage accounting are versioned.
 
 ### Consistency engine
 
@@ -93,9 +102,11 @@ Model-extracted changes enter a staging area as a mutation set. Domain validator
 - PostgreSQL repositories for external-identity mappings, workspaces, invitations, memberships, projects, settings, jobs, reviews, mutation journal, outbox, and operational audit
 - Neo4j repository for canonical entities, relations, facts, beliefs, story structure, and query projections
 - vector adapter for derived embeddings and chunks
-- blob/text storage for exact scene versions and import/export artefacts where graph properties are unsuitable
+- object storage for exact scene versions, immutable media originals/variants, and import/export artefacts where graph properties are unsuitable
 
-Large immutable prose versions and imports/exports use object storage with PostgreSQL metadata. Local development may use a filesystem-compatible adapter.
+Large immutable prose/media versions and imports/exports use object storage with PostgreSQL
+metadata. Media ingestion and embedding are idempotent background pipelines. Local development may
+use a filesystem-compatible adapter.
 
 ## Runtime flows
 
@@ -105,14 +116,16 @@ Large immutable prose versions and imports/exports use object storage with Postg
 2. Load deterministic graph state.
 3. Apply knowledge and visibility policy.
 4. Retrieve derived semantic candidates using graph IDs as filters.
-5. rank, deduplicate, and budget context items.
-6. Return structured results and an explanation trace.
+5. retrieve eligible explicitly linked and semantic media candidates.
+6. rank, cluster cross-modal representations, and budget context items.
+7. resolve the target model's modality support and representation fallback.
+8. Return structured results and an explanation trace.
 
 ### AI proposal flow
 
 1. Create a job with immutable input references.
 2. Build and persist a context manifest.
-3. resolve the configured local/OpenRouter credential, enforce the author's limits, and select a model route.
+3. resolve the configured local/OpenRouter credential, enforce the author's limits, and select a model route whose modality capabilities satisfy the job or declared fallback.
 4. run deterministic consistency preflight and attach the constraint packet.
 5. call the model through an adapter.
 6. validate the structured response and record normalized usage.
@@ -164,9 +177,17 @@ This should be reached incrementally. Avoid a wholesale move before characteriza
 - Long-running AI calls return job IDs rather than holding a fragile browser request indefinitely.
 - Model jobs estimate usage, enforce configured limits, and record actual usage exactly once.
 - BYOK secrets are never placed in prompts, logs, graph records, or vector metadata.
+- Media objects are fetched only after scope re-authorization; object keys and signed URLs are never stable public identifiers.
+- Explicit author/domain asset links and hard branch/time/visibility gates outrank semantic similarity.
+- Embeddings, captions, transcripts, OCR, and model observations are derived and cannot write canon without mutation review.
+- A provider adapter must record whether it sent original media or derived text and must not silently omit an unsupported modality.
 - Every stored AI artefact identifies provider, model, prompt version, schema version, and input manifest.
 - API and persisted formats are versioned before the first user project becomes irreplaceable.
 
 ## Scale strategy
 
-Do not split services pre-emptively. Extract a component only when it needs independent scaling, security isolation, or deployment. Likely first candidates are the worker and embedding/indexing pipeline. Neo4j query profiling and context budgets should precede caching or distributed architecture.
+Do not split services pre-emptively. Extract a component only when it needs independent scaling,
+security isolation, or deployment. Likely first candidates are the worker and media
+processing/embedding pipeline because codec/scanning workloads and a multimodal model should not
+block API processes. Neo4j query profiling and context budgets should precede caching or
+distributed architecture.

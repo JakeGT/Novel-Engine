@@ -21,6 +21,7 @@ React + FastAPI + worker
       +-- PostgreSQL/pgvector
       +-- Neo4j
       +-- filesystem/object adapter
+      |     `-- immutable prose and media originals/variants
       +-- local OpenAI-compatible model (optional)
       +-- OpenRouter with author's key (optional)
 ```
@@ -46,6 +47,11 @@ Novel Engine host-only session
 ```
 
 Every hosted record and derived artefact carries workspace/project scope where applicable. Owner/editor/viewer roles govern application actions. Real-time co-editing remains deferred; ordinary version conflicts use optimistic concurrency and review.
+
+Hosted media uploads additionally require tenant storage/processing quotas, isolated
+scan/transcode workers, opaque object keys, short-lived authorized previews, and complete
+original/variant/vector cleanup. Self-hosted mode can disable processors or use local-only media
+context without sending originals to an external provider.
 
 ### Deferred: public managed service
 
@@ -134,6 +140,7 @@ Every delegated action records the policy version and why approval was or was no
 - Authors can export a readable manuscript plus a full-fidelity, versioned project archive.
 - Backup and restore cover PostgreSQL, Neo4j, prose/object files, and version metadata consistently.
 - Project deletion is explicit and includes derived vector/index data.
+- Media deletion includes originals, variants, segments, derived observations/vectors, caches, and remote-provider uploads where the provider supports deletion.
 - Provider prompt/response retention is configurable locally.
 - Published/exported manuscripts never require Novel Engine to remain installed or available.
 - Hosted account unlinking/deletion is distinct from workspace ownership transfer and shared-project retention.

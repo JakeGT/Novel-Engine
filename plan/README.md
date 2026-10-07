@@ -22,10 +22,11 @@ Read in this order:
 14. [Distribution and invite-only hosting](14-saas-platform.md) — Authentik OIDC identity, invitations, tenancy, self-hosting, provider keys, and packaging. The legacy filename is retained for stable links.
 15. [Prose editor and memory](15-prose-editor-and-memory.md) — canonical manuscript versions, editing, external integrations, and prose retrieval.
 16. [OpenCodeReview adaptation](16-open-code-review-adaptation.md) — deterministic review bundles and bounded agents for long-form prose.
-17. [Phase 0 todo](phase-0-todo.md) — execution-ready stabilization checklist, dependencies, and exit evidence.
-18. [API surface](api-surface.md) — canonical `/api/v1` routes, deprecated aliases, and the problem error contract.
-19. [Phase 0 baseline](phase-0-baseline.md) — pre-refactor API, storage, workflow, and worktree inventory.
-20. [Phase 1 todo](phase-1-todo.md) — execution-ready identity, tenancy, distribution, provider-credential, and isolation checklist.
+17. [Multimodal context and media memory](17-multimodal-context.md) — assets, cross-modal retrieval, capability-aware model context, and media consistency.
+18. [Phase 0 todo](phase-0-todo.md) — execution-ready stabilization checklist, dependencies, and exit evidence.
+19. [API surface](api-surface.md) — canonical `/api/v1` routes, deprecated aliases, and the problem error contract.
+20. [Phase 0 baseline](phase-0-baseline.md) — pre-refactor API, storage, workflow, and worktree inventory.
+21. [Phase 1 todo](phase-1-todo.md) — execution-ready identity, tenancy, distribution, provider-credential, and isolation checklist.
 
 Architectural decisions that become settled should be recorded in `decisions/` using [the ADR template](decisions/000-template.md).
 
@@ -41,6 +42,7 @@ Architectural decisions that become settled should be recorded in `decisions/` u
 - **Open source and hosted use share one core.** Self-hosted local identity and invite-only portfolio identity enter the same scoped application contracts.
 - **Tenancy is explicit; commerce is absent.** Hosted workspace isolation is foundational, while billing and platform-funded inference are not release dependencies.
 - **Consistency is tiered.** Cheap deterministic checks run continuously; paid model audits escalate only where they add value.
+- **Context is multimodal and authority-aware.** Text, images, audio, and video retain original evidence, explicit links, provenance, branch/time/POV scope, and honest provider fallbacks.
 
 ## Status vocabulary
 
@@ -52,7 +54,7 @@ Architectural decisions that become settled should be recorded in `decisions/` u
 | Implemented | Acceptance criteria and quality gates pass. |
 | Deferred | Intentionally excluded from the current release. |
 
-Core domain decisions are recorded under `decisions/`. ADR-008 proposes the open-source/free distribution pivot and ADR-009 accepts invite-only tenancy through shared portfolio identity (Authentik). Licensing and governance remain owner decisions in `11-decisions-and-questions.md`.
+Core domain decisions are recorded under `decisions/`. ADR-008 proposes the open-source/free distribution pivot, ADR-009 accepts invite-only tenancy through shared portfolio identity (Authentik), and ADR-010 accepts multimodal context with a shared embedding-space boundary. Licensing and governance remain owner decisions in `11-decisions-and-questions.md`.
 
 ## Current repository baseline
 

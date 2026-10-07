@@ -75,6 +75,7 @@ Work:
 - canonical entity/fact/belief/event models
 - revision and provenance model
 - entity CRUD/search and relationship/fact editor APIs
+- media-asset identity, immutable source versions, authority/provenance, explicit domain links, and export semantics
 - mutation journal and atomic commit service
 - author-originated mutation review path
 - project shell and world/character editors
@@ -99,6 +100,7 @@ Work:
 - branch creation, overlay reads, comparison, and conflict model
 - POV visibility/knowledge policy
 - secret handling and common-knowledge rules
+- branch/time/POV applicability for media assets, links, and reviewed observations
 - branch/timeline selector in the UI
 - state/history inspectors
 - deterministic contradiction rules for time, cardinality, and knowledge
@@ -114,7 +116,7 @@ Exit criteria:
 
 ## Phase 4 — Explainable context and derived memory
 
-Goal: the author can preview and control reliable scene context.
+Goal: the author can preview and control reliable text and media scene context.
 
 Work:
 
@@ -122,10 +124,15 @@ Work:
 - deterministic graph retrieval scoped by project/branch/tick/POV
 - vector adapter interface and versioned chunk model
 - indexing outbox, worker, and rebuild command
+- secure media ingestion lifecycle with immutable originals, variants, segments, and processing status
+- provider-neutral multimodal embedding port and generation-based vector migration/rebuild
+- EmbeddingGemma 2 evaluation against MiniLM and a strong text-only baseline; select 768/512 only from project metrics
 - scene summaries/event blocks/full-text indexing
+- image-first, then audio/video cross-modal indexing with captions/transcripts as derived fallbacks
 - previous-prose retrieval with semantic, two-clock recency, author importance, narrative proximity, continuity impact, and thread signals
 - hybrid ranking, deduplication, diversity, and token budgeting
 - context preview API and context inspector UI
+- project media library and context cards showing authority, branch/time/POV scope, timestamps/regions, and delivery representation
 - pin/exclude author controls
 - retrieval and leakage evaluation suite
 
@@ -136,10 +143,13 @@ Exit criteria:
 - stale index state is visible
 - token budgets preserve hard constraints over soft style context
 - curated POV leakage tests pass
+- text-to-media and media-to-text retrieval meets the approved baseline
+- incompatible vector generations cannot mix, and reindex/rollback is observable
+- original media is never silently dropped when a selected model lacks the modality
 
 ## Phase 5 — Story planning, consistency, and scene studio
 
-Goal: an author can plan and draft a scene using controlled context.
+Goal: an author can plan and draft a scene using controlled multimodal context.
 
 Work:
 
@@ -148,11 +158,13 @@ Work:
 - scene readiness checks
 - async job framework, progress stream, cancellation, and budgets
 - provider-neutral generation gateway
+- typed text/image/audio/video context parts and capability-aware OpenRouter/local adapter translation
 - OpenRouter BYOK/local-provider routing and normalized usage records
 - versioned generation prompts and fake adapter
 - scene editor, entity mentions, context preview, and draft variants
 - immutable scene versions and lineage
 - Tier 0/1 deterministic consistency preflight/postflight
+- multimodal consistency checks over reviewed media facts plus evidence-citing image/audio/video critic passes
 - user-triggered Tier 2 model critics, including isolated POV secret-leakage validation, with contextual recommendations and opt-in budgeted automation
 - consistency findings/correction review UI and incremental invalidation
 - deterministic dependency grouping/coverage prototype inspired by OpenCodeReview
@@ -166,6 +178,7 @@ Exit criteria:
 - failures do not lose plans or manual prose
 - deterministic consistency runs on each generation without paid inference
 - provider attempts and actual usage are recorded exactly once
+- context manifests reproduce whether original media or a derived fallback reached the provider
 
 ## Phase 6 — Extraction, review, and commit loop
 
@@ -174,6 +187,7 @@ Goal: a drafted scene can safely evolve canon.
 Work:
 
 - event/fact/belief extraction contract
+- caption/transcript/visual/audio observations may propose evidence-backed mutations through the same review contract
 - evidence spans and entity-resolution workflow
 - mutation-set validation and status machine
 - per-operation accept/edit/reject UI
@@ -208,6 +222,7 @@ Work:
 - Tier 3 scheduled/on-demand chapter, act, and project audits
 - reproducible release artefacts, upgrade notes, contributor/security policies, and license notices
 - direct OpenAI-compatible local inference route and provider capability diagnostics
+- media codec/scanner sandboxing, quotas, provider-retention/deletion behavior, orphan cleanup, and multimodal backup/restore hardening
 
 Exit criteria:
 
@@ -220,7 +235,7 @@ Exit criteria:
 ## Later options
 
 - richer branch merge/rebase tools
-- vision-assisted character/location design extraction
+- generative image/audio/video creation and editing (multimodal retrieval/context is in release one)
 - richer local-model capability negotiation and offline workflows
 - real-time collaborative editing, presence, and comments if not included in release one
 - advanced graph/timeline visualization
@@ -237,7 +252,7 @@ stable boundaries
   -> OIDC identity + invite-only tenancy + self-hosted packaging
     -> project-scoped canon + journal
       -> time/branch/knowledge semantics
-        -> explainable context + indexing
+        -> explainable text/media context + indexing
           -> planning + consistency + generation jobs
             -> extraction + review + commit
               -> open-source release hardening

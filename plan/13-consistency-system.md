@@ -15,6 +15,8 @@ The grouping/review harness takes architectural inspiration from Alibaba OpenCod
 - selected project, branch, world-time interval, and narrative position
 - scene plan and required/intended state
 - exact prose version or generation candidate
+- original media and exact asset/segment versions selected for the scene or review scope
+- media authority, explicit domain links, branch/time applicability, and reviewed derived observations
 - context manifest used to produce the prose
 - accepted canonical facts, events, constraints, and beliefs
 - POV knowledge ledger, including false beliefs and explicitly exposed author-only secrets
@@ -30,6 +32,7 @@ A `ConsistencyRun` records scope, input revisions, profile, stages, duration, mo
 - severity: info, warning, error, or blocking
 - confidence and detection tier
 - prose evidence spans
+- media evidence regions, frames, or timestamp ranges when applicable
 - canonical evidence and source revisions
 - affected entities, facts, events, scenes, or threads
 - explanation and suggested correction options
@@ -49,6 +52,7 @@ Checks include:
 - required objects/resources are owned, available, and not concurrently elsewhere
 - required story-state predicates are satisfied
 - planned actions do not violate hard world laws without an explicit exception
+- explicitly required canonical media references are applicable to the branch/time and authorized for the POV/context purpose
 - POV knowledge ledger distinguishes known, believed, unknown, and author-only facts
 - branch head and timeline selection are current
 - scene plan has required POV, location, purpose, and intended change fields
@@ -62,6 +66,7 @@ Run after generation or manual edits. Parse deterministic annotations and use st
 Checks include:
 
 - names, aliases, pronouns, physical attributes, and stable identity details
+- appearance, costume, injury, disguise, object, map, location, or voice claims that conflict with reviewed active media evidence
 - active location and impossible simultaneity
 - chronology, age, duration, travel, and event ordering
 - possession, resource consumption, injury/state continuity, and dead/retired entities
@@ -70,6 +75,7 @@ Checks include:
 - explicit contradictions with active facts
 - POV claims unsupported by knowledge/belief state
 - accidental use of isolated author-only secrets
+- secrets exposed only through selected images, filenames, captions, transcripts, audio, or video
 - unmet scene-plan requirements or unintended state changes
 - duplicate, missing, or incompatible extracted mutations
 - unresolved thread progression and premature payoff/reveal
@@ -81,6 +87,7 @@ Not every prose statement needs an LLM. Entity mentions, numbers, dates, declare
 Run when requested by the user or by an explicitly enabled budgeted schedule. Recommend it after an accepted scene or small generation group. Supply a compact evidence packet rather than the whole project:
 
 - scene prose or changed passages
+- bounded original media segments when the critic route supports them, otherwise the exact previewed derived representation
 - deterministic findings and unresolved ambiguities
 - relevant canonical facts with provenance
 - POV knowledge and selected author-only truth in separate sections
@@ -95,6 +102,8 @@ Ask task-specific critic passes rather than one vague “find problems” prompt
 - physical and causal continuity
 - world-rule adherence
 - narrative promise/setup/payoff consistency
+- visual appearance/location/object continuity
+- speaker/voice and timestamped audio/video continuity
 
 The critic emits typed findings with quoted evidence locations and canonical references. Unsupported findings are discarded or labeled low confidence.
 
@@ -170,6 +179,24 @@ Recommended prose units:
 
 Changing importance should not require regenerating the semantic vector. Re-embed only when the content, embedding representation, or embedding model changes.
 
+## Multimodal evidence
+
+Media participates in consistency through evidence clusters: the immutable original, explicit
+links, reviewed observations, and derived caption/transcript are one source, not independent votes.
+Deterministic checks use explicit links and reviewed facts. Model critics may inspect original
+images/audio/video for soft judgments, but findings must cite an asset version and exact
+region/frame/timestamp.
+
+Source authority determines conflict behavior. Author-approved canon may contradict an inspiration
+image without error; an active canonical portrait conflicting with prose should produce a finding;
+an unreviewed caption conflicting with canon should produce an extraction-quality warning, not a
+canon contradiction. Machine observations become facts only through the ordinary mutation review
+and commit workflow.
+
+All bundles apply tenant, project, branch, time, POV, secret, and asset-lifecycle gates before a
+critic receives evidence. If a selected route cannot consume original media, the run records its
+derived-text fallback and cannot claim original-media validation.
+
 ## Rule engine design
 
 Rules are versioned code/config with declared:
@@ -216,3 +243,4 @@ Agent corrections always produce diffs and never overwrite the accepted prose ve
 - Stale runs cannot block or modify newer prose without revalidation.
 - Index lag is visible; critical checks fall back to canonical queries and direct source reads.
 - A critic response without verifiable evidence cannot produce a blocking finding.
+- Media processing failure or a text-only fallback cannot invalidate deterministic findings from reviewed media facts, but the run reports reduced multimodal coverage.

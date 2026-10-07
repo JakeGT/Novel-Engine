@@ -10,13 +10,26 @@ Store projects, branches, stable entities, facts, beliefs, events, story structu
 
 Use PostgreSQL from the start for external-identity mappings, workspaces, invitations, memberships, project metadata, encrypted hosted provider credentials, jobs, review state, idempotency, outbox, consistency runs/findings, and ordered immutable commit envelopes. The mutation journal is the recovery boundary for canonical changes.
 
-### Text/blob store: authored artefacts
+### Object store: authored prose and media
 
-Store exact structured scene versions, rendered text projections, imports, exports, and potentially large prompt artefacts outside graph properties. Hosted deployments use object storage with content-addressed keys and PostgreSQL metadata; local development uses a compatible filesystem adapter.
+Store exact structured scene versions, rendered text projections, immutable media originals,
+derived variants, imports, exports, and potentially large prompt artefacts outside graph
+properties. Hosted deployments use object storage with opaque tenant-scoped content-addressed keys
+and PostgreSQL metadata; local development uses a compatible filesystem adapter. Client-visible
+asset IDs are not object keys.
 
 ### Vector index: derived retrieval data
 
-Use PostgreSQL with pgvector for the first implementation, behind a replaceable vector adapter. Every entry points back to a canonical source/version. The complete index can be deleted and rebuilt.
+Use PostgreSQL with pgvector for the first implementation, behind replaceable text/multimodal
+vector ports. Every entry points back to an exact prose or media segment/version and records its
+embedding generation. The complete index can be deleted and rebuilt; incompatible generations are
+not queried together.
+
+### Media lifecycle metadata
+
+PostgreSQL owns media assets, immutable versions, technical metadata, variants, segments, explicit
+links, processing state, derived observations, retention, and deletion. Neo4j may project reviewed
+semantic links for traversal but does not own binary lifecycle. See `17-multimodal-context.md`.
 
 ## Canonical write protocol
 
@@ -57,6 +70,10 @@ Create an ordered migration system before relying on user data. Each migration i
 
 Migrations cover Neo4j constraints/indexes, core schema, custom schema formats, vector metadata, prompt contracts, and exports. Application startup may verify versions but should not perform risky migrations implicitly.
 
+Embedding dimension/model changes create a new generation and rebuild path rather than altering
+active rows in place. The current `vector(384)` MiniLM prototype requires an explicit migration
+before a 512- or 768-dimensional multimodal generation can become active.
+
 ## Concurrency and idempotency
 
 - Branch heads use optimistic revision checks.
@@ -64,6 +81,7 @@ Migrations cover Neo4j constraints/indexes, core schema, custom schema formats, 
 - Job creation accepts a client idempotency key.
 - Provider attempts, usage recording, cancellation, and output acceptance are idempotent by job/attempt.
 - Derived workers record source revision and content hash.
+- Media processing stages key idempotency by asset-version checksum plus processor configuration.
 - Duplicate model callbacks or retries must not duplicate facts or edges.
 - UI conflict responses include current head and a rebase/review path.
 
@@ -77,6 +95,7 @@ Release one needs a user-owned export containing:
 - story plans and scene versions
 - accepted mutation history and provenance
 - original authored assets permitted for export
+- media links, reviewed observations, source/licence/attribution, and branch/time/visibility metadata
 
 Embeddings are optional because they are derived. A restore test must create a clean environment, import the export, rebuild indexes, and compare canonical checksums and representative queries.
 
@@ -88,6 +107,7 @@ Embeddings are optional because they are derived. A restore test must create a c
 - Configure retention for raw model requests/responses because they may contain manuscript text.
 - Remove or cryptographically destroy stored BYOK credentials when revoked/account-deleted, subject to required audit retention that never includes the raw key.
 - Redact secrets from logs and diagnostics.
+- Deleting a media asset covers originals, variants, segments, vectors, caches, and remote-provider uploads where supported, while preserving only an authorized audit tombstone.
 
 ## Near-term repairs to the prototype
 

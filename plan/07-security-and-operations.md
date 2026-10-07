@@ -2,7 +2,14 @@
 
 ## Threat model
 
-Protected assets include OIDC/application sessions, invitations, OpenRouter credentials, unpublished manuscript text, private world notes, secrets within the story graph, provider request history, and project exports. Relevant threats include cross-tenant access, invitation replay, identity/session confusion across sibling portfolio apps, prompt injection from imported text, credential theft, accidental secret leakage into POV context, unsafe dynamic Cypher, excessive model spend, dependency compromise, and loss/corruption of author data.
+Protected assets include OIDC/application sessions, invitations, OpenRouter credentials,
+unpublished manuscript text, private world notes, original images/audio/video, media metadata and
+derived observations, secrets within the story graph, provider request history, and project
+exports. Relevant threats include cross-tenant access, invitation replay, identity/session
+confusion across sibling portfolio apps, prompt injection from imported text or media/OCR,
+malicious/polyglot/decompression-bomb uploads, codec/parser compromise, sensitive EXIF/GPS leakage,
+credential theft, accidental secret leakage into POV context, unsafe dynamic Cypher, excessive
+model spend/storage, dependency compromise, and loss/corruption of author data.
 
 ## Security controls
 
@@ -13,22 +20,27 @@ Protected assets include OIDC/application sessions, invitations, OpenRouter cred
 - Use allow-listed schema identifiers; parameters cannot protect interpolated Cypher labels by themselves.
 - Keep unrestricted Cypher and raw graph administration out of user-facing APIs.
 - Validate uploads by size, type, extension, and content; scan when hosted.
+- Decode/transcode media in an isolated worker with pixel/frame/duration/decompression limits and allow-listed output formats.
+- Namespace object keys by verified scope, use short-lived authorized access, and never accept a client object key as authorization.
+- Strip or separately protect EXIF/GPS and other metadata that is not required for authored provenance.
 - Apply request/body limits and timeouts.
 - Return redacted errors outside development.
 
 ### AI boundaries
 
-- Treat imported prose, web material, and retrieved notes as untrusted data, never system instructions.
+- Treat imported prose, web material, filenames, OCR, captions, transcripts, visible media text, and retrieved notes as untrusted data, never system instructions.
 - Delimit context sections and state their authority.
 - Validate all structured outputs against strict schemas and domain rules.
 - Do not allow model-selected tools to write canon directly.
 - Apply per-project cost/rate limits and require confirmation above thresholds.
 - Encrypt BYOK credentials with envelope encryption, restrict decryption to workers, support revocation/rotation, and redact request headers/logs.
+- Record whether original media or a derived fallback was sent to a remote provider; require an explicit preview and respect provider retention/deletion capabilities.
 
 ### Story confidentiality
 
 - Logs are metadata-first; manuscript content logging is opt-in and time-limited.
 - Context traces may contain spoilers/secrets and inherit project access control.
+- Media previews, captions, transcripts, embeddings, perceptual derivatives, signed URLs, and context parts inherit the strictest source visibility and are excluded from content logs.
 - Exports are explicit, checksummed, and never uploaded implicitly.
 - Hosted mode requires encryption in transit and at rest plus tenant-isolation tests.
 
@@ -53,6 +65,10 @@ Invitations are high-entropy, hashed at rest, single-use, expiring, revocable, a
 
 Job records contain workspace/project, initiating identity, type, immutable inputs, stage, attempts, lease/heartbeat, cancellation flag, progress, credential reference, provider usage, outputs, and classified error. Workers use idempotency keys and bounded retries. Jobs that may spend the user's provider funds check cancellation and limits immediately before provider calls.
 
+Media ingestion jobs additionally record source checksum, processor/model revision, safe technical
+limits, segment/variant generation, scanning result, and derived-index generation. They run outside
+the API process and cannot broaden source visibility.
+
 Start with PostgreSQL-backed job/outbox coordination suitable for the invite-only hosted deployment. Adopt a dedicated broker only when throughput or distributed scheduling demands it.
 
 ## Observability
@@ -68,6 +84,8 @@ Use structured logs with correlation, project, job, workflow, prompt version, mo
 - mutation validation/commit failures
 - consistency finding categories
 - index lag from canonical head
+- media upload/scan/transcode/extraction/index latency and failure counts by safe media category
+- original-versus-derived provider delivery and unsupported-modality rejection, without content or object URLs
 
 Add tracing across API → workflow → retrieval/provider → persistence when the basic boundaries exist.
 
@@ -77,6 +95,8 @@ Add tracing across API → workflow → retrieval/provider → persistence when 
 - Readiness checks required stores without mutating them.
 - Provider outage should leave manual authoring and canonical reads operational.
 - Vector outage should permit deterministic context with a visible degradation warning.
+- Media processor outage should preserve originals and text/manual workflows with a visible retryable status.
+- A provider without a required modality must fail before charging or use a previewed, recorded derived-text fallback.
 - Worker outage should queue work rather than lose it.
 - Index lag is visible and repairable.
 - Startup does not hide failed migrations or destructive compatibility issues.
@@ -101,10 +121,12 @@ If selected, a separately authenticated companion makes outbound connections fro
 - failed/corrupt commit recovery
 - stuck job and provider outage
 - vector reindex
+- quarantined/failed media processing and multimodal reindex
 - schema migration failure
 - project export/import
 - key rotation
 - data deletion
+- media/provider-upload deletion and orphan-object reconciliation
 - spend spike investigation
 - shared IdP outage/key rotation and invitation abuse
 - suspected provider-key or tenant-data exposure

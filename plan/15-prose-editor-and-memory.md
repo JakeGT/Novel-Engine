@@ -4,6 +4,9 @@
 
 Novel Engine should support a long-running manuscript, not only isolated generated snippets. Prose remains author-owned and editable, while the engine maintains entity annotations, version lineage, context provenance, consistency findings, and canon mutations without corrupting text.
 
+Scenes may also reference immutable project media. The structured document stores stable asset or
+segment annotations, never storage URLs or embedded provider objects.
+
 ## Document hierarchy
 
 ```text
@@ -58,8 +61,13 @@ Index prose at multiple resolutions:
 - scene and chapter summaries
 - character dialogue/voice excerpts
 - passages tied to active objects, rules, secrets, promises, or threads
+- captions/transcripts and explicitly linked character/location/object media relevant to the prose unit
 
 Every unit points to exact manuscript/version/range and includes workspace/project, branch, narrative/world positions, POV, entities, visibility, content hash, embedding model, and active state.
+
+Media memory points to exact asset/version/segment regions or timestamps and carries authority,
+branch/time applicability, visibility, explicit-link role, and the embedding representation. A
+portrait and its caption/reviewed facts are clustered as one evidence source during ranking.
 
 Semantic vectors represent content meaning. Dynamic weights remain metadata:
 
@@ -84,8 +92,13 @@ Always consider:
 - recent prose involving active characters/location/objects
 - older high-impact prose linked to active facts/threads
 - voice samples appropriate to speaking/POV characters
+- applicable canonical/reference portraits, locations, maps, objects, performances, or recordings explicitly linked to the active scene entities
 
 Apply hard workspace/project/branch/visibility filters first. Then rank, deduplicate overlapping ranges, allocate token budgets, and show included/excluded passages in the context inspector. Authors may pin, suppress, or adjust importance with provenance.
+
+Apply the same rules to media and show whether the generation model receives the original asset or
+a caption/transcript fallback. Requiring original media is a job capability constraint, not a soft
+ranking preference.
 
 ## External editor integrations
 

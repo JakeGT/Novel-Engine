@@ -46,6 +46,13 @@ Use a stable problem format with `type`, `title`, `status`, `code`, `detail`, `f
 - `/api/v1/projects/{project_id}/members`
 - `/api/v1/projects/{project_id}/schemas`
 - `/api/v1/projects/{project_id}/entities`
+- `/api/v1/projects/{project_id}/assets`
+- `/api/v1/projects/{project_id}/assets/{asset_id}/versions`
+- `/api/v1/projects/{project_id}/assets/{asset_id}/variants`
+- `/api/v1/projects/{project_id}/assets/{asset_id}/segments`
+- `/api/v1/projects/{project_id}/assets/{asset_id}/links`
+- `/api/v1/projects/{project_id}/assets/{asset_id}/observations`
+- `/api/v1/projects/{project_id}/assets/search`
 - `/api/v1/projects/{project_id}/branches`
 - `/api/v1/projects/{project_id}/timeline`
 - `/api/v1/projects/{project_id}/stories`
@@ -62,7 +69,18 @@ Use a stable problem format with `type`, `title`, `status`, `code`, `detail`, `f
 
 ### Context preview
 
-`POST .../context-previews` accepts purpose, branch, timeline position, POV, text/entity anchors, pinned sources, and budget. It returns structured sections, individual sources, scores, exclusions, warnings, and rendered token estimates. The UI can revise the request before generation.
+`POST .../context-previews` accepts purpose, branch, timeline position, POV, text/entity/media
+anchors, pinned sources, required-original flags, and text/media budgets. It returns typed context
+parts, evidence clusters, individual sources, authority and score components, exclusions, warnings,
+rendered token/media estimates, and the original-versus-derived representation selected for the
+target model. The UI can revise the request before generation.
+
+### Media ingestion and review
+
+Asset creation uses an authorized upload intent/finalize flow or bounded streaming upload. The API
+exposes immutable source versions, processing status, safe previews, variants/segments, explicit
+domain links, branch/time/visibility/authority controls, and derived-observation review. It never
+returns storage credentials, stable public object URLs, or another tenant's processing status.
 
 ### Generation job
 
@@ -92,12 +110,14 @@ Use a stable problem format with `type`, `title`, `status`, `code`, `detail`, `f
 - entity list and typed editor
 - relationship editor
 - searchable lore and source view
+- project media library with safe previews, source/licence metadata, processing status, and explicit entity/location/object links
 - compact neighborhood graph as a supporting visualization
 - schema extension management
 
 ### Character workspace
 
 - identity and stable profile
+- branch/time-applicable portraits, costume/appearance references, and reviewed visual observations
 - current state at selected branch/tick
 - beliefs and knowledge with evidence
 - goals, relationships, voice samples, and history
@@ -116,6 +136,7 @@ Use a stable problem format with `type`, `title`, `status`, `code`, `detail`, `f
 - manuscript editor with entity mentions
 - long-running structured prose document with immutable scene/version checkpoints
 - context inspector with pin/exclude controls
+- typed media context cards with authority/visibility/timestamp details and original-versus-caption/transcript delivery controls
 - draft variants and revision comparison
 - consistency findings
 - consistency profile, preflight constraints, and correction proposals
@@ -158,4 +179,7 @@ State ownership:
 - Show why context was included and allow author overrides.
 - Never silently accept newly inferred facts.
 - Never silently expose an author-only secret as POV knowledge; show leakage findings and their evidence.
+- Never imply that a text-only model inspected original media; preview and persist the actual fallback representation.
+- Treat machine captions, transcripts, OCR, and visual/audio observations as reviewable derived material, not canon.
+- Show source/licence/attribution and warn before remote-provider transfer of original media.
 - Preserve manual prose edits when rerunning extraction or generation.

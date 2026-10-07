@@ -46,6 +46,15 @@ Narrative intent organized as Story → Arc/Act → Beat → ScenePlan. It refer
 
 An authored artefact with immutable versions. A scene version records point of view, plan, branch, timeline interval, exact text, context manifest, generation metadata, extraction result, review decisions, and committed event/mutation IDs.
 
+### Media asset
+
+A project-scoped image, audio, video, document, or mixed reference with immutable source versions,
+authority, visibility, provenance, licence/attribution, branch/time applicability, and processing
+state. Derived variants, segments, captions, transcripts, OCR, observations, and embeddings point
+to the exact source version and are rebuildable. Explicit asset links connect media to entities,
+scenes, plans, events, or facts with roles such as `DEPICTS`, `VOICE_OF`, `MAP_OF`, `SET_AT`, or
+`EVIDENCE_FOR`.
+
 ### Mutation set
 
 A reviewable proposal containing ordered creates, updates, closes, and links. It has statuses `draft`, `validating`, `needs_review`, `approved`, `committing`, `committed`, `rejected`, and `failed`.
@@ -62,8 +71,13 @@ Prefer a controlled core vocabulary:
 - Story, Act, PlotArc, Beat, ScenePlan, Scene, SceneVersion
 - Thread, Conflict, Foreshadow, Payoff, Theme
 - Source, ContextManifest, MutationSet
+- MediaAsset, MediaAssetVersion, MediaSegment, AssetLink, DerivedMediaObservation
 
 Appearance, personality, and state may remain structured components when they need independent temporal history. Avoid making every form section a graph node by default; use a node only when it has identity, relationships, or version history.
+
+Media lifecycle metadata remains authoritative in PostgreSQL; graph nodes/edges are query
+projections for reviewed semantic links. An image-derived appearance observation is not equivalent
+to an accepted appearance fact.
 
 ## Identity rules
 
@@ -93,6 +107,7 @@ Flashbacks change narrative order, not the world time at which their events occu
 - Merging computes mutations relative to the common ancestor.
 - Structural conflicts require author resolution; prose is never auto-merged into canon.
 - Derived vector documents include project, branch, inherited source branch, and revision metadata.
+- Asset links and observations use the same inheritance and conflict rules; alternate-branch media cannot leak into a sibling branch through vector similarity.
 
 ## Knowledge and visibility
 
@@ -105,6 +120,9 @@ For a point-of-view character, context may contain:
 - author-only constraints in a separate non-prose instruction channel
 
 It must not present an inaccessible secret as something the character knows. The generator may receive author-only truth only when the prompt contract clearly separates it from POV-accessible content and the workflow needs dramatic control. This choice should be configurable and covered by leakage evaluations.
+
+The same policy covers media. A portrait, map, recording, filename, caption, transcript, or visible
+detail can reveal a secret even when its accompanying text is safe.
 
 ## Provenance
 
@@ -130,6 +148,9 @@ Derived information also stores its derivation inputs and can be invalidated whe
 - A scene's resulting mutations are idempotent by mutation-set ID.
 - Deleting an entity used by history means retiring it, not erasing it.
 - Secret visibility is deny-by-default.
+- An asset/segment cannot be linked across projects, and a derived representation cannot widen its source visibility.
+- A machine-derived media observation cannot become canon without an accepted mutation carrying exact region/timestamp evidence.
+- Retired, deleted, quarantined, failed, or branch/time-inapplicable media cannot enter a new executable context manifest.
 
 ## Schema extensions
 

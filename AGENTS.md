@@ -104,6 +104,7 @@ The Makefile keeps tool caches under ignored `.cache/` so sandboxed coding agent
 11. Workspace and project scope are mandatory at every hosted persistence, job, cache, vector, object, export, and event boundary. Self-hosted local mode supplies explicit local scope through the same contracts.
 12. User-funded AI operations enforce configured limits and record provider usage idempotently. Hosted OpenRouter credentials must remain encrypted/redacted and are accessed only through the credential port.
 13. Run deterministic consistency preflight/postflight around generation. Model critics produce evidence-backed findings and never silently rewrite accepted prose or canon.
+14. Treat original media as scoped evidence and multimodal embeddings/captions/transcripts as derived indexes. Explicit links and workspace/project/branch/time/POV gates outrank similarity; a provider fallback must never pretend a model saw media it did not receive.
 
 ## Change workflow
 

@@ -100,6 +100,21 @@ These IDs are retained for traceability from ADR-001. Identity and isolation wor
 - **CTX-008 · P1 — Token budgeter:** hard/soft categories and deterministic truncation.
 - **CTX-009 · P1 — Context preview API/UI:** inspect, pin, exclude, and compare packages.
 - **CTX-010 · P0 — Retrieval evaluations:** relevance, omission, leakage, and branch correctness fixtures.
+- **CTX-011 · P0 — Multimodal embedding port:** typed text/image/audio/video/interleaved inputs, separate query/corpus tasks, normalized output, provenance, capability health, and deterministic fake.
+- **CTX-012 · P1 — Cross-modal indexing:** generation-versioned pgvector rows for media segments, captions, transcripts, and prose; migrate away from fixed `vector(384)` without mixing spaces.
+- **CTX-013 · P1 — Typed model context:** `TextPart | ImagePart | AudioPart | VideoPart`, provider capability/limit negotiation, original-versus-derived fallback, budgeting, and exact delivery manifest.
+- **CTX-014 · P0 — Multimodal evaluations:** text↔media and media↔media retrieval, explicit-link precedence, 768/512 dimension comparison, hard negatives, resource use, rebuild, and leakage gates.
+
+## Multimodal assets
+
+- **AST-001 · P0 — Asset identity and versions:** project-scoped media assets, immutable originals, authority, visibility, source/licence/attribution, branch/time applicability, provenance, and lifecycle state.
+- **AST-002 · P0 — Secure object ingestion:** authorized upload/finalize, streamed hashing, signature/type/size validation, hosted scanning, opaque scoped keys, and safe preview access.
+- **AST-003 · P1 — Variants and segments:** thumbnails/proxies, image regions, audio ranges, video windows/keyframes, transcript/OCR pointers, idempotent processors, and processing status.
+- **AST-004 · P0 — Explicit media links:** reviewed `DEPICTS`/`VOICE_OF`/`SET_AT`/`MAP_OF`/`EVIDENCE_FOR` links that outrank similarity and obey project/branch/time/visibility.
+- **AST-005 · P1 — Derived observations:** caption, transcript, OCR, speaker, and visual/audio proposals with evidence, confidence, model/processor provenance, review state, and mutation-set promotion.
+- **AST-006 · P0 — Media security and privacy:** codec isolation, decompression/pixel/frame/duration quotas, metadata stripping/protection, untrusted-content delimiting, remote-provider preview, and content-free logs.
+- **AST-007 · P1 — Media library and inspector:** upload/process/retry, preview, metadata, links, applicability, observation review, search, context pin/exclude, and representation controls.
+- **AST-008 · P0 — Media lifecycle:** export/restore, retention, retire/delete, vector/cache/provider-upload cleanup, orphan reconciliation, and audit tombstones.
 
 ## Story and scene workflows
 
@@ -108,7 +123,7 @@ These IDs are retained for traceability from ADR-001. Identity and isolation wor
 - **STY-003 · P1 — Scene intent:** POV, location, participants, goal, conflict, rule pressure, required and intended state.
 - **STY-004 · P1 — Readiness rules:** explain unmet prerequisites and suggest author-controlled bridge plans.
 - **SCN-001 · P0 — Job model:** persistence, leases, stages, progress, cancellation, retry, and usage.
-- **SCN-002 · P0 — AI provider port:** structured generation, prose, embeddings, normalized errors/usage, fake adapter, and OpenRouter adapter.
+- **SCN-002 · P0 — AI provider port:** structured generation, prose, typed media context, multimodal embeddings, declared modality/limit capabilities, normalized errors/usage, fake adapter, and OpenRouter adapter.
 - **SCN-002A · P1 — Local inference connector:** authenticated device registration, outbound job channel, secure updates/revocation, capability discovery, and OpenAI-compatible Ollama/llama.cpp adapter.
 - **SCN-003 · P1 — Prompt registry:** versioned templates, input/output schemas, rendering tests.
 - **SCN-004 · P1 — Scene studio:** plan, editor, mentions, context, variants, findings, and review.
@@ -132,6 +147,7 @@ These IDs are retained for traceability from ADR-001. Identity and isolation wor
 - **CON-011 · P1 — Deep audit jobs:** chapter/act/project recomputation, estimates, cancellation, and correction plans.
 - **CON-012 · P0 — Consistency evaluations:** labeled defects, leakage, false positives, detection/latency/cost reporting.
 - **CON-013 · P0 — Deterministic bundle prototype:** implement prose review units, dependency graph, rule-specific grouping, token splitting, coverage manifest, preview, and fallbacks; benchmark against full-context and vector-only critics.
+- **CON-014 · P1 — Multimodal consistency:** deterministic checks against reviewed media facts plus bounded evidence-citing image/audio/video critic bundles, region/timestamp anchors, secret leakage, and fallback-quality reporting.
 
 ## Extraction and commit
 
@@ -151,6 +167,7 @@ These IDs are retained for traceability from ADR-001. Identity and isolation wor
 - **OPS-004 · P1 — Hosted identity operations:** OIDC/session security, invitation and role audit, recovery runbooks, and a clearly separated local identity adapter.
 - **OPS-005 · P1 — Privacy controls:** retention and deletion for drafts/model artefacts/log content.
 - **OPS-006 · P1 — Health/degradation:** readiness and clear graph/vector/provider/worker status.
+- **OPS-007 · P1 — Media operations:** processing/index lag, safe failure telemetry, quarantine/retry/orphan runbooks, storage quotas, and processor capability diagnostics.
 - **QLT-001 · P0 — Reference world:** synthetic cross-layer fixture with branches, secrets, and false beliefs.
 - **QLT-002 · P1 — Release workflow E2E:** automate the complete release-one loop.
 - **QLT-003 · P1 — Evaluation baseline:** approved AI/retrieval metrics and comparison report.

@@ -1,6 +1,6 @@
 # Decisions and remaining questions
 
-The project owner answered the original architecture questionnaires on 2026-10-05. On 2026-10-06 the product direction shifted from subscription SaaS toward an open-source/free product with an invite-only multi-tenant portfolio deployment. ADR-008 records the distribution pivot; ADR-009 accepts shared identity and invite-only tenancy.
+The project owner answered the original architecture questionnaires on 2026-10-05. On 2026-10-06 the product direction shifted from subscription SaaS toward an open-source/free product with an invite-only multi-tenant portfolio deployment. ADR-008 records the distribution pivot; ADR-009 accepts shared identity and invite-only tenancy. On 2026-10-07 ADR-010 accepted first-class multimodal context and a shared embedding-space boundary.
 
 ## Current direction
 
@@ -15,6 +15,8 @@ The project owner answered the original architecture questionnaires on 2026-10-0
 | Collaboration | Workspaces and project sharing use owner/editor/viewer roles; real-time co-editing is not initially required |
 | First complete workflow | Plan scene → preview context → draft → review mutations → commit canon |
 | Context | Include previous prose using semantic, temporal, narrative, continuity, and author-importance signals |
+| Multimodal context | Text, images, audio, and video are typed evidence with explicit authority, provenance, branch/time/POV scope, and provider delivery trace |
+| Multimodal embeddings | Evaluate EmbeddingGemma 2 as the preferred local candidate at 768/512 dimensions; adopt only after Novel Engine retrieval/resource benchmarks |
 | Autonomy | Include delegated low-risk canon writes; protected/high-impact actions remain human-in-the-loop |
 | Branches | Fork, compare, and merge; author resolves conflicts or accepts an agent proposal through review |
 | Cloud providers | OpenRouter routing behind an internal capability-based port |
@@ -38,6 +40,8 @@ The project owner answered the original architecture questionnaires on 2026-10-0
 - The structured manuscript schema, scene-version lineage, projections, and patch protocol precede the full editor UI.
 - Consistency model calls remain opt-in/default-off automation, with recommendations and provider-usage estimates rather than platform-credit prices.
 - Telemetry is opt-in; manuscript text is never sent anywhere except a provider explicitly invoked by the author.
+- Original media remains in tenant-scoped object storage and is sent to a remote model only through an explicit, previewed operation. Captions/transcripts and vectors are derived, not canon.
+- The prototype's MiniLM `vector(384)` index must migrate through a versioned rebuild; incompatible embedding spaces are never mixed.
 
 ## Decisions needed from the owner
 
@@ -52,6 +56,7 @@ These choices materially affect public release and should be answered before OSS
 7. **Structured editor framework.** Select the editor and canonical JSON document schema before editor implementation.
 8. **Autonomy defaults.** Confirm the protected-action list and exact thresholds for delegated changes and provider spend.
 9. **Model-check automation.** Decide whether users may schedule automatic checks within their own provider budget.
+10. **Hosted media policy.** Set initial per-file/workspace size, duration, retention, and processing quotas before enabling hosted uploads; self-hosted operators may override documented safe defaults.
 
 ## Retired SaaS selections
 

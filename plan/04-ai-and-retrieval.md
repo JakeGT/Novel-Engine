@@ -10,11 +10,15 @@ Define provider-neutral ports for:
 
 - structured completion
 - long-form text generation
-- embeddings
-- optional image understanding
+- typed multimodal embeddings for text, images, audio, and video
+- image/audio/video understanding with declared provider capabilities and limits
 - optional critique/ranking
 
 An operation declares capability requirements rather than a hard-coded model name. Provider configuration maps requirements to actual models and limits. OpenRouter is the primary cloud gateway; the system records the router and actual upstream model/provider when available. A separate OpenAI-compatible adapter supports approved local inference connectivity.
+
+`google/embeddinggemma-2` is the preferred first local multimodal embedding candidate, subject to
+the product-specific evaluation and migration gate in `17-multimodal-context.md`. The architecture
+does not make one model or vector dimension authoritative.
 
 ## Context package
 
@@ -31,6 +35,10 @@ A context package is a durable structure, not only a concatenated string. It con
 - rendered prompt sections and template version
 - previous-prose units and their semantic, temporal, narrative, author-importance, and continuity scores
 - selected author-only secrets, separately labeled from POV-accessible knowledge
+- typed text, image, audio, and video parts with asset/segment/version pointers
+- media authority, branch/time applicability, visibility, explicit-link role, and score components
+- the original media or derived caption/transcript representation actually delivered to the model
+- provider modality limits, exclusions, transformations, and degradation decisions
 
 This enables debugging, replay, cost analysis, and regression testing.
 
@@ -41,10 +49,12 @@ This enables debugging, replay, cost analysis, and regression testing.
 3. **Apply visibility.** Separate POV-accessible knowledge, public knowledge, and author-only direction.
 4. **Expand structurally.** Traverse only predicates allowed by the workflow policy with depth and result caps.
 5. **Expand semantically.** Search relevant summaries and previous-prose chunks, filtered by workspace/project, branch ancestry, active version, entity IDs, and visibility.
-6. **Rank and deduplicate.** Combine explicit priority, graph distance, semantic relevance, narrative/world-time distance, author-assigned importance, continuity impact, unresolved threads, and diversity. Keep changing weights as metadata rather than modifying semantic vectors.
-7. **Budget.** Allocate tokens by category, preserving hard constraints before stylistic examples.
-8. **Render.** Build distinct sections for canon, POV beliefs, story intent, relevant history, style, and task instructions.
-9. **Trace.** Persist why each item was included or excluded.
+6. **Expand across media.** Load eligible explicit asset links, then search shared-space image/audio/video segments without widening hard scope.
+7. **Rank and deduplicate.** Combine explicit priority, source authority, graph distance, semantic relevance, narrative/world-time distance, author-assigned importance, continuity impact, unresolved threads, and diversity. Cluster an asset with its caption/transcript/facts so representations do not vote independently. Keep changing weights as metadata rather than modifying semantic vectors.
+8. **Negotiate capabilities.** Select original media, a declared derived-text fallback, or fail before spending when the requested operation requires an unsupported modality.
+9. **Budget.** Allocate text tokens, media counts/sizes/durations, and provider cost by category, preserving hard constraints before stylistic examples.
+10. **Render.** Build distinct text sections and typed media parts for canon, POV beliefs, story intent, relevant history, style, and task instructions.
+11. **Trace.** Persist why each item and representation was included or excluded.
 
 Semantic retrieval suggests candidates; it never decides truth.
 
@@ -60,6 +70,8 @@ Each indexed item includes:
 - visibility/access labels
 - source hash and embedding-model version
 - exact source pointer
+- modality, asset/segment/version pointer, source authority, and explicit-link role where applicable
+- embedding task/prefix, normalization, dimension, model revision, and representation kind
 
 Recommended layers:
 
@@ -72,22 +84,27 @@ Recommended layers:
 
 Never overwrite a version in place. Mark it inactive and index the replacement. Reindexing must be idempotent.
 
+The multimodal vector model, ingestion/indexing lifecycle, typed context-part contract, and
+cross-modal evaluation set are specified in `17-multimodal-context.md`. Query and corpus embedding
+operations are distinct. Incompatible embedding generations are never mixed in one search.
+
 ## Scene generation pipeline
 
 1. Validate the scene plan and required fields.
 2. Run deterministic consistency preflight and build its constraint packet.
 3. Build a context package including relevant previous prose.
-4. Show the author a context preview and allow pin/exclude/importance operations.
-5. Resolve the autonomy/consistency profile, authorized credential route, and token/cost limit.
-6. Create an immutable generation job.
-7. Generate one or more drafts.
-8. Store each draft separately with lineage and reconcile usage.
-9. Run deterministic postflight checks, POV leakage validation, and configured model critics.
-10. Let the author edit/select a draft and resolve findings.
-11. Extract events, facts, beliefs, and state changes into a mutation set.
-12. Resolve entity references and flag ambiguity.
-13. Validate the mutation set.
-14. Review or policy-approve eligible changes and commit them.
+4. Add eligible linked/retrieved media and resolve the selected route's original-media or derived-text representation.
+5. Show the author a context preview and allow pin/exclude/importance/require-original operations.
+6. Resolve the autonomy/consistency profile, authorized credential route, and token/cost limit.
+7. Create an immutable generation job.
+8. Generate one or more drafts.
+9. Store each draft separately with lineage and reconcile usage.
+10. Run deterministic postflight checks, POV leakage validation, and configured model critics.
+11. Let the author edit/select a draft and resolve findings.
+12. Extract events, facts, beliefs, state changes, and proposed media observations into a mutation set.
+13. Resolve entity references and flag ambiguity.
+14. Validate the mutation set.
+15. Review or policy-approve eligible changes and commit them.
 
 Generation and extraction should be separate calls. A prose model should not be trusted to produce the definitive state delta incidentally.
 
@@ -151,5 +168,8 @@ Maintain versioned fixtures for:
 - prompt-injection resistance
 - deterministic and model-assisted consistency detection by category and cost tier
 - previous-prose retrieval across recency, importance, branch, and narrative-distance cases
+- text-to-media, media-to-text, and media-to-media relevance with explicit-link precedence
+- media branch/time/POV/tenant isolation and capability-fallback fidelity
+- multimodal consistency cases with authoritative and misleading media hard negatives
 
 Run deterministic contract tests on every change. Run provider evaluations explicitly, record cost/model/date, and compare against an approved baseline before prompt or model migrations.
