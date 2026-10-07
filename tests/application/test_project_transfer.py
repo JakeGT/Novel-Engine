@@ -52,7 +52,9 @@ def _seeded_graph() -> InMemoryGraphRepository:
 def test_export_import_round_trip_isolates_target_project() -> None:
     archive = ProjectTransferService(_seeded_graph()).export_project("ws-a", "prj-1")
     assert archive["checksum"]
-    assert archive["project"] == {"workspace_id": "ws-a", "project_id": "prj-1"}
+    assert archive["project"]["workspace_id"] == "ws-a"
+    assert archive["project"]["project_id"] == "prj-1"
+    assert archive["project"]["node_count"] == 2
     assert {node["id"] for node in archive["nodes"]} == {"char_a", "loc_b"}
     assert archive["objects"] == []
     assert "credentials" not in archive and "sessions" not in archive
@@ -90,4 +92,43 @@ def test_import_rejects_unknown_archive_version() -> None:
     archive["archive_version"] = "999"
 
     with pytest.raises(TransferError, match="version"):
+        ProjectTransferService(InMemoryGraphRepository()).import_project("ws-b", "prj-9", archive)
+
+
+def test_import_preflight_rejects_edge_outside_archive() -> None:
+    archive = ProjectTransferService(_seeded_graph()).export_project("ws-a", "prj-1")
+    archive["edges"][0]["target"] = "ghost"
+    from backend.services.project_transfer import _checksum
+
+    archive["checksum"] = _checksum(archive)
+
+    with pytest.raises(TransferError, match="outside the archive"):
+        ProjectTransferService(InMemoryGraphRepository()).import_project("ws-b", "prj-9", archive)
+
+
+def test_export_includes_object_manifest(tmp_path) -> None:
+    from backend.adapters.objects import FilesystemObjectStore
+
+    objects = FilesystemObjectStore(str(tmp_path))
+    objects.put(b"cover", workspace_id="ws-a", project_id="prj-1", content_type="image/png")
+
+    archive = ProjectTransferService(_seeded_graph(), objects=objects).export_project(
+        "ws-a", "prj-1"
+    )
+
+    assert len(archive["objects"]) == 1
+    entry = archive["objects"][0]
+    assert entry["content_type"] == "image/png"
+    assert entry["byte_length"] == 5
+    assert entry["checksum"]
+
+
+def test_import_preflight_rejects_object_without_checksum() -> None:
+    archive = ProjectTransferService(_seeded_graph()).export_project("ws-a", "prj-1")
+    archive["objects"] = [{"key": "x"}]
+    from backend.services.project_transfer import _checksum
+
+    archive["checksum"] = _checksum(archive)
+
+    with pytest.raises(TransferError, match="checksum"):
         ProjectTransferService(InMemoryGraphRepository()).import_project("ws-b", "prj-9", archive)

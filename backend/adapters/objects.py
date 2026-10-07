@@ -136,6 +136,27 @@ class FilesystemObjectStore:
             self._root / _safe_component(workspace_id) / _safe_component(project_id)
         )
 
+    def list_objects(self, *, workspace_id: str, project_id: str) -> list[ObjectStat]:
+        base = self._dir(workspace_id, project_id)
+        if not base.is_dir():
+            return []
+        stats: list[ObjectStat] = []
+        for meta_path in sorted(base.glob("*.meta.json")):
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            created = meta.get("created_at")
+            stats.append(
+                ObjectStat(
+                    key=meta["key"],
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    content_type=meta.get("content_type", "application/octet-stream"),
+                    byte_length=int(meta.get("byte_length", 0)),
+                    checksum=meta.get("checksum", ""),
+                    created_at=datetime.fromisoformat(created) if created else utcnow(),
+                )
+            )
+        return stats
+
 
 class NullObjectStore:
     """No-op object store for environments without product media."""
@@ -167,3 +188,6 @@ class NullObjectStore:
 
     def delete_project(self, *, workspace_id: str, project_id: str) -> int:
         return 0
+
+    def list_objects(self, *, workspace_id: str, project_id: str) -> list[ObjectStat]:
+        return []

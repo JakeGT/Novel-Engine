@@ -15,7 +15,7 @@ import json
 from typing import Any
 
 from backend.graph.schema import Edge, Node
-from backend.ports import GraphRepository
+from backend.ports import GraphRepository, ObjectStorePort
 
 ARCHIVE_VERSION = "2"
 SCHEMA_VERSION = "1"
@@ -44,8 +44,9 @@ def _dedupe_edges(edges: list[Edge]) -> list[Edge]:
 
 
 class ProjectTransferService:
-    def __init__(self, graph: GraphRepository) -> None:
+    def __init__(self, graph: GraphRepository, objects: ObjectStorePort | None = None) -> None:
         self._graph = graph
+        self._objects = objects
 
     def export_project(self, workspace_id: str, project_id: str) -> dict[str, Any]:
         nodes = self._graph.get_nodes(workspace_id=workspace_id, project_id=project_id)
@@ -55,10 +56,31 @@ class ProjectTransferService:
                 self._graph.get_edges(node.id, workspace_id=workspace_id, project_id=project_id)
             )
 
+        objects_manifest: list[dict[str, Any]] = []
+        if self._objects is not None:
+            objects_manifest = [
+                {
+                    "key": stat.key,
+                    "content_type": stat.content_type,
+                    "byte_length": stat.byte_length,
+                    "checksum": stat.checksum,
+                    # Attribution/licence fields are reserved for source media.
+                    "attribution": {},
+                }
+                for stat in self._objects.list_objects(
+                    workspace_id=workspace_id, project_id=project_id
+                )
+            ]
+
         body: dict[str, Any] = {
             "archive_version": ARCHIVE_VERSION,
             "schema_version": SCHEMA_VERSION,
-            "project": {"workspace_id": workspace_id, "project_id": project_id},
+            "project": {
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "node_count": len(nodes),
+                "object_count": len(objects_manifest),
+            },
             "nodes": [
                 {
                     "id": node.id,
@@ -77,9 +99,7 @@ class ProjectTransferService:
                 }
                 for edge in _dedupe_edges(edges)
             ],
-            # Object manifest entries gain content_type/byte_length/checksum/attribution
-            # when media exists; empty is valid for text-only projects.
-            "objects": [],
+            "objects": objects_manifest,
             # Derived sections (e.g. vectors) are rebuildable and optional.
             "derived": {},
             # Forward-compatible bucket for unknown future sections.
@@ -88,19 +108,57 @@ class ProjectTransferService:
         body["checksum"] = _checksum(body)
         return body
 
+    @staticmethod
+    def _validate_archive(archive: dict[str, Any]) -> tuple[list[dict], list[dict], list[dict]]:
+        """Validate the whole archive before writing anything (preflight)."""
+        if archive.get("archive_version") != ARCHIVE_VERSION:
+            raise TransferError("unsupported archive version")
+        if archive.get("schema_version") != SCHEMA_VERSION:
+            raise TransferError("unsupported schema version")
+        if archive.get("checksum") != _checksum(archive):
+            raise TransferError("archive checksum mismatch")
+
+        nodes = archive.get("nodes")
+        if not isinstance(nodes, list):
+            raise TransferError("archive nodes must be a list")
+        node_ids: set[str] = set()
+        for raw in nodes:
+            if not isinstance(raw, dict) or not isinstance(raw.get("id"), str):
+                raise TransferError("node entry is missing an id")
+            if not isinstance(raw.get("type"), str):
+                raise TransferError("node entry is missing a type")
+            node_ids.add(raw["id"])
+
+        edges = archive.get("edges")
+        if not isinstance(edges, list):
+            raise TransferError("archive edges must be a list")
+        for raw in edges:
+            if not isinstance(raw, dict):
+                raise TransferError("edge entry must be an object")
+            if raw.get("source") not in node_ids or raw.get("target") not in node_ids:
+                raise TransferError("edge references a node outside the archive")
+
+        objects = archive.get("objects", [])
+        if not isinstance(objects, list):
+            raise TransferError("archive objects must be a list")
+        for raw in objects:
+            if not isinstance(raw, dict) or not isinstance(raw.get("key"), str):
+                raise TransferError("object manifest entry is missing a key")
+            if not isinstance(raw.get("checksum"), str):
+                raise TransferError("object manifest entry is missing a checksum")
+
+        return nodes, edges, objects
+
     def import_project(
         self,
         target_workspace_id: str,
         target_project_id: str,
         archive: dict[str, Any],
     ) -> dict[str, Any]:
-        if archive.get("archive_version") != ARCHIVE_VERSION:
-            raise TransferError("unsupported archive version")
-        if archive.get("checksum") != _checksum(archive):
-            raise TransferError("archive checksum mismatch")
+        nodes, edges, objects = self._validate_archive(archive)
 
         node_count = 0
-        for raw in archive.get("nodes", []):
+        for raw in nodes:
             node = Node(
                 id=raw["id"],
                 type=raw["type"],
@@ -112,7 +170,7 @@ class ProjectTransferService:
             node_count += 1
 
         edge_count = 0
-        for raw in archive.get("edges", []):
+        for raw in edges:
             edge = Edge(
                 source=raw["source"],
                 target=raw["target"],
@@ -127,6 +185,6 @@ class ProjectTransferService:
         return {
             "nodes": node_count,
             "edges": edge_count,
-            "objects": len(archive.get("objects", [])),
+            "objects": len(objects),
             "checksum": archive["checksum"],
         }
