@@ -73,3 +73,10 @@ def test_factory_does_not_require_a_developer_dotenv(settings_factory) -> None:
 
     assert settings.APP_ENV == "test"
     assert settings.postgres_dsn.startswith("postgresql+psycopg://")
+
+
+def test_previous_credential_keks_parsing() -> None:
+    from backend.core.config import Settings
+
+    settings = Settings(_env_file=None, CREDENTIAL_PREVIOUS_KEKS="1:abc, 2:def ,bad,")
+    assert settings.previous_credential_keks == {1: "abc", 2: "def"}

@@ -64,10 +64,22 @@ def _to_credential(row: CredentialRow) -> Credential:
 
 
 class PostgresCredentialVault:
-    def __init__(self, session_factory: Any, *, kek: str = "", key_version: int = 1) -> None:
+    def __init__(
+        self,
+        session_factory: Any,
+        *,
+        kek: str = "",
+        key_version: int = 1,
+        previous_keks: dict[int, str] | None = None,
+    ) -> None:
         self._session_factory = session_factory
         self._kek = kek
         self._key_version = key_version
+        # Older KEKs remain available for decryption so rotating the current KEK
+        # does not strand existing credentials.
+        self._keks: dict[int, str] = dict(previous_keks or {})
+        if kek:
+            self._keks[key_version] = kek
 
     @property
     def is_configured(self) -> bool:
@@ -192,7 +204,12 @@ class PostgresCredentialVault:
             nonce=row.nonce,
             ciphertext=row.ciphertext,
         )
-        return envelope_decrypt(envelope, kek=self._kek)
+        kek = self._keks.get(row.key_version)
+        if not kek:
+            raise CredentialUnavailable(
+                f"no key-encryption key configured for version {row.key_version}"
+            )
+        return envelope_decrypt(envelope, kek=kek)
 
     async def mark_used(self, *, workspace_id: str, credential_id: str) -> None:
         from sqlalchemy import select

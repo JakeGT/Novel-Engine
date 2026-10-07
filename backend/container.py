@@ -149,6 +149,7 @@ def build_container(settings: Settings | None = None) -> Container:
         database.session_factory,
         kek=resolved.CREDENTIAL_KEK,
         key_version=resolved.CREDENTIAL_KEK_VERSION,
+        previous_keks=resolved.previous_credential_keks,
     )
     container.usage = PostgresProviderUsageStore(database.session_factory)
 

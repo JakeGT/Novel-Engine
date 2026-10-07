@@ -101,3 +101,31 @@ async def test_usage_store_totals_and_idempotency(session_factory) -> None:
     assert await store.has_idempotency_key(idempotency_key="missing") is False
     job = await store.totals_for_job(idempotency_key="j0")
     assert job.total_tokens == 15
+
+
+@pytest.mark.asyncio
+async def test_kek_rotation_still_decrypts_old_credentials(session_factory) -> None:
+    factory, _database = session_factory
+    old_kek = generate_kek()
+    new_kek = generate_kek()
+
+    stored = await PostgresCredentialVault(factory, kek=old_kek, key_version=1).store(
+        workspace_id="ws1",
+        owner_user_id="u1",
+        provider=CredentialProvider.OPENROUTER,
+        label="old",
+        plaintext_key="sk-or-v1-kept",
+    )
+
+    rotated_vault = PostgresCredentialVault(
+        factory,
+        kek=new_kek,
+        key_version=2,
+        previous_keks={1: old_kek},
+    )
+    assert (
+        await rotated_vault.resolve_plaintext(
+            workspace_id="ws1", credential_id=stored.id, actor_user_id="u1"
+        )
+        == "sk-or-v1-kept"
+    )

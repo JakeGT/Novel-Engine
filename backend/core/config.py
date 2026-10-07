@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     # Provider credentials and usage limits. An empty KEK disables credential storage.
     CREDENTIAL_KEK: str = ""
     CREDENTIAL_KEK_VERSION: int = 1
+    # Retired KEKs kept only for decrypting existing credentials, as "version:kek"
+    # pairs (comma-separated), so rotating CREDENTIAL_KEK does not strand them.
+    CREDENTIAL_PREVIOUS_KEKS: str = ""
     PROVIDER_PER_JOB_TOKEN_LIMIT: int = 200_000
     PROVIDER_PER_JOB_COST_LIMIT: float = 0.0
     PROVIDER_PERIOD_TOKEN_LIMIT: int = 2_000_000
@@ -105,6 +108,20 @@ class Settings(BaseSettings):
     @property
     def platform_admin_user_ids(self) -> set[str]:
         return {value.strip() for value in self.PLATFORM_ADMIN_USER_IDS.split(",") if value.strip()}
+
+    @property
+    def previous_credential_keks(self) -> dict[int, str]:
+        keys: dict[int, str] = {}
+        for pair in self.CREDENTIAL_PREVIOUS_KEKS.split(","):
+            entry = pair.strip()
+            if not entry or ":" not in entry:
+                continue
+            version, _, kek = entry.partition(":")
+            try:
+                keys[int(version.strip())] = kek.strip()
+            except ValueError:
+                continue
+        return keys
 
     def _postgres_dsn(self, scheme: str) -> str:
         user = quote_plus(self.POSTGRES_USER)

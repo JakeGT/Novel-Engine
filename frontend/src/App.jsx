@@ -14,7 +14,8 @@ export default function App() {
     try {
       const response = await fetch('/auth/me', { credentials: 'include' })
       if (response.ok) {
-        setUser(await response.json())
+        const data = await response.json()
+        setUser(data.user)
         setStatus('authenticated')
       } else {
         setUser(null)
