@@ -26,6 +26,7 @@ from backend.ports import (
     RateLimiterPort,
     SessionStorePort,
     TenancyStorePort,
+    WorkspacePurgePort,
 )
 
 INVITATION_TTL_SECONDS = 60 * 60 * 24 * 7
@@ -42,6 +43,7 @@ class TenancyService:
         session_store: SessionStorePort | None = None,
         rate_limiter: RateLimiterPort | None = None,
         settings: Settings | None = None,
+        purger: WorkspacePurgePort | None = None,
         invitation_ttl_seconds: int = INVITATION_TTL_SECONDS,
         accept_rate_limit: int = ACCEPT_RATE_LIMIT,
         accept_rate_window_seconds: int = ACCEPT_RATE_WINDOW_SECONDS,
@@ -51,6 +53,7 @@ class TenancyService:
         self._session_store = session_store
         self._rate_limiter = rate_limiter
         self._settings = settings
+        self._purger = purger
         self._invitation_ttl_seconds = invitation_ttl_seconds
         self._accept_rate_limit = accept_rate_limit
         self._accept_rate_window_seconds = accept_rate_window_seconds
@@ -186,7 +189,26 @@ class TenancyService:
             target_id=workspace_id,
             detail={"slug": existing.slug},
         )
+        if self._purger is not None:
+            await self._purger.purge_workspace(workspace_id)
         return await self._store.delete_workspace(workspace_id)
+
+    async def delete_project(self, scope: AccessScope, workspace_id: str, project_id: str) -> bool:
+        await self._authorize(scope, workspace_id, Permission.PROJECT_ADMIN)
+        project = await self._store.get_project(project_id)
+        if project is None or project.workspace_id != workspace_id:
+            raise NotFoundError("Project not found.")
+        await self._audit(
+            scope,
+            workspace_id=workspace_id,
+            action="project.deleted",
+            target_type="project",
+            target_id=project_id,
+            detail={"slug": project.slug},
+        )
+        if self._purger is not None:
+            await self._purger.purge_project(workspace_id, project_id)
+        return await self._store.delete_project(workspace_id, project_id)
 
     async def list_members(self, scope: AccessScope, workspace_id: str) -> list[Membership]:
         await self._authorize(scope, workspace_id, Permission.WORKSPACE_READ)

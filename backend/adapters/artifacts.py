@@ -21,6 +21,12 @@ class NullArtifactStore:
     def load(self, key: str, *, workspace_id: str, project_id: str) -> str | None:
         return None
 
+    def delete_workspace(self, *, workspace_id: str) -> int:
+        return 0
+
+    def delete_project(self, *, workspace_id: str, project_id: str) -> int:
+        return 0
+
 
 class FilesystemArtifactStore:
     """Debug artifact store namespaced by workspace and project, with traversal guards."""
@@ -46,3 +52,23 @@ class FilesystemArtifactStore:
         if not path.exists():
             return None
         return path.read_text(encoding="utf-8")
+
+    def delete_workspace(self, *, workspace_id: str) -> int:
+        import shutil
+
+        root = self._directory / _safe_component(workspace_id)
+        if not root.exists():
+            return 0
+        removed = sum(1 for child in root.rglob("*") if child.is_file())
+        shutil.rmtree(root)
+        return removed
+
+    def delete_project(self, *, workspace_id: str, project_id: str) -> int:
+        import shutil
+
+        root = self._directory / _safe_component(workspace_id) / _safe_component(project_id)
+        if not root.exists():
+            return 0
+        removed = sum(1 for child in root.rglob("*") if child.is_file())
+        shutil.rmtree(root)
+        return removed

@@ -159,6 +159,21 @@ class PgVectorStore:
                 (list(ids), workspace_id, project_id),
             )
 
+    @instrument("vector.delete_workspace", logger)
+    def delete_workspace(self, *, workspace_id: str) -> int:
+        with self._connect() as connection:
+            return connection.execute(
+                "DELETE FROM vector_documents WHERE workspace_id = %s", (workspace_id,)
+            ).rowcount
+
+    @instrument("vector.delete_project", logger)
+    def delete_project(self, *, workspace_id: str, project_id: str) -> int:
+        with self._connect() as connection:
+            return connection.execute(
+                "DELETE FROM vector_documents WHERE workspace_id = %s AND project_id = %s",
+                (workspace_id, project_id),
+            ).rowcount
+
     def health(self) -> bool:
         if not self.dimension_supported():
             return False

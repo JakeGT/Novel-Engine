@@ -3694,6 +3694,50 @@
         ]
       }
     },
+    "/api/v1/workspaces/{workspace_id}/projects/{project_id}": {
+      "delete": {
+        "operationId": "delete_project_api_v1_workspaces__workspace_id__projects__project_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Project",
+        "tags": [
+          "tenancy"
+        ]
+      }
+    },
     "/auth/callback": {
       "get": {
         "operationId": "callback_auth_callback_get",

@@ -165,6 +165,14 @@ class Neo4jGraphRepository:
     def delete_node(self, node_id: str, *, workspace_id: str, project_id: str) -> bool:
         return self.manager.delete_node(node_id, workspace_id=workspace_id, project_id=project_id)
 
+    @instrument("graph.delete_workspace_nodes", logger)
+    def delete_workspace_nodes(self, workspace_id: str) -> int:
+        return self.manager.delete_workspace_nodes(workspace_id)
+
+    @instrument("graph.delete_project_nodes", logger)
+    def delete_project_nodes(self, workspace_id: str, project_id: str) -> int:
+        return self.manager.delete_project_nodes(workspace_id, project_id)
+
     def ping(self) -> bool:
         try:
             self.manager.driver.verify_connectivity()

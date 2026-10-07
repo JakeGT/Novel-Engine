@@ -277,6 +277,24 @@ class GraphManager:
             )
             return result.consume().counters.nodes_deleted > 0
 
+    def delete_workspace_nodes(self, workspace_id: str) -> int:
+        with self.driver.session() as session:
+            result = session.run(
+                "MATCH (n:Entity {workspace_id: $workspace_id}) DETACH DELETE n",
+                workspace_id=workspace_id,
+            )
+            return result.consume().counters.nodes_deleted
+
+    def delete_project_nodes(self, workspace_id: str, project_id: str) -> int:
+        with self.driver.session() as session:
+            result = session.run(
+                "MATCH (n:Entity {workspace_id: $workspace_id, project_id: $project_id}) "
+                "DETACH DELETE n",
+                workspace_id=workspace_id,
+                project_id=project_id,
+            )
+            return result.consume().counters.nodes_deleted
+
     def get_top_10_nodes_by_name_and_type(
         self, node_type: str, name: str, *, workspace_id: str, project_id: str
     ) -> list[dict[str, Any]]:

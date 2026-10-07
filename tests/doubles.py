@@ -273,6 +273,24 @@ class InMemoryGraphRepository:
         self.close_calls += 1
         return None
 
+    def delete_workspace_nodes(self, workspace_id: str) -> int:
+        keys = [key for key in self.nodes if key[0] == workspace_id]
+        for key in keys:
+            del self.nodes[key]
+        self.edges = [e for e in self.edges if e.workspace_id != workspace_id]
+        return len(keys)
+
+    def delete_project_nodes(self, workspace_id: str, project_id: str) -> int:
+        keys = [key for key in self.nodes if key[0] == workspace_id and key[1] == project_id]
+        for key in keys:
+            del self.nodes[key]
+        self.edges = [
+            e
+            for e in self.edges
+            if not (e.workspace_id == workspace_id and e.project_id == project_id)
+        ]
+        return len(keys)
+
 
 @dataclass
 class _StoredDocument:
@@ -339,6 +357,22 @@ class InMemoryVectorStore:
 
     def health(self) -> bool:
         return True
+
+    def delete_workspace(self, *, workspace_id: str) -> int:
+        ids = [doc_id for doc_id, doc in self.documents.items() if doc.workspace_id == workspace_id]
+        for doc_id in ids:
+            del self.documents[doc_id]
+        return len(ids)
+
+    def delete_project(self, *, workspace_id: str, project_id: str) -> int:
+        ids = [
+            doc_id
+            for doc_id, doc in self.documents.items()
+            if doc.workspace_id == workspace_id and doc.project_id == project_id
+        ]
+        for doc_id in ids:
+            del self.documents[doc_id]
+        return len(ids)
 
 
 class FakeEmbeddingProvider:
@@ -752,6 +786,13 @@ class InMemoryTenancyStore:
         }
         return True
 
+    async def delete_project(self, workspace_id: str, project_id: str) -> bool:
+        project = self.projects.get(project_id)
+        if project is None or project.workspace_id != workspace_id:
+            return False
+        del self.projects[project_id]
+        return True
+
     async def add_membership(self, *, workspace_id: str, user_id: str, role: Role) -> Membership:
         if (workspace_id, user_id) in self.memberships:
             raise MembershipConflict("user is already a member of the workspace")
@@ -1028,6 +1069,13 @@ class InMemoryCredentialVault:
                 update={"last_used_at": datetime.now(UTC)}
             )
 
+    async def delete_workspace(self, workspace_id: str) -> int:
+        ids = [cid for cid, cred in self._credentials.items() if cred.workspace_id == workspace_id]
+        for cid in ids:
+            self._credentials.pop(cid, None)
+            self._secrets.pop(cid, None)
+        return len(ids)
+
 
 class InMemoryProviderUsageStore:
     def __init__(self) -> None:
@@ -1063,3 +1111,8 @@ class InMemoryProviderUsageStore:
             completion_tokens=sum(r.completion_tokens for r in records),
             provider_cost_usd=sum(r.provider_cost_usd or 0.0 for r in records),
         )
+
+    async def delete_workspace(self, workspace_id: str) -> int:
+        before = len(self.records)
+        self.records = [r for r in self.records if r.workspace_id != workspace_id]
+        return before - len(self.records)

@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import DateTime, Integer, String, Text, delete
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.adapters.system import uuid7
@@ -221,3 +221,10 @@ class PostgresCredentialVault:
                     )
                 )
             ).scalar_one_or_none()
+
+    async def delete_workspace(self, workspace_id: str) -> int:
+        async with session_scope(self._session_factory) as session:
+            result = await session.execute(
+                delete(CredentialRow).where(CredentialRow.workspace_id == workspace_id)
+            )
+            return result.rowcount or 0

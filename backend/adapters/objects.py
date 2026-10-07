@@ -19,6 +19,20 @@ def _safe_component(value: str) -> str:
     return value
 
 
+def _rmtree_count(path: Path) -> int:
+    if not path.exists():
+        return 0
+    removed = 0
+    for child in sorted(path.rglob("*"), reverse=True):
+        if child.is_file():
+            child.unlink()
+            removed += 1
+        elif child.is_dir():
+            child.rmdir()
+    path.rmdir()
+    return removed
+
+
 class FilesystemObjectStore:
     """Local immutable object store with server-generated opaque keys.
 
@@ -114,6 +128,14 @@ class FilesystemObjectStore:
             return False
         return hashlib.sha256(data).hexdigest() == stat.checksum
 
+    def delete_workspace(self, *, workspace_id: str) -> int:
+        return _rmtree_count(self._root / _safe_component(workspace_id))
+
+    def delete_project(self, *, workspace_id: str, project_id: str) -> int:
+        return _rmtree_count(
+            self._root / _safe_component(workspace_id) / _safe_component(project_id)
+        )
+
 
 class NullObjectStore:
     """No-op object store for environments without product media."""
@@ -139,3 +161,9 @@ class NullObjectStore:
 
     def verify_checksum(self, key: str, *, workspace_id: str, project_id: str) -> bool:
         return False
+
+    def delete_workspace(self, *, workspace_id: str) -> int:
+        return 0
+
+    def delete_project(self, *, workspace_id: str, project_id: str) -> int:
+        return 0

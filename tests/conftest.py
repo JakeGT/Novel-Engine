@@ -101,16 +101,29 @@ def _build_fake_container(settings, tmp_path):
     )
     tenancy = InMemoryTenancyStore()
     rate_limiter = InMemoryRateLimiter()
+    vault = InMemoryCredentialVault()
+    usage_store = InMemoryProviderUsageStore()
+    from backend.adapters.objects import NullObjectStore
+    from backend.adapters.purge import StoreWorkspacePurge
+
+    objects = NullObjectStore()
+    purger = StoreWorkspacePurge(
+        graph=graph,
+        vectors=vectors,
+        credentials=vault,
+        usage=usage_store,
+        objects=objects,
+        artifacts=artifacts,
+    )
     tenancy_service = TenancyService(
         tenancy,
         identity_store=identity_store,
         session_store=session_store,
         rate_limiter=rate_limiter,
         settings=settings,
+        purger=purger,
     )
-    vault = InMemoryCredentialVault()
     credential_service = CredentialService(vault, tenancy=tenancy_service)
-    usage_store = InMemoryProviderUsageStore()
     usage_service = ProviderUsageService(
         usage_store,
         limit=UsageLimit(per_job_token_limit=200_000, period_token_limit=2_000_000),
@@ -137,6 +150,7 @@ def _build_fake_container(settings, tmp_path):
         credential_service=credential_service,
         usage=usage_store,
         usage_service=usage_service,
+        objects=objects,
     )
 
 
@@ -155,6 +169,9 @@ def hosted_container(settings_factory, tmp_path):
         OIDC_CLIENT_SECRET="test-secret",
         OIDC_REDIRECT_URI="https://novel-engine.jaketalling.com/auth/callback",
         OIDC_POST_LOGOUT_REDIRECT_URI="https://novel-engine.jaketalling.com/",
+        # Scoping tests provision workspaces through the API; provisioning policy
+        # itself is exercised directly in tests/application/test_workspace_provisioning.py.
+        ALLOW_WORKSPACE_SELF_CREATION=True,
     )
     return _build_fake_container(settings, tmp_path)
 

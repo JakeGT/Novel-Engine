@@ -138,13 +138,6 @@ def build_container(settings: Settings | None = None) -> Container:
     from backend.adapters.rate_limit import PostgresRateLimiter
 
     container.rate_limiter = PostgresRateLimiter(database.session_factory)
-    container.tenancy_service = TenancyService(
-        container.tenancy,
-        identity_store=identity_store,
-        session_store=session_store,
-        rate_limiter=container.rate_limiter,
-        settings=resolved,
-    )
 
     from backend.adapters.credentials import PostgresCredentialVault
     from backend.adapters.usage import PostgresProviderUsageStore
@@ -157,10 +150,28 @@ def build_container(settings: Settings | None = None) -> Container:
         kek=resolved.CREDENTIAL_KEK,
         key_version=resolved.CREDENTIAL_KEK_VERSION,
     )
+    container.usage = PostgresProviderUsageStore(database.session_factory)
+
+    from backend.adapters.purge import StoreWorkspacePurge
+
+    container.tenancy_service = TenancyService(
+        container.tenancy,
+        identity_store=identity_store,
+        session_store=session_store,
+        rate_limiter=container.rate_limiter,
+        settings=resolved,
+        purger=StoreWorkspacePurge(
+            graph=container.graph,
+            vectors=container.vectors,
+            credentials=container.credentials,
+            usage=container.usage,
+            objects=container.objects,
+            artifacts=container.artifacts,
+        ),
+    )
     container.credential_service = CredentialService(
         container.credentials, tenancy=container.tenancy_service
     )
-    container.usage = PostgresProviderUsageStore(database.session_factory)
     container.usage_service = ProviderUsageService(
         container.usage,
         limit=UsageLimit(

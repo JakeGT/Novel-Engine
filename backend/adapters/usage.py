@@ -97,6 +97,16 @@ class PostgresProviderUsageStore:
             provider_cost_usd=float(row[3]),
         )
 
+    async def delete_workspace(self, workspace_id: str) -> int:
+        from sqlalchemy import text
+
+        async with session_scope(self._session_factory) as session:
+            result = await session.execute(
+                text("DELETE FROM provider_usage WHERE workspace_id = :ws"),
+                {"ws": workspace_id},
+            )
+            return result.rowcount or 0
+
 
 def usage_record_from_row(row: Any) -> UsageRecord:
     return UsageRecord(

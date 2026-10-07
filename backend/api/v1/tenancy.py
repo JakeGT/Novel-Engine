@@ -209,6 +209,18 @@ async def create_project(
     return ProjectModel.model_validate(project)
 
 
+@router.delete(
+    "/workspaces/{workspace_id}/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+async def delete_project(
+    workspace_id: str,
+    project_id: str,
+    scope: AccessScope = Depends(require_scope),
+    service: TenancyService = Depends(get_tenancy_service),
+) -> None:
+    await service.delete_project(scope, workspace_id, project_id)
+
+
 @router.get("/workspaces/{workspace_id}/invitations", response_model=list[InvitationModel])
 async def list_invitations(
     workspace_id: str,
