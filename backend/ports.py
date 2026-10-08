@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
+from backend.domain.canon.entities import CanonEntity
 from backend.domain.commit import ApplyOutcome, CommitMarker
 from backend.domain.credentials import Credential, CredentialProvider
 from backend.domain.identity import IdentityClaims, LoginAttempt, Role, Session, User
@@ -657,8 +658,35 @@ class CanonWriterPort(Protocol):
         project_id: str,
         branch_id: str,
         operations: Sequence[Any],
+        schema_version_id: str | None = None,
     ) -> ApplyOutcome: ...
 
     async def get_marker(self, commit_id: str) -> CommitMarker | None: ...
+
+    async def get_entity(
+        self, *, workspace_id: str, project_id: str, entity_id: str
+    ) -> CanonEntity | None: ...
+
+    async def list_entities(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        entity_type: str | None = None,
+        include_retired: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[CanonEntity]: ...
+
+    async def search_entities(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        query: str,
+        entity_type: str | None = None,
+        include_retired: bool = False,
+        limit: int = 50,
+    ) -> list[CanonEntity]: ...
 
     async def health(self) -> bool: ...

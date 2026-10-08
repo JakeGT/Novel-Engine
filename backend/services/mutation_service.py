@@ -363,6 +363,7 @@ class MutationService:
                 project_id=mutation.project_id,
                 branch_id=mutation.branch_id,
                 operations=resolved,
+                schema_version_id=mutation.schema_version_id,
             )
             await self._journal.record_attempt(commit_id=commit_id, status="graph_applied")
         except RevisionConflict:
@@ -397,6 +398,7 @@ class MutationService:
                 project_id=envelope.project_id,
                 branch_id=envelope.branch_id,
                 operations=operations,
+                schema_version_id=envelope.schema_version_id,
             )
         finalized = await self._journal.finalize(commit_id=commit_id)
         await self._journal.record_attempt(commit_id=commit_id, status="committed")

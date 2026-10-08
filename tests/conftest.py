@@ -141,6 +141,15 @@ def _build_fake_container(settings, tmp_path):
     journal = InMemoryCanonJournal()
     canon_writer = InMemoryCanonWriter()
     mutation_service = MutationService(journal, canon_writer, local_mode=not settings.is_hosted)
+    from backend.services.canon_entity_service import CanonEntityService
+
+    canon_entity_service = CanonEntityService(
+        mutation=mutation_service,
+        writer=canon_writer,
+        schema_store=schema_versions,
+        tenancy=tenancy_service,
+        local_mode=not settings.is_hosted,
+    )
     return Container(
         settings=settings,
         graph=graph,
@@ -169,6 +178,7 @@ def _build_fake_container(settings, tmp_path):
         journal=journal,
         canon_writer=canon_writer,
         mutation_service=mutation_service,
+        canon_entity_service=canon_entity_service,
     )
 
 

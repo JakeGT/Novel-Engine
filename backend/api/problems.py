@@ -10,6 +10,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from backend.api.middleware import get_correlation_id
 from backend.domain.errors import DomainError
 from backend.domain.identity import IdentityError, IdentityProviderUnavailable
+from backend.domain.journal import HeadConflict, RevisionConflict
+from backend.domain.operations import OperationValidationError
 from backend.domain.schemas import SchemaCompatibilityError, SchemaGovernanceError
 from backend.domain.tenancy import InvitationNotFound, TenancyError
 from backend.ports import AIError
@@ -193,6 +195,35 @@ def register_exception_handlers(app: FastAPI) -> None:
                 title="Conflict",
                 code="conflict",
                 detail=str(exc),
+                correlation_id=_correlation_id(request),
+            ),
+        )
+
+    @app.exception_handler(OperationValidationError)
+    async def _handle_operation_validation(
+        request: Request, exc: OperationValidationError
+    ) -> JSONResponse:
+        return _problem_response(
+            422,
+            problem_body(
+                status=422,
+                title="Mutation validation failed",
+                code="validation_error",
+                detail=str(exc),
+                correlation_id=_correlation_id(request),
+            ),
+        )
+
+    @app.exception_handler(HeadConflict)
+    @app.exception_handler(RevisionConflict)
+    async def _handle_revision_conflict(request: Request, exc: Exception) -> JSONResponse:
+        return _problem_response(
+            409,
+            problem_body(
+                status=409,
+                title="Revision conflict",
+                code="revision_conflict",
+                detail="The branch head or commit revision changed; reload and retry.",
                 correlation_id=_correlation_id(request),
             ),
         )

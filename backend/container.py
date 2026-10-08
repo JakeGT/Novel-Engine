@@ -59,6 +59,7 @@ class Container:
     journal: Any = None
     canon_writer: Any = None
     mutation_service: Any = None
+    canon_entity_service: Any = None
 
     async def aclose(self) -> None:
         self.graph.close()
@@ -214,6 +215,15 @@ def build_container(settings: Settings | None = None) -> Container:
     container.mutation_service = MutationService(
         container.journal,
         container.canon_writer,
+        tenancy=container.tenancy_service,
+        local_mode=not resolved.is_hosted,
+    )
+    from backend.services.canon_entity_service import CanonEntityService
+
+    container.canon_entity_service = CanonEntityService(
+        mutation=container.mutation_service,
+        writer=container.canon_writer,
+        schema_store=container.schema_versions,
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
     )

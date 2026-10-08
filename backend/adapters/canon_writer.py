@@ -15,6 +15,7 @@ import re
 from collections.abc import Sequence
 from typing import Any
 
+from backend.domain.canon.entities import CanonEntity, EntityLifecycle
 from backend.domain.commit import ApplyOutcome, CommitMarker
 from backend.domain.journal import RevisionConflict
 from backend.domain.operations import (
@@ -64,6 +65,7 @@ class Neo4jCanonWriter:
         project_id: str,
         branch_id: str,
         operations: Sequence[CanonOperation],
+        schema_version_id: str | None = None,
     ) -> ApplyOutcome:
         with self._manager.driver.session() as session:
             with session.begin_transaction() as tx:
@@ -85,6 +87,7 @@ class Neo4jCanonWriter:
                     "revision": revision,
                     "commit_id": commit_id,
                     "provenance_id": self._provenance_id(commit_id),
+                    "schema_version_id": schema_version_id,
                 }
                 tx.run(
                     """
@@ -118,7 +121,8 @@ class Neo4jCanonWriter:
                 ON CREATE SET n.created_revision = $revision
                 SET n.branch_id = $branch_id, n.kind = 'entity', n.type = $type,
                     n.name = $name, n.slug = $slug, n.attributes = $attributes,
-                    n.lifecycle = 'active', n.commit_id = $commit_id, n.revision = $revision
+                    n.lifecycle = 'active', n.commit_id = $commit_id, n.revision = $revision,
+                    n.schema_version_id = $schema_version_id
                 SET n:{label}
                 """,
                 id=operation.id,
@@ -340,6 +344,106 @@ class Neo4jCanonWriter:
         if record is None:
             return None
         return CommitMarker(**dict(record))
+
+    _ENTITY_RETURN = (
+        "n.id AS id, n.workspace_id AS workspace_id, n.project_id AS project_id, "
+        "n.branch_id AS branch_id, n.type AS type, n.name AS name, n.slug AS slug, "
+        "n.lifecycle AS lifecycle, n.schema_version_id AS schema_version_id, "
+        "n.created_revision AS created_revision, n.retired_revision AS retired_revision, "
+        "n.attributes AS attributes"
+    )
+
+    @staticmethod
+    def _to_entity(record: Any) -> CanonEntity:
+        return CanonEntity(
+            id=record["id"],
+            workspace_id=record["workspace_id"],
+            project_id=record["project_id"],
+            branch_id=record["branch_id"] or "",
+            type=record["type"],
+            name=record["name"],
+            slug=record["slug"],
+            lifecycle=EntityLifecycle(record["lifecycle"] or "active"),
+            schema_version_id=record["schema_version_id"] or "",
+            created_revision=record["created_revision"] or 0,
+            retired_revision=record["retired_revision"],
+            attributes=json.loads(record["attributes"]) if record["attributes"] else {},
+        )
+
+    async def get_entity(
+        self, *, workspace_id: str, project_id: str, entity_id: str
+    ) -> CanonEntity | None:
+        with self._manager.driver.session() as session:
+            record = session.run(
+                f"""
+                MATCH (n:Entity {{workspace_id: $workspace_id, project_id: $project_id, id: $id}})
+                WHERE n.kind = 'entity'
+                RETURN {self._ENTITY_RETURN}
+                """,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                id=entity_id,
+            ).single()
+        return self._to_entity(record) if record is not None else None
+
+    async def list_entities(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        entity_type: str | None = None,
+        include_retired: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[CanonEntity]:
+        type_clause = "AND n.type = $type" if entity_type else ""
+        retired_clause = "" if include_retired else "AND coalesce(n.lifecycle, 'active') = 'active'"
+        with self._manager.driver.session() as session:
+            records = session.run(
+                f"""
+                MATCH (n:Entity {{workspace_id: $workspace_id, project_id: $project_id}})
+                WHERE n.kind = 'entity' {type_clause} {retired_clause}
+                RETURN {self._ENTITY_RETURN}
+                ORDER BY n.name, n.id
+                SKIP $offset LIMIT $limit
+                """,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                type=entity_type,
+                offset=offset,
+                limit=limit,
+            )
+            return [self._to_entity(record) for record in records]
+
+    async def search_entities(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        query: str,
+        entity_type: str | None = None,
+        include_retired: bool = False,
+        limit: int = 50,
+    ) -> list[CanonEntity]:
+        type_clause = "AND n.type = $type" if entity_type else ""
+        retired_clause = "" if include_retired else "AND coalesce(n.lifecycle, 'active') = 'active'"
+        with self._manager.driver.session() as session:
+            records = session.run(
+                f"""
+                MATCH (n:Entity {{workspace_id: $workspace_id, project_id: $project_id}})
+                WHERE n.kind = 'entity' AND toLower(n.name) CONTAINS toLower($needle)
+                      {type_clause} {retired_clause}
+                RETURN {self._ENTITY_RETURN}
+                ORDER BY n.name, n.id
+                LIMIT $limit
+                """,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                type=entity_type,
+                needle=query,
+                limit=limit,
+            )
+            return [self._to_entity(record) for record in records]
 
     async def health(self) -> bool:
         try:

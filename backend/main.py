@@ -9,6 +9,7 @@ from backend.api.auth import router as auth_router
 from backend.api.health import router as health_router
 from backend.api.middleware import CorrelationIdMiddleware
 from backend.api.problems import register_exception_handlers
+from backend.api.v1.canon_entities import router as canon_entities_router
 from backend.api.v1.credentials import router as credentials_router
 from backend.api.v1.router import router as v1_router
 from backend.api.v1.schema_versions import router as schema_versions_router
@@ -109,6 +110,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.include_router(tenancy_router, prefix="/api/v1")
     app.include_router(credentials_router, prefix="/api/v1")
     app.include_router(schema_versions_router, prefix="/api/v1")
+    app.include_router(canon_entities_router, prefix="/api/v1")
     app.include_router(health_router)
     app.include_router(auth_router)
 

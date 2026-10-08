@@ -15,6 +15,97 @@
         "title": "AcceptInvitationRequest",
         "type": "object"
       },
+      "CanonEntityListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CanonEntityModel"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "limit",
+          "offset"
+        ],
+        "title": "CanonEntityListResponse",
+        "type": "object"
+      },
+      "CanonEntityModel": {
+        "properties": {
+          "attributes": {
+            "additionalProperties": true,
+            "title": "Attributes",
+            "type": "object"
+          },
+          "created_revision": {
+            "title": "Created Revision",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "lifecycle": {
+            "title": "Lifecycle",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "retired_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired Revision"
+          },
+          "schema_version_id": {
+            "title": "Schema Version Id",
+            "type": "string"
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "name",
+          "lifecycle",
+          "schema_version_id",
+          "created_revision"
+        ],
+        "title": "CanonEntityModel",
+        "type": "object"
+      },
       "CharacterAnswersRequest": {
         "properties": {
           "answers": {
@@ -206,6 +297,46 @@
           "key"
         ],
         "title": "CreateCredentialRequest",
+        "type": "object"
+      },
+      "CreateEntityRequest": {
+        "properties": {
+          "attributes": {
+            "additionalProperties": true,
+            "title": "Attributes",
+            "type": "object"
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "expected_revision"
+        ],
+        "title": "CreateEntityRequest",
         "type": "object"
       },
       "CreateInvitationRequest": {
@@ -962,6 +1093,20 @@
         "title": "QuestionSheet",
         "type": "object"
       },
+      "RetireEntityRequest": {
+        "properties": {
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "title": "RetireEntityRequest",
+        "type": "object"
+      },
       "Role": {
         "enum": [
           "owner",
@@ -1138,6 +1283,54 @@
           "to_user_id"
         ],
         "title": "TransferOwnershipRequest",
+        "type": "object"
+      },
+      "UpdateEntityRequest": {
+        "properties": {
+          "attributes": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attributes"
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "title": "UpdateEntityRequest",
         "type": "object"
       },
       "ValidationError": {
@@ -2108,50 +2301,9 @@
         ]
       }
     },
-    "/api/v1/invitations/accept": {
+    "/api/v1/graph/projects/{project_id}/characters/generate-questions": {
       "post": {
-        "operationId": "accept_invitation_api_v1_invitations_accept_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AcceptInvitationRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MembershipModel"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Accept Invitation",
-        "tags": [
-          "tenancy"
-        ]
-      }
-    },
-    "/api/v1/projects/{project_id}/characters/generate-questions": {
-      "post": {
-        "operationId": "character_generate_questions_api_v1_projects__project_id__characters_generate_questions_post",
+        "operationId": "character_generate_questions_api_v1_graph_projects__project_id__characters_generate_questions_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2186,14 +2338,14 @@
         },
         "summary": "Character Generate Questions",
         "tags": [
-          "projects",
+          "graph",
           "characters"
         ]
       }
     },
-    "/api/v1/projects/{project_id}/characters/init": {
+    "/api/v1/graph/projects/{project_id}/characters/init": {
       "post": {
-        "operationId": "character_init_api_v1_projects__project_id__characters_init_post",
+        "operationId": "character_init_api_v1_graph_projects__project_id__characters_init_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2228,14 +2380,14 @@
         },
         "summary": "Character Init",
         "tags": [
-          "projects",
+          "graph",
           "characters"
         ]
       }
     },
-    "/api/v1/projects/{project_id}/characters/process-answers": {
+    "/api/v1/graph/projects/{project_id}/characters/process-answers": {
       "post": {
-        "operationId": "character_process_answers_api_v1_projects__project_id__characters_process_answers_post",
+        "operationId": "character_process_answers_api_v1_graph_projects__project_id__characters_process_answers_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2270,14 +2422,14 @@
         },
         "summary": "Character Process Answers",
         "tags": [
-          "projects",
+          "graph",
           "characters"
         ]
       }
     },
-    "/api/v1/projects/{project_id}/context": {
+    "/api/v1/graph/projects/{project_id}/context": {
       "post": {
-        "operationId": "build_context_api_v1_projects__project_id__context_post",
+        "operationId": "build_context_api_v1_graph_projects__project_id__context_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2312,14 +2464,14 @@
         },
         "summary": "Build Context",
         "tags": [
-          "projects",
+          "graph",
           "context"
         ]
       }
     },
-    "/api/v1/projects/{project_id}/edges": {
+    "/api/v1/graph/projects/{project_id}/edges": {
       "get": {
-        "operationId": "list_edges_api_v1_projects__project_id__edges_get",
+        "operationId": "list_edges_api_v1_graph_projects__project_id__edges_get",
         "parameters": [
           {
             "in": "query",
@@ -2380,12 +2532,12 @@
         },
         "summary": "List Edges",
         "tags": [
-          "projects",
+          "graph",
           "edges"
         ]
       },
       "post": {
-        "operationId": "create_edge_api_v1_projects__project_id__edges_post",
+        "operationId": "create_edge_api_v1_graph_projects__project_id__edges_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2420,14 +2572,14 @@
         },
         "summary": "Create Edge",
         "tags": [
-          "projects",
+          "graph",
           "edges"
         ]
       }
     },
-    "/api/v1/projects/{project_id}/entities": {
+    "/api/v1/graph/projects/{project_id}/entities": {
       "get": {
-        "operationId": "list_entities_api_v1_projects__project_id__entities_get",
+        "operationId": "list_entities_api_v1_graph_projects__project_id__entities_get",
         "parameters": [
           {
             "in": "query",
@@ -2493,12 +2645,12 @@
         },
         "summary": "List Entities",
         "tags": [
-          "projects",
+          "graph",
           "entities"
         ]
       },
       "post": {
-        "operationId": "create_entity_api_v1_projects__project_id__entities_post",
+        "operationId": "create_entity_api_v1_graph_projects__project_id__entities_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2533,14 +2685,14 @@
         },
         "summary": "Create Entity",
         "tags": [
-          "projects",
+          "graph",
           "entities"
         ]
       }
     },
-    "/api/v1/projects/{project_id}/entities/search": {
+    "/api/v1/graph/projects/{project_id}/entities/search": {
       "get": {
-        "operationId": "search_entities_api_v1_projects__project_id__entities_search_get",
+        "operationId": "search_entities_api_v1_graph_projects__project_id__entities_search_get",
         "parameters": [
           {
             "in": "query",
@@ -2593,14 +2745,14 @@
         },
         "summary": "Search Entities",
         "tags": [
-          "projects",
+          "graph",
           "entities"
         ]
       }
     },
-    "/api/v1/projects/{project_id}/entities/{entity_id}": {
+    "/api/v1/graph/projects/{project_id}/entities/{entity_id}": {
       "delete": {
-        "operationId": "delete_entity_api_v1_projects__project_id__entities__entity_id__delete",
+        "operationId": "delete_entity_api_v1_graph_projects__project_id__entities__entity_id__delete",
         "parameters": [
           {
             "in": "path",
@@ -2629,12 +2781,12 @@
         },
         "summary": "Delete Entity",
         "tags": [
-          "projects",
+          "graph",
           "entities"
         ]
       },
       "get": {
-        "operationId": "get_entity_api_v1_projects__project_id__entities__entity_id__get",
+        "operationId": "get_entity_api_v1_graph_projects__project_id__entities__entity_id__get",
         "parameters": [
           {
             "in": "path",
@@ -2670,12 +2822,12 @@
         },
         "summary": "Get Entity",
         "tags": [
-          "projects",
+          "graph",
           "entities"
         ]
       },
       "put": {
-        "operationId": "update_entity_api_v1_projects__project_id__entities__entity_id__put",
+        "operationId": "update_entity_api_v1_graph_projects__project_id__entities__entity_id__put",
         "parameters": [
           {
             "in": "path",
@@ -2721,14 +2873,14 @@
         },
         "summary": "Update Entity",
         "tags": [
-          "projects",
+          "graph",
           "entities"
         ]
       }
     },
-    "/api/v1/projects/{project_id}/entities/{entity_id}/edges": {
+    "/api/v1/graph/projects/{project_id}/entities/{entity_id}/edges": {
       "get": {
-        "operationId": "list_entity_edges_api_v1_projects__project_id__entities__entity_id__edges_get",
+        "operationId": "list_entity_edges_api_v1_graph_projects__project_id__entities__entity_id__edges_get",
         "parameters": [
           {
             "in": "path",
@@ -2764,14 +2916,14 @@
         },
         "summary": "List Entity Edges",
         "tags": [
-          "projects",
+          "graph",
           "entities"
         ]
       }
     },
-    "/api/v1/projects/{project_id}/rag/query": {
+    "/api/v1/graph/projects/{project_id}/rag/query": {
       "post": {
-        "operationId": "rag_query_api_v1_projects__project_id__rag_query_post",
+        "operationId": "rag_query_api_v1_graph_projects__project_id__rag_query_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2804,14 +2956,14 @@
         },
         "summary": "Rag Query",
         "tags": [
-          "projects",
+          "graph",
           "rag"
         ]
       }
     },
-    "/api/v1/projects/{project_id}/schema/edge-types": {
+    "/api/v1/graph/projects/{project_id}/schema/edge-types": {
       "get": {
-        "operationId": "list_edge_types_api_v1_projects__project_id__schema_edge_types_get",
+        "operationId": "list_edge_types_api_v1_graph_projects__project_id__schema_edge_types_get",
         "responses": {
           "200": {
             "content": {
@@ -2826,12 +2978,12 @@
         },
         "summary": "List Edge Types",
         "tags": [
-          "projects",
+          "graph",
           "schema"
         ]
       },
       "post": {
-        "operationId": "add_edge_type_api_v1_projects__project_id__schema_edge_types_post",
+        "operationId": "add_edge_type_api_v1_graph_projects__project_id__schema_edge_types_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2866,14 +3018,14 @@
         },
         "summary": "Add Edge Type",
         "tags": [
-          "projects",
+          "graph",
           "schema"
         ]
       }
     },
-    "/api/v1/projects/{project_id}/schema/edge-types/{edge_type}": {
+    "/api/v1/graph/projects/{project_id}/schema/edge-types/{edge_type}": {
       "delete": {
-        "operationId": "remove_edge_type_api_v1_projects__project_id__schema_edge_types__edge_type__delete",
+        "operationId": "remove_edge_type_api_v1_graph_projects__project_id__schema_edge_types__edge_type__delete",
         "parameters": [
           {
             "in": "path",
@@ -2909,14 +3061,14 @@
         },
         "summary": "Remove Edge Type",
         "tags": [
-          "projects",
+          "graph",
           "schema"
         ]
       }
     },
-    "/api/v1/projects/{project_id}/schema/node-types": {
+    "/api/v1/graph/projects/{project_id}/schema/node-types": {
       "get": {
-        "operationId": "list_node_types_api_v1_projects__project_id__schema_node_types_get",
+        "operationId": "list_node_types_api_v1_graph_projects__project_id__schema_node_types_get",
         "responses": {
           "200": {
             "content": {
@@ -2931,12 +3083,12 @@
         },
         "summary": "List Node Types",
         "tags": [
-          "projects",
+          "graph",
           "schema"
         ]
       },
       "post": {
-        "operationId": "add_node_type_api_v1_projects__project_id__schema_node_types_post",
+        "operationId": "add_node_type_api_v1_graph_projects__project_id__schema_node_types_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2971,14 +3123,14 @@
         },
         "summary": "Add Node Type",
         "tags": [
-          "projects",
+          "graph",
           "schema"
         ]
       }
     },
-    "/api/v1/projects/{project_id}/schema/node-types/{node_type}": {
+    "/api/v1/graph/projects/{project_id}/schema/node-types/{node_type}": {
       "delete": {
-        "operationId": "remove_node_type_api_v1_projects__project_id__schema_node_types__node_type__delete",
+        "operationId": "remove_node_type_api_v1_graph_projects__project_id__schema_node_types__node_type__delete",
         "parameters": [
           {
             "in": "path",
@@ -3014,8 +3166,451 @@
         },
         "summary": "Remove Node Type",
         "tags": [
-          "projects",
+          "graph",
           "schema"
+        ]
+      }
+    },
+    "/api/v1/invitations/accept": {
+      "post": {
+        "operationId": "accept_invitation_api_v1_invitations_accept_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptInvitationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MembershipModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Invitation",
+        "tags": [
+          "tenancy"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/entities": {
+      "get": {
+        "operationId": "canon_list_entities_api_v1_projects__project_id__entities_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entity_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Entity Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanonEntityListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Canon List Entities",
+        "tags": [
+          "canon-entities"
+        ]
+      },
+      "post": {
+        "operationId": "canon_create_entity_api_v1_projects__project_id__entities_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEntityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanonEntityModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Canon Create Entity",
+        "tags": [
+          "canon-entities"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/entities/search": {
+      "get": {
+        "operationId": "canon_search_entities_api_v1_projects__project_id__entities_search_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entity_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Entity Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanonEntityListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Canon Search Entities",
+        "tags": [
+          "canon-entities"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/entities/{entity_id}": {
+      "get": {
+        "operationId": "canon_get_entity_api_v1_projects__project_id__entities__entity_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "entity_id",
+            "required": true,
+            "schema": {
+              "title": "Entity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanonEntityModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Canon Get Entity",
+        "tags": [
+          "canon-entities"
+        ]
+      },
+      "patch": {
+        "operationId": "canon_update_entity_api_v1_projects__project_id__entities__entity_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "entity_id",
+            "required": true,
+            "schema": {
+              "title": "Entity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEntityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanonEntityModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Canon Update Entity",
+        "tags": [
+          "canon-entities"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/entities/{entity_id}/retire": {
+      "post": {
+        "operationId": "canon_retire_entity_api_v1_projects__project_id__entities__entity_id__retire_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "entity_id",
+            "required": true,
+            "schema": {
+              "title": "Entity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetireEntityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanonEntityModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Canon Retire Entity",
+        "tags": [
+          "canon-entities"
         ]
       }
     },

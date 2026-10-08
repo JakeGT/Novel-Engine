@@ -22,9 +22,31 @@ async def test_canon_writer_applies_idempotently_and_rejects_checksum_drift(
     operations = [CreateEntityOp(id="ent_int_1", type="Character", name="Mara")]
     try:
         first = await writer.apply_commit(
-            commit_id=commit_id, revision=1, checksum="sum-1", operations=operations, **_SCOPE
+            commit_id=commit_id,
+            revision=1,
+            checksum="sum-1",
+            operations=operations,
+            schema_version_id="scv_int",
+            **_SCOPE,
         )
         assert first == ApplyOutcome.APPLIED
+
+        entity = await writer.get_entity(
+            workspace_id=_SCOPE["workspace_id"],
+            project_id=_SCOPE["project_id"],
+            entity_id="ent_int_1",
+        )
+        assert entity is not None
+        assert entity.name == "Mara"
+        assert entity.schema_version_id == "scv_int"
+        listed = await writer.list_entities(
+            workspace_id=_SCOPE["workspace_id"], project_id=_SCOPE["project_id"]
+        )
+        assert [item.id for item in listed] == ["ent_int_1"]
+        searched = await writer.search_entities(
+            workspace_id=_SCOPE["workspace_id"], project_id=_SCOPE["project_id"], query="mar"
+        )
+        assert [item.id for item in searched] == ["ent_int_1"]
 
         marker = await writer.get_marker(commit_id)
         assert marker is not None

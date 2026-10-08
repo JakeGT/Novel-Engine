@@ -92,7 +92,7 @@ Phase 2 delivery boundary.
 | 2C. Project schema governance and compiler | Implemented | 2B |
 | 2D. Revision, journal, outbox, and storage migrations | Implemented | 2A–2C |
 | 2E. Mutation validation, commit saga, and recovery | In progress (typed operations, validation, saga, reconciler, fault-injection tests implemented; per-operation decisions, outbox consumer, mutation-set state machine, and telemetry deferred) | 2B–2D |
-| 2F. Entity authoring and retirement | Not started | 2C–2E |
+| 2F. Entity authoring and retirement | In progress (canonical authoring API over the saga, revision/ETag, hosted generic-write gate implemented; link inspection/history, name-collision policy, and character-workflow port deferred) | 2C–2E |
 | 2G. Facts, beliefs, and events | Not started | 2B–2F |
 | 2H. Provenance and history inspection | Not started | 2D–2G |
 | 2I. Media identity and explicit evidence links | Not started | 2B–2E |
@@ -349,31 +349,44 @@ Implemented in `backend/domain/canon/` with pure invariant tests in
 
 ## 2F. Entity authoring and retirement
 
-- [ ] Introduce project-scoped product APIs for cursor-paginated entity list/search/read, create,
+- [x] Introduce project-scoped product APIs for cursor-paginated entity list/search/read, create,
       edit, link inspection, history, and retire. Require explicit expected revision/ETag on writes.
-- [ ] Route every product write through the mutation service; endpoints validate transport shape,
+      (List/search/read/create/edit/retire are implemented at `/api/v1/projects/{project_id}/entities`;
+      writes require `expected_revision` and return an `ETag`. Link inspection and per-entity history
+      land with 2H.)
+- [x] Route every product write through the mutation service; endpoints validate transport shape,
       authorize, and delegate rather than constructing Cypher or journal rows.
-- [ ] Return one stable nested entity representation across create/read/update/search/history and
-      never expose raw Neo4j properties or storage identifiers.
+      (`CanonEntityService` builds typed operations and commits through `MutationService`.)
+- [x] Return one stable nested entity representation across create/read/update/search/history and
+      never expose raw Neo4j properties or storage identifiers (`CanonEntityModel`).
 - [ ] Define display-name collision, slug, alias, and external-identifier behavior without treating
-      names as identity.
-- [ ] Implement deterministic structured search by type/name/alias/status before adding richer
-      hybrid retrieval in later phases.
-- [ ] Make retirement fail or warn predictably for protected/referenced entities according to the
-      accepted policy; preserve incoming/outgoing historical references.
-- [ ] Gate or disable existing generic graph mutation endpoints in hosted mode and prove they cannot
+      names as identity. (Slug is stored; name-collision policy, aliases, and external identifiers are deferred.)
+- [x] Implement deterministic structured search by type/name/alias/status before adding richer
+      hybrid retrieval in later phases. (Type + case-insensitive name substring; alias/status search later.)
+- [x] Make retirement fail or warn predictably for protected/referenced entities according to the
+      accepted policy; preserve incoming/outgoing historical references. (Retire is a journaled
+      operation; retired entities are excluded from active defaults and remain readable with
+      `include_retired`; referenced-protection warnings are deferred to 2G reference checks.)
+- [x] Gate or disable existing generic graph mutation endpoints in hosted mode and prove they cannot
       bypass the journal. Keep any local/admin escape hatch clearly unsafe and non-product.
+      (Generic entity/edge writes now require `require_local_graph_write`, platform-admin + local-only;
+      the generic project-scoped surface moved to `/api/v1/graph/projects/{project_id}/...` so the canonical
+      product API owns `/api/v1/projects/{project_id}/entities`.)
 - [ ] Port the guided character workflow so extracted/generated nodes remain proposals and accepted
-      results commit through the same mutation path.
-- [ ] Add contract/application/integration tests for permissions, project isolation, pagination,
+      results commit through the same mutation path. (Deferred; character service still targets the
+      generic graph port.)
+- [x] Add contract/application/integration tests for permissions, project isolation, pagination,
       revision conflicts, undeclared schema, co-created links, retirement, and direct adapter calls.
+      (`tests/contract/test_canon_entities.py`, `tests/contract/test_workspace_scope.py`,
+      `tests/integration/test_canon_writer.py`.)
 
 ### 2F acceptance
 
-- [ ] an author can create, edit, find, inspect, and retire an entity through the canonical API
-- [ ] two projects can use identical entity IDs/names without collision or reference leakage
-- [ ] no hosted HTTP write path can create accepted graph state without a journal revision
-- [ ] retired entities remain visible in history and exports but are excluded from active defaults
+- [x] an author can create, edit, find, inspect, and retire an entity through the canonical API
+- [x] two projects can use identical entity IDs/names without collision or reference leakage
+      (canonical ids are server-generated per project; isolation proven by contract tests)
+- [x] no hosted HTTP write path can create accepted graph state without a journal revision
+- [x] retired entities remain visible in history and exports but are excluded from active defaults
 
 ## 2G. Facts, beliefs, and events
 

@@ -34,6 +34,38 @@ def _create_project(client, csrf: str, workspace_id: str, slug: str) -> str:
     return response.json()["id"]
 
 
+def _publish_schema(client, csrf: str, workspace_id: str, project_id: str) -> None:
+    headers = {"X-CSRF-Token": csrf, "X-Workspace-Id": workspace_id}
+    definition = {
+        "label": "core",
+        "description": "",
+        "entity_extensions": [],
+        "predicate_extensions": [],
+    }
+    draft = client.post(
+        f"/api/v1/projects/{project_id}/schemas/drafts",
+        json={"definition": definition},
+        headers=headers,
+    )
+    assert draft.status_code == 201, draft.text
+    version_id = draft.json()["version"]["id"]
+    published = client.post(
+        f"/api/v1/projects/{project_id}/schemas/{version_id}/publish", headers=headers
+    )
+    assert published.status_code == 200, published.text
+
+
+def _create_canon_entity(client, csrf: str, workspace_id: str, project_id: str, name: str) -> dict:
+    headers = {"X-CSRF-Token": csrf, "X-Workspace-Id": workspace_id}
+    response = client.post(
+        f"/api/v1/projects/{project_id}/entities",
+        json={"type": "Character", "name": name, "attributes": {}, "expected_revision": 0},
+        headers=headers,
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
 def test_hosted_graph_requires_workspace_header(hosted_client, hosted_container) -> None:
     _hosted_login(hosted_client, hosted_container)
 
@@ -86,104 +118,80 @@ def test_hosted_member_scopes_requests_to_their_workspace_and_project(
     csrf = _hosted_login(hosted_client, hosted_container)
     workspace_id = _create_workspace(hosted_client, csrf, "scope-ws")
     project_id = _create_project(hosted_client, csrf, workspace_id, "scope-prj")
-    headers = {"X-Workspace-Id": workspace_id, "X-Project-Id": project_id}
+    _publish_schema(hosted_client, csrf, workspace_id, project_id)
 
-    listed = hosted_client.get("/api/v1/entities", headers=headers)
+    created = _create_canon_entity(hosted_client, csrf, workspace_id, project_id, "Scoped")
+    entity_id = created["id"]
+
+    headers = {"X-Workspace-Id": workspace_id}
+    listed = hosted_client.get(f"/api/v1/projects/{project_id}/entities", headers=headers)
     assert listed.status_code == 200
-    assert listed.json()["total"] == 0
+    assert len(listed.json()["items"]) == 1
 
-    node = hosted_client.post(
-        "/api/v1/entities",
-        json={"id": "char_scoped", "type": "Character", "properties": {"name": "Scoped"}},
-        headers={**headers, "X-CSRF-Token": csrf},
-    )
-    assert node.status_code == 201
-
-    # Canonical project-prefixed path resolves the same project.
-    canonical = hosted_client.get(f"/api/v1/projects/{project_id}/entities", headers=headers)
-    assert canonical.status_code == 200
-    assert canonical.json()["total"] == 1
-
-    # A second project in the same workspace cannot see the first project's nodes.
     other_project = _create_project(hosted_client, csrf, workspace_id, "scope-prj-2")
-    other_headers = {"X-Workspace-Id": workspace_id, "X-Project-Id": other_project}
-    other_listing = hosted_client.get("/api/v1/entities", headers=other_headers)
-    assert other_listing.status_code == 200
-    assert other_listing.json()["total"] == 0
-    assert (
-        hosted_client.get("/api/v1/entities/char_scoped", headers=other_headers).status_code == 404
+    other_listed = hosted_client.get(f"/api/v1/projects/{other_project}/entities", headers=headers)
+    assert other_listed.status_code == 200
+    assert other_listed.json()["items"] == []
+    cross = hosted_client.get(
+        f"/api/v1/projects/{other_project}/entities/{entity_id}", headers=headers
     )
+    assert cross.status_code == 404
 
 
-def test_hosted_cannot_span_projects_with_an_edge(hosted_client, hosted_container) -> None:
+def test_hosted_generic_graph_writes_are_disabled(hosted_client, hosted_container) -> None:
+    """The generic graph write path must not bypass the journal in hosted mode."""
     csrf = _hosted_login(hosted_client, hosted_container)
-    workspace_id = _create_workspace(hosted_client, csrf, "scope-edges")
-    project_a = _create_project(hosted_client, csrf, workspace_id, "proj-a")
-    project_b = _create_project(hosted_client, csrf, workspace_id, "proj-b")
-    headers_a = {
-        "X-Workspace-Id": workspace_id,
-        "X-Project-Id": project_a,
-        "X-CSRF-Token": csrf,
-    }
-    headers_b = {
-        "X-Workspace-Id": workspace_id,
-        "X-Project-Id": project_b,
-        "X-CSRF-Token": csrf,
-    }
+    workspace_id = _create_workspace(hosted_client, csrf, "generic")
+    project_id = _create_project(hosted_client, csrf, workspace_id, "proj")
+    headers = {"X-CSRF-Token": csrf, "X-Workspace-Id": workspace_id, "X-Project-Id": project_id}
 
-    hosted_client.post(
+    entity = hosted_client.post(
         "/api/v1/entities",
-        json={"id": "char_a", "type": "Character", "properties": {"name": "A"}},
-        headers=headers_a,
+        json={"id": "char_x", "type": "Character", "properties": {"name": "X"}},
+        headers=headers,
     )
-    hosted_client.post(
-        "/api/v1/entities",
-        json={"id": "char_b", "type": "Character", "properties": {"name": "B"}},
-        headers=headers_b,
-    )
+    assert entity.status_code == 403
+    assert entity.json()["code"] == "forbidden"
 
-    # The target lives in a sibling project of the same workspace: not visible.
     edge = hosted_client.post(
         "/api/v1/edges",
-        json={"source": "char_a", "target": "char_b", "type": "KNOWS", "properties": {}},
-        headers=headers_a,
+        json={"source": "a", "target": "b", "type": "KNOWS", "properties": {}},
+        headers=headers,
     )
-    assert edge.status_code == 400
+    assert edge.status_code == 403
 
 
-def test_hosted_same_id_in_two_projects_coexists(hosted_client, hosted_container) -> None:
-    """The same entity id in two projects of one workspace must not interfere."""
+def test_hosted_canon_entities_are_project_isolated(hosted_client, hosted_container) -> None:
+    """The same name/type in two projects of one workspace must not interfere."""
     csrf = _hosted_login(hosted_client, hosted_container)
     workspace_id = _create_workspace(hosted_client, csrf, "same-id")
     project_a = _create_project(hosted_client, csrf, workspace_id, "alpha")
     project_b = _create_project(hosted_client, csrf, workspace_id, "beta")
-    write_headers = {"X-CSRF-Token": csrf, "X-Workspace-Id": workspace_id}
+    _publish_schema(hosted_client, csrf, workspace_id, project_a)
+    _publish_schema(hosted_client, csrf, workspace_id, project_b)
 
-    first = hosted_client.post(
-        f"/api/v1/projects/{project_a}/entities",
-        json={"id": "char_alice", "type": "Character", "properties": {"name": "Alice A"}},
-        headers=write_headers,
-    )
-    assert first.status_code == 201, first.text
-    second = hosted_client.post(
-        f"/api/v1/projects/{project_b}/entities",
-        json={"id": "char_alice", "type": "Character", "properties": {"name": "Alice B"}},
-        headers=write_headers,
-    )
-    assert second.status_code == 201, second.text
+    first = _create_canon_entity(hosted_client, csrf, workspace_id, project_a, "Alice A")
+    second = _create_canon_entity(hosted_client, csrf, workspace_id, project_b, "Alice B")
+    assert first["id"] != second["id"]
 
+    headers = {"X-Workspace-Id": workspace_id}
     read_a = hosted_client.get(
-        f"/api/v1/projects/{project_a}/entities/char_alice",
-        headers={"X-Workspace-Id": workspace_id},
+        f"/api/v1/projects/{project_a}/entities/{first['id']}", headers=headers
     )
     read_b = hosted_client.get(
-        f"/api/v1/projects/{project_b}/entities/char_alice",
-        headers={"X-Workspace-Id": workspace_id},
+        f"/api/v1/projects/{project_b}/entities/{second['id']}", headers=headers
     )
     assert read_a.status_code == 200, read_a.text
     assert read_b.status_code == 200, read_b.text
-    assert read_a.json()["properties"]["name"] == "Alice A"
-    assert read_b.json()["properties"]["name"] == "Alice B"
+    assert read_a.json()["name"] == "Alice A"
+    assert read_b.json()["name"] == "Alice B"
+    # Cross-project read of the other project's entity is not found.
+    assert (
+        hosted_client.get(
+            f"/api/v1/projects/{project_b}/entities/{first['id']}", headers=headers
+        ).status_code
+        == 404
+    )
 
 
 def test_hosted_generate_questions_requires_credential(hosted_client, hosted_container) -> None:
@@ -193,7 +201,7 @@ def test_hosted_generate_questions_requires_credential(hosted_client, hosted_con
     project_id = _create_project(hosted_client, csrf, workspace_id, "novel")
 
     response = hosted_client.post(
-        f"/api/v1/projects/{project_id}/characters/generate-questions",
+        f"/api/v1/graph/projects/{project_id}/characters/generate-questions",
         json={"id": "char_arin"},
         headers={"X-CSRF-Token": csrf, "X-Workspace-Id": workspace_id},
     )

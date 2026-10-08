@@ -1519,6 +1519,7 @@ class InMemoryCanonWriter:
         self._RevisionConflict = RevisionConflict
         self.markers: dict[str, CommitMarker] = {}
         self.objects: dict[tuple[str, str, str], dict] = {}
+        self.entities: dict[tuple[str, str, str], dict] = {}
         self.applied_operations: list = []
         # When set, apply fails after this many operations (crash simulation),
         # leaving a partially applied graph and no marker.
@@ -1534,6 +1535,7 @@ class InMemoryCanonWriter:
         project_id,
         branch_id,
         operations,
+        schema_version_id=None,
     ):
         existing = self.markers.get(commit_id)
         if existing is not None:
@@ -1548,6 +1550,9 @@ class InMemoryCanonWriter:
                 **operation.model_dump(mode="json"),
                 "revision": revision,
             }
+            self._apply_entity(
+                workspace_id, project_id, branch_id, schema_version_id, revision, operation
+            )
             self.applied_operations.append(operation)
             applied += 1
         self.markers[commit_id] = self._CommitMarker(
@@ -1562,6 +1567,106 @@ class InMemoryCanonWriter:
 
     async def get_marker(self, commit_id):
         return self.markers.get(commit_id)
+
+    def _apply_entity(self, ws, pr, branch_id, schema_version_id, revision, operation) -> None:
+        from backend.domain.operations import CreateEntityOp, RetireEntityOp, UpdateEntityOp
+
+        key = (ws, pr, operation.id)
+        if isinstance(operation, CreateEntityOp):
+            self.entities[key] = {
+                "branch_id": branch_id,
+                "schema_version_id": schema_version_id or "",
+                "type": operation.type,
+                "name": operation.name,
+                "slug": operation.slug,
+                "lifecycle": "active",
+                "created_revision": revision,
+                "retired_revision": None,
+                "attributes": dict(operation.attributes),
+            }
+        elif isinstance(operation, UpdateEntityOp):
+            entity = self.entities.get(key)
+            if entity is not None:
+                if operation.name is not None:
+                    entity["name"] = operation.name
+                if operation.slug is not None:
+                    entity["slug"] = operation.slug
+                if operation.attributes is not None:
+                    entity["attributes"] = dict(operation.attributes)
+        elif isinstance(operation, RetireEntityOp):
+            entity = self.entities.get(key)
+            if entity is not None:
+                entity["lifecycle"] = "retired"
+                entity["retired_revision"] = revision
+
+    def _entity(self, key):
+        from backend.domain.canon.entities import CanonEntity
+
+        data = self.entities.get(key)
+        if data is None:
+            return None
+        return CanonEntity(
+            id=key[2],
+            workspace_id=key[0],
+            project_id=key[1],
+            branch_id=data["branch_id"],
+            type=data["type"],
+            name=data["name"],
+            slug=data["slug"],
+            lifecycle=data["lifecycle"],
+            schema_version_id=data["schema_version_id"],
+            created_revision=data["created_revision"],
+            retired_revision=data["retired_revision"],
+            attributes=data["attributes"],
+        )
+
+    async def get_entity(self, *, workspace_id, project_id, entity_id):
+        return self._entity((workspace_id, project_id, entity_id))
+
+    async def list_entities(
+        self,
+        *,
+        workspace_id,
+        project_id,
+        entity_type=None,
+        include_retired=False,
+        limit=50,
+        offset=0,
+    ):
+        items = []
+        for key, data in sorted(self.entities.items(), key=lambda kv: (kv[1]["name"], kv[0][2])):
+            if key[0] != workspace_id or key[1] != project_id:
+                continue
+            if entity_type is not None and data["type"] != entity_type:
+                continue
+            if not include_retired and data["lifecycle"] != "active":
+                continue
+            items.append(self._entity(key))
+        return items[offset : offset + limit]
+
+    async def search_entities(
+        self,
+        *,
+        workspace_id,
+        project_id,
+        query,
+        entity_type=None,
+        include_retired=False,
+        limit=50,
+    ):
+        needle = query.lower()
+        return [
+            entity
+            for entity in await self.list_entities(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                entity_type=entity_type,
+                include_retired=include_retired,
+                limit=limit,
+                offset=0,
+            )
+            if needle in entity.name.lower()
+        ]
 
     async def health(self) -> bool:
         return True

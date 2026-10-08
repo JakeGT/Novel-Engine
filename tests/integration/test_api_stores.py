@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from backend.adapters.artifacts import NullArtifactStore
 from backend.adapters.graph import Neo4jGraphRepository, Neo4jMigrationVerifier
 from backend.adapters.vector import PgVectorStore
-from backend.api.auth import get_project_scope, require_project_scope
+from backend.api.auth import get_project_scope, require_local_graph_write, require_project_scope
 from backend.container import Container
 from backend.domain.identity import AccessScope, AuthMode
 from backend.graph.manager import GraphManager
@@ -73,6 +73,9 @@ def client(container: Container) -> Iterator[TestClient]:
 
     app.dependency_overrides[get_project_scope] = _scope
     app.dependency_overrides[require_project_scope] = _scope
+    # Generic graph writes are a local/admin escape hatch; this integration app is
+    # local mode, so allow them without a platform-admin session.
+    app.dependency_overrides[require_local_graph_write] = _scope
     with TestClient(app) as test_client:
         yield test_client
 

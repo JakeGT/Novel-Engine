@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query, status
 from backend.adapters.system import uuid7
 from backend.api.auth import (
     get_project_scope,
+    require_local_graph_write,
     require_local_schema_write,
     require_project_scope,
     require_session,
@@ -153,6 +154,7 @@ def create_entity(
     embeddings: EmbeddingPort = Depends(get_embeddings),
     registry: SchemaRegistryPort = Depends(get_schema_registry),
     scope: AccessScope = Depends(require_project_scope),
+    _guard: AuthenticatedSession = Depends(require_local_graph_write),
 ) -> s.Entity:
     _validate_identifier(body.id, "entity id")
     _validate_identifier(body.type, "entity type")
@@ -195,6 +197,7 @@ def update_entity(
     embeddings: EmbeddingPort = Depends(get_embeddings),
     registry: SchemaRegistryPort = Depends(get_schema_registry),
     scope: AccessScope = Depends(require_project_scope),
+    _guard: AuthenticatedSession = Depends(require_local_graph_write),
 ) -> s.Entity:
     if body.id is not None and body.id != entity_id:
         raise ValidationError("Body id does not match the path id.")
@@ -236,6 +239,7 @@ def delete_entity(
     entity_id: str,
     graph: GraphRepository = Depends(get_graph),
     scope: AccessScope = Depends(require_project_scope),
+    _guard: AuthenticatedSession = Depends(require_local_graph_write),
 ) -> None:
     if not graph.delete_node(
         entity_id, workspace_id=scope.workspace_id or "", project_id=scope.project_id or ""
@@ -273,6 +277,7 @@ def create_edge(
     graph: GraphRepository = Depends(get_graph),
     registry: SchemaRegistryPort = Depends(get_schema_registry),
     scope: AccessScope = Depends(require_project_scope),
+    _guard: AuthenticatedSession = Depends(require_local_graph_write),
 ) -> s.EdgeModel:
     _validate_identifier(body.type, "edge type")
     if not registry.is_valid_edge_type(body.type):
@@ -580,9 +585,12 @@ async def character_process_answers(
     )
 
 
-# Canonical surface: /api/v1/projects/{project_id}/...
-# Temporary compatibility aliases keep the pre-project paths but still resolve a
-# specific project (path, X-Project-Id header, or the local project).
+# Generic graph surface: project-scoped under /graph/projects/{project_id}/... so it
+# does not shadow the canonical product API (/projects/{project_id}/entities) or the
+# schema-version API. Writes here are local/admin-only; hosted writes must use the
+# canonical mutation endpoints.
+# Compatibility aliases keep the pre-project paths and still resolve a project
+# (X-Project-Id header or the local project).
 router = APIRouter()
-router.include_router(project_router, prefix="/projects/{project_id}", tags=["projects"])
+router.include_router(project_router, prefix="/graph/projects/{project_id}", tags=["graph"])
 router.include_router(project_router, tags=["legacy"])

@@ -124,6 +124,23 @@ async def require_local_schema_write(
     return auth_session
 
 
+async def require_local_graph_write(
+    auth_session: AuthenticatedSession = Depends(require_platform_admin),
+    settings: Settings = Depends(get_settings),
+) -> AuthenticatedSession:
+    """Generic graph writes are a local/admin escape hatch only.
+
+    Hosted deployments must write canon through the mutation commit saga
+    (``/projects/{project_id}/entities``), which records a journal revision.
+    """
+    if settings.is_hosted:
+        raise ForbiddenError(
+            "Generic graph writes are disabled in hosted mode; "
+            "use the canonical mutation endpoints instead."
+        )
+    return auth_session
+
+
 async def _resolve_workspace_scope(
     request: Request,
     auth_session: AuthenticatedSession,
