@@ -26,6 +26,7 @@ class ProjectionLag:
     head_revision: int
     applied_revision: int
     status: ProjectionStatus
+    last_error: str | None = None
 
     @property
     def lag(self) -> int:
@@ -75,7 +76,12 @@ class GraphProjectionService:
             status = ProjectionStatus.CURRENT
         else:
             status = ProjectionStatus.LAGGING
-        return ProjectionLag(head_revision=head, applied_revision=applied, status=status)
+        return ProjectionLag(
+            head_revision=head,
+            applied_revision=applied,
+            status=status,
+            last_error=watermark.last_error if watermark is not None else None,
+        )
 
     async def project_pending(
         self,

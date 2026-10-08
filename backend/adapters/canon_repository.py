@@ -205,6 +205,7 @@ def _event(row: Any) -> Event:
         world_position=row.world_position,
         provenance_id=row.provenance_id,
         created_revision=row.created_revision,
+        retired_revision=getattr(row, "retired_revision", None),
     )
 
 

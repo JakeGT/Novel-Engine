@@ -203,6 +203,32 @@ async def belief_at_revision(
     }
 
 
+@router.get("/events/{event_id}/at-revision/{revision}")
+async def event_at_revision(
+    project_id: str,
+    event_id: str,
+    revision: int,
+    scope: AccessScope = Depends(get_project_scope),
+    history: CanonHistoryService = Depends(get_canon_history_service),
+) -> dict:
+    event = await history.event_at_revision(
+        scope, scope.workspace_id or "", project_id, event_id, revision
+    )
+    return {
+        "id": event.id,
+        "kind": event.kind,
+        "name": event.name,
+        "participants": [p.model_dump(mode="json") for p in event.participants],
+        "location_ids": event.location_ids,
+        "cause_ids": event.cause_ids,
+        "outcome_ids": event.outcome_ids,
+        "world_position": event.world_position,
+        "provenance_id": event.provenance_id,
+        "created_revision": event.created_revision,
+        "retired_revision": event.retired_revision,
+    }
+
+
 @router.get("/tags")
 async def list_tags(
     project_id: str,

@@ -647,6 +647,8 @@ class CanonJournalPort(Protocol):
 
     async def mark_outbox_failed(self, *, message_id: str, error: str) -> None: ...
 
+    async def count_failed_outbox(self, *, workspace_id: str, project_id: str) -> int: ...
+
 
 @runtime_checkable
 class CanonWriterPort(Protocol):

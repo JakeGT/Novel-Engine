@@ -1547,6 +1547,16 @@ class InMemoryCanonJournal:
         self.outbox_attempts[message_id] = self.outbox_attempts.get(message_id, 0) + 1
         self.outbox_errors[message_id] = error
 
+    async def count_failed_outbox(self, *, workspace_id: str, project_id: str) -> int:
+        return sum(
+            1
+            for message in self.outbox.values()
+            if message.workspace_id == workspace_id
+            and message.project_id == project_id
+            and message.published_at is None
+            and self.outbox_attempts.get(message.id, 0) > 0
+        )
+
 
 class InMemoryCanonWriter:
     """In-memory canon writer with deterministic, fault-injectable apply."""
@@ -1920,6 +1930,7 @@ class InMemoryCanonWriter:
             world_position=data["world_position"],
             provenance_id=data["provenance_id"],
             created_revision=data["created_revision"],
+            retired_revision=data.get("retired_revision"),
         )
 
     async def get_event(self, *, workspace_id, project_id, event_id):

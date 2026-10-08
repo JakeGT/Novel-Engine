@@ -34,3 +34,4 @@ class Event(BaseModel):
     world_position: str | None = None
     provenance_id: str
     created_revision: int
+    retired_revision: int | None = None

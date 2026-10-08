@@ -11,6 +11,8 @@ from backend.domain.operations import (
     AssertFactOp,
     CloseFactOp,
     CreateEntityOp,
+    CreateEventOp,
+    RetireEventOp,
     UpdateEntityOp,
 )
 from backend.services.canon_history_service import CanonHistoryService
@@ -119,3 +121,41 @@ async def test_fact_belief_at_revision_and_revision_diff() -> None:
 
     diff = await service.diff_revisions(scope, "ws", "pr", from_revision=2, to_revision=4)
     assert {(entry.revision, entry.record_type) for entry in diff} == {(3, "belief"), (4, "fact")}
+
+
+@pytest.mark.asyncio
+async def test_event_at_revision_includes_retirement() -> None:
+    journal = InMemoryCanonJournal()
+    repo = InMemoryCanonRepository(journal=journal)
+    branch = await journal.ensure_root_branch(workspace_id="ws", project_id="pr")
+    scope = AccessScope(actor_user_id="usr_1", auth_mode=AuthMode.LOCAL)
+    service = CanonHistoryService(canon=repo, journal=journal, local_mode=True)
+
+    await _apply(
+        repo, branch, "cmt_1", 0, [CreateEntityOp(id="ent_1", type="Character", name="Mara")]
+    )
+    await _apply(
+        repo,
+        branch,
+        "cmt_2",
+        1,
+        [
+            CreateEventOp(
+                id="evt_1",
+                kind="battle",
+                name="Fall of Harbor",
+                participants=[{"entity_id": "ent_1", "role": "witness"}],
+                location_ids=["ent_1"],
+                world_position="winter, year 12",
+            )
+        ],
+    )
+    await _apply(repo, branch, "cmt_3", 2, [RetireEventOp(id="evt_1")])
+
+    created = await service.event_at_revision(scope, "ws", "pr", "evt_1", 2)
+    assert created.name == "Fall of Harbor"
+    assert created.retired_revision is None
+    assert created.participants[0].entity_id == "ent_1"
+
+    retired = await service.event_at_revision(scope, "ws", "pr", "evt_1", 3)
+    assert retired.retired_revision == 3

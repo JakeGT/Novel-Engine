@@ -637,6 +637,20 @@ class PostgresCanonJournal:
                 {"id": message_id},
             )
 
+    async def count_failed_outbox(self, *, workspace_id: str, project_id: str) -> int:
+        async with session_scope(self._session_factory) as session:
+            count = (
+                await session.execute(
+                    text(
+                        "SELECT count(*) FROM outbox_messages "
+                        "WHERE workspace_id = :w AND project_id = :p "
+                        "AND published_at IS NULL AND attempts > 0"
+                    ),
+                    {"w": workspace_id, "p": project_id},
+                )
+            ).scalar()
+        return int(count or 0)
+
     async def mark_outbox_failed(self, *, message_id: str, error: str) -> None:
         async with session_scope(self._session_factory) as session:
             await session.execute(

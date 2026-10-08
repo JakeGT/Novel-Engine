@@ -5261,6 +5261,68 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/events/{event_id}/at-revision/{revision}": {
+      "get": {
+        "operationId": "event_at_revision_api_v1_projects__project_id__events__event_id__at_revision__revision__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "revision",
+            "required": true,
+            "schema": {
+              "title": "Revision",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Event At Revision Api V1 Projects  Project Id  Events  Event Id  At Revision  Revision  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Event At Revision",
+        "tags": [
+          "canon-history"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/events/{event_id}/history": {
       "get": {
         "operationId": "event_history_api_v1_projects__project_id__events__event_id__history_get",

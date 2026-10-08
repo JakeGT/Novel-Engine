@@ -10,6 +10,7 @@ import json
 
 from backend.domain.canon.assertions import Belief, Fact, FactStatus
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
+from backend.domain.canon.events import Event, EventParticipant
 from backend.domain.canon.propositions import Proposition
 from backend.domain.canon.revisions import CanonRevision
 from backend.domain.errors import NotFoundError, ValidationError
@@ -269,6 +270,31 @@ class CanonHistoryService:
             raise NotFoundError("Belief did not exist at that revision.")
         return belief
 
+    async def event_at_revision(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        event_id: str,
+        revision: int,
+    ) -> Event:
+        await self._authorize(scope, workspace_id, project_id)
+        versions = await self._canon.list_record_versions(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            record_type="event",
+            record_id=event_id,
+            max_revision=revision,
+            limit=1000,
+        )
+        ordered = sorted(versions, key=lambda v: v.revision)
+        event: Event | None = None
+        for version in ordered:
+            event = _replay_event(version, event)
+        if event is None:
+            raise NotFoundError("Event did not exist at that revision.")
+        return event
+
     async def list_tags(
         self, scope: AccessScope, workspace_id: str, project_id: str
     ) -> list[CanonTag]:
@@ -418,6 +444,41 @@ def _replay_belief(version: RecordVersion, current: Belief | None) -> Belief | N
         return None
     if op == "close_belief":
         return current.model_copy(update={"closed_revision": version.revision})
+    return current
+
+
+def _replay_event(version: RecordVersion, current: Event | None) -> Event | None:
+    change = version.change
+    op = change.get("op")
+    if op == "create_event":
+        return Event(
+            id=change["id"],
+            workspace_id=version.workspace_id,
+            project_id=version.project_id,
+            branch_id=version.branch_id,
+            kind=change["kind"],
+            name=change["name"],
+            participants=[
+                EventParticipant.model_validate(p) for p in change.get("participants", [])
+            ],
+            location_ids=list(change.get("location_ids", [])),
+            cause_ids=list(change.get("cause_ids", [])),
+            outcome_ids=list(change.get("outcome_ids", [])),
+            world_position=change.get("world_position"),
+            provenance_id=f"prov_{version.commit_id}",
+            created_revision=version.revision,
+        )
+    if current is None:
+        return None
+    if op == "amend_event":
+        update: dict[str, object] = {}
+        if change.get("name") is not None:
+            update["name"] = change["name"]
+        if change.get("world_position") is not None:
+            update["world_position"] = change["world_position"]
+        return current.model_copy(update=update)
+    if op == "retire_event":
+        return current.model_copy(update={"retired_revision": version.revision})
     return current
 
 

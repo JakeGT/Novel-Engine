@@ -31,6 +31,9 @@ async def projection_lag(
     lag = await projection.lag(
         workspace_id=scope.workspace_id, project_id=project_id, branch_id=branch.id
     )
+    failed = await journal.count_failed_outbox(
+        workspace_id=scope.workspace_id, project_id=project_id
+    )
     return {
         "projection": "graph",
         "branch_id": branch.id,
@@ -39,4 +42,6 @@ async def projection_lag(
         "lag": lag.lag,
         "status": lag.status.value,
         "current": lag.current,
+        "last_error": lag.last_error,
+        "failed_deliveries": failed,
     }
