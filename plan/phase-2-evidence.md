@@ -88,7 +88,11 @@ Neo4j ordered migrations and checksums:
   are not implemented; provenance source-artefact identifiers are recorded on beliefs
   (`source_ref`) but not generalized across all operations; explicit history/provenance authz/redaction
   tests remain thin.
-- **2J:** the frontend TypeScript authoring UI is **not** implemented (React/JS shell only).
+- **2J:** the frontend is TypeScript with a client generated from the committed OpenAPI
+  snapshot, React Router + TanStack Query with project-scoped cache keys, and an entity
+  list/create/detail shell with history and projection status, plus a component test. Deferred:
+  mutation preview/review UI, schema publish UI, media panels, automated accessibility coverage,
+  and the end-to-end browser workflow.
 - **2K:** no v1-archive upgrader (the graph-format `ProjectTransferService` v2 is untouched); archive
   import does not automatically rebuild projections or run representative-query comparison.
 - **2L:** property/state-machine fuzzing and mutation testing are not adopted; Sentry spans/metrics

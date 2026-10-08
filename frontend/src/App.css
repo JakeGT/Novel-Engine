@@ -33,3 +33,17 @@
   color: #777;
   font-size: 0.9rem;
 }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.row nav { gap: 1rem; }
+.status { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; background: #2a2f3a; font-size: 0.8rem; }
+.badge.ok { background: #1f4d33; }
+.badge.warn { background: #5a4210; }
+.error { color: #ff8a8a; }
+.stack { display: flex; flex-direction: column; gap: 0.75rem; max-width: 32rem; }
+.stack label { display: flex; flex-direction: column; gap: 0.25rem; }
+.stack input, .stack select, .stack textarea { padding: 0.4rem; border-radius: 6px; border: 1px solid #3a4150; background: #161a22; color: inherit; }
+.list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
+dt { color: #9aa4b2; }
+pre { background: #161a22; padding: 0.5rem; border-radius: 6px; overflow: auto; }

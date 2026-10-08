@@ -4,7 +4,7 @@ export UV_CACHE_DIR
 
 TYPE_CHECK_TARGETS = backend
 
-.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify verify seed reset-dev diagnostics retention reconcile project watch archive audit api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check secret-scan frontend-install frontend-lint frontend-build check
+.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify verify seed reset-dev diagnostics retention reconcile project watch archive audit api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check secret-scan frontend-install frontend-lint frontend-typecheck frontend-test frontend-build check
 
 help:
 	@echo "install             Install runtime Python dependencies"
@@ -37,6 +37,8 @@ help:
 	@echo "secret-scan         Scan tracked files for credential shapes"
 	@echo "frontend-install    Install frontend dependencies"
 	@echo "frontend-lint       Lint the frontend"
+	@echo "frontend-typecheck  Type-check the frontend"
+	@echo "frontend-test       Run frontend component tests"
 	@echo "frontend-build      Build the frontend"
 	@echo "check               Run local static checks and hermetic tests"
 
@@ -132,7 +134,13 @@ frontend-install:
 frontend-lint:
 	pnpm --dir frontend run lint
 
+frontend-typecheck:
+	pnpm --dir frontend run typecheck
+
+frontend-test:
+	pnpm --dir frontend run test
+
 frontend-build:
 	pnpm --dir frontend run build
 
-check: lock-check lint format-check secret-scan typecheck test frontend-lint frontend-build
+check: lock-check lint format-check secret-scan typecheck test frontend-lint frontend-typecheck frontend-test frontend-build

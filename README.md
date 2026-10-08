@@ -73,6 +73,12 @@ make frontend-install
 pnpm --dir frontend run dev
 ```
 
+The frontend is TypeScript and consumes a client generated from the committed OpenAPI
+snapshot (`pnpm --dir frontend run gen:api`, output committed under `frontend/src/api/`). It uses
+React Router and TanStack Query with workspace/project-scoped cache keys. Validate it with
+`make frontend-lint frontend-typecheck frontend-test frontend-build`; the generated client is
+excluded from lint.
+
 The API is served at `http://localhost:8000`; canonical routes are under `/api/v1` and interactive API documentation is at `http://localhost:8000/docs`. Neo4j Browser is at `http://localhost:7474` using the credentials configured in `.env`.
 
 ## Development
@@ -128,7 +134,7 @@ stored envelope-encrypted and never returned by the API; logs redact `sk-`/`sk-o
 
 ## Current limitations
 
-- The React application is still the default Vite scaffold.
+- The React application is a minimal TypeScript authoring shell (session, project switcher, entity list/create/detail with history and projection status); schema publish, mutation review, media panels, and end-to-end browser tests are still pending.
 - Canonical API routes live under `/api/v1` with stable DTOs and an `application/problem+json` error contract; the original prototype routes remain at `/api` as deprecated aliases pending migration.
 - Character and schema routes use the injected container; graph and RAG routes still use legacy module singletons pending 0G.
 - The world workflow and generic RAG answer endpoint are incomplete (`/api/v1/rag/query` returns 501).
