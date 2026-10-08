@@ -150,6 +150,15 @@ def _build_fake_container(settings, tmp_path):
         tenancy=tenancy_service,
         local_mode=not settings.is_hosted,
     )
+    from backend.services.canon_assertion_service import CanonAssertionService
+
+    canon_assertion_service = CanonAssertionService(
+        mutation=mutation_service,
+        writer=canon_writer,
+        schema_store=schema_versions,
+        tenancy=tenancy_service,
+        local_mode=not settings.is_hosted,
+    )
     return Container(
         settings=settings,
         graph=graph,
@@ -179,6 +188,7 @@ def _build_fake_container(settings, tmp_path):
         canon_writer=canon_writer,
         mutation_service=mutation_service,
         canon_entity_service=canon_entity_service,
+        canon_assertion_service=canon_assertion_service,
     )
 
 

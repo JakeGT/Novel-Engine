@@ -80,6 +80,7 @@ class AssertBeliefOp(_Operation):
     holder_entity_id: str
     proposition: Proposition
     confidence: float = 1.0
+    source_ref: str | None = None
 
 
 class CloseBeliefOp(_Operation):

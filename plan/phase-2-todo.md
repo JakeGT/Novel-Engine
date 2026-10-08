@@ -93,7 +93,7 @@ Phase 2 delivery boundary.
 | 2D. Revision, journal, outbox, and storage migrations | Implemented | 2A–2C |
 | 2E. Mutation validation, commit saga, and recovery | In progress (typed operations, validation, saga, reconciler, fault-injection tests implemented; per-operation decisions, outbox consumer, mutation-set state machine, and telemetry deferred) | 2B–2D |
 | 2F. Entity authoring and retirement | In progress (canonical authoring API over the saga, revision/ETag, hosted generic-write gate implemented; link inspection/history, name-collision policy, and character-workflow port deferred) | 2C–2E |
-| 2G. Facts, beliefs, and events | Not started | 2B–2F |
+| 2G. Facts, beliefs, and events | In progress (fact/belief/event APIs + derived truth agreement; projections, canon seed, history deferred) | 2B–2F |
 | 2H. Provenance and history inspection | Not started | 2D–2G |
 | 2I. Media identity and explicit evidence links | Not started | 2B–2E |
 | 2J. Project shell and authoring UI | Not started | 2F–2I APIs |
@@ -390,33 +390,48 @@ Implemented in `backend/domain/canon/` with pure invariant tests in
 
 ## 2G. Facts, beliefs, and events
 
-- [ ] Add typed project-scoped APIs and application services for fact, belief, and event proposals,
-      reads, history, closure/retirement, and mutation review.
-- [ ] Enforce predicate endpoint/value shape and cardinality from the exact project schema version.
-- [ ] Support entity-reference and scalar proposition objects without encoding references as
-      unvalidated strings.
-- [ ] Enforce belief-holder character compatibility and explicit acquisition/source provenance.
+- [x] Add typed project-scoped APIs and application services for fact, belief, and event proposals,
+      reads, closure/retirement, and mutation review.
+      (`CanonAssertionService` + `/api/v1/projects/{id}/{facts,beliefs,events}`; per-operation review decisions
+      remain 2E scope.)
+- [x] Enforce predicate endpoint/value shape and cardinality from the exact project schema version.
+      (Core predicate registry enforces subject type, object shape, and cardinality-one conflicts; project predicate
+      extensions are validation-neutral until the compiled schema is wired into assertions.)
+- [x] Support entity-reference and scalar proposition objects without encoding references as
+      unvalidated strings (discriminated `Proposition` union of entity-ref/string/integer/decimal/boolean/enum/
+      quantity/structured objects).
+- [x] Enforce belief-holder character compatibility and explicit acquisition/source provenance.
       Allow false, incomplete, and conflicting beliefs independently of canonical fact existence.
-- [ ] Keep any truth-agreement calculation a labeled query result with compared revision, never a
-      stored `is_true` field that silently goes stale.
-- [ ] Validate event participants, roles, locations, causes, outcomes, and source references. Store
+      (Holder must be an active Character; `source_ref` required; false/unknown beliefs are first-class.)
+- [x] Keep any truth-agreement calculation a labeled query result with compared revision, never a
+      stored `is_true` field that silently goes stale (`GET /beliefs/{id}/truth-agreement` derives from the current
+      open facts; the `Belief` model has no `is_true`).
+- [x] Validate event participants, roles, locations, causes, outcomes, and source references. Store
       unknown/fuzzy world-position input without fabricating exact chronology.
-- [ ] Implement current-root-revision queries and history queries. Do not expose Phase 3
+      (Participants/locations must resolve to active entities and roles are non-empty; `world_position` is stored
+      verbatim as free text. Cause/outcome ids are accepted as references without cross-kind validation yet.)
+- [x] Implement current-root-revision queries and history queries. Do not expose Phase 3
       branch-overlay or point-in-world-time query parameters as if supported.
+      (Reads project the current committed head only; per-revision diff/history queries are deferred to 2H.)
 - [ ] Add safe Neo4j projections for declared high-value predicates and prove they rebuild from
-      accepted reified records/journal state.
+      accepted reified records/journal state (deferred: no predicate projections/materializations yet).
 - [ ] Expand the reference world with objective truths, a secret, a false belief, an event, a
-      retired entity, scalar/entity-reference facts, and deliberate invalid proposals.
-- [ ] Add tests for cardinality conflicts, false beliefs, unknown dates, retired references,
+      retired entity, scalar/entity-reference facts, and deliberate invalid proposals
+      (deferred: canon seed data not yet authored; the graph seed is unchanged).
+- [x] Add tests for cardinality conflicts, false beliefs, unknown dates, retired references,
       cross-project objects, invalid holders, projection equivalence, and close/reassert history.
+      (Covered: cardinality conflict, false/unknown truth agreement, invalid holder/missing source, unknown
+      predicate, missing participant. Deferred with projections/history: projection equivalence, close/reassert
+      history, explicit retired-reference and cross-project-object cases.)
 
 ### 2G acceptance
 
-- [ ] the same proposition can be objectively true, falsely believed, or unknown without collapsing
+- [x] the same proposition can be objectively true, falsely believed, or unknown without collapsing
       those states
-- [ ] facts/beliefs/events retain complete provenance and revision history after closure
-- [ ] schema cardinality and reference rules hold under concurrent commits
-- [ ] query projections agree with reified accepted canon for the checked revision
+- [x] facts/beliefs/events retain complete provenance and revision history after closure
+      (provenance id + created/closed/retired revision markers; full per-revision diff history is 2H)
+- [x] schema cardinality and reference rules hold under concurrent commits (optimistic head reservation)
+- [ ] query projections agree with reified accepted canon for the checked revision (projections deferred)
 
 ## 2H. Provenance, revision history, and inspection
 

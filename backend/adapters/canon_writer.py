@@ -13,9 +13,13 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Any
 
+from backend.domain.canon.assertions import Belief, Fact, FactStatus
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
+from backend.domain.canon.events import Event, EventParticipant
+from backend.domain.canon.propositions import Proposition
 from backend.domain.commit import ApplyOutcome, CommitMarker
 from backend.domain.journal import RevisionConflict
 from backend.domain.operations import (
@@ -209,6 +213,7 @@ class Neo4jCanonWriter:
                 SET b.branch_id = $branch_id, b.holder_entity_id = $holder_entity_id,
                     b.proposition = $proposition, b.confidence = $confidence,
                     b.acquisition_provenance_id = $provenance_id, b.status = 'asserted',
+                    b.source_ref = $source_ref,
                     b.commit_id = $commit_id, b.revision = $revision
                 WITH b
                 OPTIONAL MATCH (h:Entity {workspace_id: $workspace_id, project_id: $project_id, id: $holder_entity_id})
@@ -218,6 +223,7 @@ class Neo4jCanonWriter:
                 holder_entity_id=operation.holder_entity_id,
                 proposition=_dumps(operation.proposition.model_dump(mode="json")),
                 confidence=operation.confidence,
+                source_ref=operation.source_ref,
                 **ctx,
             )
         elif isinstance(operation, CloseBeliefOp):
@@ -451,3 +457,214 @@ class Neo4jCanonWriter:
             return True
         except Exception:
             return False
+
+    _FACT_RETURN = (
+        "f.id AS id, f.workspace_id AS workspace_id, f.project_id AS project_id, "
+        "f.branch_id AS branch_id, f.proposition AS proposition, f.status AS status, "
+        "f.confidence AS confidence, f.provenance_id AS provenance_id, "
+        "f.created_revision AS created_revision, f.closed_revision AS closed_revision, "
+        "f.valid_from AS valid_from, f.valid_until AS valid_until"
+    )
+
+    @staticmethod
+    def _to_fact(record: Any) -> Fact:
+        return Fact(
+            id=record["id"],
+            workspace_id=record["workspace_id"],
+            project_id=record["project_id"],
+            branch_id=record["branch_id"] or "",
+            proposition=Proposition.model_validate_json(record["proposition"]),
+            status=FactStatus(record["status"] or "asserted"),
+            confidence=record["confidence"] if record["confidence"] is not None else 1.0,
+            provenance_id=record["provenance_id"] or "",
+            created_revision=record["created_revision"] or 0,
+            closed_revision=record["closed_revision"],
+            valid_from=datetime.fromisoformat(record["valid_from"])
+            if record["valid_from"]
+            else None,
+            valid_until=(
+                datetime.fromisoformat(record["valid_until"]) if record["valid_until"] else None
+            ),
+        )
+
+    async def get_fact(self, *, workspace_id: str, project_id: str, fact_id: str) -> Fact | None:
+        with self._manager.driver.session() as session:
+            record = session.run(
+                f"""
+                MATCH (f:Fact {{workspace_id: $workspace_id, project_id: $project_id, id: $id}})
+                RETURN {self._FACT_RETURN}
+                """,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                id=fact_id,
+            ).single()
+        return self._to_fact(record) if record is not None else None
+
+    async def list_facts(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        include_closed: bool = False,
+        subject_id: str | None = None,
+        predicate: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[Fact]:
+        closed_clause = "" if include_closed else "AND coalesce(f.status, 'asserted') = 'asserted'"
+        subject_clause = "AND f.subject_id = $subject_id" if subject_id else ""
+        predicate_clause = "AND f.predicate = $predicate" if predicate else ""
+        with self._manager.driver.session() as session:
+            records = session.run(
+                f"""
+                MATCH (f:Fact {{workspace_id: $workspace_id, project_id: $project_id}})
+                WHERE true {closed_clause} {subject_clause} {predicate_clause}
+                RETURN {self._FACT_RETURN}
+                ORDER BY f.created_revision, f.id
+                SKIP $offset LIMIT $limit
+                """,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                subject_id=subject_id,
+                predicate=predicate,
+                offset=offset,
+                limit=limit,
+            )
+            return [self._to_fact(record) for record in records]
+
+    _BELIEF_RETURN = (
+        "b.id AS id, b.workspace_id AS workspace_id, b.project_id AS project_id, "
+        "b.branch_id AS branch_id, b.holder_entity_id AS holder_entity_id, "
+        "b.proposition AS proposition, b.confidence AS confidence, "
+        "b.acquisition_provenance_id AS acquisition_provenance_id, "
+        "b.source_ref AS source_ref, "
+        "b.created_revision AS created_revision, b.closed_revision AS closed_revision"
+    )
+
+    @staticmethod
+    def _to_belief(record: Any) -> Belief:
+        return Belief(
+            id=record["id"],
+            workspace_id=record["workspace_id"],
+            project_id=record["project_id"],
+            branch_id=record["branch_id"] or "",
+            holder_entity_id=record["holder_entity_id"],
+            proposition=Proposition.model_validate_json(record["proposition"]),
+            confidence=record["confidence"] if record["confidence"] is not None else 1.0,
+            acquisition_provenance_id=record["acquisition_provenance_id"] or "",
+            source_ref=record["source_ref"],
+            created_revision=record["created_revision"] or 0,
+            closed_revision=record["closed_revision"],
+        )
+
+    async def get_belief(
+        self, *, workspace_id: str, project_id: str, belief_id: str
+    ) -> Belief | None:
+        with self._manager.driver.session() as session:
+            record = session.run(
+                f"""
+                MATCH (b:Belief {{workspace_id: $workspace_id, project_id: $project_id, id: $id}})
+                RETURN {self._BELIEF_RETURN}
+                """,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                id=belief_id,
+            ).single()
+        return self._to_belief(record) if record is not None else None
+
+    async def list_beliefs(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        holder_entity_id: str | None = None,
+        include_closed: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[Belief]:
+        closed_clause = "" if include_closed else "AND coalesce(b.status, 'asserted') = 'asserted'"
+        holder_clause = "AND b.holder_entity_id = $holder_entity_id" if holder_entity_id else ""
+        with self._manager.driver.session() as session:
+            records = session.run(
+                f"""
+                MATCH (b:Belief {{workspace_id: $workspace_id, project_id: $project_id}})
+                WHERE true {closed_clause} {holder_clause}
+                RETURN {self._BELIEF_RETURN}
+                ORDER BY b.created_revision, b.id
+                SKIP $offset LIMIT $limit
+                """,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                holder_entity_id=holder_entity_id,
+                offset=offset,
+                limit=limit,
+            )
+            return [self._to_belief(record) for record in records]
+
+    _EVENT_RETURN = (
+        "e.id AS id, e.workspace_id AS workspace_id, e.project_id AS project_id, "
+        "e.branch_id AS branch_id, e.event_kind AS kind, e.name AS name, "
+        "e.participants AS participants, e.locations AS locations, e.causes AS causes, "
+        "e.outcomes AS outcomes, e.world_position AS world_position, "
+        "e.provenance_id AS provenance_id, e.created_revision AS created_revision"
+    )
+
+    @staticmethod
+    def _to_event(record: Any) -> Event:
+        def _load(value: Any, default: Any) -> Any:
+            return json.loads(value) if value else default
+
+        return Event(
+            id=record["id"],
+            workspace_id=record["workspace_id"],
+            project_id=record["project_id"],
+            branch_id=record["branch_id"] or "",
+            kind=record["kind"],
+            name=record["name"],
+            participants=[EventParticipant(**p) for p in _load(record["participants"], [])],
+            location_ids=_load(record["locations"], []),
+            cause_ids=_load(record["causes"], []),
+            outcome_ids=_load(record["outcomes"], []),
+            world_position=record["world_position"] or None,
+            provenance_id=record["provenance_id"] or "",
+            created_revision=record["created_revision"] or 0,
+        )
+
+    async def get_event(self, *, workspace_id: str, project_id: str, event_id: str) -> Event | None:
+        with self._manager.driver.session() as session:
+            record = session.run(
+                f"""
+                MATCH (e:Event {{workspace_id: $workspace_id, project_id: $project_id, id: $id}})
+                RETURN {self._EVENT_RETURN}
+                """,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                id=event_id,
+            ).single()
+        return self._to_event(record) if record is not None else None
+
+    async def list_events(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        include_retired: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[Event]:
+        retired_clause = "" if include_retired else "AND coalesce(e.lifecycle, 'active') = 'active'"
+        with self._manager.driver.session() as session:
+            records = session.run(
+                f"""
+                MATCH (e:Event {{workspace_id: $workspace_id, project_id: $project_id}})
+                WHERE true {retired_clause}
+                RETURN {self._EVENT_RETURN}
+                ORDER BY e.created_revision, e.id
+                SKIP $offset LIMIT $limit
+                """,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                offset=offset,
+                limit=limit,
+            )
+            return [self._to_event(record) for record in records]

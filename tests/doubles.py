@@ -1520,6 +1520,9 @@ class InMemoryCanonWriter:
         self.markers: dict[str, CommitMarker] = {}
         self.objects: dict[tuple[str, str, str], dict] = {}
         self.entities: dict[tuple[str, str, str], dict] = {}
+        self.facts: dict[tuple[str, str, str], dict] = {}
+        self.beliefs: dict[tuple[str, str, str], dict] = {}
+        self.events: dict[tuple[str, str, str], dict] = {}
         self.applied_operations: list = []
         # When set, apply fails after this many operations (crash simulation),
         # leaving a partially applied graph and no marker.
@@ -1552,6 +1555,9 @@ class InMemoryCanonWriter:
             }
             self._apply_entity(
                 workspace_id, project_id, branch_id, schema_version_id, revision, operation
+            )
+            self._apply_assertion(
+                workspace_id, project_id, branch_id, revision, operation, commit_id
             )
             self.applied_operations.append(operation)
             applied += 1
@@ -1598,6 +1604,78 @@ class InMemoryCanonWriter:
             if entity is not None:
                 entity["lifecycle"] = "retired"
                 entity["retired_revision"] = revision
+
+    def _apply_assertion(self, ws, pr, branch_id, revision, operation, commit_id) -> None:
+        from backend.domain.operations import (
+            AmendEventOp,
+            AssertBeliefOp,
+            AssertFactOp,
+            CloseBeliefOp,
+            CloseFactOp,
+            CreateEventOp,
+            RetireEventOp,
+        )
+
+        key = (ws, pr, operation.id)
+        if isinstance(operation, AssertFactOp):
+            self.facts[key] = {
+                "branch_id": branch_id,
+                "proposition": operation.proposition.model_copy(deep=True),
+                "status": "asserted",
+                "confidence": operation.confidence,
+                "provenance_id": f"prov_{commit_id}",
+                "created_revision": revision,
+                "closed_revision": None,
+                "valid_from": operation.valid_from,
+                "valid_until": operation.valid_until,
+            }
+        elif isinstance(operation, CloseFactOp):
+            fact = self.facts.get(key)
+            if fact is not None:
+                fact["status"] = "closed"
+                fact["closed_revision"] = revision
+        elif isinstance(operation, AssertBeliefOp):
+            self.beliefs[key] = {
+                "branch_id": branch_id,
+                "holder_entity_id": operation.holder_entity_id,
+                "proposition": operation.proposition.model_copy(deep=True),
+                "confidence": operation.confidence,
+                "acquisition_provenance_id": f"prov_{commit_id}",
+                "source_ref": operation.source_ref,
+                "status": "asserted",
+                "created_revision": revision,
+                "closed_revision": None,
+            }
+        elif isinstance(operation, CloseBeliefOp):
+            belief = self.beliefs.get(key)
+            if belief is not None:
+                belief["status"] = "closed"
+                belief["closed_revision"] = revision
+        elif isinstance(operation, CreateEventOp):
+            self.events[key] = {
+                "branch_id": branch_id,
+                "kind": operation.kind,
+                "name": operation.name,
+                "participants": [p.model_copy(deep=True) for p in operation.participants],
+                "location_ids": list(operation.location_ids),
+                "cause_ids": list(operation.cause_ids),
+                "outcome_ids": list(operation.outcome_ids),
+                "world_position": operation.world_position,
+                "provenance_id": f"prov_{commit_id}",
+                "created_revision": revision,
+                "lifecycle": "active",
+            }
+        elif isinstance(operation, AmendEventOp):
+            event = self.events.get(key)
+            if event is not None:
+                if operation.name is not None:
+                    event["name"] = operation.name
+                if operation.world_position is not None:
+                    event["world_position"] = operation.world_position
+        elif isinstance(operation, RetireEventOp):
+            event = self.events.get(key)
+            if event is not None:
+                event["lifecycle"] = "retired"
 
     def _entity(self, key):
         from backend.domain.canon.entities import CanonEntity
@@ -1667,6 +1745,142 @@ class InMemoryCanonWriter:
             )
             if needle in entity.name.lower()
         ]
+
+    def _fact(self, key):
+        from backend.domain.canon.assertions import Fact, FactStatus
+
+        data = self.facts.get(key)
+        if data is None:
+            return None
+        return Fact(
+            id=key[2],
+            workspace_id=key[0],
+            project_id=key[1],
+            branch_id=data["branch_id"],
+            proposition=data["proposition"],
+            status=FactStatus(data["status"]),
+            confidence=data["confidence"],
+            provenance_id=data["provenance_id"],
+            created_revision=data["created_revision"],
+            closed_revision=data["closed_revision"],
+            valid_from=data["valid_from"],
+            valid_until=data["valid_until"],
+        )
+
+    async def get_fact(self, *, workspace_id, project_id, fact_id):
+        return self._fact((workspace_id, project_id, fact_id))
+
+    async def list_facts(
+        self,
+        *,
+        workspace_id,
+        project_id,
+        include_closed=False,
+        subject_id=None,
+        predicate=None,
+        limit=50,
+        offset=0,
+    ):
+        items = []
+        for key, data in sorted(
+            self.facts.items(), key=lambda kv: (kv[1]["created_revision"], kv[0][2])
+        ):
+            if key[0] != workspace_id or key[1] != project_id:
+                continue
+            if not include_closed and data["status"] != "asserted":
+                continue
+            proposition = data["proposition"]
+            if subject_id is not None and proposition.subject_id != subject_id:
+                continue
+            if predicate is not None and proposition.predicate != predicate:
+                continue
+            items.append(self._fact(key))
+        return items[offset : offset + limit]
+
+    def _belief(self, key):
+        from backend.domain.canon.assertions import Belief
+
+        data = self.beliefs.get(key)
+        if data is None:
+            return None
+        return Belief(
+            id=key[2],
+            workspace_id=key[0],
+            project_id=key[1],
+            branch_id=data["branch_id"],
+            holder_entity_id=data["holder_entity_id"],
+            proposition=data["proposition"],
+            confidence=data["confidence"],
+            acquisition_provenance_id=data["acquisition_provenance_id"],
+            source_ref=data.get("source_ref"),
+            created_revision=data["created_revision"],
+            closed_revision=data["closed_revision"],
+        )
+
+    async def get_belief(self, *, workspace_id, project_id, belief_id):
+        return self._belief((workspace_id, project_id, belief_id))
+
+    async def list_beliefs(
+        self,
+        *,
+        workspace_id,
+        project_id,
+        holder_entity_id=None,
+        include_closed=False,
+        limit=50,
+        offset=0,
+    ):
+        items = []
+        for key, data in sorted(
+            self.beliefs.items(), key=lambda kv: (kv[1]["created_revision"], kv[0][2])
+        ):
+            if key[0] != workspace_id or key[1] != project_id:
+                continue
+            if not include_closed and data["status"] != "asserted":
+                continue
+            if holder_entity_id is not None and data["holder_entity_id"] != holder_entity_id:
+                continue
+            items.append(self._belief(key))
+        return items[offset : offset + limit]
+
+    def _event(self, key):
+        from backend.domain.canon.events import Event
+
+        data = self.events.get(key)
+        if data is None:
+            return None
+        return Event(
+            id=key[2],
+            workspace_id=key[0],
+            project_id=key[1],
+            branch_id=data["branch_id"],
+            kind=data["kind"],
+            name=data["name"],
+            participants=list(data["participants"]),
+            location_ids=list(data["location_ids"]),
+            cause_ids=list(data["cause_ids"]),
+            outcome_ids=list(data["outcome_ids"]),
+            world_position=data["world_position"],
+            provenance_id=data["provenance_id"],
+            created_revision=data["created_revision"],
+        )
+
+    async def get_event(self, *, workspace_id, project_id, event_id):
+        return self._event((workspace_id, project_id, event_id))
+
+    async def list_events(
+        self, *, workspace_id, project_id, include_retired=False, limit=50, offset=0
+    ):
+        items = []
+        for key, data in sorted(
+            self.events.items(), key=lambda kv: (kv[1]["created_revision"], kv[0][2])
+        ):
+            if key[0] != workspace_id or key[1] != project_id:
+                continue
+            if not include_retired and data["lifecycle"] != "active":
+                continue
+            items.append(self._event(key))
+        return items[offset : offset + limit]
 
     async def health(self) -> bool:
         return True

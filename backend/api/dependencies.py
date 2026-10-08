@@ -12,6 +12,7 @@ from backend.ports import (
     VectorStorePort,
 )
 from backend.services.auth_service import AuthService
+from backend.services.canon_assertion_service import CanonAssertionService
 from backend.services.canon_entity_service import CanonEntityService
 from backend.services.character_service import CharacterService
 from backend.services.credential_service import CredentialService
@@ -82,3 +83,9 @@ def get_canon_entity_service(
     container: Container = Depends(get_container),
 ) -> CanonEntityService:
     return container.canon_entity_service
+
+
+def get_canon_assertion_service(
+    container: Container = Depends(get_container),
+) -> CanonAssertionService:
+    return container.canon_assertion_service

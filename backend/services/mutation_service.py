@@ -42,6 +42,7 @@ from backend.domain.operations import (
     RetireEntityOp,
     UpdateEntityOp,
     canonicalize_operations,
+    operation_reference_ids,
     operations_checksum,
     parse_operation,
     resolve_temporary_ids,
@@ -183,23 +184,33 @@ class MutationService:
             if isinstance(operation, CreateEntityOp):
                 created_types[operation.id] = operation.type
 
+        # Resolve pre-existing referenced entities (co-created ids take precedence).
+        existing_types: dict[str, str] = {}
+        referenced: set[str] = set()
+        for operation in operations:
+            referenced.update(operation_reference_ids(operation))
+            referenced.add(operation.id)
+        for entity_id in referenced:
+            if entity_id in created_types:
+                continue
+            if self._entity_lookup is not None:
+                entity = self._entity_lookup(mutation.workspace_id, mutation.project_id, entity_id)
+            else:
+                entity = await self._writer.get_entity(
+                    workspace_id=mutation.workspace_id,
+                    project_id=mutation.project_id,
+                    entity_id=entity_id,
+                )
+            if entity is not None:
+                existing_types[entity_id] = entity.type
+
         def subject_type(entity_id: str) -> str | None:
             if entity_id in created_types:
                 return created_types[entity_id]
-            if self._entity_lookup is not None:
-                entity = self._entity_lookup(mutation.workspace_id, mutation.project_id, entity_id)
-                return entity.type if entity is not None else None
-            return None
+            return existing_types.get(entity_id)
 
         def exists(entity_id: str) -> bool:
-            if entity_id in created_types:
-                return True
-            if self._entity_lookup is not None:
-                return (
-                    self._entity_lookup(mutation.workspace_id, mutation.project_id, entity_id)
-                    is not None
-                )
-            return True  # no lookup available: skip existence assertions
+            return entity_id in created_types or entity_id in existing_types
 
         for index, operation in enumerate(operations):
             try:

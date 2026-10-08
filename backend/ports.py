@@ -11,7 +11,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
+from backend.domain.canon.assertions import Belief, Fact
 from backend.domain.canon.entities import CanonEntity
+from backend.domain.canon.events import Event
 from backend.domain.commit import ApplyOutcome, CommitMarker
 from backend.domain.credentials import Credential, CredentialProvider
 from backend.domain.identity import IdentityClaims, LoginAttempt, Role, Session, User
@@ -688,5 +690,50 @@ class CanonWriterPort(Protocol):
         include_retired: bool = False,
         limit: int = 50,
     ) -> list[CanonEntity]: ...
+
+    async def get_fact(
+        self, *, workspace_id: str, project_id: str, fact_id: str
+    ) -> Fact | None: ...
+
+    async def list_facts(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        include_closed: bool = False,
+        subject_id: str | None = None,
+        predicate: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[Fact]: ...
+
+    async def get_belief(
+        self, *, workspace_id: str, project_id: str, belief_id: str
+    ) -> Belief | None: ...
+
+    async def list_beliefs(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        holder_entity_id: str | None = None,
+        include_closed: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[Belief]: ...
+
+    async def get_event(
+        self, *, workspace_id: str, project_id: str, event_id: str
+    ) -> Event | None: ...
+
+    async def list_events(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        include_retired: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[Event]: ...
 
     async def health(self) -> bool: ...

@@ -54,6 +54,7 @@ class Belief(BaseModel):
     proposition: Proposition
     confidence: float = 1.0
     acquisition_provenance_id: str
+    source_ref: str | None = None
     created_revision: int
     closed_revision: int | None = None
 
