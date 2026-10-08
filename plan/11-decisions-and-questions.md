@@ -1,6 +1,6 @@
 # Decisions and remaining questions
 
-The project owner answered the original architecture questionnaires on 2026-10-05. On 2026-10-06 the product direction shifted from subscription SaaS toward an open-source/free product with an invite-only multi-tenant portfolio deployment. ADR-008 records the distribution pivot; ADR-009 accepts shared identity and invite-only tenancy. On 2026-10-07 ADR-010 accepted first-class multimodal context and a shared embedding-space boundary.
+The project owner answered the original architecture questionnaires on 2026-10-05. On 2026-10-06 the product direction shifted from subscription SaaS toward an open-source/free product with an invite-only multi-tenant portfolio deployment. ADR-008 records the distribution pivot; ADR-009 accepts shared identity and invite-only tenancy. On 2026-10-07 ADR-010 accepted first-class multimodal context and a shared embedding-space boundary. On 2026-10-08 ADR-012 superseded ADR-011's split authority: PostgreSQL owns journal plus normalized canon, while Neo4j is replayable. ADR-012 retains the author-review and root-branch boundaries. ADR-013 accepts warning-default declarative story invariants while keeping built-in integrity rules permanently blocking.
 
 ## Current direction
 
@@ -26,19 +26,32 @@ The project owner answered the original architecture questionnaires on 2026-10-0
 | Schema | Fixed core plus dynamically registered, runtime-compiled typed project extensions |
 | POV secrets | Author may include secrets; prompts separate author truth from POV knowledge and a second pass checks leakage |
 | Manuscript | Versioned structured editor document is canonical, with deterministic Markdown/plain-text projections |
-| Operational store | PostgreSQL remains the operational store for projects, jobs, journal, reviews, outbox, and audit |
+| Operational and canon store | PostgreSQL owns projects, jobs, reviews, the immutable journal, normalized/versioned canon, branch heads, outbox, and audit |
+| Derived graph | Neo4j is an optional replayable projection with an applied-revision watermark; it is not part of canonical commit success |
+| Phase 2 authoring | Low-impact author edits use the journal with recorded author approval; model/import/bulk/protected changes require a distinct human decision |
+| Phase 2 temporal scope | One root branch plus system revisions; fork/merge and world/narrative-time behavior remain Phase 3 |
+| Phase 2 media scope | Identity, immutable-version metadata, authority/provenance, explicit links, and archives only; secure ingestion/processing remains later |
 | Prototype data | Disposable; deterministic seed data replaces preservation of current databases |
 | Consistency | Deterministic checks every generation; model-assisted checks are user-triggered by default |
+| Story invariants | Safe declarative rules; author rules default to warnings and require explicit enablement to block; built-in integrity rules are permanently blocking and non-suppressible (ADR-013) |
+| Canon reasoning | One point-in-time/history/provenance query boundary serves UI, rules, exports, review agents, and MCP |
+| Reader knowledge | Track reviewed disclosures separately from character beliefs and objective canon |
+| External assistants | Read-only scoped MCP queries; all write-like actions return reviewable proposals and never commit directly |
 
 ## Consequences for implementation
 
 - Shared OIDC, invitations, workspace isolation, and safe self-hosting precede storing real hosted manuscripts; commercial infrastructure remains out of scope.
-- PostgreSQL with pgvector and Neo4j remain required development infrastructure; the pivot does not reopen Phase 0 storage choices.
+- PostgreSQL with pgvector remains required development infrastructure. Neo4j is retained while its
+  traversal value is evaluated, but ADR-012 makes it optional/rebuildable rather than canonical.
 - The core application must function without a project-operated cloud dependency and degrade clearly when no model is configured.
 - Local inference is a direct adapter for self-hosting. Using a user's local model from the hosted portfolio instance would require a separately secured companion and remains later work.
 - Provider calls record model, token usage, latency, and estimated/actual provider cost where available, but no internal balance or markup policy is required.
 - The structured manuscript schema, scene-version lineage, projections, and patch protocol precede the full editor UI.
 - Consistency model calls remain opt-in/default-off automation, with recommendations and provider-usage estimates rather than platform-credit prices.
+- The text-first import/extraction/review probe follows Phase 2 and precedes deeper branch,
+  generation, and multimodal product work.
+- Author finding suppressions are versioned and dependency-scoped; they cannot weaken permanent
+  integrity, authorization, schema, or journal checks.
 - Telemetry is opt-in; manuscript text is never sent anywhere except a provider explicitly invoked by the author.
 - Original media remains in tenant-scoped object storage and is sent to a remote model only through an explicit, previewed operation. Captions/transcripts and vectors are derived, not canon.
 - The prototype's MiniLM `vector(384)` index must migrate through a versioned rebuild; incompatible embedding spaces are never mixed.

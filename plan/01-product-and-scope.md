@@ -23,6 +23,9 @@ The author chooses an autonomy profile. AI may draft, analyze, retrieve, and pro
 7. Review proposed state changes before accepting them into canon.
 8. Explore alternatives on a branch without damaging the main timeline.
 9. Diagnose contradictions with evidence and choose a resolution.
+10. Express book-specific continuity rules and scene conditions as safe declarative checks.
+11. Ask what was true, who knew it, why it was accepted, and what a proposed change would affect.
+12. Export spoiler-safe bibles and use external assistants through the same scoped proposal boundary.
 
 ## Release-one workflow
 
@@ -77,6 +80,7 @@ This is the minimum coherent product. A questionnaire without the review-and-com
 - Fine-tuning custom models
 - Unbounded automatic canon commits without autonomy policy, audit, and protected-action review
 - Arbitrary user-authored executable rules
+- Unreviewed assistant, import, extraction, propagation, or MCP writes to accepted canon
 - Mobile-native applications
 - Marketplace or public sharing of worlds
 - Generative image, music, voice-cloning, or video creation; release one consumes author-provided media as context

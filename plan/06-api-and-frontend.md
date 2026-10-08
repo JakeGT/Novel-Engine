@@ -55,6 +55,12 @@ Use a stable problem format with `type`, `title`, `status`, `code`, `detail`, `f
 - `/api/v1/projects/{project_id}/assets/search`
 - `/api/v1/projects/{project_id}/branches`
 - `/api/v1/projects/{project_id}/timeline`
+- `/api/v1/projects/{project_id}/canon-query`
+- `/api/v1/projects/{project_id}/revisions`, `/tags`, `/revert-proposals`
+- `/api/v1/projects/{project_id}/invariants`
+- `/api/v1/projects/{project_id}/aliases`
+- `/api/v1/projects/{project_id}/disclosures`
+- `/api/v1/projects/{project_id}/suppressions`
 - `/api/v1/projects/{project_id}/stories`
 - `/api/v1/projects/{project_id}/scene-plans`
 - `/api/v1/projects/{project_id}/scenes`
@@ -90,9 +96,33 @@ returns storage credentials, stable public object URLs, or another tenant's proc
 
 `POST .../mutation-sets/{id}/decisions` records accept/edit/reject decisions per operation. `POST .../mutation-sets/{id}/commit` requires expected branch head and returns the new revision or a conflict response.
 
+Before commit, an impact-preview endpoint evaluates the mutation against a scratch overlay and
+returns known affected scenes/plans/manifests, invariant and scene-condition results, stale
+findings/suppressions, and dependency-coverage gaps. Preview never authorizes the later commit.
+
+### Canon query, history, and revert
+
+Point-in-time query endpoints require explicit branch/revision and optional world/narrative/POV
+coordinates. Results report their effective scope and projection watermark. Provenance responses
+link state to commit, mutation operation, review decision, source scene/version, and evidence.
+Revert requests create compensating mutation sets and surface intervening conflicts; they never
+delete history. Tags are immutable named branch/revision pointers.
+
 ### Consistency run
 
 `POST .../consistency-runs` accepts a prose/scene/project scope, profile, check categories, spend cap, and optional schedule context. It returns a job/run ID. Findings expose exact source revisions and evidence. Correction requests create prose diffs or mutation proposals; they do not mutate accepted data directly.
+
+Invariant creation defaults to warning behavior. Enabling blocking requires a separate explicit
+authorized action and rule-version publication. Eligible finding dismissal may create a scoped,
+versioned suppression with rationale and expiry; built-in integrity failures cannot expose that
+action.
+
+### MCP transport
+
+After canon query contracts stabilize, a read-only MCP server exposes the same scoped query,
+history, provenance, and visibility operations. Authenticated server context establishes tenancy.
+Any write-like MCP operation can create only a mutation/patch proposal and cannot commit or modify
+review and invariant policy.
 
 ## Frontend information architecture
 
@@ -126,7 +156,9 @@ returns storage credentials, stable public object URLs, or another tenant's proc
 ### Story workspace
 
 - arcs, beats, and scene plans
-- unresolved threads, foreshadow/payoff, requirements, and intended changes
+- typed scene preconditions/postconditions and character-arc state paths
+- reader disclosure/reveal planner, irony map, and spoiler position
+- unresolved threads, Chekhov-debt view, foreshadow/payoff, requirements, and intended changes
 - timeline/narrative-order views
 - readiness indicators based on required world state
 
@@ -140,6 +172,8 @@ returns storage credentials, stable public object URLs, or another tenant's proc
 - draft variants and revision comparison
 - consistency findings
 - consistency profile, preflight constraints, and correction proposals
+- story invariant results, scoped suppressions, and postcondition coverage
+- alias/epithet candidate correction with positive/negative resolution feedback
 - extracted mutation review and commit panel
 
 ### History workspace
@@ -147,7 +181,16 @@ returns storage credentials, stable public object URLs, or another tenant's proc
 - branch graph
 - revision log
 - mutation and provenance inspector
+- point-in-time query, revision comparison, immutable tags, and evidence-level blame
+- impact preview and compensating revert proposal
 - branch comparison/merge workflow
+
+### Story bible and audience exports
+
+- generate a character/location/timeline/recap snapshot at branch, revision, narrative position,
+  and author/reader/character viewpoint
+- preview exactly which propositions and media-derived details are included or withheld
+- share a beta-reader artifact without granting full project viewer access
 
 ## Frontend technical direction
 
@@ -167,7 +210,7 @@ State ownership:
 - editor drafts remain local until explicitly saved
 - branch/timeline context lives in route/workspace state
 - job progress comes from event streams with polling fallback
-- no duplicated client-side canonical graph
+- no duplicated client-side canonical state
 
 ## UX safeguards
 
@@ -183,3 +226,7 @@ State ownership:
 - Treat machine captions, transcripts, OCR, and visual/audio observations as reviewable derived material, not canon.
 - Show source/licence/attribution and warn before remote-provider transfer of original media.
 - Preserve manual prose edits when rerunning extraction or generation.
+- Show derived-view watermarks and dependency-coverage gaps rather than presenting stale or partial
+  impact analysis as complete.
+- Built-in integrity failures never offer disable, suppression, or override controls. Author story
+  invariants visibly default to warning and require an explicit action to become blocking.

@@ -58,6 +58,15 @@ Offline contract tests use recorded or synthetic structured responses. Live-prov
 | Credentials | BYOK encryption, worker-only access, rotation, deletion, and redaction |
 | Autonomy | mandatory approvals cannot be bypassed by user/model/job state |
 | Consistency | tier rules, incremental invalidation, evidence, staleness, override audit |
+| Story invariants | warning default, explicit blocking enablement, example cases, deterministic completeness, permanent built-in integrity enforcement |
+| Canon queries | branch/time/revision/POV state, history differences, evidence provenance, tag immutability, compensating revert conflicts |
+| Reader knowledge | disclosure order, irony joins, premature reveal, setup/payoff, edition/audience isolation |
+| Assertions/beliefs | lie/mistake/unreliable narration handling, explicit perception, trust-scoped propagation proposals, no direct belief write |
+| Resolution memory | time/POV-scoped aliases, positive/negative correction examples, no historical/global silent remap |
+| Derived views | watermark/lag, duplicate delivery, replay equivalence, dependency coverage, impact preview parity |
+| Suppressions | scope/expiry/dependency staleness, audit, and inability to suppress integrity failures |
+| MCP | authenticated tenant scope, POV filters, read parity, proposal-only writes, no commit/policy bypass |
+| Spoiler exports | narrative-position/viewpoint filtering, secret/media leakage, artifact-specific sharing |
 | Export | round trip, schema version, checksum, missing derived data rebuild |
 
 ## Test data
@@ -73,6 +82,11 @@ Create a compact reference world containing:
 - an unresolved thread and planned payoff
 - a selected author-only secret that must not leak into POV knowledge
 - deterministic continuity defects and labeled model-critic cases
+- warning and explicitly blocking story invariants with positive and `should_reject` examples
+- a narrated lie, mistaken report, explicit overhearer, and trust-dependent proposed belief
+- reader disclosures, a premature reveal, an unresolved setup, and a payoff
+- time/POV-scoped epithets plus reviewed positive and negative entity-resolution examples
+- sufficient dialogue for a stable voice baseline and one intentional voice shift
 - branch/time-scoped character portraits, landscapes, objects/maps, multi-speaker audio, timestamped video, and visually similar hard negatives
 - a secret-bearing asset and misleading machine observation that must not become accessible truth or canon
 
@@ -97,6 +111,7 @@ For a release candidate:
 - export/restore drill passes
 - migration from the previous supported version passes
 - AI evaluation metrics meet the approved baseline
+- journal replay reproduces purpose-built read models and spoiler-safe exports at tagged revisions
 - multimodal retrieval, provider-fallback fidelity, and media-consistency metrics meet the approved baseline
 - security dependency scan has no unaccepted critical issue
 - tenant-isolation, identity/invitation, provider-usage, and key-redaction suites pass

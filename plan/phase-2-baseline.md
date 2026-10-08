@@ -1,7 +1,7 @@
 # Phase 2 baseline and compatibility rules
 
 - Status: Captured 2026-10-08 at commit `5822303` (Phase 1 hardening complete)
-- Related: ADR-011, `phase-2-todo.md`
+- Related: ADR-012 (supersedes ADR-011), `phase-2-todo.md`
 
 This records the starting point Phase 2 builds on, so later evidence can prove
 what changed.
@@ -43,8 +43,9 @@ what changed.
 ## Deferred from Phase 2 (named so APIs cannot imply them)
 
 Branch forks/overlays/merges and world/narrative-time evaluation (Phase 3); POV
-knowledge filtering (Phase 3); scene/prose generation and consistency critics
-(Phase 4+); hosted media upload, scanning, transcoding, captioning, transcription,
+knowledge filtering (Phase 3); story-invariant authoring, scene contracts, suppressions, and the
+text-first manuscript/extraction workflow (Phase 2.5); scene/prose generation and consistency
+critics (Phase 4+); hosted media upload, scanning, transcoding, captioning, transcription,
 segmentation, multimodal embeddings, and provider media delivery (Phase 4+, per
 ADR-010); real-time co-editing/CRDTs; a general background job system beyond the
 commit outbox/reconciler seam.

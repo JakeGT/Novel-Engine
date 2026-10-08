@@ -40,6 +40,9 @@ Avoid storing only rendered HTML or an editor-vendor-specific opaque format. The
 - Use operation/diff history for local undo while immutable versions provide durable provenance.
 - Represent AI corrections as reviewable patches anchored to version/range and reject them when the base is stale.
 - Entity mentions survive ordinary text edits and expose broken-link repair when anchors are deleted or pasted as plain text.
+- Alias and epithet suggestions use the shared branch/time/narrative/POV-scoped resolver. Accepting
+  or rejecting a candidate records a bounded positive or negative resolution example rather than
+  silently rewriting historical extraction.
 
 For initial shared projects, optimistic concurrency and diff-based conflict review are acceptable. Real-time collaboration would require a CRDT/OT decision and editor architecture ADR.
 
@@ -102,6 +105,14 @@ ranking preference.
 
 ## External editor integrations
 
+### Paste and Markdown intake
+
+The first manuscript intake path precedes generation: paste or import Markdown into an immutable
+source/scene version, preserve explicit entity marks where present, run bounded extraction, resolve
+aliases, and present confidence-tiered grouped proposals. The author can commit reviewed changes
+without configuring a model generator. Imports retain a loss/ambiguity report and exact source
+evidence.
+
 ### Google Docs
 
 Treat as an explicit synchronization/import-export workflow unless a later ADR makes it canonical. Required design:
@@ -132,6 +143,10 @@ Provide reliable versioned import/export and sidecar metadata for entity IDs whe
 ## Export and ownership
 
 Authors can export the manuscript without AI metadata in common readable formats, plus a full fidelity project archive containing versions, annotations, provenance, plans, and canon. Identity-provider or hosted-service failure must not trap author prose. Published/exported artefacts never require Novel Engine to remain readable.
+
+Spoiler-safe story-bible exports are separate derived artifacts. They bind branch, canonical
+revision, narrative position, viewpoint/audience, and visibility-policy version in their manifest,
+and can be shared without granting access to later or author-only project state.
 
 ## Open implementation decisions
 

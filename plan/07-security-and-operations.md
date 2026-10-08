@@ -22,6 +22,10 @@ model spend/storage, dependency compromise, and loss/corruption of author data.
 - Validate uploads by size, type, extension, and content; scan when hosted.
 - Decode/transcode media in an isolated worker with pixel/frame/duration/decompression limits and allow-listed output formats.
 - Namespace object keys by verified scope, use short-lived authorized access, and never accept a client object key as authorization.
+- Treat MCP as an authenticated transport over the same application services. Server-derived
+  identity establishes workspace/project scope; tool arguments never establish tenant authority.
+- MCP and other assistant integrations may create proposals but cannot commit canon, change
+  invariant enforcement, or mint suppressions/overrides outside the ordinary authorized workflow.
 - Strip or separately protect EXIF/GPS and other metadata that is not required for authored provenance.
 - Apply request/body limits and timeouts.
 - Return redacted errors outside development.
@@ -42,6 +46,11 @@ model spend/storage, dependency compromise, and loss/corruption of author data.
 - Context traces may contain spoilers/secrets and inherit project access control.
 - Media previews, captions, transcripts, embeddings, perceptual derivatives, signed URLs, and context parts inherit the strictest source visibility and are excluded from content logs.
 - Exports are explicit, checksummed, and never uploaded implicitly.
+- Apply the same branch/revision/narrative-position/POV visibility gate to spoiler-safe exports,
+  MCP results, cached context prefixes, and UI queries. Artifact sharing is narrower than project
+  viewer membership and does not grant general project access.
+- Scope provider prompt caches by tenant/project/visibility policy. Never trade cache reuse for
+  cross-tenant, cross-POV, or secret-bearing prefix reuse.
 - Hosted mode requires encryption in transit and at rest plus tenant-isolation tests.
 
 ## Authentication and tenancy

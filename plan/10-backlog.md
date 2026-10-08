@@ -75,6 +75,12 @@ These IDs are retained for traceability from ADR-001. Identity and isolation wor
 - **CAN-008 · P0 — Mutation journal:** append, validate, commit, recover, and verify checksums.
 - **CAN-009 · P1 — Entity authoring API/UI:** typed list, search, create, edit, link, and retire workflows.
 - **CAN-010 · P1 — Export/import:** versioned complete project archive and clean restore validation.
+- **CAN-011 · P0 — Canon query/explanation boundary:** point-in-time state, revision differences,
+  belief holders, and provenance through commit/decision/source evidence, shared by every transport.
+- **CAN-012 · P1 — Tags and compensation:** immutable named revision pointers plus conflict-aware
+  compensating revert proposals through normal review.
+- **CAN-013 · P0 — Story invariant contract:** safe versioned predicate AST, dependencies, examples,
+  warning default, explicit blocking publication, and separation from permanent integrity rules.
 
 ## Time, branches, and visibility
 
@@ -86,6 +92,12 @@ These IDs are retained for traceability from ADR-001. Identity and isolation wor
 - **KNW-001 · P0 — Visibility policy:** public, private, secret, author-only, and character-accessible classification.
 - **KNW-002 · P0 — Knowledge acquisition:** beliefs linked to perception/report/inference events.
 - **KNW-003 · P1 — POV context gate:** deterministic filtering and leakage explanations.
+- **KNW-004 · P1 — Reader disclosure ledger:** explicit/implied disclosures by narrative position,
+  audience, source, and evidence with irony/reveal queries.
+- **KNW-005 · P1 — Narrated assertions and speech acts:** speaker/listener/overhearer, sincerity,
+  modality, visibility, and evidence without treating narration/dialogue as objective truth.
+- **KNW-006 · P1 — Belief propagation proposals:** deterministic perception/report/trust policies
+  that emit reviewed belief mutation sets and never write canon directly.
 
 ## Retrieval and memory
 
@@ -104,6 +116,10 @@ These IDs are retained for traceability from ADR-001. Identity and isolation wor
 - **CTX-012 · P1 — Cross-modal indexing:** generation-versioned pgvector rows for media segments, captions, transcripts, and prose; migrate away from fixed `vector(384)` without mixing spaces.
 - **CTX-013 · P1 — Typed model context:** `TextPart | ImagePart | AudioPart | VideoPart`, provider capability/limit negotiation, original-versus-derived fallback, budgeting, and exact delivery manifest.
 - **CTX-014 · P0 — Multimodal evaluations:** text↔media and media↔media retrieval, explicit-link precedence, 768/512 dimension comparison, hard negatives, resource use, rebuild, and leakage gates.
+- **CTX-015 · P1 — Cache-compatible rendering:** deterministic stable-to-volatile context sections,
+  scope-safe cache boundaries, and provider-reported cache usage.
+- **CTX-016 · P1 — Alias/epithet memory:** branch/time/narrative/POV-scoped bindings and reviewed
+  positive/negative resolution examples shared by editor, import, extraction, and checks.
 
 ## Multimodal assets
 
@@ -122,6 +138,12 @@ These IDs are retained for traceability from ADR-001. Identity and isolation wor
 - **STY-002 · P1 — Narrative threads:** open/progress/resolve with foreshadow/payoff links.
 - **STY-003 · P1 — Scene intent:** POV, location, participants, goal, conflict, rule pressure, required and intended state.
 - **STY-004 · P1 — Readiness rules:** explain unmet prerequisites and suggest author-controlled bridge plans.
+- **STY-005 · P1 — Scene contracts:** typed hard/soft preconditions, intended postconditions,
+  perceptions, disclosures, setups/payoffs, and deterministic readiness/postflight.
+- **STY-006 · P1 — Character arc paths:** project-defined qualitative/ordinal state dimensions,
+  beat targets, evidence expectations, and progress queries.
+- **STY-007 · P1 — Reveal planner:** reader/character irony map, premature-reveal checks, and
+  reading-distance Chekhov-debt view.
 - **SCN-001 · P0 — Job model:** persistence, leases, stages, progress, cancellation, retry, and usage.
 - **SCN-002 · P0 — AI provider port:** structured generation, prose, typed media context, multimodal embeddings, declared modality/limit capabilities, normalized errors/usage, fake adapter, and OpenRouter adapter.
 - **SCN-002A · P1 — Local inference connector:** authenticated device registration, outbound job channel, secure updates/revocation, capability discovery, and OpenAI-compatible Ollama/llama.cpp adapter.
@@ -148,6 +170,14 @@ These IDs are retained for traceability from ADR-001. Identity and isolation wor
 - **CON-012 · P0 — Consistency evaluations:** labeled defects, leakage, false positives, detection/latency/cost reporting.
 - **CON-013 · P0 — Deterministic bundle prototype:** implement prose review units, dependency graph, rule-specific grouping, token splitting, coverage manifest, preview, and fallbacks; benchmark against full-context and vector-only critics.
 - **CON-014 · P1 — Multimodal consistency:** deterministic checks against reviewed media facts plus bounded evidence-citing image/audio/video critic bundles, region/timestamp anchors, secret leakage, and fallback-quality reporting.
+- **CON-015 · P1 — Authored invariant runner:** validate examples, evaluate on commits/runs, cite
+  rule versions, and block only explicitly enabled deterministic rules.
+- **CON-016 · P1 — Scoped suppressions:** versioned rationale/scope/expiry/dependencies, staleness,
+  explicit calibration policy, and permanent exclusion of integrity failures.
+- **CON-017 · P1 — Impact preview:** scratch canonical overlay plus dependency coverage for scenes,
+  plans, invariants, findings, manifests, and projections.
+- **CON-018 · P2 — Voice fingerprints:** language/sample-aware dialogue and narration statistics,
+  advisory drift findings, and bounded critic escalation.
 
 ## Extraction and commit
 
@@ -158,6 +188,19 @@ These IDs are retained for traceability from ADR-001. Identity and isolation wor
 - **EXT-005 · P0 — Commit service:** optimistic head, idempotency, journal, Neo4j transaction, outbox.
 - **EXT-006 · P1 — Recovery:** reconcile pending/failed commits and requeue derived updates.
 - **EXT-007 · P1 — End-to-end loop:** commit scene, advance state, update threads, and inspect resulting history.
+- **EXT-008 · P0 — Extraction/resolution evaluation:** labeled reference-manuscript cases for
+  propositions, pronouns, aliases, epithets, narration, speech, disclosures, and review corrections.
+- **EXT-009 · P1 — Text-first manuscript intake:** paste/Markdown source version, explicit marks,
+  grouped/confidence-tiered extraction review, and commit without generation.
+
+## Query projections, exports, and integrations
+
+- **QRY-001 · P1 — Temporal read models:** outbox-built location, possession, relationship,
+  timeline, reader-disclosure, and dependency views with watermarks and replay verification.
+- **QRY-002 · P1 — Spoiler-safe bibles:** character/location/timeline/recap exports at branch,
+  revision, narrative position, and viewpoint with artifact-specific sharing and leakage tests.
+- **QRY-003 · P1 — Read-only MCP:** scoped canon/history/provenance tools over the application query
+  boundary; write-like tools produce proposals only and cannot commit or change policy.
 
 ## Operations and product quality
 

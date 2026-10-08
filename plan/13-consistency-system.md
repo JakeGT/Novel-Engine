@@ -20,6 +20,9 @@ The grouping/review harness takes architectural inspiration from Alibaba OpenCod
 - context manifest used to produce the prose
 - accepted canonical facts, events, constraints, and beliefs
 - POV knowledge ledger, including false beliefs and explicitly exposed author-only secrets
+- reader disclosure ledger at the checked narrative position
+- authored story invariants and scene pre/postconditions
+- narrated assertions, speech/perception evidence, and alias-resolution memory
 - unresolved narrative threads and promises
 - extracted but uncommitted mutation proposal
 - consistency policy/profile and previous check fingerprints
@@ -38,6 +41,8 @@ A `ConsistencyRun` records scope, input revisions, profile, stages, duration, mo
 - explanation and suggested correction options
 - status: open, accepted, dismissed, fixed, or superseded
 - author rationale when dismissed
+- cited story invariant or scene condition and exact rule version
+- active suppression/override identity, scope, expiry, and dependency fingerprint when applicable
 
 Findings remain attached to the exact prose/canon revisions checked. Editing either marks affected findings stale.
 
@@ -56,6 +61,8 @@ Checks include:
 - POV knowledge ledger distinguishes known, believed, unknown, and author-only facts
 - branch head and timeline selection are current
 - scene plan has required POV, location, purpose, and intended change fields
+- hard scene preconditions and explicitly blocking author story invariants hold on complete
+  deterministic inputs
 
 The generated constraint packet contains only relevant assertions and machine-readable rule IDs. It becomes part of the context manifest.
 
@@ -79,8 +86,18 @@ Checks include:
 - unmet scene-plan requirements or unintended state changes
 - duplicate, missing, or incompatible extracted mutations
 - unresolved thread progression and premature payoff/reveal
+- reader-disclosure order, explicit premature reveals, and payoff-without-setup
+- scene postcondition coverage
+- deterministic voice-profile drift where the sample-size/language gate is satisfied
+- author story invariants in warning mode and blocking rules whose extraction-dependent inputs could
+  not safely run in the commit transaction
 
-Not every prose statement needs an LLM. Entity mentions, numbers, dates, declared state changes, known predicates, and branch/time constraints should be normalized into facts and checked with domain rules/queries.
+Not every prose statement needs an LLM. Explicit entity marks, numbers, dates, declared scene
+outcomes, reviewed narrated assertions, known predicates, and branch/time constraints can be
+normalized and checked with domain rules/queries. Unmarked free prose still needs structured
+extraction before proposition-level checks; Tier 1 is model-free only for signals already expressed
+or deterministically parsed. Plans and UI must not describe all Tier 1 coverage as free of an
+extraction dependency.
 
 ## Tier 2 — Compact model-assisted critic
 
@@ -131,7 +148,11 @@ Suggested user-facing profiles:
 | Thorough | Tier 0 + Tier 1 + leakage Tier 2 | all Tier 2 passes | scheduled Tier 3 |
 | Custom | author-configured checks and spend caps | author-configured | author-configured |
 
-Blocking deterministic invariants cannot be disabled silently. Authors may override eligible findings with a recorded rationale.
+Built-in integrity invariants are permanently blocking and cannot be disabled, overridden, or
+suppressed. Author story invariants default to warnings; authors may explicitly publish a rule
+version as blocking. Only deterministic, current, complete evaluation may block a commit. Eligible
+story findings may be suppressed or intentionally overridden with versioned scope and rationale as
+defined by ADR-013.
 
 ## Incremental invalidation
 
@@ -145,6 +166,10 @@ Build a dependency index from facts/rules/entities/scene plans to prose versions
 - model and prompt version where applicable
 
 When prose or canon changes, enqueue only checks whose dependencies changed. Cache results for identical fingerprints. A deep audit can verify the incremental system and reveal missing dependencies.
+
+The same dependency index powers impact preview. Results classify definite dependencies,
+potential/heuristic dependencies, and uncovered categories so an incomplete index is never
+presented as exhaustive.
 
 ## Previous-prose retrieval
 
@@ -212,6 +237,13 @@ Rules are versioned code/config with declared:
 
 Project schema extensions may attach declarative constraints, but cannot upload executable code. Safe constraint forms include cardinality, allowed endpoints, value ranges/enums, required resources, incompatibilities, implication rules, and lifecycle transitions.
 
+Author story invariants use the same safe engine plus bounded proposition quantifiers and explicit
+world/narrative-position predicates. Rule versions carry positive and `should_reject` examples,
+which execute as validation tests and feed the consistency evaluation corpus.
+
+System integrity rules and author story rules have separate registries and enforcement policy. A
+project record cannot shadow a system rule ID or reduce its severity.
+
 ## User correction workflow
 
 For each finding, the author may:
@@ -224,6 +256,12 @@ For each finding, the author may:
 - mark intentional inconsistency/mystery with scope and rationale
 - dismiss a false positive, feeding evaluation data
 
+An eligible dismissal may create a versioned suppression scoped to a scene, character,
+rule/invariant, branch, or narrative range. It has a reason, expiry, dependency fingerprint, and
+author. A changed dependency or rule version marks it stale. Suppressions never apply to built-in
+integrity, authorization/isolation, schema/reference, or journal-consistency failures. Project
+threshold calibration is an explicit versioned policy change, never silent learning.
+
 Agent corrections always produce diffs and never overwrite the accepted prose version directly.
 
 ## Cost and quality controls
@@ -234,6 +272,8 @@ Agent corrections always produce diffs and never overwrite the accepted prose ve
 - skip unchanged evidence through fingerprints
 - prefer summaries for distant context, but fetch exact prose before issuing a high-severity finding
 - calibrate thresholds using labeled reference-world cases
+- compute language-aware voice fingerprints only after minimum sample sizes; use drift as advisory
+  triage for a bounded voice critic, not as literary truth
 - track precision, recall, false-positive dismissal, latency, and cost per finding
 
 ## Failure behavior

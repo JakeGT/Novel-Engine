@@ -66,14 +66,23 @@ Exit criteria:
 
 ## Phase 2 — Trustworthy canon
 
+Detailed execution plan: [`phase-2-todo.md`](phase-2-todo.md).
+
 Goal: authors can safely create and maintain isolated project canon.
 
 Work:
 
 - project aggregate and project-scoped repositories
+- PostgreSQL-authoritative immutable journal plus normalized/versioned canon; replayable Neo4j
+  projection with revision watermarks
 - fixed core schema and validated custom extensions
 - canonical entity/fact/belief/event models
 - revision and provenance model
+- canonical point-in-time/history query boundary, immutable revision tags, and compensating revert
+  proposals
+- invariant-evaluator seam separating permanent built-in integrity from warning-default author
+  story rules
+- dependency/read-model outbox conventions and visible projection watermarks
 - entity CRUD/search and relationship/fact editor APIs
 - media-asset identity, immutable source versions, authority/provenance, explicit domain links, and export semantics
 - mutation journal and atomic commit service
@@ -89,6 +98,34 @@ Exit criteria:
 - entities can be retired without losing history
 - project export round-trips into a clean environment
 
+## Phase 2.5 — Text-first author workflow probe
+
+Goal: validate extraction quality, entity resolution, review ergonomics, and authored continuity
+rules with real prose before broader generation and multimodal scope.
+
+Work:
+
+- paste and Markdown manuscript/scene import with immutable source versions
+- explicit entity marks and @-mentions as the primary deterministic signal
+- time/POV-scoped alias and epithet memory with reviewed positive/negative corrections
+- bounded structured extraction into grouped, confidence-tiered mutation proposals
+- bulk-safe review actions, including accept-all eligible low-risk changes and evidence diffs
+- typed scene preconditions/postconditions and readiness/postflight results
+- declarative story invariants with warning default and explicit blocking enablement
+- commit, provenance/blame, revision comparison, tag, and compensating revert views
+- basic authoring UI; expose read-only MCP canon queries if authentication is ready
+- labeled extraction/entity-resolution evaluation set built from the reference world
+
+Exit criteria:
+
+- an author can import or paste prose, resolve its entities, review grouped proposals, and commit
+  accepted canon without invoking generation
+- invariant examples, scene conditions, and commit results agree deterministically
+- extraction and entity-resolution precision/recall are recorded against a versioned baseline
+- review telemetry demonstrates that a scene does not require blind operation-by-operation
+  rubber-stamping
+- every accepted change can be explained back to source evidence and review decision
+
 ## Phase 3 — Time, branches, and knowledge
 
 Goal: canonical queries are correct for a selected branch, world time, and point of view.
@@ -99,11 +136,15 @@ Work:
 - temporal facts and belief intervals
 - branch creation, overlay reads, comparison, and conflict model
 - POV visibility/knowledge policy
+- reader disclosure ledger, reveal planner, irony queries, and setup/payoff debt
+- narrated assertions/speech acts plus reviewable perception/trust-based belief propagation
 - secret handling and common-knowledge rules
 - branch/time/POV applicability for media assets, links, and reviewed observations
 - branch/timeline selector in the UI
 - state/history inspectors
+- location, possession, relationship, timeline, and disclosure read models with revision watermarks
 - deterministic contradiction rules for time, cardinality, and knowledge
+- spoiler-safe state queries and story-bible exports at narrative position/viewpoint
 
 Exit criteria:
 
@@ -113,6 +154,9 @@ Exit criteria:
 - flashback events preserve world chronology and narrative order
 - conflicting merges require explicit resolution
 - an agent may propose merge resolutions but cannot finalize a conflict without the configured human approval
+- lies, mistakes, dreams, and unreliable narration remain distinct from objective facts
+- reader/character knowledge differences support deterministic reveal and dramatic-irony checks
+- spoiler-safe exports exclude later and inaccessible truth in leakage fixtures
 
 ## Phase 4 — Explainable context and derived memory
 
@@ -132,6 +176,8 @@ Work:
 - previous-prose retrieval with semantic, two-clock recency, author importance, narrative proximity, continuity impact, and thread signals
 - hybrid ranking, deduplication, diversity, and token budgeting
 - context preview API and context inspector UI
+- stable-to-volatile deterministic context rendering for prompt-cache-compatible prefixes and
+  provider-reported cache-usage accounting
 - project media library and context cards showing authority, branch/time/POV scope, timestamps/regions, and delivery representation
 - pin/exclude author controls
 - retrieval and leakage evaluation suite
@@ -154,6 +200,7 @@ Goal: an author can plan and draft a scene using controlled multimodal context.
 Work:
 
 - story/arc/beat/scene-plan models and APIs
+- typed scene contracts and project-defined character-arc state paths
 - narrative threads, requirements, intended changes, reveals, and payoffs
 - scene readiness checks
 - async job framework, progress stream, cancellation, and budgets
@@ -167,6 +214,8 @@ Work:
 - multimodal consistency checks over reviewed media facts plus evidence-citing image/audio/video critic passes
 - user-triggered Tier 2 model critics, including isolated POV secret-leakage validation, with contextual recommendations and opt-in budgeted automation
 - consistency findings/correction review UI and incremental invalidation
+- dependency-backed canon-edit impact preview and scoped finding suppressions
+- deterministic voice fingerprints with model critic escalation only for flagged passages
 - deterministic dependency grouping/coverage prototype inspired by OpenCodeReview
 
 Exit criteria:
@@ -189,6 +238,7 @@ Work:
 - event/fact/belief extraction contract
 - caption/transcript/visual/audio observations may propose evidence-backed mutations through the same review contract
 - evidence spans and entity-resolution workflow
+- reuse the Phase 2.5 alias/correction memory and extraction evaluation baseline
 - mutation-set validation and status machine
 - per-operation accept/edit/reject UI
 - optimistic head check and canonical commit
@@ -240,7 +290,7 @@ Exit criteria:
 - real-time collaborative editing, presence, and comments if not included in release one
 - advanced graph/timeline visualization
 - manuscript-wide revision and continuity reports
-- importers for common writing tools
+- importers for common writing tools beyond the release-one paste/Markdown intake path
 - agentic planning assistants operating strictly on proposals
 - public demo or managed multi-user hosting, with a separate funding/privacy/operations decision
 - open signup or public community hosting beyond the invite-only portfolio deployment
@@ -251,8 +301,9 @@ Exit criteria:
 stable boundaries
   -> OIDC identity + invite-only tenancy + self-hosted packaging
     -> project-scoped canon + journal
-      -> time/branch/knowledge semantics
-        -> explainable text/media context + indexing
+      -> text-first import/extraction/review probe
+        -> time/branch/reader+character knowledge semantics
+          -> explainable text/media context + indexing
           -> planning + consistency + generation jobs
             -> extraction + review + commit
               -> open-source release hardening

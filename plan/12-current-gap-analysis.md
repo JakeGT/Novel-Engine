@@ -173,4 +173,5 @@ the PostgreSQL RLS decision.
 The next transition is Phase 2 (trustworthy canon): a controlled core vocabulary and
 project schema versions, reified facts/beliefs/events, root-branch revisions, a
 recoverable PostgreSQL journal/outbox with idempotent Neo4j application, provenance
-and retirement, and media identity. See `plan/phase-2-todo.md` and ADR-011.
+and retirement, and media identity. ADR-012 has since reopened canonical storage/commit work so
+PostgreSQL becomes authoritative and Neo4j replayable; see `plan/phase-2-todo.md`.

@@ -1,6 +1,6 @@
 # ADR-003: PostgreSQL as the operational system of record
 
-- Status: Accepted
+- Status: Accepted; canon-authority portion superseded by ADR-012
 - Date: 2026-10-05
 - Owners: project owner
 - Related backlog: FND-005, CAN-008, SCN-001, IDN-001–IDN-006, SaaS-006
@@ -13,18 +13,23 @@ The invite-only hosted profile needs transactional external-identity mapping, wo
 
 Use PostgreSQL from the foundation phase for identity references, workspaces, invitations, project metadata, memberships, provider credentials, jobs, outbox, mutation journal, reviews, and operational audit. Subscription and credit-ledger tables are not required unless a later commercial ADR reintroduces them.
 
-Neo4j remains the authoritative query model for accepted story canon and graph relationships. Exact authored prose lives in versioned text/blob records referenced from PostgreSQL. Use pgvector initially for derived vector data, behind a replaceable vector port.
+ADR-012 supersedes the original Neo4j-authority decision: PostgreSQL now owns the immutable journal
+and normalized/versioned accepted canon, while Neo4j is a rebuildable query projection. Exact
+authored prose lives in versioned text/blob records referenced from PostgreSQL. Use pgvector
+initially for derived vector data, behind a replaceable vector port.
 
-Cross-store operations use a PostgreSQL journal/outbox and idempotent Neo4j application with explicit recovery states rather than pretending to have a distributed transaction.
+Canonical commits are atomic PostgreSQL transactions. PostgreSQL outbox messages drive idempotent
+Neo4j and vector projections with explicit lag/rebuild state.
 
 ## Consequences
 
 - Local development requires PostgreSQL and Neo4j.
-- Commit ordering, recovery, and reconciliation are first-class domain behavior.
+- Commit ordering, journal replay, projection lag, and rebuild are first-class domain behavior.
 - Project/tenant identifiers exist in both stores and are verified at each adapter boundary.
 - pgvector becomes a strong initial vector-store candidate but remains a separate decision behind the vector port.
 - Prototype stores may be reset; production migrations must be forward-safe and tested.
 
 ## Validation
 
-Failure-injection tests cover crashes before and after journal append, Neo4j apply, head advance, and outbox publication. Reconciliation must converge without duplicate mutations or charges.
+Failure-injection tests cover PostgreSQL transaction boundaries and outbox/projector delivery.
+Replaying committed envelopes must recreate Neo4j without duplicate mutations or changed canon.

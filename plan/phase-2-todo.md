@@ -1,9 +1,9 @@
 # Phase 2 todo — Trustworthy canon
 
-- Status: Draft execution plan; foundation decisions accepted, implementation has not started
-- Scope: CAN-002–CAN-010 and the Phase 2 portions of AST-001/AST-004/AST-008 and EXT-003–EXT-006
+- Status: In progress; ADR-012 reopened canonical storage/commit work before further feature slices
+- Scope: CAN-002–CAN-013 and the Phase 2 portions of AST-001/AST-004/AST-008 and EXT-003–EXT-006
 - Depends on: Phase 1 technical foundation and acceptance of the remaining owner/operational exit items
-- Architecture: ADR-003, ADR-004, ADR-005, ADR-009, ADR-010, and ADR-011
+- Architecture: ADR-003, ADR-004, ADR-005, ADR-009, ADR-010, and ADR-012 (supersedes ADR-011)
 - Exit owner: project owner or designated technical lead
 
 ## Objective
@@ -36,8 +36,11 @@ Phase 2 includes:
 - stable entities plus reified facts, beliefs, and events
 - a root branch and monotonic system revisions for every project
 - provenance and retirement rather than destructive history erasure
+- a point-in-revision canon/history/provenance query boundary, immutable tags, and compensating
+  revert proposals
+- invariant enforcement classes and a stable evaluator seam for the Phase 2.5 story-rule workflow
 - typed mutation sets, per-operation decisions, validation, optimistic concurrency, and idempotency
-- a PostgreSQL journal/outbox and idempotent Neo4j application/recovery protocol
+- an atomic PostgreSQL journal + normalized canon transaction and replayable Neo4j projection
 - project-scoped entity/canon APIs and a usable world/character authoring interface
 - media asset/version identity, authority, provenance, explicit links, and archive semantics
 - a complete archive containing canonical history and permitted immutable originals
@@ -48,7 +51,8 @@ Phase 2 deliberately excludes:
 - world-time query semantics, interval replacement, and narrative-order behavior (Phase 3)
 - POV knowledge filtering and secret-aware context assembly (Phase 3)
 - story hierarchy, scene plans, canonical scene documents, and prose generation (Phase 4+)
-- consistency runs and model critics beyond domain invariant validation (later phases)
+- author story-invariant authoring/runs, scene contracts, suppressions, and model critics (Phase
+  2.5+); Phase 2 defines their stable enforcement boundary and serialization compatibility only
 - public media upload, scanning, transcoding, captioning, transcription, segmentation, embeddings,
   similarity retrieval, or provider media delivery (Phase 4+)
 - real-time co-editing or CRDTs
@@ -60,8 +64,8 @@ claim that deferred temporal or POV rules are enforced.
 
 ## Accepted Phase 2 foundation decisions
 
-The project owner accepted these decisions on 2026-10-08; ADR-011 records their durable rationale
-and commit/recovery protocol.
+The project owner accepted these decisions on 2026-10-08. ADR-012 supersedes ADR-011's storage
+authority while carrying the other Phase 2 boundaries forward.
 
 1. **Author edit path:** ordinary author-originated, low-impact edits may be committed
    directly after showing their validation/diff, but still create a mutation set, journal entry,
@@ -69,30 +73,33 @@ and commit/recovery protocol.
    conflict-resolution proposals require a distinct human approval action.
 2. **Branch/time boundary:** create one root branch per project and implement system
    revision concurrency only. Keep fork/merge and world/narrative-time evaluation in Phase 3.
-3. **Graph authority:** Neo4j remains the canonical query state for accepted story
-   records; PostgreSQL owns workflow state, idempotency, the immutable commit envelope, branch-head
-   coordination, recovery, and outbox delivery. Neither store may independently report a commit as
-   complete.
+3. **Canon authority:** PostgreSQL owns the immutable journal and normalized/versioned accepted
+   canon in one transaction. Neo4j is an optional, rebuildable projection driven by the outbox and
+   never participates in canonical commit success.
 4. **Media boundary:** implement metadata, immutable version identity, explicit links,
    lifecycle, provenance, and archive behavior only. Do not expose hosted uploads until the secure
    ingestion pipeline exists.
 5. **Existing generic graph API:** retain it only as an explicitly enabled local
    development/admin surface while product APIs use the mutation service. Hosted mode disables all
    mutation paths that bypass the journal.
+6. **Invariant enforcement:** built-in integrity invariants are permanently blocking and
+   non-suppressible. Author story invariants default to warnings and require explicit authorized
+   publication to block; uncertain or extraction-dependent checks cannot reject a commit
+   (ADR-013).
 
-ADR-011 records decisions 1–3 and 5. Decision 4 follows ADR-010 and is restated in ADR-011 as the
-Phase 2 delivery boundary.
+ADR-012 records decision 3 and carries forward ADR-011's decisions 1, 2, and 5. Decision 4 follows
+ADR-010 and is restated in ADR-012 as the Phase 2 delivery boundary. ADR-013 records decision 6.
 
 ## Completion dashboard
 
 | Workstream | Status | Depends on |
 | --- | --- | --- |
-| 2A. Phase 1 closeout and Phase 2 contract | In progress (ADR-011, glossary, baseline, compatibility rules recorded; owner acceptance, hosted CI run, and clean-host rehearsal are external) | Phase 1 evidence |
+| 2A. Phase 1 closeout and Phase 2 contract | In progress (ADR-012, glossary, baseline, compatibility rules recorded; owner acceptance, hosted CI run, and clean-host rehearsal are external) | Phase 1 evidence |
 | 2B. Canon domain and core schema | Implemented | 2A |
 | 2C. Project schema governance and compiler | Implemented | 2B |
-| 2D. Revision, journal, outbox, and storage migrations | Implemented | 2A–2C |
-| 2E. Mutation validation, commit saga, and recovery | In progress (typed operations, validation, saga, reconciler, fault-injection tests implemented; per-operation decisions, outbox consumer, mutation-set state machine, and telemetry deferred) | 2B–2D |
-| 2F. Entity authoring and retirement | In progress (canonical authoring API over the saga, revision/ETag, hosted generic-write gate implemented; link inspection/history, name-collision policy, and character-workflow port deferred) | 2C–2E |
+| 2D. Revision, journal, outbox, and storage migrations | Reopened (journal exists; normalized PostgreSQL canon and projection watermarks required by ADR-012) | 2A–2C |
+| 2E. Mutation validation, canonical commit, and projection recovery | Reopened (typed operations exist; central validator, atomic PostgreSQL unit of work, and replayable projector required) | 2B–2D |
+| 2F. Entity authoring and retirement | In progress (canonical authoring API over the transitional saga, revision/ETag, hosted generic-write gate implemented; link inspection/history, name-collision policy, and character-workflow port deferred) | 2C–2E |
 | 2G. Facts, beliefs, and events | In progress (fact/belief/event APIs + derived truth agreement; projections, canon seed, history deferred) | 2B–2F |
 | 2H. Provenance and history inspection | Not started | 2D–2G |
 | 2I. Media identity and explicit evidence links | Not started | 2B–2E |
@@ -109,8 +116,8 @@ Phase 2 delivery boundary.
 - [x] Refresh `12-current-gap-analysis.md` from the Phase 1 implementation rather than its Phase 0
       baseline, and reconcile historical phase labels in `10-backlog.md` with this plan.
       (A "Phase 1 implementation update" section was appended to `12-current-gap-analysis.md`.)
-- [x] Write and accept an ADR for canon authority, root-branch head ownership, commit saga states,
-      failure recovery, and the author direct-commit/review boundary.
+- [x] Write and accept the canon authority decision. ADR-012 supersedes ADR-011's cross-store saga,
+      makes PostgreSQL canon authoritative, and retains the author direct-commit/review boundary.
 - [x] Freeze a Phase 2 vocabulary/glossary for entity, proposition, fact, belief, event, revision,
       mutation set, operation, decision, journal entry, projection, and provenance.
       (`plan/phase-2-glossary.md`.)
@@ -119,6 +126,10 @@ Phase 2 delivery boundary.
 - [x] Define forward/backward compatibility rules for API DTOs, archive versions, schema versions,
       prompt schemas, and Neo4j projections before adding durable records.
       (`plan/phase-2-baseline.md` "Compatibility rules".)
+- [x] Record the accepted story-invariant enforcement classes and cross-phase contracts for canon
+      queries, reader disclosure, narrated assertions, scene contracts, aliases, suppressions,
+      derived read models, MCP, and prompt caching. (ADR-013 and
+      `18-author-rules-canon-queries-and-derived-views.md`.)
 
 ### 2A acceptance
 
@@ -227,7 +238,26 @@ Implemented in `backend/domain/canon/` with pure invariant tests in
 - [x] ordinary content writes cannot create undeclared types or predicates
 - [x] unsafe or pathologically complex definitions are rejected without executing user input
 
-## 2D. Revisions, journal, outbox, and storage migrations
+## 2D. Revisions, journal, outbox, canonical storage, and projection migrations
+
+ADR-012 reopens this workstream. Migration `0013_canon_journal` remains useful, but its Neo4j-first
+write path is transitional and must not become the base for additional canon features.
+
+- [ ] Add normalized, versioned PostgreSQL tables for entities, facts, beliefs, events, provenance,
+      record versions/effects, and projection watermarks. Final fact/effect columns wait for the
+      accepted branch-overlay and `WorldTime` design.
+- [ ] Reserve stable ID prefixes and canonical serialization envelopes for future `StoryInvariant`,
+      `SceneContract`, `NarratedAssertion`/`SpeechAct`, `Disclosure`, `AliasBinding`/
+      `ResolutionExample`, `CanonTag`, `FindingSuppression`, dependency-edge, and read-model
+      watermark records. Do not add inactive tables merely to reserve names.
+- [ ] Define one PostgreSQL canon repository/unit-of-work port that reads state at a revision and
+      applies a validated envelope atomically with branch head, revision, decisions, and outbox.
+- [ ] Separate canonical repository ports from `CanonProjectionPort`; no application workflow may
+      treat `CanonWriterPort`/Neo4j success as canon acceptance.
+- [ ] Add projection cursor/watermark persistence with project, branch, revision, commit ID,
+      envelope checksum, projection schema version, last error, and rebuild status.
+- [ ] Provide deterministic journal replay into empty normalized test state and empty Neo4j, plus
+      checksum/representative-query verification.
 
 - [x] Add PostgreSQL records for root branches, branch heads/reservations, schema versions,
       mutation sets, ordered operations, review decisions, immutable commit envelopes, commit
@@ -286,7 +316,14 @@ Implemented in `backend/domain/canon/` with pure invariant tests in
       (No `elementId(` in the graph layer; the legacy `GraphManager.delete_edge` still keys on `id(r)`
       but is unused by canon/projection paths and is not exposed.)
 
-## 2E. Mutation validation, commit saga, and recovery
+### ADR-012 acceptance additions
+
+- [ ] PostgreSQL normalized canon and the immutable journal commit in one transaction
+- [ ] Neo4j can be deleted and rebuilt from genesis without changing canonical checksums
+- [ ] graph-backed reads prove their watermark satisfies the requested revision or report lag
+- [ ] canonical commits succeed correctly while Neo4j is unavailable
+
+## 2E. Mutation validation, canonical commit, and projection recovery
 
 - [x] Define typed, ordered mutation operations for create/update/retire entity; assert/close fact;
       assert/close belief; create/amend/retire event; and create/retire explicit asset link
@@ -299,30 +336,32 @@ Implemented in `backend/domain/canon/` with pure invariant tests in
       decisions. Every transition records actor, time, reason, and correlation/idempotency IDs.
       (States and legal transitions are defined in `backend/domain/journal.py`; explicit transition
       enforcement with actor/time/reason recording is not yet wired through the service.)
-- [x] Validate authorization, project/branch scope, expected head, exact schema version, operation
-      shape, references, endpoint types, cardinality, lifecycle, and provenance before reservation
-      (`MutationService.validate`: authorization, expected head, duplicate ids, entity existence via
-      an injected lookup, registry proposition/type checks; exact published-schema-version matching
-      and full cardinality/lifecycle enforcement land with 2F/2G as the entity lookup is wired).
-- [x] Revalidate all mutable assumptions immediately before graph application; a previously valid
-      preview is not permission to commit against a changed head or changed authorization
-      (`commit` re-authorizes, re-validates, and re-reads the branch head before reserving).
+- [ ] Centralize authorization, project/branch scope, exact schema version, operation shape,
+      references, endpoint types, attributes, cardinality, lifecycle, provenance, and review policy
+      in one authoritative validator invoked inside the canonical PostgreSQL transaction. The
+      current validator covers structural/core-type checks but is bypassable through service-layer
+      rule splits and does not support project extensions.
+- [ ] Split validator results into permanently blocking built-in integrity failures, explicitly
+      blocking deterministic author-rule failures, and advisory findings. Phase 2 implements the
+      integrity path and evaluator interface; author-rule authoring/runs arrive in Phase 2.5.
+- [ ] Prove no suppression, import, MCP/proposal transport, admin UI, or autonomy setting can bypass
+      a built-in integrity invariant.
+- [ ] Revalidate every mutable assumption against the transactional head/state used for the commit;
+      preview validation is advisory and cannot authorize a later write.
 - [ ] Implement per-operation accept/edit/reject decisions. Editing creates a new operation
       revision and invalidates prior validation rather than mutating accepted review evidence.
       (Mutation-level decisions are recorded; per-operation decisions and edit-as-new-revision are
       deferred to the review slice 2F/2G.)
-- [x] Implement the accepted PostgreSQL/Neo4j saga with explicit recoverable states
-      (`MutationService.commit`: reserve → append prepared envelope → idempotent graph apply →
-      finalize/outbox).
+- [ ] Replace the transitional PostgreSQL/Neo4j saga with ADR-012's single PostgreSQL transaction:
+      validate/review → envelope + normalized canon → head/revision + outbox. The current
+      `MutationService.commit` implementation is not the target authority boundary.
 - [x] Make Neo4j application idempotent by immutable commit/mutation IDs and reject a checksum
       mismatch. A retry must return the original result rather than duplicate nodes/edges
       (`Neo4jCanonWriter` checks the marker and raises `RevisionConflict` on checksum drift).
-- [x] Never return success until the graph application and PostgreSQL final state agree. Return a
-      retryable operation status—not a generic success or destructive rollback—when reconciliation
-      is required (`commit` succeeds only after `finalize`; `reconcile` returns a status).
-- [x] Implement a reconciler that can finish or classify prepared/graph-applied/finalization-failed
-      commits and requeue outbox work. Make it callable as a CLI before adding a worker
-      (`backend/devtools/reconcile.py`, `make reconcile COMMIT=...`).
+- [ ] Return canonical success after the PostgreSQL transaction, independent of Neo4j availability;
+      expose projection lag separately and never label stale graph state current.
+- [ ] Replace commit reconciliation with a projector/replay worker that resumes from a verified
+      watermark, quarantines checksum disagreement, and can rebuild one project or all projects.
 - [ ] Add an outbox consumer seam for derived graph/vector/search updates with retry count, source
       revision, idempotency key, and visible lag. Phase 2 may use a bounded in-process/dev runner;
       accepted canon must not depend on derived delivery completing synchronously.
@@ -331,10 +370,9 @@ Implemented in `backend/domain/canon/` with pure invariant tests in
 - [ ] Record audit/telemetry for state, latency, operation counts, recovery, and outcome without
       logging canon payloads by default. (No canon payloads are logged; structured commit
       telemetry is deferred.)
-- [x] Add deterministic fault-injection tests at every boundary: before/after reservation, during
-      Neo4j application, after graph commit, before head finalization, and during outbox delivery
-      (in-memory writer fault injection + crash-mid-apply recovery test; the integration writer test
-      covers apply/marker/checksum).
+- [ ] Replace cross-store success fault tests with PostgreSQL transaction rollback tests plus
+      projector crash/retry/duplicate-delivery/rebuild tests. Retain existing tests as
+      characterization until the transitional saga is removed.
 - [x] Add concurrent-commit, replay, checksum mismatch, authorization-revocation, stale-schema,
       stale-head, and partial-decision tests (replay/idempotency, checksum mismatch, stale-head, and
       crash tests are present; true multi-worker concurrency relies on the journal constraints).
@@ -343,9 +381,10 @@ Implemented in `backend/domain/canon/` with pure invariant tests in
 
 - [x] every accepted canon mutation has one immutable envelope and one resulting revision
 - [x] retries are idempotent and concurrent stale-head commits receive a stable conflict response
-- [x] a crash at any injected boundary is recoverable without silent loss or duplicate canon
-- [x] rejected operations never appear in accepted graph state
-- [x] outbox failure creates visible index lag but cannot corrupt or roll back accepted canon
+- [ ] a crash at any canonical transaction boundary rolls back, while a projector crash resumes
+      without silent loss or duplicate projection records
+- [ ] rejected or unapproved protected operations never enter normalized canon or any projection
+- [ ] outbox/projector failure creates visible lag but cannot corrupt or roll back accepted canon
 
 ## 2F. Entity authoring and retirement
 
@@ -385,7 +424,7 @@ Implemented in `backend/domain/canon/` with pure invariant tests in
 - [x] an author can create, edit, find, inspect, and retire an entity through the canonical API
 - [x] two projects can use identical entity IDs/names without collision or reference leakage
       (canonical ids are server-generated per project; isolation proven by contract tests)
-- [x] no hosted HTTP write path can create accepted graph state without a journal revision
+- [x] no hosted HTTP write path can create accepted canon without a journal revision
 - [x] retired entities remain visible in history and exports but are excluded from active defaults
 
 ## 2G. Facts, beliefs, and events
@@ -394,9 +433,9 @@ Implemented in `backend/domain/canon/` with pure invariant tests in
       reads, closure/retirement, and mutation review.
       (`CanonAssertionService` + `/api/v1/projects/{id}/{facts,beliefs,events}`; per-operation review decisions
       remain 2E scope.)
-- [x] Enforce predicate endpoint/value shape and cardinality from the exact project schema version.
-      (Core predicate registry enforces subject type, object shape, and cardinality-one conflicts; project predicate
-      extensions are validation-neutral until the compiled schema is wired into assertions.)
+- [ ] Enforce predicate endpoint/value shape and cardinality from the exact project schema version.
+      Core predicate checks exist, but project extensions and commit-path cardinality enforcement are
+      not yet wired into the authoritative validator.
 - [x] Support entity-reference and scalar proposition objects without encoding references as
       unvalidated strings (discriminated `Proposition` union of entity-ref/string/integer/decimal/boolean/enum/
       quantity/structured objects).
@@ -418,7 +457,7 @@ Implemented in `backend/domain/canon/` with pure invariant tests in
 - [ ] Expand the reference world with objective truths, a secret, a false belief, an event, a
       retired entity, scalar/entity-reference facts, and deliberate invalid proposals
       (deferred: canon seed data not yet authored; the graph seed is unchanged).
-- [x] Add tests for cardinality conflicts, false beliefs, unknown dates, retired references,
+- [ ] Add tests for cardinality conflicts, false beliefs, unknown dates, retired references,
       cross-project objects, invalid holders, projection equivalence, and close/reassert history.
       (Covered: cardinality conflict, false/unknown truth agreement, invalid holder/missing source, unknown
       predicate, missing participant. Deferred with projections/history: projection equivalence, close/reassert
@@ -428,9 +467,8 @@ Implemented in `backend/domain/canon/` with pure invariant tests in
 
 - [x] the same proposition can be objectively true, falsely believed, or unknown without collapsing
       those states
-- [x] facts/beliefs/events retain complete provenance and revision history after closure
-      (provenance id + created/closed/retired revision markers; full per-revision diff history is 2H)
-- [x] schema cardinality and reference rules hold under concurrent commits (optimistic head reservation)
+- [ ] facts/beliefs/events retain complete provenance and revision history after closure
+- [ ] schema cardinality and reference rules hold under concurrent and safely rebased commits
 - [ ] query projections agree with reified accepted canon for the checked revision (projections deferred)
 
 ## 2H. Provenance, revision history, and inspection
@@ -440,12 +478,21 @@ Implemented in `backend/domain/canon/` with pure invariant tests in
       secret payloads to unauthorized users.
 - [ ] Add entity/fact/belief/event history APIs that map changes back to mutation operations and
       provenance sources.
+- [ ] Define and implement the storage-neutral canon query boundary for state at a canonical
+      revision, revision-to-revision differences, belief holders/truth-agreement inputs, and full
+      evidence provenance. Phase 3 extends the same contract with branch/world/narrative/POV
+      evaluation rather than creating a second query layer.
+- [ ] Add immutable named tags pointing to an exact root branch/revision with replacement history.
+- [ ] Generate compensating mutation sets for eligible commit reverts, detect intervening conflicts,
+      preview the diff, and require the normal validation/review/commit path. Never delete or amend
+      a committed envelope.
 - [ ] Distinguish security audit records from canon provenance: audit answers who invoked an action;
       provenance explains why a canonical record exists and from which evidence.
 - [ ] Provide canonical checksum and verification commands for a project/root revision. Verification
-      compares journal envelopes, graph commit markers, branch head, and representative projections.
-- [ ] Provide an operator reconciliation report for missing/mismatched graph applications, stuck
-      reservations, and outbox lag; never repair checksum disagreement automatically.
+      compares journal envelopes, normalized state, branch head, projection watermarks, and
+      representative queries.
+- [ ] Provide an operator projection report for lag, failed delivery, checksum mismatch, and rebuild
+      status; never repair checksum disagreement by mutating canon.
 - [ ] Record source artefact identifiers and bounded evidence locations, not copied manuscript/media
       content, in provenance metadata.
 - [ ] Add authorization/redaction tests for history, provenance, audit, and diagnostics.
@@ -456,7 +503,11 @@ Implemented in `backend/domain/canon/` with pure invariant tests in
       or closed it
 - [ ] an operator can distinguish recoverable lag from integrity disagreement without reading story
       content in logs
-- [ ] checksum verification detects tampering, missing graph state, and envelope mismatch
+- [ ] checksum verification detects tampering, journal/normalized-state divergence, projection lag,
+      and projection checksum mismatch
+- [ ] UI/API query results agree at the same revision and explain current state through commit,
+      operation, decision, source version, and evidence where recorded
+- [ ] tags retain their original revision meaning and revert creates new reviewed history
 
 ## 2I. Media identity and explicit evidence links
 
@@ -552,11 +603,15 @@ Implemented in `backend/domain/canon/` with pure invariant tests in
 ## 2L. Security, quality, and exit evidence
 
 - [ ] Extend the threat model for schema complexity attacks, journal replay/checksum substitution,
-      cross-store partial commits, ID/reference confusion, archive bombs/path traversal, generic API
+      journal/state divergence, projection poisoning or false freshness, ID/reference confusion,
+      archive bombs/path traversal, generic API
       bypass, asset key enumeration, and provenance content leakage.
 - [ ] Add a critical invariant matrix covering tenant/project isolation, schema versioning,
       fact/belief separation, cardinality, retirement, optimistic heads, mutation decisions,
-      idempotency, saga recovery, outbox lag, media links, and archive round-trip.
+      idempotency, transaction/projector recovery, outbox lag, media links, and archive round-trip.
+- [ ] Include invariant-classification tests proving author rules default to warning, blocking is
+      explicit, incomplete/extraction-dependent evaluation cannot block, and built-in integrity
+      checks cannot be suppressed or weakened.
 - [ ] Maintain hermetic unit/application/contract tests with in-memory ports; keep PostgreSQL/Neo4j
       behavior in disposable integration tests and browser workflows in e2e.
 - [ ] Add property/state-machine tests for schema compilation, mutation transitions, revision heads,
@@ -578,33 +633,37 @@ Implemented in `backend/domain/canon/` with pure invariant tests in
 
 - [ ] all critical invariants have automated positive and adversarial coverage
 - [ ] no critical/high unaccepted dependency or security finding remains
-- [ ] failure injection proves the commit saga converges or stops for explicit operator action
+- [ ] failure injection proves canonical transactions roll back cleanly and projections replay or
+      stop for explicit operator action
 - [ ] diagnostics and telemetry expose state without story text, secrets, or raw media
 - [ ] a clean install completes the authoring → commit → history → export/restore workflow
 
 ## Suggested implementation slices
 
-1. **P2-00 — Contract and ADR:** close/accept Phase 1, refresh the baseline, apply the five accepted
-   foundation decisions and ADR-011, and freeze domain language.
+1. **P2-00 — Contract and ADR:** close/accept Phase 1, refresh the baseline, apply the accepted
+   foundation decisions plus ADR-012/ADR-013, freeze domain language, and reserve the cross-phase
+   author-rule/query record contracts.
 2. **P2-01 — Root revision and domain kernel:** typed entity/proposition/fact/belief/event,
    provenance, core schema, root branch, genesis revision, and pure invariant tests.
 3. **P2-02 — Governed schema vertical slice:** PostgreSQL versions, compiler/cache, publish API,
    seed migration, and generated form/JSON Schema proof.
-4. **P2-03 — Journal skeleton:** mutation/envelope/head/outbox migrations and ports, in-memory
-   implementation, transition tests, and diagnostics.
-5. **P2-04 — Entity commit vertical slice:** create/edit/retire entity through preview, validation,
-   journal, Neo4j application, revision history, and recovery fault injection.
+4. **P2-03 — PostgreSQL canon transaction:** journal/head/outbox plus normalized/versioned canon,
+   authoritative validator, record/dependency preconditions, and transactional fault tests.
+5. **P2-04 — Replayable graph projection:** idempotent outbox projector, watermarks, lag health,
+   full replay/rebuild, verification, and Neo4j-unavailable commit tests.
 6. **P2-05 — Fact/belief/event canon:** reified records, projections, schema/cardinality rules,
    false-belief fixture, history, and product APIs.
 7. **P2-06 — Review and concurrency:** operation decisions, author/model/import policies,
    stale-head UX/API, checksum verification, reconciler CLI, and outbox lag.
-8. **P2-07 — Evidence assets:** asset/version metadata, immutable originals already in object
+8. **P2-07 — Canon reasoning:** point-in-revision query/history/provenance, immutable tags,
+   compensating revert proposals, and invariant enforcement classification.
+9. **P2-08 — Evidence assets:** asset/version metadata, immutable originals already in object
    storage, explicit reviewed links, retirement, and archive integration.
-9. **P2-08 — Authoring frontend:** TypeScript/client/router/query foundation, project shell,
+10. **P2-09 — Authoring frontend:** TypeScript/client/router/query foundation, project shell,
    schema/entity/character/mutation/history flows, and accessibility tests.
-10. **P2-09 — Archive and restore:** format v2, v1 policy/upgrader, staged import, projection rebuild,
+11. **P2-10 — Archive and restore:** format v2, v1 policy/upgrader, staged import, projection rebuild,
     clean-environment checksum comparison, and audit.
-11. **P2-10 — Exit audit:** complete invariant/fault/security/e2e matrices, clean-host rehearsal,
+12. **P2-11 — Exit audit:** complete invariant/fault/security/e2e matrices, clean-host rehearsal,
     evidence document, and owner acceptance.
 
 Do not start P2-03 durable journal migrations until P2-00 settles authority and head ownership. P2-07
@@ -620,11 +679,15 @@ vertical slices rather than mocks alone.
 - [ ] objective facts and character beliefs are distinct in domain, storage, API, and UI
 - [ ] entities and evidence links can be retired without erasing accepted history
 - [ ] stale/concurrent commits fail predictably and retries cannot duplicate mutations
-- [ ] PostgreSQL/Neo4j interruption scenarios recover without ambiguous reported success
+- [ ] PostgreSQL commits are atomic; Neo4j interruption produces only observable, replayable
+      projection lag
 - [ ] media identity and explicit evidence links obey project scope, authority, and lifecycle rules
 - [ ] two projects cannot read, write, link, restore, or reference each other's canon/assets
 - [ ] a complete project archive restores into a clean environment with the same canonical checksum
 - [ ] the project shell supports entity/schema/canon review and history without generic graph tools
+- [ ] one canon query boundary supports revision state, differences, and provenance; tags and revert
+      proposals preserve rather than rewrite history
+- [ ] built-in integrity rules are permanently blocking and author-rule contracts default to warning
 - [ ] Phase 2 evidence, known deferrals, and owner acceptance are recorded before Phase 3 starts
 
 ## Definition of done for each slice

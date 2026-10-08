@@ -8,10 +8,11 @@ Novel Engine is an open-source fiction authoring system with self-hosted and fre
 
 ## Current maturity
 
-The repository is a stabilized prototype, not a production application. Phase 0
-(foundation) is complete and Phase 1 (identity, tenancy, distribution, and project
-foundation) is implemented but has explicit external/operational exit items remaining. See
-`plan/phase-1-evidence.md` and the dashboard in `plan/phase-1-todo.md`.
+The repository is a stabilized prototype under active Phase 2 development, not a production
+application. Phase 0 is complete. Phase 1 is implemented with explicit external/operational exit
+items remaining. Phase 2 has a domain kernel, governed schema versions, a journal, and initial
+entity/fact/belief/event APIs, but ADR-012 has reopened storage and commit work so PostgreSQL—not
+Neo4j—becomes authoritative canon. See `plan/phase-2-todo.md`.
 
 - Application lifecycle, dependency container, ports, and adapters exist; imports perform no
   external work.
@@ -24,8 +25,12 @@ foundation) is implemented but has explicit external/operational exit items rema
   module has been removed.
 - The React frontend is a minimal authenticated shell; product workspaces are planned work.
 - OIDC/local identity, invite-only multi-tenancy, scoped storage, encrypted OpenRouter BYOK,
-  object storage, and project transfer foundations exist. Story planning, long-form generation,
-  review, temporal branching, and production operations remain planned work.
+  object storage, and project transfer foundations exist.
+- Phase 2 canon models, project schema compilation, journal migrations, and initial authoring APIs
+  exist. The current Neo4j-first commit implementation is transitional pending the ADR-012
+  PostgreSQL canon/unit-of-work and replayable graph projection refactor.
+- Story planning, long-form generation, review UI, temporal branching, and production operations
+  remain planned work.
 
 Do not describe a planned capability as implemented. When changing a capability, update its
 status in `plan/`.
@@ -100,7 +105,8 @@ The Makefile keeps tool caches under ignored `.cache/` so sandboxed coding agent
 ## Design rules
 
 1. Keep transport, application workflow, domain logic, and persistence separate. Endpoints should validate and delegate; they should not assemble prompts or Cypher.
-2. Treat Neo4j as the source of canonical story truth. Vector indexes are derived and rebuildable.
+2. Treat PostgreSQL's immutable journal plus normalized/versioned canon tables as canonical story
+   truth. Neo4j, pgvector, search, and summaries are derived and rebuildable projections.
 3. Treat model output as an untrusted proposal. Validate identifiers, types, references, branch/timeline invariants, and permissions before persistence.
 4. Preserve the distinction between objective facts and character beliefs. Never inject inaccessible truth into point-of-view context.
 5. Every canon mutation must carry provenance. Temporal facts must identify branch and validity interval.
@@ -141,3 +147,14 @@ Before handoff:
 ## Definition of done
 
 A feature is done only when its domain behavior, API contract, persistence behavior, failure handling, tests, and user-facing documentation agree. A successful model response alone is not completion.
+
+<!-- CODEGRAPH_START -->
+## CodeGraph
+
+In repositories indexed by CodeGraph (a `.codegraph/` directory exists at the repo root), reach for it BEFORE grep/find or reading files when you need to understand or locate code:
+
+- **MCP tool** (when available): `codegraph_explore` answers most code questions in one call — the relevant symbols' verbatim source plus the call paths between them, including dynamic-dispatch hops grep can't follow. Name a file or symbol in the query to read its current line-numbered source. If it's listed but deferred, load it by name via tool search.
+- **Shell** (always works): `codegraph explore "<symbol names or question>"` prints the same output.
+
+If there is no `.codegraph/` directory, skip CodeGraph entirely — indexing is the user's decision.
+<!-- CODEGRAPH_END -->

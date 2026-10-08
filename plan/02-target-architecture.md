@@ -22,7 +22,7 @@ Domain   Context  AI ports  Review/commit  Consistency
        |          |           |          |
        v          v           v          v
   PostgreSQL    Neo4j    Vector index  Object/media
-  journal/jobs  canon      derived       versions
+  canon/jobs   projection   derived       versions
 ```
 
 The arrows indicate dependency direction. Domain models and policies do not import FastAPI, PostgreSQL/Neo4j/vector drivers, or an AI SDK.
@@ -61,7 +61,13 @@ They define transaction boundaries and call domain services through ports.
 
 ### Domain
 
-Contains typed entities, value objects, invariants, policies, commands, and events. Important concepts include project, branch, timeline position, entity reference, fact, belief, scene plan, scene draft, mutation set, provenance, and review decision.
+Contains typed entities, value objects, invariants, policies, commands, and events. Important concepts
+include project, branch, world/narrative/revision positions, entity reference, fact, belief,
+narrated assertion, reader disclosure, scene contract, mutation set, provenance, and review decision.
+
+Author-defined story invariants and scene contracts use a safe declarative proposition language.
+They are versioned project data, never executable project code. Built-in integrity invariants remain
+separate, permanently blocking domain rules.
 
 ### Context engine
 
@@ -93,14 +99,31 @@ media delivery, and usage accounting are versioned.
 
 Builds deterministic preflight constraints, runs incremental postflight rules, and schedules bounded model critics or deep audits. Findings reference exact prose and canon revisions. See `13-consistency-system.md`.
 
+It also evaluates author story invariants, scene contracts, reader disclosures, scoped
+suppressions, and derived voice evidence. Author invariants default to warnings; only explicitly
+enabled deterministic rules may block a commit. See
+`18-author-rules-canon-queries-and-derived-views.md`.
+
+### Canon query and explanation layer
+
+Provides one storage-neutral boundary for point-in-time state, reader/character visibility,
+revision differences, provenance/blame, dependency impact, tags, and compensating revert
+proposals. HTTP, UI, consistency rules, context assembly, exports, and MCP call this same
+application layer. Implementations may use watermarked projections, but PostgreSQL remains the
+authoritative fallback.
+
 ### Review and commit
 
-Model-extracted changes enter a staging area as a mutation set. Domain validators attach errors or warnings. The author can accept, edit, or reject changes. Only an accepted mutation set enters the canonical graph and mutation journal.
+Model-extracted changes enter a staging area as a mutation set. Domain validators attach errors or
+warnings. The author can accept, edit, or reject changes. Only an accepted mutation set enters the
+PostgreSQL canonical journal/state transaction; projection delivery follows through the outbox.
 
 ### Persistence adapters
 
-- PostgreSQL repositories for external-identity mappings, workspaces, invitations, memberships, projects, settings, jobs, reviews, mutation journal, outbox, and operational audit
-- Neo4j repository for canonical entities, relations, facts, beliefs, story structure, and query projections
+- PostgreSQL repositories for external-identity mappings, workspaces, invitations, memberships,
+  projects, settings, jobs, reviews, mutation journal, normalized/versioned canon, outbox, and
+  operational audit; plus versioned authored rules/plans and watermarked derived read models
+- Neo4j repository for rebuildable graph query projections with applied-revision watermarks
 - vector adapter for derived embeddings and chunks
 - object storage for exact scene versions, immutable media originals/variants, and import/export artefacts where graph properties are unsuitable
 
@@ -113,8 +136,9 @@ use a filesystem-compatible adapter.
 ### Read flow
 
 1. Resolve user, project, branch, and timeline position.
-2. Load deterministic graph state.
-3. Apply knowledge and visibility policy.
+2. Load deterministic canonical state from PostgreSQL; use Neo4j only when its projection watermark
+   satisfies the requested revision.
+3. Apply reader/character knowledge, disclosure, and visibility policy.
 4. Retrieve derived semantic candidates using graph IDs as filters.
 5. retrieve eligible explicitly linked and semantic media candidates.
 6. rank, cluster cross-modal representations, and budget context items.
@@ -137,12 +161,14 @@ use a filesystem-compatible adapter.
 ### Commit flow
 
 1. Check the proposal still targets the expected project/branch/head revision.
-2. Re-run hard invariants.
-3. append the mutation transaction to the journal.
-4. apply canonical graph changes atomically or mark recovery required.
-5. advance the branch head.
-6. enqueue derived-index and summary updates.
-7. publish a change event to the UI.
+2. Re-run permanently blocking built-in integrity invariants, then applicable deterministic author
+   story invariants. Author rules are warnings unless an authorized user explicitly enabled
+   blocking behavior for that rule version.
+3. In one PostgreSQL transaction, append the immutable envelope, update normalized/versioned canon,
+   advance the branch head, append the revision, and enqueue projection events.
+4. Report the canonical commit after that transaction succeeds.
+5. Project the committed envelope idempotently into Neo4j/vector/search and publish projection lag.
+6. Publish a change event to the UI.
 
 ## Package direction
 
@@ -172,7 +198,13 @@ This should be reached incrementally. Avoid a wholesale move before characteriza
 - Every request, job, object, graph record, vector record, export, and event is workspace/project scoped in hosted mode. Self-hosted local mode supplies one explicit local workspace/user context through the same contracts.
 - Every repository method requires project scope; branch/timeline scope where relevant.
 - Canon writes happen only through the commit service.
-- The vector store never authoritatively resolves a conflict with the graph.
+- Built-in integrity invariants cannot be disabled, overridden, suppressed, or bypassed through an
+  alternate transport. Extraction-dependent uncertainty cannot block a commit.
+- MCP and other assistant transports may read scoped state and create proposals, but never commit
+  canon or weaken review/invariant policy directly.
+- Derived projections never authoritatively resolve a conflict with PostgreSQL canon.
+- Neo4j and vector-backed reads expose or verify their applied canonical revision; stale projection
+  state is never presented as current.
 - A model cannot introduce an unknown type or edge without an explicit schema-extension decision.
 - Long-running AI calls return job IDs rather than holding a fragile browser request indefinitely.
 - Model jobs estimate usage, enforce configured limits, and record actual usage exactly once.

@@ -1,11 +1,15 @@
 # ADR-011: Canon authority, commit saga, and Phase 2 authoring boundary
 
-- Status: Accepted
+- Status: Superseded by ADR-012
 - Date: 2026-10-08
 - Owners: project owner
 - Related backlog: CAN-002–CAN-010, EXT-003–EXT-006, AST-001, AST-004, AST-008
 
 ## Context
+
+> ADR-012 replaces the split PostgreSQL/Neo4j authority and cross-store commit saga. The Phase 2
+> branch/time boundary, author-review policy, media boundary, and generic-graph restrictions below
+> remain accepted because ADR-012 carries them forward explicitly.
 
 Phase 2 introduces durable entities, facts, beliefs, events, schema versions, revisions,
 provenance, and reviewed media links. PostgreSQL and Neo4j cannot participate in one ordinary

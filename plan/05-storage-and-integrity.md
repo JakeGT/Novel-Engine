@@ -2,13 +2,28 @@
 
 ## Storage responsibilities
 
-### Neo4j: canonical graph and query projections
+### PostgreSQL: canonical journal, normalized state, operations, and audit
 
-Store projects, branches, stable entities, facts, beliefs, events, story structures, provenance links, and review/commit references. Optimize projections for the queries the product actually runs.
+PostgreSQL owns projects, branches, immutable commit envelopes, normalized/versioned entities,
+facts, beliefs, events, later narrative records, provenance, schema versions, decisions, jobs,
+idempotency, outbox, consistency runs/findings, identity mapping, credentials, and operational
+audit. Canonical commits update the journal, normalized state, branch head, revision, and outbox in
+one transaction.
 
-### PostgreSQL: identity mapping, operations, durable audit, and recovery
+PostgreSQL also owns versioned authored policy/planning records: story invariants, scene contracts,
+reader disclosures, narrated assertions, alias bindings/resolution examples, canon tags, finding
+suppressions, and their provenance. Their existence does not make their propositions objective
+canon. Purpose-built temporal/dependency views are derived projections with explicit watermarks.
 
-Use PostgreSQL from the start for external-identity mappings, workspaces, invitations, memberships, project metadata, encrypted hosted provider credentials, jobs, review state, idempotency, outbox, consistency runs/findings, and ordered immutable commit envelopes. The mutation journal is the recovery boundary for canonical changes.
+The journal is the replay/recovery source. Normalized canon is the strongly consistent read model
+and must be verifiable from the committed journal plus immutable schema versions.
+
+### Neo4j: rebuildable graph projection
+
+Project committed envelopes into Neo4j for bounded traversal, causal paths, relationship
+exploration, and context assembly. Record an applied revision/checksum watermark per project/branch.
+Neo4j can be deleted and rebuilt by journal replay and is never required for canonical commit
+success.
 
 ### Object store: authored prose and media
 
@@ -33,28 +48,39 @@ semantic links for traversal but does not own binary lifecycle. See `17-multimod
 
 ## Canonical write protocol
 
-1. Begin with project, branch, expected head revision, and idempotency key.
-2. Validate the mutation set and referenced schema version.
-3. Append a pending PostgreSQL journal record and outbox intent.
-4. Apply graph mutations in one Neo4j transaction.
-5. Advance the branch head with optimistic concurrency.
-6. Mark the PostgreSQL journal record committed with result IDs/checksum.
-7. enqueue derived-index updates using an outbox record.
+1. Begin with project, branch, base/head revision, record/dependency preconditions, and idempotency
+   key.
+2. In one PostgreSQL transaction, authorize, safely rebase or reserve the head, and run the
+   authoritative schema/lifecycle/cardinality/review validator.
+3. Append the immutable canonical envelope and decision summary.
+4. Apply the operations to normalized, versioned PostgreSQL canon.
+5. Advance the branch head, append the canonical revision, and enqueue idempotent projection
+   messages.
+6. Commit and report canonical success.
+7. Project the envelope asynchronously into Neo4j/vector/search, updating visible watermarks.
 
-PostgreSQL and Neo4j cannot share an ordinary transaction, so use a documented saga with recoverable states, idempotent Neo4j application, and reconciliation. Never report success while the journal/graph state is ambiguous.
+Projection failure creates observable lag, not ambiguous canon. Rebuild or resume a projection by
+replaying committed envelopes in revision order.
+
+Before applying a proposed envelope, the transaction evaluates permanently blocking built-in
+integrity invariants and any author story invariant version explicitly configured as blocking.
+Author invariants default to warnings. Only current, deterministic, complete evaluation may reject
+a commit; extraction-dependent uncertainty is persisted as a finding outside the integrity gate.
 
 ## Graph representation
 
-Recommended pattern:
+Recommended Neo4j projection pattern:
 
 - stable anchor nodes for identity
-- explicit Fact/Belief/Event nodes where validity, provenance, or review matters
+- explicit Fact/Belief/Event nodes where traversal adds value
 - projected relationships for frequent traversal
 - project ID on every node and relationship projection
 - branch/revision metadata on temporal records
 - uniqueness constraints scoped appropriately
 
-Avoid arbitrary property bags as the only domain model. Validate properties against a schema version before Cypher generation.
+Avoid arbitrary property bags as the only domain model. Validate properties in the canonical
+PostgreSQL transaction before any projection message exists; projector validation protects against
+corrupt delivery but does not establish canon.
 
 ## Migrations
 
@@ -76,14 +102,31 @@ before a 512- or 768-dimensional multimodal generation can become active.
 
 ## Concurrency and idempotency
 
-- Branch heads use optimistic revision checks.
+- Branch heads provide total commit order. Record/dependency preconditions permit safe automatic
+  rebase when intervening commits are disjoint.
 - Mutation-set commits are idempotent.
 - Job creation accepts a client idempotency key.
 - Provider attempts, usage recording, cancellation, and output acceptance are idempotent by job/attempt.
 - Derived workers record source revision and content hash.
 - Media processing stages key idempotency by asset-version checksum plus processor configuration.
-- Duplicate model callbacks or retries must not duplicate facts or edges.
+- Duplicate model callbacks, outbox delivery, or projector retries must not duplicate facts or
+  projection edges.
 - UI conflict responses include current head and a rebase/review path.
+
+## Query history, tags, and compensation
+
+Canonical query repositories expose state/history at a revision and provenance through operation
+decisions and source evidence. Immutable tags point to a branch/revision. Undo constructs a
+compensating mutation set against current state and uses the normal impact, validation, review, and
+commit flow; no committed envelope is deleted or edited.
+
+## Derived read models
+
+Outbox consumers may build location, possession, relationship, timeline, reader-disclosure,
+dependency/impact, and voice-profile views. Each view records workspace/project, branch, source
+revision/checksum, projector version, last error, and rebuild status. A reader sees stale state only
+with an explicit lag marker; critical checks fall back to canonical PostgreSQL queries. Replaying
+the journal and versioned authored records must reproduce the view.
 
 ## Backup, restore, and export
 
@@ -109,14 +152,19 @@ Embeddings are optional because they are derived. A restore test must create a c
 - Redact secrets from logs and diagnostics.
 - Deleting a media asset covers originals, variants, segments, vectors, caches, and remote-provider uploads where supported, while preserving only an authorized audit tombstone.
 
-## Near-term repairs to the prototype
+## Near-term Phase 2 corrections
 
-- Introduce repository interfaces and application-owned lifecycles for clients.
-- Remove network/database activity from imports.
-- standardize graph DTO serialization.
-- Store edge temporal/provenance fields rather than dropping them.
-- Add node retirement and scoped deletion behavior.
-- Replace the process-local JSON schema registry with project-scoped durable schema records.
-- Add migrations for constraints and the vector index.
-- Isolate the current Chroma client behind the vector port so it can be replaced by the selected pgvector adapter without affecting retrieval workflows.
-- Introduce PostgreSQL migrations, workspace/project context, journal/outbox, and seed data; current prototype databases may be reset.
+- Add normalized/versioned PostgreSQL canon tables and one canonical commit unit of work.
+- Move every schema, lifecycle, cardinality, reference, and review-policy rule into commit-time
+  validation.
+- Replace the Neo4j canonical writer with an idempotent projection consumer and visible watermark.
+- Add full journal replay, projection rebuild, verification, and lag health.
+- Reserve stable serialized identities for story invariants, scene contracts, disclosures,
+  narrated assertions, aliases, tags, suppressions, and dependency edges before durable formats
+  freeze; implement only the Phase 2 query/invariant seams now.
+- Settle branch-local closure effects and the `WorldTime` value object before declaring fact/event
+  persistence stable.
+- Add point-in-time history/provenance queries, immutable revision tags, and compensating-revert
+  proposals as the first author-facing uses of the journal.
+- Prototype the representative branch/time/POV query in PostgreSQL and Neo4j before Phase 3 retains
+  Neo4j as required infrastructure.

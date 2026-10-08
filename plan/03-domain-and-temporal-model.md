@@ -2,13 +2,15 @@
 
 ## Model goals
 
-The domain model must answer five questions without consulting generated prose:
+The domain model must answer seven questions without consulting generated prose:
 
 1. What is canonically true?
 2. On which branch and during which interval is it true?
 3. Who believes or knows it, and with what confidence?
 4. Which event or author action caused it to become true?
 5. Which narrative plan does it serve?
+6. What has the reader been shown at this narrative position?
+7. Which authored rule or scene condition should this state satisfy?
 
 ## Top-level aggregates
 
@@ -28,7 +30,9 @@ A stable identity such as Character, Location, Object, Faction, Concept, Resourc
 
 A reified canonical assertion with subject, predicate, object or scalar value, branch scope, valid interval, confidence/status, and provenance. Reifying important facts makes temporal validity, contradiction detection, review, and branching tractable.
 
-Relationships may be projected as native Neo4j edges for fast traversal, but the fact identity and journal entry remain authoritative.
+Relationships may be projected as native Neo4j edges for fast traversal, but PostgreSQL's
+versioned fact identity/state and immutable journal remain authoritative. Neo4j is replayable from
+committed envelopes (ADR-012).
 
 ### Belief
 
@@ -41,6 +45,10 @@ Something that happened in world chronology. Events have timeline positions, par
 ### Story plan
 
 Narrative intent organized as Story → Arc/Act → Beat → ScenePlan. It references required state, intended changes, threads, themes, reveals, and conflicts. Plans are not canon until realized by committed events.
+
+Each scene plan may carry a typed `SceneContract`: hard preconditions, soft expectations, intended
+postconditions, declared perceptions, setups, disclosures, and payoffs. Character arcs are paths
+over project-defined qualitative or ordinal state dimensions, not universal psychological scores.
 
 ### Scene
 
@@ -59,6 +67,34 @@ scenes, plans, events, or facts with roles such as `DEPICTS`, `VOICE_OF`, `MAP_O
 
 A reviewable proposal containing ordered creates, updates, closes, and links. It has statuses `draft`, `validating`, `needs_review`, `approved`, `committing`, `committed`, `rejected`, and `failed`.
 
+### Narrated assertion and speech act
+
+A proposition represented in narration, dialogue, thought, written communication, dream/vision, or
+reported speech. Speech acts record speaker, intended listeners, explicit overhearers, evidence, and
+an authored interpretation such as sincere, lie, mistaken, unreliable narration, or figurative.
+They are not objective facts merely because they appear in accepted prose.
+
+### Reader disclosure
+
+A versioned record that a proposition was exposed at a narrative position for an intended
+audience/edition, with source scene/version, exact evidence, and explicit/implied/ambiguous mode.
+It supports reveal, dramatic-irony, and spoiler-safe views without claiming that every reader made
+the same inference.
+
+### Story invariant and suppression
+
+A story invariant is a safe declarative rule over propositions and the three clocks. It is authored
+policy rather than canon. New author invariants are warnings by default and may become blocking
+only through an explicit authorized publication. Built-in integrity invariants are a separate,
+permanently blocking class. Eligible advisory findings may be covered by versioned, scoped
+suppressions; integrity failures cannot.
+
+### Alias binding
+
+A time-, branch-, narrative-, and POV/speaker-scoped reference from an alias or epithet to an
+entity. Reviewed positive and negative resolution examples preserve author corrections for editor
+suggestions, import, extraction, and deterministic checks.
+
 ## Core node types
 
 Prefer a controlled core vocabulary:
@@ -68,9 +104,10 @@ Prefer a controlled core vocabulary:
 - System, Law, Constraint, Pressure
 - Fact, Belief, Goal, Secret
 - Event
-- Story, Act, PlotArc, Beat, ScenePlan, Scene, SceneVersion
+- Story, Act, PlotArc, Beat, ScenePlan, SceneContract, Scene, SceneVersion
 - Thread, Conflict, Foreshadow, Payoff, Theme
-- Source, ContextManifest, MutationSet
+- NarratedAssertion, SpeechAct, Disclosure, StoryInvariant, FindingSuppression, AliasBinding
+- Source, ContextManifest, MutationSet, CanonTag
 - MediaAsset, MediaAssetVersion, MediaSegment, AssetLink, DerivedMediaObservation
 
 Appearance, personality, and state may remain structured components when they need independent temporal history. Avoid making every form section a graph node by default; use a node only when it has identity, relationships, or version history.
@@ -99,6 +136,11 @@ Each temporal fact uses a half-open validity interval `[valid_from, valid_to)`. 
 
 Flashbacks change narrative order, not the world time at which their events occurred.
 
+`WorldTime` must represent ordinal, authored-calendar, relative-anchor, fuzzy interval, and unknown
+forms without coercing them to civil `datetime`. `NarrativePosition` is an ordered manuscript
+coordinate that may carry part/chapter/scene labels. Neither is implicitly convertible to the
+other.
+
 ## Branch semantics
 
 - A new branch points to a parent and fork revision/tick; it does not copy the entire graph.
@@ -124,6 +166,11 @@ It must not present an inaccessible secret as something the character knows. The
 The same policy covers media. A portrait, map, recording, filename, caption, transcript, or visible
 detail can reveal a secret even when its accompanying text is safe.
 
+Character knowledge and reader disclosure are distinct ledgers. Deterministic belief propagation
+may propose acquisitions from explicit perception, addressed speech, or overhearing, but scene
+participation alone does not prove perception. Directional, context-specific trust can affect
+proposed confidence. All propagated changes remain reviewable mutations.
+
 ## Provenance
 
 Every fact, belief, event, and plan change records:
@@ -139,6 +186,9 @@ Derived information also stores its derivation inputs and can be invalidated whe
 
 ## Hard invariants
 
+These built-in integrity invariants are permanently blocking and non-suppressible. They are not the
+same as author story invariants, which default to warning behavior under ADR-013.
+
 - References cannot cross projects.
 - A branch cannot inherit from itself or from a descendant.
 - At one branch/tick, mutually exclusive single-valued facts cannot both be active.
@@ -151,6 +201,15 @@ Derived information also stores its derivation inputs and can be invalidated whe
 - An asset/segment cannot be linked across projects, and a derived representation cannot widen its source visibility.
 - A machine-derived media observation cannot become canon without an accepted mutation carrying exact region/timestamp evidence.
 - Retired, deleted, quarantined, failed, or branch/time-inapplicable media cannot enter a new executable context manifest.
+
+## Author story invariants
+
+Project rules use a bounded declarative AST over governed propositions, cardinality, branch/time,
+narrative position, and declared exceptions. Each rule version records dependencies, examples,
+scope, and enforcement mode. A deterministic violation becomes a cited finding and blocks a commit
+only when that exact author rule version has explicitly enabled blocking behavior. Uncertain or
+extraction-dependent results are findings only. See ADR-013 and
+`18-author-rules-canon-queries-and-derived-views.md`.
 
 ## Schema extensions
 

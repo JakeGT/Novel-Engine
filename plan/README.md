@@ -24,9 +24,11 @@ Read in this order:
 16. [OpenCodeReview adaptation](16-open-code-review-adaptation.md) — deterministic review bundles and bounded agents for long-form prose.
 17. [Multimodal context and media memory](17-multimodal-context.md) — assets, cross-modal retrieval, capability-aware model context, and media consistency.
 18. [Phase 0 todo](phase-0-todo.md) — execution-ready stabilization checklist, dependencies, and exit evidence.
-19. [API surface](api-surface.md) — canonical `/api/v1` routes, deprecated aliases, and the problem error contract.
+19. [API surface](api-surface.md) — canonical `/api/v1` routes and the problem error contract.
 20. [Phase 0 baseline](phase-0-baseline.md) — pre-refactor API, storage, workflow, and worktree inventory.
 21. [Phase 1 todo](phase-1-todo.md) — execution-ready identity, tenancy, distribution, provider-credential, and isolation checklist.
+22. [Phase 2 todo](phase-2-todo.md) — draft execution plan for governed schema, revisioned canon, mutation commits, evidence assets, authoring UI, and archive recovery.
+23. [Author rules, canon queries, and derived views](18-author-rules-canon-queries-and-derived-views.md) — story invariants, explanation/history queries, reader disclosure, scene contracts, derived projections, MCP, and suppressions.
 
 Architectural decisions that become settled should be recorded in `decisions/` using [the ADR template](decisions/000-template.md).
 
@@ -36,7 +38,8 @@ Architectural decisions that become settled should be recorded in `decisions/` u
 - **Perspective is explicit.** Objective truth, a character's belief, and narrated assertion are different records.
 - **History is retained.** Changes create traceable versions instead of silently erasing prior state.
 - **Retrieval is inspectable.** Every context item has a reason, source, scope, and token cost.
-- **Derived stores are disposable.** Neo4j plus the mutation journal can reconstruct search indexes and summaries.
+- **Derived stores are disposable.** The PostgreSQL journal and normalized canon can reconstruct Neo4j, search indexes, summaries, and purpose-built read models.
+- **Author intent is executable data, not code.** Safe declarative invariants and scene contracts are versioned, testable, and evaluated without allowing project-supplied executable rules.
 - **One vertical slice at a time.** Each delivery phase ends in a user-observable workflow, not only infrastructure.
 - **Local development is first-class.** A contributor or agent should be able to validate most changes without paid APIs.
 - **Open source and hosted use share one core.** Self-hosted local identity and invite-only portfolio identity enter the same scoped application contracts.
@@ -54,25 +57,29 @@ Architectural decisions that become settled should be recorded in `decisions/` u
 | Implemented | Acceptance criteria and quality gates pass. |
 | Deferred | Intentionally excluded from the current release. |
 
-Core domain decisions are recorded under `decisions/`. ADR-008 proposes the open-source/free distribution pivot, ADR-009 accepts invite-only tenancy through shared portfolio identity (Authentik), and ADR-010 accepts multimodal context with a shared embedding-space boundary. Licensing and governance remain owner decisions in `11-decisions-and-questions.md`.
+Core domain decisions are recorded under `decisions/`. ADR-008 proposes the open-source/free distribution pivot, ADR-009 accepts invite-only tenancy through shared portfolio identity (Authentik), ADR-010 accepts multimodal context with a shared embedding-space boundary, ADR-012 makes PostgreSQL authoritative canon with Neo4j as a replayable projection (superseding ADR-011), and ADR-013 accepts warning-default declarative story invariants while making built-in integrity checks permanently blocking. Licensing and governance remain owner decisions in `11-decisions-and-questions.md`.
 
 ## Current repository baseline
 
 Implemented or partially implemented:
 
-- FastAPI application and graph CRUD routes
-- Neo4j node, edge, text search, and vector search access
-- custom schema registry stored in JSON
-- explicit entity tags and graph traversal policies
-- character anchor/questionnaire/graph-extraction workflow
-- a minimal ChromaDB wrapper
+- Phase 0 lifecycle, ports, migrations, deterministic tests, seed/reset, stable `/api/v1`, and
+  PostgreSQL/pgvector + Neo4j infrastructure
+- Phase 1 OIDC/local identity, invitation-only tenancy, scoped stores, encrypted OpenRouter BYOK,
+  object storage, project transfer, and the minimal authenticated React shell
+- Phase 2 typed entity/fact/belief/event domain, immutable project schema versions/runtime
+  compilation, PostgreSQL journal/head/outbox migrations, and initial canonical authoring APIs
+- a transitional ADR-011 Neo4j-first commit implementation retained as characterization while the
+  ADR-012 PostgreSQL canon refactor is built
 
 Not yet product-ready:
 
-- stable domain and API representations
-- reviewable canon mutation workflow
-- temporal and branch semantics
-- story planning and scene generation
-- reliable vector synchronization
-- frontend workflows
-- isolated tests, migrations, background jobs, authentication, and operational telemetry
+- normalized/versioned PostgreSQL canon and a single authoritative commit validator/unit of work
+- replayable Neo4j projection worker, revision watermarks, lag handling, and rebuild verification
+- branch-overlay closure and a structured fuzzy/invented-calendar `WorldTime` model
+- per-operation review policy, record/dependency-level rebasing, and automatic recovery workers
+- provenance/history UI, media identity, archive v2, and the Phase 2 authoring frontend
+- manuscript import, extraction/entity-resolution evaluation, story planning, scene generation,
+  consistency workflows, temporal branching, and production operations
+- declarative story invariants, reader disclosures, narrated assertions/belief propagation, scene
+  contracts, impact preview, spoiler-safe exports, purpose-built temporal views, and MCP transport

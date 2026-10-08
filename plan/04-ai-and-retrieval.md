@@ -35,6 +35,7 @@ A context package is a durable structure, not only a concatenated string. It con
 - rendered prompt sections and template version
 - previous-prose units and their semantic, temporal, narrative, author-importance, and continuity scores
 - selected author-only secrets, separately labeled from POV-accessible knowledge
+- reader disclosures and unresolved setup/payoff obligations at the selected narrative position
 - typed text, image, audio, and video parts with asset/segment/version pointers
 - media authority, branch/time applicability, visibility, explicit-link role, and score components
 - the original media or derived caption/transcript representation actually delivered to the model
@@ -57,6 +58,12 @@ This enables debugging, replay, cost analysis, and regression testing.
 11. **Trace.** Persist why each item and representation was included or excluded.
 
 Semantic retrieval suggests candidates; it never decides truth.
+
+Rendering uses deterministic stable-to-volatile section ordering to support provider prompt
+caching: policy, schema/world laws and invariant summaries, stable style/bibles, filtered canon,
+scene contract/task, then recent prose and volatile evidence. Visibility and tenant boundaries are
+applied before rendering; no cache prefix is shared across incompatible scope. Provider-reported
+cache-read/write usage is recorded when available and `unsupported` otherwise.
 
 ## Vector document model
 
@@ -108,6 +115,10 @@ operations are distinct. Incompatible embedding generations are never mixed in o
 
 Generation and extraction should be separate calls. A prose model should not be trusted to produce the definitive state delta incidentally.
 
+Narrated assertions, disclosures, aliases, and perception outcomes may also be extracted, but remain
+reviewable proposals. Deterministic speech/perception policies may derive proposed belief mutations
+only after their source assertions/events are reviewed.
+
 ## Structured extraction
 
 Extraction output uses operations such as:
@@ -142,6 +153,8 @@ Findings have severity, category, evidence, affected records, suggested resoluti
 - Delimit and label untrusted manuscript text to reduce prompt injection.
 - Persist hashes or versions, not secret environment configuration.
 - Test rendering without a provider.
+- Keep stable, deterministically serialized sections before scene-specific and recent-prose
+  sections so compatible providers can reuse a cacheable prefix without altering semantic order.
 - Retain a compatibility window for replaying old jobs.
 
 ## Reliability and cost
@@ -163,8 +176,11 @@ Maintain versioned fixtures for:
 - temporal and branch correctness
 - context relevance and omission
 - structured extraction precision/recall
+- alias/epithet resolution, including reviewed negative examples and POV/time-dependent aliases
+- narrated-assertion, reader-disclosure, and belief-propagation precision/recall
 - contradiction detection
 - character voice and scene-plan adherence
+- deterministic voice-drift triage across sample sizes, languages, and intentional style changes
 - prompt-injection resistance
 - deterministic and model-assisted consistency detection by category and cost tier
 - previous-prose retrieval across recency, importance, branch, and narrative-distance cases

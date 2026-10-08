@@ -124,6 +124,11 @@ Hard gates remove anything outside workspace, project, selected branch ancestry,
 
 Unlike OpenCodeReview's one-group-per-file behavior, a prose unit may appear in several targeted bundles. This costs more, but avoids forcing timeline, knowledge, voice, and plot-thread checks into one noisy prompt.
 
+Bundle construction also consumes authored story invariants, scene pre/postconditions, reader
+disclosures, narrated assertions, and scoped suppressions. Explicit entity marks and reviewed alias
+bindings are deterministic inputs; claims extracted from otherwise unmarked prose retain their
+extraction confidence and cannot be mislabeled as model-free evidence.
+
 ## Example
 
 A generated scene changes three passages:
@@ -139,6 +144,9 @@ The deterministic graph may create:
 - `POV/secret` bundle: Mara's beliefs, secret access, the author's selected truth, recalled claim
 - `thread/promise` bundle: new promise, Iven, before-dawn deadline, existing unresolved threads
 - `character/voice` bundle: changed dialogue/interiority plus selected voice exemplars
+- `reader/reveal` bundle: changed disclosures plus reader/character ledger differences and open
+  setups/payoffs
+- `invariant/scene-contract` bundle: changed dependencies plus applicable rule/condition versions
 
 Each bundle receives only the changed passages and evidence needed for that check family. Results merge by evidence range and canonical dependency.
 
