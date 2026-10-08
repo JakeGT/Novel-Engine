@@ -141,11 +141,13 @@ def _build_fake_container(settings, tmp_path):
     )
     journal = InMemoryCanonJournal()
     canon_writer = InMemoryCanonWriter()
-    canon_repository = InMemoryCanonRepository()
+    canon_repository = InMemoryCanonRepository(journal=journal)
     mutation_service = MutationService(journal, canon_repository, local_mode=not settings.is_hosted)
+    from backend.services.outbox_consumer import OutboxConsumer
     from backend.services.projection_service import GraphProjectionService
 
     projection_service = GraphProjectionService(canon=canon_repository, writer=canon_writer)
+    outbox_consumer = OutboxConsumer(journal=journal, projector=projection_service)
     from backend.services.canon_entity_service import CanonEntityService
 
     canon_entity_service = CanonEntityService(
@@ -193,6 +195,7 @@ def _build_fake_container(settings, tmp_path):
         canon_writer=canon_writer,
         canon_repository=canon_repository,
         projection_service=projection_service,
+        outbox_consumer=outbox_consumer,
         mutation_service=mutation_service,
         canon_entity_service=canon_entity_service,
         canon_assertion_service=canon_assertion_service,

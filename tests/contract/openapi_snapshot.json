@@ -4968,6 +4968,50 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/projection": {
+      "get": {
+        "operationId": "projection_lag_api_v1_projects__project_id__projection_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Projection Lag Api V1 Projects  Project Id  Projection Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Projection Lag",
+        "tags": [
+          "projection"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/schemas": {
       "get": {
         "operationId": "list_schema_versions_api_v1_projects__project_id__schemas_get",

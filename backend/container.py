@@ -61,6 +61,7 @@ class Container:
     canon_repository: Any = None
     mutation_service: Any = None
     projection_service: Any = None
+    outbox_consumer: Any = None
     canon_entity_service: Any = None
     canon_assertion_service: Any = None
 
@@ -247,5 +248,10 @@ def build_container(settings: Settings | None = None) -> Container:
 
     container.projection_service = GraphProjectionService(
         canon=container.canon_repository, writer=container.canon_writer
+    )
+    from backend.services.outbox_consumer import OutboxConsumer
+
+    container.outbox_consumer = OutboxConsumer(
+        journal=container.journal, projector=container.projection_service
     )
     return container

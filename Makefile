@@ -4,7 +4,7 @@ export UV_CACHE_DIR
 
 TYPE_CHECK_TARGETS = backend
 
-.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify seed reset-dev diagnostics retention reconcile project audit api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check secret-scan frontend-install frontend-lint frontend-build check
+.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify seed reset-dev diagnostics retention reconcile project watch audit api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check secret-scan frontend-install frontend-lint frontend-build check
 
 help:
 	@echo "install             Install runtime Python dependencies"
@@ -21,6 +21,7 @@ help:
 	@echo "retention           Purge expired sessions, attempts, invitations, and rate-limit hits"
 	@echo "reconcile           Reconcile an interrupted canon commit by id"
 	@echo "project             Project committed canon into the graph (PROJECT_ARGS=--lag|--rebuild)"
+	@echo "watch               Drain the canonical outbox into the graph (WATCH_ARGS=--interval N|--rebuild)"
 	@echo "audit               Audit Python dependencies for known vulnerabilities"
 	@echo "api                 Start the FastAPI development server"
 	@echo "test                Run hermetic tests (unit, application, contract)"
@@ -78,6 +79,9 @@ reconcile:
 
 project:
 	uv run --locked python -m backend.devtools.project $(PROJECT_ARGS)
+
+watch:
+	uv run --locked python -m backend.devtools.watch $(WATCH_ARGS)
 
 audit:
 	uv run --locked pip-audit

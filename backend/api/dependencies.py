@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import Depends, Request
 
 from backend.container import Container
@@ -89,3 +91,15 @@ def get_canon_assertion_service(
     container: Container = Depends(get_container),
 ) -> CanonAssertionService:
     return container.canon_assertion_service
+
+
+def get_journal(container: Container = Depends(get_container)) -> Any:
+    return container.journal
+
+
+def get_projection_service(container: Container = Depends(get_container)) -> Any:
+    return container.projection_service
+
+
+def get_outbox_consumer(container: Container = Depends(get_container)) -> Any:
+    return container.outbox_consumer

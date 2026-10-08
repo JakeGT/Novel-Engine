@@ -12,6 +12,7 @@ from backend.api.problems import register_exception_handlers
 from backend.api.v1.canon_assertions import router as canon_assertions_router
 from backend.api.v1.canon_entities import router as canon_entities_router
 from backend.api.v1.credentials import router as credentials_router
+from backend.api.v1.projection import router as projection_router
 from backend.api.v1.router import router as v1_router
 from backend.api.v1.schema_versions import router as schema_versions_router
 from backend.api.v1.tenancy import router as tenancy_router
@@ -113,6 +114,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.include_router(schema_versions_router, prefix="/api/v1")
     app.include_router(canon_entities_router, prefix="/api/v1")
     app.include_router(canon_assertions_router, prefix="/api/v1")
+    app.include_router(projection_router, prefix="/api/v1")
     app.include_router(health_router)
     app.include_router(auth_router)
 

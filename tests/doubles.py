@@ -1292,6 +1292,8 @@ class InMemoryCanonJournal:
         self.attempts: list[CommitAttempt] = []
         self.revisions: dict[str, CanonRevision] = {}
         self.outbox: dict[str, OutboxMessage] = {}
+        self.outbox_attempts: dict[str, int] = {}
+        self.outbox_errors: dict[str, str] = {}
 
     def _id(self, kind: str) -> str:
         self._counter += 1
@@ -1528,6 +1530,16 @@ class InMemoryCanonJournal:
             for message in self.outbox.values()
             if message.workspace_id == workspace_id and message.project_id == project_id
         ][:limit]
+
+    async def mark_outbox_published(self, *, message_id: str) -> None:
+        for key, message in self.outbox.items():
+            if message.id == message_id:
+                self.outbox[key] = message.model_copy(update={"published_at": self._now()})
+                return
+
+    async def mark_outbox_failed(self, *, message_id: str, error: str) -> None:
+        self.outbox_attempts[message_id] = self.outbox_attempts.get(message_id, 0) + 1
+        self.outbox_errors[message_id] = error
 
 
 class InMemoryCanonWriter:
@@ -1971,7 +1983,8 @@ class _MemoryCanonReader:
 class InMemoryCanonRepository:
     """In-memory canonical PostgreSQL canon (ADR-012) with matching invariants."""
 
-    def __init__(self) -> None:
+    def __init__(self, journal: InMemoryCanonJournal | None = None) -> None:
+        self._journal = journal
         self.heads: dict[tuple[str, str, str], int] = {}
         self.envelopes: dict[str, Any] = {}
         self.revisions: list[Any] = []
@@ -2056,6 +2069,21 @@ class InMemoryCanonRepository:
                 created_at=utcnow(),
             )
         )
+        if self._journal is not None:
+            self._journal.outbox.setdefault(
+                f"commit:{envelope.commit_id}",
+                OutboxMessage(
+                    id=f"ob_{envelope.commit_id}",
+                    topic="canon.commit",
+                    workspace_id=envelope.workspace_id,
+                    project_id=envelope.project_id,
+                    branch_id=envelope.branch_id,
+                    revision=reserved,
+                    payload={"commit_id": envelope.commit_id},
+                    idempotency_key=f"commit:{envelope.commit_id}",
+                    created_at=utcnow(),
+                ),
+            )
         return reserved
 
     async def get_envelope(self, commit_id: str) -> Any:

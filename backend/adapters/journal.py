@@ -629,3 +629,20 @@ class PostgresCanonJournal:
             )
             for row in rows
         ]
+
+    async def mark_outbox_published(self, *, message_id: str) -> None:
+        async with session_scope(self._session_factory) as session:
+            await session.execute(
+                text("UPDATE outbox_messages SET published_at = now() WHERE id = :id"),
+                {"id": message_id},
+            )
+
+    async def mark_outbox_failed(self, *, message_id: str, error: str) -> None:
+        async with session_scope(self._session_factory) as session:
+            await session.execute(
+                text(
+                    "UPDATE outbox_messages "
+                    "SET attempts = attempts + 1, last_error = :error WHERE id = :id"
+                ),
+                {"id": message_id, "error": error[:500]},
+            )

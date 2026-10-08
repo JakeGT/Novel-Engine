@@ -641,6 +641,10 @@ class CanonJournalPort(Protocol):
         self, *, workspace_id: str, project_id: str, limit: int = 100
     ) -> list[OutboxMessage]: ...
 
+    async def mark_outbox_published(self, *, message_id: str) -> None: ...
+
+    async def mark_outbox_failed(self, *, message_id: str, error: str) -> None: ...
+
 
 @runtime_checkable
 class CanonWriterPort(Protocol):
