@@ -185,8 +185,9 @@ def clear_tenancy(dsn: str) -> bool:
     try:
         with psycopg.connect(dsn, autocommit=True) as connection:
             connection.execute(
-                "TRUNCATE TABLE audit_events, invitations, projects, memberships, workspaces, "
-                "external_identities, sessions, login_attempts, users RESTART IDENTITY CASCADE"
+                "TRUNCATE TABLE schema_versions, audit_events, invitations, projects, "
+                "memberships, workspaces, external_identities, sessions, login_attempts, "
+                "users RESTART IDENTITY CASCADE"
             )
         return True
     except psycopg.errors.UndefinedTable:

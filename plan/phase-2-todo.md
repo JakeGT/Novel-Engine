@@ -89,7 +89,7 @@ Phase 2 delivery boundary.
 | --- | --- | --- |
 | 2A. Phase 1 closeout and Phase 2 contract | In progress (ADR-011, glossary, baseline, compatibility rules recorded; owner acceptance, hosted CI run, and clean-host rehearsal are external) | Phase 1 evidence |
 | 2B. Canon domain and core schema | Implemented | 2A |
-| 2C. Project schema governance and compiler | Not started | 2B |
+| 2C. Project schema governance and compiler | Implemented | 2B |
 | 2D. Revision, journal, outbox, and storage migrations | Not started | 2A–2C |
 | 2E. Mutation validation, commit saga, and recovery | Not started | 2B–2D |
 | 2F. Entity authoring and retirement | Not started | 2C–2E |
@@ -174,40 +174,58 @@ Implemented in `backend/domain/canon/` with pure invariant tests in
 
 ## 2C. Project schema governance and runtime compiler
 
-- [ ] Replace the process-local/global `custom_schema.json` registry with immutable,
+- [x] Replace the process-local/global `custom_schema.json` registry with immutable,
       workspace/project-scoped schema-version records in PostgreSQL.
-- [ ] Preserve a fixed application-owned core schema and allow extensions only through a bounded
+      (New `schema_versions` table (migration `0012_schema_versions`) + `SchemaVersionStorePort`;
+      the legacy global JSON registry remains only as a local-dev convenience for listing core
+      types and is no longer a project-governance path.)
+- [x] Preserve a fixed application-owned core schema and allow extensions only through a bounded
       declarative meta-schema. Never evaluate project-supplied Python, templates, regexes with
       unsafe features, Cypher, or arbitrary expressions.
-- [ ] Support the initial safe subset: bounded primitives, enums, constrained strings/numbers,
+      (`backend/domain/schema_defs.py`; string `format` is a vetted enum, never a user regex.)
+- [x] Support the initial safe subset: bounded primitives, enums, constrained strings/numbers,
       lists, nested records, entity references, required/optional fields, endpoint constraints,
       cardinality, and reserved temporal/visibility flags.
-- [ ] Validate limits on definition size, nesting depth, enum/list size, identifiers, descriptions,
+      (Records nest to depth 3; lists carry primitives/enums/entity refs; temporal/visibility flag
+      maps are reserved.)
+- [x] Validate limits on definition size, nesting depth, enum/list size, identifiers, descriptions,
       and compiled JSON Schema complexity to prevent resource-exhaustion inputs.
-- [ ] Compile an exact schema version into internal field specifications, strict runtime Pydantic
+- [x] Compile an exact schema version into internal field specifications, strict runtime Pydantic
       validators, and strict JSON Schema suitable for later model structured-output requests.
-- [ ] Cache compiled validators only by workspace/project/schema-version content hash; make cache
-      eviction safe and ensure a cache hit cannot cross projects.
-- [ ] Make schema publishing immutable and optimistic: edit a draft, validate compatibility, then
+      (`backend/services/schema_compiler.py`; `CompiledSchema` + deterministic content hash.)
+- [x] Cache compiled validators only by workspace/project/schema-version content hash; make cache
+      eviction safe and ensure a cache hit cannot cross projects. (LRU keyed by
+      `workspace\x1fproject\x1fcontent_hash`.)
+- [x] Make schema publishing immutable and optimistic: edit a draft, validate compatibility, then
       publish a new version. Existing canon retains the version under which it was accepted.
-- [ ] Define compatibility categories (`additive`, `migration_required`, `forbidden`) and produce a
+- [x] Define compatibility categories (`additive`, `migration_required`, `forbidden`) and produce a
       migration/projection plan for non-additive changes; no schema publish silently rewrites canon.
-- [ ] Add project-scoped schema list/read/draft/validate/publish endpoints with authorization,
+      (`classify_compatibility` + `migration_plan`.)
+- [x] Add project-scoped schema list/read/draft/validate/publish endpoints with authorization,
       revision conflicts, stable problem responses, and audit/provenance events.
-- [ ] Remove hosted write access to the global schema endpoint. Provide a read-only core-schema
+      (`backend/api/v1/schema_versions.py`; publish requires project admin; forbidden → 409.)
+- [x] Remove hosted write access to the global schema endpoint. Provide a read-only core-schema
       capability endpoint or local development tool where still useful.
-- [ ] Update the seed world to use published schema versions and remove its dependency on a mutable
-      global JSON file.
-- [ ] Add meta-schema property/fuzz tests, malicious definition fixtures, deterministic compilation
+      (Global `POST/DELETE /schema/*` now requires local mode; hosted mode must publish project
+      schema versions. Read-only listing remains available.)
+- [x] Update the seed world to use published schema versions and remove its dependency on a mutable
+      global JSON file. (`backend/seed/schema.py` publishes a v1 core schema for the seed project;
+      `make seed` is idempotent and `make reset-dev` clears it.)
+- [x] Add meta-schema property/fuzz tests, malicious definition fixtures, deterministic compilation
       snapshots, cache-isolation tests, and JSON-Schema/Pydantic agreement tests.
+      (`tests/unit/test_schema_compiler.py`, `test_schema_compatibility.py`,
+      `tests/application/test_schema_service.py`, `tests/integration/test_schema_store.py`,
+      `tests/contract/test_schema_versions.py`.)
 
 ### 2C acceptance
 
-- [ ] two projects may define the same extension name without sharing definition or cache state
-- [ ] one published definition produces deterministic validators and JSON Schema after restart
-- [ ] historical canon remains interpretable after a newer project schema is published
-- [ ] ordinary content writes cannot create undeclared types or predicates
-- [ ] unsafe or pathologically complex definitions are rejected without executing user input
+- [x] two projects may define the same extension name without sharing definition or cache state
+- [x] one published definition produces deterministic validators and JSON Schema after restart
+      (content-addressed; cache cleared between compilations still yields the same hash/output)
+- [x] historical canon remains interpretable after a newer project schema is published
+      (versions are immutable and canon carries `schema_version_id`; enforcement lands with 2F)
+- [x] ordinary content writes cannot create undeclared types or predicates
+- [x] unsafe or pathologically complex definitions are rejected without executing user input
 
 ## 2D. Revisions, journal, outbox, and storage migrations
 

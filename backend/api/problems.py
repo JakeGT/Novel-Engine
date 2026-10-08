@@ -10,6 +10,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from backend.api.middleware import get_correlation_id
 from backend.domain.errors import DomainError
 from backend.domain.identity import IdentityError, IdentityProviderUnavailable
+from backend.domain.schemas import SchemaCompatibilityError, SchemaGovernanceError
 from backend.domain.tenancy import InvitationNotFound, TenancyError
 from backend.ports import AIError
 
@@ -148,6 +149,36 @@ def register_exception_handlers(app: FastAPI) -> None:
                 status=404,
                 title="Not found",
                 code="not_found",
+                detail=str(exc),
+                correlation_id=_correlation_id(request),
+            ),
+        )
+
+    @app.exception_handler(SchemaCompatibilityError)
+    async def _handle_schema_compatibility(
+        request: Request, exc: SchemaCompatibilityError
+    ) -> JSONResponse:
+        return _problem_response(
+            409,
+            problem_body(
+                status=409,
+                title="Schema change rejected",
+                code="schema_incompatible",
+                detail=str(exc),
+                correlation_id=_correlation_id(request),
+            ),
+        )
+
+    @app.exception_handler(SchemaGovernanceError)
+    async def _handle_schema_governance(
+        request: Request, exc: SchemaGovernanceError
+    ) -> JSONResponse:
+        return _problem_response(
+            422,
+            problem_body(
+                status=422,
+                title="Invalid schema definition",
+                code="invalid_schema",
                 detail=str(exc),
                 correlation_id=_correlation_id(request),
             ),

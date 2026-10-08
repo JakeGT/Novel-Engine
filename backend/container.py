@@ -54,6 +54,8 @@ class Container:
     credential_service: Any = None
     usage: Any = None
     usage_service: Any = None
+    schema_versions: Any = None
+    schema_service: Any = None
 
     async def aclose(self) -> None:
         self.graph.close()
@@ -187,5 +189,15 @@ def build_container(settings: Settings | None = None) -> Container:
             period_token_limit=resolved.PROVIDER_PERIOD_TOKEN_LIMIT,
             period_cost_limit=resolved.PROVIDER_PERIOD_COST_LIMIT,
         ),
+    )
+
+    from backend.adapters.schema_store import PostgresSchemaVersionStore
+    from backend.services.schema_service import SchemaService
+
+    container.schema_versions = PostgresSchemaVersionStore(database.session_factory)
+    container.schema_service = SchemaService(
+        container.schema_versions,
+        tenancy=container.tenancy_service,
+        local_mode=not resolved.is_hosted,
     )
     return container

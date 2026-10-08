@@ -69,6 +69,7 @@ def _build_fake_container(settings, tmp_path):
         InMemoryLoginAttemptStore,
         InMemoryProviderUsageStore,
         InMemoryRateLimiter,
+        InMemorySchemaVersionStore,
         InMemorySessionStore,
         InMemoryTenancyStore,
         InMemoryVectorStore,
@@ -128,6 +129,12 @@ def _build_fake_container(settings, tmp_path):
         usage_store,
         limit=UsageLimit(per_job_token_limit=200_000, period_token_limit=2_000_000),
     )
+    from backend.services.schema_service import SchemaService
+
+    schema_versions = InMemorySchemaVersionStore()
+    schema_service = SchemaService(
+        schema_versions, tenancy=tenancy_service, local_mode=not settings.is_hosted
+    )
     return Container(
         settings=settings,
         graph=graph,
@@ -151,6 +158,8 @@ def _build_fake_container(settings, tmp_path):
         usage=usage_store,
         usage_service=usage_service,
         objects=objects,
+        schema_versions=schema_versions,
+        schema_service=schema_service,
     )
 
 

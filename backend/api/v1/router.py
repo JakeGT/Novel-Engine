@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query, status
 from backend.adapters.system import uuid7
 from backend.api.auth import (
     get_project_scope,
-    require_platform_admin,
+    require_local_schema_write,
     require_project_scope,
     require_session,
 )
@@ -337,7 +337,7 @@ def list_node_types(
 def add_node_type(
     body: s.SchemaTypeRequest,
     registry: SchemaRegistryPort = Depends(get_schema_registry),
-    _admin: AuthenticatedSession = Depends(require_platform_admin),
+    _admin: AuthenticatedSession = Depends(require_local_schema_write),
 ) -> s.SchemaTypesResponse:
     _validate_identifier(body.type, "node type")
     if registry.is_valid_node_type(body.type):
@@ -352,7 +352,7 @@ def add_node_type(
 def remove_node_type(
     node_type: str,
     registry: SchemaRegistryPort = Depends(get_schema_registry),
-    _admin: AuthenticatedSession = Depends(require_platform_admin),
+    _admin: AuthenticatedSession = Depends(require_local_schema_write),
 ) -> s.SchemaTypesResponse:
     if node_type not in registry.custom_node_types:
         raise NotFoundError(f"Custom node type {node_type!r} not found")
@@ -377,7 +377,7 @@ def list_edge_types(
 def add_edge_type(
     body: s.SchemaTypeRequest,
     registry: SchemaRegistryPort = Depends(get_schema_registry),
-    _admin: AuthenticatedSession = Depends(require_platform_admin),
+    _admin: AuthenticatedSession = Depends(require_local_schema_write),
 ) -> s.SchemaTypesResponse:
     _validate_identifier(body.type, "edge type")
     if registry.is_valid_edge_type(body.type):
@@ -392,7 +392,7 @@ def add_edge_type(
 def remove_edge_type(
     edge_type: str,
     registry: SchemaRegistryPort = Depends(get_schema_registry),
-    _admin: AuthenticatedSession = Depends(require_platform_admin),
+    _admin: AuthenticatedSession = Depends(require_local_schema_write),
 ) -> s.SchemaTypesResponse:
     if edge_type not in registry.custom_edge_types:
         raise NotFoundError(f"Custom edge type {edge_type!r} not found")

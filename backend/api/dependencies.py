@@ -14,6 +14,7 @@ from backend.ports import (
 from backend.services.auth_service import AuthService
 from backend.services.character_service import CharacterService
 from backend.services.credential_service import CredentialService
+from backend.services.schema_service import SchemaService
 from backend.services.tenancy_service import TenancyService
 from backend.services.usage_service import ProviderUsageService
 
@@ -70,3 +71,7 @@ def get_usage_service(
     container: Container = Depends(get_container),
 ) -> ProviderUsageService:
     return container.usage_service
+
+
+def get_schema_service(container: Container = Depends(get_container)) -> SchemaService:
+    return container.schema_service

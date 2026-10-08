@@ -107,6 +107,23 @@ async def require_platform_admin(
     return auth_session
 
 
+async def require_local_schema_write(
+    auth_session: AuthenticatedSession = Depends(require_platform_admin),
+    settings: Settings = Depends(get_settings),
+) -> AuthenticatedSession:
+    """Global (process-wide) schema mutation is a local development capability only.
+
+    Hosted deployments must use project-scoped schema versions instead of mutating
+    a shared process-global registry.
+    """
+    if settings.is_hosted:
+        raise ForbiddenError(
+            "Global schema mutation is disabled in hosted mode; "
+            "publish project schema versions instead."
+        )
+    return auth_session
+
+
 async def _resolve_workspace_scope(
     request: Request,
     auth_session: AuthenticatedSession,

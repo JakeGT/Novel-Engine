@@ -985,6 +985,45 @@
         "title": "RotateCredentialRequest",
         "type": "object"
       },
+      "SchemaDefinitionRequest": {
+        "properties": {
+          "definition": {
+            "additionalProperties": true,
+            "title": "Definition",
+            "type": "object"
+          }
+        },
+        "required": [
+          "definition"
+        ],
+        "title": "SchemaDefinitionRequest",
+        "type": "object"
+      },
+      "SchemaDraftResponse": {
+        "properties": {
+          "compatibility": {
+            "title": "Compatibility",
+            "type": "string"
+          },
+          "migration_plan": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Migration Plan",
+            "type": "array"
+          },
+          "version": {
+            "$ref": "#/components/schemas/SchemaVersionModel"
+          }
+        },
+        "required": [
+          "version",
+          "compatibility",
+          "migration_plan"
+        ],
+        "title": "SchemaDraftResponse",
+        "type": "object"
+      },
       "SchemaTypeRequest": {
         "properties": {
           "type": {
@@ -1012,6 +1051,67 @@
           "types"
         ],
         "title": "SchemaTypesResponse",
+        "type": "object"
+      },
+      "SchemaVersionModel": {
+        "properties": {
+          "compatibility": {
+            "title": "Compatibility",
+            "type": "string"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "project_id",
+          "version",
+          "status",
+          "content_hash",
+          "compatibility",
+          "created_at"
+        ],
+        "title": "SchemaVersionModel",
         "type": "object"
       },
       "SetRoleRequest": {
@@ -1078,6 +1178,61 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "ValidationReportModel": {
+        "properties": {
+          "compatibility": {
+            "title": "Compatibility",
+            "type": "string"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "entity_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Entity Types",
+            "type": "array"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "migration_plan": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Migration Plan",
+            "type": "array"
+          },
+          "predicates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Predicates",
+            "type": "array"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "valid",
+          "content_hash",
+          "compatibility",
+          "errors",
+          "migration_plan",
+          "entity_types",
+          "predicates"
+        ],
+        "title": "ValidationReportModel",
         "type": "object"
       },
       "WorkspaceModel": {
@@ -2860,6 +3015,197 @@
         "summary": "Remove Node Type",
         "tags": [
           "projects",
+          "schema"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/schemas": {
+      "get": {
+        "operationId": "list_schema_versions_api_v1_projects__project_id__schemas_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SchemaVersionModel"
+                  },
+                  "title": "Response List Schema Versions Api V1 Projects  Project Id  Schemas Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Schema Versions",
+        "tags": [
+          "schema"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/schemas/drafts": {
+      "post": {
+        "operationId": "create_schema_draft_api_v1_projects__project_id__schemas_drafts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SchemaDefinitionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchemaDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Schema Draft",
+        "tags": [
+          "schema"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/schemas/validate": {
+      "post": {
+        "operationId": "validate_schema_definition_api_v1_projects__project_id__schemas_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SchemaDefinitionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationReportModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate Schema Definition",
+        "tags": [
+          "schema"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/schemas/{version_id}": {
+      "get": {
+        "operationId": "get_schema_version_api_v1_projects__project_id__schemas__version_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchemaVersionModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Schema Version",
+        "tags": [
+          "schema"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/schemas/{version_id}/publish": {
+      "post": {
+        "operationId": "publish_schema_version_api_v1_projects__project_id__schemas__version_id__publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchemaVersionModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Schema Version",
+        "tags": [
           "schema"
         ]
       }

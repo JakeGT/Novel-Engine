@@ -28,6 +28,7 @@ from backend.domain.identity import (
     User,
     utcnow,
 )
+from backend.domain.schemas import SchemaVersion, SchemaVersionStatus
 from backend.domain.tenancy import (
     AuditEvent,
     Invitation,
@@ -1149,3 +1150,86 @@ class InMemoryProviderUsageStore:
         before = len(self.records)
         self.records = [r for r in self.records if r.workspace_id != workspace_id]
         return before - len(self.records)
+
+
+class InMemorySchemaVersionStore:
+    """Deterministic project-scoped schema-version store for tests."""
+
+    def __init__(self) -> None:
+        self.versions: list[SchemaVersion] = []
+        self._counter = 0
+
+    def _for_project(self, workspace_id: str, project_id: str) -> list[SchemaVersion]:
+        return [
+            v
+            for v in self.versions
+            if v.workspace_id == workspace_id and v.project_id == project_id
+        ]
+
+    async def create_draft(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        definition: dict[str, Any],
+        content_hash: str,
+        compatibility: str,
+        created_by_user_id: str | None,
+    ) -> SchemaVersion:
+        self._counter += 1
+        existing = self._for_project(workspace_id, project_id)
+        version = max((v.version for v in existing), default=0) + 1
+        item = SchemaVersion(
+            id=f"scv_{self._counter:04d}",
+            workspace_id=workspace_id,
+            project_id=project_id,
+            version=version,
+            status=SchemaVersionStatus.DRAFT,
+            definition=definition,
+            content_hash=content_hash,
+            compatibility=compatibility,
+            created_by_user_id=created_by_user_id,
+        )
+        self.versions.append(item)
+        return item
+
+    async def get(
+        self, *, workspace_id: str, project_id: str, version_id: str
+    ) -> SchemaVersion | None:
+        for version in self._for_project(workspace_id, project_id):
+            if version.id == version_id:
+                return version
+        return None
+
+    async def get_published(self, *, workspace_id: str, project_id: str) -> SchemaVersion | None:
+        published = [
+            v
+            for v in self._for_project(workspace_id, project_id)
+            if v.status is SchemaVersionStatus.PUBLISHED
+        ]
+        return max(published, key=lambda v: v.version) if published else None
+
+    async def list(self, *, workspace_id: str, project_id: str) -> list[SchemaVersion]:
+        return sorted(
+            self._for_project(workspace_id, project_id), key=lambda v: v.version, reverse=True
+        )
+
+    async def publish(
+        self, *, workspace_id: str, project_id: str, version_id: str
+    ) -> SchemaVersion | None:
+        for index, version in enumerate(self.versions):
+            if (
+                version.workspace_id == workspace_id
+                and version.project_id == project_id
+                and version.id == version_id
+                and version.status is SchemaVersionStatus.DRAFT
+            ):
+                updated = version.model_copy(
+                    update={
+                        "status": SchemaVersionStatus.PUBLISHED,
+                        "published_at": utcnow(),
+                    }
+                )
+                self.versions[index] = updated
+                return updated
+        return None

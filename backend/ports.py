@@ -14,6 +14,7 @@ from typing import Any, Protocol, runtime_checkable
 from backend.domain.credentials import Credential, CredentialProvider
 from backend.domain.identity import IdentityClaims, LoginAttempt, Role, Session, User
 from backend.domain.objects import ObjectStat
+from backend.domain.schemas import SchemaVersion
 from backend.domain.tenancy import AuditEvent, Invitation, Membership, Project, Workspace
 from backend.domain.usage import UsageRecord, UsageTotals
 from backend.graph.schema import Edge, Node
@@ -164,6 +165,36 @@ class SchemaRegistryPort(Protocol):
 
     @property
     def custom_edge_types(self) -> set[str]: ...
+
+
+@runtime_checkable
+class SchemaVersionStorePort(Protocol):
+    """Immutable, project-scoped schema versions (draft → published)."""
+
+    async def create_draft(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        definition: dict[str, Any],
+        content_hash: str,
+        compatibility: str,
+        created_by_user_id: str | None,
+    ) -> SchemaVersion: ...
+
+    async def get(
+        self, *, workspace_id: str, project_id: str, version_id: str
+    ) -> SchemaVersion | None: ...
+
+    async def get_published(
+        self, *, workspace_id: str, project_id: str
+    ) -> SchemaVersion | None: ...
+
+    async def list(self, *, workspace_id: str, project_id: str) -> list[SchemaVersion]: ...
+
+    async def publish(
+        self, *, workspace_id: str, project_id: str, version_id: str
+    ) -> SchemaVersion | None: ...
 
 
 @dataclass
