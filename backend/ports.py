@@ -14,6 +14,7 @@ from typing import Any, Protocol, runtime_checkable
 from backend.domain.canon.assertions import Belief, Fact
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.events import Event
+from backend.domain.canon.revisions import Provenance
 from backend.domain.commit import ApplyOutcome, CommitMarker
 from backend.domain.credentials import Credential, CredentialProvider
 from backend.domain.identity import IdentityClaims, LoginAttempt, Role, Session, User
@@ -28,6 +29,8 @@ from backend.domain.journal import (
     ReviewDecision,
 )
 from backend.domain.objects import ObjectStat
+from backend.domain.operations import CanonOperation
+from backend.domain.projection import ProjectionWatermark, RecordVersion
 from backend.domain.schemas import SchemaVersion
 from backend.domain.tenancy import AuditEvent, Invitation, Membership, Project, Workspace
 from backend.domain.usage import UsageRecord, UsageTotals
@@ -735,5 +738,119 @@ class CanonWriterPort(Protocol):
         limit: int = 50,
         offset: int = 0,
     ) -> list[Event]: ...
+
+    async def health(self) -> bool: ...
+
+
+@runtime_checkable
+class CanonRepositoryPort(Protocol):
+    """Canonical PostgreSQL canon storage (ADR-012).
+
+    ``apply_commit`` is the authority boundary: one transaction reserves the
+    branch head, appends the immutable envelope, applies the validated operations
+    to normalized/versioned tables, advances the head/revision, and enqueues the
+    outbox. It is idempotent by ``commit_id`` and never depends on Neo4j.
+    """
+
+    async def apply_commit(
+        self,
+        *,
+        envelope: CommitEnvelope,
+        operations: Sequence[CanonOperation],
+        origin: str = "author",
+    ) -> int: ...
+
+    async def get_head(self, *, workspace_id: str, project_id: str, branch_id: str) -> int: ...
+
+    async def get_entity(
+        self, *, workspace_id: str, project_id: str, entity_id: str
+    ) -> CanonEntity | None: ...
+
+    async def list_entities(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        entity_type: str | None = None,
+        include_retired: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[CanonEntity]: ...
+
+    async def search_entities(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        query: str,
+        entity_type: str | None = None,
+        include_retired: bool = False,
+        limit: int = 50,
+    ) -> list[CanonEntity]: ...
+
+    async def get_fact(
+        self, *, workspace_id: str, project_id: str, fact_id: str
+    ) -> Fact | None: ...
+
+    async def list_facts(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        include_closed: bool = False,
+        subject_id: str | None = None,
+        predicate: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[Fact]: ...
+
+    async def get_belief(
+        self, *, workspace_id: str, project_id: str, belief_id: str
+    ) -> Belief | None: ...
+
+    async def list_beliefs(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        holder_entity_id: str | None = None,
+        include_closed: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[Belief]: ...
+
+    async def get_event(
+        self, *, workspace_id: str, project_id: str, event_id: str
+    ) -> Event | None: ...
+
+    async def list_events(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        include_retired: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[Event]: ...
+
+    async def get_provenance(
+        self, *, workspace_id: str, project_id: str, branch_id: str, provenance_id: str
+    ) -> Provenance | None: ...
+
+    async def list_record_versions(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        record_type: str | None = None,
+        record_id: str | None = None,
+        limit: int = 100,
+    ) -> list[RecordVersion]: ...
+
+    async def get_watermark(
+        self, *, projection: str, workspace_id: str, project_id: str, branch_id: str
+    ) -> ProjectionWatermark | None: ...
+
+    async def set_watermark(self, watermark: ProjectionWatermark) -> None: ...
 
     async def health(self) -> bool: ...

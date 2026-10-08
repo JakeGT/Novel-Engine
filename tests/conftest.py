@@ -65,6 +65,7 @@ def _build_fake_container(settings, tmp_path):
         FakeIdentityProvider,
         FakeMigrationVerifier,
         InMemoryCanonJournal,
+        InMemoryCanonRepository,
         InMemoryCanonWriter,
         InMemoryCredentialVault,
         InMemoryGraphRepository,
@@ -140,6 +141,7 @@ def _build_fake_container(settings, tmp_path):
     )
     journal = InMemoryCanonJournal()
     canon_writer = InMemoryCanonWriter()
+    canon_repository = InMemoryCanonRepository()
     mutation_service = MutationService(journal, canon_writer, local_mode=not settings.is_hosted)
     from backend.services.canon_entity_service import CanonEntityService
 
@@ -186,6 +188,7 @@ def _build_fake_container(settings, tmp_path):
         schema_service=schema_service,
         journal=journal,
         canon_writer=canon_writer,
+        canon_repository=canon_repository,
         mutation_service=mutation_service,
         canon_entity_service=canon_entity_service,
         canon_assertion_service=canon_assertion_service,

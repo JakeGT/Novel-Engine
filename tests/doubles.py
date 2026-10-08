@@ -12,6 +12,9 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
+from backend.domain.canon.assertions import Belief, Fact
+from backend.domain.canon.entities import CanonEntity, EntityLifecycle
+from backend.domain.canon.events import Event
 from backend.domain.canon.revisions import CanonRevision
 from backend.domain.credentials import (
     Credential,
@@ -45,6 +48,19 @@ from backend.domain.journal import (
     ReviewDecision,
     RevisionConflict,
 )
+from backend.domain.operations import (
+    AmendEventOp,
+    AssertBeliefOp,
+    AssertFactOp,
+    CloseBeliefOp,
+    CloseFactOp,
+    CreateEntityOp,
+    CreateEventOp,
+    RetireEntityOp,
+    RetireEventOp,
+    UpdateEntityOp,
+)
+from backend.domain.projection import RecordVersion
 from backend.domain.schemas import SchemaVersion, SchemaVersionStatus
 from backend.domain.tenancy import (
     AuditEvent,
@@ -1881,6 +1897,307 @@ class InMemoryCanonWriter:
                 continue
             items.append(self._event(key))
         return items[offset : offset + limit]
+
+    async def health(self) -> bool:
+        return True
+
+
+_CANON_RECORD_TYPE = {
+    "create_entity": "entity",
+    "update_entity": "entity",
+    "retire_entity": "entity",
+    "assert_fact": "fact",
+    "close_fact": "fact",
+    "assert_belief": "belief",
+    "close_belief": "belief",
+    "create_event": "event",
+    "amend_event": "event",
+    "retire_event": "event",
+    "link_asset": "asset_link",
+    "retire_asset_link": "asset_link",
+}
+
+
+class InMemoryCanonRepository:
+    """In-memory canonical PostgreSQL canon (ADR-012) with matching invariants."""
+
+    def __init__(self) -> None:
+        self.heads: dict[tuple[str, str, str], int] = {}
+        self.envelopes: dict[str, Any] = {}
+        self.entities: dict[tuple[str, str, str], CanonEntity] = {}
+        self.facts: dict[tuple[str, str, str], Any] = {}
+        self.beliefs: dict[tuple[str, str, str], Any] = {}
+        self.events: dict[tuple[str, str, str], Any] = {}
+        self.provenance: dict[str, Any] = {}
+        self.record_versions: list[Any] = []
+        self.watermarks: dict[tuple[str, str, str, str], Any] = {}
+
+    def set_head(self, workspace_id: str, project_id: str, branch_id: str, head: int) -> None:
+        self.heads[(workspace_id, project_id, branch_id)] = head
+
+    async def get_head(self, *, workspace_id: str, project_id: str, branch_id: str) -> int:
+        return self.heads.get((workspace_id, project_id, branch_id), 0)
+
+    async def apply_commit(
+        self, *, envelope: Any, operations: list[Any], origin: str = "author"
+    ) -> int:
+        existing = self.envelopes.get(envelope.commit_id)
+        if existing is not None:
+            if existing.checksum != envelope.checksum:
+                raise RevisionConflict("commit id reused with a different checksum")
+            return existing.revision
+        key = (envelope.workspace_id, envelope.project_id, envelope.branch_id)
+        head = self.heads.get(key, 0)
+        if head != envelope.expected_head:
+            raise HeadConflict(f"expected head {envelope.expected_head}, found {head}")
+        reserved = head + 1
+        self.envelopes[envelope.commit_id] = envelope
+        provenance_id = f"prov_{envelope.commit_id}"
+        for operation in operations:
+            self._apply(envelope, operation, provenance_id, reserved)
+            self.record_versions.append(
+                RecordVersion(
+                    workspace_id=envelope.workspace_id,
+                    project_id=envelope.project_id,
+                    branch_id=envelope.branch_id,
+                    record_type=_CANON_RECORD_TYPE.get(operation.op, operation.op),
+                    record_id=operation.id,
+                    revision=reserved,
+                    operation_type=operation.op,
+                    commit_id=envelope.commit_id,
+                    change=operation.model_dump(mode="json"),
+                    created_at=utcnow(),
+                )
+            )
+        self.heads[key] = reserved
+        return reserved
+
+    def _apply(self, envelope: Any, operation: Any, provenance_id: str, revision: int) -> None:
+        ws, pr, br = envelope.workspace_id, envelope.project_id, envelope.branch_id
+        key = (ws, pr, operation.id)
+        if isinstance(operation, CreateEntityOp):
+            self.entities[key] = CanonEntity(
+                id=operation.id,
+                workspace_id=ws,
+                project_id=pr,
+                branch_id=br,
+                type=operation.type,
+                name=operation.name,
+                slug=operation.slug,
+                schema_version_id=envelope.schema_version_id or "",
+                created_revision=revision,
+                attributes=dict(operation.attributes),
+            )
+        elif isinstance(operation, UpdateEntityOp) and key in self.entities:
+            current = self.entities[key]
+            self.entities[key] = current.model_copy(
+                update={
+                    "name": operation.name or current.name,
+                    "slug": operation.slug if operation.slug is not None else current.slug,
+                    "attributes": operation.attributes
+                    if operation.attributes is not None
+                    else current.attributes,
+                }
+            )
+        elif isinstance(operation, RetireEntityOp) and key in self.entities:
+            current = self.entities[key]
+            self.entities[key] = current.model_copy(
+                update={"lifecycle": EntityLifecycle.RETIRED, "retired_revision": revision}
+            )
+        elif isinstance(operation, AssertFactOp):
+            self.facts[key] = Fact(
+                id=operation.id,
+                workspace_id=ws,
+                project_id=pr,
+                branch_id=br,
+                proposition=operation.proposition,
+                provenance_id=provenance_id,
+                created_revision=revision,
+                valid_from=operation.valid_from,
+                valid_until=operation.valid_until,
+            )
+        elif isinstance(operation, CloseFactOp) and key in self.facts:
+            self.facts[key] = self.facts[key].model_copy(update={"closed_revision": revision})
+        elif isinstance(operation, AssertBeliefOp):
+            self.beliefs[key] = Belief(
+                id=operation.id,
+                workspace_id=ws,
+                project_id=pr,
+                branch_id=br,
+                holder_entity_id=operation.holder_entity_id,
+                proposition=operation.proposition,
+                confidence=operation.confidence,
+                acquisition_provenance_id=provenance_id,
+                source_ref=operation.source_ref,
+                created_revision=revision,
+            )
+        elif isinstance(operation, CloseBeliefOp) and key in self.beliefs:
+            self.beliefs[key] = self.beliefs[key].model_copy(update={"closed_revision": revision})
+        elif isinstance(operation, CreateEventOp):
+            self.events[key] = Event(
+                id=operation.id,
+                workspace_id=ws,
+                project_id=pr,
+                branch_id=br,
+                kind=operation.kind,
+                name=operation.name,
+                participants=list(operation.participants),
+                location_ids=list(operation.location_ids),
+                cause_ids=list(operation.cause_ids),
+                outcome_ids=list(operation.outcome_ids),
+                world_position=operation.world_position,
+                provenance_id=provenance_id,
+                created_revision=revision,
+            )
+        elif isinstance(operation, AmendEventOp) and key in self.events:
+            current = self.events[key]
+            self.events[key] = current.model_copy(
+                update={
+                    "name": operation.name or current.name,
+                    "world_position": operation.world_position
+                    if operation.world_position is not None
+                    else current.world_position,
+                }
+            )
+        elif isinstance(operation, RetireEventOp) and key in self.events:
+            self.events[key] = self.events[key].model_copy(update={"retired_revision": revision})
+
+    async def get_entity(self, *, workspace_id: str, project_id: str, entity_id: str):
+        return self.entities.get((workspace_id, project_id, entity_id))
+
+    async def list_entities(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        entity_type: str | None = None,
+        include_retired: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+    ):
+        items = [
+            e
+            for (w, p, _), e in self.entities.items()
+            if w == workspace_id
+            and p == project_id
+            and (entity_type is None or e.type == entity_type)
+            and (include_retired or e.lifecycle is EntityLifecycle.ACTIVE)
+        ]
+        items.sort(key=lambda e: e.name)
+        return items[offset : offset + limit]
+
+    async def search_entities(self, *, workspace_id: str, project_id: str, query: str, **kwargs):
+        needle = query.lower()
+        items = [
+            e
+            for (w, p, _), e in self.entities.items()
+            if w == workspace_id
+            and p == project_id
+            and needle in e.name.lower()
+            and (kwargs.get("include_retired") or e.lifecycle is EntityLifecycle.ACTIVE)
+        ]
+        return sorted(items, key=lambda e: e.name)[: kwargs.get("limit", 50)]
+
+    async def get_fact(self, *, workspace_id: str, project_id: str, fact_id: str):
+        return self.facts.get((workspace_id, project_id, fact_id))
+
+    async def list_facts(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        include_closed: bool = False,
+        subject_id: str | None = None,
+        predicate: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ):
+        items = [
+            f
+            for (w, p, _), f in self.facts.items()
+            if w == workspace_id
+            and p == project_id
+            and (include_closed or f.closed_revision is None)
+            and (subject_id is None or f.proposition.subject_id == subject_id)
+            and (predicate is None or f.proposition.predicate == predicate)
+        ]
+        return items[offset : offset + limit]
+
+    async def get_belief(self, *, workspace_id: str, project_id: str, belief_id: str):
+        return self.beliefs.get((workspace_id, project_id, belief_id))
+
+    async def list_beliefs(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        holder_entity_id: str | None = None,
+        include_closed: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+    ):
+        items = [
+            b
+            for (w, p, _), b in self.beliefs.items()
+            if w == workspace_id
+            and p == project_id
+            and (include_closed or b.closed_revision is None)
+            and (holder_entity_id is None or b.holder_entity_id == holder_entity_id)
+        ]
+        return items[offset : offset + limit]
+
+    async def get_event(self, *, workspace_id: str, project_id: str, event_id: str):
+        return self.events.get((workspace_id, project_id, event_id))
+
+    async def list_events(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        include_retired: bool = False,
+        limit: int = 50,
+        offset: int = 0,
+    ):
+        items = [e for (w, p, _), e in self.events.items() if w == workspace_id and p == project_id]
+        return items[offset : offset + limit]
+
+    async def get_provenance(
+        self, *, workspace_id: str, project_id: str, branch_id: str, provenance_id: str
+    ):
+        return self.provenance.get(provenance_id)
+
+    async def list_record_versions(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        record_type: str | None = None,
+        record_id: str | None = None,
+        limit: int = 100,
+    ):
+        return [
+            rv
+            for rv in self.record_versions
+            if rv.workspace_id == workspace_id
+            and rv.project_id == project_id
+            and (record_type is None or rv.record_type == record_type)
+            and (record_id is None or rv.record_id == record_id)
+        ][:limit]
+
+    async def get_watermark(
+        self, *, projection: str, workspace_id: str, project_id: str, branch_id: str
+    ):
+        return self.watermarks.get((projection, workspace_id, project_id, branch_id))
+
+    async def set_watermark(self, watermark: Any) -> None:
+        self.watermarks[
+            (
+                watermark.projection,
+                watermark.workspace_id,
+                watermark.project_id,
+                watermark.branch_id,
+            )
+        ] = watermark
 
     async def health(self) -> bool:
         return True

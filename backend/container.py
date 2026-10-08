@@ -58,6 +58,7 @@ class Container:
     schema_service: Any = None
     journal: Any = None
     canon_writer: Any = None
+    canon_repository: Any = None
     mutation_service: Any = None
     canon_entity_service: Any = None
     canon_assertion_service: Any = None
@@ -208,6 +209,10 @@ def build_container(settings: Settings | None = None) -> Container:
     from backend.adapters.journal import PostgresCanonJournal
 
     container.journal = PostgresCanonJournal(database.session_factory)
+
+    from backend.adapters.canon_repository import PostgresCanonRepository
+
+    container.canon_repository = PostgresCanonRepository(database.session_factory)
 
     from backend.adapters.canon_writer import Neo4jCanonWriter
     from backend.services.mutation_service import MutationService
