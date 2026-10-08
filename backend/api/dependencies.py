@@ -103,3 +103,7 @@ def get_projection_service(container: Container = Depends(get_container)) -> Any
 
 def get_outbox_consumer(container: Container = Depends(get_container)) -> Any:
     return container.outbox_consumer
+
+
+def get_canon_history_service(container: Container = Depends(get_container)) -> Any:
+    return container.canon_history_service

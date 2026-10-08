@@ -64,6 +64,7 @@ class Container:
     outbox_consumer: Any = None
     canon_entity_service: Any = None
     canon_assertion_service: Any = None
+    canon_history_service: Any = None
 
     async def aclose(self) -> None:
         self.graph.close()
@@ -253,5 +254,13 @@ def build_container(settings: Settings | None = None) -> Container:
 
     container.outbox_consumer = OutboxConsumer(
         journal=container.journal, projector=container.projection_service
+    )
+    from backend.services.canon_history_service import CanonHistoryService
+
+    container.canon_history_service = CanonHistoryService(
+        canon=container.canon_repository,
+        journal=container.journal,
+        tenancy=container.tenancy_service,
+        local_mode=not resolved.is_hosted,
     )
     return container

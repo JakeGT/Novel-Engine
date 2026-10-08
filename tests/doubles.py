@@ -23,6 +23,7 @@ from backend.domain.credentials import (
     CredentialStatus,
     CredentialUnavailable,
 )
+from backend.domain.history import CanonTag, CanonTagHistoryEntry
 from backend.domain.identity import (
     IdentityClaims,
     InvalidIdentityToken,
@@ -1995,6 +1996,8 @@ class InMemoryCanonRepository:
         self.provenance: dict[str, Any] = {}
         self.record_versions: list[Any] = []
         self.watermarks: dict[tuple[str, str, str, str], Any] = {}
+        self.tags: dict[tuple[str, str, str, str], Any] = {}
+        self.tag_history: dict[tuple[str, str, str, str], list[Any]] = {}
 
     def set_head(self, workspace_id: str, project_id: str, branch_id: str, head: int) -> None:
         self.heads[(workspace_id, project_id, branch_id)] = head
@@ -2335,6 +2338,59 @@ class InMemoryCanonRepository:
                 watermark.branch_id,
             )
         ] = watermark
+
+    async def create_tag(self, tag: Any) -> Any:
+        key = (tag.workspace_id, tag.project_id, tag.branch_id, tag.name)
+        previous = self.tags.get(key)
+        if previous is not None:
+            entry = CanonTagHistoryEntry(
+                workspace_id=previous.workspace_id,
+                project_id=previous.project_id,
+                branch_id=previous.branch_id,
+                name=previous.name,
+                revision=previous.revision,
+                commit_id=previous.commit_id,
+                replaced_at=datetime.now(UTC),
+            )
+            self.tag_history.setdefault(key, []).append(entry)
+        stored = CanonTag(
+            workspace_id=tag.workspace_id,
+            project_id=tag.project_id,
+            branch_id=tag.branch_id,
+            name=tag.name,
+            revision=tag.revision,
+            commit_id=tag.commit_id,
+            created_by_user_id=tag.created_by_user_id,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+        self.tags[key] = stored
+        return stored
+
+    async def get_tag(
+        self, *, workspace_id: str, project_id: str, branch_id: str, name: str
+    ) -> Any:
+        return self.tags.get((workspace_id, project_id, branch_id, name))
+
+    async def list_tags(self, *, workspace_id: str, project_id: str, branch_id: str) -> list[Any]:
+        return sorted(
+            (
+                tag
+                for (w, p, b, _name), tag in self.tags.items()
+                if (w, p, b) == (workspace_id, project_id, branch_id)
+            ),
+            key=lambda tag: tag.name,
+        )
+
+    async def list_tag_history(
+        self, *, workspace_id: str, project_id: str, branch_id: str, name: str
+    ) -> list[Any]:
+        return list(reversed(self.tag_history.get((workspace_id, project_id, branch_id, name), [])))
+
+    async def delete_tag(
+        self, *, workspace_id: str, project_id: str, branch_id: str, name: str
+    ) -> bool:
+        return self.tags.pop((workspace_id, project_id, branch_id, name), None) is not None
 
     async def health(self) -> bool:
         return True

@@ -166,6 +166,14 @@ def _build_fake_container(settings, tmp_path):
         tenancy=tenancy_service,
         local_mode=not settings.is_hosted,
     )
+    from backend.services.canon_history_service import CanonHistoryService
+
+    canon_history_service = CanonHistoryService(
+        canon=canon_repository,
+        journal=journal,
+        tenancy=tenancy_service,
+        local_mode=not settings.is_hosted,
+    )
     return Container(
         settings=settings,
         graph=graph,
@@ -199,6 +207,7 @@ def _build_fake_container(settings, tmp_path):
         mutation_service=mutation_service,
         canon_entity_service=canon_entity_service,
         canon_assertion_service=canon_assertion_service,
+        canon_history_service=canon_history_service,
     )
 
 

@@ -17,6 +17,7 @@ from backend.domain.canon.events import Event
 from backend.domain.canon.revisions import CanonRevision, Provenance
 from backend.domain.commit import ApplyOutcome, CommitMarker
 from backend.domain.credentials import Credential, CredentialProvider
+from backend.domain.history import CanonTag, CanonTagHistoryEntry
 from backend.domain.identity import IdentityClaims, LoginAttempt, Role, Session, User
 from backend.domain.journal import (
     Branch,
@@ -872,5 +873,23 @@ class CanonRepositoryPort(Protocol):
     ) -> ProjectionWatermark | None: ...
 
     async def set_watermark(self, watermark: ProjectionWatermark) -> None: ...
+
+    async def create_tag(self, tag: CanonTag) -> CanonTag: ...
+
+    async def get_tag(
+        self, *, workspace_id: str, project_id: str, branch_id: str, name: str
+    ) -> CanonTag | None: ...
+
+    async def list_tags(
+        self, *, workspace_id: str, project_id: str, branch_id: str
+    ) -> list[CanonTag]: ...
+
+    async def list_tag_history(
+        self, *, workspace_id: str, project_id: str, branch_id: str, name: str
+    ) -> list[CanonTagHistoryEntry]: ...
+
+    async def delete_tag(
+        self, *, workspace_id: str, project_id: str, branch_id: str, name: str
+    ) -> bool: ...
 
     async def health(self) -> bool: ...

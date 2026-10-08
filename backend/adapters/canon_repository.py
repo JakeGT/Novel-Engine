@@ -20,6 +20,7 @@ from backend.domain.canon.events import Event, EventParticipant
 from backend.domain.canon.ids import format_canon_id
 from backend.domain.canon.propositions import Proposition
 from backend.domain.canon.revisions import CanonRevision, OriginKind, Provenance
+from backend.domain.history import CanonTag, CanonTagHistoryEntry
 from backend.domain.journal import CommitEnvelope, HeadConflict, RevisionConflict
 from backend.domain.operations import (
     AmendEventOp,
@@ -37,6 +38,7 @@ from backend.domain.operations import (
     UpdateEntityOp,
 )
 from backend.domain.projection import (
+    CanonStorageError,
     ProjectionStatus,
     ProjectionWatermark,
     RecordVersion,
@@ -67,6 +69,20 @@ _RECORD_TYPE = {
 
 def _load(value: Any) -> Any:
     return json.loads(value) if isinstance(value, str) else value
+
+
+def _to_tag(row: Any) -> CanonTag:
+    return CanonTag(
+        workspace_id=row.workspace_id,
+        project_id=row.project_id,
+        branch_id=row.branch_id,
+        name=row.name,
+        revision=row.revision,
+        commit_id=row.commit_id,
+        created_by_user_id=row.created_by_user_id,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
 
 
 def _entity(row: Any) -> CanonEntity:
@@ -1075,6 +1091,138 @@ class PostgresCanonRepository:
                     "error": watermark.last_error,
                 },
             )
+
+    async def create_tag(self, tag: CanonTag) -> CanonTag:
+        async with session_scope(self._session_factory) as session:
+            existing = (
+                await session.execute(
+                    text(
+                        "SELECT revision, commit_id FROM canon_tags "
+                        "WHERE workspace_id=:w AND project_id=:p AND branch_id=:b AND name=:n"
+                    ),
+                    {"w": tag.workspace_id, "p": tag.project_id, "b": tag.branch_id, "n": tag.name},
+                )
+            ).first()
+            if existing is not None:
+                await session.execute(
+                    text(
+                        "INSERT INTO canon_tag_history (workspace_id, project_id, branch_id, "
+                        "name, revision, commit_id) VALUES (:w, :p, :b, :n, :rev, :c)"
+                    ),
+                    {
+                        "w": tag.workspace_id,
+                        "p": tag.project_id,
+                        "b": tag.branch_id,
+                        "n": tag.name,
+                        "rev": existing.revision,
+                        "c": existing.commit_id,
+                    },
+                )
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO canon_tags (
+                        workspace_id, project_id, branch_id, name, revision, commit_id,
+                        created_by_user_id, created_at, updated_at
+                    )
+                    VALUES (:w, :p, :b, :n, :rev, :c, :actor, now(), now())
+                    ON CONFLICT (workspace_id, project_id, branch_id, name)
+                    DO UPDATE SET
+                        revision = EXCLUDED.revision,
+                        commit_id = EXCLUDED.commit_id,
+                        created_by_user_id = EXCLUDED.created_by_user_id,
+                        updated_at = now()
+                    """
+                ),
+                {
+                    "w": tag.workspace_id,
+                    "p": tag.project_id,
+                    "b": tag.branch_id,
+                    "n": tag.name,
+                    "rev": tag.revision,
+                    "c": tag.commit_id,
+                    "actor": tag.created_by_user_id,
+                },
+            )
+        stored = await self.get_tag(
+            workspace_id=tag.workspace_id,
+            project_id=tag.project_id,
+            branch_id=tag.branch_id,
+            name=tag.name,
+        )
+        if stored is None:  # pragma: no cover - defensive
+            raise CanonStorageError("tag was not persisted")
+        return stored
+
+    async def get_tag(
+        self, *, workspace_id: str, project_id: str, branch_id: str, name: str
+    ) -> CanonTag | None:
+        async with session_scope(self._session_factory) as session:
+            row = (
+                await session.execute(
+                    text(
+                        "SELECT * FROM canon_tags WHERE workspace_id=:w AND project_id=:p "
+                        "AND branch_id=:b AND name=:n"
+                    ),
+                    {"w": workspace_id, "p": project_id, "b": branch_id, "n": name},
+                )
+            ).first()
+        return _to_tag(row) if row else None
+
+    async def list_tags(
+        self, *, workspace_id: str, project_id: str, branch_id: str
+    ) -> list[CanonTag]:
+        async with session_scope(self._session_factory) as session:
+            rows = (
+                await session.execute(
+                    text(
+                        "SELECT * FROM canon_tags WHERE workspace_id=:w AND project_id=:p "
+                        "AND branch_id=:b ORDER BY name"
+                    ),
+                    {"w": workspace_id, "p": project_id, "b": branch_id},
+                )
+            ).fetchall()
+        return [_to_tag(row) for row in rows]
+
+    async def list_tag_history(
+        self, *, workspace_id: str, project_id: str, branch_id: str, name: str
+    ) -> list[CanonTagHistoryEntry]:
+        async with session_scope(self._session_factory) as session:
+            rows = (
+                await session.execute(
+                    text(
+                        "SELECT workspace_id, project_id, branch_id, name, revision, commit_id, "
+                        "replaced_at FROM canon_tag_history WHERE workspace_id=:w AND project_id=:p "
+                        "AND branch_id=:b AND name=:n ORDER BY replaced_at DESC"
+                    ),
+                    {"w": workspace_id, "p": project_id, "b": branch_id, "n": name},
+                )
+            ).fetchall()
+        return [
+            CanonTagHistoryEntry(
+                workspace_id=row.workspace_id,
+                project_id=row.project_id,
+                branch_id=row.branch_id,
+                name=row.name,
+                revision=row.revision,
+                commit_id=row.commit_id,
+                replaced_at=row.replaced_at,
+            )
+            for row in rows
+        ]
+
+    async def delete_tag(
+        self, *, workspace_id: str, project_id: str, branch_id: str, name: str
+    ) -> bool:
+        async with session_scope(self._session_factory) as session:
+            result = await session.execute(
+                text(
+                    "DELETE FROM canon_tags WHERE workspace_id=:w AND project_id=:p "
+                    "AND branch_id=:b AND name=:n"
+                ),
+                {"w": workspace_id, "p": project_id, "b": branch_id, "n": name},
+            )
+            return bool(result.rowcount)  # type: ignore[attr-defined]
 
     async def health(self) -> bool:
         try:
