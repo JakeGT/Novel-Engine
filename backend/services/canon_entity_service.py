@@ -15,7 +15,7 @@ from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.operations import CreateEntityOp, RetireEntityOp, UpdateEntityOp
 from backend.domain.tenancy import Permission
-from backend.ports import CanonWriterPort, SchemaVersionStorePort
+from backend.ports import CanonRepositoryPort, SchemaVersionStorePort
 from backend.services.mutation_service import CommitResult, MutationService
 
 
@@ -24,13 +24,13 @@ class CanonEntityService:
         self,
         *,
         mutation: MutationService,
-        writer: CanonWriterPort,
+        reader: CanonRepositoryPort,
         schema_store: SchemaVersionStorePort | None = None,
         tenancy: object | None = None,
         local_mode: bool = False,
     ) -> None:
         self._mutation = mutation
-        self._writer = writer
+        self._reader = reader
         self._schema_store = schema_store
         self._tenancy = tenancy
         self._local_mode = local_mode
@@ -56,7 +56,7 @@ class CanonEntityService:
         self, scope: AccessScope, workspace_id: str, project_id: str, entity_id: str
     ) -> CanonEntity:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
-        entity = await self._writer.get_entity(
+        entity = await self._reader.get_entity(
             workspace_id=workspace_id, project_id=project_id, entity_id=entity_id
         )
         if entity is None:
@@ -75,7 +75,7 @@ class CanonEntityService:
         offset: int = 0,
     ) -> list[CanonEntity]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
-        return await self._writer.list_entities(
+        return await self._reader.list_entities(
             workspace_id=workspace_id,
             project_id=project_id,
             entity_type=entity_type,
@@ -96,7 +96,7 @@ class CanonEntityService:
         limit: int = 50,
     ) -> list[CanonEntity]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
-        return await self._writer.search_entities(
+        return await self._reader.search_entities(
             workspace_id=workspace_id,
             project_id=project_id,
             query=query,
@@ -137,7 +137,7 @@ class CanonEntityService:
             idempotency_key,
             schema_version_id,
         )
-        entity = await self._writer.get_entity(
+        entity = await self._reader.get_entity(
             workspace_id=workspace_id, project_id=project_id, entity_id=entity_id
         )
         assert entity is not None
@@ -169,7 +169,7 @@ class CanonEntityService:
             idempotency_key,
             schema_version_id,
         )
-        entity = await self._writer.get_entity(
+        entity = await self._reader.get_entity(
             workspace_id=workspace_id, project_id=project_id, entity_id=entity_id
         )
         assert entity is not None
@@ -198,14 +198,14 @@ class CanonEntityService:
             idempotency_key,
             schema_version_id,
         )
-        entity = await self._writer.get_entity(
+        entity = await self._reader.get_entity(
             workspace_id=workspace_id, project_id=project_id, entity_id=entity_id
         )
         assert entity is not None
         return result, entity
 
     async def _require_active(self, workspace_id: str, project_id: str, entity_id: str) -> None:
-        existing = await self._writer.get_entity(
+        existing = await self._reader.get_entity(
             workspace_id=workspace_id, project_id=project_id, entity_id=entity_id
         )
         if existing is None:

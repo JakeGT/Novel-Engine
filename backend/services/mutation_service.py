@@ -1,15 +1,14 @@
-"""Mutation validation and the ADR-011 commit saga.
+"""Mutation validation and the ADR-012 canonical commit.
 
 The service validates an ordered operation set against the exact schema version
-and expected head, then commits it through the journal + graph writer. It never
-reports success until the graph application and the PostgreSQL final state agree;
-interruptions are completed by :meth:`reconcile` from durable state.
+and expected head, then commits it as ONE PostgreSQL transaction through the
+canonical repository. Success is decided entirely in PostgreSQL; the graph is a
+rebuildable projection applied separately (see ``GraphProjectionService``).
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -25,11 +24,9 @@ from backend.domain.canon.revisions import OriginKind
 from backend.domain.identity import AccessScope
 from backend.domain.journal import (
     CommitEnvelope,
-    HeadConflict,
     MutationNotFound,
     MutationOperation,
     MutationSet,
-    RevisionConflict,
 )
 from backend.domain.operations import (
     AssertBeliefOp,
@@ -48,7 +45,7 @@ from backend.domain.operations import (
     resolve_temporary_ids,
 )
 from backend.domain.tenancy import Permission
-from backend.ports import CanonJournalPort, CanonWriterPort
+from backend.ports import CanonJournalPort, CanonRepositoryPort
 
 EntityLookup = Callable[[str, str, str], CanonEntity | None]
 
@@ -92,14 +89,14 @@ class MutationService:
     def __init__(
         self,
         journal: CanonJournalPort,
-        writer: CanonWriterPort,
+        repository: CanonRepositoryPort,
         *,
         tenancy: object | None = None,
         local_mode: bool = False,
         entity_lookup: EntityLookup | None = None,
     ) -> None:
         self._journal = journal
-        self._writer = writer
+        self._repository = repository
         self._tenancy = tenancy
         self._local_mode = local_mode
         self._entity_lookup = entity_lookup
@@ -196,7 +193,7 @@ class MutationService:
             if self._entity_lookup is not None:
                 entity = self._entity_lookup(mutation.workspace_id, mutation.project_id, entity_id)
             else:
-                entity = await self._writer.get_entity(
+                entity = await self._repository.get_entity(
                     workspace_id=mutation.workspace_id,
                     project_id=mutation.project_id,
                     entity_id=entity_id,
@@ -321,18 +318,6 @@ class MutationService:
                 "; ".join(f"[{issue.code}] {issue.message}" for issue in report.issues)
             )
 
-        branch = await self._journal.get_branch(
-            workspace_id=mutation.workspace_id,
-            project_id=mutation.project_id,
-            branch_id=mutation.branch_id,
-        )
-        if branch is None:
-            raise MutationNotFound(f"branch {mutation.branch_id!r} not found")
-        if branch.head_revision != mutation.expected_head:
-            raise HeadConflict(
-                f"expected head {mutation.expected_head}, found {branch.head_revision}"
-            )
-
         operations = await self._load_operations(mutation_id)
         resolved, _mapping = resolve_temporary_ids(
             operations, new_id=lambda kind, tmp: _deterministic_id(mutation_id, kind, tmp)
@@ -340,21 +325,13 @@ class MutationService:
         canonical = canonicalize_operations(resolved)
         checksum = operations_checksum(resolved)
         commit_id = f"cmt_{uuid7()}"
-
-        reservation = await self._journal.reserve_head(
-            workspace_id=mutation.workspace_id,
-            project_id=mutation.project_id,
-            branch_id=mutation.branch_id,
-            mutation_id=mutation_id,
-            expected_revision=mutation.expected_head,
-        )
         envelope = CommitEnvelope(
             commit_id=commit_id,
             mutation_id=mutation_id,
             workspace_id=mutation.workspace_id,
             project_id=mutation.project_id,
             branch_id=mutation.branch_id,
-            revision=reservation.reserved_revision,
+            revision=mutation.expected_head + 1,
             expected_head=mutation.expected_head,
             schema_version_id=mutation.schema_version_id,
             canonical=canonical,
@@ -362,58 +339,24 @@ class MutationService:
             actor_user_id=scope.actor_user_id,
             created_at=datetime.now(UTC),
         )
-        await self._journal.append_envelope(envelope)
-        await self._journal.record_attempt(commit_id=commit_id, status="prepared")
-
-        try:
-            await self._writer.apply_commit(
-                commit_id=commit_id,
-                revision=reservation.reserved_revision,
-                checksum=checksum,
-                workspace_id=mutation.workspace_id,
-                project_id=mutation.project_id,
-                branch_id=mutation.branch_id,
-                operations=resolved,
-                schema_version_id=mutation.schema_version_id,
-            )
-            await self._journal.record_attempt(commit_id=commit_id, status="graph_applied")
-        except RevisionConflict:
-            await self._journal.record_attempt(commit_id=commit_id, status="integrity_blocked")
-            raise
-
-        finalized = await self._journal.finalize(commit_id=commit_id)
-        await self._journal.record_attempt(commit_id=commit_id, status="committed")
+        # ONE PostgreSQL transaction decides canonical success: reserve/advance the
+        # head, append the immutable envelope, apply operations to normalized canon,
+        # record the revision, and enqueue the outbox. Neo4j is not involved.
+        revision = await self._repository.apply_commit(envelope=envelope, operations=resolved)
         return CommitResult(
             commit_id=commit_id,
-            revision=finalized.revision,
+            revision=revision,
             checksum=checksum,
             status="committed",
         )
 
     async def reconcile(self, commit_id: str) -> ReconcileResult:
-        envelope = await self._journal.get_envelope(commit_id=commit_id)
+        # Canonical commits are atomic in PostgreSQL, so an existing envelope is a
+        # committed revision; there is no partial canonical state to repair.
+        envelope = await self._repository.get_envelope(commit_id)
         if envelope is None:
             raise MutationNotFound(f"commit {commit_id!r} not found")
-        marker = await self._writer.get_marker(commit_id)
-        if marker is not None and marker.checksum != envelope.checksum:
-            await self._journal.record_attempt(commit_id=commit_id, status="integrity_blocked")
-            return ReconcileResult(status="integrity_blocked")
-        if marker is None:
-            payloads = json.loads(envelope.canonical)
-            operations = [parse_operation(item) for item in payloads]
-            await self._writer.apply_commit(
-                commit_id=commit_id,
-                revision=envelope.revision,
-                checksum=envelope.checksum,
-                workspace_id=envelope.workspace_id,
-                project_id=envelope.project_id,
-                branch_id=envelope.branch_id,
-                operations=operations,
-                schema_version_id=envelope.schema_version_id,
-            )
-        finalized = await self._journal.finalize(commit_id=commit_id)
-        await self._journal.record_attempt(commit_id=commit_id, status="committed")
-        return ReconcileResult(status="committed", revision=finalized.revision)
+        return ReconcileResult(status="committed", revision=envelope.revision)
 
 
 __all__ = [

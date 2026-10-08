@@ -9,7 +9,7 @@ from backend.domain.operations import (
     OperationValidationError,
 )
 from backend.services.mutation_service import MutationService
-from tests.doubles import InMemoryCanonJournal, InMemoryCanonWriter
+from tests.doubles import InMemoryCanonJournal, InMemoryCanonRepository
 
 pytestmark = pytest.mark.application
 
@@ -20,15 +20,15 @@ def _scope() -> AccessScope:
     )
 
 
-def _service() -> tuple[MutationService, InMemoryCanonJournal, InMemoryCanonWriter]:
+def _service() -> tuple[MutationService, InMemoryCanonJournal, InMemoryCanonRepository]:
     journal = InMemoryCanonJournal()
-    writer = InMemoryCanonWriter()
-    return MutationService(journal, writer, local_mode=True), journal, writer
+    repository = InMemoryCanonRepository()
+    return MutationService(journal, repository, local_mode=True), journal, repository
 
 
 @pytest.mark.asyncio
-async def test_commit_creates_revision_marker_and_is_idempotent() -> None:
-    service, journal, writer = _service()
+async def test_commit_creates_revision_and_is_idempotent() -> None:
+    service, _journal, repository = _service()
     scope = _scope()
     mutation = await service.create_draft(
         scope,
@@ -43,8 +43,14 @@ async def test_commit_creates_revision_marker_and_is_idempotent() -> None:
 
     assert result.status == "committed"
     assert result.revision == 1
-    assert result.commit_id in writer.markers
-    assert writer.markers[result.commit_id].checksum == result.checksum
+    # Canonical state landed in PostgreSQL canon, not the graph projection.
+    assert repository.envelopes[result.commit_id].checksum == result.checksum
+    assert (
+        await repository.get_head(
+            workspace_id="ws1", project_id="pr1", branch_id=mutation.branch_id
+        )
+        == 1
+    )
 
     again = await service.reconcile(result.commit_id)
     assert again.status == "committed"
@@ -53,7 +59,7 @@ async def test_commit_creates_revision_marker_and_is_idempotent() -> None:
 
 @pytest.mark.asyncio
 async def test_unknown_type_fails_validation_and_commit() -> None:
-    service, _journal, _writer = _service()
+    service, _journal, _repository = _service()
     scope = _scope()
     mutation = await service.create_draft(
         scope,
@@ -73,7 +79,7 @@ async def test_unknown_type_fails_validation_and_commit() -> None:
 
 @pytest.mark.asyncio
 async def test_stale_head_is_rejected() -> None:
-    service, _journal, _writer = _service()
+    service, _journal, _repository = _service()
     scope = _scope()
     first = await service.create_draft(
         scope,
@@ -96,40 +102,26 @@ async def test_stale_head_is_rejected() -> None:
 
 
 @pytest.mark.asyncio
-async def test_crash_mid_apply_is_reconciled_without_duplicates() -> None:
-    service, journal, writer = _service()
+async def test_commit_lands_entity_in_canonical_state() -> None:
+    service, _journal, repository = _service()
     scope = _scope()
     mutation = await service.create_draft(
         scope,
         workspace_id="ws1",
         project_id="pr1",
-        operations=[
-            CreateEntityOp(id="tmp:a", type="Character", name="A"),
-            CreateEntityOp(id="tmp:b", type="Location", name="B"),
-        ],
+        operations=[CreateEntityOp(id="tmp:a", type="Character", name="A")],
         expected_head=0,
     )
 
-    writer.fail_after_ops = 1
-    with pytest.raises(RuntimeError):
-        await service.commit(scope, mutation.id)
+    await service.commit(scope, mutation.id)
 
-    commit_id = next(iter(journal.envelopes))
-    assert commit_id not in writer.markers  # crash before the marker
-
-    writer.fail_after_ops = None
-    result = await service.reconcile(commit_id)
-
-    assert result.status == "committed"
-    assert commit_id in writer.markers
-    # Both entities are present exactly once (idempotent re-apply by scoped id).
-    scoped_keys = [key for key in writer.objects if key[0] == "ws1" and key[1] == "pr1"]
-    assert len(scoped_keys) == 2
+    listed = await repository.list_entities(workspace_id="ws1", project_id="pr1")
+    assert [item.name for item in listed] == ["A"]
 
 
 @pytest.mark.asyncio
 async def test_fact_references_resolve_within_the_set() -> None:
-    service, _journal, writer = _service()
+    service, _journal, repository = _service()
     scope = _scope()
     mutation = await service.create_draft(
         scope,
@@ -149,6 +141,7 @@ async def test_fact_references_resolve_within_the_set() -> None:
 
     result = await service.commit(scope, mutation.id)
     assert result.status == "committed"
-    stored = [op for op in writer.applied_operations if op.op == "assert_fact"]
-    assert stored
-    assert not stored[0].proposition.subject_id.startswith("tmp:")
+
+    facts = await repository.list_facts(workspace_id="ws1", project_id="pr1")
+    assert len(facts) == 1
+    assert not facts[0].proposition.subject_id.startswith("tmp:")

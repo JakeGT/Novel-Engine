@@ -221,7 +221,7 @@ def build_container(settings: Settings | None = None) -> Container:
     container.canon_writer = Neo4jCanonWriter(manager)
     container.mutation_service = MutationService(
         container.journal,
-        container.canon_writer,
+        container.canon_repository,
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
     )
@@ -229,7 +229,7 @@ def build_container(settings: Settings | None = None) -> Container:
 
     container.canon_entity_service = CanonEntityService(
         mutation=container.mutation_service,
-        writer=container.canon_writer,
+        reader=container.canon_repository,
         schema_store=container.schema_versions,
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
@@ -238,7 +238,7 @@ def build_container(settings: Settings | None = None) -> Container:
 
     container.canon_assertion_service = CanonAssertionService(
         mutation=container.mutation_service,
-        writer=container.canon_writer,
+        reader=container.canon_repository,
         schema_store=container.schema_versions,
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,

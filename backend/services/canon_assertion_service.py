@@ -31,7 +31,7 @@ from backend.domain.operations import (
     RetireEventOp,
 )
 from backend.domain.tenancy import Permission
-from backend.ports import CanonWriterPort, SchemaVersionStorePort
+from backend.ports import CanonRepositoryPort, SchemaVersionStorePort
 from backend.services.mutation_service import CommitResult, MutationService
 
 
@@ -40,13 +40,13 @@ class CanonAssertionService:
         self,
         *,
         mutation: MutationService,
-        writer: CanonWriterPort,
+        reader: CanonRepositoryPort,
         schema_store: SchemaVersionStorePort | None = None,
         tenancy: object | None = None,
         local_mode: bool = False,
     ) -> None:
         self._mutation = mutation
-        self._writer = writer
+        self._reader = reader
         self._schema_store = schema_store
         self._tenancy = tenancy
         self._local_mode = local_mode
@@ -82,7 +82,7 @@ class CanonAssertionService:
     async def _require_entity(
         self, workspace_id: str, project_id: str, entity_id: str
     ) -> CanonEntity:
-        entity = await self._writer.get_entity(
+        entity = await self._reader.get_entity(
             workspace_id=workspace_id, project_id=project_id, entity_id=entity_id
         )
         if entity is None or entity.lifecycle != EntityLifecycle.ACTIVE:
@@ -116,7 +116,7 @@ class CanonAssertionService:
         self._validate_proposition(proposition, subject.type)
         spec = predicate_spec(proposition.predicate)
         if spec is not None and spec.cardinality == Cardinality.ONE:
-            existing = await self._writer.list_facts(
+            existing = await self._reader.list_facts(
                 workspace_id=workspace_id,
                 project_id=project_id,
                 subject_id=proposition.subject_id,
@@ -138,7 +138,7 @@ class CanonAssertionService:
         result = await self._commit(
             scope, workspace_id, project_id, [operation], expected_revision, idempotency_key
         )
-        fact = await self._writer.get_fact(
+        fact = await self._reader.get_fact(
             workspace_id=workspace_id, project_id=project_id, fact_id=fact_id
         )
         assert fact is not None
@@ -155,7 +155,7 @@ class CanonAssertionService:
         idempotency_key: str = "",
     ) -> tuple[CommitResult, Fact]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
-        existing = await self._writer.get_fact(
+        existing = await self._reader.get_fact(
             workspace_id=workspace_id, project_id=project_id, fact_id=fact_id
         )
         if existing is None:
@@ -164,7 +164,7 @@ class CanonAssertionService:
         result = await self._commit(
             scope, workspace_id, project_id, [operation], expected_revision, idempotency_key
         )
-        fact = await self._writer.get_fact(
+        fact = await self._reader.get_fact(
             workspace_id=workspace_id, project_id=project_id, fact_id=fact_id
         )
         assert fact is not None
@@ -174,7 +174,7 @@ class CanonAssertionService:
         self, scope: AccessScope, workspace_id: str, project_id: str, fact_id: str
     ) -> Fact:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
-        fact = await self._writer.get_fact(
+        fact = await self._reader.get_fact(
             workspace_id=workspace_id, project_id=project_id, fact_id=fact_id
         )
         if fact is None:
@@ -194,7 +194,7 @@ class CanonAssertionService:
         offset: int = 0,
     ) -> list[Fact]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
-        return await self._writer.list_facts(
+        return await self._reader.list_facts(
             workspace_id=workspace_id,
             project_id=project_id,
             include_closed=include_closed,
@@ -238,7 +238,7 @@ class CanonAssertionService:
         result = await self._commit(
             scope, workspace_id, project_id, [operation], expected_revision, idempotency_key
         )
-        belief = await self._writer.get_belief(
+        belief = await self._reader.get_belief(
             workspace_id=workspace_id, project_id=project_id, belief_id=belief_id
         )
         assert belief is not None
@@ -255,7 +255,7 @@ class CanonAssertionService:
         idempotency_key: str = "",
     ) -> tuple[CommitResult, Belief]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
-        existing = await self._writer.get_belief(
+        existing = await self._reader.get_belief(
             workspace_id=workspace_id, project_id=project_id, belief_id=belief_id
         )
         if existing is None:
@@ -264,7 +264,7 @@ class CanonAssertionService:
         result = await self._commit(
             scope, workspace_id, project_id, [operation], expected_revision, idempotency_key
         )
-        belief = await self._writer.get_belief(
+        belief = await self._reader.get_belief(
             workspace_id=workspace_id, project_id=project_id, belief_id=belief_id
         )
         assert belief is not None
@@ -274,7 +274,7 @@ class CanonAssertionService:
         self, scope: AccessScope, workspace_id: str, project_id: str, belief_id: str
     ) -> Belief:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
-        belief = await self._writer.get_belief(
+        belief = await self._reader.get_belief(
             workspace_id=workspace_id, project_id=project_id, belief_id=belief_id
         )
         if belief is None:
@@ -293,7 +293,7 @@ class CanonAssertionService:
         offset: int = 0,
     ) -> list[Belief]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
-        return await self._writer.list_beliefs(
+        return await self._reader.list_beliefs(
             workspace_id=workspace_id,
             project_id=project_id,
             holder_entity_id=holder_entity_id,
@@ -308,7 +308,7 @@ class CanonAssertionService:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
         belief = await self.get_belief(scope, workspace_id, project_id, belief_id)
         proposition = belief.proposition
-        facts = await self._writer.list_facts(
+        facts = await self._reader.list_facts(
             workspace_id=workspace_id,
             project_id=project_id,
             subject_id=proposition.subject_id,
@@ -357,7 +357,7 @@ class CanonAssertionService:
         result = await self._commit(
             scope, workspace_id, project_id, [operation], expected_revision, idempotency_key
         )
-        event = await self._writer.get_event(
+        event = await self._reader.get_event(
             workspace_id=workspace_id, project_id=project_id, event_id=event_id
         )
         assert event is not None
@@ -376,7 +376,7 @@ class CanonAssertionService:
         idempotency_key: str = "",
     ) -> tuple[CommitResult, Event]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
-        existing = await self._writer.get_event(
+        existing = await self._reader.get_event(
             workspace_id=workspace_id, project_id=project_id, event_id=event_id
         )
         if existing is None:
@@ -385,7 +385,7 @@ class CanonAssertionService:
         result = await self._commit(
             scope, workspace_id, project_id, [operation], expected_revision, idempotency_key
         )
-        event = await self._writer.get_event(
+        event = await self._reader.get_event(
             workspace_id=workspace_id, project_id=project_id, event_id=event_id
         )
         assert event is not None
@@ -402,7 +402,7 @@ class CanonAssertionService:
         idempotency_key: str = "",
     ) -> tuple[CommitResult, Event]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
-        existing = await self._writer.get_event(
+        existing = await self._reader.get_event(
             workspace_id=workspace_id, project_id=project_id, event_id=event_id
         )
         if existing is None:
@@ -411,7 +411,7 @@ class CanonAssertionService:
         result = await self._commit(
             scope, workspace_id, project_id, [operation], expected_revision, idempotency_key
         )
-        event = await self._writer.get_event(
+        event = await self._reader.get_event(
             workspace_id=workspace_id, project_id=project_id, event_id=event_id
         )
         assert event is not None
@@ -421,7 +421,7 @@ class CanonAssertionService:
         self, scope: AccessScope, workspace_id: str, project_id: str, event_id: str
     ) -> Event:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
-        event = await self._writer.get_event(
+        event = await self._reader.get_event(
             workspace_id=workspace_id, project_id=project_id, event_id=event_id
         )
         if event is None:
@@ -439,7 +439,7 @@ class CanonAssertionService:
         offset: int = 0,
     ) -> list[Event]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
-        return await self._writer.list_events(
+        return await self._reader.list_events(
             workspace_id=workspace_id,
             project_id=project_id,
             include_retired=include_retired,
