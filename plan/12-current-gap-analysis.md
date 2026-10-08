@@ -145,3 +145,32 @@ Phase 1 should proceed in this order without reopening Phase 0 foundations:
 5. mutation review and atomic application (FND-008.21)
 6. consistency preflight/postflight harness (ADR-006)
 7. legacy `/api` route removal once v1 parity is confirmed
+
+## Phase 1 implementation update (2026-10-08)
+
+Phase 1 built the identity, tenancy, isolation, credential, and packaging boundary
+on top of the Phase 0 foundation. This section supersedes the Phase 0 baseline
+above where it differs; `plan/phase-1-evidence.md` holds the detailed evidence.
+
+Now implemented and tested:
+
+- provider-neutral OIDC (Authentik) login with host-only, CSRF-protected,
+  server-side, rotating sessions, plus a trusted local single-user mode
+- users, external identities, workspaces, memberships, invitations, projects, and
+  security audit events, with centralized authorization and a durable rate limiter
+- mandatory workspace/project scope across PostgreSQL, Neo4j, pgvector, and object
+  storage; cross-workspace and cross-project references are refused
+- envelope-encrypted OpenRouter BYOK credentials with project-write use authority,
+  provider usage records and limits, and redaction
+- object storage separate from debug artifacts; redacted diagnostics; retention
+  purge; checksummed project export/import; dependency auditing
+
+Still open before later phases: usage accounting completeness (latency/cost/
+attempts/failures/idempotency), purge/commit journaling and recovery, live Authentik
+browser validation, coordinated database backup/restore, clean-host rehearsals, and
+the PostgreSQL RLS decision.
+
+The next transition is Phase 2 (trustworthy canon): a controlled core vocabulary and
+project schema versions, reified facts/beliefs/events, root-branch revisions, a
+recoverable PostgreSQL journal/outbox with idempotent Neo4j application, provenance
+and retirement, and media identity. See `plan/phase-2-todo.md` and ADR-011.
