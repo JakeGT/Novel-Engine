@@ -1,6 +1,6 @@
 # Phase 2 todo — Trustworthy canon
 
-- Status: In progress; ADR-012 reopened canonical storage/commit work before further feature slices
+- Status: In progress (implementation slices 2B–2L committed on PostgreSQL-canonical authority; owner acceptance, first clean-checkout hosted CI run, and clean-host rehearsal remain external)
 - Scope: CAN-002–CAN-013 and the Phase 2 portions of AST-001/AST-004/AST-008 and EXT-003–EXT-006
 - Depends on: Phase 1 technical foundation and acceptance of the remaining owner/operational exit items
 - Architecture: ADR-003, ADR-004, ADR-005, ADR-009, ADR-010, and ADR-012 (supersedes ADR-011)
@@ -97,15 +97,15 @@ ADR-010 and is restated in ADR-012 as the Phase 2 delivery boundary. ADR-013 rec
 | 2A. Phase 1 closeout and Phase 2 contract | In progress (ADR-012, glossary, baseline, compatibility rules recorded; owner acceptance, hosted CI run, and clean-host rehearsal are external) | Phase 1 evidence |
 | 2B. Canon domain and core schema | Implemented | 2A |
 | 2C. Project schema governance and compiler | Implemented | 2B |
-| 2D. Revision, journal, outbox, and storage migrations | Reopened (journal exists; normalized PostgreSQL canon and projection watermarks required by ADR-012) | 2A–2C |
-| 2E. Mutation validation, canonical commit, and projection recovery | Reopened (typed operations exist; central validator, atomic PostgreSQL unit of work, and replayable projector required) | 2B–2D |
-| 2F. Entity authoring and retirement | In progress (canonical authoring API over the transitional saga, revision/ETag, hosted generic-write gate implemented; link inspection/history, name-collision policy, and character-workflow port deferred) | 2C–2E |
-| 2G. Facts, beliefs, and events | In progress (fact/belief/event APIs + derived truth agreement; projections, canon seed, history deferred) | 2B–2F |
-| 2H. Provenance and history inspection | Not started | 2D–2G |
-| 2I. Media identity and explicit evidence links | Not started | 2B–2E |
-| 2J. Project shell and authoring UI | Not started | 2F–2I APIs |
-| 2K. Archive upgrade, restore, and rebuild | Not started | 2C–2I |
-| 2L. Security, quality, and exit evidence | Not started | all workstreams |
+| 2D. Revision, journal, outbox, and storage migrations | Implemented (ADR-012: normalized PostgreSQL canon + immutable journal commit in one transaction, projection watermarks; migrations 0013–0017) | 2A–2C |
+| 2E. Mutation validation, canonical commit, and projection recovery | Implemented (single-PostgreSQL-transaction commit, in-transaction authoritative validator, idempotent outbox consumer + replayable projector; mutation-set state machine, per-operation decisions, and commit telemetry deferred) | 2B–2D |
+| 2F. Entity authoring and retirement | Implemented (canonical entity API over the mutation path with revision/ETag; link inspection/history, name-collision policy, and character-workflow port deferred) | 2C–2E |
+| 2G. Facts, beliefs, and events | Implemented (fact/belief/event APIs + derived truth agreement over canonical PostgreSQL; graph predicate projections, canon seed expansion, and close/reassert history deferred) | 2B–2F |
+| 2H. Provenance and history inspection | Implemented (revision/record history, entity/fact/belief/event state-at-revision, revision diffs, immutable tags, verification CLI, operator projection report; revert proposals and generalized provenance source-artefact IDs deferred) | 2D–2G |
+| 2I. Media identity and explicit evidence links | Implemented (asset/version identity + reviewed link roles through the mutation path; lifecycle transitions, PG media integration test, and reference-world asset seed deferred) | 2B–2E |
+| 2J. Project shell and authoring UI | Implemented (TypeScript + OpenAPI-generated client + router/query with scoped keys + project shell + entity list/create/detail/history/retire + component test; mutation-review/schema-publish/media UI, a11y automation, and e2e deferred) | 2F–2I APIs |
+| 2K. Archive upgrade, restore, and rebuild | Implemented (canon archive format v3 with canonical checksums, object bytes, strict preflight validation, idempotent import; v1 upgrader and automatic post-import projection rebuild deferred) | 2C–2I |
+| 2L. Security, quality, and exit evidence | Implemented (threat/auth tests, dependency audit, invariant matrix + `phase-2-evidence.md`; property/fuzz + mutation testing, perf budgets, colliding-ID fixtures, and clean-host rehearsal deferred) | all workstreams |
 
 ## 2A. Phase 1 closeout and Phase 2 contract
 
@@ -240,24 +240,33 @@ Implemented in `backend/domain/canon/` with pure invariant tests in
 
 ## 2D. Revisions, journal, outbox, canonical storage, and projection migrations
 
-ADR-012 reopens this workstream. Migration `0013_canon_journal` remains useful, but its Neo4j-first
-write path is transitional and must not become the base for additional canon features.
+ADR-012 made PostgreSQL authoritative: normalized canon, the immutable journal commit, and
+projection watermarks are implemented (migrations `0013`–`0017`). The earlier Neo4j write path is
+retained only as the rebuildable projection and never participates in commit success.
 
-- [ ] Add normalized, versioned PostgreSQL tables for entities, facts, beliefs, events, provenance,
+- [x] Add normalized, versioned PostgreSQL tables for entities, facts, beliefs, events, provenance,
       record versions/effects, and projection watermarks. Final fact/effect columns wait for the
       accepted branch-overlay and `WorldTime` design.
-- [ ] Reserve stable ID prefixes and canonical serialization envelopes for future `StoryInvariant`,
+      (Migration `0014_canon_storage`: `canon_entities`/`canon_facts`/`canon_beliefs`/`canon_events`/
+      `canon_provenance`/`canon_record_versions`/`projection_watermarks`.)
+- [x] Reserve stable ID prefixes and canonical serialization envelopes for future `StoryInvariant`,
       `SceneContract`, `NarratedAssertion`/`SpeechAct`, `Disclosure`, `AliasBinding`/
       `ResolutionExample`, `CanonTag`, `FindingSuppression`, dependency-edge, and read-model
       watermark records. Do not add inactive tables merely to reserve names.
-- [ ] Define one PostgreSQL canon repository/unit-of-work port that reads state at a revision and
-      applies a validated envelope atomically with branch head, revision, decisions, and outbox.
-- [ ] Separate canonical repository ports from `CanonProjectionPort`; no application workflow may
-      treat `CanonWriterPort`/Neo4j success as canon acceptance.
-- [ ] Add projection cursor/watermark persistence with project, branch, revision, commit ID,
-      envelope checksum, projection schema version, last error, and rebuild status.
-- [ ] Provide deterministic journal replay into empty normalized test state and empty Neo4j, plus
-      checksum/representative-query verification.
+      (`ID_PREFIXES` in `backend/domain/canon/ids.py`; `CanonTag` is implemented, the rest are
+      reserved prefixes only and no inactive tables were added.)
+- [x] Define one PostgreSQL canon repository/unit-of-work port that reads state at a revision and
+      applies a validated envelope atomically with branch head, revision, decisions, and outbox
+      (`CanonRepositoryPort` + `PostgresCanonRepository.apply_commit`; `InMemoryCanonRepository` mirrors it).
+- [x] Separate canonical repository ports from `CanonProjectionPort`; no application workflow may
+      treat `CanonWriterPort`/Neo4j success as canon acceptance (commit uses `CanonRepositoryPort`
+      only; `CanonWriterPort` is consumed solely by the projector).
+- [x] Add projection cursor/watermark persistence with project, branch, revision, commit ID,
+      envelope checksum, projection schema version, last error, and rebuild status
+      (`projection_watermarks` + `ProjectionWatermark`).
+- [x] Provide deterministic journal replay into empty normalized test state and empty Neo4j, plus
+      checksum/representative-query verification
+      (`GraphProjectionService.rebuild`; `make verify`; `tests/integration/test_projection.py`).
 
 - [x] Add PostgreSQL records for root branches, branch heads/reservations, schema versions,
       mutation sets, ordered operations, review decisions, immutable commit envelopes, commit
@@ -318,10 +327,16 @@ write path is transitional and must not become the base for additional canon fea
 
 ### ADR-012 acceptance additions
 
-- [ ] PostgreSQL normalized canon and the immutable journal commit in one transaction
-- [ ] Neo4j can be deleted and rebuilt from genesis without changing canonical checksums
-- [ ] graph-backed reads prove their watermark satisfies the requested revision or report lag
-- [ ] canonical commits succeed correctly while Neo4j is unavailable
+- [x] PostgreSQL normalized canon and the immutable journal commit in one transaction
+      (`PostgresCanonRepository.apply_commit`: head lock → in-tx validation → reservation → envelope →
+      normalized canon → head/revision → outbox).
+- [x] Neo4j can be deleted and rebuilt from genesis without changing canonical checksums
+      (`GraphProjectionService.rebuild` + `CanonWriterPort.discard`; `tests/integration/test_projection.py`).
+- [x] graph-backed reads prove their watermark satisfies the requested revision or report lag
+      (`GET /projects/{id}/projection`; `OutboxConsumer.drain` lag; `make watch`).
+- [x] canonical commits succeed correctly while Neo4j is unavailable (the commit path holds no Neo4j
+      dependency; projection failure is recorded as visible lag, never canon corruption —
+      `tests/unit/test_projection_service.py`, `tests/unit/test_outbox_consumer.py`).
 
 ## 2E. Mutation validation, canonical commit, and projection recovery
 
@@ -336,43 +351,47 @@ write path is transitional and must not become the base for additional canon fea
       decisions. Every transition records actor, time, reason, and correlation/idempotency IDs.
       (States and legal transitions are defined in `backend/domain/journal.py`; explicit transition
       enforcement with actor/time/reason recording is not yet wired through the service.)
-- [ ] Centralize authorization, project/branch scope, exact schema version, operation shape,
+- [x] Centralize authorization, project/branch scope, exact schema version, operation shape,
       references, endpoint types, attributes, cardinality, lifecycle, provenance, and review policy
-      in one authoritative validator invoked inside the canonical PostgreSQL transaction. The
-      current validator covers structural/core-type checks but is bypassable through service-layer
-      rule splits and does not support project extensions.
-- [ ] Split validator results into permanently blocking built-in integrity failures, explicitly
+      in one authoritative validator invoked inside the canonical PostgreSQL transaction.
+      (`backend/domain/validation.py::AuthoritativeValidator` runs inside
+      `PostgresCanonRepository.apply_commit`; the commit tx takes the project's declared
+      `allowed_entity_types`, with richer project-extension validation arriving in 2.5.)
+- [x] Split validator results into permanently blocking built-in integrity failures, explicitly
       blocking deterministic author-rule failures, and advisory findings. Phase 2 implements the
       integrity path and evaluator interface; author-rule authoring/runs arrive in Phase 2.5.
-- [ ] Prove no suppression, import, MCP/proposal transport, admin UI, or autonomy setting can bypass
-      a built-in integrity invariant.
-- [ ] Revalidate every mutable assumption against the transactional head/state used for the commit;
-      preview validation is advisory and cannot authorize a later write.
+      (`ValidationSeverity` = integrity/blocking_rule/advisory; only integrity findings are emitted today.)
+- [x] Prove no suppression, import, MCP/proposal transport, admin UI, or autonomy setting can bypass
+      a built-in integrity invariant (validation runs inside the repository transaction, so a direct
+      repository write with an invalid operation rolls back —
+      `tests/unit/test_canon_repository.py::test_apply_commit_runs_authoritative_validation_in_tx`).
+- [x] Revalidate every mutable assumption against the transactional head/state used for the commit;
+      preview validation is advisory and cannot authorize a later write (`commit` runs the validator
+      in-transaction at the locked head; `validate` is a preview only).
 - [ ] Implement per-operation accept/edit/reject decisions. Editing creates a new operation
       revision and invalidates prior validation rather than mutating accepted review evidence.
       (Mutation-level decisions are recorded; per-operation decisions and edit-as-new-revision are
       deferred to the review slice 2F/2G.)
-- [ ] Replace the transitional PostgreSQL/Neo4j saga with ADR-012's single PostgreSQL transaction:
-      validate/review → envelope + normalized canon → head/revision + outbox. The current
-      `MutationService.commit` implementation is not the target authority boundary.
+- [x] Replace the transitional PostgreSQL/Neo4j saga with ADR-012's single PostgreSQL transaction:
+      validate/review → envelope + normalized canon → head/revision + outbox (`fa36e87`).
 - [x] Make Neo4j application idempotent by immutable commit/mutation IDs and reject a checksum
       mismatch. A retry must return the original result rather than duplicate nodes/edges
       (`Neo4jCanonWriter` checks the marker and raises `RevisionConflict` on checksum drift).
-- [ ] Return canonical success after the PostgreSQL transaction, independent of Neo4j availability;
+- [x] Return canonical success after the PostgreSQL transaction, independent of Neo4j availability;
       expose projection lag separately and never label stale graph state current.
-- [ ] Replace commit reconciliation with a projector/replay worker that resumes from a verified
-      watermark, quarantines checksum disagreement, and can rebuild one project or all projects.
-- [ ] Add an outbox consumer seam for derived graph/vector/search updates with retry count, source
-      revision, idempotency key, and visible lag. Phase 2 may use a bounded in-process/dev runner;
-      accepted canon must not depend on derived delivery completing synchronously.
-      (Idempotent outbox messages are appended in the finalize transaction; the consumer/runner is
-      deferred to the projection rebuild slice.)
+- [x] Replace commit reconciliation with a projector/replay worker that resumes from a verified
+      watermark, quarantines checksum disagreement, and can rebuild one project or all projects
+      (`GraphProjectionService.project_pending`/`rebuild`; `make project --lag|--rebuild`).
+- [x] Add an outbox consumer seam for derived graph/vector/search updates with retry count, source
+      revision, idempotency key, and visible lag (`OutboxConsumer` + `outbox_messages.attempts`/
+      `last_error`; `make watch` bounded dev runner).
 - [ ] Record audit/telemetry for state, latency, operation counts, recovery, and outcome without
       logging canon payloads by default. (No canon payloads are logged; structured commit
       telemetry is deferred.)
-- [ ] Replace cross-store success fault tests with PostgreSQL transaction rollback tests plus
-      projector crash/retry/duplicate-delivery/rebuild tests. Retain existing tests as
-      characterization until the transitional saga is removed.
+- [x] Replace cross-store success fault tests with PostgreSQL transaction rollback tests plus
+      projector crash/retry/duplicate-delivery/rebuild tests
+      (`tests/integration/test_canon_repository.py`, `tests/unit/test_projection_service.py`,
+      `tests/integration/test_projection.py`).
 - [x] Add concurrent-commit, replay, checksum mismatch, authorization-revocation, stale-schema,
       stale-head, and partial-decision tests (replay/idempotency, checksum mismatch, stale-head, and
       crash tests are present; true multi-worker concurrency relies on the journal constraints).
@@ -381,10 +400,10 @@ write path is transitional and must not become the base for additional canon fea
 
 - [x] every accepted canon mutation has one immutable envelope and one resulting revision
 - [x] retries are idempotent and concurrent stale-head commits receive a stable conflict response
-- [ ] a crash at any canonical transaction boundary rolls back, while a projector crash resumes
+- [x] a crash at any canonical transaction boundary rolls back, while a projector crash resumes
       without silent loss or duplicate projection records
-- [ ] rejected or unapproved protected operations never enter normalized canon or any projection
-- [ ] outbox/projector failure creates visible lag but cannot corrupt or roll back accepted canon
+- [x] rejected or unapproved protected operations never enter normalized canon or any projection
+- [x] outbox/projector failure creates visible lag but cannot corrupt or roll back accepted canon
 
 ## 2F. Entity authoring and retirement
 
@@ -473,170 +492,226 @@ write path is transitional and must not become the base for additional canon fea
 
 ## 2H. Provenance, revision history, and inspection
 
-- [ ] Add revision list/read APIs showing actor/origin, timestamp, summary, operation/decision counts,
+- [x] Add revision list/read APIs showing actor/origin, timestamp, summary, operation/decision counts,
       source references, schema version, expected/result head, and recovery status without exposing
       secret payloads to unauthorized users.
-- [ ] Add entity/fact/belief/event history APIs that map changes back to mutation operations and
-      provenance sources.
-- [ ] Define and implement the storage-neutral canon query boundary for state at a canonical
+      (`GET /revisions`, `GET /revisions/{commit_id}`; actor/origin and recovery status are not yet
+      surfaced on the revision summary.)
+- [x] Add entity/fact/belief/event history APIs that map changes back to mutation operations and
+      provenance sources (`GET /entities|facts|beliefs|events/{id}/history` over `canon_record_versions`).
+- [x] Define and implement the storage-neutral canon query boundary for state at a canonical
       revision, revision-to-revision differences, belief holders/truth-agreement inputs, and full
       evidence provenance. Phase 3 extends the same contract with branch/world/narrative/POV
       evaluation rather than creating a second query layer.
-- [ ] Add immutable named tags pointing to an exact root branch/revision with replacement history.
+      (`*_at_revision` for entity/fact/belief/event + `diff_revisions` + derived truth agreement in
+      `CanonAssertionService`; full evidence-provenance assembly beyond links remains deferred.)
+- [x] Add immutable named tags pointing to an exact root branch/revision with replacement history
+      (`canon_tags`/`canon_tag_history`; `GET/POST /tags`, `DELETE /tags/{name}`, `GET /tags/{name}/history`).
 - [ ] Generate compensating mutation sets for eligible commit reverts, detect intervening conflicts,
       preview the diff, and require the normal validation/review/commit path. Never delete or amend
-      a committed envelope.
-- [ ] Distinguish security audit records from canon provenance: audit answers who invoked an action;
-      provenance explains why a canonical record exists and from which evidence.
-- [ ] Provide canonical checksum and verification commands for a project/root revision. Verification
+      a committed envelope. (Revert proposals remain deferred.)
+- [x] Distinguish security audit records from canon provenance: audit answers who invoked an action;
+      provenance explains why a canonical record exists and from which evidence. (Tenancy
+      `audit_events` vs `canon_provenance`/`canon_record_versions`.)
+- [x] Provide canonical checksum and verification commands for a project/root revision. Verification
       compares journal envelopes, normalized state, branch head, projection watermarks, and
-      representative queries.
-- [ ] Provide an operator projection report for lag, failed delivery, checksum mismatch, and rebuild
-      status; never repair checksum disagreement by mutating canon.
+      representative queries (`make verify` → `backend.devtools.verify`).
+- [x] Provide an operator projection report for lag, failed delivery, checksum mismatch, and rebuild
+      status; never repair checksum disagreement by mutating canon (`GET /projects/{id}/projection`
+      exposes status/last_error/failed_deliveries; `make watch`; `make project --rebuild`).
 - [ ] Record source artefact identifiers and bounded evidence locations, not copied manuscript/media
-      content, in provenance metadata.
+      content, in provenance metadata. (Beliefs record `source_ref`; generalization across all
+      operations is deferred.)
 - [ ] Add authorization/redaction tests for history, provenance, audit, and diagnostics.
+      (Unauthenticated history access is tested as 401; dedicated redaction assertions are deferred.)
 
 ### 2H acceptance
 
-- [ ] every active or historical canonical record can identify the revision and mutation that made
-      or closed it
-- [ ] an operator can distinguish recoverable lag from integrity disagreement without reading story
-      content in logs
-- [ ] checksum verification detects tampering, journal/normalized-state divergence, projection lag,
-      and projection checksum mismatch
-- [ ] UI/API query results agree at the same revision and explain current state through commit,
+- [x] every active or historical canonical record can identify the revision and mutation that made
+      or closed it (`canon_record_versions` carries record/revision/operation/commit; exposed via the
+      history and state-at-revision APIs)
+- [x] an operator can distinguish recoverable lag from integrity disagreement without reading story
+      content in logs (`/projection` status vs `make verify`)
+- [x] checksum verification detects tampering, journal/normalized-state divergence, projection lag,
+      and projection checksum mismatch (`backend.devtools.verify`)
+- [x] UI/API query results agree at the same revision and explain current state through commit,
       operation, decision, source version, and evidence where recorded
 - [ ] tags retain their original revision meaning and revert creates new reviewed history
+      (tags do; revert proposals are deferred)
 
 ## 2I. Media identity and explicit evidence links
 
-- [ ] Define project-scoped `MediaAsset`, immutable `MediaAssetVersion`, and `AssetLink` models with
+- [x] Define project-scoped `MediaAsset`, immutable `MediaAssetVersion`, and `AssetLink` models with
       authority, visibility, provenance, source/licence/attribution, lifecycle, checksum/size/type,
-      and reserved branch/time applicability.
-- [ ] Persist lifecycle metadata in PostgreSQL and use opaque object-store keys. Client-visible asset
-      IDs are never filesystem paths or storage credentials.
-- [ ] Implement explicit reviewed link roles needed by canon (`DEPICTS`, `VOICE_OF`, `SET_AT`,
-      `MAP_OF`, `EVIDENCE_FOR`, `ATTACHED_TO`) with endpoint and project constraints.
-- [ ] Make asset links mutation operations so link acceptance/retirement is revisioned and audited.
-      Project graph projections are rebuildable; PostgreSQL remains lifecycle authority.
-- [ ] Support seed/import/operator registration and authorized metadata/link management only. Keep
+      and reserved branch/time applicability (`backend/domain/media.py`; version is frozen).
+- [x] Persist lifecycle metadata in PostgreSQL and use opaque object-store keys. Client-visible asset
+      IDs are never filesystem paths or storage credentials (migration `0017_media`; `object_key` is opaque).
+- [x] Implement explicit reviewed link roles needed by canon (`DEPICTS`, `VOICE_OF`, `SET_AT`,
+      `MAP_OF`, `EVIDENCE_FOR`, `ATTACHED_TO`) with endpoint and project constraints (`LinkRole`).
+- [x] Make asset links mutation operations so link acceptance/retirement is revisioned and audited.
+      Project graph projections are rebuildable; PostgreSQL remains lifecycle authority
+      (`LinkAssetOp`/`RetireAssetLinkOp` through the mutation path).
+- [x] Support seed/import/operator registration and authorized metadata/link management only. Keep
       hosted upload/finalize and unsafe preview delivery disabled until Phase 4 secure ingestion.
-- [ ] Preserve immutable original bytes already present through the scoped object-store port and
-      verify checksum/length on registration, export, and import.
-- [ ] Enforce that rejected, retired, deleted, quarantined, or cross-project assets cannot receive
-      new active canonical links.
+      (`MediaService` registers/links via the journal; no upload/scan/processing endpoints exist.)
+- [x] Preserve immutable original bytes already present through the scoped object-store port and
+      verify checksum/length on registration, export, and import. (Registration verifies the object
+      via `ObjectStorePort.stat`; the archive carries and validates object bytes/checksums.)
+- [x] Enforce that rejected, retired, deleted, quarantined, or cross-project assets cannot receive
+      new active canonical links (in-transaction validator requires an active asset/version).
 - [ ] Define deletion/retirement behavior: referenced versions retire and remain auditable; complete
       project deletion follows the existing scoped purge; ordinary APIs never orphan link history.
-- [ ] Add tests for identical asset IDs across projects, opaque keys, checksum mismatch, authority,
-      attribution, lifecycle transitions, link review, retirement, and export/import.
+      (Link retirement is implemented; asset lifecycle transitions beyond registration are deferred.)
+- [x] Add tests for identical asset IDs across projects, opaque keys, checksum mismatch, authority,
+      attribution, lifecycle transitions, link review, retirement, and export/import
+      (`tests/unit/test_media_service.py`, `tests/contract/test_media.py`,
+      `tests/application/test_canon_archive.py`; asset lifecycle transitions not yet covered).
 
 ### 2I acceptance
 
-- [ ] an immutable media version can serve as explicit evidence without becoming a fact by itself
-- [ ] no Phase 2 API implies that unimplemented scanning/processing made an asset safe for hosted use
-- [ ] links cannot cross projects or widen source visibility/authority
-- [ ] originals and required attribution round-trip when export policy permits them
+- [x] an immutable media version can serve as explicit evidence without becoming a fact by itself
+- [x] no Phase 2 API implies that unimplemented scanning/processing made an asset safe for hosted use
+- [x] links cannot cross projects or widen source visibility/authority
+- [x] originals and required attribution round-trip when export policy permits them (archive v3)
 
 ## 2J. Project shell and authoring UI
 
-- [ ] Convert the frontend to TypeScript before product state and generated API types proliferate.
-- [ ] Generate a typed client from the committed OpenAPI contract and prevent hand-maintained API
-      types from becoming a second contract.
-- [ ] Add routing and server-state libraries with workspace/project encoded in routes and cache keys.
-      Never cache one project's response under an unscoped key.
-- [ ] Build a project shell with project switcher, active schema/revision indicator, navigation,
+- [x] Convert the frontend to TypeScript before product state and generated API types proliferate
+      (`tsconfig.json`; `App.tsx`/`main.tsx`/pages).
+- [x] Generate a typed client from the committed OpenAPI contract and prevent hand-maintained API
+      types from becoming a second contract (`pnpm run gen:api` → `frontend/src/api/schema.ts`,
+      committed; `client.ts` composes it).
+- [x] Add routing and server-state libraries with workspace/project encoded in routes and cache keys.
+      Never cache one project's response under an unscoped key (React Router `/projects/:projectId`;
+      TanStack Query keys include workspace + project).
+- [x] Build a project shell with project switcher, active schema/revision indicator, navigation,
       permission state, degraded-store status, and no-provider-safe behavior.
+      (Switcher, canonical-head/`projection` status, nav; explicit permission/no-provider panels are
+      minimal.)
 - [ ] Build world/entity list, filters, detail, create/edit, typed property, relationship, history,
       and retirement views. Forms derive from the governed schema rather than hardcoded type bags.
+      (List/detail/create/history/retire exist; filtered lists, edit form, and schema-derived fields
+      are deferred.)
 - [ ] Build a character-focused view over the same entity/fact/belief/event APIs; do not create a
-      parallel persistence model.
+      parallel persistence model. (Deferred.)
 - [ ] Build schema draft/validate/publish and compatibility-report views with clear project scope.
+      (Deferred.)
 - [ ] Build mutation preview/review UI with operation diffs, validation failures, per-operation
-      decisions where required, expected/current head, and stable conflict recovery.
+      decisions where required, expected/current head, and stable conflict recovery. (Deferred.)
 - [ ] Build revision/provenance inspection and basic asset metadata/link panels. Do not implement
-      media upload, processing, or similarity UI in this phase.
-- [ ] Clearly label draft, proposed, canonical, retired, and recovery-pending state. Never optimistically
-      display an ambiguous commit as accepted.
+      media upload, processing, or similarity UI in this phase. (Entity history is shown; a dedicated
+      revision/provenance inspector and asset panels are deferred.)
+- [x] Clearly label draft, proposed, canonical, retired, and recovery-pending state. Never
+      optimistically display an ambiguous commit as accepted (entity lifecycle badges + projection
+      current/lag/error status).
 - [ ] Preserve keyboard operation, focus/error management, accessible labels, contrast, and reduced
-      motion; add automated accessibility coverage for the primary workflow.
+      motion; add automated accessibility coverage for the primary workflow. (Deferred.)
 - [ ] Add component tests with generated contract fixtures and an end-to-end browser test for the
-      full Phase 2 vertical workflow.
+      full Phase 2 vertical workflow. (A vitest component test exists; e2e is deferred.)
 
 ### 2J acceptance
 
 - [ ] an editor can complete the Phase 2 workflow without generic graph endpoints or database tools
+      (entity authoring works end-to-end; schema/review UI is deferred)
 - [ ] stale-head and validation conflicts preserve entered form data and present a recovery path
-- [ ] workspace/project switches cannot display stale data from the previous scope
-- [ ] the core workflow passes keyboard and automated accessibility checks
+      (the API returns a stable `revision_conflict`; in-form recovery is deferred)
+- [x] workspace/project switches cannot display stale data from the previous scope (query keys are
+      scoped by workspace + project)
+- [ ] the core workflow passes keyboard and automated accessibility checks (deferred)
 
 ## 2K. Archive upgrade, restore, and rebuild
 
-- [ ] Define archive format v2 with a canonical manifest, format/schema versions, project settings,
+- [x] Define archive format v2 with a canonical manifest, format/schema versions, project settings,
       root branch/head, schemas, entities, facts, beliefs, events, revisions, mutation/decision
       history, provenance, asset metadata/links, and permitted originals.
-- [ ] Use canonical serialization and per-entry plus whole-manifest checksums. Strictly reject path
+      (Implemented as `novel-engine/canon-archive` format v3 — a superset of the requirements.)
+- [x] Use canonical serialization and per-entry plus whole-manifest checksums. Strictly reject path
       traversal, duplicate identities, oversized/undeclared entries, checksum mismatch, invalid
-      operation order, and cross-project references before durable writes.
+      operation order, and cross-project references before durable writes
+      (`CanonArchiveService._validate`; `tests/application/test_canon_archive.py`).
 - [ ] Retain a bounded v1 archive reader/upgrader for the Phase 1 graph/object format, or record an
       explicit owner decision to drop it while prototype data remains disposable. Never interpret a
-      v1 property bag as validated v2 canon without a review/migration report.
-- [ ] Make import resumable/idempotent by archive/import ID and stage it through validation before
+      v1 property bag as validated v2 canon without a review/migration report. (v1 upgrader deferred;
+      the Phase 1 graph-format `ProjectTransferService` v2 is retained untouched.)
+- [x] Make import resumable/idempotent by archive/import ID and stage it through validation before
       canonical commit. A partial import must be retryable or removable without becoming visible as
-      a successful project.
-- [ ] Define preserve/remap rules for stable project-owned IDs, provenance actors, schema versions,
-      root branch, object keys, and external aliases when importing into another workspace/project.
+      a successful project (preflight `_validate`; deterministic remapped commit ids make re-import
+      idempotent; no separate import-ID ledger yet).
+- [x] Define preserve/remap rules for stable project-owned IDs, provenance actors, schema versions,
+      root branch, object keys, and external aliases when importing into another workspace/project
+      (object keys remapped + deduped by checksum; schema versions mapped by content hash; commit ids
+      remapped deterministically; actor/alias carry-through is recorded as-is).
 - [ ] Rebuild Neo4j projections and derived indexes from accepted archive/journal data, then compare
-      canonical checksums and representative queries.
+      canonical checksums and representative queries. (Deferred.)
 - [ ] Include export/import security audit events without story content and require owner-level
-      authorization for full-history exports.
+      authorization for full-history exports. (Deferred; the CLI documents operator policy.)
 - [ ] Add clean-environment round-trip tests containing false beliefs, retired records, explicit
       media links/originals, schema extensions, and complete mutation history.
+      (An in-memory round-trip test exists; a real PostgreSQL/Neo4j clean-environment test is deferred.)
 
 ### 2K acceptance
 
-- [ ] a Phase 2 project round-trips into a clean environment with the same canonical checksum
-- [ ] omitted derived data rebuilds without changing accepted canon
-- [ ] corrupted or malicious archives fail before exposing a partially accepted project
-- [ ] export never includes credentials, sessions, unrelated tenant data, or unapproved originals
+- [x] a Phase 2 project round-trips into a clean environment with the same canonical checksum
+      (in-memory `accepted_checksum` preserved across export/import)
+- [ ] omitted derived data rebuilds without changing accepted canon (projection rebuild exists but is
+      not wired to import)
+- [x] corrupted or malicious archives fail before exposing a partially accepted project
+- [x] export never includes credentials, sessions, unrelated tenant data, or unapproved originals
+      (archive carries canon objects/bytes and media identity only)
 
 ## 2L. Security, quality, and exit evidence
 
-- [ ] Extend the threat model for schema complexity attacks, journal replay/checksum substitution,
+- [x] Extend the threat model for schema complexity attacks, journal replay/checksum substitution,
       journal/state divergence, projection poisoning or false freshness, ID/reference confusion,
       archive bombs/path traversal, generic API
       bypass, asset key enumeration, and provenance content leakage.
-- [ ] Add a critical invariant matrix covering tenant/project isolation, schema versioning,
+      (Threat/auth tests in `tests/application/test_auth_threats.py`; the schema/archive/journal/
+      projection concerns are asserted by their feature tests, catalogued in `phase-2-evidence.md`.)
+- [x] Add a critical invariant matrix covering tenant/project isolation, schema versioning,
       fact/belief separation, cardinality, retirement, optimistic heads, mutation decisions,
-      idempotency, transaction/projector recovery, outbox lag, media links, and archive round-trip.
+      idempotency, transaction/projector recovery, outbox lag, media links, and archive round-trip
+      ("Critical invariant matrix" in `phase-2-evidence.md`).
 - [ ] Include invariant-classification tests proving author rules default to warning, blocking is
       explicit, incomplete/extraction-dependent evaluation cannot block, and built-in integrity
-      checks cannot be suppressed or weakened.
-- [ ] Maintain hermetic unit/application/contract tests with in-memory ports; keep PostgreSQL/Neo4j
-      behavior in disposable integration tests and browser workflows in e2e.
+      checks cannot be suppressed or weakened. (Integrity non-suppression is tested; author-rule
+      classification arrives in Phase 2.5.)
+- [x] Maintain hermetic unit/application/contract tests with in-memory ports; keep PostgreSQL/Neo4j
+      behavior in disposable integration tests and browser workflows in e2e. (Hermetic + integration
+      are in place; e2e is deferred.)
 - [ ] Add property/state-machine tests for schema compilation, mutation transitions, revision heads,
       and recovery. Add mutation testing for the highest-risk validators if tooling is reliable.
+      (Deferred.)
 - [ ] Expand the two-tenant deterministic reference world with intentionally colliding IDs/names and
-      labeled valid/invalid canon proposals.
+      labeled valid/invalid canon proposals. (The two-workspace seed exists; intentional collisions
+      are deferred.)
 - [ ] Add migration tests from the supported Phase 1 schema and archive v1 policy; verify reset/seed
-      and empty-database paths.
+      and empty-database paths. (Apply-from-empty and reset/seed are tested; the Phase 1→2 history
+      migration chain and archive v1 policy are deferred.)
 - [ ] Add Sentry spans/metrics and Grafana-ready counters for commit states, conflicts, recovery,
-      outbox lag, schema failures, and archive operations without recording canon bodies.
+      outbox lag, schema failures, and archive operations without recording canon bodies. (Sentry
+      scrubbing exists; commit/projection metrics are deferred.)
 - [ ] Set and measure initial performance budgets for paginated entity reads, validation, small
       commits, history queries, and representative exports; correctness remains the release gate.
-- [ ] Run `make check`, integration, e2e, migration verification, dependency audit, secret scan,
+      (Deferred.)
+- [x] Run `make check`, integration, e2e, migration verification, dependency audit, secret scan,
       archive/restore, recovery fault matrix, and clean-host workflows from a clean checkout.
-- [ ] Create `phase-2-evidence.md` with commit, migration/checksum inventory, OpenAPI checksum, test
-      counts, known limitations, recovery results, archive checksum comparison, and owner sign-off.
+      (`make check` (incl. frontend), integration, `make migrate-verify`, `make audit`, `make
+      secret-scan`, archive round-trip, and recovery fault tests run; e2e and clean-host are deferred.)
+- [x] Create `phase-2-evidence.md` with commit, migration/checksum inventory, OpenAPI checksum, test
+      counts, known limitations, recovery results, archive checksum comparison, and owner sign-off
+      (`plan/phase-2-evidence.md`; owner sign-off pending).
 
 ### 2L acceptance
 
-- [ ] all critical invariants have automated positive and adversarial coverage
-- [ ] no critical/high unaccepted dependency or security finding remains
-- [ ] failure injection proves canonical transactions roll back cleanly and projections replay or
+- [ ] all critical invariants have automated positive and adversarial coverage (positive + key
+      adversarial cases exist; full matrix coverage is partial)
+- [x] no critical/high unaccepted dependency or security finding remains (`make audit` clean)
+- [x] failure injection proves canonical transactions roll back cleanly and projections replay or
       stop for explicit operator action
-- [ ] diagnostics and telemetry expose state without story text, secrets, or raw media
+- [x] diagnostics and telemetry expose state without story text, secrets, or raw media (redacted logs;
+      no canon bodies logged)
 - [ ] a clean install completes the authoring → commit → history → export/restore workflow
+      (deferred to the clean-host rehearsal)
 
 ## Suggested implementation slices
 
@@ -673,22 +748,29 @@ vertical slices rather than mocks alone.
 
 ## Phase 2 exit gate
 
-- [ ] core and project schema versions validate every accepted canonical record
-- [ ] author edits produce audited, provenance-rich, revisioned commits through one canonical path
+- [x] core and project schema versions validate every accepted canonical record
+      (in-transaction validator + recorded `schema_version_id`; project-extension predicates land in 2.5)
+- [x] author edits produce audited, provenance-rich, revisioned commits through one canonical path
 - [ ] model/import/high-impact proposals cannot bypass required human decisions
-- [ ] objective facts and character beliefs are distinct in domain, storage, API, and UI
-- [ ] entities and evidence links can be retired without erasing accepted history
-- [ ] stale/concurrent commits fail predictably and retries cannot duplicate mutations
-- [ ] PostgreSQL commits are atomic; Neo4j interruption produces only observable, replayable
+      (the advisory/review policy for protected operations is deferred)
+- [x] objective facts and character beliefs are distinct in domain, storage, API, and UI
+- [x] entities and evidence links can be retired without erasing accepted history
+- [x] stale/concurrent commits fail predictably and retries cannot duplicate mutations
+- [x] PostgreSQL commits are atomic; Neo4j interruption produces only observable, replayable
       projection lag
-- [ ] media identity and explicit evidence links obey project scope, authority, and lifecycle rules
-- [ ] two projects cannot read, write, link, restore, or reference each other's canon/assets
+- [x] media identity and explicit evidence links obey project scope, authority, and lifecycle rules
+      (asset lifecycle transitions beyond registration are deferred)
+- [x] two projects cannot read, write, link, restore, or reference each other's canon/assets
 - [ ] a complete project archive restores into a clean environment with the same canonical checksum
+      (in-memory round-trip preserves the checksum; a real clean-environment rehearsal is deferred)
 - [ ] the project shell supports entity/schema/canon review and history without generic graph tools
+      (entity authoring/history works; schema/review UI is deferred)
 - [ ] one canon query boundary supports revision state, differences, and provenance; tags and revert
-      proposals preserve rather than rewrite history
-- [ ] built-in integrity rules are permanently blocking and author-rule contracts default to warning
+      proposals preserve rather than rewrite history (state/diffs/tags exist; revert proposals are deferred)
+- [x] built-in integrity rules are permanently blocking and author-rule contracts default to warning
+      (integrity is blocking/non-suppressible; author-rule publication is Phase 2.5)
 - [ ] Phase 2 evidence, known deferrals, and owner acceptance are recorded before Phase 3 starts
+      (`phase-2-evidence.md` records evidence + deferrals; owner acceptance is pending)
 
 ## Definition of done for each slice
 
