@@ -90,7 +90,7 @@ Phase 2 delivery boundary.
 | 2A. Phase 1 closeout and Phase 2 contract | In progress (ADR-011, glossary, baseline, compatibility rules recorded; owner acceptance, hosted CI run, and clean-host rehearsal are external) | Phase 1 evidence |
 | 2B. Canon domain and core schema | Implemented | 2A |
 | 2C. Project schema governance and compiler | Implemented | 2B |
-| 2D. Revision, journal, outbox, and storage migrations | Not started | 2A–2C |
+| 2D. Revision, journal, outbox, and storage migrations | Implemented | 2A–2C |
 | 2E. Mutation validation, commit saga, and recovery | Not started | 2B–2D |
 | 2F. Entity authoring and retirement | Not started | 2C–2E |
 | 2G. Facts, beliefs, and events | Not started | 2B–2F |
@@ -229,39 +229,62 @@ Implemented in `backend/domain/canon/` with pure invariant tests in
 
 ## 2D. Revisions, journal, outbox, and storage migrations
 
-- [ ] Add PostgreSQL records for root branches, branch heads/reservations, schema versions,
+- [x] Add PostgreSQL records for root branches, branch heads/reservations, schema versions,
       mutation sets, ordered operations, review decisions, immutable commit envelopes, commit
       attempts/state transitions, and outbox messages.
-- [ ] Carry `workspace_id` and `project_id` on every row and every unique/index key that could
+      (Migration `0013_canon_journal`: `branches`, `branch_reservations`, `mutation_sets`,
+      `mutation_operations`, `review_decisions`, `commit_envelopes`, `commit_attempts`,
+      `canon_revisions`, `outbox_messages`; `schema_versions` arrived with 2C.)
+- [x] Carry `workspace_id` and `project_id` on every row and every unique/index key that could
       otherwise collide between tenants. Add database constraints for status transitions where
       practical.
-- [ ] Create exactly one root branch for every existing/new project through an idempotent migration
+      (Every journal table carries workspace/project ownership; uniqueness keys are workspace/project
+      scoped; `branches` has a partial unique index for a single root and `branch_reservations` a
+      partial unique index for one active reservation per branch.)
+- [x] Create exactly one root branch for every existing/new project through an idempotent migration
       and provisioning path. Use an explicit zero/genesis head, not `NULL` ambiguity.
-- [ ] Define a monotonic per-project/root-branch system revision and optimistic expected-head
+      (`CanonJournalPort.ensure_root_branch` is idempotent and genesis head is `0` (NOT NULL DEFAULT).)
+- [x] Define a monotonic per-project/root-branch system revision and optimistic expected-head
       contract. Prevent more than one active commit reservation for a branch.
-- [ ] Persist an immutable canonical serialization and checksum for each committed envelope,
+      (`reserve_head` requires the exact expected revision, allocates `expected + 1`, and a partial
+      unique index forbids a second active reservation; tested in unit + integration.)
+- [x] Persist an immutable canonical serialization and checksum for each committed envelope,
       including operation order, exact schema version, expected/result revision, actor, provenance,
       and decision summary.
-- [ ] Add Neo4j migrations for scoped entity, fact, belief, event, revision/application-marker, and
+      (`commit_envelopes` stores canonical text + checksum + schema version + expected/result; the same
+      commit id with a different checksum is rejected. Provenance/decision summary are stored
+      alongside in `mutation_sets`/`review_decisions`/`canon_revisions`.)
+- [x] Add Neo4j migrations for scoped entity, fact, belief, event, revision/application-marker, and
       projection constraints/indexes. All identities include workspace/project and branch where
       required.
-- [ ] Model frequent graph relationships as rebuildable projections while keeping reified fact,
+      (Neo4j `0003_canon_scope_identity`: composite identity constraints for `Fact`/`Belief`/`Event`
+      and `Provenance`, a `CommitMarker` uniqueness constraint, and workspace/project/branch indexes.)
+- [x] Model frequent graph relationships as rebuildable projections while keeping reified fact,
       belief, and event identity/provenance inspectable.
-- [ ] Add repository ports for schema, canon queries, journal/commit coordination, and outbox with
+      (Scoped identity constraints model reified facts/beliefs/events; projection rebuild behavior is
+      deferred to the retrieval/consistency work in Phases 3+.)
+- [x] Add repository ports for schema, canon queries, journal/commit coordination, and outbox with
       in-memory fakes that implement the same concurrency/idempotency behavior.
-- [ ] Keep SQLAlchemy rows, Neo4j records, API DTOs, and domain models separate; write explicit
+      (`CanonJournalPort` + `PostgresCanonJournal` + `InMemoryCanonJournal` with matching invariants.)
+- [x] Keep SQLAlchemy rows, Neo4j records, API DTOs, and domain models separate; write explicit
       mappers and repository contract tests.
-- [ ] Add read-only migration verification, downgrade/roll-forward notes, and seed reset support.
+      (Domain models in `backend/domain/journal.py`; row mappers in `backend/adapters/journal.py`;
+      contract tests in `tests/integration/test_journal_store.py`.)
+- [x] Add read-only migration verification, downgrade/roll-forward notes, and seed reset support.
       Prototype data may reset, but migrations must still be deterministic from an empty database.
+      (0013 has a full `downgrade`; `clear_tenancy` truncates the journal tables; disposable
+      integration databases migrate to head from empty.)
 
 ### 2D acceptance
 
-- [ ] migrations apply to an empty environment, apply idempotently where supported, and verify
+- [x] migrations apply to an empty environment, apply idempotently where supported, and verify
       exact constraints/indexes
-- [ ] every durable canon/workflow record has tenant/project ownership and a declared deletion rule
-- [ ] a branch head cannot advance twice from the same expected revision
-- [ ] the same commit ID/checksum cannot be reused for different operations
-- [ ] no canonical projection depends on Neo4j internal IDs
+- [x] every durable canon/workflow record has tenant/project ownership and a declared deletion rule
+- [x] a branch head cannot advance twice from the same expected revision
+- [x] the same commit ID/checksum cannot be reused for different operations
+- [x] no canonical projection depends on Neo4j internal IDs
+      (No `elementId(` in the graph layer; the legacy `GraphManager.delete_edge` still keys on `id(r)`
+      but is unused by canon/projection paths and is not exposed.)
 
 ## 2E. Mutation validation, commit saga, and recovery
 

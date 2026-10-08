@@ -56,6 +56,7 @@ class Container:
     usage_service: Any = None
     schema_versions: Any = None
     schema_service: Any = None
+    journal: Any = None
 
     async def aclose(self) -> None:
         self.graph.close()
@@ -200,4 +201,7 @@ def build_container(settings: Settings | None = None) -> Container:
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
     )
+    from backend.adapters.journal import PostgresCanonJournal
+
+    container.journal = PostgresCanonJournal(database.session_factory)
     return container

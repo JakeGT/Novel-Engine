@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
+from backend.domain.canon.revisions import CanonRevision
 from backend.domain.credentials import (
     Credential,
     CredentialNotFound,
@@ -27,6 +28,22 @@ from backend.domain.identity import (
     Session,
     User,
     utcnow,
+)
+from backend.domain.journal import (
+    AttemptStatus,
+    Branch,
+    BranchReservation,
+    CommitAttempt,
+    CommitEnvelope,
+    HeadConflict,
+    JournalError,
+    MutationOperation,
+    MutationSet,
+    MutationStatus,
+    OutboxMessage,
+    ReservationStatus,
+    ReviewDecision,
+    RevisionConflict,
 )
 from backend.domain.schemas import SchemaVersion, SchemaVersionStatus
 from backend.domain.tenancy import (
@@ -1233,3 +1250,258 @@ class InMemorySchemaVersionStore:
                 self.versions[index] = updated
                 return updated
         return None
+
+
+class InMemoryCanonJournal:
+    """In-memory canon journal implementing the same concurrency/idempotency rules."""
+
+    def __init__(self) -> None:
+        self._counter = 0
+        self.branches: dict[str, dict] = {}
+        self.branch_ids: dict[str, str] = {}
+        self.mutations: dict[str, MutationSet] = {}
+        self.mutation_keys: dict[tuple[str, str, str], str] = {}
+        self.operations: dict[str, list[MutationOperation]] = {}
+        self.decisions: list[ReviewDecision] = []
+        self.reservations: dict[str, BranchReservation] = {}
+        self.reservations_by_branch: dict[str, str] = {}
+        self.envelopes: dict[str, CommitEnvelope] = {}
+        self.attempts: list[CommitAttempt] = []
+        self.revisions: dict[str, CanonRevision] = {}
+        self.outbox: dict[str, OutboxMessage] = {}
+
+    def _id(self, kind: str) -> str:
+        self._counter += 1
+        return f"{kind}_{self._counter:04d}"
+
+    def _now(self) -> datetime:
+        return datetime.now(UTC)
+
+    async def ensure_root_branch(
+        self, *, workspace_id: str, project_id: str, name: str = "main"
+    ) -> Branch:
+        key = f"{workspace_id}\x1f{project_id}\x1f{name}"
+        existing = self.branch_ids.get(key)
+        if existing is not None:
+            return Branch(**self.branches[existing])
+        branch_id = self._id("branch")
+        self.branch_ids[key] = branch_id
+        self.branches[branch_id] = {
+            "id": branch_id,
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "name": name,
+            "is_root": True,
+            "head_revision": 0,
+            "created_at": self._now(),
+        }
+        return Branch(**self.branches[branch_id])
+
+    async def get_branch(
+        self, *, workspace_id: str, project_id: str, branch_id: str
+    ) -> Branch | None:
+        data = self.branches.get(branch_id)
+        if data is None or data["workspace_id"] != workspace_id or data["project_id"] != project_id:
+            return None
+        return Branch(**data)
+
+    async def list_branches(self, *, workspace_id: str, project_id: str) -> list[Branch]:
+        return [
+            Branch(**data)
+            for data in self.branches.values()
+            if data["workspace_id"] == workspace_id and data["project_id"] == project_id
+        ]
+
+    async def create_mutation(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        branch_id: str,
+        expected_head: int,
+        actor_user_id: str | None = None,
+        origin: str = "author",
+        schema_version_id: str | None = None,
+        correlation_id: str = "",
+        idempotency_key: str = "",
+    ) -> MutationSet:
+        if idempotency_key:
+            key = (workspace_id, project_id, idempotency_key)
+            existing = self.mutation_keys.get(key)
+            if existing is not None:
+                return self.mutations[existing]
+        mutation_id = self._id("mutation")
+        now = self._now()
+        mutation = MutationSet(
+            id=mutation_id,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            branch_id=branch_id,
+            schema_version_id=schema_version_id,
+            status=MutationStatus.DRAFT,
+            origin=origin,
+            actor_user_id=actor_user_id,
+            correlation_id=correlation_id,
+            idempotency_key=idempotency_key,
+            expected_head=expected_head,
+            created_at=now,
+            updated_at=now,
+        )
+        self.mutations[mutation_id] = mutation
+        if idempotency_key:
+            self.mutation_keys[(workspace_id, project_id, idempotency_key)] = mutation_id
+        return mutation
+
+    async def get_mutation(
+        self, *, workspace_id: str, project_id: str, mutation_id: str
+    ) -> MutationSet | None:
+        mutation = self.mutations.get(mutation_id)
+        if mutation is None or mutation.workspace_id != workspace_id:
+            return None
+        if mutation.project_id != project_id:
+            return None
+        return mutation
+
+    async def record_operations(
+        self, *, mutation_id: str, operations: list[MutationOperation]
+    ) -> None:
+        bucket = self.operations.setdefault(mutation_id, [])
+        existing = {operation.ordinal for operation in bucket}
+        bucket.extend(op for op in operations if op.ordinal not in existing)
+
+    async def list_operations(self, *, mutation_id: str) -> list[MutationOperation]:
+        return sorted(self.operations.get(mutation_id, []), key=lambda op: op.ordinal)
+
+    async def record_decision(
+        self,
+        *,
+        mutation_id: str,
+        decision: str,
+        actor_user_id: str | None = None,
+        note: str | None = None,
+    ) -> ReviewDecision:
+        record = ReviewDecision(
+            id=self._id("operation"),
+            mutation_id=mutation_id,
+            decision=decision,
+            actor_user_id=actor_user_id,
+            note=note,
+            created_at=self._now(),
+        )
+        self.decisions.append(record)
+        return record
+
+    async def reserve_head(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        branch_id: str,
+        mutation_id: str,
+        expected_revision: int,
+    ) -> BranchReservation:
+        data = self.branches.get(branch_id)
+        if data is None or data["workspace_id"] != workspace_id or data["project_id"] != project_id:
+            raise HeadConflict("branch not found in this project")
+        if int(data["head_revision"]) != expected_revision:
+            raise HeadConflict(
+                f"expected head {expected_revision} but branch is at {data['head_revision']}"
+            )
+        if self.reservations_by_branch.get(branch_id):
+            active = self.reservations[self.reservations_by_branch[branch_id]]
+            if active.status == ReservationStatus.ACTIVE:
+                raise HeadConflict("another commit reservation is active for this branch")
+        reservation = BranchReservation(
+            id=self._id("revision"),
+            workspace_id=workspace_id,
+            project_id=project_id,
+            branch_id=branch_id,
+            mutation_id=mutation_id,
+            expected_revision=expected_revision,
+            reserved_revision=expected_revision + 1,
+            status=ReservationStatus.ACTIVE,
+            created_at=self._now(),
+        )
+        self.reservations[reservation.id] = reservation
+        self.reservations_by_branch[branch_id] = reservation.id
+        return reservation
+
+    async def append_envelope(self, envelope: CommitEnvelope) -> None:
+        existing = self.envelopes.get(envelope.commit_id)
+        if existing is not None:
+            if existing.checksum != envelope.checksum:
+                raise RevisionConflict("commit id reused with a different checksum")
+            return
+        self.envelopes[envelope.commit_id] = envelope
+
+    async def get_envelope(self, *, commit_id: str) -> CommitEnvelope | None:
+        return self.envelopes.get(commit_id)
+
+    async def record_attempt(
+        self, *, commit_id: str, status: str, detail: str | None = None
+    ) -> CommitAttempt:
+        attempt = CommitAttempt(
+            id=self._id("operation"),
+            commit_id=commit_id,
+            status=AttemptStatus(status),
+            detail=detail,
+            created_at=self._now(),
+        )
+        self.attempts.append(attempt)
+        return attempt
+
+    async def finalize(self, *, commit_id: str) -> CanonRevision:
+        envelope = self.envelopes.get(commit_id)
+        if envelope is None:
+            raise JournalError("commit envelope not found")
+        existing = self.revisions.get(commit_id)
+        if existing is not None:
+            return existing
+        data = self.branches.get(envelope.branch_id)
+        if data is None or int(data["head_revision"]) != envelope.expected_head:
+            raise HeadConflict("branch head advanced past the expected revision")
+        data["head_revision"] = envelope.revision
+        reservation_id = self.reservations_by_branch.get(envelope.branch_id)
+        if reservation_id:
+            reservation = self.reservations[reservation_id]
+            self.reservations[reservation_id] = reservation.model_copy(
+                update={"status": ReservationStatus.FINALIZED}
+            )
+        revision = CanonRevision(
+            revision=envelope.revision,
+            workspace_id=envelope.workspace_id,
+            project_id=envelope.project_id,
+            branch_id=envelope.branch_id,
+            commit_id=envelope.commit_id,
+            expected_head=envelope.expected_head,
+            result_head=envelope.revision,
+            schema_version_id=envelope.schema_version_id,
+            envelope_checksum=envelope.checksum,
+            created_at=self._now(),
+        )
+        self.revisions[commit_id] = revision
+        message = OutboxMessage(
+            id=self._id("operation"),
+            topic="canon.commit",
+            workspace_id=envelope.workspace_id,
+            project_id=envelope.project_id,
+            branch_id=envelope.branch_id,
+            revision=envelope.revision,
+            payload={"commit_id": envelope.commit_id},
+            idempotency_key=f"commit:{envelope.commit_id}",
+            created_at=self._now(),
+        )
+        self.outbox.setdefault(message.idempotency_key, message)
+        return revision
+
+    async def append_outbox(self, message: OutboxMessage) -> None:
+        self.outbox.setdefault(message.idempotency_key, message)
+
+    async def list_outbox(
+        self, *, workspace_id: str, project_id: str, limit: int = 100
+    ) -> list[OutboxMessage]:
+        return [
+            message
+            for message in self.outbox.values()
+            if message.workspace_id == workspace_id and message.project_id == project_id
+        ][:limit]

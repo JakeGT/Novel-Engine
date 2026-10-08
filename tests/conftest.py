@@ -63,6 +63,7 @@ def _build_fake_container(settings, tmp_path):
         FakeEmbeddingProvider,
         FakeIdentityProvider,
         FakeMigrationVerifier,
+        InMemoryCanonJournal,
         InMemoryCredentialVault,
         InMemoryGraphRepository,
         InMemoryIdentityStore,
@@ -135,6 +136,7 @@ def _build_fake_container(settings, tmp_path):
     schema_service = SchemaService(
         schema_versions, tenancy=tenancy_service, local_mode=not settings.is_hosted
     )
+    journal = InMemoryCanonJournal()
     return Container(
         settings=settings,
         graph=graph,
@@ -160,6 +162,7 @@ def _build_fake_container(settings, tmp_path):
         objects=objects,
         schema_versions=schema_versions,
         schema_service=schema_service,
+        journal=journal,
     )
 
 

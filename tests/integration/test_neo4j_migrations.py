@@ -5,8 +5,7 @@ from neo4j import Driver, GraphDatabase
 
 from backend.core.config import settings
 from backend.graph.migrations import (
-    ENTITY_SCOPE_IDENTITY,
-    INITIAL_GRAPH_SCHEMA,
+    NEO4J_MIGRATIONS,
     Neo4jMigrationRunner,
 )
 
@@ -42,7 +41,7 @@ def driver() -> Driver:
 def test_migrations_apply_twice_and_report_current(driver: Driver) -> None:
     runner = Neo4jMigrationRunner(driver, clock=lambda: "t0")
 
-    assert runner.run() == [INITIAL_GRAPH_SCHEMA.id, ENTITY_SCOPE_IDENTITY.id]
+    assert runner.run() == [migration.id for migration in NEO4J_MIGRATIONS]
     assert runner.run() == []
     assert runner.verify().is_current
 
@@ -52,4 +51,8 @@ def test_migrations_apply_twice_and_report_current(driver: Driver) -> None:
 
     assert "entity_scope_id_unique" in constraints
     assert "entity_id_unique" not in constraints
+    assert "fact_scope_id_unique" in constraints
+    assert "belief_scope_id_unique" in constraints
+    assert "event_scope_id_unique" in constraints
+    assert "commit_marker_unique" in constraints
     assert "entity_embeddings" in indexes

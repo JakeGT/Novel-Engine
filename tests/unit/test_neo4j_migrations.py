@@ -102,6 +102,7 @@ def test_entity_scope_migration_replaces_global_id_constraint() -> None:
     assert [migration.id for migration in NEO4J_MIGRATIONS] == [
         "0001_initial_graph_schema",
         "0002_entity_scope_identity",
+        "0003_canon_scope_identity",
     ]
 
 

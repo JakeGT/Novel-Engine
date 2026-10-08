@@ -99,7 +99,40 @@ ENTITY_SCOPE_IDENTITY = Migration(
     ),
 )
 
-NEO4J_MIGRATIONS: tuple[Migration, ...] = (INITIAL_GRAPH_SCHEMA, ENTITY_SCOPE_IDENTITY)
+CANON_SCOPE_IDENTITY = Migration(
+    id="0003_canon_scope_identity",
+    description=(
+        "Scoped canon identity and application-marker constraints/indexes for "
+        "facts, beliefs, events, provenance, and commit markers (workspace/project/"
+        "branch). Projections never rely on Neo4j internal ids."
+    ),
+    statements=(
+        "CREATE CONSTRAINT fact_scope_id_unique IF NOT EXISTS FOR (n:Fact) "
+        "REQUIRE (n.workspace_id, n.project_id, n.branch_id, n.id) IS UNIQUE",
+        "CREATE CONSTRAINT belief_scope_id_unique IF NOT EXISTS FOR (n:Belief) "
+        "REQUIRE (n.workspace_id, n.project_id, n.branch_id, n.id) IS UNIQUE",
+        "CREATE CONSTRAINT event_scope_id_unique IF NOT EXISTS FOR (n:Event) "
+        "REQUIRE (n.workspace_id, n.project_id, n.branch_id, n.id) IS UNIQUE",
+        "CREATE CONSTRAINT provenance_scope_id_unique IF NOT EXISTS FOR (n:Provenance) "
+        "REQUIRE (n.workspace_id, n.project_id, n.id) IS UNIQUE",
+        "CREATE CONSTRAINT commit_marker_unique IF NOT EXISTS FOR (n:CommitMarker) "
+        "REQUIRE (n.workspace_id, n.project_id, n.commit_id) IS UNIQUE",
+        "CREATE INDEX entity_scope_branch_idx IF NOT EXISTS FOR (n:Entity) "
+        "ON (n.workspace_id, n.project_id, n.branch_id)",
+        "CREATE INDEX fact_scope_branch_idx IF NOT EXISTS FOR (n:Fact) "
+        "ON (n.workspace_id, n.project_id, n.branch_id)",
+        "CREATE INDEX belief_scope_branch_idx IF NOT EXISTS FOR (n:Belief) "
+        "ON (n.workspace_id, n.project_id, n.branch_id)",
+        "CREATE INDEX event_scope_branch_idx IF NOT EXISTS FOR (n:Event) "
+        "ON (n.workspace_id, n.project_id, n.branch_id)",
+    ),
+)
+
+NEO4J_MIGRATIONS: tuple[Migration, ...] = (
+    INITIAL_GRAPH_SCHEMA,
+    ENTITY_SCOPE_IDENTITY,
+    CANON_SCOPE_IDENTITY,
+)
 
 
 class Neo4jMigrationRunner:

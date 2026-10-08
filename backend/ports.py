@@ -13,6 +13,16 @@ from typing import Any, Protocol, runtime_checkable
 
 from backend.domain.credentials import Credential, CredentialProvider
 from backend.domain.identity import IdentityClaims, LoginAttempt, Role, Session, User
+from backend.domain.journal import (
+    Branch,
+    BranchReservation,
+    CommitAttempt,
+    CommitEnvelope,
+    MutationOperation,
+    MutationSet,
+    OutboxMessage,
+    ReviewDecision,
+)
 from backend.domain.objects import ObjectStat
 from backend.domain.schemas import SchemaVersion
 from backend.domain.tenancy import AuditEvent, Invitation, Membership, Project, Workspace
@@ -542,3 +552,84 @@ class WorkspacePurgePort(Protocol):
     async def purge_workspace(self, workspace_id: str) -> dict[str, int]: ...
 
     async def purge_project(self, workspace_id: str, project_id: str) -> dict[str, int]: ...
+
+
+@runtime_checkable
+class CanonJournalPort(Protocol):
+    """Authoritative commit journal (ADR-011).
+
+    PostgreSQL owns branch heads, optimistic reservations, immutable commit
+    envelopes, commit attempts, review decisions, and the transactional outbox.
+    Implementations enforce: one root branch per project, at most one active
+    reservation per branch, head-only-forward-from-expected, and commit-id
+    immutability (same id with a different checksum is a conflict).
+    """
+
+    async def ensure_root_branch(
+        self, *, workspace_id: str, project_id: str, name: str = "main"
+    ) -> Branch: ...
+
+    async def get_branch(
+        self, *, workspace_id: str, project_id: str, branch_id: str
+    ) -> Branch | None: ...
+
+    async def list_branches(self, *, workspace_id: str, project_id: str) -> list[Branch]: ...
+
+    async def create_mutation(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        branch_id: str,
+        expected_head: int,
+        actor_user_id: str | None = None,
+        origin: str = "author",
+        schema_version_id: str | None = None,
+        correlation_id: str = "",
+        idempotency_key: str = "",
+    ) -> MutationSet: ...
+
+    async def get_mutation(
+        self, *, workspace_id: str, project_id: str, mutation_id: str
+    ) -> MutationSet | None: ...
+
+    async def record_operations(
+        self, *, mutation_id: str, operations: Sequence[MutationOperation]
+    ) -> None: ...
+
+    async def list_operations(self, *, mutation_id: str) -> list[MutationOperation]: ...
+
+    async def record_decision(
+        self,
+        *,
+        mutation_id: str,
+        decision: str,
+        actor_user_id: str | None = None,
+        note: str | None = None,
+    ) -> ReviewDecision: ...
+
+    async def reserve_head(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        branch_id: str,
+        mutation_id: str,
+        expected_revision: int,
+    ) -> BranchReservation: ...
+
+    async def append_envelope(self, envelope: CommitEnvelope) -> None: ...
+
+    async def get_envelope(self, *, commit_id: str) -> CommitEnvelope | None: ...
+
+    async def record_attempt(
+        self, *, commit_id: str, status: str, detail: str | None = None
+    ) -> CommitAttempt: ...
+
+    async def finalize(self, *, commit_id: str): ...
+
+    async def append_outbox(self, message: OutboxMessage) -> None: ...
+
+    async def list_outbox(
+        self, *, workspace_id: str, project_id: str, limit: int = 100
+    ) -> list[OutboxMessage]: ...
