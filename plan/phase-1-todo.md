@@ -212,7 +212,8 @@ Acceptance:
 Acceptance:
 
 - [x] no read, write, search, traversal, job stream, export, cache, or object lookup crosses workspaces
-      (jobs/exports do not exist yet; their scoping is required when introduced)
+      (project export is scoped and semantic graph search filters scope before scoring; job runners,
+      caches, and events do not exist yet and must adopt the same scope contract when introduced)
 - [ ] background jobs re-authorize immutable scope rather than trusting payload IDs (no job system in Phase 1)
 - [x] local mode uses the same scoped paths with its explicit local workspace
 
@@ -234,7 +235,8 @@ Acceptance:
 - [x] Resolve credentials from authenticated actor, workspace/project policy, and job scope immediately before provider use.
       (`CredentialService.resolve_active_for_use`/`resolve_for_use` require project-write authority (editors may run
       generation); credential management requires workspace admin. The hosted AI endpoints resolve the workspace key
-      immediately before the provider call.)
+      immediately before the provider call. Credential activation is serialized transactionally and migration
+      `0011_active_credential_unique` permits only one active key per workspace/provider.)
 - [ ] Record requested/actual route, token usage, latency, attempt, and provider-reported cost without creating a platform balance.
       (Partial: `ProviderUsagePort` + `PostgresProviderUsageStore` (migration `0009_provider_usage`) persist immutable
       records, but only successful calls are recorded and only provider/model/route/tokens/outcome are populated —

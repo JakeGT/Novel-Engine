@@ -3,7 +3,7 @@
 - Status: Evidence collected; project-owner acceptance, a clean-host deployment rehearsal, and the first hosted Phase 1 CI run pending
 - Owner: project owner or designated technical lead
 - Branch: `main` (Phase 0 merged as `8d7a599`; Phase 1 implemented on top)
-- Date: 2026-10-06
+- Date: 2026-10-08
 
 This records the security and operational boundary for the invite-only deployment while
 preserving a safe single-user self-hosted profile. Billing and platform-funded inference do
@@ -21,10 +21,10 @@ not exist.
 
 ## Tests and coverage baseline
 
-- Hermetic suite (unit + application + contract): **317 passed** on the committed tree in this
+- Hermetic suite (unit + application + contract): **316 passed** on the reviewed tree in this
   environment (`make test` / `make check`); no services, network, API keys, or persistent writes.
   See the deadlock note below for the reproducibility caveat.
-- Integration suite (disposable PostgreSQL/pgvector + `neo4j-test`): **48 passed**
+- Integration suite (disposable PostgreSQL/pgvector + `neo4j-test`): **51 passed**
   (`make integration-test`).
 - Hermetic line coverage baseline: **~71%** (`--cov=backend`), a regression floor only.
 - Static/quality: `make check` (lock-check, lint, format, secret-scan, typecheck, hermetic
@@ -33,9 +33,10 @@ not exist.
 
 ## Migration versions and checksums
 
-- PostgreSQL (Alembic) head: `0010_vector_project_scope`
+- PostgreSQL (Alembic) head: `0011_active_credential_unique`
   (`0004_identity_and_sessions`, `0005_tenancy`, `0006_rate_limiter`, `0007_workspace_scope`,
-  `0008_credentials`, `0009_provider_usage`, `0010_vector_project_scope`).
+  `0008_credentials`, `0009_provider_usage`, `0010_vector_project_scope`,
+  `0011_active_credential_unique`).
 - Neo4j ordered migrations: `0001_initial_graph_schema` and `0002_entity_scope_identity`
   (composite `(workspace_id, project_id, id)` entity uniqueness).
 
@@ -95,7 +96,7 @@ rows), `make audit` (dependency scan). No step requires a paid model call or pro
 | `vector_documents` (pgvector) | `workspace_id`, `project_id` (PK includes both + `id`) | migration `0010_vector_project_scope`, `PgVectorStore` |
 | `users`, `external_identities`, `sessions`, `login_attempts` | global (identity) | identity store; not project-owned |
 | `workspaces`, `memberships`, `projects`, `invitations`, `audit_events` | `workspace_id` (+ `project_id` on projects) | migration `0005_tenancy`, `PostgresTenancyStore` |
-| `credentials`, `provider_usage` | `workspace_id` | migrations `0008`/`0009`; vault/usage stores |
+| `credentials`, `provider_usage` | `workspace_id` | migrations `0008`/`0009`/`0011`; vault/usage stores; one active credential per workspace/provider |
 | debug artifacts | `workspace_id`, `project_id` path namespace | `FilesystemArtifactStore` |
 | product objects | `workspace_id`, `project_id` path namespace | `FilesystemObjectStore` (`ObjectStorePort`) |
 | job envelope / idempotency | `workspace_id`, `project_id` fields | `JobEnvelope` (re-validated by workers before acting) |
@@ -124,9 +125,9 @@ and expired invitations, removed-inviter, and email-bound mismatch.
   clean-host self-hosted and hosted deployment rehearsals; provider-side credential validation;
   interactive confirmation thresholds; job-runner cancellation/idempotency enforcement; the live
   Authentik browser round-trip (requires the test user and a browser).
-- **Warnings:** Pydantic `datetime.utcnow()` deprecation in domain `Node`/`Edge` defaults.
 - **Prerequisites for Phase 2:** owner acceptance of this evidence, optional PostgreSQL RLS
   decision, and the canon mutation journal/temporal redesign.
+
 ## Post-review hardening (2026-10-06)
 
 An external review reopened isolation/security claims. Each is now repaired with a regression
@@ -158,15 +159,12 @@ test (commits after the initial Phase 1 work):
   (no cross-store journal/rollback) and object keys are regenerated on import.
 - **Frontend:** the shell renders the nested `/auth/me` user.
 
-A reported TestClient deadlock is **not reproducible on the committed tree**: `make check` and the
-full hermetic suite complete in ~5–8 seconds here across `uv run pytest`, `python -m pytest`, closed
-stdin, and file-redirected output; the cited test name
-(`test_health_capabilities_include_provider_capabilities`) does not exist in this tree (the health
-capabilities test is `test_health_capabilities`). Because an environment-specific hang cannot be
-excluded, the gate now fails fast with diagnostics rather than hanging: Sentry is disabled whenever
-pytest is running, `pytest-timeout` uses the **thread** method (the signal method does not interrupt a
-protocol blocked in a native wait) with a 60s threshold, and `faulthandler_timeout = 60` dumps every
-thread's stack. This converts any future hang into a labelled failure with a traceback.
+The previously reported TestClient deadlock was isolated to the coding agent's restricted seccomp
+sandbox: the same locked environment and test pass normally outside that sandbox, and the full
+`make check` gate completes in ~5–8 seconds. Sandboxed agents must run TestClient-bearing gates with
+the normal execution approval rather than treating the sandbox limitation as an application defect.
+The gate still fails fast with diagnostics: Sentry is disabled under pytest, `pytest-timeout` uses
+the **thread** method with a 60s threshold, and `faulthandler_timeout = 60` dumps every thread's stack.
 
 ## Post-review corrections (2026-10-06)
 
@@ -178,16 +176,15 @@ overstated ones:
   `AI_PROVIDER`/`AI_BASE_URL` (OpenRouter `https://openrouter.ai/api/v1`, Ollama/llama.cpp-
   compatible), and capability reporting reflects the configured provider. Credential *use*
   (`resolve_active_for_use`) requires project-write, not workspace admin, so editors can generate.
-- **Semantic retrieval:** the Neo4j vector query filters on the node returned by the index
-  (`node.workspace_id`/`node.project_id`) instead of re-matching by id, so a colliding id in another
-  project cannot contribute its score, and it deepens (bounded oversampling up to
-  `SEMANTIC_MAX_CANDIDATES`) when a project has fewer than `top_k` scoped hits. This is a best-effort
-  mitigation, **not a guarantee** — a global ANN index can still crowd a project out at the bound; an
-  exact scoped path (pgvector with workspace/project filters) is the planned guarantee.
+- **Semantic retrieval:** Neo4j now applies `workspace_id`/`project_id` predicates before exact cosine
+  scoring, so global ANN candidates cannot leak scores or crowd scoped results out. This prioritizes
+  tenant correctness over index speed in Phase 1; pgvector remains the planned scoped indexed path.
 - **Export/import:** object bytes are carried, strict-base64-decoded, and verified against the recorded
   sha256/byte length on import; node `created_at` is preserved; already-present object checksums are
   skipped (idempotent retry). Graph writes remain sequential without a cross-store journal.
 - **Type checking:** `mypy backend` (76 files) is clean and enforced; scope widened from four files.
+- **Credential selection:** replacement is serialized transactionally, older active keys are revoked,
+  and migration `0011_active_credential_unique` enforces one active key per workspace/provider.
 - **Corrections:** the usage plan item is reopened (only successful calls recorded; latency, provider
   cost, attempts, failures, and idempotency not populated; estimates default to 0); workspace/project
   purge is documented as sequential with no journal/retry/compensation; project-export audit events

@@ -1006,6 +1006,16 @@ class InMemoryCredentialVault:
         plaintext_key: str,
     ) -> Credential:
         self._require()
+        now = datetime.now(UTC)
+        for credential_id, existing in list(self._credentials.items()):
+            if (
+                existing.workspace_id == workspace_id
+                and existing.provider == provider
+                and existing.status == CredentialStatus.ACTIVE
+            ):
+                self._credentials[credential_id] = existing.model_copy(
+                    update={"status": CredentialStatus.REVOKED, "revoked_at": now}
+                )
         credential = Credential(
             id=self._next(),
             workspace_id=workspace_id,
@@ -1035,11 +1045,22 @@ class InMemoryCredentialVault:
         credential = await self.get(workspace_id=workspace_id, credential_id=credential_id)
         if credential is None:
             raise CredentialNotFound("Credential not found.")
+        now = datetime.now(UTC)
+        for other_id, existing in list(self._credentials.items()):
+            if (
+                other_id != credential_id
+                and existing.workspace_id == workspace_id
+                and existing.provider == credential.provider
+                and existing.status == CredentialStatus.ACTIVE
+            ):
+                self._credentials[other_id] = existing.model_copy(
+                    update={"status": CredentialStatus.REVOKED, "revoked_at": now}
+                )
         updated = credential.model_copy(
             update={
                 "key_fingerprint": self._key_fingerprint(plaintext_key),
                 "key_last4": self._key_last4(plaintext_key),
-                "rotated_at": datetime.now(UTC),
+                "rotated_at": now,
                 "status": CredentialStatus.ACTIVE,
                 "revoked_at": None,
             }

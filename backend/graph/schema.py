@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -10,6 +10,11 @@ from pydantic import BaseModel, Field
 from backend.core.logging import log_event
 
 logger = logging.getLogger(__name__)
+
+
+def utcnow() -> datetime:
+    """Return a timezone-aware UTC timestamp for persisted graph values."""
+    return datetime.now(UTC)
 
 
 class NodeType(StrEnum):
@@ -104,7 +109,7 @@ class Node(BaseModel):
     )
     workspace_id: str | None = None
     project_id: str | None = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class Edge(BaseModel):

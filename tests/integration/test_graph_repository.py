@@ -95,6 +95,32 @@ def test_get_nodes_filters_and_search(repository: Neo4jGraphRepository) -> None:
     assert [match["id"] for match in matches] == ["char_mara"]
 
 
+def test_semantic_search_scores_only_the_requested_project(
+    repository: Neo4jGraphRepository,
+) -> None:
+    target = [1.0] + [0.0] * 383
+    repository.add_node(
+        _node("local_exact", "Character", name="Local").model_copy(update={"embedding": target})
+    )
+    # A closer-looking colliding id and many unrelated-project vectors must never
+    # affect the scoped candidate set or score.
+    for index in range(25):
+        repository.add_node(
+            Node(
+                id="local_exact" if index == 0 else f"foreign_{index}",
+                type="Character",
+                properties={"name": f"Foreign {index}"},
+                embedding=target,
+                workspace_id=OTHER_WS,
+                project_id=OTHER_PROJECT,
+            )
+        )
+
+    assert repository.search_semantic_nodes(
+        target, workspace_id=WS, project_id=PROJECT, top_k=5, min_score=0.99
+    ) == ["local_exact"]
+
+
 def test_delete_node_removes_attached_edges(repository: Neo4jGraphRepository) -> None:
     repository.add_node(_node("char_mara", "Character", name="Mara"))
     repository.add_node(_node("loc_harbor", "Location", name="Harbor"))

@@ -9,21 +9,23 @@ Novel Engine is an open-source fiction authoring system with self-hosted and fre
 ## Current maturity
 
 The repository is a stabilized prototype, not a production application. Phase 0
-(foundation) is implemented; see `plan/phase-0-evidence.md` and the dashboard in
-`plan/phase-0-todo.md`.
+(foundation) is complete and Phase 1 (identity, tenancy, distribution, and project
+foundation) is implemented but has explicit external/operational exit items remaining. See
+`plan/phase-1-evidence.md` and the dashboard in `plan/phase-1-todo.md`.
 
 - Application lifecycle, dependency container, ports, and adapters exist; imports perform no
   external work.
 - Neo4j and PostgreSQL/pgvector schemas are migration-controlled with read-only verification.
-- Stable `/api/v1` DTOs and an `application/problem+json` error contract exist; legacy `/api`
-  routes remain as deprecated aliases.
+- Stable `/api/v1` DTOs and an `application/problem+json` error contract exist; deprecated legacy
+  `/api` aliases have been removed.
 - Graph CRUD, tagged-entity context retrieval, and the character questionnaire are implemented;
   the world workflow is parked and unfinished.
 - The vector store is PostgreSQL/pgvector behind the vector port; the transitional Chroma
   module has been removed.
-- The React frontend is still the Vite starter.
-- Story planning, generation, review, temporal branching, multi-tenancy, and production
-  operations are planned work.
+- The React frontend is a minimal authenticated shell; product workspaces are planned work.
+- OIDC/local identity, invite-only multi-tenancy, scoped storage, encrypted OpenRouter BYOK,
+  object storage, and project transfer foundations exist. Story planning, long-form generation,
+  review, temporal branching, and production operations remain planned work.
 
 Do not describe a planned capability as implemented. When changing a capability, update its
 status in `plan/`.
@@ -84,6 +86,12 @@ make frontend-build
 ```
 
 Run the smallest relevant checks during iteration and `make check` before handing over a cross-cutting change. `make test` is hermetic (no services, network, API keys, model downloads, or persistent writes); mark tests that contact PostgreSQL or Neo4j with `integration` and tests that spend model tokens with `llm`. Start the disposable test Neo4j with `docker compose --profile test up -d --wait neo4j-test` before `make test-integration`.
+
+Some restricted coding-agent seccomp sandboxes prevent Starlette/AnyIO's synchronous TestClient
+portal from starting even though the same locked tests pass normally. In that environment, run
+TestClient-bearing `make check`/integration gates through the approved normal execution path. Do
+not change runtime dependencies to accommodate that sandbox artifact; the configured thread timeout
+and faulthandler provide diagnostics if the behavior appears elsewhere.
 
 Use `uv add`/`uv remove` for Python dependencies and `pnpm --dir frontend add`/`remove` for frontend dependencies. Do not restore requirements files or use unfrozen installs in CI. Refresh lock files in the same change as dependency metadata.
 

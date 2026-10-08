@@ -11,17 +11,14 @@ from backend.graph.schema import Edge, Node
 
 logger = logging.getLogger(__name__)
 
-SEMANTIC_OVERSAMPLE = 10
-SEMANTIC_MAX_CANDIDATES = 1000
-
 
 class GraphManager:
     """Neo4j persistence with mandatory workspace + project scoping.
 
     Every read and write is filtered by ``workspace_id`` and ``project_id``.
     ``add_node`` will not mutate a node owned by another workspace or project
-    (global entity IDs are unique), and ``add_edge`` only creates edges when both
-    endpoints are in the same workspace and project.
+    (entity identity is workspace/project/id), and ``add_edge`` only creates edges
+    when both endpoints are in the same workspace and project.
     """
 
     def __init__(self, settings: Settings | None = None):
@@ -359,23 +356,21 @@ class GraphManager:
         top_k: int = 5,
         min_score: float = 0.5,
     ) -> list[str]:
-        """Vector-index search restricted to the workspace and project.
+        """Return exact cosine matches from one workspace/project.
 
-        Neo4j's vector index is global and cannot filter during the ANN search, so
-        this oversamples candidates and deepens (up to ``SEMANTIC_MAX_CANDIDATES``)
-        until enough scoped results are found. Results are filtered on the entity
-        returned by the index itself (never a re-match by id, which could collide
-        across projects) and trimmed to ``top_k``. A *guaranteed* per-tenant result
-        set would require a workspace/project-scoped index; this is a best-effort
-        mitigation, and the scoped pgvector store is the planned exact path.
+        Neo4j's ANN vector index is global and cannot pre-filter by tenant. Querying
+        it and filtering afterwards permits other tenants to crowd scoped results
+        out of the candidate set. Phase 1 therefore scores only nodes selected by
+        the mandatory workspace/project predicate. The scoped pgvector store is the
+        planned indexed path when graph-search volume requires it.
         """
-        candidate_k = top_k
         query = """
-        CALL db.index.vector.queryNodes('entity_embeddings', $candidate_k, $embedding)
-        YIELD node, score
-        WHERE score >= $min_score
-          AND node.workspace_id = $workspace_id
+        MATCH (node:Entity)
+        WHERE node.workspace_id = $workspace_id
           AND node.project_id = $project_id
+          AND node.embedding IS NOT NULL
+        WITH node, vector.similarity.cosine(node.embedding, $embedding) AS score
+        WHERE score >= $min_score
         RETURN node.id AS id, score
         ORDER BY score DESC
         LIMIT $top_k
@@ -383,22 +378,15 @@ class GraphManager:
         anchor_ids: list[str] = []
         try:
             with self.driver.session() as session:
-                while True:
-                    candidate_k = min(
-                        max(candidate_k * SEMANTIC_OVERSAMPLE, top_k), SEMANTIC_MAX_CANDIDATES
-                    )
-                    result = session.run(
-                        query,
-                        candidate_k=candidate_k,
-                        top_k=top_k,
-                        embedding=embedding,
-                        min_score=min_score,
-                        workspace_id=workspace_id,
-                        project_id=project_id,
-                    )
-                    anchor_ids = [record["id"] for record in result]
-                    if len(anchor_ids) >= top_k or candidate_k >= SEMANTIC_MAX_CANDIDATES:
-                        break
+                result = session.run(
+                    query,
+                    top_k=top_k,
+                    embedding=embedding,
+                    min_score=min_score,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                )
+                anchor_ids = [record["id"] for record in result]
         except Exception as e:
             from backend.core.logging import log_event
 

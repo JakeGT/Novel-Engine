@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 import psycopg
@@ -129,3 +130,65 @@ async def test_kek_rotation_still_decrypts_old_credentials(session_factory) -> N
         )
         == "sk-or-v1-kept"
     )
+
+
+@pytest.mark.asyncio
+async def test_concurrent_store_keeps_one_active_credential_per_provider(session_factory) -> None:
+    factory, database = session_factory
+    vault = PostgresCredentialVault(factory, kek=generate_kek())
+
+    await asyncio.gather(
+        vault.store(
+            workspace_id="ws1",
+            owner_user_id="u1",
+            provider=CredentialProvider.OPENROUTER,
+            label="first",
+            plaintext_key="sk-or-v1-first",
+        ),
+        vault.store(
+            workspace_id="ws1",
+            owner_user_id="u1",
+            provider=CredentialProvider.OPENROUTER,
+            label="second",
+            plaintext_key="sk-or-v1-second",
+        ),
+    )
+
+    credentials = await vault.list_for_workspace("ws1")
+    assert sum(item.status == CredentialStatus.ACTIVE for item in credentials) == 1
+    with psycopg.connect(database.psycopg_dsn) as connection:
+        active_count = connection.execute(
+            "SELECT count(*) FROM credentials "
+            "WHERE workspace_id = %s AND provider = %s AND status = 'active'",
+            ("ws1", CredentialProvider.OPENROUTER.value),
+        ).fetchone()[0]
+    assert active_count == 1
+
+
+@pytest.mark.asyncio
+async def test_rotating_revoked_credential_makes_it_the_only_active_one(session_factory) -> None:
+    factory, _database = session_factory
+    vault = PostgresCredentialVault(factory, kek=generate_kek())
+    first = await vault.store(
+        workspace_id="ws1",
+        owner_user_id="u1",
+        provider=CredentialProvider.OPENROUTER,
+        label="first",
+        plaintext_key="sk-or-v1-first",
+    )
+    second = await vault.store(
+        workspace_id="ws1",
+        owner_user_id="u1",
+        provider=CredentialProvider.OPENROUTER,
+        label="second",
+        plaintext_key="sk-or-v1-second",
+    )
+
+    restored = await vault.rotate(
+        workspace_id="ws1", credential_id=first.id, plaintext_key="sk-or-v1-restored"
+    )
+    credentials = {item.id: item for item in await vault.list_for_workspace("ws1")}
+
+    assert restored.status == CredentialStatus.ACTIVE
+    assert credentials[first.id].status == CredentialStatus.ACTIVE
+    assert credentials[second.id].status == CredentialStatus.REVOKED

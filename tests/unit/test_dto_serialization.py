@@ -12,7 +12,7 @@ def test_node_defaults_are_stable() -> None:
 
     assert node.properties == {}
     assert node.embedding is None
-    assert node.created_at.tzinfo is None
+    assert node.created_at.tzinfo is UTC
     assert isinstance(node.created_at, datetime)
 
 

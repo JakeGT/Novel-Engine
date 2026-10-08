@@ -157,8 +157,9 @@ test services have explicit, non-destructive shutdown paths.
 
 ## Unresolved warnings, deferred defects, and Phase 1 prerequisites
 
-- **Warnings:** Pydantic emits a `datetime.utcnow()` deprecation warning from the domain
-  `Node`/`Edge` defaults; the local workstation runs Node 26 while CI pins Node 24.
+- **Historical warnings at Phase 0 exit:** Pydantic emitted a `datetime.utcnow()` deprecation
+  warning from the graph `Node` default (resolved during Phase 1 by using timezone-aware UTC);
+  the local workstation runs Node 26 while CI pins Node 24.
 - **Deferred defects:**
   - FND-008.21 — atomic mutation application (Phase 1 mutation review).
   - FND-008.23–27 — world workflow, blocked on the parked, user-owned

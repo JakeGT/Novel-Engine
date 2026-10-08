@@ -158,6 +158,23 @@ async def test_editor_can_resolve_credential_but_not_manage_it() -> None:
 
 
 @pytest.mark.asyncio
+async def test_resolving_active_credential_authorizes_before_vault_inspection() -> None:
+    tenancy = InMemoryTenancyStore()
+    identity = InMemoryIdentityStore()
+    tenancy_service = TenancyService(tenancy, identity_store=identity)
+    owner = await identity.get_or_create_user(IdentityClaims(issuer="local", subject="owner"))
+    outsider = await identity.get_or_create_user(IdentityClaims(issuer="local", subject="outsider"))
+    owner_scope = AccessScope(actor_user_id=owner.id, auth_mode=AuthMode.HOSTED)
+    outsider_scope = AccessScope(actor_user_id=outsider.id, auth_mode=AuthMode.HOSTED)
+    workspace = await tenancy_service.create_workspace(owner_scope, slug="ws", name="WS")
+    service = CredentialService(InMemoryCredentialVault(), tenancy=tenancy_service)
+
+    # Even an empty vault must not disclose credential state to a non-member.
+    with pytest.raises(ForbiddenError):
+        await service.resolve_active_for_use(outsider_scope, workspace.id)
+
+
+@pytest.mark.asyncio
 async def test_only_one_active_credential_per_provider() -> None:
     service, owner_scope, _editor_scope, workspace_id = await _setup()
 

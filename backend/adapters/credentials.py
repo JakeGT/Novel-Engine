@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Integer, String, Text, delete
+from sqlalchemy import DateTime, Integer, String, Text, delete, select, text, update
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.adapters.system import uuid7
@@ -91,6 +91,40 @@ class PostgresCredentialVault:
                 "CREDENTIAL_KEK is not configured; credentials are disabled"
             )
 
+    @staticmethod
+    def _activation_lock_key(workspace_id: str, provider: str) -> str:
+        return f"credential-active:{workspace_id}:{provider}"
+
+    async def _lock_activation(self, session: Any, workspace_id: str, provider: str) -> None:
+        # Serialize replacement even when no active row exists yet; row locks alone
+        # cannot protect that empty-set race.
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+            {"lock_key": self._activation_lock_key(workspace_id, provider)},
+        )
+
+    async def _revoke_other_active(
+        self,
+        session: Any,
+        *,
+        workspace_id: str,
+        provider: str,
+        except_id: str | None = None,
+        now: datetime,
+    ) -> None:
+        predicate = [
+            CredentialRow.workspace_id == workspace_id,
+            CredentialRow.provider == provider,
+            CredentialRow.status == CredentialStatus.ACTIVE.value,
+        ]
+        if except_id is not None:
+            predicate.append(CredentialRow.id != except_id)
+        await session.execute(
+            update(CredentialRow)
+            .where(*predicate)
+            .values(status=CredentialStatus.REVOKED.value, revoked_at=now)
+        )
+
     async def store(
         self,
         *,
@@ -102,6 +136,7 @@ class PostgresCredentialVault:
     ) -> Credential:
         self._require_configured()
         envelope = envelope_encrypt(plaintext_key, kek=self._kek, key_version=self._key_version)
+        now = datetime.now(UTC)
         row = CredentialRow(
             id=str(uuid7()),
             workspace_id=workspace_id,
@@ -115,16 +150,21 @@ class PostgresCredentialVault:
             wrapped_dek=envelope.wrapped_dek,
             nonce=envelope.nonce,
             ciphertext=envelope.ciphertext,
-            created_at=datetime.now(UTC),
+            created_at=now,
         )
         async with session_scope(self._session_factory) as session:
+            await self._lock_activation(session, workspace_id, provider.value)
+            await self._revoke_other_active(
+                session,
+                workspace_id=workspace_id,
+                provider=provider.value,
+                now=now,
+            )
             session.add(row)
             await session.flush()
         return _to_credential(row)
 
     async def list_for_workspace(self, workspace_id: str) -> list[Credential]:
-        from sqlalchemy import select
-
         async with session_scope(self._session_factory) as session:
             rows = (
                 await session.execute(
@@ -143,8 +183,6 @@ class PostgresCredentialVault:
         self, *, workspace_id: str, credential_id: str, plaintext_key: str
     ) -> Credential:
         self._require_configured()
-        from sqlalchemy import select
-
         envelope = envelope_encrypt(plaintext_key, kek=self._kek, key_version=self._key_version)
         async with session_scope(self._session_factory) as session:
             row = (
@@ -157,13 +195,22 @@ class PostgresCredentialVault:
             ).scalar_one_or_none()
             if row is None:
                 raise CredentialNotFound("Credential not found.")
+            now = datetime.now(UTC)
+            await self._lock_activation(session, workspace_id, row.provider)
+            await self._revoke_other_active(
+                session,
+                workspace_id=workspace_id,
+                provider=row.provider,
+                except_id=row.id,
+                now=now,
+            )
             row.key_fingerprint = key_fingerprint(plaintext_key)
             row.key_last4 = key_last4(plaintext_key)
             row.key_version = envelope.key_version
             row.wrapped_dek = envelope.wrapped_dek
             row.nonce = envelope.nonce
             row.ciphertext = envelope.ciphertext
-            row.rotated_at = datetime.now(UTC)
+            row.rotated_at = now
             row.status = CredentialStatus.ACTIVE.value
             row.revoked_at = None
             await session.flush()
