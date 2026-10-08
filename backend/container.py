@@ -66,6 +66,7 @@ class Container:
     canon_assertion_service: Any = None
     canon_history_service: Any = None
     media_store: Any = None
+    archive_service: Any = None
     media_service: Any = None
 
     async def aclose(self) -> None:
@@ -276,5 +277,14 @@ def build_container(settings: Settings | None = None) -> Container:
         reader=container.canon_repository,
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
+    )
+    from backend.services.canon_archive import CanonArchiveService
+
+    container.archive_service = CanonArchiveService(
+        canon=container.canon_repository,
+        journal=container.journal,
+        schemas=container.schema_versions,
+        media=container.media_store,
+        objects=container.objects,
     )
     return container

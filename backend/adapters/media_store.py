@@ -201,6 +201,70 @@ class PostgresMediaStore:
             ).all()
         return [_asset_version(row) for row in rows]
 
+    async def import_asset(self, asset: MediaAsset) -> MediaAsset:
+        """Insert an archived asset with its preserved id (idempotent)."""
+        async with session_scope(self._session_factory) as session:
+            await session.execute(
+                text(
+                    "INSERT INTO media_assets (workspace_id, project_id, id, name, lifecycle, "
+                    "created_revision, retired_revision, created_at) VALUES (:w, :p, :id, :name, "
+                    ":lifecycle, :rev, :rrev, :created_at) ON CONFLICT DO NOTHING"
+                ),
+                {
+                    "w": asset.workspace_id,
+                    "p": asset.project_id,
+                    "id": asset.id,
+                    "name": asset.name,
+                    "lifecycle": asset.lifecycle.value,
+                    "rev": asset.created_revision,
+                    "rrev": asset.retired_revision,
+                    "created_at": asset.created_at,
+                },
+            )
+        created = await self.get_asset(
+            workspace_id=asset.workspace_id, project_id=asset.project_id, asset_id=asset.id
+        )
+        return created or asset
+
+    async def import_version(self, version: MediaAssetVersion) -> MediaAssetVersion:
+        """Insert an archived asset version with its preserved id (idempotent)."""
+        async with session_scope(self._session_factory) as session:
+            await session.execute(
+                text(
+                    "INSERT INTO media_asset_versions (workspace_id, project_id, id, asset_id, "
+                    "version, object_key, content_type, byte_length, checksum, source, licence, "
+                    "attribution, authority, visibility, created_revision, retired_revision, "
+                    "created_at) VALUES (:w, :p, :id, :a, :v, :key, :ct, :bl, :sum, :source, "
+                    ":licence, :attribution, :authority, :visibility, :rev, :rrev, :created_at) "
+                    "ON CONFLICT DO NOTHING"
+                ),
+                {
+                    "w": version.workspace_id,
+                    "p": version.project_id,
+                    "id": version.id,
+                    "a": version.asset_id,
+                    "v": version.version,
+                    "key": version.object_key,
+                    "ct": version.content_type,
+                    "bl": version.byte_length,
+                    "sum": version.checksum,
+                    "source": version.source,
+                    "licence": version.licence,
+                    "attribution": version.attribution,
+                    "authority": version.authority,
+                    "visibility": version.visibility,
+                    "rev": version.created_revision,
+                    "rrev": version.retired_revision,
+                    "created_at": version.created_at,
+                },
+            )
+        created = await self.get_version(
+            workspace_id=version.workspace_id,
+            project_id=version.project_id,
+            version_id=version.id,
+        )
+        return created or version
+
     async def health(self) -> bool:
         try:
             async with session_scope(self._session_factory) as session:

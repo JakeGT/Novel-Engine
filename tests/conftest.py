@@ -186,6 +186,15 @@ def _build_fake_container(settings, tmp_path):
         tenancy=tenancy_service,
         local_mode=not settings.is_hosted,
     )
+    from backend.services.canon_archive import CanonArchiveService
+
+    archive_service = CanonArchiveService(
+        canon=canon_repository,
+        journal=journal,
+        schemas=schema_versions,
+        media=media_store,
+        objects=objects,
+    )
     return Container(
         settings=settings,
         graph=graph,
@@ -216,6 +225,7 @@ def _build_fake_container(settings, tmp_path):
         canon_repository=canon_repository,
         media_store=media_store,
         media_service=media_service,
+        archive_service=archive_service,
         projection_service=projection_service,
         outbox_consumer=outbox_consumer,
         mutation_service=mutation_service,

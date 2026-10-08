@@ -2498,6 +2498,14 @@ class InMemoryMediaStore:
         items.sort(key=lambda a: a.id)
         return items[offset : offset + limit]
 
+    async def import_asset(self, asset: MediaAsset) -> MediaAsset:
+        self.assets.setdefault((asset.workspace_id, asset.project_id, asset.id), asset)
+        return self.assets[(asset.workspace_id, asset.project_id, asset.id)]
+
+    async def import_version(self, version: MediaAssetVersion) -> MediaAssetVersion:
+        self.versions.setdefault((version.workspace_id, version.project_id, version.id), version)
+        return self.versions[(version.workspace_id, version.project_id, version.id)]
+
     async def create_version(
         self,
         *,
