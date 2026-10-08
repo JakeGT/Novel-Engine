@@ -451,6 +451,32 @@ class Neo4jCanonWriter:
             )
             return [self._to_entity(record) for record in records]
 
+    async def discard(self, *, workspace_id: str, project_id: str, branch_id: str) -> int:
+        with self._manager.driver.session() as session:
+            record = session.run(
+                """
+                MATCH (n) WHERE n.workspace_id = $w AND n.project_id = $p
+                      AND coalesce(n.branch_id, '') = $b
+                      AND (n:Entity OR n:Fact OR n:Belief OR n:Event OR n:Provenance)
+                WITH collect(n) AS nodes, count(n) AS deleted
+                FOREACH (x IN nodes | DETACH DELETE x)
+                RETURN deleted
+                """,
+                w=workspace_id,
+                p=project_id,
+                b=branch_id,
+            ).single()
+            session.run(
+                """
+                MATCH (m:CommitMarker {workspace_id: $w, project_id: $p, branch_id: $b})
+                DELETE m
+                """,
+                w=workspace_id,
+                p=project_id,
+                b=branch_id,
+            )
+        return int(record["deleted"]) if record is not None else 0
+
     async def health(self) -> bool:
         try:
             self._manager.driver.verify_connectivity()

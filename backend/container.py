@@ -60,6 +60,7 @@ class Container:
     canon_writer: Any = None
     canon_repository: Any = None
     mutation_service: Any = None
+    projection_service: Any = None
     canon_entity_service: Any = None
     canon_assertion_service: Any = None
 
@@ -241,5 +242,10 @@ def build_container(settings: Settings | None = None) -> Container:
         schema_store=container.schema_versions,
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
+    )
+    from backend.services.projection_service import GraphProjectionService
+
+    container.projection_service = GraphProjectionService(
+        canon=container.canon_repository, writer=container.canon_writer
     )
     return container

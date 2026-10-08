@@ -1590,6 +1590,22 @@ class InMemoryCanonWriter:
     async def get_marker(self, commit_id):
         return self.markers.get(commit_id)
 
+    async def discard(self, *, workspace_id: str, project_id: str, branch_id: str) -> int:
+        removed = 0
+        for store in (self.objects, self.entities, self.facts, self.beliefs, self.events):
+            for key in [k for k in store if k[0] == workspace_id and k[1] == project_id]:
+                del store[key]
+                removed += 1
+        for commit_id in [
+            commit_id
+            for commit_id, marker in self.markers.items()
+            if marker.workspace_id == workspace_id
+            and marker.project_id == project_id
+            and marker.branch_id == branch_id
+        ]:
+            del self.markers[commit_id]
+        return removed
+
     def _apply_entity(self, ws, pr, branch_id, schema_version_id, revision, operation) -> None:
         from backend.domain.operations import CreateEntityOp, RetireEntityOp, UpdateEntityOp
 
@@ -1924,6 +1940,7 @@ class InMemoryCanonRepository:
     def __init__(self) -> None:
         self.heads: dict[tuple[str, str, str], int] = {}
         self.envelopes: dict[str, Any] = {}
+        self.revisions: list[Any] = []
         self.entities: dict[tuple[str, str, str], CanonEntity] = {}
         self.facts: dict[tuple[str, str, str], Any] = {}
         self.beliefs: dict[tuple[str, str, str], Any] = {}
@@ -1970,7 +1987,44 @@ class InMemoryCanonRepository:
                 )
             )
         self.heads[key] = reserved
+        self.revisions.append(
+            CanonRevision(
+                revision=reserved,
+                workspace_id=envelope.workspace_id,
+                project_id=envelope.project_id,
+                branch_id=envelope.branch_id,
+                commit_id=envelope.commit_id,
+                expected_head=envelope.expected_head,
+                result_head=reserved,
+                schema_version_id=envelope.schema_version_id,
+                envelope_checksum=envelope.checksum,
+                created_at=utcnow(),
+            )
+        )
         return reserved
+
+    async def get_envelope(self, commit_id: str) -> Any:
+        return self.envelopes.get(commit_id)
+
+    async def list_commits(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        branch_id: str,
+        after_revision: int = 0,
+        limit: int = 100,
+    ) -> list[Any]:
+        matches = [
+            revision
+            for revision in self.revisions
+            if revision.workspace_id == workspace_id
+            and revision.project_id == project_id
+            and revision.branch_id == branch_id
+            and revision.revision > after_revision
+        ]
+        matches.sort(key=lambda revision: revision.revision)
+        return matches[:limit]
 
     def _apply(self, envelope: Any, operation: Any, provenance_id: str, revision: int) -> None:
         ws, pr, br = envelope.workspace_id, envelope.project_id, envelope.branch_id

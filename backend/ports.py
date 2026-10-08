@@ -14,7 +14,7 @@ from typing import Any, Protocol, runtime_checkable
 from backend.domain.canon.assertions import Belief, Fact
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.events import Event
-from backend.domain.canon.revisions import Provenance
+from backend.domain.canon.revisions import CanonRevision, Provenance
 from backend.domain.commit import ApplyOutcome, CommitMarker
 from backend.domain.credentials import Credential, CredentialProvider
 from backend.domain.identity import IdentityClaims, LoginAttempt, Role, Session, User
@@ -668,6 +668,8 @@ class CanonWriterPort(Protocol):
 
     async def get_marker(self, commit_id: str) -> CommitMarker | None: ...
 
+    async def discard(self, *, workspace_id: str, project_id: str, branch_id: str) -> int: ...
+
     async def get_entity(
         self, *, workspace_id: str, project_id: str, entity_id: str
     ) -> CanonEntity | None: ...
@@ -846,6 +848,18 @@ class CanonRepositoryPort(Protocol):
         record_id: str | None = None,
         limit: int = 100,
     ) -> list[RecordVersion]: ...
+
+    async def get_envelope(self, commit_id: str) -> CommitEnvelope | None: ...
+
+    async def list_commits(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        branch_id: str,
+        after_revision: int = 0,
+        limit: int = 100,
+    ) -> list[CanonRevision]: ...
 
     async def get_watermark(
         self, *, projection: str, workspace_id: str, project_id: str, branch_id: str

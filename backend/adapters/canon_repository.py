@@ -19,8 +19,8 @@ from backend.domain.canon.entities import CanonEntity, EntityLifecycle
 from backend.domain.canon.events import Event, EventParticipant
 from backend.domain.canon.ids import format_canon_id
 from backend.domain.canon.propositions import Proposition
-from backend.domain.canon.revisions import OriginKind, Provenance
-from backend.domain.journal import HeadConflict, RevisionConflict
+from backend.domain.canon.revisions import CanonRevision, OriginKind, Provenance
+from backend.domain.journal import CommitEnvelope, HeadConflict, RevisionConflict
 from backend.domain.operations import (
     AmendEventOp,
     AssertBeliefOp,
@@ -848,6 +848,79 @@ class PostgresCanonRepository:
                 operation_type=row.operation_type,
                 commit_id=row.commit_id,
                 change=dict(_load(row.change) or {}),
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
+
+    async def get_envelope(self, commit_id: str) -> CommitEnvelope | None:
+        async with session_scope(self._session_factory) as session:
+            row = (
+                await session.execute(
+                    text(
+                        "SELECT commit_id, mutation_id, workspace_id, project_id, branch_id, "
+                        "revision, expected_head, schema_version_id, canonical, checksum, "
+                        "actor_user_id, created_at FROM commit_envelopes WHERE commit_id = :c"
+                    ),
+                    {"c": commit_id},
+                )
+            ).first()
+        if row is None:
+            return None
+        return CommitEnvelope(
+            commit_id=row.commit_id,
+            mutation_id=row.mutation_id,
+            workspace_id=row.workspace_id,
+            project_id=row.project_id,
+            branch_id=row.branch_id,
+            revision=int(row.revision),
+            expected_head=int(row.expected_head),
+            schema_version_id=row.schema_version_id,
+            canonical=row.canonical,
+            checksum=row.checksum,
+            actor_user_id=row.actor_user_id,
+            created_at=row.created_at,
+        )
+
+    async def list_commits(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        branch_id: str,
+        after_revision: int = 0,
+        limit: int = 100,
+    ) -> list[CanonRevision]:
+        async with session_scope(self._session_factory) as session:
+            rows = (
+                await session.execute(
+                    text(
+                        "SELECT revision, workspace_id, project_id, branch_id, commit_id, "
+                        "expected_head, result_head, schema_version_id, envelope_checksum, created_at "
+                        "FROM canon_revisions WHERE workspace_id = :w AND project_id = :p "
+                        "AND branch_id = :b AND revision > :after "
+                        "ORDER BY revision ASC LIMIT :limit"
+                    ),
+                    {
+                        "w": workspace_id,
+                        "p": project_id,
+                        "b": branch_id,
+                        "after": after_revision,
+                        "limit": limit,
+                    },
+                )
+            ).fetchall()
+        return [
+            CanonRevision(
+                revision=int(row.revision),
+                workspace_id=row.workspace_id,
+                project_id=row.project_id,
+                branch_id=row.branch_id,
+                commit_id=row.commit_id,
+                expected_head=int(row.expected_head),
+                result_head=int(row.result_head),
+                schema_version_id=row.schema_version_id,
+                envelope_checksum=row.envelope_checksum,
                 created_at=row.created_at,
             )
             for row in rows
