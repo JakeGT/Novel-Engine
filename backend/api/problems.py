@@ -14,6 +14,7 @@ from backend.domain.journal import HeadConflict, RevisionConflict
 from backend.domain.operations import OperationValidationError
 from backend.domain.schemas import SchemaCompatibilityError, SchemaGovernanceError
 from backend.domain.tenancy import InvitationNotFound, TenancyError
+from backend.domain.validation import CanonValidationError
 from backend.ports import AIError
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
@@ -200,9 +201,8 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(OperationValidationError)
-    async def _handle_operation_validation(
-        request: Request, exc: OperationValidationError
-    ) -> JSONResponse:
+    @app.exception_handler(CanonValidationError)
+    async def _handle_operation_validation(request: Request, exc: Exception) -> JSONResponse:
         return _problem_response(
             422,
             problem_body(

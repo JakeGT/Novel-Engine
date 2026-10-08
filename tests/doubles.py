@@ -82,8 +82,15 @@ from backend.domain.tenancy import (
     role_allows,
 )
 from backend.domain.usage import UsageRecord, UsageTotals
+from backend.domain.validation import (
+    AuthoritativeValidator,
+    CanonValidationError,
+    ValidationContext,
+)
 from backend.graph.schema import Edge, Node
 from backend.ports import MigrationStatus, ProviderCapabilities, StructuredResponse
+
+_MEMORY_DEFAULT_VALIDATOR = AuthoritativeValidator()
 
 
 @dataclass
@@ -1934,6 +1941,33 @@ _CANON_RECORD_TYPE = {
 }
 
 
+class _MemoryCanonReader:
+    """In-memory canonical reads bound to a commit scope (for in-tx validation)."""
+
+    def __init__(self, repository: Any, workspace_id: str, project_id: str, branch_id: str) -> None:
+        self._repository = repository
+        self._workspace_id = workspace_id
+        self._project_id = project_id
+        self._branch_id = branch_id
+
+    async def get_entity(self, entity_id: str) -> Any:
+        return self._repository.entities.get((self._workspace_id, self._project_id, entity_id))
+
+    async def count_open_facts(self, subject_id: str, predicate: str) -> int:
+        count = 0
+        for fact in self._repository.facts.values():
+            if (
+                fact.workspace_id == self._workspace_id
+                and fact.project_id == self._project_id
+                and fact.branch_id == self._branch_id
+                and getattr(fact.status, "value", fact.status) == "asserted"
+                and fact.proposition.subject_id == subject_id
+                and fact.proposition.predicate == predicate
+            ):
+                count += 1
+        return count
+
+
 class InMemoryCanonRepository:
     """In-memory canonical PostgreSQL canon (ADR-012) with matching invariants."""
 
@@ -1956,7 +1990,13 @@ class InMemoryCanonRepository:
         return self.heads.get((workspace_id, project_id, branch_id), 0)
 
     async def apply_commit(
-        self, *, envelope: Any, operations: list[Any], origin: str = "author"
+        self,
+        *,
+        envelope: Any,
+        operations: list[Any],
+        validator: Any = None,
+        allowed_entity_types: Any = None,
+        origin: str = "author",
     ) -> int:
         existing = self.envelopes.get(envelope.commit_id)
         if existing is not None:
@@ -1967,6 +2007,21 @@ class InMemoryCanonRepository:
         head = self.heads.get(key, 0)
         if head != envelope.expected_head:
             raise HeadConflict(f"expected head {envelope.expected_head}, found {head}")
+        validator = validator or _MEMORY_DEFAULT_VALIDATOR
+        reader = _MemoryCanonReader(
+            self, envelope.workspace_id, envelope.project_id, envelope.branch_id
+        )
+        context = ValidationContext(
+            workspace_id=envelope.workspace_id,
+            project_id=envelope.project_id,
+            branch_id=envelope.branch_id,
+            schema_version_id=envelope.schema_version_id,
+            head_revision=envelope.expected_head,
+            reader=reader,
+        )
+        report = await validator.validate(operations, context=context)
+        if not report.ok:
+            raise CanonValidationError(report)
         reserved = head + 1
         self.envelopes[envelope.commit_id] = envelope
         provenance_id = f"prov_{envelope.commit_id}"

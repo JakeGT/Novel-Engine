@@ -7,6 +7,7 @@ from backend.domain.canon.propositions import Proposition, StringObject
 from backend.domain.journal import CommitEnvelope, HeadConflict, RevisionConflict
 from backend.domain.operations import AssertFactOp, CreateEntityOp, RetireEntityOp
 from backend.domain.projection import ProjectionStatus, ProjectionWatermark
+from backend.domain.validation import CanonValidationError
 from tests.doubles import InMemoryCanonRepository
 
 pytestmark = pytest.mark.unit
@@ -132,3 +133,20 @@ async def test_retire_fact_and_watermark() -> None:
     )
     assert stored is not None and stored.revision == 3
     assert stored.status is ProjectionStatus.CURRENT
+
+
+@pytest.mark.asyncio
+async def test_apply_commit_runs_authoritative_validation_in_tx() -> None:
+    repo = InMemoryCanonRepository()
+
+    # A direct repository write cannot bypass validation: the authoritative
+    # validator runs inside apply_commit, so an invalid operation is rejected and
+    # the transaction applies nothing (head unchanged, no canon rows).
+    with pytest.raises(CanonValidationError):
+        await repo.apply_commit(
+            envelope=_envelope(commit_id="cmt_bad", expected=0, checksum="bad"),
+            operations=[CreateEntityOp(id="ent_x", type="Alien", name="Zorp")],
+        )
+
+    assert await repo.get_head(workspace_id="ws", project_id="pr", branch_id="br") == 0
+    assert await repo.list_entities(workspace_id="ws", project_id="pr") == []

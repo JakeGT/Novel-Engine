@@ -41,6 +41,13 @@ from backend.domain.projection import (
     ProjectionWatermark,
     RecordVersion,
 )
+from backend.domain.validation import (
+    AuthoritativeValidator,
+    CanonValidationError,
+    ValidationContext,
+)
+
+_DEFAULT_VALIDATOR = AuthoritativeValidator()
 
 _RECORD_TYPE = {
     "create_entity": "entity",
@@ -130,6 +137,53 @@ def _event(row: Any) -> Event:
     )
 
 
+class _TxCanonReader:
+    """Canonical reads bound to the commit transaction (for in-tx validation)."""
+
+    def __init__(self, session: Any, workspace_id: str, project_id: str, branch_id: str) -> None:
+        self._session = session
+        self._workspace_id = workspace_id
+        self._project_id = project_id
+        self._branch_id = branch_id
+
+    async def get_entity(self, entity_id: str) -> CanonEntity | None:
+        row = (
+            await self._session.execute(
+                text(
+                    "SELECT * FROM canon_entities "
+                    "WHERE workspace_id = :w AND project_id = :p AND branch_id = :b AND id = :id"
+                ),
+                {
+                    "w": self._workspace_id,
+                    "p": self._project_id,
+                    "b": self._branch_id,
+                    "id": entity_id,
+                },
+            )
+        ).first()
+        return _entity(row) if row else None
+
+    async def count_open_facts(self, subject_id: str, predicate: str) -> int:
+        value = (
+            await self._session.execute(
+                text(
+                    "SELECT count(*) FROM canon_facts "
+                    "WHERE workspace_id = :w AND project_id = :p AND branch_id = :b "
+                    "AND status = 'asserted' "
+                    "AND proposition->>'subject_id' = :s AND proposition->>'predicate' = :pr"
+                ),
+                {
+                    "w": self._workspace_id,
+                    "p": self._project_id,
+                    "b": self._branch_id,
+                    "s": subject_id,
+                    "pr": predicate,
+                },
+            )
+        ).scalar()
+        return int(value or 0)
+
+
 class PostgresCanonRepository:
     def __init__(self, session_factory: Any) -> None:
         self._session_factory = session_factory
@@ -140,8 +194,11 @@ class PostgresCanonRepository:
         *,
         envelope: Any,
         operations: list[CanonOperation],
+        validator: Any = None,
+        allowed_entity_types: frozenset[str] | None = None,
         origin: str = OriginKind.AUTHOR.value,
     ) -> int:
+        validator = validator or _DEFAULT_VALIDATOR
         async with session_scope(self._session_factory) as session:
             existing = (
                 await session.execute(
@@ -180,6 +237,33 @@ class PostgresCanonRepository:
             ).first()
             if active is not None:
                 raise HeadConflict("another commit reservation is active for this branch")
+
+            # Authoritative validation runs inside this transaction, against the
+            # locked head, before any reservation, envelope, or canon row is written.
+            reader = _TxCanonReader(
+                session, envelope.workspace_id, envelope.project_id, envelope.branch_id
+            )
+            context = ValidationContext(
+                workspace_id=envelope.workspace_id,
+                project_id=envelope.project_id,
+                branch_id=envelope.branch_id,
+                schema_version_id=envelope.schema_version_id,
+                head_revision=envelope.expected_head,
+                reader=reader,
+            )
+            if allowed_entity_types is not None:
+                context = ValidationContext(
+                    workspace_id=context.workspace_id,
+                    project_id=context.project_id,
+                    branch_id=context.branch_id,
+                    schema_version_id=context.schema_version_id,
+                    head_revision=context.head_revision,
+                    reader=reader,
+                    allowed_entity_types=allowed_entity_types,
+                )
+            report = await validator.validate(operations, context=context)
+            if not report.ok:
+                raise CanonValidationError(report)
 
             reserved = envelope.expected_head + 1
             await session.execute(

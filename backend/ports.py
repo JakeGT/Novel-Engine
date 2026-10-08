@@ -759,6 +759,8 @@ class CanonRepositoryPort(Protocol):
         *,
         envelope: CommitEnvelope,
         operations: Sequence[CanonOperation],
+        validator: Any = None,
+        allowed_entity_types: frozenset[str] | None = None,
         origin: str = "author",
     ) -> int: ...
 

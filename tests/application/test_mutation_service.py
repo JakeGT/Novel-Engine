@@ -6,8 +6,8 @@ from backend.domain.journal import HeadConflict
 from backend.domain.operations import (
     AssertFactOp,
     CreateEntityOp,
-    OperationValidationError,
 )
+from backend.domain.validation import CanonValidationError
 from backend.services.mutation_service import MutationService
 from tests.doubles import InMemoryCanonJournal, InMemoryCanonRepository
 
@@ -73,8 +73,15 @@ async def test_unknown_type_fails_validation_and_commit() -> None:
     assert not report.ok
     assert report.issues[0].code == "unknown_type"
 
-    with pytest.raises(OperationValidationError):
+    # The authoritative validator also blocks the commit inside the PG transaction.
+    with pytest.raises(CanonValidationError):
         await service.commit(scope, mutation.id)
+    assert (
+        await _repository.get_head(
+            workspace_id="ws1", project_id="pr1", branch_id=mutation.branch_id
+        )
+        == 0
+    )
 
 
 @pytest.mark.asyncio

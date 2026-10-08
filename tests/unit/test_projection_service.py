@@ -113,3 +113,23 @@ async def test_projection_failure_is_visible_lag_not_corruption() -> None:
     assert watermark is not None
     assert watermark.status is ProjectionStatus.ERROR
     assert watermark.last_error is not None
+
+
+@pytest.mark.asyncio
+async def test_projection_retries_after_transient_failure() -> None:
+    repo = InMemoryCanonRepository()
+    writer = InMemoryCanonWriter()
+    writer.fail_after_ops = 0
+    service = GraphProjectionService(canon=repo, writer=writer)
+    await _seed_commit(repo, commit_id="c1", name="Mara")
+
+    first = await service.project_pending(workspace_id=WS, project_id=PR, branch_id=BR)
+    assert first.status is ProjectionStatus.ERROR
+
+    # Transient failure cleared: a retry resumes from the same watermark without
+    # duplicating canon and catches up.
+    writer.fail_after_ops = None
+    second = await service.project_pending(workspace_id=WS, project_id=PR, branch_id=BR)
+    assert second.status is ProjectionStatus.CURRENT
+    assert second.applied == 1
+    assert (await service.lag(workspace_id=WS, project_id=PR, branch_id=BR)).current

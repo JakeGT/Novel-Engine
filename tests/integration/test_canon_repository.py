@@ -106,3 +106,24 @@ async def test_retire_entity_updates_normalized_state(repository) -> None:
     assert entity is not None and not entity.is_active
     assert entity.retired_revision == 2
     assert await repo.list_entities(workspace_id=WORKSPACE, project_id=PROJECT) == []
+
+
+@pytest.mark.asyncio
+async def test_invalid_commit_rolls_back_without_advancing_head(repository) -> None:
+    from backend.domain.validation import CanonValidationError
+
+    repo, journal, branch = repository
+    bad = CreateEntityOp(id="ent_bad", type="Alien", name="Zorp")
+    envelope = _envelope(branch.id, "cmt_bad", 0, "ckbad")
+
+    with pytest.raises(CanonValidationError):
+        await repo.apply_commit(envelope=envelope, operations=[bad])
+
+    # The authoritative validator rejected the commit inside the transaction, so
+    # nothing was written: head stays 0 and no canon row exists.
+    after = await journal.get_branch(
+        workspace_id=WORKSPACE, project_id=PROJECT, branch_id=branch.id
+    )
+    assert after is not None and after.head_revision == 0
+    entity = await repo.get_entity(workspace_id=WORKSPACE, project_id=PROJECT, entity_id="ent_bad")
+    assert entity is None
