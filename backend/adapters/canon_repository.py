@@ -22,6 +22,7 @@ from backend.domain.canon.propositions import Proposition
 from backend.domain.canon.revisions import CanonRevision, OriginKind, Provenance
 from backend.domain.history import CanonTag, CanonTagHistoryEntry
 from backend.domain.journal import CommitEnvelope, HeadConflict, RevisionConflict
+from backend.domain.media import AssetLifecycle, AssetLink, LinkRole, MediaAsset, MediaAssetVersion
 from backend.domain.operations import (
     AmendEventOp,
     AssertBeliefOp,
@@ -50,6 +51,60 @@ from backend.domain.validation import (
 )
 
 _DEFAULT_VALIDATOR = AuthoritativeValidator()
+
+
+def _asset(row: Any) -> MediaAsset:
+    return MediaAsset(
+        id=row.id,
+        workspace_id=row.workspace_id,
+        project_id=row.project_id,
+        name=row.name,
+        lifecycle=AssetLifecycle(row.lifecycle),
+        created_revision=row.created_revision,
+        retired_revision=row.retired_revision,
+        created_at=row.created_at,
+    )
+
+
+def _asset_version(row: Any) -> MediaAssetVersion:
+    return MediaAssetVersion(
+        id=row.id,
+        asset_id=row.asset_id,
+        workspace_id=row.workspace_id,
+        project_id=row.project_id,
+        version=row.version,
+        object_key=row.object_key,
+        content_type=row.content_type,
+        byte_length=row.byte_length,
+        checksum=row.checksum,
+        source=row.source,
+        licence=row.licence,
+        attribution=row.attribution,
+        authority=row.authority,
+        visibility=row.visibility,
+        created_revision=row.created_revision,
+        retired_revision=row.retired_revision,
+        created_at=row.created_at,
+    )
+
+
+def _link(row: Any) -> AssetLink:
+    return AssetLink(
+        id=row.id,
+        workspace_id=row.workspace_id,
+        project_id=row.project_id,
+        branch_id=row.branch_id,
+        asset_id=row.asset_id,
+        asset_version_id=row.asset_version_id,
+        role=LinkRole(row.role),
+        target_record_type=row.target_record_type,
+        target_record_id=row.target_record_id,
+        provenance_id=row.provenance_id,
+        created_revision=row.created_revision,
+        retired_revision=row.retired_revision,
+        created_at=row.created_at,
+    )
+
 
 _RECORD_TYPE = {
     "create_entity": "entity",
@@ -198,6 +253,30 @@ class _TxCanonReader:
             )
         ).scalar()
         return int(value or 0)
+
+    async def get_asset(self, asset_id: str) -> MediaAsset | None:
+        row = (
+            await self._session.execute(
+                text(
+                    "SELECT * FROM media_assets "
+                    "WHERE workspace_id = :w AND project_id = :p AND id = :id"
+                ),
+                {"w": self._workspace_id, "p": self._project_id, "id": asset_id},
+            )
+        ).first()
+        return _asset(row) if row else None
+
+    async def get_asset_version(self, version_id: str) -> MediaAssetVersion | None:
+        row = (
+            await self._session.execute(
+                text(
+                    "SELECT * FROM media_asset_versions "
+                    "WHERE workspace_id = :w AND project_id = :p AND id = :id"
+                ),
+                {"w": self._workspace_id, "p": self._project_id, "id": version_id},
+            )
+        ).first()
+        return _asset_version(row) if row else None
 
 
 class PostgresCanonRepository:
@@ -630,10 +709,34 @@ class PostgresCanonRepository:
                 {**scope, "id": operation.id, "rev": revision},
                 operation.id,
             )
-        elif isinstance(operation, (LinkAssetOp, RetireAssetLinkOp)):
-            # Explicit evidence links are persisted by the media workstream (2I);
-            # record the operation in history now without a canon table.
-            pass
+        elif isinstance(operation, LinkAssetOp):
+            await session.execute(
+                text(
+                    "INSERT INTO asset_links (workspace_id, project_id, branch_id, id, asset_id, "
+                    "asset_version_id, role, target_record_type, target_record_id, provenance_id, "
+                    "created_revision) VALUES (:w, :p, :b, :id, :asset_id, :asset_version_id, :role, "
+                    ":target_record_type, :target_id, :prov, :rev)"
+                ),
+                {
+                    **scope,
+                    "id": operation.id,
+                    "asset_id": operation.asset_id,
+                    "asset_version_id": operation.asset_version_id,
+                    "role": operation.role,
+                    "target_record_type": operation.target_record_type,
+                    "target_id": operation.target_id,
+                    "prov": provenance_id,
+                    "rev": revision,
+                },
+            )
+        elif isinstance(operation, RetireAssetLinkOp):
+            await self._update(
+                session,
+                "UPDATE asset_links SET retired_revision = :rev "
+                "WHERE workspace_id = :w AND project_id = :p AND id = :id",
+                {**scope, "id": operation.id, "rev": revision},
+                operation.id,
+            )
         await self._record_version(session, envelope, operation, revision)
 
     async def _update(
@@ -1231,6 +1334,57 @@ class PostgresCanonRepository:
                 {"w": workspace_id, "p": project_id, "b": branch_id, "n": name},
             )
             return bool(result.rowcount)  # type: ignore[attr-defined]
+
+    async def get_link(
+        self, *, workspace_id: str, project_id: str, link_id: str
+    ) -> AssetLink | None:
+        async with session_scope(self._session_factory) as session:
+            row = (
+                await session.execute(
+                    text(
+                        "SELECT * FROM asset_links "
+                        "WHERE workspace_id=:w AND project_id=:p AND id=:id"
+                    ),
+                    {"w": workspace_id, "p": project_id, "id": link_id},
+                )
+            ).first()
+        return _link(row) if row else None
+
+    async def list_links(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        asset_id: str | None = None,
+        branch_id: str | None = None,
+        include_retired: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[AssetLink]:
+        clauses = ["workspace_id=:w", "project_id=:p"]
+        params: dict[str, Any] = {"w": workspace_id, "p": project_id}
+        if asset_id is not None:
+            clauses.append("asset_id=:a")
+            params["a"] = asset_id
+        if branch_id is not None:
+            clauses.append("branch_id=:b")
+            params["b"] = branch_id
+        if not include_retired:
+            clauses.append("retired_revision IS NULL")
+        params["limit"] = limit
+        params["offset"] = offset
+        async with session_scope(self._session_factory) as session:
+            rows = (
+                await session.execute(
+                    text(
+                        "SELECT * FROM asset_links WHERE "
+                        + " AND ".join(clauses)
+                        + " ORDER BY created_revision DESC, id LIMIT :limit OFFSET :offset"
+                    ),
+                    params,
+                )
+            ).all()
+        return [_link(row) for row in rows]
 
     async def health(self) -> bool:
         try:

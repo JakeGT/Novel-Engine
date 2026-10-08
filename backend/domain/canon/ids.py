@@ -23,6 +23,7 @@ ID_PREFIXES: dict[str, str] = {
     "provenance": "prv",
     "asset": "ast",
     "asset_version": "asv",
+    "asset_link": "alk",
     "project": "prj",
     "workspace": "wsp",
 }

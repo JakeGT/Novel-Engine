@@ -308,10 +308,12 @@ class Neo4jCanonWriter:
                 MERGE (a:Asset {workspace_id: $workspace_id, project_id: $project_id, id: $asset_id})
                 MERGE (t:Entity {workspace_id: $workspace_id, project_id: $project_id, id: $target_id})
                 MERGE (a)-[r:EVIDENCE_FOR {link_id: $id}]->(t)
-                SET r.role = $role, r.commit_id = $commit_id, r.revision = $revision
+                SET r.role = $role, r.asset_version_id = $asset_version_id,
+                    r.commit_id = $commit_id, r.revision = $revision
                 """,
                 id=operation.id,
                 asset_id=operation.asset_id,
+                asset_version_id=operation.asset_version_id,
                 target_id=operation.target_id,
                 role=operation.role,
                 **ctx,
@@ -319,13 +321,12 @@ class Neo4jCanonWriter:
         elif isinstance(operation, RetireAssetLinkOp):
             tx.run(
                 """
-                MATCH (a:Asset {workspace_id: $workspace_id, project_id: $project_id, id: $asset_id})
+                MATCH (a:Asset {workspace_id: $workspace_id, project_id: $project_id})
                       -[r:EVIDENCE_FOR {link_id: $id}]->
                       (:Entity {workspace_id: $workspace_id, project_id: $project_id})
                 DELETE r
                 """,
                 id=operation.id,
-                asset_id=operation.asset_id,
                 **ctx,
             )
         else:  # pragma: no cover - exhaustive union

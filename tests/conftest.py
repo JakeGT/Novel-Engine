@@ -71,6 +71,8 @@ def _build_fake_container(settings, tmp_path):
         InMemoryGraphRepository,
         InMemoryIdentityStore,
         InMemoryLoginAttemptStore,
+        InMemoryMediaStore,
+        InMemoryObjectStore,
         InMemoryProviderUsageStore,
         InMemoryRateLimiter,
         InMemorySchemaVersionStore,
@@ -108,10 +110,9 @@ def _build_fake_container(settings, tmp_path):
     rate_limiter = InMemoryRateLimiter()
     vault = InMemoryCredentialVault()
     usage_store = InMemoryProviderUsageStore()
-    from backend.adapters.objects import NullObjectStore
     from backend.adapters.purge import StoreWorkspacePurge
 
-    objects = NullObjectStore()
+    objects = InMemoryObjectStore()
     purger = StoreWorkspacePurge(
         graph=graph,
         vectors=vectors,
@@ -141,7 +142,8 @@ def _build_fake_container(settings, tmp_path):
     )
     journal = InMemoryCanonJournal()
     canon_writer = InMemoryCanonWriter()
-    canon_repository = InMemoryCanonRepository(journal=journal)
+    media_store = InMemoryMediaStore()
+    canon_repository = InMemoryCanonRepository(journal=journal, media=media_store)
     mutation_service = MutationService(journal, canon_repository, local_mode=not settings.is_hosted)
     from backend.services.outbox_consumer import OutboxConsumer
     from backend.services.projection_service import GraphProjectionService
@@ -174,6 +176,16 @@ def _build_fake_container(settings, tmp_path):
         tenancy=tenancy_service,
         local_mode=not settings.is_hosted,
     )
+    from backend.services.media_service import MediaService
+
+    media_service = MediaService(
+        media=media_store,
+        objects=objects,
+        mutation=mutation_service,
+        reader=canon_repository,
+        tenancy=tenancy_service,
+        local_mode=not settings.is_hosted,
+    )
     return Container(
         settings=settings,
         graph=graph,
@@ -202,6 +214,8 @@ def _build_fake_container(settings, tmp_path):
         journal=journal,
         canon_writer=canon_writer,
         canon_repository=canon_repository,
+        media_store=media_store,
+        media_service=media_service,
         projection_service=projection_service,
         outbox_consumer=outbox_consumer,
         mutation_service=mutation_service,

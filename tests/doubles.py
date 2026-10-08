@@ -6,6 +6,7 @@ not mock Neo4j driver calls, OpenAI SDK internals, or filesystem layouts.
 
 from __future__ import annotations
 
+import hashlib
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -49,6 +50,8 @@ from backend.domain.journal import (
     ReviewDecision,
     RevisionConflict,
 )
+from backend.domain.media import AssetLink, LinkRole, MediaAsset, MediaAssetVersion
+from backend.domain.objects import ObjectStat
 from backend.domain.operations import (
     AmendEventOp,
     AssertBeliefOp,
@@ -57,6 +60,8 @@ from backend.domain.operations import (
     CloseFactOp,
     CreateEntityOp,
     CreateEventOp,
+    LinkAssetOp,
+    RetireAssetLinkOp,
     RetireEntityOp,
     RetireEventOp,
     UpdateEntityOp,
@@ -1980,12 +1985,27 @@ class _MemoryCanonReader:
                 count += 1
         return count
 
+    async def get_asset(self, asset_id: str) -> Any:
+        if self._repository._media is None:
+            return None
+        return await self._repository._media.get_asset(
+            workspace_id=self._workspace_id, project_id=self._project_id, asset_id=asset_id
+        )
+
+    async def get_asset_version(self, version_id: str) -> Any:
+        if self._repository._media is None:
+            return None
+        return await self._repository._media.get_version(
+            workspace_id=self._workspace_id, project_id=self._project_id, version_id=version_id
+        )
+
 
 class InMemoryCanonRepository:
     """In-memory canonical PostgreSQL canon (ADR-012) with matching invariants."""
 
-    def __init__(self, journal: InMemoryCanonJournal | None = None) -> None:
+    def __init__(self, journal: InMemoryCanonJournal | None = None, media: Any = None) -> None:
         self._journal = journal
+        self._media = media
         self.heads: dict[tuple[str, str, str], int] = {}
         self.envelopes: dict[str, Any] = {}
         self.revisions: list[Any] = []
@@ -1998,6 +2018,7 @@ class InMemoryCanonRepository:
         self.watermarks: dict[tuple[str, str, str, str], Any] = {}
         self.tags: dict[tuple[str, str, str, str], Any] = {}
         self.tag_history: dict[tuple[str, str, str, str], list[Any]] = {}
+        self.asset_links: dict[tuple[str, str, str], Any] = {}
 
     def set_head(self, workspace_id: str, project_id: str, branch_id: str, head: int) -> None:
         self.heads[(workspace_id, project_id, branch_id)] = head
@@ -2201,6 +2222,50 @@ class InMemoryCanonRepository:
             )
         elif isinstance(operation, RetireEventOp) and key in self.events:
             self.events[key] = self.events[key].model_copy(update={"retired_revision": revision})
+        elif isinstance(operation, LinkAssetOp):
+            self.asset_links[key] = AssetLink(
+                id=operation.id,
+                workspace_id=ws,
+                project_id=pr,
+                branch_id=br,
+                asset_id=operation.asset_id,
+                asset_version_id=operation.asset_version_id,
+                role=LinkRole(operation.role),
+                target_record_type=operation.target_record_type,
+                target_record_id=operation.target_id,
+                provenance_id=provenance_id,
+                created_revision=revision,
+            )
+        elif isinstance(operation, RetireAssetLinkOp) and key in self.asset_links:
+            self.asset_links[key] = self.asset_links[key].model_copy(
+                update={"retired_revision": revision}
+            )
+
+    async def get_link(self, *, workspace_id: str, project_id: str, link_id: str):
+        return self.asset_links.get((workspace_id, project_id, link_id))
+
+    async def list_links(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        asset_id: str | None = None,
+        branch_id: str | None = None,
+        include_retired: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+    ):
+        items = [
+            link
+            for (w, p, _), link in self.asset_links.items()
+            if w == workspace_id
+            and p == project_id
+            and (asset_id is None or link.asset_id == asset_id)
+            and (branch_id is None or link.branch_id == branch_id)
+            and (include_retired or link.retired_revision is None)
+        ]
+        items.sort(key=lambda link: (link.created_revision, link.id), reverse=True)
+        return items[offset : offset + limit]
 
     async def get_entity(self, *, workspace_id: str, project_id: str, entity_id: str):
         return self.entities.get((workspace_id, project_id, entity_id))
@@ -2398,3 +2463,164 @@ class InMemoryCanonRepository:
 
     async def health(self) -> bool:
         return True
+
+
+class InMemoryMediaStore:
+    """In-memory media identity store for tests."""
+
+    def __init__(self) -> None:
+        self.assets: dict[tuple[str, str, str], MediaAsset] = {}
+        self.versions: dict[tuple[str, str, str], MediaAssetVersion] = {}
+        self._counter = 0
+
+    async def create_asset(self, *, workspace_id: str, project_id: str, name: str) -> MediaAsset:
+        self._counter += 1
+        asset_id = f"ast_{self._counter:04d}"
+        asset = MediaAsset(
+            id=asset_id,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            name=name,
+            created_revision=0,
+        )
+        self.assets[(workspace_id, project_id, asset_id)] = asset
+        return asset
+
+    async def get_asset(
+        self, *, workspace_id: str, project_id: str, asset_id: str
+    ) -> MediaAsset | None:
+        return self.assets.get((workspace_id, project_id, asset_id))
+
+    async def list_assets(
+        self, *, workspace_id: str, project_id: str, limit: int = 100, offset: int = 0
+    ) -> list[MediaAsset]:
+        items = [a for (w, p, _), a in self.assets.items() if w == workspace_id and p == project_id]
+        items.sort(key=lambda a: a.id)
+        return items[offset : offset + limit]
+
+    async def create_version(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        asset_id: str,
+        object_key: str,
+        content_type: str,
+        byte_length: int,
+        checksum: str,
+        source: str | None = None,
+        licence: str | None = None,
+        attribution: str | None = None,
+        authority: str | None = None,
+        visibility: str | None = None,
+        created_revision: int = 0,
+    ) -> MediaAssetVersion:
+        self._counter += 1
+        version_id = f"asv_{self._counter:04d}"
+        existing = [
+            v
+            for (w, p, _), v in self.versions.items()
+            if w == workspace_id and p == project_id and v.asset_id == asset_id
+        ]
+        version = MediaAssetVersion(
+            id=version_id,
+            asset_id=asset_id,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            version=len(existing) + 1,
+            object_key=object_key,
+            content_type=content_type,
+            byte_length=byte_length,
+            checksum=checksum,
+            source=source,
+            licence=licence,
+            attribution=attribution,
+            authority=authority,
+            visibility=visibility,
+            created_revision=created_revision,
+        )
+        self.versions[(workspace_id, project_id, version_id)] = version
+        return version
+
+    async def get_version(
+        self, *, workspace_id: str, project_id: str, version_id: str
+    ) -> MediaAssetVersion | None:
+        return self.versions.get((workspace_id, project_id, version_id))
+
+    async def list_versions(
+        self, *, workspace_id: str, project_id: str, asset_id: str
+    ) -> list[MediaAssetVersion]:
+        items = [
+            v
+            for (w, p, _), v in self.versions.items()
+            if w == workspace_id and p == project_id and v.asset_id == asset_id
+        ]
+        items.sort(key=lambda v: v.version)
+        return items
+
+    async def health(self) -> bool:
+        return True
+
+
+class InMemoryObjectStore:
+    """In-memory immutable object store with opaque server-generated keys."""
+
+    def __init__(self) -> None:
+        self._objects: dict[tuple[str, str, str], tuple[bytes, ObjectStat]] = {}
+        self._counter = 0
+
+    def put(
+        self,
+        data: bytes,
+        *,
+        workspace_id: str,
+        project_id: str,
+        content_type: str = "application/octet-stream",
+    ) -> ObjectStat:
+        self._counter += 1
+        key = f"obj_{self._counter:04d}"
+        stat = ObjectStat(
+            key=key,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            content_type=content_type,
+            byte_length=len(data),
+            checksum=hashlib.sha256(data).hexdigest(),
+        )
+        self._objects[(workspace_id, project_id, key)] = (data, stat)
+        return stat
+
+    def open(self, key: str, *, workspace_id: str, project_id: str) -> bytes:
+        return self._objects[(workspace_id, project_id, key)][0]
+
+    def stat(self, key: str, *, workspace_id: str, project_id: str) -> ObjectStat | None:
+        entry = self._objects.get((workspace_id, project_id, key))
+        return entry[1] if entry else None
+
+    def delete(self, key: str, *, workspace_id: str, project_id: str) -> bool:
+        return self._objects.pop((workspace_id, project_id, key), None) is not None
+
+    def verify_checksum(self, key: str, *, workspace_id: str, project_id: str) -> bool:
+        entry = self._objects.get((workspace_id, project_id, key))
+        if entry is None:
+            return False
+        return hashlib.sha256(entry[0]).hexdigest() == entry[1].checksum
+
+    def list_objects(self, *, workspace_id: str, project_id: str) -> list[ObjectStat]:
+        return [
+            stat
+            for (w, p, _), (_data, stat) in self._objects.items()
+            if w == workspace_id and p == project_id
+        ]
+
+    def delete_workspace(self, *, workspace_id: str) -> int:
+        keys = [k for k in self._objects if k[0] == workspace_id]
+        for k in keys:
+            del self._objects[k]
+        return len(keys)
+
+    def delete_project(self, *, workspace_id: str, project_id: str) -> int:
+        keys = [k for k in self._objects if k[0] == workspace_id and k[1] == project_id]
+        for k in keys:
+            del self._objects[k]
+        return len(keys)

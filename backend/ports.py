@@ -29,6 +29,7 @@ from backend.domain.journal import (
     OutboxMessage,
     ReviewDecision,
 )
+from backend.domain.media import AssetLink, MediaAsset, MediaAssetVersion
 from backend.domain.objects import ObjectStat
 from backend.domain.operations import CanonOperation
 from backend.domain.projection import ProjectionWatermark, RecordVersion
@@ -893,5 +894,71 @@ class CanonRepositoryPort(Protocol):
     async def delete_tag(
         self, *, workspace_id: str, project_id: str, branch_id: str, name: str
     ) -> bool: ...
+
+    async def get_link(
+        self, *, workspace_id: str, project_id: str, link_id: str
+    ) -> AssetLink | None: ...
+
+    async def list_links(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        asset_id: str | None = None,
+        branch_id: str | None = None,
+        include_retired: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[AssetLink]: ...
+
+    async def health(self) -> bool: ...
+
+
+@runtime_checkable
+class MediaStorePort(Protocol):
+    """Project-scoped media identity metadata (PostgreSQL lifecycle authority).
+
+    Bytes live in the scoped object store under opaque keys; this store holds only
+    identity, version metadata, provenance, and lifecycle. It never implies any
+    processing/scanning has occurred (Phase 4+).
+    """
+
+    async def create_asset(
+        self, *, workspace_id: str, project_id: str, name: str
+    ) -> MediaAsset: ...
+
+    async def get_asset(
+        self, *, workspace_id: str, project_id: str, asset_id: str
+    ) -> MediaAsset | None: ...
+
+    async def list_assets(
+        self, *, workspace_id: str, project_id: str, limit: int = 100, offset: int = 0
+    ) -> list[MediaAsset]: ...
+
+    async def create_version(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        asset_id: str,
+        object_key: str,
+        content_type: str,
+        byte_length: int,
+        checksum: str,
+        source: str | None = None,
+        licence: str | None = None,
+        attribution: str | None = None,
+        authority: str | None = None,
+        visibility: str | None = None,
+        created_revision: int = 0,
+    ) -> MediaAssetVersion: ...
+
+    async def get_version(
+        self, *, workspace_id: str, project_id: str, version_id: str
+    ) -> MediaAssetVersion | None: ...
+
+    async def list_versions(
+        self, *, workspace_id: str, project_id: str, asset_id: str
+    ) -> list[MediaAssetVersion]: ...
 
     async def health(self) -> bool: ...

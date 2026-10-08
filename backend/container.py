@@ -65,6 +65,8 @@ class Container:
     canon_entity_service: Any = None
     canon_assertion_service: Any = None
     canon_history_service: Any = None
+    media_store: Any = None
+    media_service: Any = None
 
     async def aclose(self) -> None:
         self.graph.close()
@@ -260,6 +262,18 @@ def build_container(settings: Settings | None = None) -> Container:
     container.canon_history_service = CanonHistoryService(
         canon=container.canon_repository,
         journal=container.journal,
+        tenancy=container.tenancy_service,
+        local_mode=not resolved.is_hosted,
+    )
+    from backend.adapters.media_store import PostgresMediaStore
+    from backend.services.media_service import MediaService
+
+    container.media_store = PostgresMediaStore(database.session_factory)
+    container.media_service = MediaService(
+        media=container.media_store,
+        objects=container.objects,
+        mutation=container.mutation_service,
+        reader=container.canon_repository,
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
     )

@@ -111,13 +111,14 @@ class RetireEventOp(_Operation):
 class LinkAssetOp(_Operation):
     op: Literal["link_asset"] = "link_asset"
     asset_id: str
+    asset_version_id: str | None = None
+    target_record_type: str = "entity"
     target_id: str
-    role: str = "evidence"
+    role: str = "EVIDENCE_FOR"
 
 
 class RetireAssetLinkOp(_Operation):
     op: Literal["retire_asset_link"] = "retire_asset_link"
-    asset_id: str
 
 
 CanonOperation = Annotated[
@@ -144,7 +145,7 @@ _TEMP_KIND: dict[str, str] = {
     "assert_fact": "fact",
     "assert_belief": "belief",
     "create_event": "event",
-    "link_asset": "provenance",
+    "link_asset": "asset_link",
 }
 
 
@@ -170,7 +171,10 @@ def operation_reference_ids(operation: CanonOperation) -> list[str]:
             *operation.outcome_ids,
         ]
     if isinstance(operation, LinkAssetOp):
-        return [operation.asset_id, operation.target_id]
+        refs = [operation.asset_id, operation.target_id]
+        if operation.asset_version_id is not None:
+            refs.append(operation.asset_version_id)
+        return refs
     return []
 
 
@@ -216,6 +220,11 @@ def _rewrite(operation: CanonOperation, mapping: dict[str, str]) -> CanonOperati
             update={
                 "id": resolve(operation.id),
                 "asset_id": resolve(operation.asset_id),
+                "asset_version_id": (
+                    resolve(operation.asset_version_id)
+                    if operation.asset_version_id is not None
+                    else None
+                ),
                 "target_id": resolve(operation.target_id),
             }
         )

@@ -107,3 +107,7 @@ def get_outbox_consumer(container: Container = Depends(get_container)) -> Any:
 
 def get_canon_history_service(container: Container = Depends(get_container)) -> Any:
     return container.canon_history_service
+
+
+def get_media_service(container: Container = Depends(get_container)) -> Any:
+    return container.media_service

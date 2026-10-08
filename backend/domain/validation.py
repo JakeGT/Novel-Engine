@@ -21,6 +21,7 @@ from backend.domain.canon.registry import (
     predicate_spec,
     validate_proposition,
 )
+from backend.domain.media import MediaAsset, MediaAssetVersion, is_link_role
 from backend.domain.operations import (
     AssertBeliefOp,
     AssertFactOp,
@@ -83,6 +84,10 @@ class CanonTxReader(Protocol):
     async def get_entity(self, entity_id: str) -> CanonEntity | None: ...
 
     async def count_open_facts(self, subject_id: str, predicate: str) -> int: ...
+
+    async def get_asset(self, asset_id: str) -> MediaAsset | None: ...
+
+    async def get_asset_version(self, version_id: str) -> MediaAssetVersion | None: ...
 
 
 @dataclass(frozen=True)
@@ -218,7 +223,31 @@ class AuthoritativeValidator:
                 if not exists(ref):
                     blocking("unknown_reference", f"unknown event reference {ref!r}")
         elif isinstance(operation, LinkAssetOp):
-            if not exists(operation.target_id):
+            if not is_link_role(operation.role):
+                blocking("invalid_role", f"unknown link role {operation.role!r}")
+            asset = await context.reader.get_asset(operation.asset_id)
+            if asset is None:
+                blocking("unknown_asset", f"unknown asset {operation.asset_id!r}")
+            elif not asset.is_active:
+                blocking("inactive_asset", f"asset {operation.asset_id!r} is not active")
+            if operation.asset_version_id is not None:
+                version = await context.reader.get_asset_version(operation.asset_version_id)
+                if version is None:
+                    blocking(
+                        "unknown_asset_version",
+                        f"unknown asset version {operation.asset_version_id!r}",
+                    )
+                elif version.asset_id != operation.asset_id:
+                    blocking(
+                        "asset_version_mismatch",
+                        "asset version does not belong to the linked asset",
+                    )
+            if operation.target_record_type != "entity":
+                blocking(
+                    "unsupported_target",
+                    f"unsupported link target type {operation.target_record_type!r}",
+                )
+            elif not exists(operation.target_id):
                 blocking("unknown_target", f"unknown link target {operation.target_id!r}")
 
 

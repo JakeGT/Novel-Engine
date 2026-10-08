@@ -98,6 +98,13 @@ class _RepositoryReader:
         )
         return len(facts)
 
+    async def get_asset(self, asset_id: str) -> None:
+        # Preview reader can't reach the media store; in-tx commit revalidates links.
+        return None
+
+    async def get_asset_version(self, version_id: str) -> None:
+        return None
+
 
 class MutationService:
     def __init__(
