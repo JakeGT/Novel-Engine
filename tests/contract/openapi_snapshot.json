@@ -3887,6 +3887,68 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/beliefs/{belief_id}/at-revision/{revision}": {
+      "get": {
+        "operationId": "belief_at_revision_api_v1_projects__project_id__beliefs__belief_id__at_revision__revision__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "belief_id",
+            "required": true,
+            "schema": {
+              "title": "Belief Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "revision",
+            "required": true,
+            "schema": {
+              "title": "Revision",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Belief At Revision Api V1 Projects  Project Id  Beliefs  Belief Id  At Revision  Revision  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Belief At Revision",
+        "tags": [
+          "canon-history"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/beliefs/{belief_id}/close": {
       "post": {
         "operationId": "close_belief_api_v1_projects__project_id__beliefs__belief_id__close_post",
@@ -5128,6 +5190,68 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/facts/{fact_id}/at-revision/{revision}": {
+      "get": {
+        "operationId": "fact_at_revision_api_v1_projects__project_id__facts__fact_id__at_revision__revision__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "fact_id",
+            "required": true,
+            "schema": {
+              "title": "Fact Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "revision",
+            "required": true,
+            "schema": {
+              "title": "Revision",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Fact At Revision Api V1 Projects  Project Id  Facts  Fact Id  At Revision  Revision  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fact At Revision",
+        "tags": [
+          "canon-history"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/facts/{fact_id}/close": {
       "post": {
         "operationId": "close_fact_api_v1_projects__project_id__facts__fact_id__close_post",
@@ -5398,6 +5522,68 @@
           }
         },
         "summary": "Get Revision",
+        "tags": [
+          "canon-history"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/revisions/{from_revision}/diff/{to_revision}": {
+      "get": {
+        "operationId": "revision_diff_api_v1_projects__project_id__revisions__from_revision__diff__to_revision__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "from_revision",
+            "required": true,
+            "schema": {
+              "title": "From Revision",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "to_revision",
+            "required": true,
+            "schema": {
+              "title": "To Revision",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Revision Diff Api V1 Projects  Project Id  Revisions  From Revision  Diff  To Revision  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revision Diff",
         "tags": [
           "canon-history"
         ]

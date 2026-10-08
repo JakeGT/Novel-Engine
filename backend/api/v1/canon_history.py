@@ -138,6 +138,71 @@ async def entity_at_revision(
     }
 
 
+@router.get("/revisions/{from_revision}/diff/{to_revision}")
+async def revision_diff(
+    project_id: str,
+    from_revision: int,
+    to_revision: int,
+    scope: AccessScope = Depends(get_project_scope),
+    history: CanonHistoryService = Depends(get_canon_history_service),
+) -> dict:
+    entries = await history.diff_revisions(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        from_revision=from_revision,
+        to_revision=to_revision,
+    )
+    return {"items": [_history_entry(e) for e in entries]}
+
+
+@router.get("/facts/{fact_id}/at-revision/{revision}")
+async def fact_at_revision(
+    project_id: str,
+    fact_id: str,
+    revision: int,
+    scope: AccessScope = Depends(get_project_scope),
+    history: CanonHistoryService = Depends(get_canon_history_service),
+) -> dict:
+    fact = await history.fact_at_revision(
+        scope, scope.workspace_id or "", project_id, fact_id, revision
+    )
+    return {
+        "id": fact.id,
+        "proposition": fact.proposition.model_dump(mode="json"),
+        "status": fact.status.value,
+        "confidence": fact.confidence,
+        "provenance_id": fact.provenance_id,
+        "created_revision": fact.created_revision,
+        "closed_revision": fact.closed_revision,
+        "valid_from": fact.valid_from,
+        "valid_until": fact.valid_until,
+    }
+
+
+@router.get("/beliefs/{belief_id}/at-revision/{revision}")
+async def belief_at_revision(
+    project_id: str,
+    belief_id: str,
+    revision: int,
+    scope: AccessScope = Depends(get_project_scope),
+    history: CanonHistoryService = Depends(get_canon_history_service),
+) -> dict:
+    belief = await history.belief_at_revision(
+        scope, scope.workspace_id or "", project_id, belief_id, revision
+    )
+    return {
+        "id": belief.id,
+        "holder_entity_id": belief.holder_entity_id,
+        "proposition": belief.proposition.model_dump(mode="json"),
+        "confidence": belief.confidence,
+        "acquisition_provenance_id": belief.acquisition_provenance_id,
+        "source_ref": belief.source_ref,
+        "created_revision": belief.created_revision,
+        "closed_revision": belief.closed_revision,
+    }
+
+
 @router.get("/tags")
 async def list_tags(
     project_id: str,

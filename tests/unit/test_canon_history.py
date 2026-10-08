@@ -3,9 +3,16 @@ from datetime import UTC, datetime
 
 import pytest
 
+from backend.domain.canon.propositions import Proposition, StringObject
 from backend.domain.identity import AccessScope, AuthMode
 from backend.domain.journal import CommitEnvelope
-from backend.domain.operations import CreateEntityOp, UpdateEntityOp
+from backend.domain.operations import (
+    AssertBeliefOp,
+    AssertFactOp,
+    CloseFactOp,
+    CreateEntityOp,
+    UpdateEntityOp,
+)
 from backend.services.canon_history_service import CanonHistoryService
 from tests.doubles import InMemoryCanonJournal, InMemoryCanonRepository
 
@@ -68,3 +75,47 @@ async def test_revision_history_state_at_revision_and_tags() -> None:
 
     assert await service.delete_tag(scope, "ws", "pr", "v1") is True
     assert await service.list_tags(scope, "ws", "pr") == []
+
+
+@pytest.mark.asyncio
+async def test_fact_belief_at_revision_and_revision_diff() -> None:
+    journal = InMemoryCanonJournal()
+    repo = InMemoryCanonRepository(journal=journal)
+    branch = await journal.ensure_root_branch(workspace_id="ws", project_id="pr")
+    scope = AccessScope(actor_user_id="usr_1", auth_mode=AuthMode.LOCAL)
+    service = CanonHistoryService(canon=repo, journal=journal, local_mode=True)
+
+    await _apply(
+        repo, branch, "cmt_1", 0, [CreateEntityOp(id="ent_1", type="Character", name="Mara")]
+    )
+    proposition = Proposition(
+        subject_id="ent_1", predicate="HAS_NAME", object=StringObject(kind="string", value="Mara")
+    )
+    await _apply(repo, branch, "cmt_2", 1, [AssertFactOp(id="fact_1", proposition=proposition)])
+    await _apply(
+        repo,
+        branch,
+        "cmt_3",
+        2,
+        [
+            AssertBeliefOp(
+                id="bel_1",
+                holder_entity_id="ent_1",
+                proposition=proposition,
+                source_ref="chronicle",
+            )
+        ],
+    )
+    await _apply(repo, branch, "cmt_4", 3, [CloseFactOp(id="fact_1")])
+
+    assert (
+        await service.fact_at_revision(scope, "ws", "pr", "fact_1", 2)
+    ).status.value == "asserted"
+    assert (await service.fact_at_revision(scope, "ws", "pr", "fact_1", 4)).status.value == "closed"
+
+    belief = await service.belief_at_revision(scope, "ws", "pr", "bel_1", 3)
+    assert belief.holder_entity_id == "ent_1"
+    assert belief.source_ref == "chronicle"
+
+    diff = await service.diff_revisions(scope, "ws", "pr", from_revision=2, to_revision=4)
+    assert {(entry.revision, entry.record_type) for entry in diff} == {(3, "belief"), (4, "fact")}

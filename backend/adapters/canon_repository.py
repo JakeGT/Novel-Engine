@@ -917,6 +917,8 @@ class PostgresCanonRepository:
         project_id: str,
         record_type: str | None = None,
         record_id: str | None = None,
+        min_revision: int | None = None,
+        max_revision: int | None = None,
         limit: int = 100,
     ) -> list[RecordVersion]:
         clauses = ["workspace_id = :w", "project_id = :p"]
@@ -927,6 +929,12 @@ class PostgresCanonRepository:
         if record_id:
             clauses.append("record_id = :rid")
             params["rid"] = record_id
+        if min_revision is not None:
+            clauses.append("revision > :minrev")
+            params["minrev"] = min_revision
+        if max_revision is not None:
+            clauses.append("revision <= :maxrev")
+            params["maxrev"] = max_revision
         async with session_scope(self._session_factory) as session:
             rows = (
                 await session.execute(

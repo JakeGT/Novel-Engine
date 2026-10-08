@@ -2313,6 +2313,8 @@ class InMemoryCanonRepository:
         project_id: str,
         record_type: str | None = None,
         record_id: str | None = None,
+        min_revision: int | None = None,
+        max_revision: int | None = None,
         limit: int = 100,
     ):
         return [
@@ -2322,6 +2324,8 @@ class InMemoryCanonRepository:
             and rv.project_id == project_id
             and (record_type is None or rv.record_type == record_type)
             and (record_id is None or rv.record_id == record_id)
+            and (min_revision is None or rv.revision > min_revision)
+            and (max_revision is None or rv.revision <= max_revision)
         ][:limit]
 
     async def get_watermark(

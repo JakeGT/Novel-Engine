@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import json
 
+from backend.domain.canon.assertions import Belief, Fact, FactStatus
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
+from backend.domain.canon.propositions import Proposition
 from backend.domain.canon.revisions import CanonRevision
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.history import (
@@ -182,6 +184,91 @@ class CanonHistoryService:
             raise NotFoundError("Entity did not exist at that revision.")
         return entity
 
+    async def diff_revisions(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        *,
+        from_revision: int,
+        to_revision: int,
+        limit: int = 1000,
+    ) -> list[RecordHistoryEntry]:
+        await self._authorize(scope, workspace_id, project_id)
+        if from_revision < 0 or to_revision < from_revision:
+            raise ValidationError("Invalid revision range.")
+        versions = await self._canon.list_record_versions(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            min_revision=from_revision,
+            max_revision=to_revision,
+            limit=limit,
+        )
+        versions = sorted(versions, key=lambda v: (v.revision, v.record_type, v.record_id))
+        return [
+            RecordHistoryEntry(
+                record_type=v.record_type,
+                record_id=v.record_id,
+                branch_id=v.branch_id,
+                revision=v.revision,
+                operation_type=v.operation_type,
+                commit_id=v.commit_id,
+                change=v.change,
+                created_at=v.created_at,
+            )
+            for v in versions
+        ]
+
+    async def fact_at_revision(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        fact_id: str,
+        revision: int,
+    ) -> Fact:
+        await self._authorize(scope, workspace_id, project_id)
+        versions = await self._canon.list_record_versions(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            record_type="fact",
+            record_id=fact_id,
+            max_revision=revision,
+            limit=1000,
+        )
+        ordered = sorted(versions, key=lambda v: v.revision)
+        fact: Fact | None = None
+        for version in ordered:
+            fact = _replay_fact(version, fact)
+        if fact is None:
+            raise NotFoundError("Fact did not exist at that revision.")
+        return fact
+
+    async def belief_at_revision(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        belief_id: str,
+        revision: int,
+    ) -> Belief:
+        await self._authorize(scope, workspace_id, project_id)
+        versions = await self._canon.list_record_versions(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            record_type="belief",
+            record_id=belief_id,
+            max_revision=revision,
+            limit=1000,
+        )
+        ordered = sorted(versions, key=lambda v: v.revision)
+        belief: Belief | None = None
+        for version in ordered:
+            belief = _replay_belief(version, belief)
+        if belief is None:
+            raise NotFoundError("Belief did not exist at that revision.")
+        return belief
+
     async def list_tags(
         self, scope: AccessScope, workspace_id: str, project_id: str
     ) -> list[CanonTag]:
@@ -282,6 +369,55 @@ def _replay_entity(version: RecordVersion, current: CanonEntity | None) -> Canon
         return current.model_copy(
             update={"lifecycle": EntityLifecycle.RETIRED, "retired_revision": version.revision}
         )
+    return current
+
+
+def _replay_fact(version: RecordVersion, current: Fact | None) -> Fact | None:
+    change = version.change
+    op = change.get("op")
+    if op == "assert_fact":
+        return Fact(
+            id=change["id"],
+            workspace_id=version.workspace_id,
+            project_id=version.project_id,
+            branch_id=version.branch_id,
+            proposition=Proposition.model_validate(change["proposition"]),
+            status=FactStatus.ASSERTED,
+            confidence=change.get("confidence", 1.0),
+            provenance_id=f"prov_{version.commit_id}",
+            created_revision=version.revision,
+            valid_from=change.get("valid_from"),
+            valid_until=change.get("valid_until"),
+        )
+    if current is None:
+        return None
+    if op == "close_fact":
+        return current.model_copy(
+            update={"status": FactStatus.CLOSED, "closed_revision": version.revision}
+        )
+    return current
+
+
+def _replay_belief(version: RecordVersion, current: Belief | None) -> Belief | None:
+    change = version.change
+    op = change.get("op")
+    if op == "assert_belief":
+        return Belief(
+            id=change["id"],
+            workspace_id=version.workspace_id,
+            project_id=version.project_id,
+            branch_id=version.branch_id,
+            holder_entity_id=change["holder_entity_id"],
+            proposition=Proposition.model_validate(change["proposition"]),
+            confidence=change.get("confidence", 1.0),
+            acquisition_provenance_id=f"prov_{version.commit_id}",
+            source_ref=change.get("source_ref"),
+            created_revision=version.revision,
+        )
+    if current is None:
+        return None
+    if op == "close_belief":
+        return current.model_copy(update={"closed_revision": version.revision})
     return current
 
 

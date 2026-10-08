@@ -4,7 +4,7 @@ export UV_CACHE_DIR
 
 TYPE_CHECK_TARGETS = backend
 
-.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify seed reset-dev diagnostics retention reconcile project watch audit api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check secret-scan frontend-install frontend-lint frontend-build check
+.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify verify seed reset-dev diagnostics retention reconcile project watch audit api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check secret-scan frontend-install frontend-lint frontend-build check
 
 help:
 	@echo "install             Install runtime Python dependencies"
@@ -15,6 +15,7 @@ help:
 	@echo "infra-down          Stop infrastructure services"
 	@echo "migrate             Apply PostgreSQL and Neo4j migrations"
 	@echo "migrate-verify      Verify migration state without mutating stores"
+	@echo "verify              Verify canonical PostgreSQL consistency (heads/checksums/watermarks)"
 	@echo "seed                Seed the deterministic reference world"
 	@echo "reset-dev           Reset development stores (guarded; refuses production)"
 	@echo "diagnostics         Print a redacted diagnostics/support bundle"
@@ -61,6 +62,9 @@ migrate:
 
 migrate-verify:
 	uv run --locked python -m backend.migrate --verify
+
+verify:
+	uv run --locked python -m backend.devtools.verify
 
 seed:
 	uv run --locked python -m backend.devtools.seed

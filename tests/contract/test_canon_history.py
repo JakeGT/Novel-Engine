@@ -60,3 +60,37 @@ def test_revisions_record_history_and_tags(auth_client) -> None:
 def test_revisions_require_auth(api_client) -> None:
     response = api_client.get("/api/v1/projects/local-project/revisions")
     assert response.status_code == 401
+
+
+def test_revision_diff_and_fact_at_revision(auth_client) -> None:
+    project = "local-project"
+    _publish_schema(auth_client, project)
+
+    created = auth_client.post(
+        f"/api/v1/projects/{project}/entities",
+        json={"type": "Character", "name": "Mara", "attributes": {}, "expected_revision": 0},
+    )
+    assert created.status_code == 201, created.text
+    entity_id = created.json()["id"]
+
+    fact = auth_client.post(
+        f"/api/v1/projects/{project}/facts",
+        json={
+            "proposition": {
+                "subject_id": entity_id,
+                "predicate": "HAS_NAME",
+                "object": {"kind": "string", "value": "Mara"},
+            },
+            "expected_revision": 1,
+        },
+    )
+    assert fact.status_code == 201, fact.text
+    fact_id = fact.json()["id"]
+
+    diff = auth_client.get(f"/api/v1/projects/{project}/revisions/1/diff/2")
+    assert diff.status_code == 200, diff.text
+    assert any(entry["record_type"] == "fact" for entry in diff.json()["items"])
+
+    at_revision = auth_client.get(f"/api/v1/projects/{project}/facts/{fact_id}/at-revision/2")
+    assert at_revision.status_code == 200, at_revision.text
+    assert at_revision.json()["status"] == "asserted"

@@ -853,6 +853,8 @@ class CanonRepositoryPort(Protocol):
         project_id: str,
         record_type: str | None = None,
         record_id: str | None = None,
+        min_revision: int | None = None,
+        max_revision: int | None = None,
         limit: int = 100,
     ) -> list[RecordVersion]: ...
 
