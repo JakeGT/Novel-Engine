@@ -57,6 +57,8 @@ class Container:
     schema_versions: Any = None
     schema_service: Any = None
     journal: Any = None
+    canon_writer: Any = None
+    mutation_service: Any = None
 
     async def aclose(self) -> None:
         self.graph.close()
@@ -204,4 +206,15 @@ def build_container(settings: Settings | None = None) -> Container:
     from backend.adapters.journal import PostgresCanonJournal
 
     container.journal = PostgresCanonJournal(database.session_factory)
+
+    from backend.adapters.canon_writer import Neo4jCanonWriter
+    from backend.services.mutation_service import MutationService
+
+    container.canon_writer = Neo4jCanonWriter(manager)
+    container.mutation_service = MutationService(
+        container.journal,
+        container.canon_writer,
+        tenancy=container.tenancy_service,
+        local_mode=not resolved.is_hosted,
+    )
     return container

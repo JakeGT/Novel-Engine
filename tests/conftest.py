@@ -55,6 +55,7 @@ def _build_fake_container(settings, tmp_path):
     from backend.services.auth_service import AuthService
     from backend.services.character_service import CharacterService
     from backend.services.credential_service import CredentialService
+    from backend.services.mutation_service import MutationService
     from backend.services.tenancy_service import TenancyService
     from backend.services.usage_service import ProviderUsageService
     from tests.doubles import (
@@ -64,6 +65,7 @@ def _build_fake_container(settings, tmp_path):
         FakeIdentityProvider,
         FakeMigrationVerifier,
         InMemoryCanonJournal,
+        InMemoryCanonWriter,
         InMemoryCredentialVault,
         InMemoryGraphRepository,
         InMemoryIdentityStore,
@@ -137,6 +139,8 @@ def _build_fake_container(settings, tmp_path):
         schema_versions, tenancy=tenancy_service, local_mode=not settings.is_hosted
     )
     journal = InMemoryCanonJournal()
+    canon_writer = InMemoryCanonWriter()
+    mutation_service = MutationService(journal, canon_writer, local_mode=not settings.is_hosted)
     return Container(
         settings=settings,
         graph=graph,
@@ -163,6 +167,8 @@ def _build_fake_container(settings, tmp_path):
         schema_versions=schema_versions,
         schema_service=schema_service,
         journal=journal,
+        canon_writer=canon_writer,
+        mutation_service=mutation_service,
     )
 
 

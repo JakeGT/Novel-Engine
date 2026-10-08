@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
+from backend.domain.commit import ApplyOutcome, CommitMarker
 from backend.domain.credentials import Credential, CredentialProvider
 from backend.domain.identity import IdentityClaims, LoginAttempt, Role, Session, User
 from backend.domain.journal import (
@@ -633,3 +634,31 @@ class CanonJournalPort(Protocol):
     async def list_outbox(
         self, *, workspace_id: str, project_id: str, limit: int = 100
     ) -> list[OutboxMessage]: ...
+
+
+@runtime_checkable
+class CanonWriterPort(Protocol):
+    """Applies an immutable commit envelope to the canonical graph.
+
+    ``apply_commit`` must be idempotent by ``commit_id``: re-applying the same
+    tuple is a no-op returning ``ALREADY_APPLIED``; the same ``commit_id`` with a
+    different ``checksum`` is an integrity error. The marker write and the object
+    writes happen in one transaction so a crash leaves either nothing or a
+    complete, marker-backed commit.
+    """
+
+    async def apply_commit(
+        self,
+        *,
+        commit_id: str,
+        revision: int,
+        checksum: str,
+        workspace_id: str,
+        project_id: str,
+        branch_id: str,
+        operations: Sequence[Any],
+    ) -> ApplyOutcome: ...
+
+    async def get_marker(self, commit_id: str) -> CommitMarker | None: ...
+
+    async def health(self) -> bool: ...

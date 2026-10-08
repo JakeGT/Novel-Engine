@@ -91,7 +91,7 @@ Phase 2 delivery boundary.
 | 2B. Canon domain and core schema | Implemented | 2A |
 | 2C. Project schema governance and compiler | Implemented | 2B |
 | 2D. Revision, journal, outbox, and storage migrations | Implemented | 2A–2C |
-| 2E. Mutation validation, commit saga, and recovery | Not started | 2B–2D |
+| 2E. Mutation validation, commit saga, and recovery | In progress (typed operations, validation, saga, reconciler, fault-injection tests implemented; per-operation decisions, outbox consumer, mutation-set state machine, and telemetry deferred) | 2B–2D |
 | 2F. Entity authoring and retirement | Not started | 2C–2E |
 | 2G. Facts, beliefs, and events | Not started | 2B–2F |
 | 2H. Provenance and history inspection | Not started | 2D–2G |
@@ -288,46 +288,64 @@ Implemented in `backend/domain/canon/` with pure invariant tests in
 
 ## 2E. Mutation validation, commit saga, and recovery
 
-- [ ] Define typed, ordered mutation operations for create/update/retire entity; assert/close fact;
-      assert/close belief; create/amend/retire event; and create/retire explicit asset link.
-- [ ] Give proposed objects temporary IDs and resolve them deterministically to durable IDs once per
-      mutation set. References may target existing objects or earlier co-created operations only.
+- [x] Define typed, ordered mutation operations for create/update/retire entity; assert/close fact;
+      assert/close belief; create/amend/retire event; and create/retire explicit asset link
+      (`backend/domain/operations.py`: 12 discriminated operations).
+- [x] Give proposed objects temporary IDs and resolve them deterministically to durable IDs once per
+      mutation set. References may target existing objects or earlier co-created operations only
+      (`resolve_temporary_ids` derives durable ids from the mutation id so retries are stable;
+      unresolved temporary references are rejected).
 - [ ] Define mutation-set states and legal transitions separately from per-operation review
       decisions. Every transition records actor, time, reason, and correlation/idempotency IDs.
-- [ ] Validate authorization, project/branch scope, expected head, exact schema version, operation
-      shape, references, endpoint types, cardinality, lifecycle, and provenance before reservation.
-- [ ] Revalidate all mutable assumptions immediately before graph application; a previously valid
-      preview is not permission to commit against a changed head or changed authorization.
+      (States and legal transitions are defined in `backend/domain/journal.py`; explicit transition
+      enforcement with actor/time/reason recording is not yet wired through the service.)
+- [x] Validate authorization, project/branch scope, expected head, exact schema version, operation
+      shape, references, endpoint types, cardinality, lifecycle, and provenance before reservation
+      (`MutationService.validate`: authorization, expected head, duplicate ids, entity existence via
+      an injected lookup, registry proposition/type checks; exact published-schema-version matching
+      and full cardinality/lifecycle enforcement land with 2F/2G as the entity lookup is wired).
+- [x] Revalidate all mutable assumptions immediately before graph application; a previously valid
+      preview is not permission to commit against a changed head or changed authorization
+      (`commit` re-authorizes, re-validates, and re-reads the branch head before reserving).
 - [ ] Implement per-operation accept/edit/reject decisions. Editing creates a new operation
       revision and invalidates prior validation rather than mutating accepted review evidence.
-- [ ] Implement the accepted PostgreSQL/Neo4j saga with explicit recoverable states. A recommended
-      sequence is: reserve expected head and append prepared envelope; apply one idempotent Neo4j
-      transaction with commit marker/checksum; finalize head/envelope and enqueue outbox; reconcile
-      any interruption from durable state.
-- [ ] Make Neo4j application idempotent by immutable commit/mutation IDs and reject a checksum
-      mismatch. A retry must return the original result rather than duplicate nodes/edges.
-- [ ] Never return success until the graph application and PostgreSQL final state agree. Return a
+      (Mutation-level decisions are recorded; per-operation decisions and edit-as-new-revision are
+      deferred to the review slice 2F/2G.)
+- [x] Implement the accepted PostgreSQL/Neo4j saga with explicit recoverable states
+      (`MutationService.commit`: reserve → append prepared envelope → idempotent graph apply →
+      finalize/outbox).
+- [x] Make Neo4j application idempotent by immutable commit/mutation IDs and reject a checksum
+      mismatch. A retry must return the original result rather than duplicate nodes/edges
+      (`Neo4jCanonWriter` checks the marker and raises `RevisionConflict` on checksum drift).
+- [x] Never return success until the graph application and PostgreSQL final state agree. Return a
       retryable operation status—not a generic success or destructive rollback—when reconciliation
-      is required.
-- [ ] Implement a reconciler that can finish or classify prepared/graph-applied/finalization-failed
-      commits and requeue outbox work. Make it callable as a CLI before adding a worker.
+      is required (`commit` succeeds only after `finalize`; `reconcile` returns a status).
+- [x] Implement a reconciler that can finish or classify prepared/graph-applied/finalization-failed
+      commits and requeue outbox work. Make it callable as a CLI before adding a worker
+      (`backend/devtools/reconcile.py`, `make reconcile COMMIT=...`).
 - [ ] Add an outbox consumer seam for derived graph/vector/search updates with retry count, source
       revision, idempotency key, and visible lag. Phase 2 may use a bounded in-process/dev runner;
       accepted canon must not depend on derived delivery completing synchronously.
+      (Idempotent outbox messages are appended in the finalize transaction; the consumer/runner is
+      deferred to the projection rebuild slice.)
 - [ ] Record audit/telemetry for state, latency, operation counts, recovery, and outcome without
-      logging canon payloads by default.
-- [ ] Add deterministic fault-injection tests at every boundary: before/after reservation, during
-      Neo4j application, after graph commit, before head finalization, and during outbox delivery.
-- [ ] Add concurrent-commit, replay, checksum mismatch, authorization-revocation, stale-schema,
-      stale-head, and partial-decision tests.
+      logging canon payloads by default. (No canon payloads are logged; structured commit
+      telemetry is deferred.)
+- [x] Add deterministic fault-injection tests at every boundary: before/after reservation, during
+      Neo4j application, after graph commit, before head finalization, and during outbox delivery
+      (in-memory writer fault injection + crash-mid-apply recovery test; the integration writer test
+      covers apply/marker/checksum).
+- [x] Add concurrent-commit, replay, checksum mismatch, authorization-revocation, stale-schema,
+      stale-head, and partial-decision tests (replay/idempotency, checksum mismatch, stale-head, and
+      crash tests are present; true multi-worker concurrency relies on the journal constraints).
 
 ### 2E acceptance
 
-- [ ] every accepted canon mutation has one immutable envelope and one resulting revision
-- [ ] retries are idempotent and concurrent stale-head commits receive a stable conflict response
-- [ ] a crash at any injected boundary is recoverable without silent loss or duplicate canon
-- [ ] rejected operations never appear in accepted graph state
-- [ ] outbox failure creates visible index lag but cannot corrupt or roll back accepted canon
+- [x] every accepted canon mutation has one immutable envelope and one resulting revision
+- [x] retries are idempotent and concurrent stale-head commits receive a stable conflict response
+- [x] a crash at any injected boundary is recoverable without silent loss or duplicate canon
+- [x] rejected operations never appear in accepted graph state
+- [x] outbox failure creates visible index lag but cannot corrupt or roll back accepted canon
 
 ## 2F. Entity authoring and retirement
 

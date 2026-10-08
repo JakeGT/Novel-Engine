@@ -1505,3 +1505,63 @@ class InMemoryCanonJournal:
             for message in self.outbox.values()
             if message.workspace_id == workspace_id and message.project_id == project_id
         ][:limit]
+
+
+class InMemoryCanonWriter:
+    """In-memory canon writer with deterministic, fault-injectable apply."""
+
+    def __init__(self) -> None:
+        from backend.domain.commit import ApplyOutcome, CommitMarker
+        from backend.domain.journal import RevisionConflict
+
+        self._ApplyOutcome = ApplyOutcome
+        self._CommitMarker = CommitMarker
+        self._RevisionConflict = RevisionConflict
+        self.markers: dict[str, CommitMarker] = {}
+        self.objects: dict[tuple[str, str, str], dict] = {}
+        self.applied_operations: list = []
+        # When set, apply fails after this many operations (crash simulation),
+        # leaving a partially applied graph and no marker.
+        self.fail_after_ops: int | None = None
+
+    async def apply_commit(
+        self,
+        *,
+        commit_id,
+        revision,
+        checksum,
+        workspace_id,
+        project_id,
+        branch_id,
+        operations,
+    ):
+        existing = self.markers.get(commit_id)
+        if existing is not None:
+            if existing.checksum != checksum:
+                raise self._RevisionConflict("commit id reused with a different checksum")
+            return self._ApplyOutcome.ALREADY_APPLIED
+        applied = 0
+        for operation in operations:
+            if self.fail_after_ops is not None and applied >= self.fail_after_ops:
+                raise RuntimeError("injected graph apply failure")
+            self.objects[(workspace_id, project_id, operation.id)] = {
+                **operation.model_dump(mode="json"),
+                "revision": revision,
+            }
+            self.applied_operations.append(operation)
+            applied += 1
+        self.markers[commit_id] = self._CommitMarker(
+            commit_id=commit_id,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            branch_id=branch_id,
+            revision=revision,
+            checksum=checksum,
+        )
+        return self._ApplyOutcome.APPLIED
+
+    async def get_marker(self, commit_id):
+        return self.markers.get(commit_id)
+
+    async def health(self) -> bool:
+        return True
