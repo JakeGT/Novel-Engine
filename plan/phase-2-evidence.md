@@ -1,8 +1,10 @@
 # Phase 2 exit evidence
 
-- Status: Implementation complete; awaiting owner acceptance. Every code-completable Phase 2 item
-  is implemented and verified as recorded below. Six items are owner or operational actions and
-  remain open (see "Open owner items").
+- Status: **Accepted by the project owner on 2026-10-09** (recorded against commit `22955a7` on
+  `phase-2-closure`). Every code-completable Phase 2 item is implemented and verified as recorded
+  below. The remaining items are operational and stay open (see "Open owner items"): the hosted CI
+  run, the clean-host backup/restore rehearsal, the live Authentik round trip, and the decision on
+  ADR-014–016.
 - Scope: Canonical story-state authority (ADR-012/013), Phase 2 workstreams 2A–2L
 - Owner: project owner or designated technical lead
 - Date: 2026-10-09
@@ -239,8 +241,9 @@ These cannot be completed by code and are the only unchecked items in `phase-2-t
    backup/restore rehearsal. A project archive round trip is not a database backup.
 4. Perform the live Authentik browser round trip for hosted mode.
 5. Accept, amend, or reject ADR-014, ADR-015, and ADR-016.
-6. Accept this evidence and authorize the next phase.
+6. ~~Accept this evidence and authorize the next phase.~~ Accepted by the owner on 2026-10-09.
 
 ## Owner sign-off
 
-- [ ] Project owner accepts the Phase 2 evidence and authorizes Phase 3.
+- [x] Project owner accepts the Phase 2 evidence and authorizes the next phase (2026-10-09, commit
+      `22955a7`). ADR-014, ADR-015, and ADR-016 are still awaiting a decision.

@@ -1,6 +1,6 @@
 # Phase 2 todo — Trustworthy canon
 
-- Status: Implementation complete, awaiting owner acceptance (all code-completable 2B–2L work is committed; owner acceptance of the Phase 1 and Phase 2 evidence, the first clean-checkout hosted CI run, the clean-host backup/restore rehearsal, and the live Authentik round-trip are external and still open)
+- Status: Accepted by the project owner on 2026-10-09. All code-completable 2B–2L work is committed. Still open and operational: the first clean-checkout hosted CI run, the clean-host backup/restore rehearsal, the live Authentik round trip, and the decision on the proposed ADR-014/015/016.
 - Scope: CAN-002–CAN-013 and the Phase 2 portions of AST-001/AST-004/AST-008 and EXT-003–EXT-006
 - Depends on: Phase 1 technical foundation and acceptance of the remaining owner/operational exit items
 - Architecture: ADR-003, ADR-004, ADR-005, ADR-009, ADR-010, ADR-012 (supersedes ADR-011), ADR-013, and the proposed ADR-014/015/016 recorded while closing the phase
@@ -864,8 +864,8 @@ vertical slices rather than mocks alone.
 - [x] built-in integrity rules are permanently blocking and author-rule contracts default to warning
       (integrity is non-suppressible; the evaluator seam classifies rule results; rule authoring is
       Phase 2.5)
-- [ ] Phase 2 evidence, known deferrals, and owner acceptance are recorded before Phase 3 starts
-      (`phase-2-evidence.md` records evidence + deferrals; owner acceptance is pending)
+- [x] Phase 2 evidence, known deferrals, and owner acceptance are recorded before Phase 3 starts
+      (accepted by the owner on 2026-10-09; see `phase-2-evidence.md`)
 
 ## Definition of done for each slice
 

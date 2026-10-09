@@ -18,7 +18,7 @@ The project combines:
 This repository is a stabilized prototype, not a production application. Phase 0 is complete;
 Phase 1 identity, invitation-only tenancy, scoped persistence, encrypted OpenRouter BYOK, and
 distribution foundations are implemented with external rehearsals pending. Phase 2 (trustworthy
-canon) is implementation-complete and awaiting owner acceptance: typed canon and immutable project
+canon) is complete and accepted by the owner (2026-10-09): typed canon and immutable project
 schemas, atomic PostgreSQL commits behind a review gate with per-operation decisions, evidence
 provenance and history, compensating reverts, media identity, a verified archive restore, a
 replayable Neo4j projection, and an authoring and review UI. Story rules, manuscript import,

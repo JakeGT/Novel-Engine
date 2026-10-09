@@ -75,9 +75,9 @@ Implemented and verified (see the per-phase evidence documents):
   journal/canon/projection equivalence checks; and an authoring and review UI with browser
   end-to-end coverage
 
-Phase 2 is implementation-complete and **awaiting owner acceptance**. The open items are owner or
-operational actions: acceptance of the Phase 1 and Phase 2 evidence and of ADR-014–016, the first
-hosted CI run, the clean-host backup/restore rehearsal, and the live Authentik round trip.
+Phase 2 is complete and **accepted by the owner (2026-10-09)**, as is the Phase 1 evidence. Still
+open and operational: the owner's decision on ADR-014–016, the first hosted CI run, the clean-host
+backup/restore rehearsal, and the live Authentik round trip.
 
 Not yet built (later phases):
 

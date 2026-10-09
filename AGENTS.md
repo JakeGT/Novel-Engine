@@ -10,10 +10,10 @@ Novel Engine is an open-source fiction authoring system with self-hosted and fre
 
 The repository is a stabilized prototype, not a production application. Phase 0 is complete.
 Phase 1 is implemented with explicit external/operational exit items remaining. Phase 2
-(trustworthy canon) is implementation-complete and awaiting owner acceptance: every
-code-completable item is done and recorded in `plan/phase-2-evidence.md`, and the open items are
-owner or operational actions (evidence and ADR-014–016 acceptance, the first hosted CI run, the
-clean-host backup/restore rehearsal, the live Authentik round trip). See `plan/phase-2-todo.md`.
+(trustworthy canon) is complete and accepted by the owner (2026-10-09); the evidence is in
+`plan/phase-2-evidence.md`. Still open and operational: the first hosted CI run, the clean-host
+backup/restore rehearsal, the live Authentik round trip, and the owner's decision on the proposed
+ADR-014–016. See `plan/phase-2-todo.md`.
 
 - Application lifecycle, dependency container, ports, and adapters exist; imports perform no
   external work.

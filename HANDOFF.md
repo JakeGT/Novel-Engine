@@ -32,7 +32,7 @@ Two rules dominate every design decision:
 | --- | --- |
 | Phase 0 — prototype stabilization | Complete (merged PR #1). See `plan/phase-0-evidence.md`. |
 | Phase 1 — identity, tenancy, distribution | Implemented with external exit items pending. See `plan/phase-1-evidence.md`. |
-| Phase 2 — trustworthy canon | **Implementation complete, awaiting owner acceptance.** Every code-completable 2B–2L item is done; the open items are owner/operational (see §11). See `plan/phase-2-todo.md` and `plan/phase-2-evidence.md`. |
+| Phase 2 — trustworthy canon | **Complete; accepted by the owner on 2026-10-09.** Every code-completable 2B–2L item is done; the open items are owner/operational (see §11). See `plan/phase-2-todo.md` and `plan/phase-2-evidence.md`. |
 | Phase 2.5 | Next: text-first author workflow probe (manuscript import, extraction into proposals, story-rule authoring). See `plan/09-delivery-roadmap.md`. |
 | Phase 3+ | Planned (branch forks/overlays, world/narrative time, POV filtering, planning/prose). See `plan/09-delivery-roadmap.md`. |
 
@@ -268,7 +268,7 @@ then `pnpm --dir frontend run gen:api`.
    backup/restore rehearsal.
 4. Perform the live Authentik browser round trip.
 5. Accept, amend, or reject ADR-014, ADR-015, and ADR-016 (they are implemented and `Proposed`).
-6. Accept `plan/phase-2-evidence.md` and authorize the next phase.
+6. ~~Accept `plan/phase-2-evidence.md`.~~ Accepted by the owner on 2026-10-09.
 
 Known limitations of what was built are listed in `plan/phase-2-evidence.md`. The ones most likely
 to matter next:
