@@ -156,3 +156,81 @@ test('author, review, retire, and export a project end to end', async ({ page })
   const origins = archive.commits.map((commit: { origin: string }) => commit.origin)
   expect(origins).toEqual(['author', 'author', 'author', 'model', 'author'])
 })
+
+// Keyboard-only: every step below uses Tab/Shift+Tab, typing, Enter, and Space.
+// No pointer events are sent, so an unreachable or unlabelled control fails the test.
+test('the core authoring path works with the keyboard alone', async ({ page }) => {
+  /** Press Tab until the focused element has the wanted accessible name. */
+  async function tabTo(name: RegExp | string, limit = 60): Promise<void> {
+    for (let presses = 0; presses < limit; presses += 1) {
+      await page.keyboard.press('Tab')
+      // `document.activeElement` always exists (the body when nothing is focused).
+      const accessible = await page.evaluate(() => {
+        const element = document.activeElement
+        if (!element || element === document.body) return ''
+        const control = element as HTMLInputElement
+        const label =
+          element.getAttribute('aria-label') ??
+          control.labels?.[0]?.textContent ??
+          element.textContent ??
+          ''
+        return label.trim()
+      })
+      if (typeof name === 'string' ? accessible === name : name.test(accessible)) return
+    }
+    throw new Error(`could not reach ${String(name)} with the keyboard`)
+  }
+
+  /** A focused control must show a visible focus indicator. */
+  async function expectVisibleFocus(): Promise<void> {
+    const outline = await page.evaluate(() => {
+      const style = getComputedStyle(document.activeElement as Element)
+      return { style: style.outlineStyle, width: parseFloat(style.outlineWidth) }
+    })
+    expect(outline.style).not.toBe('none')
+    expect(outline.width).toBeGreaterThanOrEqual(2)
+  }
+
+  await page.goto('/')
+  // The previous test signed in on its own context; sign in again by keyboard.
+  await tabTo(/^(Sign in|Open project)$/)
+  if ((await page.evaluate(() => document.activeElement?.textContent ?? '')).trim() === 'Sign in') {
+    await page.keyboard.press('Enter')
+    // Signing in navigates away and back; wait for the page before tabbing on.
+    await expect(page.getByRole('link', { name: 'Open project' })).toBeVisible()
+    await tabTo('Open project')
+  }
+  await expectVisibleFocus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByText('Canon head')).toBeVisible()
+
+  // Submitting an empty form by keyboard reports the problem on the field itself.
+  await tabTo('Create entity')
+  await page.keyboard.press('Enter')
+  const name = page.getByRole('form', { name: 'Create entity' }).getByLabel('Name', { exact: true })
+  await expect(name).toHaveAttribute('aria-invalid', 'true')
+  const describedBy = await name.getAttribute('aria-describedby')
+  expect(describedBy).toBeTruthy()
+  await expect(page.locator(`#${describedBy!.split(' ')[0]}`)).toBeVisible()
+
+  // Fill the form and create the entity without touching the pointer.
+  await name.focus()
+  await expectVisibleFocus()
+  await page.keyboard.type('Keyboard Kestrel')
+  await tabTo('Create entity')
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('link', { name: 'Keyboard Kestrel' })).toBeVisible()
+
+  // Open it and retire it: checkbox by Space, confirmation by Enter.
+  await page.getByRole('link', { name: 'Keyboard Kestrel' }).focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('heading', { name: /Keyboard Kestrel/ })).toBeVisible()
+  await tabTo('Retire…')
+  await page.keyboard.press('Enter')
+  await tabTo(/I understand this is a high-impact change/)
+  await page.keyboard.press('Space')
+  await tabTo('Retire entity')
+  await expectVisibleFocus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('heading', { name: /Keyboard Kestrel/ })).toContainText('Retired')
+})
