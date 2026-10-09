@@ -11,6 +11,7 @@ from __future__ import annotations
 from backend.adapters.system import uuid7
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.ids import format_canon_id
+from backend.domain.canon.naming import MAX_SLUG_LENGTH, slugify
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.operations import CreateEntityOp, RetireEntityOp, UpdateEntityOp
@@ -117,16 +118,22 @@ class CanonEntityService:
         expected_revision: int,
         idempotency_key: str = "",
         slug: str | None = None,
+        aliases: list[str] | None = None,
+        external_ids: dict[str, str] | None = None,
     ) -> tuple[CommitResult, CanonEntity]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         schema_version_id = await self._published_schema_id(workspace_id, project_id)
         entity_id = format_canon_id("entity", str(uuid7()))
+        if slug is None:
+            slug = await self._available_slug(workspace_id, project_id, name)
         operation = CreateEntityOp(
             id=entity_id,
             type=entity_type,
             name=name,
             slug=slug,
             attributes=attributes or {},
+            aliases=aliases or [],
+            external_ids=external_ids or {},
         )
         result = await self._commit(
             scope,
@@ -153,13 +160,22 @@ class CanonEntityService:
         name: str | None = None,
         slug: str | None = None,
         attributes: dict | None = None,
+        aliases: list[str] | None = None,
+        external_ids: dict[str, str] | None = None,
         expected_revision: int,
         idempotency_key: str = "",
     ) -> tuple[CommitResult, CanonEntity]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         await self._require_active(workspace_id, project_id, entity_id)
         schema_version_id = await self._published_schema_id(workspace_id, project_id)
-        operation = UpdateEntityOp(id=entity_id, name=name, slug=slug, attributes=attributes)
+        operation = UpdateEntityOp(
+            id=entity_id,
+            name=name,
+            slug=slug,
+            attributes=attributes,
+            aliases=aliases,
+            external_ids=external_ids,
+        )
         result = await self._commit(
             scope,
             workspace_id,
@@ -205,6 +221,54 @@ class CanonEntityService:
         )
         assert entity is not None
         return result, entity
+
+    async def get_by_external_id(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        *,
+        namespace: str,
+        value: str,
+    ) -> CanonEntity:
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        entity = await self._reader.get_entity_by_external_id(
+            workspace_id=workspace_id, project_id=project_id, namespace=namespace, value=value
+        )
+        if entity is None:
+            raise NotFoundError("Entity not found.")
+        return entity
+
+    async def name_collisions(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        *,
+        entity_type: str,
+        name: str,
+    ) -> list[CanonEntity]:
+        """Active same-type entities sharing a display name (advisory, never blocking)."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        return await self._reader.find_entities_by_name(
+            workspace_id=workspace_id, project_id=project_id, entity_type=entity_type, name=name
+        )
+
+    async def _available_slug(self, workspace_id: str, project_id: str, name: str) -> str | None:
+        """Derive a free slug from the name; the commit transaction still enforces uniqueness."""
+        base = slugify(name)
+        if not base:
+            return None
+        candidate = base
+        for suffix in range(2, 1000):
+            holder = await self._reader.get_entity_by_slug(
+                workspace_id=workspace_id, project_id=project_id, slug=candidate
+            )
+            if holder is None:
+                return candidate
+            tail = f"-{suffix}"
+            candidate = f"{base[: MAX_SLUG_LENGTH - len(tail)].rstrip('-')}{tail}"
+        return None
 
     async def _require_active(self, workspace_id: str, project_id: str, entity_id: str) -> None:
         existing = await self._reader.get_entity(

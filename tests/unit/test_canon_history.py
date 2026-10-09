@@ -80,7 +80,8 @@ async def test_revision_history_state_at_revision_and_tags() -> None:
     history = await service.record_history(
         scope, "ws", "pr", record_type="entity", record_id="ent_1"
     )
-    assert [entry.operation_type for entry in history] == ["create_entity", "update_entity"]
+    # Newest change first.
+    assert [entry.operation_type for entry in history] == ["update_entity", "create_entity"]
 
     at_one = await service.entity_at_revision(scope, "ws", "pr", "ent_1", 1)
     assert at_one.name == "Mara"

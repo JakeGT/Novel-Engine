@@ -18,6 +18,14 @@
       "AmendEventOp": {
         "additionalProperties": false,
         "properties": {
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRef"
+            },
+            "maxItems": 10,
+            "title": "Evidence",
+            "type": "array"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -101,6 +109,14 @@
             "title": "Confidence",
             "type": "number"
           },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRef"
+            },
+            "maxItems": 10,
+            "title": "Evidence",
+            "type": "array"
+          },
           "holder_entity_id": {
             "title": "Holder Entity Id",
             "type": "string"
@@ -145,6 +161,14 @@
             "default": 1.0,
             "title": "Confidence",
             "type": "number"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRef"
+            },
+            "maxItems": 10,
+            "title": "Evidence",
+            "type": "array"
           },
           "id": {
             "title": "Id",
@@ -390,6 +414,13 @@
       },
       "CanonEntityModel": {
         "properties": {
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Aliases",
+            "type": "array"
+          },
           "attributes": {
             "additionalProperties": true,
             "title": "Attributes",
@@ -398,6 +429,13 @@
           "created_revision": {
             "title": "Created Revision",
             "type": "integer"
+          },
+          "external_ids": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "External Ids",
+            "type": "object"
           },
           "id": {
             "title": "Id",
@@ -529,6 +567,14 @@
       "CloseBeliefOp": {
         "additionalProperties": false,
         "properties": {
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRef"
+            },
+            "maxItems": 10,
+            "title": "Evidence",
+            "type": "array"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -549,6 +595,14 @@
       "CloseFactOp": {
         "additionalProperties": false,
         "properties": {
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRef"
+            },
+            "maxItems": 10,
+            "title": "Evidence",
+            "type": "array"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -703,9 +757,31 @@
       "CreateEntityOp": {
         "additionalProperties": false,
         "properties": {
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Aliases",
+            "type": "array"
+          },
           "attributes": {
             "additionalProperties": true,
             "title": "Attributes",
+            "type": "object"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRef"
+            },
+            "maxItems": 10,
+            "title": "Evidence",
+            "type": "array"
+          },
+          "external_ids": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "External Ids",
             "type": "object"
           },
           "id": {
@@ -748,6 +824,13 @@
       },
       "CreateEntityRequest": {
         "properties": {
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Aliases",
+            "type": "array"
+          },
           "attributes": {
             "additionalProperties": true,
             "title": "Attributes",
@@ -757,6 +840,13 @@
             "minimum": 0.0,
             "title": "Expected Revision",
             "type": "integer"
+          },
+          "external_ids": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "External Ids",
+            "type": "object"
           },
           "name": {
             "title": "Name",
@@ -794,6 +884,14 @@
               "type": "string"
             },
             "title": "Cause Ids",
+            "type": "array"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRef"
+            },
+            "maxItems": 10,
+            "title": "Evidence",
             "type": "array"
           },
           "id": {
@@ -1563,6 +1661,34 @@
         "title": "EventRequest",
         "type": "object"
       },
+      "EvidenceRef": {
+        "additionalProperties": false,
+        "description": "A bounded pointer to the evidence behind an operation; never copied content.",
+        "properties": {
+          "location": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9_.:,=\\-]{1,120}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "source_artefact_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:\\-]{0,199}$",
+            "title": "Source Artefact Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_artefact_id"
+        ],
+        "title": "EvidenceRef",
+        "type": "object"
+      },
       "FactModel": {
         "properties": {
           "closed_revision": {
@@ -1819,6 +1945,14 @@
               }
             ],
             "title": "Asset Version Id"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRef"
+            },
+            "maxItems": 10,
+            "title": "Evidence",
+            "type": "array"
           },
           "id": {
             "title": "Id",
@@ -2714,6 +2848,14 @@
       "RetireAssetLinkOp": {
         "additionalProperties": false,
         "properties": {
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRef"
+            },
+            "maxItems": 10,
+            "title": "Evidence",
+            "type": "array"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -2734,6 +2876,14 @@
       "RetireEntityOp": {
         "additionalProperties": false,
         "properties": {
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRef"
+            },
+            "maxItems": 10,
+            "title": "Evidence",
+            "type": "array"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -2773,6 +2923,14 @@
       "RetireEventOp": {
         "additionalProperties": false,
         "properties": {
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRef"
+            },
+            "maxItems": 10,
+            "title": "Evidence",
+            "type": "array"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -3229,6 +3387,20 @@
       "UpdateEntityOp": {
         "additionalProperties": false,
         "properties": {
+          "aliases": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aliases"
+          },
           "attributes": {
             "anyOf": [
               {
@@ -3240,6 +3412,28 @@
               }
             ],
             "title": "Attributes"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRef"
+            },
+            "maxItems": 10,
+            "title": "Evidence",
+            "type": "array"
+          },
+          "external_ids": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ids"
           },
           "id": {
             "title": "Id",
@@ -3282,6 +3476,20 @@
       },
       "UpdateEntityRequest": {
         "properties": {
+          "aliases": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aliases"
+          },
           "attributes": {
             "anyOf": [
               {
@@ -3298,6 +3506,20 @@
             "minimum": 0.0,
             "title": "Expected Revision",
             "type": "integer"
+          },
+          "external_ids": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ids"
           },
           "name": {
             "anyOf": [
@@ -3381,12 +3603,17 @@
           "ordinal": {
             "title": "Ordinal",
             "type": "integer"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
           }
         },
         "required": [
           "ordinal",
           "code",
-          "message"
+          "message",
+          "severity"
         ],
         "title": "ValidationIssueModel",
         "type": "object"
@@ -6300,6 +6527,134 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/entities/by-external-id": {
+      "get": {
+        "operationId": "canon_get_entity_by_external_id_api_v1_projects__project_id__entities_by_external_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "maxLength": 50,
+              "minLength": 1,
+              "title": "Namespace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "value",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Value",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanonEntityModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Canon Get Entity By External Id",
+        "tags": [
+          "canon-entities"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/entities/name-collisions": {
+      "get": {
+        "description": "Active same-type entities with the same display name.\n\nNames are not identity, so a collision never blocks a write; clients show\nthis as a warning before creating a possible duplicate.",
+        "operationId": "canon_entity_name_collisions_api_v1_projects__project_id__entities_name_collisions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entity_type",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Entity Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "maxLength": 300,
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanonEntityListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Canon Entity Name Collisions",
+        "tags": [
+          "canon-entities"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/entities/search": {
       "get": {
         "operationId": "canon_search_entities_api_v1_projects__project_id__entities_search_get",
@@ -8247,6 +8602,69 @@
         "summary": "Projection Lag",
         "tags": [
           "projection"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/provenance/{record_type}/{record_id}": {
+      "get": {
+        "description": "Why each change to a record exists: commit, origin, review decisions, evidence.\n\n``record_type`` is one of entity, fact, belief, event, asset_link. Reviewer\nidentities and notes are withheld from members who cannot write to the project.",
+        "operationId": "record_provenance_api_v1_projects__project_id__provenance__record_type___record_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "record_type",
+            "required": true,
+            "schema": {
+              "title": "Record Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Record Provenance Api V1 Projects  Project Id  Provenance  Record Type   Record Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Provenance",
+        "tags": [
+          "canon-history"
         ]
       }
     },

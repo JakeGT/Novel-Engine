@@ -36,7 +36,7 @@ from backend.domain.journal import (
 from backend.domain.media import AssetLink, MediaAsset, MediaAssetVersion
 from backend.domain.objects import ObjectStat
 from backend.domain.operations import CanonOperation
-from backend.domain.projection import ProjectionWatermark, RecordVersion
+from backend.domain.projection import EvidenceRecord, ProjectionWatermark, RecordVersion
 from backend.domain.schemas import SchemaVersion
 from backend.domain.tenancy import AuditEvent, Invitation, Membership, Project, Workspace
 from backend.domain.usage import UsageRecord, UsageTotals
@@ -743,6 +743,12 @@ class CanonWriterPort(Protocol):
 
     async def discard(self, *, workspace_id: str, project_id: str, branch_id: str) -> int: ...
 
+    async def list_fact_edges(
+        self, *, workspace_id: str, project_id: str
+    ) -> list[tuple[str, str, str, str]]:
+        """Projected ``(fact_id, subject_id, predicate, object_id)`` relationship shortcuts."""
+        ...
+
     async def get_entity(
         self, *, workspace_id: str, project_id: str, entity_id: str
     ) -> CanonEntity | None: ...
@@ -863,6 +869,38 @@ class CanonRepositoryPort(Protocol):
         include_retired: bool = False,
         limit: int = 50,
     ) -> list[CanonEntity]: ...
+
+    async def get_entity_by_slug(
+        self, *, workspace_id: str, project_id: str, slug: str
+    ) -> CanonEntity | None: ...
+
+    async def get_entity_by_external_id(
+        self, *, workspace_id: str, project_id: str, namespace: str, value: str
+    ) -> CanonEntity | None: ...
+
+    async def find_entities_by_name(
+        self, *, workspace_id: str, project_id: str, entity_type: str, name: str
+    ) -> list[CanonEntity]: ...
+
+    async def list_active_references(
+        self, *, workspace_id: str, project_id: str, entity_id: str
+    ) -> list[tuple[str, str]]:
+        """``(record_type, record_id)`` of live records that reference the entity."""
+        ...
+
+    async def count_active_references(
+        self, *, workspace_id: str, project_id: str, entity_id: str
+    ) -> int: ...
+
+    async def list_evidence(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        record_type: str | None = None,
+        record_id: str | None = None,
+        commit_id: str | None = None,
+    ) -> list[EvidenceRecord]: ...
 
     async def get_fact(
         self, *, workspace_id: str, project_id: str, fact_id: str

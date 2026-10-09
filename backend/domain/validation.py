@@ -21,6 +21,13 @@ from pydantic import ValidationError as PydanticValidationError
 from backend.domain.canon.assertions import Belief, Fact, FactStatus
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
 from backend.domain.canon.events import Event
+from backend.domain.canon.naming import (
+    aliases_problem,
+    external_ids_problem,
+    name_problem,
+    normalize_name,
+    slug_problem,
+)
 from backend.domain.canon.propositions import EntityRefObject
 from backend.domain.canon.registry import (
     CORE_ENTITY_TYPES,
@@ -108,6 +115,22 @@ class CanonTxReader(Protocol):
 
     async def get_asset_version(self, version_id: str) -> MediaAssetVersion | None: ...
 
+    async def find_entity_by_slug(self, slug: str) -> CanonEntity | None:
+        """The active entity holding ``slug`` on this branch, if any."""
+        ...
+
+    async def find_entity_by_external_id(self, namespace: str, value: str) -> CanonEntity | None:
+        """The entity (active or retired) bound to an external identifier, if any."""
+        ...
+
+    async def find_entities_by_name(self, entity_type: str, name: str) -> list[CanonEntity]:
+        """Active entities of ``entity_type`` whose normalized name equals ``name``."""
+        ...
+
+    async def count_active_references(self, entity_id: str) -> int:
+        """Open facts/beliefs, live events, and active links that reference the entity."""
+        ...
+
 
 @dataclass(frozen=True)
 class ValidationContext:
@@ -171,6 +194,104 @@ class AuthoritativeValidator:
         def blocking(index: int, code: str, message: str) -> None:
             findings.append(ValidationFinding(ValidationSeverity.INTEGRITY, code, message, index))
 
+        def advisory(index: int, code: str, message: str) -> None:
+            findings.append(ValidationFinding(ValidationSeverity.ADVISORY, code, message, index))
+
+        # Handles claimed or released earlier in this batch (None = released).
+        batch_slugs: dict[str, str | None] = {}
+        batch_external_ids: dict[tuple[str, str], str] = {}
+        batch_names: dict[tuple[str, str], str] = {}
+
+        async def validate_handles(
+            index: int,
+            entity_id: str,
+            entity_type: str,
+            *,
+            name: str,
+            slug: str | None,
+            aliases: list[str],
+            external_ids: dict[str, str],
+            check_name: bool,
+            check_slug: bool,
+            check_external_ids: bool,
+        ) -> None:
+            problem = name_problem(name)
+            if problem is not None:
+                blocking(index, "invalid_name", problem)
+            problem = aliases_problem(aliases, name=name)
+            if problem is not None:
+                blocking(index, "invalid_alias", problem)
+            if slug is not None and check_slug:
+                problem = slug_problem(slug)
+                if problem is not None:
+                    blocking(index, "invalid_slug", problem)
+                else:
+                    if slug in batch_slugs:
+                        holder_id = batch_slugs[slug]
+                    else:
+                        holder = await context.reader.find_entity_by_slug(slug)
+                        holder_id = holder.id if holder is not None else None
+                        # A holder retired earlier in this batch has released the slug.
+                        if holder_id is not None:
+                            current_holder = await entity(holder_id)
+                            if current_holder is None or not current_holder.is_active:
+                                holder_id = None
+                    if holder_id is not None and holder_id != entity_id:
+                        blocking(index, "slug_conflict", f"slug {slug!r} is used by another entity")
+                    else:
+                        batch_slugs[slug] = entity_id
+            if check_external_ids:
+                problem = external_ids_problem(external_ids)
+                if problem is not None:
+                    blocking(index, "invalid_external_id", problem)
+                else:
+                    for namespace, value in external_ids.items():
+                        key = (namespace, value)
+                        bound_id = batch_external_ids.get(key)
+                        if bound_id is None:
+                            bound = await context.reader.find_entity_by_external_id(
+                                namespace, value
+                            )
+                            bound_id = bound.id if bound is not None else None
+                        if bound_id is not None and bound_id != entity_id:
+                            blocking(
+                                index,
+                                "external_id_conflict",
+                                f"external identifier {namespace}:{value} is bound to "
+                                "another entity",
+                            )
+                        else:
+                            batch_external_ids[key] = entity_id
+            if check_name and name.strip():
+                key = (entity_type, normalize_name(name))
+                twin_id = batch_names.get(key)
+                if twin_id is None:
+                    twins = await context.reader.find_entities_by_name(entity_type, name)
+                    twin_id = next((twin.id for twin in twins if twin.id != entity_id), None)
+                if twin_id is not None and twin_id != entity_id:
+                    advisory(
+                        index,
+                        "name_collision",
+                        f"another active {entity_type} is already named {name!r}",
+                    )
+                batch_names[key] = entity_id
+
+        async def validate_evidence(index: int, operation: Any) -> None:
+            for item in operation.evidence:
+                artefact = item.source_artefact_id
+                if artefact.startswith("ast_"):
+                    asset = await context.reader.get_asset(artefact)
+                    if asset is None:
+                        blocking(index, "unknown_evidence", f"unknown evidence asset {artefact!r}")
+                elif artefact.startswith("asv_"):
+                    version = await context.reader.get_asset_version(artefact)
+                    if version is None:
+                        blocking(
+                            index,
+                            "unknown_evidence",
+                            f"unknown evidence asset version {artefact!r}",
+                        )
+
         async def require_active_entity(
             index: int, entity_id: str, role: str
         ) -> CanonEntity | None:
@@ -228,6 +349,7 @@ class AuthoritativeValidator:
         for index, operation in enumerate(operations):
             if not 0.0 <= getattr(operation, "confidence", 1.0) <= 1.0:
                 blocking(index, "invalid_confidence", "confidence must be between 0 and 1")
+            await validate_evidence(index, operation)
 
             if isinstance(operation, CreateEntityOp):
                 if operation.id in created_record_ids or await entity(operation.id) is not None:
@@ -243,6 +365,18 @@ class AuthoritativeValidator:
                         model.model_validate(operation.attributes)
                     except PydanticValidationError as error:
                         blocking(index, "invalid_attributes", str(error))
+                await validate_handles(
+                    index,
+                    operation.id,
+                    operation.type,
+                    name=operation.name,
+                    slug=operation.slug,
+                    aliases=operation.aliases,
+                    external_ids=operation.external_ids,
+                    check_name=True,
+                    check_slug=True,
+                    check_external_ids=True,
+                )
                 entities[operation.id] = CanonEntity(
                     id=operation.id,
                     workspace_id=context.workspace_id,
@@ -254,6 +388,8 @@ class AuthoritativeValidator:
                     schema_version_id=context.schema_version_id or "",
                     created_revision=context.head_revision + 1,
                     attributes=operation.attributes,
+                    aliases=operation.aliases,
+                    external_ids=operation.external_ids,
                 )
             elif isinstance(operation, UpdateEntityOp):
                 current = await require_active_entity(index, operation.id, "entity")
@@ -267,16 +403,55 @@ class AuthoritativeValidator:
                             model.model_validate(attributes)
                         except PydanticValidationError as error:
                             blocking(index, "invalid_attributes", str(error))
-                    entities[operation.id] = current.model_copy(
+                    updated = current.model_copy(
                         update={
                             "name": current.name if operation.name is None else operation.name,
                             "slug": current.slug if operation.slug is None else operation.slug,
                             "attributes": attributes,
+                            "aliases": current.aliases
+                            if operation.aliases is None
+                            else operation.aliases,
+                            "external_ids": current.external_ids
+                            if operation.external_ids is None
+                            else operation.external_ids,
                         }
                     )
+                    if (
+                        operation.slug is not None
+                        and current.slug is not None
+                        and operation.slug != current.slug
+                    ):
+                        batch_slugs[current.slug] = None
+                    # Only handles this operation changes are re-checked, so an
+                    # unrelated edit never fails on pre-existing data.
+                    await validate_handles(
+                        index,
+                        operation.id,
+                        current.type,
+                        name=updated.name,
+                        slug=updated.slug,
+                        aliases=updated.aliases,
+                        external_ids=updated.external_ids,
+                        check_name=operation.name is not None
+                        and normalize_name(operation.name) != normalize_name(current.name),
+                        check_slug=operation.slug is not None and operation.slug != current.slug,
+                        check_external_ids=operation.external_ids is not None,
+                    )
+                    entities[operation.id] = updated
             elif isinstance(operation, RetireEntityOp):
                 current = await require_active_entity(index, operation.id, "entity")
                 if current is not None:
+                    references = await context.reader.count_active_references(operation.id)
+                    if references:
+                        # Retirement preserves history; existing references stay
+                        # readable. The reviewer is told what still points here.
+                        advisory(
+                            index,
+                            "referenced_entity",
+                            f"{references} active record(s) still reference {operation.id!r}",
+                        )
+                    if current.slug is not None:
+                        batch_slugs[current.slug] = None
                     entities[operation.id] = current.model_copy(
                         update={"lifecycle": EntityLifecycle.RETIRED}
                     )

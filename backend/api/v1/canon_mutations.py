@@ -131,6 +131,8 @@ class ValidationIssueModel(BaseModel):
     ordinal: int
     code: str
     message: str
+    # "blocking" stops a commit; "advisory" only informs the reviewer.
+    severity: str
 
 
 class MutationValidationModel(BaseModel):
@@ -284,7 +286,12 @@ async def validate_mutation(
     return MutationValidationModel(
         ok=report.ok,
         issues=[
-            ValidationIssueModel(ordinal=issue.ordinal, code=issue.code, message=issue.message)
+            ValidationIssueModel(
+                ordinal=issue.ordinal,
+                code=issue.code,
+                message=issue.message,
+                severity=issue.severity,
+            )
             for issue in report.issues
         ],
     )

@@ -36,6 +36,10 @@ class CanonEntity(BaseModel):
     created_revision: int
     retired_revision: int | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
+    # Alternative names the entity is known by. Names and aliases are never identity.
+    aliases: list[str] = Field(default_factory=list)
+    # Identifiers in external systems, keyed by namespace; unique per project.
+    external_ids: dict[str, str] = Field(default_factory=dict)
 
     @property
     def is_active(self) -> bool:

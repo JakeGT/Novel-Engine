@@ -36,7 +36,7 @@ from backend.domain.journal import (
     ReviewDecision,
     RevisionConflict,
 )
-from backend.domain.media import AssetLink
+from backend.domain.media import AssetLink, MediaAsset, MediaAssetVersion
 from backend.domain.operations import (
     CanonOperation,
     canonicalize_operations,
@@ -64,7 +64,12 @@ from backend.domain.validation import (
     ValidationFinding,
     ValidationSeverity,
 )
-from backend.ports import CanonJournalPort, CanonRepositoryPort, SchemaVersionStorePort
+from backend.ports import (
+    CanonJournalPort,
+    CanonRepositoryPort,
+    MediaStorePort,
+    SchemaVersionStorePort,
+)
 from backend.services.schema_compiler import compile_definition
 
 logger = logging.getLogger(__name__)
@@ -75,6 +80,8 @@ class ValidationIssue:
     ordinal: int
     code: str
     message: str
+    # ``blocking`` findings stop a commit; ``advisory`` findings only inform review.
+    severity: str = "blocking"
 
 
 @dataclass(frozen=True)
@@ -83,7 +90,7 @@ class ValidationReport:
 
     @property
     def ok(self) -> bool:
-        return not self.issues
+        return not any(issue.severity == "blocking" for issue in self.issues)
 
 
 @dataclass(frozen=True)
@@ -161,10 +168,17 @@ def _deterministic_commit_id(mutation_id: str) -> str:
 class _RepositoryReader:
     """Preview reads for ``validate`` (non-transactional; the commit still revalidates in-tx)."""
 
-    def __init__(self, repository: CanonRepositoryPort, workspace_id: str, project_id: str) -> None:
+    def __init__(
+        self,
+        repository: CanonRepositoryPort,
+        workspace_id: str,
+        project_id: str,
+        media: MediaStorePort | None = None,
+    ) -> None:
         self._repository = repository
         self._workspace_id = workspace_id
         self._project_id = project_id
+        self._media = media
 
     async def get_entity(self, entity_id: str) -> CanonEntity | None:
         return await self._repository.get_entity(
@@ -212,12 +226,45 @@ class _RepositoryReader:
             link_id=link_id,
         )
 
-    async def get_asset(self, asset_id: str) -> None:
-        # Preview reader can't reach the media store; in-tx commit revalidates links.
-        return None
+    async def get_asset(self, asset_id: str) -> MediaAsset | None:
+        if self._media is None:
+            return None
+        return await self._media.get_asset(
+            workspace_id=self._workspace_id, project_id=self._project_id, asset_id=asset_id
+        )
 
-    async def get_asset_version(self, version_id: str) -> None:
-        return None
+    async def get_asset_version(self, version_id: str) -> MediaAssetVersion | None:
+        if self._media is None:
+            return None
+        return await self._media.get_version(
+            workspace_id=self._workspace_id, project_id=self._project_id, version_id=version_id
+        )
+
+    async def find_entity_by_slug(self, slug: str) -> CanonEntity | None:
+        return await self._repository.get_entity_by_slug(
+            workspace_id=self._workspace_id, project_id=self._project_id, slug=slug
+        )
+
+    async def find_entity_by_external_id(self, namespace: str, value: str) -> CanonEntity | None:
+        return await self._repository.get_entity_by_external_id(
+            workspace_id=self._workspace_id,
+            project_id=self._project_id,
+            namespace=namespace,
+            value=value,
+        )
+
+    async def find_entities_by_name(self, entity_type: str, name: str) -> list[CanonEntity]:
+        return await self._repository.find_entities_by_name(
+            workspace_id=self._workspace_id,
+            project_id=self._project_id,
+            entity_type=entity_type,
+            name=name,
+        )
+
+    async def count_active_references(self, entity_id: str) -> int:
+        return await self._repository.count_active_references(
+            workspace_id=self._workspace_id, project_id=self._project_id, entity_id=entity_id
+        )
 
 
 class MutationService:
@@ -230,7 +277,9 @@ class MutationService:
         local_mode: bool = False,
         validator: AuthoritativeValidator | None = None,
         schema_store: SchemaVersionStorePort | None = None,
+        media: MediaStorePort | None = None,
     ) -> None:
+        self._media = media
         self._journal = journal
         self._repository = repository
         self._tenancy = tenancy
@@ -458,7 +507,9 @@ class MutationService:
             )
         if not operations:
             issues.append(ValidationIssue(-1, "empty_mutation", "no accepted operations remain"))
-        reader = _RepositoryReader(self._repository, mutation.workspace_id, mutation.project_id)
+        reader = _RepositoryReader(
+            self._repository, mutation.workspace_id, mutation.project_id, self._media
+        )
         compiled = None
         if mutation.schema_version_id is not None:
             version = (
@@ -507,8 +558,9 @@ class MutationService:
                 ordinals[f.operation_ordinal] if f.operation_ordinal is not None else -1,
                 f.code,
                 f.message,
+                "advisory" if f.severity is ValidationSeverity.ADVISORY else "blocking",
             )
-            for f in report.blocking
+            for f in report.findings
         )
         return ValidationReport(issues=tuple(issues))
 

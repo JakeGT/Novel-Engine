@@ -68,6 +68,7 @@ class Container:
     media_store: Any = None
     archive_service: Any = None
     media_service: Any = None
+    equivalence_service: Any = None
 
     async def aclose(self) -> None:
         self.graph.close()
@@ -221,15 +222,18 @@ def build_container(settings: Settings | None = None) -> Container:
     container.canon_repository = PostgresCanonRepository(database.session_factory)
 
     from backend.adapters.canon_writer import Neo4jCanonWriter
+    from backend.adapters.media_store import PostgresMediaStore
     from backend.services.mutation_service import MutationService
 
     container.canon_writer = Neo4jCanonWriter(manager)
+    container.media_store = PostgresMediaStore(database.session_factory)
     container.mutation_service = MutationService(
         container.journal,
         container.canon_repository,
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
         schema_store=container.schema_versions,
+        media=container.media_store,
     )
     from backend.services.canon_entity_service import CanonEntityService
 
@@ -268,10 +272,8 @@ def build_container(settings: Settings | None = None) -> Container:
         local_mode=not resolved.is_hosted,
         mutation=container.mutation_service,
     )
-    from backend.adapters.media_store import PostgresMediaStore
     from backend.services.media_service import MediaService
 
-    container.media_store = PostgresMediaStore(database.session_factory)
     container.media_service = MediaService(
         media=container.media_store,
         objects=container.objects,
@@ -280,6 +282,13 @@ def build_container(settings: Settings | None = None) -> Container:
         journal=container.journal,
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
+    )
+    from backend.services.canon_equivalence import CanonEquivalenceService
+
+    container.equivalence_service = CanonEquivalenceService(
+        canon=container.canon_repository,
+        journal=container.journal,
+        writer=container.canon_writer,
     )
     from backend.services.canon_archive import CanonArchiveService
 

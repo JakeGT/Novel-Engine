@@ -734,6 +734,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/entities/by-external-id": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Canon Get Entity By External Id */
+        get: operations["canon_get_entity_by_external_id_api_v1_projects__project_id__entities_by_external_id_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/entities/name-collisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Canon Entity Name Collisions
+         * @description Active same-type entities with the same display name.
+         *
+         *     Names are not identity, so a collision never blocks a write; clients show
+         *     this as a warning before creating a possible duplicate.
+         */
+        get: operations["canon_entity_name_collisions_api_v1_projects__project_id__entities_name_collisions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/entities/search": {
         parameters: {
             query?: never;
@@ -1196,6 +1236,29 @@ export interface paths {
         };
         /** Projection Lag */
         get: operations["projection_lag_api_v1_projects__project_id__projection_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/provenance/{record_type}/{record_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Record Provenance
+         * @description Why each change to a record exists: commit, origin, review decisions, evidence.
+         *
+         *     ``record_type`` is one of entity, fact, belief, event, asset_link. Reviewer
+         *     identities and notes are withheld from members who cannot write to the project.
+         */
+        get: operations["record_provenance_api_v1_projects__project_id__provenance__record_type___record_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1802,6 +1865,8 @@ export interface components {
         };
         /** AmendEventOp */
         AmendEventOp: {
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceRef"][];
             /** Id */
             id: string;
             /** Name */
@@ -1830,6 +1895,8 @@ export interface components {
              * @default 1
              */
             confidence: number;
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceRef"][];
             /** Holder Entity Id */
             holder_entity_id: string;
             /** Id */
@@ -1850,6 +1917,8 @@ export interface components {
              * @default 1
              */
             confidence: number;
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceRef"][];
             /** Id */
             id: string;
             /**
@@ -1939,12 +2008,18 @@ export interface components {
         };
         /** CanonEntityModel */
         CanonEntityModel: {
+            /** Aliases */
+            aliases?: string[];
             /** Attributes */
             attributes?: {
                 [key: string]: unknown;
             };
             /** Created Revision */
             created_revision: number;
+            /** External Ids */
+            external_ids?: {
+                [key: string]: string;
+            };
             /** Id */
             id: string;
             /** Lifecycle */
@@ -1995,6 +2070,8 @@ export interface components {
         };
         /** CloseBeliefOp */
         CloseBeliefOp: {
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceRef"][];
             /** Id */
             id: string;
             /**
@@ -2005,6 +2082,8 @@ export interface components {
         };
         /** CloseFactOp */
         CloseFactOp: {
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceRef"][];
             /** Id */
             id: string;
             /**
@@ -2068,9 +2147,17 @@ export interface components {
         };
         /** CreateEntityOp */
         CreateEntityOp: {
+            /** Aliases */
+            aliases?: string[];
             /** Attributes */
             attributes?: {
                 [key: string]: unknown;
+            };
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceRef"][];
+            /** External Ids */
+            external_ids?: {
+                [key: string]: string;
             };
             /** Id */
             id: string;
@@ -2088,12 +2175,18 @@ export interface components {
         };
         /** CreateEntityRequest */
         CreateEntityRequest: {
+            /** Aliases */
+            aliases?: string[];
             /** Attributes */
             attributes?: {
                 [key: string]: unknown;
             };
             /** Expected Revision */
             expected_revision: number;
+            /** External Ids */
+            external_ids?: {
+                [key: string]: string;
+            };
             /** Name */
             name: string;
             /** Slug */
@@ -2105,6 +2198,8 @@ export interface components {
         CreateEventOp: {
             /** Cause Ids */
             cause_ids?: string[];
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceRef"][];
             /** Id */
             id: string;
             /** Kind */
@@ -2429,6 +2524,16 @@ export interface components {
             /** World Position */
             world_position?: string | null;
         };
+        /**
+         * EvidenceRef
+         * @description A bounded pointer to the evidence behind an operation; never copied content.
+         */
+        EvidenceRef: {
+            /** Location */
+            location?: string | null;
+            /** Source Artefact Id */
+            source_artefact_id: string;
+        };
         /** FactModel */
         FactModel: {
             /** Closed Revision */
@@ -2519,6 +2624,8 @@ export interface components {
             asset_id: string;
             /** Asset Version Id */
             asset_version_id?: string | null;
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceRef"][];
             /** Id */
             id: string;
             /**
@@ -2843,6 +2950,8 @@ export interface components {
         };
         /** RetireAssetLinkOp */
         RetireAssetLinkOp: {
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceRef"][];
             /** Id */
             id: string;
             /**
@@ -2853,6 +2962,8 @@ export interface components {
         };
         /** RetireEntityOp */
         RetireEntityOp: {
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceRef"][];
             /** Id */
             id: string;
             /**
@@ -2873,6 +2984,8 @@ export interface components {
         };
         /** RetireEventOp */
         RetireEventOp: {
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceRef"][];
             /** Id */
             id: string;
             /**
@@ -3030,9 +3143,17 @@ export interface components {
         };
         /** UpdateEntityOp */
         UpdateEntityOp: {
+            /** Aliases */
+            aliases?: string[] | null;
             /** Attributes */
             attributes?: {
                 [key: string]: unknown;
+            } | null;
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceRef"][];
+            /** External Ids */
+            external_ids?: {
+                [key: string]: string;
             } | null;
             /** Id */
             id: string;
@@ -3048,12 +3169,18 @@ export interface components {
         };
         /** UpdateEntityRequest */
         UpdateEntityRequest: {
+            /** Aliases */
+            aliases?: string[] | null;
             /** Attributes */
             attributes?: {
                 [key: string]: unknown;
             } | null;
             /** Expected Revision */
             expected_revision: number;
+            /** External Ids */
+            external_ids?: {
+                [key: string]: string;
+            } | null;
             /** Name */
             name?: string | null;
             /** Slug */
@@ -3080,6 +3207,8 @@ export interface components {
             message: string;
             /** Ordinal */
             ordinal: number;
+            /** Severity */
+            severity: string;
         };
         /** ValidationReportModel */
         ValidationReportModel: {
@@ -5012,6 +5141,74 @@ export interface operations {
             };
         };
     };
+    canon_get_entity_by_external_id_api_v1_projects__project_id__entities_by_external_id_get: {
+        parameters: {
+            query: {
+                namespace: string;
+                value: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanonEntityModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    canon_entity_name_collisions_api_v1_projects__project_id__entities_name_collisions_get: {
+        parameters: {
+            query: {
+                entity_type: string;
+                name: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanonEntityListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     canon_search_entities_api_v1_projects__project_id__entities_search_get: {
         parameters: {
             query: {
@@ -6107,6 +6304,41 @@ export interface operations {
             header?: never;
             path: {
                 project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_provenance_api_v1_projects__project_id__provenance__record_type___record_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                record_type: string;
+                record_id: string;
             };
             cookie?: never;
         };

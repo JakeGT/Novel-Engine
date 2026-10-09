@@ -19,7 +19,7 @@ from typing import Any
 from backend.domain.canon.assertions import Belief, Fact, FactStatus
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
 from backend.domain.canon.events import Event, EventParticipant
-from backend.domain.canon.propositions import Proposition
+from backend.domain.canon.propositions import EntityRefObject, Proposition
 from backend.domain.commit import ApplyOutcome, CommitMarker
 from backend.domain.journal import RevisionConflict
 from backend.domain.operations import (
@@ -40,6 +40,9 @@ from backend.domain.operations import (
 from backend.graph.manager import GraphManager
 
 _LABEL = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+# A predicate becomes a relationship type only when it is a plain identifier, so
+# no project-supplied text is ever interpolated into Cypher unchecked.
+_PREDICATE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 
 
 class CanonWriteError(RuntimeError):
@@ -125,6 +128,7 @@ class Neo4jCanonWriter:
                 ON CREATE SET n.created_revision = $revision
                 SET n.branch_id = $branch_id, n.kind = 'entity', n.type = $type,
                     n.name = $name, n.slug = $slug, n.attributes = $attributes,
+                    n.aliases = $aliases, n.external_ids = $external_ids,
                     n.lifecycle = 'active', n.commit_id = $commit_id, n.revision = $revision,
                     n.schema_version_id = $schema_version_id
                 SET n:{label}
@@ -134,6 +138,8 @@ class Neo4jCanonWriter:
                 name=operation.name,
                 slug=operation.slug,
                 attributes=_dumps(operation.attributes),
+                aliases=list(operation.aliases),
+                external_ids=_dumps(operation.external_ids),
                 **ctx,
             )
         elif isinstance(operation, UpdateEntityOp):
@@ -145,12 +151,16 @@ class Neo4jCanonWriter:
                     FOREACH (_ IN CASE WHEN $name IS NULL THEN [] ELSE [1] END | SET n.name = $name)
                     FOREACH (_ IN CASE WHEN $slug IS NULL THEN [] ELSE [1] END | SET n.slug = $slug)
                     FOREACH (_ IN CASE WHEN $attributes IS NULL THEN [] ELSE [1] END | SET n.attributes = $attributes)
+                    FOREACH (_ IN CASE WHEN $aliases IS NULL THEN [] ELSE [1] END | SET n.aliases = $aliases)
+                    FOREACH (_ IN CASE WHEN $external_ids IS NULL THEN [] ELSE [1] END | SET n.external_ids = $external_ids)
                     RETURN n.id AS id
                     """,
                     id=operation.id,
                     name=operation.name,
                     slug=operation.slug,
                     attributes=_dumps(operation.attributes),
+                    aliases=operation.aliases,
+                    external_ids=_dumps(operation.external_ids),
                     **ctx,
                 ),
                 operation.id,
@@ -191,6 +201,26 @@ class Neo4jCanonWriter:
                 valid_until=operation.valid_until.isoformat() if operation.valid_until else None,
                 **ctx,
             )
+            obj = operation.proposition.object
+            predicate = operation.proposition.predicate
+            if isinstance(obj, EntityRefObject) and _PREDICATE.match(predicate):
+                # Traversable shortcut for an open entity-to-entity fact. It is a
+                # pure function of the reified Fact node: created with it, removed
+                # when it closes, and rebuilt from the journal like everything else.
+                tx.run(
+                    f"""
+                    MATCH (s:Entity {{workspace_id: $workspace_id, project_id: $project_id, id: $subject_id}})
+                    MATCH (o:Entity {{workspace_id: $workspace_id, project_id: $project_id, id: $object_id}})
+                    MERGE (s)-[r:{predicate} {{fact_id: $id}}]->(o)
+                    SET r.projection = 'fact', r.predicate = $predicate,
+                        r.commit_id = $commit_id, r.revision = $revision
+                    """,
+                    id=operation.id,
+                    subject_id=operation.proposition.subject_id,
+                    object_id=obj.entity_id,
+                    predicate=predicate,
+                    **ctx,
+                )
         elif isinstance(operation, CloseFactOp):
             self._require(
                 tx.run(
@@ -204,6 +234,17 @@ class Neo4jCanonWriter:
                     **ctx,
                 ),
                 operation.id,
+            )
+            tx.run(
+                """
+                MATCH (f:Fact {workspace_id: $workspace_id, project_id: $project_id, id: $id})
+                MATCH (:Entity {workspace_id: $workspace_id, project_id: $project_id, id: f.subject_id})
+                      -[r]->(:Entity)
+                WHERE r.projection = 'fact' AND r.fact_id = $id
+                DELETE r
+                """,
+                id=operation.id,
+                **ctx,
             )
         elif isinstance(operation, AssertBeliefOp):
             tx.run(
@@ -249,7 +290,7 @@ class Neo4jCanonWriter:
                 MERGE (e:Event {workspace_id: $workspace_id, project_id: $project_id, id: $id})
                 ON CREATE SET e.created_revision = $revision
                 SET e.branch_id = $branch_id, e.event_kind = $kind, e.name = $name,
-                    e.participants = $participants, e.participant_edges = $participant_edges,
+                    e.participants = $participants,
                     e.locations = $locations, e.causes = $causes, e.outcomes = $outcomes,
                     e.world_position = $world_position, e.provenance_id = $provenance_id,
                     e.commit_id = $commit_id, e.revision = $revision
@@ -357,7 +398,7 @@ class Neo4jCanonWriter:
         "n.branch_id AS branch_id, n.type AS type, n.name AS name, n.slug AS slug, "
         "n.lifecycle AS lifecycle, n.schema_version_id AS schema_version_id, "
         "n.created_revision AS created_revision, n.retired_revision AS retired_revision, "
-        "n.attributes AS attributes"
+        "n.attributes AS attributes, n.aliases AS aliases, n.external_ids AS external_ids"
     )
 
     @staticmethod
@@ -375,7 +416,31 @@ class Neo4jCanonWriter:
             created_revision=record["created_revision"] or 0,
             retired_revision=record["retired_revision"],
             attributes=json.loads(record["attributes"]) if record["attributes"] else {},
+            aliases=list(record["aliases"] or []),
+            external_ids=json.loads(record["external_ids"]) if record["external_ids"] else {},
         )
+
+    async def list_fact_edges(
+        self, *, workspace_id: str, project_id: str
+    ) -> list[tuple[str, str, str, str]]:
+        """Projected ``(fact_id, subject_id, predicate, object_id)`` relationship shortcuts."""
+        with self._manager.driver.session() as session:
+            records = session.run(
+                """
+                MATCH (s:Entity {workspace_id: $workspace_id, project_id: $project_id})
+                      -[r]->(o:Entity {workspace_id: $workspace_id, project_id: $project_id})
+                WHERE r.projection = 'fact'
+                RETURN r.fact_id AS fact_id, s.id AS subject_id, type(r) AS predicate,
+                       o.id AS object_id
+                ORDER BY fact_id
+                """,
+                workspace_id=workspace_id,
+                project_id=project_id,
+            )
+            return [
+                (record["fact_id"], record["subject_id"], record["predicate"], record["object_id"])
+                for record in records
+            ]
 
     async def get_entity(
         self, *, workspace_id: str, project_id: str, entity_id: str
@@ -633,7 +698,8 @@ class Neo4jCanonWriter:
         "e.branch_id AS branch_id, e.event_kind AS kind, e.name AS name, "
         "e.participants AS participants, e.locations AS locations, e.causes AS causes, "
         "e.outcomes AS outcomes, e.world_position AS world_position, "
-        "e.provenance_id AS provenance_id, e.created_revision AS created_revision"
+        "e.provenance_id AS provenance_id, e.created_revision AS created_revision, "
+        "e.retired_revision AS retired_revision"
     )
 
     @staticmethod
@@ -655,6 +721,7 @@ class Neo4jCanonWriter:
             world_position=record["world_position"] or None,
             provenance_id=record["provenance_id"] or "",
             created_revision=record["created_revision"] or 0,
+            retired_revision=record["retired_revision"],
         )
 
     async def get_event(self, *, workspace_id: str, project_id: str, event_id: str) -> Event | None:

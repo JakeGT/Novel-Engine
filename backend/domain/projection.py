@@ -52,6 +52,22 @@ class RecordVersion(BaseModel):
     commit_id: str
     change: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
+    # Position of the operation within its commit.
+    ordinal: int = 0
+
+
+class EvidenceRecord(BaseModel):
+    """A bounded evidence pointer recorded with the operation that cited it."""
+
+    model_config = {"extra": "forbid"}
+
+    record_type: str
+    record_id: str
+    revision: int
+    commit_id: str
+    ordinal: int
+    source_artefact_id: str
+    location: str | None = None
 
 
 class CanonStorageError(RuntimeError):

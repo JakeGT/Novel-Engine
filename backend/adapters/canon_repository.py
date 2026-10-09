@@ -20,6 +20,7 @@ from backend.domain.canon.assertions import Belief, Fact, FactStatus
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
 from backend.domain.canon.events import Event, EventParticipant
 from backend.domain.canon.ids import format_canon_id
+from backend.domain.canon.naming import normalize_name
 from backend.domain.canon.propositions import Proposition
 from backend.domain.canon.registry import CORE_ENTITY_TYPES
 from backend.domain.canon.revisions import CanonRevision, OriginKind, Provenance
@@ -54,6 +55,7 @@ from backend.domain.operations import (
 )
 from backend.domain.projection import (
     CanonStorageError,
+    EvidenceRecord,
     ProjectionStatus,
     ProjectionWatermark,
     RecordVersion,
@@ -173,7 +175,102 @@ def _entity(row: Any) -> CanonEntity:
         created_revision=row.created_revision,
         retired_revision=row.retired_revision,
         attributes=dict(_load(row.attributes) or {}),
+        aliases=list(_load(row.aliases) or []),
+        external_ids=dict(_load(row.external_ids) or {}),
     )
+
+
+_ACTIVE_REFERENCES = """
+SELECT 'fact' AS record_type, id FROM canon_facts
+  WHERE workspace_id = :w AND project_id = :p AND status = 'asserted'
+    AND (proposition->>'subject_id' = :id
+         OR (proposition->'object'->>'kind' = 'entity_ref'
+             AND proposition->'object'->>'entity_id' = :id))
+UNION ALL
+SELECT 'belief', id FROM canon_beliefs
+  WHERE workspace_id = :w AND project_id = :p AND closed_revision IS NULL
+    AND (holder_entity_id = :id OR proposition->>'subject_id' = :id
+         OR (proposition->'object'->>'kind' = 'entity_ref'
+             AND proposition->'object'->>'entity_id' = :id))
+UNION ALL
+SELECT 'event', id FROM canon_events
+  WHERE workspace_id = :w AND project_id = :p AND retired_revision IS NULL
+    AND (participants @> CAST(:participant AS JSONB)
+         OR location_ids @> CAST(:member AS JSONB)
+         OR cause_ids @> CAST(:member AS JSONB)
+         OR outcome_ids @> CAST(:member AS JSONB))
+UNION ALL
+SELECT 'asset_link', id FROM asset_links
+  WHERE workspace_id = :w AND project_id = :p AND retired_revision IS NULL
+    AND target_record_id = :id
+ORDER BY 1, 2
+"""
+
+
+def _reference_params(workspace_id: str, project_id: str, entity_id: str) -> dict[str, Any]:
+    return {
+        "w": workspace_id,
+        "p": project_id,
+        "id": entity_id,
+        "participant": json.dumps([{"entity_id": entity_id}]),
+        "member": json.dumps([entity_id]),
+    }
+
+
+async def _entity_by_slug(
+    session: Any, workspace_id: str, project_id: str, slug: str
+) -> CanonEntity | None:
+    row = (
+        await session.execute(
+            text(
+                "SELECT * FROM canon_entities WHERE workspace_id = :w AND project_id = :p "
+                "AND slug = :slug AND lifecycle = 'active'"
+            ),
+            {"w": workspace_id, "p": project_id, "slug": slug},
+        )
+    ).first()
+    return _entity(row) if row else None
+
+
+async def _entity_by_external_id(
+    session: Any, workspace_id: str, project_id: str, namespace: str, value: str
+) -> CanonEntity | None:
+    row = (
+        await session.execute(
+            text(
+                "SELECT e.* FROM canon_entity_external_ids x JOIN canon_entities e "
+                "ON e.workspace_id = x.workspace_id AND e.project_id = x.project_id "
+                "AND e.branch_id = x.branch_id AND e.id = x.entity_id "
+                "WHERE x.workspace_id = :w AND x.project_id = :p "
+                "AND x.namespace = :ns AND x.value = :value"
+            ),
+            {"w": workspace_id, "p": project_id, "ns": namespace, "value": value},
+        )
+    ).first()
+    return _entity(row) if row else None
+
+
+async def _entities_by_name(
+    session: Any, workspace_id: str, project_id: str, entity_type: str, name: str
+) -> list[CanonEntity]:
+    rows = (
+        await session.execute(
+            text(
+                "SELECT * FROM canon_entities WHERE workspace_id = :w AND project_id = :p "
+                "AND type = :type AND lifecycle = 'active' "
+                "AND lower(regexp_replace(btrim(name), '\\s+', ' ', 'g')) = lower(:name)"
+            ),
+            {
+                "w": workspace_id,
+                "p": project_id,
+                "type": entity_type,
+                "name": " ".join(name.split()),
+            },
+        )
+    ).all()
+    # SQL narrows by whitespace and simple case; the policy's normalization decides.
+    key = normalize_name(name)
+    return [entity for entity in map(_entity, rows) if normalize_name(entity.name) == key]
 
 
 def _fact(row: Any) -> Fact:
@@ -365,6 +462,28 @@ class _TxCanonReader:
             )
         ).first()
         return _asset_version(row) if row else None
+
+    async def find_entity_by_slug(self, slug: str) -> CanonEntity | None:
+        return await _entity_by_slug(self._session, self._workspace_id, self._project_id, slug)
+
+    async def find_entity_by_external_id(self, namespace: str, value: str) -> CanonEntity | None:
+        return await _entity_by_external_id(
+            self._session, self._workspace_id, self._project_id, namespace, value
+        )
+
+    async def find_entities_by_name(self, entity_type: str, name: str) -> list[CanonEntity]:
+        return await _entities_by_name(
+            self._session, self._workspace_id, self._project_id, entity_type, name
+        )
+
+    async def count_active_references(self, entity_id: str) -> int:
+        rows = (
+            await self._session.execute(
+                text(_ACTIVE_REFERENCES),
+                _reference_params(self._workspace_id, self._project_id, entity_id),
+            )
+        ).all()
+        return len(rows)
 
 
 class PostgresCanonRepository:
@@ -644,8 +763,35 @@ class PostgresCanonRepository:
                 },
             )
 
-            for operation in operations:
-                await self._apply(session, envelope, operation, provenance_id, reserved)
+            for ordinal, operation in enumerate(operations):
+                await self._apply(session, envelope, operation, provenance_id, reserved, ordinal)
+                for position, evidence in enumerate(operation.evidence):
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO canon_evidence (
+                                workspace_id, project_id, branch_id, commit_id, ordinal,
+                                position, record_type, record_id, revision,
+                                source_artefact_id, location
+                            )
+                            VALUES (:w, :p, :b, :c, :ordinal, :position, :rtype, :rid, :rev,
+                                    :artefact, :location)
+                            """
+                        ),
+                        {
+                            "w": envelope.workspace_id,
+                            "p": envelope.project_id,
+                            "b": envelope.branch_id,
+                            "c": envelope.commit_id,
+                            "ordinal": ordinal,
+                            "position": position,
+                            "rtype": _RECORD_TYPE.get(operation.op, operation.op),
+                            "rid": operation.id,
+                            "rev": reserved,
+                            "artefact": evidence.source_artefact_id,
+                            "location": evidence.location,
+                        },
+                    )
 
             result = await session.execute(
                 text(
@@ -766,18 +912,21 @@ class PostgresCanonRepository:
         envelope: Any,
         operation: CanonOperation,
         revision: int,
+        ordinal: int,
     ) -> None:
         await session.execute(
             text(
                 """
                 INSERT INTO canon_record_versions (
                     workspace_id, project_id, branch_id, record_type, record_id,
-                    revision, operation_type, commit_id, change
+                    revision, operation_type, commit_id, change, ordinal
                 )
-                VALUES (:w, :p, :b, :rtype, :rid, :rev, :op, :c, CAST(:change AS JSONB))
+                VALUES (:w, :p, :b, :rtype, :rid, :rev, :op, :c, CAST(:change AS JSONB),
+                        :ordinal)
                 """
             ),
             {
+                "ordinal": ordinal,
                 "w": envelope.workspace_id,
                 "p": envelope.project_id,
                 "b": envelope.branch_id,
@@ -797,6 +946,7 @@ class PostgresCanonRepository:
         operation: CanonOperation,
         provenance_id: str,
         revision: int,
+        ordinal: int,
     ) -> None:
         scope = {
             "w": envelope.workspace_id,
@@ -809,10 +959,12 @@ class PostgresCanonRepository:
                     """
                     INSERT INTO canon_entities (
                         workspace_id, project_id, branch_id, id, type, name, slug,
-                        lifecycle, schema_version_id, created_revision, attributes
+                        lifecycle, schema_version_id, created_revision, attributes,
+                        aliases, external_ids
                     )
                     VALUES (:w, :p, :b, :id, :type, :name, :slug, 'active', :schema, :rev,
-                            CAST(:attributes AS JSONB))
+                            CAST(:attributes AS JSONB), CAST(:aliases AS JSONB),
+                            CAST(:external_ids AS JSONB))
                     """
                 ),
                 {
@@ -824,14 +976,19 @@ class PostgresCanonRepository:
                     "schema": envelope.schema_version_id,
                     "rev": revision,
                     "attributes": json.dumps(operation.attributes),
+                    "aliases": json.dumps(operation.aliases),
+                    "external_ids": json.dumps(operation.external_ids),
                 },
             )
+            await self._bind_external_ids(session, scope, operation.id, operation.external_ids)
         elif isinstance(operation, UpdateEntityOp):
             await self._update(
                 session,
                 "UPDATE canon_entities SET "
                 "name = COALESCE(:name, name), slug = COALESCE(:slug, slug), "
-                "attributes = COALESCE(CAST(:attributes AS JSONB), attributes) "
+                "attributes = COALESCE(CAST(:attributes AS JSONB), attributes), "
+                "aliases = COALESCE(CAST(:aliases AS JSONB), aliases), "
+                "external_ids = COALESCE(CAST(:external_ids AS JSONB), external_ids) "
                 "WHERE workspace_id = :w AND project_id = :p AND branch_id = :b AND id = :id",
                 {
                     **scope,
@@ -841,9 +998,24 @@ class PostgresCanonRepository:
                     "attributes": json.dumps(operation.attributes)
                     if operation.attributes is not None
                     else None,
+                    "aliases": json.dumps(operation.aliases)
+                    if operation.aliases is not None
+                    else None,
+                    "external_ids": json.dumps(operation.external_ids)
+                    if operation.external_ids is not None
+                    else None,
                 },
                 operation.id,
             )
+            if operation.external_ids is not None:
+                await session.execute(
+                    text(
+                        "DELETE FROM canon_entity_external_ids WHERE workspace_id = :w "
+                        "AND project_id = :p AND branch_id = :b AND entity_id = :id"
+                    ),
+                    {**scope, "id": operation.id},
+                )
+                await self._bind_external_ids(session, scope, operation.id, operation.external_ids)
         elif isinstance(operation, RetireEntityOp):
             await self._update(
                 session,
@@ -995,7 +1167,20 @@ class PostgresCanonRepository:
                 {**scope, "id": operation.id, "rev": revision},
                 operation.id,
             )
-        await self._record_version(session, envelope, operation, revision)
+        await self._record_version(session, envelope, operation, revision, ordinal)
+
+    async def _bind_external_ids(
+        self, session: Any, scope: dict[str, Any], entity_id: str, external_ids: dict[str, str]
+    ) -> None:
+        for namespace, value in external_ids.items():
+            await session.execute(
+                text(
+                    "INSERT INTO canon_entity_external_ids "
+                    "(workspace_id, project_id, branch_id, namespace, value, entity_id) "
+                    "VALUES (:w, :p, :b, :ns, :value, :id)"
+                ),
+                {**scope, "ns": namespace, "value": value, "id": entity_id},
+            )
 
     async def _update(
         self, session: Any, statement: str, params: dict[str, Any], record_id: str
@@ -1077,7 +1262,13 @@ class PostgresCanonRepository:
         include_retired: bool = False,
         limit: int = 50,
     ) -> list[CanonEntity]:
-        clauses = ["workspace_id = :w", "project_id = :p", "lower(name) LIKE :needle"]
+        clauses = [
+            "workspace_id = :w",
+            "project_id = :p",
+            "(lower(name) LIKE :needle OR lower(slug) LIKE :needle OR EXISTS ("
+            "SELECT 1 FROM jsonb_array_elements_text(aliases) alias "
+            "WHERE lower(alias) LIKE :needle))",
+        ]
         params: dict[str, Any] = {
             "w": workspace_id,
             "p": project_id,
@@ -1100,6 +1291,88 @@ class PostgresCanonRepository:
                 )
             ).all()
         return [_entity(row) for row in rows]
+
+    async def get_entity_by_slug(
+        self, *, workspace_id: str, project_id: str, slug: str
+    ) -> CanonEntity | None:
+        async with session_scope(self._session_factory) as session:
+            return await _entity_by_slug(session, workspace_id, project_id, slug)
+
+    async def get_entity_by_external_id(
+        self, *, workspace_id: str, project_id: str, namespace: str, value: str
+    ) -> CanonEntity | None:
+        async with session_scope(self._session_factory) as session:
+            return await _entity_by_external_id(session, workspace_id, project_id, namespace, value)
+
+    async def find_entities_by_name(
+        self, *, workspace_id: str, project_id: str, entity_type: str, name: str
+    ) -> list[CanonEntity]:
+        async with session_scope(self._session_factory) as session:
+            return await _entities_by_name(session, workspace_id, project_id, entity_type, name)
+
+    async def list_active_references(
+        self, *, workspace_id: str, project_id: str, entity_id: str
+    ) -> list[tuple[str, str]]:
+        async with session_scope(self._session_factory) as session:
+            rows = (
+                await session.execute(
+                    text(_ACTIVE_REFERENCES),
+                    _reference_params(workspace_id, project_id, entity_id),
+                )
+            ).all()
+        return [(row.record_type, row.id) for row in rows]
+
+    async def count_active_references(
+        self, *, workspace_id: str, project_id: str, entity_id: str
+    ) -> int:
+        return len(
+            await self.list_active_references(
+                workspace_id=workspace_id, project_id=project_id, entity_id=entity_id
+            )
+        )
+
+    async def list_evidence(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        record_type: str | None = None,
+        record_id: str | None = None,
+        commit_id: str | None = None,
+    ) -> list[EvidenceRecord]:
+        clauses = ["workspace_id = :w", "project_id = :p"]
+        params: dict[str, Any] = {"w": workspace_id, "p": project_id}
+        if record_type is not None:
+            clauses.append("record_type = :rtype")
+            params["rtype"] = record_type
+        if record_id is not None:
+            clauses.append("record_id = :rid")
+            params["rid"] = record_id
+        if commit_id is not None:
+            clauses.append("commit_id = :c")
+            params["c"] = commit_id
+        async with session_scope(self._session_factory) as session:
+            rows = (
+                await session.execute(
+                    text(
+                        f"SELECT * FROM canon_evidence WHERE {' AND '.join(clauses)} "
+                        "ORDER BY revision, ordinal, position"
+                    ),
+                    params,
+                )
+            ).all()
+        return [
+            EvidenceRecord(
+                record_type=row.record_type,
+                record_id=row.record_id,
+                revision=row.revision,
+                commit_id=row.commit_id,
+                ordinal=row.ordinal,
+                source_artefact_id=row.source_artefact_id,
+                location=row.location,
+            )
+            for row in rows
+        ]
 
     async def get_fact(self, *, workspace_id: str, project_id: str, fact_id: str) -> Fact | None:
         async with session_scope(self._session_factory) as session:
@@ -1301,7 +1574,7 @@ class PostgresCanonRepository:
                 await session.execute(
                     text(
                         f"SELECT * FROM canon_record_versions WHERE {' AND '.join(clauses)} "
-                        "ORDER BY revision DESC, created_at DESC LIMIT :limit"
+                        "ORDER BY revision DESC, ordinal DESC LIMIT :limit"
                     ),
                     params,
                 )
@@ -1318,6 +1591,7 @@ class PostgresCanonRepository:
                 commit_id=row.commit_id,
                 change=dict(_load(row.change) or {}),
                 created_at=row.created_at,
+                ordinal=row.ordinal,
             )
             for row in rows
         ]

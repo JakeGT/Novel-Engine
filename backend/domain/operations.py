@@ -38,10 +38,28 @@ def is_temporary_id(value: str) -> bool:
     return bool(_TEMP_ID.match(value))
 
 
+MAX_EVIDENCE_PER_OPERATION = 10
+
+# Opaque identifier shapes only: evidence points at a source artefact and a bounded
+# location inside it. Prose, captions, or media content can never be pasted here.
+_ARTEFACT_ID = r"^[A-Za-z0-9][A-Za-z0-9_.:\-]{0,199}$"
+_EVIDENCE_LOCATION = r"^[A-Za-z0-9_.:,=\-]{1,120}$"
+
+
+class EvidenceRef(BaseModel):
+    """A bounded pointer to the evidence behind an operation; never copied content."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_artefact_id: str = Field(pattern=_ARTEFACT_ID)
+    location: str | None = Field(default=None, pattern=_EVIDENCE_LOCATION)
+
+
 class _Operation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str  # durable or temporary target id
+    evidence: list[EvidenceRef] = Field(default_factory=list, max_length=MAX_EVIDENCE_PER_OPERATION)
 
 
 class CreateEntityOp(_Operation):
@@ -50,6 +68,8 @@ class CreateEntityOp(_Operation):
     name: str
     slug: str | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
+    aliases: list[str] = Field(default_factory=list)
+    external_ids: dict[str, str] = Field(default_factory=dict)
 
 
 class UpdateEntityOp(_Operation):
@@ -57,6 +77,9 @@ class UpdateEntityOp(_Operation):
     name: str | None = None
     slug: str | None = None
     attributes: dict[str, Any] | None = None
+    # ``None`` leaves the current value; a list/mapping replaces it wholesale.
+    aliases: list[str] | None = None
+    external_ids: dict[str, str] | None = None
 
 
 class RetireEntityOp(_Operation):
@@ -275,8 +298,22 @@ def resolve_temporary_ids(
     return resolved, mapping
 
 
+# Fields added after the first committed envelopes. They are omitted from the
+# canonical form while unset so every earlier envelope keeps its exact checksum.
+_CANONICAL_OMIT_WHEN_UNSET = ("evidence", "aliases", "external_ids")
+
+
+def canonical_operation(operation: CanonOperation) -> dict[str, Any]:
+    """The checksum-stable serialization of one operation."""
+    payload = operation.model_dump(mode="json")
+    for key in _CANONICAL_OMIT_WHEN_UNSET:
+        if key in payload and not payload[key]:
+            del payload[key]
+    return payload
+
+
 def canonicalize_operations(operations: Sequence[CanonOperation]) -> str:
-    payload = [operation.model_dump(mode="json") for operation in operations]
+    payload = [canonical_operation(operation) for operation in operations]
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
 
@@ -297,6 +334,7 @@ __all__ = [
     "CloseFactOp",
     "CreateEntityOp",
     "CreateEventOp",
+    "EvidenceRef",
     "LinkAssetOp",
     "OperationValidationError",
     "OriginKind",
@@ -306,6 +344,7 @@ __all__ = [
     "TEMP_ID_PREFIX",
     "UnresolvedReferenceError",
     "UpdateEntityOp",
+    "canonical_operation",
     "canonicalize_operations",
     "is_temporary_id",
     "operation_reference_ids",

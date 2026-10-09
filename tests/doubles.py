@@ -17,6 +17,7 @@ from backend.domain.canon.assertions import Belief, Fact, FactStatus
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
 from backend.domain.canon.events import Event
 from backend.domain.canon.ids import format_canon_id
+from backend.domain.canon.naming import normalize_name
 from backend.domain.canon.registry import CORE_ENTITY_TYPES
 from backend.domain.canon.revisions import CanonRevision, OriginKind, Provenance
 from backend.domain.credentials import (
@@ -76,7 +77,7 @@ from backend.domain.operations import (
     parse_operation,
     resolve_temporary_ids,
 )
-from backend.domain.projection import RecordVersion
+from backend.domain.projection import EvidenceRecord, RecordVersion
 from backend.domain.review import (
     MutationIntent,
     effective_operations,
@@ -1912,6 +1913,8 @@ class InMemoryCanonWriter:
                 "created_revision": revision,
                 "retired_revision": None,
                 "attributes": dict(operation.attributes),
+                "aliases": list(operation.aliases),
+                "external_ids": dict(operation.external_ids),
             }
         elif isinstance(operation, UpdateEntityOp):
             entity = self.entities.get(key)
@@ -1922,6 +1925,10 @@ class InMemoryCanonWriter:
                     entity["slug"] = operation.slug
                 if operation.attributes is not None:
                     entity["attributes"] = dict(operation.attributes)
+                if operation.aliases is not None:
+                    entity["aliases"] = list(operation.aliases)
+                if operation.external_ids is not None:
+                    entity["external_ids"] = dict(operation.external_ids)
         elif isinstance(operation, RetireEntityOp):
             entity = self.entities.get(key)
             if entity is not None:
@@ -1999,6 +2006,7 @@ class InMemoryCanonWriter:
             event = self.events.get(key)
             if event is not None:
                 event["lifecycle"] = "retired"
+                event["retired_revision"] = revision
 
     def _entity(self, key):
         from backend.domain.canon.entities import CanonEntity
@@ -2019,7 +2027,29 @@ class InMemoryCanonWriter:
             created_revision=data["created_revision"],
             retired_revision=data["retired_revision"],
             attributes=data["attributes"],
+            aliases=data.get("aliases", []),
+            external_ids=data.get("external_ids", {}),
         )
+
+    async def list_fact_edges(self, *, workspace_id, project_id):
+        edges = []
+        for key, data in self.facts.items():
+            obj = data["proposition"].object
+            if (
+                key[0] == workspace_id
+                and key[1] == project_id
+                and data["status"] == "asserted"
+                and getattr(obj, "entity_id", None) is not None
+            ):
+                edges.append(
+                    (
+                        key[2],
+                        data["proposition"].subject_id,
+                        data["proposition"].predicate,
+                        obj.entity_id,
+                    )
+                )
+        return sorted(edges)
 
     async def get_entity(self, *, workspace_id, project_id, entity_id):
         return self._entity((workspace_id, project_id, entity_id))
@@ -2278,6 +2308,32 @@ class _MemoryCanonReader:
             workspace_id=self._workspace_id, project_id=self._project_id, version_id=version_id
         )
 
+    async def find_entity_by_slug(self, slug: str) -> Any:
+        return await self._repository.get_entity_by_slug(
+            workspace_id=self._workspace_id, project_id=self._project_id, slug=slug
+        )
+
+    async def find_entity_by_external_id(self, namespace: str, value: str) -> Any:
+        return await self._repository.get_entity_by_external_id(
+            workspace_id=self._workspace_id,
+            project_id=self._project_id,
+            namespace=namespace,
+            value=value,
+        )
+
+    async def find_entities_by_name(self, entity_type: str, name: str) -> list[Any]:
+        return await self._repository.find_entities_by_name(
+            workspace_id=self._workspace_id,
+            project_id=self._project_id,
+            entity_type=entity_type,
+            name=name,
+        )
+
+    async def count_active_references(self, entity_id: str) -> int:
+        return await self._repository.count_active_references(
+            workspace_id=self._workspace_id, project_id=self._project_id, entity_id=entity_id
+        )
+
 
 class InMemoryCanonRepository:
     """In-memory canonical PostgreSQL canon (ADR-012) with matching invariants."""
@@ -2305,6 +2361,7 @@ class InMemoryCanonRepository:
         self.tags: dict[tuple[str, str, str, str], Any] = {}
         self.tag_history: dict[tuple[str, str, str, str], list[Any]] = {}
         self.asset_links: dict[tuple[str, str, str], Any] = {}
+        self.evidence: list[EvidenceRecord] = []
 
     def set_head(self, workspace_id: str, project_id: str, branch_id: str, head: int) -> None:
         self.heads[(workspace_id, project_id, branch_id)] = head
@@ -2444,8 +2501,20 @@ class InMemoryCanonRepository:
             actor_user_id=envelope.actor_user_id,
             created_at=utcnow(),
         )
-        for operation in operations:
+        for ordinal, operation in enumerate(operations):
             self._apply(envelope, operation, provenance_id, reserved)
+            for evidence in operation.evidence:
+                self.evidence.append(
+                    EvidenceRecord(
+                        record_type=_CANON_RECORD_TYPE.get(operation.op, operation.op),
+                        record_id=operation.id,
+                        revision=reserved,
+                        commit_id=envelope.commit_id,
+                        ordinal=ordinal,
+                        source_artefact_id=evidence.source_artefact_id,
+                        location=evidence.location,
+                    )
+                )
             self.record_versions.append(
                 RecordVersion(
                     workspace_id=envelope.workspace_id,
@@ -2458,6 +2527,7 @@ class InMemoryCanonRepository:
                     commit_id=envelope.commit_id,
                     change=operation.model_dump(mode="json"),
                     created_at=utcnow(),
+                    ordinal=ordinal,
                 )
             )
         self.heads[key] = reserved
@@ -2545,6 +2615,8 @@ class InMemoryCanonRepository:
                 schema_version_id=envelope.schema_version_id or "",
                 created_revision=revision,
                 attributes=dict(operation.attributes),
+                aliases=list(operation.aliases),
+                external_ids=dict(operation.external_ids),
             )
         elif isinstance(operation, UpdateEntityOp) and key in self.entities:
             current = self.entities[key]
@@ -2555,6 +2627,12 @@ class InMemoryCanonRepository:
                     "attributes": operation.attributes
                     if operation.attributes is not None
                     else current.attributes,
+                    "aliases": operation.aliases
+                    if operation.aliases is not None
+                    else current.aliases,
+                    "external_ids": operation.external_ids
+                    if operation.external_ids is not None
+                    else current.external_ids,
                 }
             )
         elif isinstance(operation, RetireEntityOp) and key in self.entities:
@@ -2693,15 +2771,134 @@ class InMemoryCanonRepository:
 
     async def search_entities(self, *, workspace_id: str, project_id: str, query: str, **kwargs):
         needle = query.lower()
+        entity_type = kwargs.get("entity_type")
         items = [
             e
             for (w, p, _), e in self.entities.items()
             if w == workspace_id
             and p == project_id
-            and needle in e.name.lower()
+            and (
+                needle in e.name.lower()
+                or needle in (e.slug or "")
+                or any(needle in alias.lower() for alias in e.aliases)
+            )
+            and (entity_type is None or e.type == entity_type)
             and (kwargs.get("include_retired") or e.lifecycle is EntityLifecycle.ACTIVE)
         ]
         return sorted(items, key=lambda e: e.name)[: kwargs.get("limit", 50)]
+
+    def _scoped_entities(self, workspace_id: str, project_id: str) -> list[CanonEntity]:
+        return [
+            e for (w, p, _), e in self.entities.items() if w == workspace_id and p == project_id
+        ]
+
+    async def get_entity_by_slug(self, *, workspace_id: str, project_id: str, slug: str):
+        return next(
+            (
+                e
+                for e in self._scoped_entities(workspace_id, project_id)
+                if e.slug == slug and e.lifecycle is EntityLifecycle.ACTIVE
+            ),
+            None,
+        )
+
+    async def get_entity_by_external_id(
+        self, *, workspace_id: str, project_id: str, namespace: str, value: str
+    ):
+        return next(
+            (
+                e
+                for e in self._scoped_entities(workspace_id, project_id)
+                if e.external_ids.get(namespace) == value
+            ),
+            None,
+        )
+
+    async def find_entities_by_name(
+        self, *, workspace_id: str, project_id: str, entity_type: str, name: str
+    ):
+        key = normalize_name(name)
+        return [
+            e
+            for e in self._scoped_entities(workspace_id, project_id)
+            if e.type == entity_type
+            and e.lifecycle is EntityLifecycle.ACTIVE
+            and normalize_name(e.name) == key
+        ]
+
+    async def list_active_references(
+        self, *, workspace_id: str, project_id: str, entity_id: str
+    ) -> list[tuple[str, str]]:
+        def scoped(records: dict) -> list[Any]:
+            return [r for (w, p, _), r in records.items() if w == workspace_id and p == project_id]
+
+        def refers(proposition: Any) -> bool:
+            obj = proposition.object
+            return (
+                proposition.subject_id == entity_id or getattr(obj, "entity_id", None) == entity_id
+            )
+
+        found: list[tuple[str, str]] = []
+        found += [
+            ("fact", fact.id)
+            for fact in scoped(self.facts)
+            if getattr(fact.status, "value", fact.status) == "asserted" and refers(fact.proposition)
+        ]
+        found += [
+            ("belief", belief.id)
+            for belief in scoped(self.beliefs)
+            if belief.closed_revision is None
+            and (belief.holder_entity_id == entity_id or refers(belief.proposition))
+        ]
+        found += [
+            ("event", event.id)
+            for event in scoped(self.events)
+            if event.retired_revision is None
+            and (
+                any(p.entity_id == entity_id for p in event.participants)
+                or entity_id in event.location_ids
+                or entity_id in event.cause_ids
+                or entity_id in event.outcome_ids
+            )
+        ]
+        found += [
+            ("asset_link", link.id)
+            for link in scoped(self.asset_links)
+            if link.retired_revision is None and link.target_record_id == entity_id
+        ]
+        return sorted(found)
+
+    async def count_active_references(
+        self, *, workspace_id: str, project_id: str, entity_id: str
+    ) -> int:
+        return len(
+            await self.list_active_references(
+                workspace_id=workspace_id, project_id=project_id, entity_id=entity_id
+            )
+        )
+
+    async def list_evidence(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        record_type: str | None = None,
+        record_id: str | None = None,
+        commit_id: str | None = None,
+    ) -> list[EvidenceRecord]:
+        scoped_commits = {
+            cid
+            for cid, envelope in self.envelopes.items()
+            if envelope.workspace_id == workspace_id and envelope.project_id == project_id
+        }
+        return [
+            item
+            for item in self.evidence
+            if item.commit_id in scoped_commits
+            and (record_type is None or item.record_type == record_type)
+            and (record_id is None or item.record_id == record_id)
+            and (commit_id is None or item.commit_id == commit_id)
+        ]
 
     async def get_fact(self, *, workspace_id: str, project_id: str, fact_id: str):
         return self.facts.get((workspace_id, project_id, fact_id))
@@ -2782,7 +2979,7 @@ class InMemoryCanonRepository:
         max_revision: int | None = None,
         limit: int = 100,
     ):
-        return [
+        matches = [
             rv
             for rv in self.record_versions
             if rv.workspace_id == workspace_id
@@ -2791,7 +2988,10 @@ class InMemoryCanonRepository:
             and (record_id is None or rv.record_id == record_id)
             and (min_revision is None or rv.revision > min_revision)
             and (max_revision is None or rv.revision <= max_revision)
-        ][:limit]
+        ]
+        # Newest first, like the PostgreSQL adapter.
+        matches.sort(key=lambda rv: (rv.revision, rv.ordinal), reverse=True)
+        return matches[:limit]
 
     async def get_watermark(
         self, *, projection: str, workspace_id: str, project_id: str, branch_id: str

@@ -151,6 +151,7 @@ def _build_fake_container(settings, tmp_path):
         canon_repository,
         local_mode=not settings.is_hosted,
         schema_store=schema_versions,
+        media=media_store,
     )
     from backend.services.outbox_consumer import OutboxConsumer
     from backend.services.projection_service import GraphProjectionService
