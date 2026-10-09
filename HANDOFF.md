@@ -267,7 +267,7 @@ then `pnpm --dir frontend run gen:api`.
 3. Run, or time-box, the clean-host install and coordinated PostgreSQL/Neo4j/object-store
    backup/restore rehearsal.
    **Deferred by the owner on 2026-10-10** until the project is complete and on a permanent host.
-4. Perform the live Authentik browser round trip.
+4. ~~Perform the live Authentik browser round trip.~~ Done by the owner on 2026-10-10 on the deployed site.
 5. ~~Accept, amend, or reject ADR-014, ADR-015, and ADR-016.~~ Accepted by the owner on 2026-10-10.
 6. ~~Accept `plan/phase-2-evidence.md`.~~ Accepted by the owner on 2026-10-09.
 
@@ -335,10 +335,11 @@ to matter next:
 
 `Dockerfile` builds one image (API, migration CLI, built web UI served by the API);
 `deploy/hosted/` holds the Compose stack, secret initialisation, backup script, and the ordered
-runbook for the jaketalling platform. The stack has run only as an isolated loopback smoke copy
-with throwaway secrets. It is **not deployed**, the Caddy and Cloudflare routes do not exist, the
-Authentik application's settings have not been inspected, and the live sign-in round trip is still
-open. Hosted/production sites hide `/docs` and `/openapi.json`, send security headers, and read
+runbook for the jaketalling platform. **Deployed on 2026-10-10** at `novel-engine.jaketalling.com`
+(Caddy route and Authentik blueprint live in the platform repository; the owner signed in and
+created canon). To ship a new version: build the image, set `NOVEL_ENGINE_VERSION` in
+`deploy/hosted/.env`, `docker compose up -d --wait` (run `./backup.sh` first).
+Hosted/production sites hide `/docs` and `/openapi.json`, send security headers, and read
 secrets from files (`NOVEL_ENGINE_SECRETS_DIR`). `python -m backend.devtools.provision` creates
 the first workspace for a user who has signed in. Development store ports now bind to 127.0.0.1.
 

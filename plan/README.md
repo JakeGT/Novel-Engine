@@ -76,7 +76,7 @@ Implemented and verified (see the per-phase evidence documents):
   end-to-end coverage
 
 Phase 2 is complete and **accepted by the owner (2026-10-09)**, as is the Phase 1 evidence. Still
-open and operational: the first hosted CI run, the live Authentik round trip, and the clean-host
+open and operational: the first hosted CI run and the clean-host
 backup/restore rehearsal (deferred by the owner until the project is on a permanent host).
 ADR-014–016 were accepted on 2026-10-10.
 

@@ -208,3 +208,18 @@ def test_hosted_generate_questions_requires_credential(hosted_client, hosted_con
 
     assert response.status_code == 503
     assert response.json()["code"] == "capability_unavailable"
+
+
+def test_a_new_project_can_accept_canon_without_any_schema_setup(
+    hosted_client, hosted_container
+) -> None:
+    csrf = _hosted_login(hosted_client, hosted_container)
+    workspace_id = _create_workspace(hosted_client, csrf, "starter")
+    project_id = _create_project(hosted_client, csrf, workspace_id, "first-novel")
+
+    versions = hosted_client.get(
+        f"/api/v1/projects/{project_id}/schemas", headers={"X-Workspace-Id": workspace_id}
+    ).json()
+    assert [(item["version"], item["status"]) for item in versions] == [(1, "published")]
+    entity = _create_canon_entity(hosted_client, csrf, workspace_id, project_id, "Mara Ven")
+    assert entity["name"] == "Mara Ven"

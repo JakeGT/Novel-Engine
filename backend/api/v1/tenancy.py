@@ -13,9 +13,11 @@ from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.api.auth import get_access_scope, require_scope
-from backend.api.dependencies import get_tenancy_service
+from backend.api.dependencies import get_container, get_tenancy_service
+from backend.container import Container
 from backend.domain.errors import NotFoundError
 from backend.domain.identity import AccessScope, Role
+from backend.services.schema_service import publish_starter_schema
 from backend.services.tenancy_service import TenancyService
 
 router = APIRouter(tags=["tenancy"])
@@ -202,10 +204,20 @@ async def create_project(
     payload: CreateProjectRequest,
     scope: AccessScope = Depends(require_scope),
     service: TenancyService = Depends(get_tenancy_service),
+    container: Container = Depends(get_container),
 ) -> ProjectModel:
     project = await service.create_project(
         scope, workspace_id, slug=payload.slug, name=payload.name
     )
+    # A project with no published schema cannot accept canon; start it with the
+    # core vocabulary so it is usable straight away.
+    if container.schema_versions is not None:
+        await publish_starter_schema(
+            container.schema_versions,
+            workspace_id=workspace_id,
+            project_id=project.id,
+            created_by_user_id=scope.actor_user_id,
+        )
     return ProjectModel.model_validate(project)
 
 

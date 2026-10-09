@@ -5,7 +5,7 @@ import pytest
 from backend.devtools.provision import ProvisionError, find_owner, provision
 from backend.domain.identity import User
 from backend.domain.tenancy import Role
-from tests.doubles import InMemoryTenancyStore
+from tests.doubles import InMemorySchemaVersionStore, InMemoryTenancyStore
 
 pytestmark = pytest.mark.application
 
@@ -71,3 +71,20 @@ async def test_rejects_unsafe_slugs() -> None:
         with pytest.raises(ProvisionError, match="invalid slug"):
             await provision(store, JAKE, **{**ARGS, "workspace_slug": bad})
     assert store.workspaces == {}
+
+
+@pytest.mark.asyncio
+async def test_new_project_starts_with_a_published_schema_and_keeps_an_existing_one() -> None:
+    store, schemas = InMemoryTenancyStore(), InMemorySchemaVersionStore()
+
+    first = await provision(store, JAKE, schemas=schemas, **ARGS)
+    published = await schemas.get_published(
+        workspace_id=first.workspace_id, project_id=first.project_id
+    )
+    assert published is not None and published.version == 1
+
+    # Re-running never adds a second version or replaces the author's schema.
+    await provision(store, JAKE, schemas=schemas, **ARGS)
+    assert (
+        len(await schemas.list(workspace_id=first.workspace_id, project_id=first.project_id)) == 1
+    )

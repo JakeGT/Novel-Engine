@@ -63,6 +63,7 @@ async def provision(
     tenancy: Any,
     owner: User,
     *,
+    schemas: Any = None,
     workspace_slug: str,
     workspace_name: str,
     project_slug: str,
@@ -91,6 +92,17 @@ async def provision(
     if project is None:
         project = await tenancy.create_project(
             workspace_id=workspace.id, slug=project_slug, name=project_name
+        )
+
+    if schemas is not None:
+        # Canon cannot be written without a published schema; no-op if one exists.
+        from backend.services.schema_service import publish_starter_schema
+
+        await publish_starter_schema(
+            schemas,
+            workspace_id=workspace.id,
+            project_id=project.id,
+            created_by_user_id=owner.id,
         )
 
     if created_workspace or created_project:
@@ -131,6 +143,7 @@ def _parser() -> argparse.ArgumentParser:
 
 async def _run(args: argparse.Namespace) -> int:
     from backend.adapters.identity_store import PostgresIdentityStore
+    from backend.adapters.schema_store import PostgresSchemaVersionStore
     from backend.adapters.tenancy_store import PostgresTenancyStore
     from backend.core.config import settings
     from backend.core.database import create_engine, create_session_factory
@@ -168,6 +181,7 @@ async def _run(args: argparse.Namespace) -> int:
             result = await provision(
                 PostgresTenancyStore(factory),
                 owner,
+                schemas=PostgresSchemaVersionStore(factory),
                 workspace_slug=args.workspace_slug,
                 workspace_name=args.workspace_name,
                 project_slug=args.project_slug,

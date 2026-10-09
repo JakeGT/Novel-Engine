@@ -34,6 +34,41 @@ from backend.services.schema_compiler import (
     migration_plan,
 )
 
+STARTER_SCHEMA_LABEL = "Starter schema"
+
+
+async def publish_starter_schema(
+    store: SchemaVersionStorePort,
+    *,
+    workspace_id: str,
+    project_id: str,
+    created_by_user_id: str | None,
+) -> SchemaVersion | None:
+    """Give a brand-new project its first published schema (the core vocabulary only).
+
+    Canon cannot be written until a schema version is published, so a project
+    with none is unusable. This is a no-op when the project already has any
+    version, published or draft: it never overrides an author's own schema.
+    """
+    if await store.list(workspace_id=workspace_id, project_id=project_id):
+        return None
+    compiled = compile_definition(
+        SchemaDefinition(label=STARTER_SCHEMA_LABEL),
+        workspace_id=workspace_id,
+        project_id=project_id,
+    )
+    draft = await store.create_draft(
+        workspace_id=workspace_id,
+        project_id=project_id,
+        definition=compiled.definition,
+        content_hash=compiled.content_hash,
+        compatibility=SchemaCompatibility.ADDITIVE.value,
+        created_by_user_id=created_by_user_id,
+    )
+    return await store.publish(
+        workspace_id=workspace_id, project_id=project_id, version_id=draft.id
+    )
+
 
 @dataclass
 class ValidationReport:

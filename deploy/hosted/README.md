@@ -5,10 +5,7 @@ serves. This stack follows the jaketalling platform's app contract (`apps/README
 platform repository): no host ports, only the server on `platform-proxy`, file-mounted secrets,
 one exact Caddy route, one OIDC client.
 
-Status: the stack has been started in an isolated, loopback-only copy with throwaway secrets
-(migrations applied, server healthy, UI served, docs hidden, backup script run). **It has not been
-deployed on the platform, and no live Authentik sign-in has been completed.** Do the steps below in
-order.
+Status: deployed on 2026-10-10. The owner signed in through Authentik and created canon on the live site.
 
 | Piece | Where |
 |---|---|

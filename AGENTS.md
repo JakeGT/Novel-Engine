@@ -11,8 +11,7 @@ Novel Engine is an open-source fiction authoring system with self-hosted and fre
 The repository is a stabilized prototype, not a production application. Phase 0 is complete.
 Phase 1 is implemented with explicit external/operational exit items remaining. Phase 2
 (trustworthy canon) is complete and accepted by the owner (2026-10-09); the evidence is in
-`plan/phase-2-evidence.md`. Still open and operational: the first hosted CI run, the live
-Authentik round trip, and the clean-host backup/restore rehearsal (deferred by the owner until the
+`plan/phase-2-evidence.md`. Still open and operational: the first hosted CI run and the clean-host backup/restore rehearsal (deferred by the owner until the
 project is on a permanent host). ADR-014–016 are accepted. See `plan/phase-2-todo.md`.
 
 - Application lifecycle, dependency container, ports, and adapters exist; imports perform no

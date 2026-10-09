@@ -3,7 +3,7 @@
 - Status: **Accepted by the project owner on 2026-10-09** (recorded against commit `22955a7` on
   `phase-2-closure`). Every code-completable Phase 2 item is implemented and verified as recorded
   below. The remaining items are operational and stay open (see "Open owner items"): the hosted CI
-  run, the live Authentik round trip, and the clean-host backup/restore rehearsal (deferred by the
+  run and the clean-host backup/restore rehearsal (deferred by the
   owner on 2026-10-10 until the project moves to a permanent host). ADR-014–016 were accepted on 2026-10-10.
 - Scope: Canonical story-state authority (ADR-012/013), Phase 2 workstreams 2A–2L
 - Owner: project owner or designated technical lead
@@ -240,7 +240,10 @@ These cannot be completed by code and are the only unchecked items in `phase-2-t
 3. Run, or time-box, the clean-host install and coordinated PostgreSQL/Neo4j/object-store
    backup/restore rehearsal. A project archive round trip is not a database backup.
    **Deferred by the owner on 2026-10-10** until the project is complete and on a permanent host.
-4. Perform the live Authentik browser round trip for hosted mode.
+4. ~~Perform the live Authentik browser round trip for hosted mode.~~ Done by the owner on 2026-10-10
+   against the deployed site (`novel-engine.jaketalling.com`, image `7c3805f`): sign-in through
+   Authentik, first workspace provisioned from the command line, schema published, entity created.
+   Reported by the owner; not independently observed.
 5. ~~Accept, amend, or reject ADR-014, ADR-015, and ADR-016.~~ Accepted by the owner on 2026-10-10.
 6. ~~Accept this evidence and authorize the next phase.~~ Accepted by the owner on 2026-10-09.
 

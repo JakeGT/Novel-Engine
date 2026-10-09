@@ -1,6 +1,6 @@
 # Phase 2 todo — Trustworthy canon
 
-- Status: Accepted by the project owner on 2026-10-09. All code-completable 2B–2L work is committed. Still open and operational: the first clean-checkout hosted CI run, the live Authentik round trip, and the clean-host backup/restore rehearsal (deferred by the owner on 2026-10-10 until the project is complete and moved to a permanent host). ADR-014/015/016 were accepted on 2026-10-10.
+- Status: Accepted by the project owner on 2026-10-09. All code-completable 2B–2L work is committed. Still open and operational: the first clean-checkout hosted CI run and the clean-host backup/restore rehearsal (deferred by the owner on 2026-10-10 until the project is complete and moved to a permanent host). ADR-014/015/016 were accepted on 2026-10-10.
 - Scope: CAN-002–CAN-013 and the Phase 2 portions of AST-001/AST-004/AST-008 and EXT-003–EXT-006
 - Depends on: Phase 1 technical foundation and acceptance of the remaining owner/operational exit items
 - Architecture: ADR-003, ADR-004, ADR-005, ADR-009, ADR-010, ADR-012 (supersedes ADR-011), ADR-013, and ADR-014/015/016 (accepted 2026-10-10)
