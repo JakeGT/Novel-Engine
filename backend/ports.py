@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
+from backend.domain.archive import ArchiveImport, ImportStatus
 from backend.domain.canon.assertions import Belief, Fact
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.events import Event
@@ -845,6 +846,37 @@ class CanonRepositoryPort(Protocol):
         validator: Any = None,
         origin: str = "author",
     ) -> int: ...
+
+    async def begin_import(
+        self,
+        *,
+        import_id: str,
+        workspace_id: str,
+        project_id: str,
+        archive_checksum: str,
+        format_version: str,
+        commits_total: int,
+        actor_user_id: str | None = None,
+    ) -> ArchiveImport:
+        """Record (or resume) an archive import before its first durable write."""
+        ...
+
+    async def update_import(
+        self,
+        *,
+        import_id: str,
+        stage: str,
+        commits_applied: int | None = None,
+        object_keys: Sequence[str] | None = None,
+    ) -> None: ...
+
+    async def finish_import(
+        self, *, import_id: str, status: ImportStatus, error: str | None = None
+    ) -> ArchiveImport: ...
+
+    async def record_removed_import(self, record: ArchiveImport) -> ArchiveImport: ...
+
+    async def list_imports(self, *, workspace_id: str, project_id: str) -> list[ArchiveImport]: ...
 
     async def purge_project(self, *, workspace_id: str, project_id: str) -> int:
         """Erase every canon, journal, schema, and media row a project owns."""

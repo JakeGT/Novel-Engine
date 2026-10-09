@@ -9,6 +9,7 @@ from backend.api.auth import router as auth_router
 from backend.api.health import router as health_router
 from backend.api.middleware import CorrelationIdMiddleware
 from backend.api.problems import register_exception_handlers
+from backend.api.v1.canon_archive import router as canon_archive_router
 from backend.api.v1.canon_assertions import router as canon_assertions_router
 from backend.api.v1.canon_characters import router as canon_characters_router
 from backend.api.v1.canon_entities import router as canon_entities_router
@@ -121,6 +122,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.include_router(canon_history_router, prefix="/api/v1")
     app.include_router(canon_mutations_router, prefix="/api/v1")
     app.include_router(canon_characters_router, prefix="/api/v1")
+    app.include_router(canon_archive_router, prefix="/api/v1")
     app.include_router(media_router, prefix="/api/v1")
     app.include_router(projection_router, prefix="/api/v1")
     app.include_router(health_router)

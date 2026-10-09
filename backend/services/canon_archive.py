@@ -7,9 +7,17 @@ Import is preflight-validated and idempotent: commits replay under deterministic
 target-scoped commit ids, so re-importing the same archive into the same project
 is a no-op. Project-scoped entity references are rewritten for the target, so a
 cross-project restore can legitimately produce a different commit checksum.
-When a projector is configured, import rebuilds the graph projection from the
-accepted journal after canonical restore. Other derived indexes and semantic
-equivalence checks remain separate operator work.
+
+An import is recorded in a status ledger before its first durable write and is
+marked ``completed`` only after every commit has replayed, the graph projection
+has been rebuilt (when one is configured), and the journal, normalized canon,
+and projection have been verified to agree. A failed import stays visibly
+unsuccessful; it can be retried or removed. Canon has no derived vector index
+in Phase 2, so there is nothing else to rebuild.
+
+Full-history export and import are owner-level operations: the ``*_as`` entry
+points authorize the actor and write a durable security-audit record carrying
+counts and checksums only.
 
 Credentials, sessions, provider usage, and unrelated tenant data are never
 included.
@@ -26,9 +34,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 from backend.core.logging import log_event
+from backend.domain.archive import ArchiveImport, ArchiveImportError, ImportStatus
 from backend.domain.canon.propositions import EntityRefObject
 from backend.domain.canon.revisions import OriginKind
+from backend.domain.errors import NotFoundError
 from backend.domain.history import CanonTag
+from backend.domain.identity import AccessScope
 from backend.domain.journal import CommitEnvelope, MutationOperation, MutationStatus
 from backend.domain.media import MediaAsset, MediaAssetVersion
 from backend.domain.operations import (
@@ -40,6 +51,7 @@ from backend.domain.operations import (
     parse_operation,
 )
 from backend.domain.review import MutationIntent, classify_review
+from backend.domain.tenancy import Permission
 from backend.ports import (
     CanonJournalPort,
     CanonRepositoryPort,
@@ -78,6 +90,11 @@ def _dedup_commit_id(
     return f"cmt_{digest[:32]}"
 
 
+def _import_id(archive_checksum: str, workspace_id: str, project_id: str) -> str:
+    digest = hashlib.sha256(f"{archive_checksum}:{workspace_id}:{project_id}".encode()).hexdigest()
+    return f"imp_{digest[:32]}"
+
+
 def _remap_operation_scope(operation: CanonOperation, *, target_project_id: str) -> CanonOperation:
     if not isinstance(operation, (AssertFactOp, AssertBeliefOp)):
         return operation
@@ -110,6 +127,11 @@ class CanonArchiveService:
         media: MediaStorePort,
         objects: ObjectStorePort,
         projector: object | None = None,
+        equivalence: object | None = None,
+        tenancy: object | None = None,
+        audit: object | None = None,
+        canon_writer: object | None = None,
+        local_mode: bool = False,
     ) -> None:
         self._canon = canon
         self._journal = journal
@@ -117,6 +139,161 @@ class CanonArchiveService:
         self._media = media
         self._objects = objects
         self._projector = projector
+        self._equivalence = equivalence
+        self._tenancy = tenancy
+        self._audit = audit
+        self._canon_writer = canon_writer
+        self._local_mode = local_mode
+
+    # ----------------------------------------------- authorized entry points
+    async def _require_owner(self, scope: AccessScope, workspace_id: str, project_id: str) -> None:
+        """Full-history archive operations need project administration (owners only)."""
+        if self._local_mode or self._tenancy is None:
+            return
+        await self._tenancy.require_project(  # type: ignore[attr-defined]
+            scope, workspace_id, project_id, Permission.PROJECT_ADMIN
+        )
+
+    async def _record_audit(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        action: str,
+        detail: dict[str, Any],
+    ) -> None:
+        """Durable security-audit record: who did what, with counts, never content."""
+        if self._audit is None:
+            return
+        await self._audit.record_audit(  # type: ignore[attr-defined]
+            workspace_id=workspace_id,
+            actor_user_id=scope.actor_user_id,
+            action=action,
+            target_type="project",
+            target_id=project_id,
+            detail=detail,
+            correlation_id=scope.correlation_id,
+        )
+
+    async def export_project_as(
+        self, scope: AccessScope, workspace_id: str, project_id: str
+    ) -> dict[str, Any]:
+        await self._require_owner(scope, workspace_id, project_id)
+        archive = await self.export_project(workspace_id, project_id)
+        await self._record_audit(
+            scope,
+            workspace_id,
+            project_id,
+            "archive.exported",
+            {
+                "archive_checksum": archive["checksum"],
+                "format_version": archive["format_version"],
+                "commits": len(archive["commits"]),
+                "objects": len(archive["objects"]),
+                "head_revision": archive["project"]["head_revision"],
+            },
+        )
+        return archive
+
+    async def import_project_as(
+        self, scope: AccessScope, workspace_id: str, project_id: str, archive: dict[str, Any]
+    ) -> dict[str, Any]:
+        await self._require_owner(scope, workspace_id, project_id)
+        checksum = archive.get("checksum") if isinstance(archive, dict) else None
+        try:
+            result = await self.import_project(
+                workspace_id, project_id, archive, actor_user_id=scope.actor_user_id
+            )
+        except Exception as error:
+            await self._record_audit(
+                scope,
+                workspace_id,
+                project_id,
+                "archive.import_failed",
+                {"archive_checksum": str(checksum or ""), "error": type(error).__name__},
+            )
+            raise
+        await self._record_audit(
+            scope,
+            workspace_id,
+            project_id,
+            "archive.imported",
+            {
+                "archive_checksum": result["checksum"],
+                "import_id": result["import_id"],
+                "commits": result["commits"],
+                "objects": result["objects"],
+                "verified": result["verified"],
+            },
+        )
+        return result
+
+    async def list_imports_as(
+        self, scope: AccessScope, workspace_id: str, project_id: str
+    ) -> list[ArchiveImport]:
+        if not self._local_mode and self._tenancy is not None:
+            await self._tenancy.require_project(  # type: ignore[attr-defined]
+                scope, workspace_id, project_id, Permission.PROJECT_READ
+            )
+        return await self._canon.list_imports(workspace_id=workspace_id, project_id=project_id)
+
+    async def remove_import_as(
+        self, scope: AccessScope, workspace_id: str, project_id: str, import_id: str
+    ) -> ArchiveImport:
+        await self._require_owner(scope, workspace_id, project_id)
+        removed = await self.remove_import(workspace_id, project_id, import_id)
+        await self._record_audit(
+            scope,
+            workspace_id,
+            project_id,
+            "archive.import_removed",
+            {"import_id": import_id, "archive_checksum": removed.archive_checksum},
+        )
+        return removed
+
+    async def remove_import(
+        self, workspace_id: str, project_id: str, import_id: str
+    ) -> ArchiveImport:
+        """Erase the canon a failed or interrupted import wrote, and nothing else.
+
+        Refused once an import has completed, and refused when the project holds
+        any canon the import did not write, so authored work is never removed.
+        """
+        imports = await self._canon.list_imports(workspace_id=workspace_id, project_id=project_id)
+        record = next((item for item in imports if item.id == import_id), None)
+        if record is None:
+            raise NotFoundError("Import not found.")
+        if record.status not in {ImportStatus.FAILED, ImportStatus.IMPORTING}:
+            raise ArchiveImportError(
+                f"an import in state {record.status.value!r} cannot be removed"
+            )
+        branch_id = await self._root_branch_id(workspace_id, project_id)
+        revisions = await self._canon.list_commits(
+            workspace_id=workspace_id, project_id=project_id, branch_id=branch_id, limit=MAX_ENTRIES
+        )
+        for revision in revisions:
+            envelope = await self._canon.get_envelope(revision.commit_id)
+            mutation = (
+                await self._journal.get_mutation(
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    mutation_id=envelope.mutation_id,
+                )
+                if envelope is not None
+                else None
+            )
+            if mutation is None or not mutation.idempotency_key.startswith("archive:"):
+                raise ArchiveImportError(
+                    "the project contains canon this import did not write; it was not removed"
+                )
+        for key in record.object_keys:
+            self._objects.delete(key, workspace_id=workspace_id, project_id=project_id)
+        await self._canon.purge_project(workspace_id=workspace_id, project_id=project_id)
+        if self._canon_writer is not None:
+            await self._canon_writer.purge(  # type: ignore[attr-defined]
+                workspace_id=workspace_id, project_id=project_id
+            )
+        return await self._canon.record_removed_import(record)
 
     async def _root_branch_id(self, workspace_id: str, project_id: str) -> str:
         branch = await self._journal.ensure_root_branch(
@@ -293,13 +470,56 @@ class CanonArchiveService:
 
     # ---------------------------------------------------------------- import
     async def import_project(
-        self, target_workspace_id: str, target_project_id: str, archive: dict[str, Any]
+        self,
+        target_workspace_id: str,
+        target_project_id: str,
+        archive: dict[str, Any],
+        *,
+        actor_user_id: str | None = None,
     ) -> dict[str, Any]:
+        # Validation and the target preflight perform no durable writes. Only
+        # then is the import recorded, before anything is restored.
         self._validate(archive)
         archive_checksum = archive["checksum"]
-        branch_id = await self._root_branch_id(target_workspace_id, target_project_id)
+        import_id = _import_id(archive_checksum, target_workspace_id, target_project_id)
+        await self._preflight_target(target_workspace_id, target_project_id, archive)
+        record = await self._canon.begin_import(
+            import_id=import_id,
+            workspace_id=target_workspace_id,
+            project_id=target_project_id,
+            archive_checksum=archive_checksum,
+            format_version=str(archive["format_version"]),
+            commits_total=len(archive["commits"]),
+            actor_user_id=actor_user_id,
+        )
+        try:
+            result = await self._restore(
+                target_workspace_id, target_project_id, archive, import_id=import_id
+            )
+        except Exception as error:
+            # The error class is recorded; archive content never is.
+            await self._canon.finish_import(
+                import_id=import_id, status=ImportStatus.FAILED, error=type(error).__name__
+            )
+            log_event(
+                logger,
+                "archive.import.failed",
+                level=logging.WARNING,
+                workspace_id=target_workspace_id,
+                project_id=target_project_id,
+                import_id=import_id,
+                error_type=type(error).__name__,
+            )
+            raise
+        if record.status is not ImportStatus.COMPLETED:
+            await self._canon.finish_import(import_id=import_id, status=ImportStatus.COMPLETED)
+        return {**result, "import_id": import_id}
 
-        imported_commits: list[dict[str, Any]] = []
+    def _replay_plan(
+        self, target_workspace_id: str, target_project_id: str, archive: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        """Target-scoped commits in revision order (pure; no I/O)."""
+        plan: list[dict[str, Any]] = []
         for raw in sorted(archive["commits"], key=lambda item: item["revision"]):
             operations = [
                 _remap_operation_scope(
@@ -307,11 +527,11 @@ class CanonArchiveService:
                 )
                 for operation in json.loads(raw["canonical"])
             ]
-            imported_commits.append(
+            plan.append(
                 {
                     "raw": raw,
                     "commit_id": _dedup_commit_id(
-                        archive_checksum,
+                        archive["checksum"],
                         raw["commit_id"],
                         target_workspace_id,
                         target_project_id,
@@ -321,15 +541,20 @@ class CanonArchiveService:
                     "checksum": operations_checksum(operations),
                 }
             )
+        return plan
 
+    async def _preflight_target(
+        self, target_workspace_id: str, target_project_id: str, archive: dict[str, Any]
+    ) -> None:
+        """Refuse a target that already holds canon this archive did not produce."""
+        branch_id = await self._root_branch_id(target_workspace_id, target_project_id)
+        plan = self._replay_plan(target_workspace_id, target_project_id, archive)
         target_head = await self._canon.get_head(
-            workspace_id=target_workspace_id,
-            project_id=target_project_id,
-            branch_id=branch_id,
+            workspace_id=target_workspace_id, project_id=target_project_id, branch_id=branch_id
         )
-        if target_head > len(imported_commits):
+        if target_head > len(plan):
             raise ArchiveError("target project already contains unrelated canon")
-        for item in imported_commits[:target_head]:
+        for item in plan[:target_head]:
             existing_envelope = await self._canon.get_envelope(item["commit_id"])
             if (
                 existing_envelope is None
@@ -339,7 +564,21 @@ class CanonArchiveService:
             ):
                 raise ArchiveError("target project already contains unrelated canon")
 
+    async def _restore(
+        self,
+        target_workspace_id: str,
+        target_project_id: str,
+        archive: dict[str, Any],
+        *,
+        import_id: str,
+    ) -> dict[str, Any]:
+        archive_checksum = archive["checksum"]
+        branch_id = await self._root_branch_id(target_workspace_id, target_project_id)
+
+        imported_commits = self._replay_plan(target_workspace_id, target_project_id, archive)
+
         object_key_map: dict[str, str] = {}
+        stored_keys: list[str] = []
         object_count = 0
         existing = {
             stat.checksum: stat.key
@@ -361,6 +600,24 @@ class CanonArchiveService:
             existing[raw["checksum"]] = stat.key
             object_key_map[raw["key"]] = stat.key
             object_count += 1
+            stored_keys.append(stat.key)
+        if stored_keys:
+            # Remember exactly which objects this import stored so a failed import
+            # can be removed without touching objects that were already there.
+            prior = next(
+                (
+                    item
+                    for item in await self._canon.list_imports(
+                        workspace_id=target_workspace_id, project_id=target_project_id
+                    )
+                    if item.id == import_id
+                ),
+                None,
+            )
+            stored_keys = [*(prior.object_keys if prior else []), *stored_keys]
+            await self._canon.update_import(
+                import_id=import_id, stage="objects", object_keys=stored_keys
+            )
 
         existing_schemas = await self._schemas.list(
             workspace_id=target_workspace_id, project_id=target_project_id
@@ -407,7 +664,7 @@ class CanonArchiveService:
             )
 
         commit_id_map: dict[str, str] = {}
-        for item in imported_commits:
+        for applied, item in enumerate(imported_commits, start=1):
             raw = item["raw"]
             new_commit_id = item["commit_id"]
             commit_id_map[raw["commit_id"]] = new_commit_id
@@ -484,6 +741,9 @@ class CanonArchiveService:
                 operations=item["operations"],
                 origin=source_origin,
             )
+            await self._canon.update_import(
+                import_id=import_id, stage="commits", commits_applied=applied
+            )
 
         for raw in archive["tags"]:
             now = datetime.now(UTC)
@@ -510,6 +770,21 @@ class CanonArchiveService:
             )
             projection_rebuilt = True
 
+        # Prove the restore before calling it successful: the journal must replay
+        # to the normalized tables, and the rebuilt projection must answer the
+        # same queries. Disagreement fails the import instead of hiding it.
+        verified = False
+        if self._equivalence is not None:
+            await self._canon.update_import(import_id=import_id, stage="verifying")
+            report = await self._equivalence.verify(  # type: ignore[attr-defined]
+                target_workspace_id, target_project_id
+            )
+            if not report.ok:
+                raise ArchiveError(
+                    "restored canon failed verification: " + "; ".join(report.problems[:5])
+                )
+            verified = True
+
         log_event(
             logger,
             "archive.import",
@@ -526,6 +801,7 @@ class CanonArchiveService:
             "commits": len(archive["commits"]),
             "checksum": archive_checksum,
             "projection_rebuilt": projection_rebuilt,
+            "verified": verified,
         }
 
     async def accepted_checksum(self, workspace_id: str, project_id: str) -> str:

@@ -70,6 +70,7 @@ class Container:
     media_service: Any = None
     equivalence_service: Any = None
     canon_character_workflow: Any = None
+    graph_upgrade_service: Any = None
 
     async def aclose(self) -> None:
         self.graph.close()
@@ -298,6 +299,13 @@ def build_container(settings: Settings | None = None) -> Container:
         local_mode=not resolved.is_hosted,
         model=resolved.AI_MODEL,
     )
+    from backend.services.graph_archive_upgrade import GraphArchiveUpgradeService
+
+    container.graph_upgrade_service = GraphArchiveUpgradeService(
+        mutation=container.mutation_service,
+        reader=container.canon_repository,
+        schema_store=container.schema_versions,
+    )
     from backend.services.canon_equivalence import CanonEquivalenceService
 
     container.equivalence_service = CanonEquivalenceService(
@@ -314,5 +322,10 @@ def build_container(settings: Settings | None = None) -> Container:
         media=container.media_store,
         objects=container.objects,
         projector=container.projection_service,
+        equivalence=container.equivalence_service,
+        tenancy=container.tenancy_service,
+        audit=container.tenancy,
+        canon_writer=container.canon_writer,
+        local_mode=not resolved.is_hosted,
     )
     return container

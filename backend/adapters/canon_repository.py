@@ -18,6 +18,7 @@ from backend.adapters.canon_tables import CANON_PROJECT_TABLES
 from backend.adapters.journal import apply_transition
 from backend.adapters.system import uuid7
 from backend.core.database import session_scope
+from backend.domain.archive import ArchiveImport, ImportStatus
 from backend.domain.canon.assertions import Belief, Fact, FactStatus
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
 from backend.domain.canon.events import Event, EventParticipant
@@ -147,6 +148,27 @@ _RECORD_TYPE = {
 
 def _load(value: Any) -> Any:
     return json.loads(value) if isinstance(value, str) else value
+
+
+def _archive_import(row: Any) -> ArchiveImport:
+    return ArchiveImport(
+        id=row.id,
+        workspace_id=row.workspace_id,
+        project_id=row.project_id,
+        archive_checksum=row.archive_checksum,
+        format_version=row.format_version,
+        status=ImportStatus(row.status),
+        stage=row.stage,
+        commits_total=row.commits_total,
+        commits_applied=row.commits_applied,
+        objects_imported=row.objects_imported,
+        object_keys=list(_load(row.object_keys) or []),
+        error=row.error,
+        actor_user_id=row.actor_user_id,
+        started_at=row.started_at,
+        updated_at=row.updated_at,
+        completed_at=row.completed_at,
+    )
 
 
 def _to_tag(row: Any) -> CanonTag:
@@ -1190,6 +1212,150 @@ class PostgresCanonRepository:
         result = await session.execute(text(statement), params)
         if result.rowcount == 0:  # type: ignore[attr-defined]
             raise HeadConflict(f"canonical record {record_id!r} not found for update")
+
+    # ------------------------------------------------------- import ledger
+    async def begin_import(
+        self,
+        *,
+        import_id: str,
+        workspace_id: str,
+        project_id: str,
+        archive_checksum: str,
+        format_version: str,
+        commits_total: int,
+        actor_user_id: str | None = None,
+    ) -> ArchiveImport:
+        """Record (or resume) an import. A completed import is returned unchanged."""
+        async with session_scope(self._session_factory) as session:
+            row = (
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO archive_imports (
+                            id, workspace_id, project_id, archive_checksum, format_version,
+                            status, stage, commits_total, actor_user_id
+                        )
+                        VALUES (:id, :w, :p, :sum, :fmt, 'importing', 'validated', :total, :actor)
+                        ON CONFLICT (workspace_id, project_id, archive_checksum) DO UPDATE SET
+                            status = CASE WHEN archive_imports.status = 'completed'
+                                          THEN 'completed' ELSE 'importing' END,
+                            error = CASE WHEN archive_imports.status = 'completed'
+                                         THEN archive_imports.error ELSE NULL END,
+                            updated_at = now()
+                        RETURNING *
+                        """
+                    ),
+                    {
+                        "id": import_id,
+                        "w": workspace_id,
+                        "p": project_id,
+                        "sum": archive_checksum,
+                        "fmt": format_version,
+                        "total": commits_total,
+                        "actor": actor_user_id,
+                    },
+                )
+            ).one()
+        return _archive_import(row)
+
+    async def update_import(
+        self,
+        *,
+        import_id: str,
+        stage: str,
+        commits_applied: int | None = None,
+        object_keys: Sequence[str] | None = None,
+    ) -> None:
+        async with session_scope(self._session_factory) as session:
+            await session.execute(
+                text(
+                    """
+                    UPDATE archive_imports SET
+                        stage = :stage,
+                        commits_applied = COALESCE(:applied, commits_applied),
+                        object_keys = COALESCE(CAST(:keys AS JSONB), object_keys),
+                        objects_imported = COALESCE(:count, objects_imported),
+                        updated_at = now()
+                    WHERE id = :id AND status = 'importing'
+                    """
+                ),
+                {
+                    "id": import_id,
+                    "stage": stage,
+                    "applied": commits_applied,
+                    "keys": json.dumps(list(object_keys)) if object_keys is not None else None,
+                    "count": len(object_keys) if object_keys is not None else None,
+                },
+            )
+
+    async def finish_import(
+        self, *, import_id: str, status: ImportStatus, error: str | None = None
+    ) -> ArchiveImport:
+        async with session_scope(self._session_factory) as session:
+            row = (
+                await session.execute(
+                    text(
+                        """
+                        UPDATE archive_imports SET
+                            status = :status,
+                            error = :error,
+                            stage = CASE WHEN :status = 'completed' THEN 'verified' ELSE stage END,
+                            updated_at = now(),
+                            completed_at = CASE WHEN :status = 'completed' THEN now()
+                                                ELSE completed_at END
+                        WHERE id = :id RETURNING *
+                        """
+                    ),
+                    {"id": import_id, "status": status.value, "error": error},
+                )
+            ).one()
+        return _archive_import(row)
+
+    async def record_removed_import(self, record: ArchiveImport) -> ArchiveImport:
+        """Keep a tombstone after a failed import's canon has been purged."""
+        async with session_scope(self._session_factory) as session:
+            row = (
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO archive_imports (
+                            id, workspace_id, project_id, archive_checksum, format_version,
+                            status, stage, commits_total, commits_applied, error, actor_user_id,
+                            started_at
+                        )
+                        VALUES (:id, :w, :p, :sum, :fmt, 'removed', 'removed', :total, 0, :error,
+                                :actor, :started)
+                        RETURNING *
+                        """
+                    ),
+                    {
+                        "id": record.id,
+                        "w": record.workspace_id,
+                        "p": record.project_id,
+                        "sum": record.archive_checksum,
+                        "fmt": record.format_version,
+                        "total": record.commits_total,
+                        "error": record.error,
+                        "actor": record.actor_user_id,
+                        "started": record.started_at,
+                    },
+                )
+            ).one()
+        return _archive_import(row)
+
+    async def list_imports(self, *, workspace_id: str, project_id: str) -> list[ArchiveImport]:
+        """Imports into a project, most recent first."""
+        async with session_scope(self._session_factory) as session:
+            rows = (
+                await session.execute(
+                    text(
+                        "SELECT * FROM archive_imports WHERE workspace_id = :w AND project_id = :p "
+                        "ORDER BY updated_at DESC, id"
+                    ),
+                    {"w": workspace_id, "p": project_id},
+                )
+            ).all()
+        return [_archive_import(row) for row in rows]
 
     async def _purge(self, clause: str, params: dict[str, Any]) -> int:
         removed = 0

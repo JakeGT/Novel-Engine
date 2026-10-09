@@ -5655,6 +5655,51 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/archive/export": {
+      "post": {
+        "description": "Export the project's full canonical history (owner only, audited).",
+        "operationId": "export_archive_api_v1_projects__project_id__archive_export_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Export Archive Api V1 Projects  Project Id  Archive Export Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Archive",
+        "tags": [
+          "archive"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/assets": {
       "get": {
         "operationId": "list_assets_api_v1_projects__project_id__assets_get",
@@ -8187,6 +8232,104 @@
         "summary": "Fact History",
         "tags": [
           "canon-history"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/imports": {
+      "get": {
+        "operationId": "list_imports_api_v1_projects__project_id__imports_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Imports Api V1 Projects  Project Id  Imports Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Imports",
+        "tags": [
+          "archive"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/imports/{import_id}": {
+      "delete": {
+        "description": "Erase the canon written by a failed or interrupted import (owner only).",
+        "operationId": "remove_import_api_v1_projects__project_id__imports__import_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "title": "Import Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Remove Import Api V1 Projects  Project Id  Imports  Import Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Import",
+        "tags": [
+          "archive"
         ]
       }
     },

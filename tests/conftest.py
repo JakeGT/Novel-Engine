@@ -220,6 +220,11 @@ def _build_fake_container(settings, tmp_path):
         media=media_store,
         objects=objects,
         projector=projection_service,
+        equivalence=equivalence_service,
+        tenancy=tenancy_service,
+        audit=tenancy,
+        canon_writer=canon_writer,
+        local_mode=not settings.is_hosted,
     )
     return Container(
         settings=settings,

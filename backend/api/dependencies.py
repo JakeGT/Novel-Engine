@@ -101,6 +101,10 @@ def get_canon_character_workflow(container: Container = Depends(get_container)) 
     return container.canon_character_workflow
 
 
+def get_archive_service(container: Container = Depends(get_container)) -> Any:
+    return container.archive_service
+
+
 def get_journal(container: Container = Depends(get_container)) -> Any:
     return container.journal
 

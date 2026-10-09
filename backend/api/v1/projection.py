@@ -12,7 +12,8 @@ from typing import Any
 from fastapi import APIRouter, Depends
 
 from backend.api.auth import get_project_scope
-from backend.api.dependencies import get_journal, get_projection_service
+from backend.api.dependencies import get_archive_service, get_journal, get_projection_service
+from backend.api.v1.canon_archive import import_summary
 from backend.domain.identity import AccessScope
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["projection"])
@@ -24,6 +25,7 @@ async def projection_lag(
     scope: AccessScope = Depends(get_project_scope),
     journal: Any = Depends(get_journal),
     projection: Any = Depends(get_projection_service),
+    archive: Any = Depends(get_archive_service),
 ) -> dict[str, object]:
     branch = await journal.ensure_root_branch(
         workspace_id=scope.workspace_id, project_id=project_id
@@ -34,7 +36,11 @@ async def projection_lag(
     failed = await journal.count_failed_outbox(
         workspace_id=scope.workspace_id, project_id=project_id
     )
+    imports = await archive.list_imports_as(scope, scope.workspace_id or "", project_id)
     return {
+        # The most recent archive import, if any. Anything other than
+        # ``completed`` means this project is not (yet) a successful restore.
+        "import": import_summary(imports[0]) if imports else None,
         "projection": "graph",
         "branch_id": branch.id,
         "head_revision": lag.head_revision,

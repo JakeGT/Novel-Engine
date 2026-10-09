@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
+from backend.domain.archive import ArchiveImport, ImportStatus
 from backend.domain.canon.assertions import Belief, Fact, FactStatus
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
 from backend.domain.canon.events import Event
@@ -2423,9 +2424,107 @@ class InMemoryCanonRepository:
         self.tag_history: dict[tuple[str, str, str, str], list[Any]] = {}
         self.asset_links: dict[tuple[str, str, str], Any] = {}
         self.evidence: list[EvidenceRecord] = []
+        self.imports: dict[tuple[str, str, str], ArchiveImport] = {}
 
     def set_head(self, workspace_id: str, project_id: str, branch_id: str, head: int) -> None:
         self.heads[(workspace_id, project_id, branch_id)] = head
+
+    async def begin_import(
+        self,
+        *,
+        import_id: str,
+        workspace_id: str,
+        project_id: str,
+        archive_checksum: str,
+        format_version: str,
+        commits_total: int,
+        actor_user_id: str | None = None,
+    ) -> ArchiveImport:
+        key = (workspace_id, project_id, archive_checksum)
+        existing = self.imports.get(key)
+        now = utcnow()
+        if existing is None:
+            record = ArchiveImport(
+                id=import_id,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                archive_checksum=archive_checksum,
+                format_version=format_version,
+                status=ImportStatus.IMPORTING,
+                commits_total=commits_total,
+                actor_user_id=actor_user_id,
+                started_at=now,
+                updated_at=now,
+            )
+        elif existing.status is ImportStatus.COMPLETED:
+            record = existing
+        else:
+            record = existing.model_copy(
+                update={"status": ImportStatus.IMPORTING, "error": None, "updated_at": now}
+            )
+        self.imports[key] = record
+        return record
+
+    def _import_by_id(self, import_id: str) -> tuple[tuple[str, str, str], ArchiveImport]:
+        return next((key, item) for key, item in self.imports.items() if item.id == import_id)
+
+    async def update_import(
+        self,
+        *,
+        import_id: str,
+        stage: str,
+        commits_applied: int | None = None,
+        object_keys: Any = None,
+    ) -> None:
+        key, record = self._import_by_id(import_id)
+        if record.status is not ImportStatus.IMPORTING:
+            return
+        update: dict[str, Any] = {"stage": stage, "updated_at": utcnow()}
+        if commits_applied is not None:
+            update["commits_applied"] = commits_applied
+        if object_keys is not None:
+            update["object_keys"] = list(object_keys)
+            update["objects_imported"] = len(object_keys)
+        self.imports[key] = record.model_copy(update=update)
+
+    async def finish_import(
+        self, *, import_id: str, status: ImportStatus, error: str | None = None
+    ) -> ArchiveImport:
+        key, record = self._import_by_id(import_id)
+        now = utcnow()
+        completed = status is ImportStatus.COMPLETED
+        self.imports[key] = record.model_copy(
+            update={
+                "status": status,
+                "error": error,
+                "stage": "verified" if completed else record.stage,
+                "updated_at": now,
+                "completed_at": now if completed else record.completed_at,
+            }
+        )
+        return self.imports[key]
+
+    async def record_removed_import(self, record: ArchiveImport) -> ArchiveImport:
+        tombstone = record.model_copy(
+            update={
+                "status": ImportStatus.REMOVED,
+                "stage": "removed",
+                "commits_applied": 0,
+                "objects_imported": 0,
+                "object_keys": [],
+                "updated_at": utcnow(),
+            }
+        )
+        self.imports[(record.workspace_id, record.project_id, record.archive_checksum)] = tombstone
+        return tombstone
+
+    async def list_imports(self, *, workspace_id: str, project_id: str) -> list[ArchiveImport]:
+        items = [
+            item
+            for (w, p, _), item in self.imports.items()
+            if w == workspace_id and p == project_id
+        ]
+        return sorted(items, key=lambda item: item.updated_at, reverse=True)
 
     async def purge_project(self, *, workspace_id: str, project_id: str) -> int:
         return self._purge(workspace_id, project_id)
@@ -2448,6 +2547,7 @@ class InMemoryCanonRepository:
             self.watermarks,
             self.tags,
             self.tag_history,
+            self.imports,
         ):
             # Watermarks are keyed (projection, ws, pr, branch); the rest lead with (ws, pr).
             offset = 1 if store is self.watermarks else 0

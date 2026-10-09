@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from backend.api.middleware import get_correlation_id
+from backend.domain.archive import ArchiveImportError
 from backend.domain.errors import DomainError
 from backend.domain.identity import IdentityError, IdentityProviderUnavailable
 from backend.domain.journal import HeadConflict, MutationNotFound, RevisionConflict
@@ -240,6 +241,19 @@ def register_exception_handlers(app: FastAPI) -> None:
             problem_body(
                 status=409,
                 title="Invalid mutation state",
+                code="invalid_state",
+                detail=str(exc),
+                correlation_id=_correlation_id(request),
+            ),
+        )
+
+    @app.exception_handler(ArchiveImportError)
+    async def _handle_import_state(request: Request, exc: ArchiveImportError) -> JSONResponse:
+        return _problem_response(
+            409,
+            problem_body(
+                status=409,
+                title="Import cannot be changed",
                 code="invalid_state",
                 detail=str(exc),
                 correlation_id=_correlation_id(request),
