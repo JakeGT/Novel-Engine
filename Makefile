@@ -6,7 +6,7 @@ export pnpm_config_store_dir = $(PNPM_STORE_DIR)
 
 TYPE_CHECK_TARGETS = backend
 
-.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify verify seed reset-dev diagnostics retention reconcile project watch archive audit api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check secret-scan frontend-install frontend-api-check frontend-lint frontend-typecheck frontend-test frontend-build check
+.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify verify seed reset-dev diagnostics retention reconcile project watch archive audit api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check secret-scan frontend-install frontend-api-check frontend-lint frontend-typecheck frontend-test frontend-build frontend-e2e-install e2e check
 
 help:
 	@echo "install             Install runtime Python dependencies"
@@ -42,6 +42,8 @@ help:
 	@echo "frontend-lint       Lint the frontend"
 	@echo "frontend-typecheck  Type-check the frontend"
 	@echo "frontend-test       Run frontend component tests"
+	@echo "frontend-e2e-install Install the Playwright browser used by make e2e"
+	@echo "e2e                 Run the browser end-to-end workflow (needs infra + test profile)"
 	@echo "frontend-build      Build the frontend"
 	@echo "check               Run local static checks and hermetic tests"
 
@@ -158,5 +160,15 @@ frontend-test:
 
 frontend-build:
 	pnpm --dir frontend run build
+
+frontend-e2e-install:
+	pnpm --dir frontend exec playwright install chromium
+
+# Drives the real UI against a real API on a disposable PostgreSQL database and
+# the neo4j-test service (docker compose --profile test up -d --wait). Not part
+# of `check`, which must stay hermetic. Set E2E_BROWSER_CHANNEL=chrome to use an
+# installed Chrome instead of the Playwright-managed Chromium.
+e2e:
+	pnpm --dir frontend exec playwright test
 
 check: lock-check lint format-check secret-scan typecheck test frontend-api-check frontend-lint frontend-typecheck frontend-test frontend-build

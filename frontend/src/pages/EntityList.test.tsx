@@ -1,59 +1,53 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
-import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ProjectContext } from './ProjectLayout'
+import { screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { entity, VOCABULARY } from '../test/fixtures'
+import { expectAccessible, mockApi, renderInProject } from '../test/harness'
 import { EntityList } from './EntityList'
 
-function renderEntityList() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const context: ProjectContext = {
-    scope: { workspaceId: 'ws_1', projectId: 'prj_1' },
-    headRevision: 3,
-  }
-  return render(
-    <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/projects/prj_1']}>
-        <Routes>
-          <Route path="/projects/:projectId" element={<Outlet context={context} />}>
-            <Route index element={<EntityList />} />
-          </Route>
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  )
-}
+afterEach(() => vi.unstubAllGlobals())
 
 describe('EntityList', () => {
-  beforeEach(() => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            items: [
-              {
-                id: 'ent_1',
-                type: 'Character',
-                name: 'Mara',
-                lifecycle: 'active',
-                schema_version_id: 'scv_1',
-                created_revision: 1,
-              },
-            ],
-            limit: 20,
-            offset: 0,
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        ),
-      ),
-    )
-  })
+  it('lists project-scoped entities and filters by type, search, and lifecycle', async () => {
+    const api = mockApi({
+      'GET /schemas/vocabulary': VOCABULARY,
+      'GET /entities/name-collisions': { items: [], limit: 0, offset: 0 },
+      'GET /entities': {
+        items: [entity(), entity({ id: 'ent_old', name: 'Old Light', type: 'Location', lifecycle: 'retired', aliases: [] })],
+        limit: 100,
+        offset: 0,
+      },
+      'GET /entities/search': { items: [entity()], limit: 100, offset: 0 },
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<EntityList />)
 
-  it('renders project-scoped entities from the API', async () => {
-    renderEntityList()
-    expect(await screen.findByText('Mara')).toBeTruthy()
-    const call = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]
-    expect(String(call[0])).toContain('/api/v1/projects/prj_1/entities')
+    const link = await screen.findByRole('link', { name: 'Mara Venn' })
+    // Characters open in the character view; everything else in the entity view.
+    expect(link).toHaveAttribute('href', '/projects/prj_1/characters/ent_mara')
+    expect(screen.getByRole('link', { name: 'Old Light' })).toHaveAttribute(
+      'href',
+      '/projects/prj_1/entities/ent_old',
+    )
+    expect(screen.getByText('also The Fox')).toBeInTheDocument()
+    expect(screen.getByText('Retired')).toBeInTheDocument()
+    expect(api.calls[0].path).toContain('/api/v1/projects/prj_1/')
+    await expectAccessible(container)
+
+    await screen.findAllByRole('option', { name: 'Location' })
+    await user.selectOptions(screen.getByLabelText('Type', { selector: '.filters select' }), 'Location')
+    await user.click(screen.getByLabelText('Include retired'))
+    await waitFor(() => {
+      const last = api.find('GET', '/entities').at(-1)
+      expect(last?.search.get('entity_type')).toBe('Location')
+      expect(last?.search.get('include_retired')).toBe('true')
+    })
+
+    await user.type(screen.getByLabelText('Search'), 'fox')
+    await waitFor(() => {
+      const last = api.find('GET', '/entities/search').at(-1)
+      expect(last?.search.get('q')).toBe('fox')
+      expect(last?.search.get('entity_type')).toBe('Location')
+    })
   })
 })

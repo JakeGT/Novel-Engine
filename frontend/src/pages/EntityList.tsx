@@ -1,109 +1,106 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Link, useOutletContext } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { api } from '../api/client'
-import type { ProjectContext } from './ProjectLayout'
-
-// Core entity types come from the governed core schema (backend registry).
-const CORE_TYPES = [
-  'Character',
-  'Location',
-  'Object',
-  'Faction',
-  'Event',
-  'Concept',
-  'System',
-  'Resource',
-  'Constraint',
-  'Law',
-]
+import { EntityForm } from '../components/EntityForm'
+import { ErrorNotice, LifecycleBadge, ReadOnlyNotice } from '../components/ui'
+import { scopedKey, useProject } from '../project'
 
 export function EntityList() {
-  const { scope, headRevision } = useOutletContext<ProjectContext>()
-  const queryClient = useQueryClient()
-  const [type, setType] = useState('Character')
-  const [name, setName] = useState('')
-  const [attributes, setAttributes] = useState('{}')
-  const [error, setError] = useState<string | null>(null)
+  const { scope, canWrite } = useProject()
+  const [type, setType] = useState('')
+  const [search, setSearch] = useState('')
+  const [includeRetired, setIncludeRetired] = useState(false)
+  const term = search.trim()
 
-  const entities = useQuery({
-    queryKey: ['entities', scope.workspaceId, scope.projectId],
-    queryFn: () => api.listEntities(scope),
+  const vocabulary = useQuery({
+    queryKey: scopedKey(scope, 'vocabulary'),
+    queryFn: () => api.vocabulary(scope),
   })
 
-  const create = useMutation({
-    mutationFn: () =>
-      api.createEntity(scope, {
-        type,
-        name,
-        attributes: JSON.parse(attributes || '{}') as Record<string, unknown>,
-        expected_revision: headRevision,
-      }),
-    onSuccess: () => {
-      setName('')
-      setAttributes('{}')
-      setError(null)
-      queryClient.invalidateQueries({ queryKey: ['entities'] })
-      queryClient.invalidateQueries({ queryKey: ['projection'] })
-    },
-    onError: (mutationError: unknown) =>
-      setError(mutationError instanceof Error ? mutationError.message : 'Create failed'),
+  const entities = useQuery({
+    queryKey: scopedKey(scope, 'entities', type, term, includeRetired),
+    queryFn: () =>
+      term
+        ? api.searchEntities(scope, {
+            q: term,
+            entity_type: type || undefined,
+            include_retired: includeRetired,
+            limit: 100,
+          })
+        : api.listEntities(scope, {
+            entity_type: type || undefined,
+            include_retired: includeRetired,
+            limit: 100,
+          }),
   })
 
   const items = entities.data?.items ?? []
 
   return (
-    <section className="panel">
-      <h2>Entities</h2>
-      {entities.isError && (
-        <p className="error">Could not load entities: {(entities.error as Error).message}</p>
-      )}
-      {items.length === 0 && <p className="muted">No entities yet.</p>}
-      <ul className="list">
-        {items.map((entity) => (
-          <li key={entity.id}>
-            <Link to={`/projects/${scope.projectId}/entities/${entity.id}`}>{entity.name}</Link>
-            <span className="muted"> {entity.type}</span>
-            {entity.lifecycle !== 'active' && <span className="badge warn">{entity.lifecycle}</span>}
-          </li>
-        ))}
-      </ul>
+    <>
+      <section className="panel" aria-labelledby="entities-heading">
+        <h2 id="entities-heading">Entities</h2>
+        <form className="filters" role="search" onSubmit={(event) => event.preventDefault()}>
+          <label>
+            Search
+            <input
+              type="search"
+              value={search}
+              placeholder="Name, slug, or alias"
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </label>
+          <label>
+            Type
+            <select value={type} onChange={(event) => setType(event.target.value)}>
+              <option value="">All types</option>
+              {(vocabulary.data?.entity_types ?? []).map((item) => (
+                <option key={item.name} value={item.name}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={includeRetired}
+              onChange={(event) => setIncludeRetired(event.target.checked)}
+            />
+            Include retired
+          </label>
+        </form>
 
-      <h3>Create entity</h3>
-      <form
-        className="stack"
-        onSubmit={(event) => {
-          event.preventDefault()
-          create.mutate()
-        }}
-      >
-        <label>
-          Type
-          <select value={type} onChange={(event) => setType(event.target.value)}>
-            {CORE_TYPES.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Name
-          <input value={name} onChange={(event) => setName(event.target.value)} required />
-        </label>
-        <label>
-          Attributes (JSON)
-          <textarea
-            value={attributes}
-            onChange={(event) => setAttributes(event.target.value)}
-            rows={3}
-          />
-        </label>
-        <button className="button" type="submit" disabled={create.isPending || !name}>
-          Create
-        </button>
-        {error && <p className="error">{error}</p>}
-      </form>
-    </section>
+        <ErrorNotice error={entities.error} prefix="Could not load entities" />
+        <p className="muted" role="status">
+          {entities.isLoading
+            ? 'Loading entities…'
+            : `${items.length} ${items.length === 1 ? 'entity' : 'entities'}`}
+        </p>
+        <ul className="list">
+          {items.map((entity) => (
+            <li key={entity.id}>
+              <Link
+                to={`/projects/${scope.projectId}/${entity.type === 'Character' ? 'characters' : 'entities'}/${entity.id}`}
+              >
+                {entity.name}
+              </Link>{' '}
+              <span className="muted">{entity.type}</span>{' '}
+              {(entity.aliases ?? []).length > 0 && (
+                <span className="muted">also {(entity.aliases ?? []).join(', ')}</span>
+              )}{' '}
+              {entity.lifecycle !== 'active' && <LifecycleBadge retired />}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="panel" aria-labelledby="create-heading">
+        <h2 id="create-heading">Create entity</h2>
+        <ReadOnlyNotice canWrite={canWrite} />
+        {canWrite && <EntityForm />}
+      </section>
+    </>
   )
 }

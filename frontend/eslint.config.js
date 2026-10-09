@@ -7,7 +7,7 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
   // The OpenAPI-derived client is generated; it is excluded like other vendored output.
-  globalIgnores(['dist', 'src/api/schema.ts']),
+  globalIgnores(['dist', 'src/api/schema.ts', 'test-results', 'playwright-report']),
   {
     files: ['**/*.{js,jsx,ts,tsx}'],
     extends: [
@@ -32,5 +32,15 @@ export default defineConfig([
         { varsIgnorePattern: '^[A-Z_]', argsIgnorePattern: '^_' },
       ],
     },
+  },
+  {
+    // Tooling configuration and browser specs run in Node, not the browser.
+    files: ['vite.config.js', 'playwright.config.ts', 'e2e/**'],
+    languageOptions: { globals: globals.node },
+  },
+  {
+    // Test helpers and browser specs are never hot-reloaded.
+    files: ['src/test/**', '**/*.test.{ts,tsx}', 'e2e/**', 'playwright.config.ts'],
+    rules: { 'react-refresh/only-export-components': 'off' },
   },
 ])

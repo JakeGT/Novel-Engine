@@ -1,87 +1,106 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useOutletContext, useParams } from 'react-router-dom'
-import { api } from '../api/client'
-import type { ProjectContext } from './ProjectLayout'
+import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
+import { api, type CanonEntity } from '../api/client'
+import { EntityForm } from '../components/EntityForm'
+import { MediaLinksPanel } from '../components/MediaLinksPanel'
+import { ProvenancePanel } from '../components/ProvenancePanel'
+import { RelationshipsPanel } from '../components/RelationshipsPanel'
+import { RetireEntity } from '../components/RetireEntity'
+import { ErrorNotice, Json, LifecycleBadge, ReadOnlyNotice } from '../components/ui'
+import { scopedKey, useProject } from '../project'
 
-export function EntityDetail() {
-  const { scope, headRevision } = useOutletContext<ProjectContext>()
-  const { entityId = '' } = useParams()
-  const queryClient = useQueryClient()
-
-  const entity = useQuery({
-    queryKey: ['entity', scope.workspaceId, scope.projectId, entityId],
-    queryFn: () => api.getEntity(scope, entityId),
-  })
-
-  const history = useQuery({
-    queryKey: ['entity-history', scope.workspaceId, scope.projectId, entityId],
-    queryFn: () => api.entityHistory(scope, entityId),
-  })
-
-  const retire = useMutation({
-    mutationFn: () => api.retireEntity(scope, entityId, headRevision),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['entity'] })
-      queryClient.invalidateQueries({ queryKey: ['entity-history'] })
-      queryClient.invalidateQueries({ queryKey: ['entities'] })
-      queryClient.invalidateQueries({ queryKey: ['projection'] })
-    },
-  })
+export function EntitySummary({ entity }: { entity: CanonEntity }) {
+  const { canWrite } = useProject()
+  const [editing, setEditing] = useState(false)
+  const active = entity.lifecycle === 'active'
 
   return (
-    <section className="panel">
-      <Link to={`/projects/${scope.projectId}`}>← Entities</Link>
-
-      {entity.isLoading && <p className="muted">Loading entity…</p>}
-      {entity.isError && <p className="error">{(entity.error as Error).message}</p>}
-
-      {entity.data && (
+    <section className="panel" aria-labelledby="entity-heading">
+      <h2 id="entity-heading">
+        {entity.name} <span className="muted">{entity.type}</span>{' '}
+        <LifecycleBadge retired={!active} />
+      </h2>
+      {editing ? (
+        <EntityForm entity={entity} onSaved={() => setEditing(false)} onCancel={() => setEditing(false)} />
+      ) : (
         <>
-          <h2>
-            {entity.data.name} <span className="muted">{entity.data.type}</span>{' '}
-            <span className="badge">{entity.data.lifecycle}</span>
-          </h2>
           <dl>
             <dt>ID</dt>
-            <dd>{entity.data.id}</dd>
-            <dt>Created revision</dt>
-            <dd>r{entity.data.created_revision}</dd>
-            {entity.data.retired_revision != null && (
+            <dd>
+              <code>{entity.id}</code>
+            </dd>
+            <dt>Slug</dt>
+            <dd>{entity.slug ?? <span className="muted">none</span>}</dd>
+            <dt>Aliases</dt>
+            <dd>{(entity.aliases ?? []).join(', ') || <span className="muted">none</span>}</dd>
+            <dt>Created</dt>
+            <dd>r{entity.created_revision}</dd>
+            {entity.retired_revision != null && (
               <>
-                <dt>Retired revision</dt>
-                <dd>r{entity.data.retired_revision}</dd>
+                <dt>Retired</dt>
+                <dd>r{entity.retired_revision}</dd>
               </>
             )}
             <dt>Schema version</dt>
-            <dd>{entity.data.schema_version_id}</dd>
+            <dd>
+              <code>{entity.schema_version_id || 'core'}</code>
+            </dd>
             <dt>Attributes</dt>
             <dd>
-              <pre>{JSON.stringify(entity.data.attributes ?? {}, null, 2)}</pre>
+              {Object.keys(entity.attributes ?? {}).length > 0 ? (
+                <Json value={entity.attributes} />
+              ) : (
+                <span className="muted">none</span>
+              )}
             </dd>
           </dl>
-
-          {entity.data.lifecycle === 'active' && (
-            <button
-              className="button"
-              onClick={() => retire.mutate()}
-              disabled={retire.isPending}
-            >
-              Retire
-            </button>
+          <ReadOnlyNotice canWrite={canWrite} />
+          {canWrite && active && (
+            <div className="actions">
+              <button type="button" className="button" onClick={() => setEditing(true)}>
+                Edit
+              </button>
+              <RetireEntity entity={entity} />
+            </div>
           )}
-          {retire.isError && <p className="error">{(retire.error as Error).message}</p>}
+          {!active && (
+            <p className="muted">Retired entities are read-only; their history is preserved.</p>
+          )}
         </>
       )}
-
-      <h3>History</h3>
-      <ul className="list">
-        {(history.data?.items ?? []).map((entry) => (
-          <li key={`${entry.revision}-${entry.record_id}-${entry.operation_type}`}>
-            <span className="badge">r{entry.revision}</span> {entry.operation_type}{' '}
-            <span className="muted">{entry.commit_id}</span>
-          </li>
-        ))}
-      </ul>
     </section>
+  )
+}
+
+export function EntityDetail() {
+  const { scope } = useProject()
+  const { entityId = '' } = useParams()
+
+  const entity = useQuery({
+    queryKey: scopedKey(scope, 'entity', entityId),
+    queryFn: () => api.getEntity(scope, entityId),
+  })
+
+  return (
+    <>
+      <p>
+        <Link to={`/projects/${scope.projectId}`}>← Entities</Link>
+      </p>
+      {entity.isLoading && (
+        <p className="muted" role="status">
+          Loading entity…
+        </p>
+      )}
+      <ErrorNotice error={entity.error} />
+      {entity.data && (
+        <>
+          <EntitySummary entity={entity.data} />
+          <RelationshipsPanel entity={entity.data} />
+          <MediaLinksPanel targetId={entity.data.id} />
+          <ProvenancePanel recordType="entity" recordId={entity.data.id} />
+        </>
+      )}
+    </>
   )
 }

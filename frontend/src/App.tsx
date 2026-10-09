@@ -5,6 +5,12 @@ import { ProjectLayout } from './pages/ProjectLayout'
 import { WorkspaceHome } from './pages/WorkspaceHome'
 import { EntityList } from './pages/EntityList'
 import { EntityDetail } from './pages/EntityDetail'
+import { CharacterView } from './pages/CharacterView'
+import { SchemaPage } from './pages/SchemaPage'
+import { MutationQueue } from './pages/MutationQueue'
+import { MutationDetail } from './pages/MutationDetail'
+import { RevisionsPage } from './pages/RevisionsPage'
+import { AssetsPage } from './pages/AssetsPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,6 +27,12 @@ export default function App() {
           <Route path="/projects/:projectId" element={<ProjectLayout />}>
             <Route index element={<EntityList />} />
             <Route path="entities/:entityId" element={<EntityDetail />} />
+            <Route path="characters/:entityId" element={<CharacterView />} />
+            <Route path="mutations" element={<MutationQueue />} />
+            <Route path="mutations/:mutationId" element={<MutationDetail />} />
+            <Route path="revisions" element={<RevisionsPage />} />
+            <Route path="schema" element={<SchemaPage />} />
+            <Route path="assets" element={<AssetsPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -1,24 +1,49 @@
 import type { components } from './schema'
 
-export type CanonEntity = components['schemas']['CanonEntityModel']
-export type Workspace = components['schemas']['WorkspaceModel']
-export type Project = components['schemas']['ProjectModel']
+type Schemas = components['schemas']
+
+// Contract types come straight from the generated OpenAPI schema. Only endpoints
+// the backend declares as an untyped object are typed locally, next to the call.
+export type CanonEntity = Schemas['CanonEntityModel']
+export type CreateEntityRequest = Schemas['CreateEntityRequest']
+export type UpdateEntityRequest = Schemas['UpdateEntityRequest']
+export type Workspace = Schemas['WorkspaceModel']
+export type Project = Schemas['ProjectModel']
+export type Fact = Schemas['FactModel']
+export type Belief = Schemas['BeliefModel']
+export type CanonEvent = Schemas['EventModel']
+export type AssertFactRequest = Schemas['AssertFactRequest']
+export type Vocabulary = Schemas['VocabularyModel']
+export type VocabularyEntityType = Schemas['EntityTypeModel']
+export type VocabularyPredicate = Schemas['PredicateModel']
+export type SchemaVersion = Schemas['SchemaVersionModel']
+export type SchemaValidationReport = Schemas['ValidationReportModel']
+export type SchemaDraftResponse = Schemas['SchemaDraftResponse']
+export type MutationSummary = Schemas['MutationSummaryModel']
+export type MutationDetail = Schemas['MutationDetailModel']
+export type MutationOperation = Schemas['MutationOperationModel']
+export type MutationValidation = Schemas['MutationValidationModel']
+export type MutationCommit = Schemas['MutationCommitModel']
+export type MutationList = Schemas['MutationListResponse']
+export type ProposeMutationRequest = Schemas['ProposeMutationRequest']
+export type CharacterQuestionSheet = Schemas['CharacterQuestionSheetModel']
+export type CharacterProposal = Schemas['CharacterProposalModel']
+export type CharacterProposalRequest = Schemas['CharacterProposalRequest']
+export type EntityListResponse = Schemas['CanonEntityListResponse']
 
 export interface Scope {
   workspaceId: string | null
   projectId: string
 }
 
-export interface EntityListResponse {
-  items: CanonEntity[]
-  limit: number
-  offset: number
+/** A list endpoint the backend returns as an untyped `{items}` object. */
+export interface Items<T> {
+  items: T[]
 }
 
 export interface HistoryEntry {
   record_type: string
   record_id: string
-  branch_id: string
   revision: number
   operation_type: string
   commit_id: string
@@ -26,7 +51,18 @@ export interface HistoryEntry {
   created_at: string
 }
 
+export interface ImportSummary {
+  id: string
+  status: 'importing' | 'completed' | 'failed' | 'removed'
+  stage: string
+  commits_total: number
+  commits_applied: number
+  objects_imported: number
+  error: string | null
+}
+
 export interface ProjectionStatus {
+  import: ImportSummary | null
   projection: string
   branch_id: string
   head_revision: number
@@ -38,13 +74,142 @@ export interface ProjectionStatus {
   failed_deliveries: number
 }
 
+export interface ProjectAccess {
+  role: string
+  permissions: string[]
+  can_write: boolean
+  can_admin: boolean
+  auth_mode: string
+  hosted: boolean
+}
+
+export interface RevisionSummary {
+  revision: number
+  commit_id: string
+  expected_head: number
+  result_head: number
+  schema_version_id: string | null
+  operation_count: number
+  created_at: string
+  origin: string | null
+  intent: string | null
+  mutation_id: string | null
+  actor_user_id: string | null
+  decision_count: number
+  evidence_count: number
+  status: string
+}
+
+export interface ProvenanceEntry {
+  record_type: string
+  record_id: string
+  revision: number
+  commit_id: string
+  operation_type: string
+  origin: string | null
+  intent: string | null
+  schema_version_id: string | null
+  actor_user_id: string | null
+  decisions: { decision: string; actor_user_id: string | null; note: string | null; created_at: string }[]
+  evidence: { source_artefact_id: string; location: string | null }[]
+  redacted: boolean
+  created_at: string
+}
+
+export interface RevertProposal {
+  from_revision: number
+  to_revision: number
+  head_revision: number
+  operations: Record<string, unknown>[]
+  changes: {
+    revision: number
+    record_type: string
+    record_id: string
+    operation_type: string
+    inverse_operation: string | null
+    reason: string
+  }[]
+  conflicts: string[]
+  summary: string
+}
+
+export interface Asset {
+  id: string
+  name: string
+  lifecycle: string
+  created_revision: number
+  retired_revision: number | null
+  created_at: string
+}
+
+export interface AssetVersion {
+  id: string
+  asset_id: string
+  version: number
+  content_type: string
+  byte_length: number
+  checksum: string
+  source: string | null
+  licence: string | null
+  attribution: string | null
+  authority: string | null
+  visibility: string | null
+  created_revision: number
+  retired_revision: number | null
+}
+
+export interface AssetLink {
+  id: string
+  asset_id: string
+  asset_version_id: string | null
+  role: string
+  target_record_type: string
+  target_record_id: string
+  created_revision: number
+  retired_revision: number | null
+}
+
+export interface AssetLifecycleEvent {
+  action: string
+  asset_id: string
+  asset_version_id: string | null
+  actor_user_id: string | null
+  canon_revision: number | null
+  created_at: string
+}
+
+export interface SessionInfo {
+  user: { id: string; email: string | null; display_name: string | null }
+  auth_mode: string
+  /** Present only in local (single-user) mode, which has exactly one project. */
+  local?: { workspace_id: string; project_id: string }
+}
+
+/** A failed request, carrying the stable problem `code` so callers can branch on it. */
 export class ApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
+  status: number
+  code: string
+  fieldErrors: Record<string, string>
+
+  constructor(status: number, message: string, code = '', fieldErrors: Record<string, string> = {}) {
     super(message)
+    this.status = status
+    this.code = code
+    this.fieldErrors = fieldErrors
   }
+}
+
+export function isApiError(error: unknown, code?: string): error is ApiError {
+  return error instanceof ApiError && (code === undefined || error.code === code)
+}
+
+/** The branch head moved (or the commit raced); entered data is still valid to resubmit. */
+export function isStaleHead(error: unknown): boolean {
+  return isApiError(error, 'revision_conflict')
+}
+
+export function errorMessage(error: unknown, fallback = 'Request failed'): string {
+  return error instanceof Error && error.message ? error.message : fallback
 }
 
 const CSRF_COOKIE = 'novel_csrf'
@@ -78,77 +243,240 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   if (!response.ok) {
     let detail = response.statusText
+    let code = ''
+    let fieldErrors: Record<string, string> = {}
     try {
-      const body = (await response.json()) as { detail?: string }
+      const body = (await response.json()) as {
+        detail?: string
+        code?: string
+        field_errors?: Record<string, string>
+      }
       detail = body.detail ?? detail
+      code = body.code ?? ''
+      fieldErrors = body.field_errors ?? {}
     } catch {
       // Non-JSON error body; keep the status text.
     }
-    throw new ApiError(response.status, detail)
+    throw new ApiError(response.status, detail, code, fieldErrors)
   }
   if (response.status === 204) return undefined as T
   return (await response.json()) as T
 }
 
-function query(params: Record<string, string | number | boolean | undefined>): string {
+type QueryParams = Record<string, string | number | boolean | undefined | null>
+
+function query(params: QueryParams): string {
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined) search.set(key, String(value))
+    if (value !== undefined && value !== null && value !== '') search.set(key, String(value))
   }
   const encoded = search.toString()
   return encoded ? `?${encoded}` : ''
 }
 
+function project(scope: Scope): string {
+  return `/api/v1/projects/${encodeURIComponent(scope.projectId)}`
+}
+
+function get<T>(scope: Scope, path: string, params: QueryParams = {}): Promise<T> {
+  return request<T>(`${project(scope)}${path}${query(params)}`, { workspaceId: scope.workspaceId })
+}
+
+function send<T>(scope: Scope, method: string, path: string, json?: unknown): Promise<T> {
+  return request<T>(`${project(scope)}${path}`, {
+    method,
+    workspaceId: scope.workspaceId,
+    json,
+  })
+}
+
+const id = encodeURIComponent
+
 export const api = {
-  session: () =>
-    request<{ user: { id: string; email: string | null; display_name: string | null } }>(
-      '/auth/me',
-    ),
+  session: () => request<SessionInfo>('/auth/me'),
 
   listWorkspaces: () => request<Workspace[]>('/api/v1/workspaces'),
 
   listProjects: (workspaceId: string) =>
-    request<Project[]>(`/api/v1/workspaces/${workspaceId}/projects`, { workspaceId }),
+    request<Project[]>(`/api/v1/workspaces/${id(workspaceId)}/projects`, { workspaceId }),
 
+  access: (scope: Scope) => get<ProjectAccess>(scope, '/access'),
+
+  projection: (scope: Scope) => get<ProjectionStatus>(scope, '/projection'),
+
+  // --- schema ---------------------------------------------------------------
+  vocabulary: (scope: Scope) => get<Vocabulary>(scope, '/schemas/vocabulary'),
+  listSchemaVersions: (scope: Scope) => get<SchemaVersion[]>(scope, '/schemas'),
+  validateSchema: (scope: Scope, definition: Record<string, unknown>) =>
+    send<SchemaValidationReport>(scope, 'POST', '/schemas/validate', { definition }),
+  createSchemaDraft: (scope: Scope, definition: Record<string, unknown>) =>
+    send<SchemaDraftResponse>(scope, 'POST', '/schemas/drafts', { definition }),
+  publishSchema: (scope: Scope, versionId: string) =>
+    send<SchemaVersion>(scope, 'POST', `/schemas/${id(versionId)}/publish`),
+
+  // --- entities ---------------------------------------------------------------
   listEntities: (
     scope: Scope,
     params: { limit?: number; offset?: number; include_retired?: boolean; entity_type?: string } = {},
-  ) =>
-    request<EntityListResponse>(
-      `/api/v1/projects/${scope.projectId}/entities${query(params)}`,
-      { workspaceId: scope.workspaceId },
-    ),
+  ) => get<EntityListResponse>(scope, '/entities', params),
+
+  searchEntities: (
+    scope: Scope,
+    params: { q: string; entity_type?: string; include_retired?: boolean; limit?: number },
+  ) => get<EntityListResponse>(scope, '/entities/search', params),
+
+  nameCollisions: (scope: Scope, entityType: string, name: string) =>
+    get<EntityListResponse>(scope, '/entities/name-collisions', { entity_type: entityType, name }),
 
   getEntity: (scope: Scope, entityId: string) =>
-    request<CanonEntity>(`/api/v1/projects/${scope.projectId}/entities/${entityId}`, {
-      workspaceId: scope.workspaceId,
-    }),
+    get<CanonEntity>(scope, `/entities/${id(entityId)}`),
 
-  createEntity: (
+  createEntity: (scope: Scope, body: CreateEntityRequest) =>
+    send<CanonEntity>(scope, 'POST', '/entities', body),
+
+  updateEntity: (scope: Scope, entityId: string, body: UpdateEntityRequest) =>
+    send<CanonEntity>(scope, 'PATCH', `/entities/${id(entityId)}`, body),
+
+  retireEntity: (
     scope: Scope,
-    body: { type: string; name: string; slug?: string; attributes?: Record<string, unknown>; expected_revision: number },
+    entityId: string,
+    expectedRevision: number,
+    acknowledgeHighImpact: boolean,
   ) =>
-    request<CanonEntity>(`/api/v1/projects/${scope.projectId}/entities`, {
-      method: 'POST',
-      workspaceId: scope.workspaceId,
-      json: body,
-    }),
-
-  retireEntity: (scope: Scope, entityId: string, expectedRevision: number) =>
-    request<CanonEntity>(`/api/v1/projects/${scope.projectId}/entities/${entityId}/retire`, {
-      method: 'POST',
-      workspaceId: scope.workspaceId,
-      json: { expected_revision: expectedRevision },
-    }),
+    send<CanonEntity>(scope, 'POST', `/entities/${id(entityId)}/retire`, {
+      expected_revision: expectedRevision,
+      acknowledge_high_impact: acknowledgeHighImpact,
+    } satisfies Schemas['RetireEntityRequest']),
 
   entityHistory: (scope: Scope, entityId: string) =>
-    request<{ items: HistoryEntry[] }>(
-      `/api/v1/projects/${scope.projectId}/entities/${entityId}/history`,
-      { workspaceId: scope.workspaceId },
+    get<Items<HistoryEntry>>(scope, `/entities/${id(entityId)}/history`),
+
+  provenance: (scope: Scope, recordType: string, recordId: string) =>
+    get<Items<ProvenanceEntry>>(scope, `/provenance/${id(recordType)}/${id(recordId)}`),
+
+  // --- facts, beliefs, events -------------------------------------------------
+  listFacts: (
+    scope: Scope,
+    params: {
+      subject_id?: string
+      object_entity_id?: string
+      include_closed?: boolean
+      limit?: number
+    } = {},
+  ) => get<Items<Fact>>(scope, '/facts', params),
+
+  assertFact: (scope: Scope, body: AssertFactRequest) => send<Fact>(scope, 'POST', '/facts', body),
+
+  closeFact: (scope: Scope, factId: string, expectedRevision: number) =>
+    send<Fact>(scope, 'POST', `/facts/${id(factId)}/close`, {
+      expected_revision: expectedRevision,
+    } satisfies Schemas['CloseRequest']),
+
+  listBeliefs: (scope: Scope, params: { holder_entity_id?: string; limit?: number } = {}) =>
+    get<Items<Belief>>(scope, '/beliefs', params),
+
+  truthAgreement: (scope: Scope, beliefId: string) =>
+    get<{ belief_id: string; truth_agreement: 'agrees' | 'disagrees' | 'unknown' }>(
+      scope,
+      `/beliefs/${id(beliefId)}/truth-agreement`,
     ),
 
-  projection: (scope: Scope) =>
-    request<ProjectionStatus>(`/api/v1/projects/${scope.projectId}/projection`, {
-      workspaceId: scope.workspaceId,
+  listEvents: (scope: Scope, params: { entity_id?: string; limit?: number } = {}) =>
+    get<Items<CanonEvent>>(scope, '/events', params),
+
+  // --- guided character workflow ----------------------------------------------
+  characterQuestions: (scope: Scope, entityId: string) =>
+    send<CharacterQuestionSheet>(scope, 'POST', `/characters/${id(entityId)}/questions`),
+
+  characterProposal: (scope: Scope, entityId: string, body: CharacterProposalRequest) =>
+    send<CharacterProposal>(scope, 'POST', `/characters/${id(entityId)}/proposals`, body),
+
+  // --- mutation review --------------------------------------------------------
+  listMutations: (scope: Scope, params: { status?: string; limit?: number } = {}) =>
+    get<MutationList>(scope, '/mutations', params),
+
+  getMutation: (scope: Scope, mutationId: string) =>
+    get<MutationDetail>(scope, `/mutations/${id(mutationId)}`),
+
+  proposeMutation: (scope: Scope, body: ProposeMutationRequest) =>
+    send<MutationDetail>(scope, 'POST', '/mutations', body),
+
+  validateMutation: (scope: Scope, mutationId: string) =>
+    send<MutationValidation>(scope, 'POST', `/mutations/${id(mutationId)}/validate`),
+
+  decideOperation: (
+    scope: Scope,
+    mutationId: string,
+    ordinal: number,
+    decision: 'accepted' | 'rejected',
+    note: string | null,
+  ) =>
+    send<MutationDetail>(
+      scope,
+      'POST',
+      `/mutations/${id(mutationId)}/operations/${ordinal}/decision`,
+      { decision, note } satisfies Schemas['OperationDecisionRequest'],
+    ),
+
+  reviseOperation: (
+    scope: Scope,
+    mutationId: string,
+    ordinal: number,
+    operation: Record<string, unknown>,
+    reason: string | null,
+  ) =>
+    send<MutationDetail>(scope, 'PUT', `/mutations/${id(mutationId)}/operations/${ordinal}`, {
+      operation,
+      reason,
     }),
+
+  approveMutation: (scope: Scope, mutationId: string, note: string | null) =>
+    send<MutationDetail>(scope, 'POST', `/mutations/${id(mutationId)}/approve`, {
+      note,
+    } satisfies Schemas['ReviewNoteRequest']),
+
+  rejectMutation: (scope: Scope, mutationId: string, note: string | null) =>
+    send<MutationDetail>(scope, 'POST', `/mutations/${id(mutationId)}/reject`, {
+      note,
+    } satisfies Schemas['ReviewNoteRequest']),
+
+  retargetMutation: (scope: Scope, mutationId: string, expectedRevision: number) =>
+    send<MutationDetail>(scope, 'POST', `/mutations/${id(mutationId)}/retarget`, {
+      expected_revision: expectedRevision,
+    } satisfies Schemas['RetargetRequest']),
+
+  commitMutation: (scope: Scope, mutationId: string) =>
+    send<MutationCommit>(scope, 'POST', `/mutations/${id(mutationId)}/commit`),
+
+  // --- history ----------------------------------------------------------------
+  listRevisions: (scope: Scope, params: { limit?: number; offset?: number } = {}) =>
+    get<Items<RevisionSummary>>(scope, '/revisions', params),
+
+  previewRevert: (scope: Scope, fromRevision: number, toRevision: number | null) =>
+    send<RevertProposal>(scope, 'POST', '/reverts/preview', {
+      from_revision: fromRevision,
+      to_revision: toRevision,
+    } satisfies Schemas['RevertPreviewRequest']),
+
+  commitRevert: (
+    scope: Scope,
+    body: { fromRevision: number; toRevision: number | null; expectedRevision: number },
+  ) =>
+    send<MutationCommit>(scope, 'POST', '/reverts', {
+      from_revision: body.fromRevision,
+      to_revision: body.toRevision,
+      expected_revision: body.expectedRevision,
+      acknowledge_high_impact: true,
+    } satisfies Schemas['RevertCommitRequest']),
+
+  // --- media ------------------------------------------------------------------
+  listAssets: (scope: Scope) => get<Items<Asset>>(scope, '/assets'),
+  listAssetVersions: (scope: Scope, assetId: string) =>
+    get<Items<AssetVersion>>(scope, `/assets/${id(assetId)}/versions`),
+  assetLifecycle: (scope: Scope, assetId: string) =>
+    get<Items<AssetLifecycleEvent>>(scope, `/assets/${id(assetId)}/lifecycle`),
+  listLinks: (scope: Scope, params: { target_id?: string; include_retired?: boolean } = {}) =>
+    get<Items<AssetLink>>(scope, '/links', params),
+  listAssetLinks: (scope: Scope, assetId: string) =>
+    get<Items<AssetLink>>(scope, `/assets/${id(assetId)}/links`, { include_retired: true }),
 }
