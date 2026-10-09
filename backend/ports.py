@@ -33,7 +33,7 @@ from backend.domain.journal import (
     OutboxMessage,
     ReviewDecision,
 )
-from backend.domain.media import AssetLink, MediaAsset, MediaAssetVersion
+from backend.domain.media import AssetLink, MediaAsset, MediaAssetVersion, MediaLifecycleEvent
 from backend.domain.objects import ObjectStat
 from backend.domain.operations import CanonOperation
 from backend.domain.projection import EvidenceRecord, ProjectionWatermark, RecordVersion
@@ -743,6 +743,10 @@ class CanonWriterPort(Protocol):
 
     async def discard(self, *, workspace_id: str, project_id: str, branch_id: str) -> int: ...
 
+    async def purge(self, *, workspace_id: str, project_id: str | None = None) -> int:
+        """Erase every projected canon node for a deleted project or workspace."""
+        ...
+
     async def list_fact_edges(
         self, *, workspace_id: str, project_id: str
     ) -> list[tuple[str, str, str, str]]:
@@ -841,6 +845,12 @@ class CanonRepositoryPort(Protocol):
         validator: Any = None,
         origin: str = "author",
     ) -> int: ...
+
+    async def purge_project(self, *, workspace_id: str, project_id: str) -> int:
+        """Erase every canon, journal, schema, and media row a project owns."""
+        ...
+
+    async def purge_workspace(self, *, workspace_id: str) -> int: ...
 
     async def get_head(self, *, workspace_id: str, project_id: str, branch_id: str) -> int: ...
 
@@ -1013,6 +1023,7 @@ class CanonRepositoryPort(Protocol):
         include_retired: bool = False,
         limit: int = 100,
         offset: int = 0,
+        target_record_id: str | None = None,
     ) -> list[AssetLink]: ...
 
     async def health(self) -> bool: ...
@@ -1028,7 +1039,12 @@ class MediaStorePort(Protocol):
     """
 
     async def create_asset(
-        self, *, workspace_id: str, project_id: str, name: str
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        name: str,
+        actor_user_id: str | None = None,
     ) -> MediaAsset: ...
 
     async def get_asset(
@@ -1055,6 +1071,7 @@ class MediaStorePort(Protocol):
         authority: str | None = None,
         visibility: str | None = None,
         created_revision: int = 0,
+        actor_user_id: str | None = None,
     ) -> MediaAssetVersion: ...
 
     async def get_version(
@@ -1072,6 +1089,7 @@ class MediaStorePort(Protocol):
         project_id: str,
         asset_id: str,
         retired_revision: int | None = None,
+        actor_user_id: str | None = None,
     ) -> MediaAsset | None: ...
 
     async def retire_version(
@@ -1081,10 +1099,17 @@ class MediaStorePort(Protocol):
         project_id: str,
         version_id: str,
         retired_revision: int | None = None,
+        actor_user_id: str | None = None,
     ) -> MediaAssetVersion | None: ...
 
     async def import_asset(self, asset: MediaAsset) -> MediaAsset: ...
 
     async def import_version(self, version: MediaAssetVersion) -> MediaAssetVersion: ...
+
+    async def list_lifecycle_events(
+        self, *, workspace_id: str, project_id: str, asset_id: str
+    ) -> list[MediaLifecycleEvent]:
+        """Append-only audit of registration, import, and retirement for one asset."""
+        ...
 
     async def health(self) -> bool: ...

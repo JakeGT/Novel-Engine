@@ -468,7 +468,13 @@ def character_init(
     body: s.CharacterInitRequest,
     service: CharacterService = Depends(get_character_service),
     scope: AccessScope = Depends(require_project_scope),
+    _local: AuthenticatedSession = Depends(require_local_graph_write),
 ) -> s.Entity:
+    """Legacy graph-backed prototype (local only).
+
+    The product workflow is ``/projects/{project_id}/characters/...``, which
+    produces reviewable canon proposals instead of writing graph nodes.
+    """
     node = service.init_character_anchor(
         body.name,
         body.bio,
@@ -532,7 +538,10 @@ async def character_process_answers(
     usage: ProviderUsageService = Depends(get_usage_service),
     settings: Settings = Depends(get_settings),
     scope: AccessScope = Depends(require_project_scope),
+    _local: AuthenticatedSession = Depends(require_local_graph_write),
 ) -> s.GraphUpdateResponse:
+    """Legacy graph-backed prototype (local only); it writes model output to the
+    generic graph, so hosted deployments must use the canonical proposal workflow."""
     workspace_id = scope.workspace_id or ""
     project_id = scope.project_id or ""
     credential_id, api_key, provider_base_url, usage_sink = await _provider_context(

@@ -29,7 +29,11 @@ from backend.seed.tenancy import clear_tenancy
 
 def reset_neo4j(manager: GraphManager) -> int:
     with manager.driver.session() as session:
-        result = session.run("MATCH (n:Entity) DETACH DELETE n")
+        # Legacy graph entities plus every node kind the canon projection writes.
+        result = session.run(
+            "MATCH (n) WHERE n:Entity OR n:Fact OR n:Belief OR n:Event OR n:Provenance "
+            "OR n:Asset OR n:CommitMarker DETACH DELETE n"
+        )
         return result.consume().counters.nodes_deleted
 
 

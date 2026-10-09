@@ -47,7 +47,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Character Init */
+        /**
+         * Character Init
+         * @description Legacy graph-backed prototype (local only).
+         *
+         *     The product workflow is ``/projects/{project_id}/characters/...``, which
+         *     produces reviewable canon proposals instead of writing graph nodes.
+         */
         post: operations["character_init_api_v1_characters_init_post"];
         delete?: never;
         options?: never;
@@ -64,7 +70,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Character Process Answers */
+        /**
+         * Character Process Answers
+         * @description Legacy graph-backed prototype (local only); it writes model output to the
+         *     generic graph, so hosted deployments must use the canonical proposal workflow.
+         */
         post: operations["character_process_answers_api_v1_characters_process_answers_post"];
         delete?: never;
         options?: never;
@@ -273,7 +283,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Character Init */
+        /**
+         * Character Init
+         * @description Legacy graph-backed prototype (local only).
+         *
+         *     The product workflow is ``/projects/{project_id}/characters/...``, which
+         *     produces reviewable canon proposals instead of writing graph nodes.
+         */
         post: operations["character_init_api_v1_graph_projects__project_id__characters_init_post"];
         delete?: never;
         options?: never;
@@ -290,7 +306,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Character Process Answers */
+        /**
+         * Character Process Answers
+         * @description Legacy graph-backed prototype (local only); it writes model output to the
+         *     generic graph, so hosted deployments must use the canonical proposal workflow.
+         */
         post: operations["character_process_answers_api_v1_graph_projects__project_id__characters_process_answers_post"];
         delete?: never;
         options?: never;
@@ -543,6 +563,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/assets/{asset_id}/lifecycle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Asset Lifecycle
+         * @description Append-only audit of registration, import, and retirement for this asset.
+         */
+        get: operations["asset_lifecycle_api_v1_projects__project_id__assets__asset_id__lifecycle_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/assets/{asset_id}/links": {
         parameters: {
             query?: never;
@@ -710,6 +750,40 @@ export interface paths {
         get: operations["belief_truth_agreement_api_v1_projects__project_id__beliefs__belief_id__truth_agreement_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/characters/{entity_id}/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Character Proposal */
+        post: operations["character_proposal_api_v1_projects__project_id__characters__entity_id__proposals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/characters/{entity_id}/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Character Questions */
+        post: operations["character_questions_api_v1_projects__project_id__characters__entity_id__questions_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1025,6 +1099,26 @@ export interface paths {
         };
         /** Fact History */
         get: operations["fact_history_api_v1_projects__project_id__facts__fact_id__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Project Links
+         * @description Evidence links in the project, optionally only those attached to one record.
+         */
+        get: operations["list_project_links_api_v1_projects__project_id__links_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2035,6 +2129,15 @@ export interface components {
             /** Type */
             type: string;
         };
+        /** CharacterAnswerModel */
+        CharacterAnswerModel: {
+            /** Answer */
+            answer: string;
+            /** Question */
+            question: string;
+            /** Question Id */
+            question_id: string;
+        };
         /** CharacterAnswersRequest */
         CharacterAnswersRequest: {
             /** Answers */
@@ -2057,6 +2160,46 @@ export interface components {
             bio?: string | null;
             /** Name */
             name: string;
+        };
+        /** CharacterProposalModel */
+        CharacterProposalModel: {
+            /** Discarded */
+            discarded: components["schemas"]["DiscardedItemModel"][];
+            /** Mutation Id */
+            mutation_id: string;
+            /** Operation Count */
+            operation_count: number;
+            /** Session Id */
+            session_id: string;
+            /** Status */
+            status: string;
+            /** Validation Issues */
+            validation_issues: components["schemas"]["ProposalIssueModel"][];
+            /** Validation Ok */
+            validation_ok: boolean;
+        };
+        /** CharacterProposalRequest */
+        CharacterProposalRequest: {
+            /** Answers */
+            answers: components["schemas"]["CharacterAnswerModel"][];
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** CharacterQuestionModel */
+        CharacterQuestionModel: {
+            /** Category */
+            category: string;
+            /** Id */
+            id: string;
+            /** Question */
+            question: string;
+        };
+        /** CharacterQuestionSheetModel */
+        CharacterQuestionSheetModel: {
+            /** Entity Id */
+            entity_id: string;
+            /** Questions */
+            questions: components["schemas"]["CharacterQuestionModel"][];
         };
         /** CharacterQuestionsRequest */
         CharacterQuestionsRequest: {
@@ -2291,6 +2434,13 @@ export interface components {
             kind: "decimal";
             /** Value */
             value: number | string;
+        };
+        /** DiscardedItemModel */
+        DiscardedItemModel: {
+            /** Kind */
+            kind: string;
+            /** Reason */
+            reason: string;
         };
         /**
          * EdgeCreate
@@ -2862,6 +3012,17 @@ export interface components {
             updated_at: string;
             /** Workspace Id */
             workspace_id: string;
+        };
+        /** ProposalIssueModel */
+        ProposalIssueModel: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Ordinal */
+            ordinal: number;
+            /** Severity */
+            severity: string;
         };
         /** ProposeMutationRequest */
         ProposeMutationRequest: {
@@ -4607,6 +4768,40 @@ export interface operations {
             };
         };
     };
+    asset_lifecycle_api_v1_projects__project_id__assets__asset_id__lifecycle_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_links_api_v1_projects__project_id__assets__asset_id__links_get: {
         parameters: {
             query?: {
@@ -5057,6 +5252,74 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    character_proposal_api_v1_projects__project_id__characters__entity_id__proposals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CharacterProposalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CharacterProposalModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    character_questions_api_v1_projects__project_id__characters__entity_id__questions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CharacterQuestionSheetModel"];
                 };
             };
             /** @description Validation Error */
@@ -5847,6 +6110,42 @@ export interface operations {
             path: {
                 project_id: string;
                 fact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_project_links_api_v1_projects__project_id__links_get: {
+        parameters: {
+            query?: {
+                target_id?: string | null;
+                include_retired?: boolean;
+            };
+            header?: never;
+            path: {
+                project_id: string;
             };
             cookie?: never;
         };

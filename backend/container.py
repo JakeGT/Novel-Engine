@@ -69,6 +69,7 @@ class Container:
     archive_service: Any = None
     media_service: Any = None
     equivalence_service: Any = None
+    canon_character_workflow: Any = None
 
     async def aclose(self) -> None:
         self.graph.close()
@@ -175,20 +176,21 @@ def build_container(settings: Settings | None = None) -> Container:
 
     from backend.adapters.purge import StoreWorkspacePurge
 
+    purger = StoreWorkspacePurge(
+        graph=container.graph,
+        vectors=container.vectors,
+        credentials=container.credentials,
+        usage=container.usage,
+        objects=container.objects,
+        artifacts=container.artifacts,
+    )
     container.tenancy_service = TenancyService(
         container.tenancy,
         identity_store=identity_store,
         session_store=session_store,
         rate_limiter=container.rate_limiter,
         settings=resolved,
-        purger=StoreWorkspacePurge(
-            graph=container.graph,
-            vectors=container.vectors,
-            credentials=container.credentials,
-            usage=container.usage,
-            objects=container.objects,
-            artifacts=container.artifacts,
-        ),
+        purger=purger,
     )
     container.credential_service = CredentialService(
         container.credentials, tenancy=container.tenancy_service
@@ -226,6 +228,8 @@ def build_container(settings: Settings | None = None) -> Container:
     from backend.services.mutation_service import MutationService
 
     container.canon_writer = Neo4jCanonWriter(manager)
+    # Project/workspace deletion must also erase canon and its projection.
+    purger.attach_canon(canon=container.canon_repository, canon_writer=container.canon_writer)
     container.media_store = PostgresMediaStore(database.session_factory)
     container.mutation_service = MutationService(
         container.journal,
@@ -282,6 +286,17 @@ def build_container(settings: Settings | None = None) -> Container:
         journal=container.journal,
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
+    )
+    from backend.services.canon_character_workflow import CanonCharacterWorkflow
+
+    container.canon_character_workflow = CanonCharacterWorkflow(
+        ai=container.ai,
+        mutation=container.mutation_service,
+        reader=container.canon_repository,
+        schema_store=container.schema_versions,
+        tenancy=container.tenancy_service,
+        local_mode=not resolved.is_hosted,
+        model=resolved.AI_MODEL,
     )
     from backend.services.canon_equivalence import CanonEquivalenceService
 

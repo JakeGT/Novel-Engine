@@ -13,7 +13,13 @@ from sqlalchemy import text
 from backend.adapters.system import uuid7
 from backend.core.database import session_scope
 from backend.domain.canon.ids import format_canon_id
-from backend.domain.media import AssetLifecycle, MediaAsset, MediaAssetVersion
+from backend.domain.media import (
+    AssetLifecycle,
+    MediaAsset,
+    MediaAssetVersion,
+    MediaLifecycleAction,
+    MediaLifecycleEvent,
+)
 
 
 def _asset(row: Any) -> MediaAsset:
@@ -51,11 +57,77 @@ def _asset_version(row: Any) -> MediaAssetVersion:
     )
 
 
+async def _record_event(
+    session: Any,
+    *,
+    workspace_id: str,
+    project_id: str,
+    asset_id: str,
+    action: MediaLifecycleAction,
+    asset_version_id: str | None = None,
+    actor_user_id: str | None = None,
+    canon_revision: int | None = None,
+) -> None:
+    """Append a lifecycle event inside the transaction making the change."""
+    await session.execute(
+        text(
+            "INSERT INTO media_lifecycle_events (id, workspace_id, project_id, asset_id, "
+            "asset_version_id, action, actor_user_id, canon_revision) "
+            "VALUES (:id, :w, :p, :a, :v, :action, :actor, :rev)"
+        ),
+        {
+            "id": format_canon_id("operation", str(uuid7())),
+            "w": workspace_id,
+            "p": project_id,
+            "a": asset_id,
+            "v": asset_version_id,
+            "action": action.value,
+            "actor": actor_user_id,
+            "rev": canon_revision,
+        },
+    )
+
+
 class PostgresMediaStore:
     def __init__(self, session_factory: Any) -> None:
         self._session_factory = session_factory
 
-    async def create_asset(self, *, workspace_id: str, project_id: str, name: str) -> MediaAsset:
+    async def list_lifecycle_events(
+        self, *, workspace_id: str, project_id: str, asset_id: str
+    ) -> list[MediaLifecycleEvent]:
+        async with session_scope(self._session_factory) as session:
+            rows = (
+                await session.execute(
+                    text(
+                        "SELECT * FROM media_lifecycle_events WHERE workspace_id=:w AND "
+                        "project_id=:p AND asset_id=:a ORDER BY seq"
+                    ),
+                    {"w": workspace_id, "p": project_id, "a": asset_id},
+                )
+            ).all()
+        return [
+            MediaLifecycleEvent(
+                id=row.id,
+                workspace_id=row.workspace_id,
+                project_id=row.project_id,
+                asset_id=row.asset_id,
+                asset_version_id=row.asset_version_id,
+                action=MediaLifecycleAction(row.action),
+                actor_user_id=row.actor_user_id,
+                canon_revision=row.canon_revision,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
+
+    async def create_asset(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        name: str,
+        actor_user_id: str | None = None,
+    ) -> MediaAsset:
         asset_id = format_canon_id("asset", str(uuid7()))
         async with session_scope(self._session_factory) as session:
             await session.execute(
@@ -64,6 +136,14 @@ class PostgresMediaStore:
                     "created_revision) VALUES (:w, :p, :id, :name, 'active', 0)"
                 ),
                 {"w": workspace_id, "p": project_id, "id": asset_id, "name": name},
+            )
+            await _record_event(
+                session,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                asset_id=asset_id,
+                action=MediaLifecycleAction.ASSET_REGISTERED,
+                actor_user_id=actor_user_id,
             )
             row = (
                 await session.execute(
@@ -122,6 +202,7 @@ class PostgresMediaStore:
         authority: str | None = None,
         visibility: str | None = None,
         created_revision: int = 0,
+        actor_user_id: str | None = None,
     ) -> MediaAssetVersion:
         version_id = format_canon_id("asset_version", str(uuid7()))
         async with session_scope(self._session_factory) as session:
@@ -159,6 +240,16 @@ class PostgresMediaStore:
                     "visibility": visibility,
                     "rev": created_revision,
                 },
+            )
+            await _record_event(
+                session,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                asset_id=asset_id,
+                asset_version_id=version_id,
+                action=MediaLifecycleAction.VERSION_REGISTERED,
+                actor_user_id=actor_user_id,
+                canon_revision=created_revision,
             )
             row = (
                 await session.execute(
@@ -208,17 +299,28 @@ class PostgresMediaStore:
         project_id: str,
         asset_id: str,
         retired_revision: int | None = None,
+        actor_user_id: str | None = None,
     ) -> MediaAsset | None:
         async with session_scope(self._session_factory) as session:
+            # Only the first retirement changes state and is recorded; repeating it
+            # is a no-op so the audit trail never gains a misleading duplicate.
             result = await session.execute(
                 text(
                     "UPDATE media_assets SET lifecycle='retired', retired_revision=:rev "
-                    "WHERE workspace_id=:w AND project_id=:p AND id=:id"
+                    "WHERE workspace_id=:w AND project_id=:p AND id=:id AND lifecycle='active'"
                 ),
                 {"w": workspace_id, "p": project_id, "id": asset_id, "rev": retired_revision},
             )
-            if not result.rowcount:  # type: ignore[attr-defined]
-                return None
+            if result.rowcount:  # type: ignore[attr-defined]
+                await _record_event(
+                    session,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    asset_id=asset_id,
+                    action=MediaLifecycleAction.ASSET_RETIRED,
+                    actor_user_id=actor_user_id,
+                    canon_revision=retired_revision,
+                )
         return await self.get_asset(
             workspace_id=workspace_id, project_id=project_id, asset_id=asset_id
         )
@@ -230,17 +332,36 @@ class PostgresMediaStore:
         project_id: str,
         version_id: str,
         retired_revision: int | None = None,
+        actor_user_id: str | None = None,
     ) -> MediaAssetVersion | None:
         async with session_scope(self._session_factory) as session:
-            result = await session.execute(
-                text(
-                    "UPDATE media_asset_versions SET retired_revision=:rev "
-                    "WHERE workspace_id=:w AND project_id=:p AND id=:id"
-                ),
-                {"w": workspace_id, "p": project_id, "id": version_id, "rev": retired_revision},
-            )
-            if not result.rowcount:  # type: ignore[attr-defined]
-                return None
+            row = (
+                await session.execute(
+                    text(
+                        "UPDATE media_asset_versions SET retired_revision=:rev "
+                        "WHERE workspace_id=:w AND project_id=:p AND id=:id "
+                        "AND retired_revision IS NULL RETURNING asset_id"
+                    ),
+                    {
+                        "w": workspace_id,
+                        "p": project_id,
+                        "id": version_id,
+                        # A retirement always carries a revision so it is not repeatable.
+                        "rev": retired_revision if retired_revision is not None else 0,
+                    },
+                )
+            ).first()
+            if row is not None:
+                await _record_event(
+                    session,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    asset_id=row.asset_id,
+                    asset_version_id=version_id,
+                    action=MediaLifecycleAction.VERSION_RETIRED,
+                    actor_user_id=actor_user_id,
+                    canon_revision=retired_revision,
+                )
         return await self.get_version(
             workspace_id=workspace_id, project_id=project_id, version_id=version_id
         )
@@ -248,7 +369,7 @@ class PostgresMediaStore:
     async def import_asset(self, asset: MediaAsset) -> MediaAsset:
         """Insert an archived asset with its preserved id (idempotent)."""
         async with session_scope(self._session_factory) as session:
-            await session.execute(
+            inserted = await session.execute(
                 text(
                     "INSERT INTO media_assets (workspace_id, project_id, id, name, lifecycle, "
                     "created_revision, retired_revision, created_at) VALUES (:w, :p, :id, :name, "
@@ -265,6 +386,15 @@ class PostgresMediaStore:
                     "created_at": asset.created_at,
                 },
             )
+            if inserted.rowcount:  # type: ignore[attr-defined]
+                await _record_event(
+                    session,
+                    workspace_id=asset.workspace_id,
+                    project_id=asset.project_id,
+                    asset_id=asset.id,
+                    action=MediaLifecycleAction.ASSET_IMPORTED,
+                    canon_revision=asset.created_revision,
+                )
         created = await self.get_asset(
             workspace_id=asset.workspace_id, project_id=asset.project_id, asset_id=asset.id
         )
@@ -273,7 +403,7 @@ class PostgresMediaStore:
     async def import_version(self, version: MediaAssetVersion) -> MediaAssetVersion:
         """Insert an archived asset version with its preserved id (idempotent)."""
         async with session_scope(self._session_factory) as session:
-            await session.execute(
+            inserted = await session.execute(
                 text(
                     "INSERT INTO media_asset_versions (workspace_id, project_id, id, asset_id, "
                     "version, object_key, content_type, byte_length, checksum, source, licence, "
@@ -302,6 +432,16 @@ class PostgresMediaStore:
                     "created_at": version.created_at,
                 },
             )
+            if inserted.rowcount:  # type: ignore[attr-defined]
+                await _record_event(
+                    session,
+                    workspace_id=version.workspace_id,
+                    project_id=version.project_id,
+                    asset_id=version.asset_id,
+                    asset_version_id=version.id,
+                    action=MediaLifecycleAction.VERSION_IMPORTED,
+                    canon_revision=version.created_revision,
+                )
         created = await self.get_version(
             workspace_id=version.workspace_id,
             project_id=version.project_id,

@@ -93,6 +93,30 @@ async def get_asset(
     return _asset(asset)
 
 
+@router.get("/assets/{asset_id}/lifecycle")
+async def asset_lifecycle(
+    project_id: str,
+    asset_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    media: MediaService = Depends(get_media_service),
+) -> dict[str, Any]:
+    """Append-only audit of registration, import, and retirement for this asset."""
+    events = await media.list_lifecycle(scope, scope.workspace_id or "", project_id, asset_id)
+    return {
+        "items": [
+            {
+                "action": event.action.value,
+                "asset_id": event.asset_id,
+                "asset_version_id": event.asset_version_id,
+                "actor_user_id": event.actor_user_id,
+                "canon_revision": event.canon_revision,
+                "created_at": event.created_at,
+            }
+            for event in events
+        ]
+    }
+
+
 @router.get("/assets/{asset_id}/versions")
 async def list_versions(
     project_id: str,
@@ -190,6 +214,25 @@ async def create_link(
     )
     response.headers["ETag"] = f'"{result.revision}"'
     return _link(link)
+
+
+@router.get("/links")
+async def list_project_links(
+    project_id: str,
+    target_id: str | None = None,
+    include_retired: bool = False,
+    scope: AccessScope = Depends(get_project_scope),
+    media: MediaService = Depends(get_media_service),
+) -> dict[str, Any]:
+    """Evidence links in the project, optionally only those attached to one record."""
+    links = await media.list_links(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        target_id=target_id,
+        include_retired=include_retired,
+    )
+    return {"items": [_link(link) for link in links]}
 
 
 @router.post("/links/{link_id}/retire")

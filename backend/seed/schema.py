@@ -49,7 +49,7 @@ def apply_schema(
                     VALUES (%s, %s, %s, 1, 'published', %s::jsonb, %s, 'additive', NULL, now())
                     """,
                     (
-                        f"scv_seed_{project_id}",
+                        f"scv_seed_{project_id}"[:64],
                         workspace_id,
                         project_id,
                         json.dumps(canonical),

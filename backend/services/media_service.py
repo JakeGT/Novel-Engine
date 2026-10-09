@@ -17,6 +17,7 @@ from backend.domain.media import (
     LinkRole,
     MediaAsset,
     MediaAssetVersion,
+    MediaLifecycleEvent,
     is_link_role,
 )
 from backend.domain.operations import CanonOperation, LinkAssetOp, RetireAssetLinkOp
@@ -60,7 +61,10 @@ class MediaService:
         if not name.strip():
             raise ValidationError("Asset name is required.")
         return await self._media.create_asset(
-            workspace_id=workspace_id, project_id=project_id, name=name
+            workspace_id=workspace_id,
+            project_id=project_id,
+            name=name,
+            actor_user_id=scope.actor_user_id,
         )
 
     async def list_assets(
@@ -117,6 +121,18 @@ class MediaService:
             attribution=attribution,
             authority=authority,
             visibility=visibility,
+            created_revision=await self._retired_revision(workspace_id, project_id) or 0,
+            actor_user_id=scope.actor_user_id,
+        )
+
+    async def list_lifecycle(
+        self, scope: AccessScope, workspace_id: str, project_id: str, asset_id: str
+    ) -> list[MediaLifecycleEvent]:
+        """Who registered, imported, or retired this asset and its versions, and when."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        await self.get_asset(scope, workspace_id, project_id, asset_id)
+        return await self._media.list_lifecycle_events(
+            workspace_id=workspace_id, project_id=project_id, asset_id=asset_id
         )
 
     async def list_versions(
@@ -158,6 +174,7 @@ class MediaService:
             project_id=project_id,
             asset_id=asset_id,
             retired_revision=revision,
+            actor_user_id=scope.actor_user_id,
         )
         if retired is None:
             raise NotFoundError("Asset not found.")
@@ -173,6 +190,7 @@ class MediaService:
             project_id=project_id,
             version_id=version_id,
             retired_revision=revision,
+            actor_user_id=scope.actor_user_id,
         )
         if retired is None:
             raise NotFoundError("Asset version not found.")
@@ -186,6 +204,7 @@ class MediaService:
         project_id: str,
         *,
         asset_id: str | None = None,
+        target_id: str | None = None,
         include_retired: bool = False,
     ) -> list[AssetLink]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
@@ -193,6 +212,7 @@ class MediaService:
             workspace_id=workspace_id,
             project_id=project_id,
             asset_id=asset_id,
+            target_record_id=target_id,
             include_retired=include_retired,
         )
 

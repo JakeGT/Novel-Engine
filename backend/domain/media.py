@@ -49,6 +49,29 @@ class LinkRole(StrEnum):
     ATTACHED_TO = "ATTACHED_TO"
 
 
+class MediaLifecycleAction(StrEnum):
+    ASSET_REGISTERED = "asset_registered"
+    ASSET_IMPORTED = "asset_imported"
+    ASSET_RETIRED = "asset_retired"
+    VERSION_REGISTERED = "version_registered"
+    VERSION_IMPORTED = "version_imported"
+    VERSION_RETIRED = "version_retired"
+
+
+class MediaLifecycleEvent(BaseModel):
+    """Append-only record of one asset or asset-version lifecycle change."""
+
+    id: str
+    workspace_id: str
+    project_id: str
+    asset_id: str
+    asset_version_id: str | None = None
+    action: MediaLifecycleAction
+    actor_user_id: str | None = None
+    canon_revision: int | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+
+
 class MediaAsset(BaseModel):
     id: str
     workspace_id: str

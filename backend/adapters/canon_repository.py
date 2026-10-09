@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import text
 
+from backend.adapters.canon_tables import CANON_PROJECT_TABLES
 from backend.adapters.journal import apply_transition
 from backend.adapters.system import uuid7
 from backend.core.database import session_scope
@@ -495,7 +497,7 @@ class PostgresCanonRepository:
         self,
         *,
         envelope: Any,
-        operations: list[CanonOperation],
+        operations: Sequence[CanonOperation],
         validator: Any = None,
         origin: str = OriginKind.AUTHOR.value,
     ) -> int:
@@ -1188,6 +1190,27 @@ class PostgresCanonRepository:
         result = await session.execute(text(statement), params)
         if result.rowcount == 0:  # type: ignore[attr-defined]
             raise HeadConflict(f"canonical record {record_id!r} not found for update")
+
+    async def _purge(self, clause: str, params: dict[str, Any]) -> int:
+        removed = 0
+        async with session_scope(self._session_factory) as session:
+            for table in CANON_PROJECT_TABLES:
+                result = await session.execute(text(f"DELETE FROM {table} WHERE {clause}"), params)
+                removed += int(result.rowcount or 0)  # type: ignore[attr-defined]
+        return removed
+
+    async def purge_project(self, *, workspace_id: str, project_id: str) -> int:
+        """Erase every canon, journal, schema, and media row a project owns.
+
+        Deleting a project is the one operation that removes accepted history; it
+        runs in a single transaction so a project is never half-erased.
+        """
+        return await self._purge(
+            "workspace_id = :w AND project_id = :p", {"w": workspace_id, "p": project_id}
+        )
+
+    async def purge_workspace(self, *, workspace_id: str) -> int:
+        return await self._purge("workspace_id = :w", {"w": workspace_id})
 
     # ------------------------------------------------------------------- reads
     async def get_head(self, *, workspace_id: str, project_id: str, branch_id: str) -> int:
@@ -1892,9 +1915,14 @@ class PostgresCanonRepository:
         include_retired: bool = False,
         limit: int = 100,
         offset: int = 0,
+        target_record_id: str | None = None,
     ) -> list[AssetLink]:
         clauses = ["workspace_id=:w", "project_id=:p"]
+        if target_record_id is not None:
+            clauses.append("target_record_id=:t")
         params: dict[str, Any] = {"w": workspace_id, "p": project_id}
+        if target_record_id is not None:
+            params["t"] = target_record_id
         if asset_id is not None:
             clauses.append("asset_id=:a")
             params["a"] = asset_id

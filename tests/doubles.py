@@ -57,7 +57,14 @@ from backend.domain.journal import (
     ReviewDecision,
     RevisionConflict,
 )
-from backend.domain.media import AssetLink, LinkRole, MediaAsset, MediaAssetVersion
+from backend.domain.media import (
+    AssetLink,
+    LinkRole,
+    MediaAsset,
+    MediaAssetVersion,
+    MediaLifecycleAction,
+    MediaLifecycleEvent,
+)
 from backend.domain.objects import ObjectStat
 from backend.domain.operations import (
     AmendEventOp,
@@ -1420,6 +1427,42 @@ class InMemoryCanonJournal:
             return None
         return mutation
 
+    def purge(self, workspace_id: str, project_id: str | None) -> int:
+        def owned(ws: str, pr: str) -> bool:
+            return ws == workspace_id and (project_id is None or pr == project_id)
+
+        mutation_ids = {
+            mid for mid, m in self.mutations.items() if owned(m.workspace_id, m.project_id)
+        }
+        for mutation_id in mutation_ids:
+            del self.mutations[mutation_id]
+            self.operations.pop(mutation_id, None)
+        self.mutation_keys = {
+            key: mid for key, mid in self.mutation_keys.items() if mid not in mutation_ids
+        }
+        self.operation_revisions = [
+            r for r in self.operation_revisions if r.mutation_id not in mutation_ids
+        ]
+        self.operation_decisions = [
+            d for d in self.operation_decisions if d.mutation_id not in mutation_ids
+        ]
+        self.transitions = [t for t in self.transitions if t.mutation_id not in mutation_ids]
+        self.decisions = [d for d in self.decisions if d.mutation_id not in mutation_ids]
+        branch_ids = {
+            bid
+            for bid, data in self.branches.items()
+            if owned(data["workspace_id"], data["project_id"])
+        }
+        for branch_id in branch_ids:
+            del self.branches[branch_id]
+        self.branch_ids = {k: v for k, v in self.branch_ids.items() if v not in branch_ids}
+        self.outbox = {
+            key: message
+            for key, message in self.outbox.items()
+            if not owned(message.workspace_id, message.project_id)
+        }
+        return len(mutation_ids) + len(branch_ids)
+
     def _require(self, mutation_id: str) -> MutationSet:
         mutation = self.mutations.get(mutation_id)
         if mutation is None:
@@ -1881,6 +1924,24 @@ class InMemoryCanonWriter:
 
     async def get_marker(self, commit_id):
         return self.markers.get(commit_id)
+
+    async def purge(self, *, workspace_id: str, project_id: str | None = None) -> int:
+        def owned(key: tuple) -> bool:
+            return key[0] == workspace_id and (project_id is None or key[1] == project_id)
+
+        removed = 0
+        for store in (self.objects, self.entities, self.facts, self.beliefs, self.events):
+            for key in [k for k in store if owned(k)]:
+                del store[key]
+                removed += 1
+        for commit_id in [
+            commit_id
+            for commit_id, marker in self.markers.items()
+            if owned((marker.workspace_id, marker.project_id))
+        ]:
+            del self.markers[commit_id]
+            removed += 1
+        return removed
 
     async def discard(self, *, workspace_id: str, project_id: str, branch_id: str) -> int:
         removed = 0
@@ -2366,6 +2427,58 @@ class InMemoryCanonRepository:
     def set_head(self, workspace_id: str, project_id: str, branch_id: str, head: int) -> None:
         self.heads[(workspace_id, project_id, branch_id)] = head
 
+    async def purge_project(self, *, workspace_id: str, project_id: str) -> int:
+        return self._purge(workspace_id, project_id)
+
+    async def purge_workspace(self, *, workspace_id: str) -> int:
+        return self._purge(workspace_id, None)
+
+    def _purge(self, workspace_id: str, project_id: str | None) -> int:
+        def owned(ws: str, pr: str) -> bool:
+            return ws == workspace_id and (project_id is None or pr == project_id)
+
+        removed = 0
+        for store in (
+            self.heads,
+            self.entities,
+            self.facts,
+            self.beliefs,
+            self.events,
+            self.asset_links,
+            self.watermarks,
+            self.tags,
+            self.tag_history,
+        ):
+            # Watermarks are keyed (projection, ws, pr, branch); the rest lead with (ws, pr).
+            offset = 1 if store is self.watermarks else 0
+            for key in [k for k in store if owned(k[offset], k[offset + 1])]:
+                del store[key]
+                removed += 1
+        commit_ids = {
+            cid for cid, env in self.envelopes.items() if owned(env.workspace_id, env.project_id)
+        }
+        for commit_id in commit_ids:
+            mutation_id = self.envelopes.pop(commit_id).mutation_id
+            self.envelope_by_mutation.pop(mutation_id, None)
+            self.provenance.pop(f"prov_{commit_id}", None)
+            removed += 1
+        self.evidence = [item for item in self.evidence if item.commit_id not in commit_ids]
+        before = len(self.revisions) + len(self.record_versions)
+        self.revisions = [r for r in self.revisions if not owned(r.workspace_id, r.project_id)]
+        self.record_versions = [
+            r for r in self.record_versions if not owned(r.workspace_id, r.project_id)
+        ]
+        removed += before - len(self.revisions) - len(self.record_versions)
+        if self._journal is not None:
+            removed += self._journal.purge(workspace_id, project_id)
+        if self._schemas is not None:
+            kept = [v for v in self._schemas.versions if not owned(v.workspace_id, v.project_id)]
+            removed += len(self._schemas.versions) - len(kept)
+            self._schemas.versions[:] = kept
+        if self._media is not None:
+            removed += self._media.purge(workspace_id, project_id)
+        return removed
+
     async def get_head(self, *, workspace_id: str, project_id: str, branch_id: str) -> int:
         return self.heads.get((workspace_id, project_id, branch_id), 0)
 
@@ -2732,12 +2845,14 @@ class InMemoryCanonRepository:
         include_retired: bool = False,
         limit: int = 100,
         offset: int = 0,
+        target_record_id: str | None = None,
     ):
         items = [
             link
             for (w, p, _), link in self.asset_links.items()
             if w == workspace_id
             and p == project_id
+            and (target_record_id is None or link.target_record_id == target_record_id)
             and (asset_id is None or link.asset_id == asset_id)
             and (branch_id is None or link.branch_id == branch_id)
             and (include_retired or link.retired_revision is None)
@@ -3071,9 +3186,65 @@ class InMemoryMediaStore:
     def __init__(self) -> None:
         self.assets: dict[tuple[str, str, str], MediaAsset] = {}
         self.versions: dict[tuple[str, str, str], MediaAssetVersion] = {}
+        self.events: list[MediaLifecycleEvent] = []
         self._counter = 0
 
-    async def create_asset(self, *, workspace_id: str, project_id: str, name: str) -> MediaAsset:
+    def _record(
+        self,
+        workspace_id: str,
+        project_id: str,
+        asset_id: str,
+        action: MediaLifecycleAction,
+        *,
+        asset_version_id: str | None = None,
+        actor_user_id: str | None = None,
+        canon_revision: int | None = None,
+    ) -> None:
+        self._counter += 1
+        self.events.append(
+            MediaLifecycleEvent(
+                id=f"opn_media_{self._counter:04d}",
+                workspace_id=workspace_id,
+                project_id=project_id,
+                asset_id=asset_id,
+                asset_version_id=asset_version_id,
+                action=action,
+                actor_user_id=actor_user_id,
+                canon_revision=canon_revision,
+            )
+        )
+
+    async def list_lifecycle_events(
+        self, *, workspace_id: str, project_id: str, asset_id: str
+    ) -> list[MediaLifecycleEvent]:
+        return [
+            event
+            for event in self.events
+            if event.workspace_id == workspace_id
+            and event.project_id == project_id
+            and event.asset_id == asset_id
+        ]
+
+    def purge(self, workspace_id: str, project_id: str | None) -> int:
+        def owned(key: tuple) -> bool:
+            return key[0] == workspace_id and (project_id is None or key[1] == project_id)
+
+        removed = 0
+        for store in (self.assets, self.versions):
+            for key in [k for k in store if owned(k)]:
+                del store[key]
+                removed += 1
+        self.events = [e for e in self.events if not owned((e.workspace_id, e.project_id))]
+        return removed
+
+    async def create_asset(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        name: str,
+        actor_user_id: str | None = None,
+    ) -> MediaAsset:
         self._counter += 1
         asset_id = f"ast_{self._counter:04d}"
         asset = MediaAsset(
@@ -3084,6 +3255,13 @@ class InMemoryMediaStore:
             created_revision=0,
         )
         self.assets[(workspace_id, project_id, asset_id)] = asset
+        self._record(
+            workspace_id,
+            project_id,
+            asset_id,
+            MediaLifecycleAction.ASSET_REGISTERED,
+            actor_user_id=actor_user_id,
+        )
         return asset
 
     async def get_asset(
@@ -3099,12 +3277,31 @@ class InMemoryMediaStore:
         return items[offset : offset + limit]
 
     async def import_asset(self, asset: MediaAsset) -> MediaAsset:
-        self.assets.setdefault((asset.workspace_id, asset.project_id, asset.id), asset)
-        return self.assets[(asset.workspace_id, asset.project_id, asset.id)]
+        key = (asset.workspace_id, asset.project_id, asset.id)
+        if key not in self.assets:
+            self.assets[key] = asset
+            self._record(
+                asset.workspace_id,
+                asset.project_id,
+                asset.id,
+                MediaLifecycleAction.ASSET_IMPORTED,
+                canon_revision=asset.created_revision,
+            )
+        return self.assets[key]
 
     async def import_version(self, version: MediaAssetVersion) -> MediaAssetVersion:
-        self.versions.setdefault((version.workspace_id, version.project_id, version.id), version)
-        return self.versions[(version.workspace_id, version.project_id, version.id)]
+        key = (version.workspace_id, version.project_id, version.id)
+        if key not in self.versions:
+            self.versions[key] = version
+            self._record(
+                version.workspace_id,
+                version.project_id,
+                version.asset_id,
+                MediaLifecycleAction.VERSION_IMPORTED,
+                asset_version_id=version.id,
+                canon_revision=version.created_revision,
+            )
+        return self.versions[key]
 
     async def retire_asset(
         self,
@@ -3113,6 +3310,7 @@ class InMemoryMediaStore:
         project_id: str,
         asset_id: str,
         retired_revision: int | None = None,
+        actor_user_id: str | None = None,
     ) -> MediaAsset | None:
         from backend.domain.media import AssetLifecycle
 
@@ -3120,6 +3318,16 @@ class InMemoryMediaStore:
         asset = self.assets.get(key)
         if asset is None:
             return None
+        if asset.lifecycle is not AssetLifecycle.ACTIVE:
+            return asset
+        self._record(
+            workspace_id,
+            project_id,
+            asset_id,
+            MediaLifecycleAction.ASSET_RETIRED,
+            actor_user_id=actor_user_id,
+            canon_revision=retired_revision,
+        )
         retired = asset.model_copy(
             update={
                 "lifecycle": AssetLifecycle.RETIRED,
@@ -3136,12 +3344,26 @@ class InMemoryMediaStore:
         project_id: str,
         version_id: str,
         retired_revision: int | None = None,
+        actor_user_id: str | None = None,
     ) -> MediaAssetVersion | None:
         key = (workspace_id, project_id, version_id)
         version = self.versions.get(key)
         if version is None:
             return None
-        retired = version.model_copy(update={"retired_revision": retired_revision})
+        if version.retired_revision is not None:
+            return version
+        self._record(
+            workspace_id,
+            project_id,
+            version.asset_id,
+            MediaLifecycleAction.VERSION_RETIRED,
+            asset_version_id=version_id,
+            actor_user_id=actor_user_id,
+            canon_revision=retired_revision,
+        )
+        retired = version.model_copy(
+            update={"retired_revision": retired_revision if retired_revision is not None else 0}
+        )
         self.versions[key] = retired
         return retired
 
@@ -3161,6 +3383,7 @@ class InMemoryMediaStore:
         authority: str | None = None,
         visibility: str | None = None,
         created_revision: int = 0,
+        actor_user_id: str | None = None,
     ) -> MediaAssetVersion:
         self._counter += 1
         version_id = f"asv_{self._counter:04d}"
@@ -3187,6 +3410,15 @@ class InMemoryMediaStore:
             created_revision=created_revision,
         )
         self.versions[(workspace_id, project_id, version_id)] = version
+        self._record(
+            workspace_id,
+            project_id,
+            asset_id,
+            MediaLifecycleAction.VERSION_REGISTERED,
+            asset_version_id=version_id,
+            actor_user_id=actor_user_id,
+            canon_revision=created_revision,
+        )
         return version
 
     async def get_version(

@@ -543,6 +543,22 @@ class Neo4jCanonWriter:
             )
         return int(record["deleted"]) if record is not None else 0
 
+    async def purge(self, *, workspace_id: str, project_id: str | None = None) -> int:
+        """Erase every projected canon node for a deleted project or workspace."""
+        project_clause = "AND n.project_id = $p" if project_id is not None else ""
+        with self._manager.driver.session() as session:
+            result = session.run(
+                f"""
+                MATCH (n) WHERE n.workspace_id = $w {project_clause}
+                      AND (n:Entity OR n:Fact OR n:Belief OR n:Event OR n:Provenance
+                           OR n:Asset OR n:CommitMarker)
+                DETACH DELETE n
+                """,
+                w=workspace_id,
+                p=project_id,
+            )
+            return int(result.consume().counters.nodes_deleted)
+
     async def health(self) -> bool:
         try:
             self._manager.driver.verify_connectivity()

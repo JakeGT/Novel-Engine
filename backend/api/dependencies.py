@@ -97,6 +97,10 @@ def get_mutation_service(container: Container = Depends(get_container)) -> Any:
     return container.mutation_service
 
 
+def get_canon_character_workflow(container: Container = Depends(get_container)) -> Any:
+    return container.canon_character_workflow
+
+
 def get_journal(container: Container = Depends(get_container)) -> Any:
     return container.journal
 

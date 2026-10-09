@@ -7,6 +7,7 @@ attempts, review decisions, canon revisions, and the transactional outbox.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import text
@@ -407,7 +408,7 @@ class PostgresCanonJournal:
         return _mutation(row) if row else None
 
     async def record_operations(
-        self, *, mutation_id: str, operations: list[MutationOperation]
+        self, *, mutation_id: str, operations: Sequence[MutationOperation]
     ) -> None:
         async with session_scope(self._session_factory) as session:
             for operation in operations:

@@ -146,6 +146,7 @@ def _build_fake_container(settings, tmp_path):
     canon_repository = InMemoryCanonRepository(
         journal=journal, media=media_store, schemas=schema_versions
     )
+    purger.attach_canon(canon=canon_repository, canon_writer=canon_writer)
     mutation_service = MutationService(
         journal,
         canon_repository,
@@ -175,6 +176,20 @@ def _build_fake_container(settings, tmp_path):
         schema_store=schema_versions,
         tenancy=tenancy_service,
         local_mode=not settings.is_hosted,
+    )
+    from backend.services.canon_character_workflow import CanonCharacterWorkflow
+    from backend.services.canon_equivalence import CanonEquivalenceService
+
+    canon_character_workflow = CanonCharacterWorkflow(
+        ai=ai,
+        mutation=mutation_service,
+        reader=canon_repository,
+        schema_store=schema_versions,
+        tenancy=tenancy_service,
+        local_mode=not settings.is_hosted,
+    )
+    equivalence_service = CanonEquivalenceService(
+        canon=canon_repository, journal=journal, writer=canon_writer
     )
     from backend.services.canon_history_service import CanonHistoryService
 
@@ -243,6 +258,8 @@ def _build_fake_container(settings, tmp_path):
         canon_entity_service=canon_entity_service,
         canon_assertion_service=canon_assertion_service,
         canon_history_service=canon_history_service,
+        canon_character_workflow=canon_character_workflow,
+        equivalence_service=equivalence_service,
     )
 
 
