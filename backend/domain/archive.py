@@ -35,6 +35,8 @@ class ArchiveImport(BaseModel):
     commits_applied: int = 0
     objects_imported: int = 0
     object_keys: list[str] = Field(default_factory=list)
+    # Ids of non-canon records this import created: schema_versions, assets, asset_versions.
+    created_records: dict[str, list[str]] = Field(default_factory=dict)
     error: str | None = None
     actor_user_id: str | None = None
     started_at: datetime

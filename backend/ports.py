@@ -868,6 +868,7 @@ class CanonRepositoryPort(Protocol):
         stage: str,
         commits_applied: int | None = None,
         object_keys: Sequence[str] | None = None,
+        created_records: dict[str, list[str]] | None = None,
     ) -> None: ...
 
     async def finish_import(
@@ -883,6 +884,16 @@ class CanonRepositoryPort(Protocol):
         ...
 
     async def purge_workspace(self, *, workspace_id: str) -> int: ...
+
+    async def purge_import(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        created_records: dict[str, list[str]],
+    ) -> int:
+        """Erase the canon an import wrote plus exactly the supporting records it created."""
+        ...
 
     async def get_head(self, *, workspace_id: str, project_id: str, branch_id: str) -> int: ...
 

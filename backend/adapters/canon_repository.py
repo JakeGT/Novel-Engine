@@ -146,6 +146,19 @@ _RECORD_TYPE = {
 }
 
 
+# Tables an import may have found already populated; removal deletes only the
+# specific rows the import created in them.
+_IMPORT_PRESERVED_TABLES = frozenset(
+    {
+        "schema_versions",
+        "media_assets",
+        "media_asset_versions",
+        "media_lifecycle_events",
+        "archive_imports",
+    }
+)
+
+
 def _load(value: Any) -> Any:
     return json.loads(value) if isinstance(value, str) else value
 
@@ -163,6 +176,7 @@ def _archive_import(row: Any) -> ArchiveImport:
         commits_applied=row.commits_applied,
         objects_imported=row.objects_imported,
         object_keys=list(_load(row.object_keys) or []),
+        created_records=dict(_load(row.created_records) or {}),
         error=row.error,
         actor_user_id=row.actor_user_id,
         started_at=row.started_at,
@@ -1284,6 +1298,7 @@ class PostgresCanonRepository:
         stage: str,
         commits_applied: int | None = None,
         object_keys: Sequence[str] | None = None,
+        created_records: dict[str, list[str]] | None = None,
     ) -> None:
         async with session_scope(self._session_factory) as session:
             await session.execute(
@@ -1294,6 +1309,7 @@ class PostgresCanonRepository:
                         commits_applied = COALESCE(:applied, commits_applied),
                         object_keys = COALESCE(CAST(:keys AS JSONB), object_keys),
                         objects_imported = COALESCE(:count, objects_imported),
+                        created_records = COALESCE(CAST(:created AS JSONB), created_records),
                         updated_at = now()
                     WHERE id = :id AND status = 'importing'
                     """
@@ -1304,6 +1320,7 @@ class PostgresCanonRepository:
                     "applied": commits_applied,
                     "keys": json.dumps(list(object_keys)) if object_keys is not None else None,
                     "count": len(object_keys) if object_keys is not None else None,
+                    "created": json.dumps(created_records) if created_records is not None else None,
                 },
             )
 
@@ -1331,7 +1348,7 @@ class PostgresCanonRepository:
         return _archive_import(row)
 
     async def record_removed_import(self, record: ArchiveImport) -> ArchiveImport:
-        """Keep a tombstone after a failed import's canon has been purged."""
+        """Mark an import removed once its canon has been purged (the ledger row is kept)."""
         async with session_scope(self._session_factory) as session:
             row = (
                 await session.execute(
@@ -1344,6 +1361,14 @@ class PostgresCanonRepository:
                         )
                         VALUES (:id, :w, :p, :sum, :fmt, 'removed', 'removed', :total, 0, :error,
                                 :actor, :started)
+                        ON CONFLICT (id) DO UPDATE SET
+                            status = 'removed',
+                            stage = 'removed',
+                            commits_applied = 0,
+                            objects_imported = 0,
+                            object_keys = '[]'::jsonb,
+                            created_records = '{}'::jsonb,
+                            updated_at = now()
                         RETURNING *
                         """
                     ),
@@ -1396,6 +1421,47 @@ class PostgresCanonRepository:
 
     async def purge_workspace(self, *, workspace_id: str) -> int:
         return await self._purge("workspace_id = :w", {"w": workspace_id})
+
+    async def purge_import(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        created_records: dict[str, list[str]],
+    ) -> int:
+        """Erase the canon an import wrote plus exactly the supporting records it created.
+
+        Schema versions and media records that existed before the import are kept.
+        """
+        scope = {"w": workspace_id, "p": project_id}
+        removed = 0
+        async with session_scope(self._session_factory) as session:
+            for table in CANON_PROJECT_TABLES:
+                if table in _IMPORT_PRESERVED_TABLES:
+                    continue
+                result = await session.execute(
+                    text(f"DELETE FROM {table} WHERE workspace_id = :w AND project_id = :p"), scope
+                )
+                removed += int(result.rowcount or 0)  # type: ignore[attr-defined]
+            for table, key, column in (
+                ("media_lifecycle_events", "asset_versions", "asset_version_id"),
+                ("media_lifecycle_events", "assets", "asset_id"),
+                ("media_asset_versions", "asset_versions", "id"),
+                ("media_assets", "assets", "id"),
+                ("schema_versions", "schema_versions", "id"),
+            ):
+                ids = list(created_records.get(key, []))
+                if not ids:
+                    continue
+                result = await session.execute(
+                    text(
+                        f"DELETE FROM {table} WHERE workspace_id = :w AND project_id = :p "
+                        f"AND {column} = ANY(:ids)"
+                    ),
+                    {**scope, "ids": ids},
+                )
+                removed += int(result.rowcount or 0)  # type: ignore[attr-defined]
+        return removed
 
     # ------------------------------------------------------------------- reads
     async def get_head(self, *, workspace_id: str, project_id: str, branch_id: str) -> int:

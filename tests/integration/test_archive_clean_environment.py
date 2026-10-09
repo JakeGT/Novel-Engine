@@ -198,3 +198,91 @@ async def test_project_round_trips_into_a_clean_environment(
         await source.engine.dispose()
         await target.engine.dispose()
         manager.close()
+
+
+@pytest.mark.asyncio
+async def test_failed_import_is_removed_exactly_on_postgres(
+    disposable_database, second_database, neo4j_settings, neo4j_driver
+) -> None:
+    from backend.domain.archive import ArchiveImportError
+    from backend.domain.schema_defs import SchemaDefinition
+    from backend.services.schema_compiler import compute_content_hash
+
+    manager = GraphManager(neo4j_settings)
+    source = _Environment(disposable_database, manager)
+    target = _Environment(second_database, manager)
+    suffix = uuid.uuid4().hex[:8]
+    ws, pr = f"ws_partial_{suffix}", f"prj_partial_{suffix}"
+    scope = {"workspace_id": ws, "project_id": pr}
+    try:
+        apply_tenancy(disposable_database.psycopg_dsn)
+        for project in SEED_PROJECTS:
+            apply_schema(
+                disposable_database.psycopg_dsn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+            )
+        await apply_canon_seed(
+            journal=source.journal,
+            repository=source.repo,
+            schemas=source.schemas,
+            media=source.media,
+            objects=source.objects,
+        )
+        archive = await source.archive.export_project(SEED_WORKSPACE_ID, SEED_PROJECT_ID)
+
+        # The target already has its own published schema and a registered asset.
+        definition = SchemaDefinition(
+            label="own", entity_extensions=[{"entity_type": "Ship", "fields": []}]
+        ).canonical()
+        own = await target.schemas.create_draft(
+            definition=definition,
+            content_hash=compute_content_hash(definition),
+            compatibility="additive",
+            created_by_user_id=None,
+            **scope,
+        )
+        await target.schemas.publish(version_id=own.id, **scope)
+        own_asset = await target.media.create_asset(name="Own", **scope)
+
+        real_apply = target.repo.apply_commit
+        calls = 0
+
+        async def crash(**kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 4:
+                raise RuntimeError("simulated crash")
+            return await real_apply(**kwargs)
+
+        target.repo.apply_commit = crash
+        with pytest.raises(RuntimeError):
+            await target.archive.import_project(ws, pr, archive)
+        target.repo.apply_commit = real_apply
+
+        [failed] = await target.repo.list_imports(**scope)
+        assert failed.status is ImportStatus.FAILED
+        assert (failed.commits_applied, failed.error) == (3, "RuntimeError")
+        assert len(await target.repo.list_entities(include_retired=True, limit=100, **scope)) == 9
+        assert len(await target.schemas.list(**scope)) == 2
+
+        removed = await target.archive.remove_import(ws, pr, failed.id)
+
+        assert removed.status is ImportStatus.REMOVED
+        assert await target.repo.list_entities(include_retired=True, limit=100, **scope) == []
+        branch = await target.journal.ensure_root_branch(**scope)
+        assert await target.repo.get_head(branch_id=branch.id, **scope) == 0
+        assert [version.id for version in await target.schemas.list(**scope)] == [own.id]
+        assert [asset.id for asset in await target.media.list_assets(**scope)] == [own_asset.id]
+        assert target.objects.list_objects(**scope) == []
+        with pytest.raises(ArchiveImportError):
+            await target.archive.remove_import(ws, pr, failed.id)
+
+        # The project is clean enough to restore into again, successfully this time.
+        result = await target.archive.import_project(ws, pr, archive)
+        assert result["verified"] is True and result["commits"] == PRIMARY_HEAD
+    finally:
+        await target.writer.purge(**scope)
+        await source.engine.dispose()
+        await target.engine.dispose()
+        manager.close()

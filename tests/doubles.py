@@ -2475,11 +2475,14 @@ class InMemoryCanonRepository:
         stage: str,
         commits_applied: int | None = None,
         object_keys: Any = None,
+        created_records: dict[str, list[str]] | None = None,
     ) -> None:
         key, record = self._import_by_id(import_id)
         if record.status is not ImportStatus.IMPORTING:
             return
         update: dict[str, Any] = {"stage": stage, "updated_at": utcnow()}
+        if created_records is not None:
+            update["created_records"] = created_records
         if commits_applied is not None:
             update["commits_applied"] = commits_applied
         if object_keys is not None:
@@ -2531,6 +2534,46 @@ class InMemoryCanonRepository:
 
     async def purge_workspace(self, *, workspace_id: str) -> int:
         return self._purge(workspace_id, None)
+
+    async def purge_import(
+        self, *, workspace_id: str, project_id: str, created_records: dict[str, list[str]]
+    ) -> int:
+        """Remove imported canon and only the schema/media records the import created."""
+        schemas, media, imports = self._schemas, self._media, dict(self.imports)
+        self._schemas, self._media = None, None
+        try:
+            removed = self._purge(workspace_id, project_id)
+        finally:
+            self._schemas, self._media = schemas, media
+        self.imports = imports
+        if schemas is not None:
+            doomed = set(created_records.get("schema_versions", []))
+            kept = [
+                v
+                for v in schemas.versions
+                if not (
+                    v.workspace_id == workspace_id and v.project_id == project_id and v.id in doomed
+                )
+            ]
+            removed += len(schemas.versions) - len(kept)
+            schemas.versions[:] = kept
+        if media is not None:
+            for store, key in ((media.versions, "asset_versions"), (media.assets, "assets")):
+                for record_id in created_records.get(key, []):
+                    if store.pop((workspace_id, project_id, record_id), None) is not None:
+                        removed += 1
+            gone_assets = set(created_records.get("assets", []))
+            gone_versions = set(created_records.get("asset_versions", []))
+            media.events = [
+                e
+                for e in media.events
+                if not (
+                    e.workspace_id == workspace_id
+                    and e.project_id == project_id
+                    and (e.asset_id in gone_assets or e.asset_version_id in gone_versions)
+                )
+            ]
+        return removed
 
     def _purge(self, workspace_id: str, project_id: str | None) -> int:
         def owned(ws: str, pr: str) -> bool:

@@ -289,7 +289,13 @@ class CanonArchiveService:
                 )
         for key in record.object_keys:
             self._objects.delete(key, workspace_id=workspace_id, project_id=project_id)
-        await self._canon.purge_project(workspace_id=workspace_id, project_id=project_id)
+        # Only what this import created is removed: a schema version or asset the
+        # project already had before the import stays.
+        await self._canon.purge_import(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            created_records=record.created_records,
+        )
         if self._canon_writer is not None:
             await self._canon_writer.purge(  # type: ignore[attr-defined]
                 workspace_id=workspace_id, project_id=project_id
@@ -602,6 +608,21 @@ class CanonArchiveService:
 
         imported_commits = self._replay_plan(target_workspace_id, target_project_id, archive)
 
+        prior_record = next(
+            (
+                item
+                for item in await self._canon.list_imports(
+                    workspace_id=target_workspace_id, project_id=target_project_id
+                )
+                if item.id == import_id
+            ),
+            None,
+        )
+        # Records an earlier attempt of this import created stay attributed to it.
+        created: dict[str, list[str]] = {
+            key: list((prior_record.created_records if prior_record else {}).get(key, []))
+            for key in ("schema_versions", "assets", "asset_versions")
+        }
         object_key_map: dict[str, str] = {}
         stored_keys: list[str] = []
         object_count = 0
@@ -629,17 +650,7 @@ class CanonArchiveService:
         if stored_keys:
             # Remember exactly which objects this import stored so a failed import
             # can be removed without touching objects that were already there.
-            prior = next(
-                (
-                    item
-                    for item in await self._canon.list_imports(
-                        workspace_id=target_workspace_id, project_id=target_project_id
-                    )
-                    if item.id == import_id
-                ),
-                None,
-            )
-            stored_keys = [*(prior.object_keys if prior else []), *stored_keys]
+            stored_keys = [*(prior_record.object_keys if prior_record else []), *stored_keys]
             await self._canon.update_import(
                 import_id=import_id, stage="objects", object_keys=stored_keys
             )
@@ -667,9 +678,25 @@ class CanonArchiveService:
                 )
                 mapped = (target_version or draft).id
                 by_hash[raw["content_hash"]] = mapped
+                created["schema_versions"].append(mapped)
+                await self._canon.update_import(
+                    import_id=import_id, stage="schemas", created_records=created
+                )
             schema_map[raw["id"]] = mapped
 
         for raw in archive["media"]["assets"]:
+            if (
+                await self._media.get_asset(
+                    workspace_id=target_workspace_id,
+                    project_id=target_project_id,
+                    asset_id=raw["id"],
+                )
+                is None
+            ):
+                created["assets"].append(raw["id"])
+                await self._canon.update_import(
+                    import_id=import_id, stage="media", created_records=created
+                )
             await self._media.import_asset(
                 MediaAsset.model_validate(
                     {**raw, "workspace_id": target_workspace_id, "project_id": target_project_id}
@@ -677,6 +704,18 @@ class CanonArchiveService:
             )
         for raw in archive["media"]["versions"]:
             source_key = raw["object_key"]
+            if (
+                await self._media.get_version(
+                    workspace_id=target_workspace_id,
+                    project_id=target_project_id,
+                    version_id=raw["id"],
+                )
+                is None
+            ):
+                created["asset_versions"].append(raw["id"])
+                await self._canon.update_import(
+                    import_id=import_id, stage="media", created_records=created
+                )
             await self._media.import_version(
                 MediaAssetVersion.model_validate(
                     {

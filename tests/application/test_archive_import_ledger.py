@@ -418,3 +418,59 @@ def test_legacy_upgrade_rejects_tampered_wrong_or_oversized_archives() -> None:
     )
     with pytest.raises(GraphArchiveError, match="exceeds the upgrade bound"):
         validate_graph_archive(huge)
+
+
+@pytest.mark.asyncio
+async def test_removal_keeps_schema_and_media_the_project_already_had(source_archive) -> None:
+    env = _Env()
+    ws, pr = await env.provision("keep")
+    owner = env.scope("u_owner", ws, pr)
+    # Before any import: the project has its own schema version and a registered asset.
+    own_definition = SchemaDefinition(
+        label="project schema", entity_extensions=[{"entity_type": "Ship", "fields": []}]
+    ).canonical()
+    draft = await env.schemas.create_draft(
+        workspace_id=ws,
+        project_id=pr,
+        definition=own_definition,
+        content_hash=compute_content_hash(own_definition),
+        compatibility="additive",
+        created_by_user_id="u_owner",
+    )
+    await env.schemas.publish(workspace_id=ws, project_id=pr, version_id=draft.id)
+    own_asset = await env.media.create_asset(workspace_id=ws, project_id=pr, name="Own asset")
+    own_object = env.objects.put(b"mine", workspace_id=ws, project_id=pr)
+
+    real_apply = env.repo.apply_commit
+    calls = 0
+
+    async def crash_late(**kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 5:
+            raise RuntimeError("boom")
+        return await real_apply(**kwargs)
+
+    env.repo.apply_commit = crash_late
+    with pytest.raises(RuntimeError):
+        await env.archive.import_project_as(owner, ws, pr, source_archive)
+    env.repo.apply_commit = real_apply
+    [failed] = await env.archive.list_imports_as(owner, ws, pr)
+    assert set(failed.created_records) == {"schema_versions", "assets", "asset_versions"}
+    assert len(failed.created_records["schema_versions"]) == 1
+    assert failed.created_records["assets"] == ["ast_seed_harbor_chart"]
+    assert len(env.schemas.versions) == 2
+
+    await env.archive.remove_import_as(owner, ws, pr, failed.id)
+
+    assert env.repo.entities == {} and env.repo.envelopes == {}
+    assert [version.id for version in env.schemas.versions] == [draft.id]
+    assert list(env.media.assets) == [(ws, pr, own_asset.id)]
+    assert env.media.versions == {}
+    assert [stat.key for stat in env.objects.list_objects(workspace_id=ws, project_id=pr)] == [
+        own_object.key
+    ]
+    own_events = await env.media.list_lifecycle_events(
+        workspace_id=ws, project_id=pr, asset_id=own_asset.id
+    )
+    assert [event.action.value for event in own_events] == ["asset_registered"]
