@@ -14,9 +14,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from backend.adapters.system import uuid7
+from backend.domain.canon.assertions import Belief, Fact
 from backend.domain.canon.entities import CanonEntity
+from backend.domain.canon.events import Event
 from backend.domain.canon.ids import format_canon_id
+from backend.domain.canon.registry import CORE_ENTITY_TYPES
 from backend.domain.canon.revisions import OriginKind
 from backend.domain.identity import AccessScope
 from backend.domain.journal import (
@@ -24,7 +26,9 @@ from backend.domain.journal import (
     MutationNotFound,
     MutationOperation,
     MutationSet,
+    RevisionConflict,
 )
+from backend.domain.media import AssetLink
 from backend.domain.operations import (
     CanonOperation,
     canonicalize_operations,
@@ -32,9 +36,18 @@ from backend.domain.operations import (
     parse_operation,
     resolve_temporary_ids,
 )
+from backend.domain.schemas import SchemaVersionStatus
 from backend.domain.tenancy import Permission
-from backend.domain.validation import AuthoritativeValidator, ValidationContext
-from backend.ports import CanonJournalPort, CanonRepositoryPort
+from backend.domain.validation import (
+    AuthoritativeValidator,
+    CanonValidationError,
+    DomainValidationReport,
+    ValidationContext,
+    ValidationFinding,
+    ValidationSeverity,
+)
+from backend.ports import CanonJournalPort, CanonRepositoryPort, SchemaVersionStorePort
+from backend.services.schema_compiler import compile_definition
 
 
 @dataclass(frozen=True)
@@ -72,6 +85,10 @@ def _deterministic_id(mutation_id: str, kind: str, temporary_id: str) -> str:
     return format_canon_id(kind, digest)
 
 
+def _deterministic_commit_id(mutation_id: str) -> str:
+    return f"cmt_{hashlib.sha256(mutation_id.encode()).hexdigest()[:32]}"
+
+
 class _RepositoryReader:
     """Preview reads for ``validate`` (non-transactional; the commit still revalidates in-tx)."""
 
@@ -98,6 +115,34 @@ class _RepositoryReader:
         )
         return len(facts)
 
+    async def get_fact(self, fact_id: str) -> Fact | None:
+        return await self._repository.get_fact(
+            workspace_id=self._workspace_id,
+            project_id=self._project_id,
+            fact_id=fact_id,
+        )
+
+    async def get_belief(self, belief_id: str) -> Belief | None:
+        return await self._repository.get_belief(
+            workspace_id=self._workspace_id,
+            project_id=self._project_id,
+            belief_id=belief_id,
+        )
+
+    async def get_event(self, event_id: str) -> Event | None:
+        return await self._repository.get_event(
+            workspace_id=self._workspace_id,
+            project_id=self._project_id,
+            event_id=event_id,
+        )
+
+    async def get_link(self, link_id: str) -> AssetLink | None:
+        return await self._repository.get_link(
+            workspace_id=self._workspace_id,
+            project_id=self._project_id,
+            link_id=link_id,
+        )
+
     async def get_asset(self, asset_id: str) -> None:
         # Preview reader can't reach the media store; in-tx commit revalidates links.
         return None
@@ -115,12 +160,14 @@ class MutationService:
         tenancy: object | None = None,
         local_mode: bool = False,
         validator: AuthoritativeValidator | None = None,
+        schema_store: SchemaVersionStorePort | None = None,
     ) -> None:
         self._journal = journal
         self._repository = repository
         self._tenancy = tenancy
         self._local_mode = local_mode
         self._validator = validator or AuthoritativeValidator()
+        self._schema_store = schema_store
 
     async def _authorize(
         self, scope: AccessScope, workspace_id: str, project_id: str, permission: Permission
@@ -160,16 +207,29 @@ class MutationService:
             correlation_id=correlation_id or scope.correlation_id,
             idempotency_key=idempotency_key,
         )
+        if (
+            mutation.workspace_id != workspace_id
+            or mutation.project_id != project_id
+            or mutation.branch_id != branch_id
+            or mutation.expected_head != expected_head
+            or mutation.origin != origin
+            or mutation.schema_version_id != schema_version_id
+        ):
+            raise RevisionConflict("idempotency key was reused with different mutation metadata")
+        desired_operations = [
+            MutationOperation(
+                ordinal=index,
+                operation_type=operation.op,
+                payload=operation.model_dump(mode="json"),
+            )
+            for index, operation in enumerate(operations)
+        ]
+        existing_operations = await self._journal.list_operations(mutation_id=mutation.id)
+        if existing_operations and existing_operations != desired_operations:
+            raise RevisionConflict("idempotency key was reused with different operations")
         await self._journal.record_operations(
             mutation_id=mutation.id,
-            operations=[
-                MutationOperation(
-                    ordinal=index,
-                    operation_type=operation.op,
-                    payload=operation.model_dump(mode="json"),
-                )
-                for index, operation in enumerate(operations)
-            ],
+            operations=desired_operations,
         )
         return mutation
 
@@ -191,6 +251,32 @@ class MutationService:
         )
         operations = await self._load_operations(mutation_id)
         reader = _RepositoryReader(self._repository, mutation.workspace_id, mutation.project_id)
+        compiled = None
+        if mutation.schema_version_id is not None:
+            version = (
+                await self._schema_store.get(
+                    workspace_id=mutation.workspace_id,
+                    project_id=mutation.project_id,
+                    version_id=mutation.schema_version_id,
+                )
+                if self._schema_store is not None
+                else None
+            )
+            if version is None or version.status is not SchemaVersionStatus.PUBLISHED:
+                return ValidationReport(
+                    issues=(
+                        ValidationIssue(
+                            0,
+                            "invalid_schema_version",
+                            "mutation schema version is missing, outside this project, or unpublished",
+                        ),
+                    )
+                )
+            compiled = compile_definition(
+                version.definition,
+                workspace_id=mutation.workspace_id,
+                project_id=mutation.project_id,
+            )
         report = await self._validator.validate(
             operations,
             context=ValidationContext(
@@ -200,6 +286,11 @@ class MutationService:
                 schema_version_id=mutation.schema_version_id,
                 head_revision=mutation.expected_head,
                 reader=reader,
+                allowed_entity_types=frozenset(
+                    set(CORE_ENTITY_TYPES) | (set(compiled.entity_types) if compiled else set())
+                ),
+                entity_attribute_models=compiled.entity_models if compiled else {},
+                predicate_specs=compiled.predicate_specs if compiled else {},
             ),
         )
         return ValidationReport(
@@ -239,13 +330,43 @@ class MutationService:
             scope, mutation.workspace_id, mutation.project_id, Permission.PROJECT_WRITE
         )
 
+        decisions = await self._journal.list_decisions(mutation_id=mutation_id)
+        latest_decision = decisions[-1].decision if decisions else None
+        if latest_decision == "rejected":
+            raise CanonValidationError(
+                DomainValidationReport(
+                    findings=(
+                        ValidationFinding(
+                            ValidationSeverity.INTEGRITY,
+                            "review_rejected",
+                            "the proposal was rejected during review",
+                        ),
+                    )
+                )
+            )
+        if (
+            mutation.origin not in {OriginKind.AUTHOR.value, OriginKind.MIGRATION.value}
+            and latest_decision != "approved"
+        ):
+            raise CanonValidationError(
+                DomainValidationReport(
+                    findings=(
+                        ValidationFinding(
+                            ValidationSeverity.INTEGRITY,
+                            "review_required",
+                            "non-author proposals require an explicit human approval",
+                        ),
+                    )
+                )
+            )
+
         operations = await self._load_operations(mutation_id)
         resolved, _mapping = resolve_temporary_ids(
             operations, new_id=lambda kind, tmp: _deterministic_id(mutation_id, kind, tmp)
         )
         canonical = canonicalize_operations(resolved)
         checksum = operations_checksum(resolved)
-        commit_id = f"cmt_{uuid7()}"
+        commit_id = _deterministic_commit_id(mutation_id)
         envelope = CommitEnvelope(
             commit_id=commit_id,
             mutation_id=mutation_id,
@@ -267,6 +388,7 @@ class MutationService:
             envelope=envelope,
             operations=resolved,
             validator=self._validator,
+            origin=mutation.origin,
         )
         return CommitResult(
             commit_id=commit_id,

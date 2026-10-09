@@ -142,10 +142,13 @@ async def test_mutation_idempotency_key_and_operations() -> None:
             MutationOperation(ordinal=0, operation_type="create_entity", payload={"id": "e0"}),
         ],
     )
-    await journal.record_operations(
-        mutation_id=first.id,
-        operations=[MutationOperation(ordinal=1, operation_type="create_entity", payload={"x": 1})],
-    )
+    with pytest.raises(RevisionConflict):
+        await journal.record_operations(
+            mutation_id=first.id,
+            operations=[
+                MutationOperation(ordinal=1, operation_type="create_entity", payload={"x": 1})
+            ],
+        )
     operations = await journal.list_operations(mutation_id=first.id)
     assert [op.ordinal for op in operations] == [0, 1]
     assert operations[1].payload == {"id": "e1"}

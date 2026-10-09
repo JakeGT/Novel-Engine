@@ -226,3 +226,58 @@ def test_events_store_fuzzy_world_position(auth_client, fake_container) -> None:
         },
     )
     assert invalid.status_code == 404, invalid.text
+
+
+def test_published_custom_predicate_is_enforced(auth_client, fake_container) -> None:
+    project = fake_container.settings.AUTH_LOCAL_PROJECT_ID
+    definition = {
+        "label": "Character motto",
+        "entity_extensions": [],
+        "predicate_extensions": [
+            {
+                "predicate": "HAS_MOTTO",
+                "subject_types": ["Character"],
+                "object_kind": "string",
+                "cardinality": "one",
+                "temporal_allowed": False,
+            }
+        ],
+    }
+    draft = auth_client.post(
+        f"/api/v1/projects/{project}/schemas/drafts", json={"definition": definition}
+    )
+    assert draft.status_code == 201, draft.text
+    version_id = draft.json()["version"]["id"]
+    assert (
+        auth_client.post(f"/api/v1/projects/{project}/schemas/{version_id}/publish").status_code
+        == 200
+    )
+    char = _create_entity(
+        auth_client, project, entity_type="Character", name="Mara", expected_revision=0
+    )
+
+    created = auth_client.post(
+        f"/api/v1/projects/{project}/facts",
+        json={
+            "proposition": {
+                "subject_id": char,
+                "predicate": "HAS_MOTTO",
+                "object": {"kind": "string", "value": "Keep walking"},
+            },
+            "expected_revision": 1,
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    conflict = auth_client.post(
+        f"/api/v1/projects/{project}/facts",
+        json={
+            "proposition": {
+                "subject_id": char,
+                "predicate": "HAS_MOTTO",
+                "object": {"kind": "string", "value": "Never turn back"},
+            },
+            "expected_revision": 2,
+        },
+    )
+    assert conflict.status_code == 409, conflict.text

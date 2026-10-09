@@ -8,11 +8,11 @@ Novel Engine is an open-source fiction authoring system with self-hosted and fre
 
 ## Current maturity
 
-The repository is a stabilized prototype under active Phase 2 development, not a production
-application. Phase 0 is complete. Phase 1 is implemented with explicit external/operational exit
-items remaining. Phase 2 has a domain kernel, governed schema versions, a journal, and initial
-entity/fact/belief/event APIs, but ADR-012 has reopened storage and commit work so PostgreSQL—not
-Neo4j—becomes authoritative canon. See `plan/phase-2-todo.md`.
+The repository is a stabilized prototype, not a production application. Phase 0 is complete.
+Phase 1 is implemented with explicit external/operational exit items remaining. Phase 2's
+implementation slices are complete with named review-UI, revert, seed, projection-query, and
+operational deferrals; owner acceptance remains pending. See `plan/phase-2-todo.md` and
+`plan/phase-2-evidence.md`.
 
 - Application lifecycle, dependency container, ports, and adapters exist; imports perform no
   external work.
@@ -23,12 +23,12 @@ Neo4j—becomes authoritative canon. See `plan/phase-2-todo.md`.
   the world workflow is parked and unfinished.
 - The vector store is PostgreSQL/pgvector behind the vector port; the transitional Chroma
   module has been removed.
-- The React frontend is a minimal authenticated shell; product workspaces are planned work.
+- The React frontend is a minimal authenticated project/entity authoring shell; review, schema,
+  media, and end-to-end workflow UI remain planned work.
 - OIDC/local identity, invite-only multi-tenancy, scoped storage, encrypted OpenRouter BYOK,
   object storage, and project transfer foundations exist.
-- Phase 2 canon models, project schema compilation, journal migrations, and initial authoring APIs
-  exist. The current Neo4j-first commit implementation is transitional pending the ADR-012
-  PostgreSQL canon/unit-of-work and replayable graph projection refactor.
+- PostgreSQL atomically owns the Phase 2 journal and normalized canon. Neo4j is a replayable,
+  watermark-tracked projection and never decides canonical commit success.
 - Story planning, long-form generation, review UI, temporal branching, and production operations
   remain planned work.
 
@@ -39,7 +39,7 @@ status in `plan/`.
 
 | Path | Responsibility |
 | --- | --- |
-| `backend/api/` | HTTP transport and request/response contracts (`v1/` canonical, legacy deprecated) |
+| `backend/api/` | HTTP transport and request/response contracts (`v1/` canonical) |
 | `backend/services/` | Application workflows such as character and world creation |
 | `backend/graph/` | Graph schema, Neo4j persistence, resolution, traversal, summarization, migrations |
 | `backend/core/` | Configuration, database engine/session, structured logging/redaction |

@@ -13,10 +13,12 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
-from backend.domain.canon.assertions import Belief, Fact
+from backend.domain.canon.assertions import Belief, Fact, FactStatus
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
 from backend.domain.canon.events import Event
-from backend.domain.canon.revisions import CanonRevision
+from backend.domain.canon.ids import format_canon_id
+from backend.domain.canon.registry import CORE_ENTITY_TYPES
+from backend.domain.canon.revisions import CanonRevision, OriginKind, Provenance
 from backend.domain.credentials import (
     Credential,
     CredentialNotFound,
@@ -65,6 +67,10 @@ from backend.domain.operations import (
     RetireEntityOp,
     RetireEventOp,
     UpdateEntityOp,
+    canonicalize_operations,
+    operations_checksum,
+    parse_operation,
+    resolve_temporary_ids,
 )
 from backend.domain.projection import RecordVersion
 from backend.domain.schemas import SchemaVersion, SchemaVersionStatus
@@ -91,10 +97,14 @@ from backend.domain.usage import UsageRecord, UsageTotals
 from backend.domain.validation import (
     AuthoritativeValidator,
     CanonValidationError,
+    DomainValidationReport,
     ValidationContext,
+    ValidationFinding,
+    ValidationSeverity,
 )
 from backend.graph.schema import Edge, Node
 from backend.ports import MigrationStatus, ProviderCapabilities, StructuredResponse
+from backend.services.schema_compiler import compile_definition
 
 _MEMORY_DEFAULT_VALIDATOR = AuthoritativeValidator()
 
@@ -1397,7 +1407,13 @@ class InMemoryCanonJournal:
         self, *, mutation_id: str, operations: list[MutationOperation]
     ) -> None:
         bucket = self.operations.setdefault(mutation_id, [])
-        existing = {operation.ordinal for operation in bucket}
+        existing = {operation.ordinal: operation for operation in bucket}
+        for operation in operations:
+            previous = existing.get(operation.ordinal)
+            if previous is not None and previous != operation:
+                raise RevisionConflict(
+                    "mutation operation ordinal was reused with different content"
+                )
         bucket.extend(op for op in operations if op.ordinal not in existing)
 
     async def list_operations(self, *, mutation_id: str) -> list[MutationOperation]:
@@ -1421,6 +1437,9 @@ class InMemoryCanonJournal:
         )
         self.decisions.append(record)
         return record
+
+    async def list_decisions(self, *, mutation_id: str) -> list[ReviewDecision]:
+        return [decision for decision in self.decisions if decision.mutation_id == mutation_id]
 
     async def reserve_head(
         self,
@@ -1996,6 +2015,18 @@ class _MemoryCanonReader:
                 count += 1
         return count
 
+    async def get_fact(self, fact_id: str) -> Any:
+        return self._repository.facts.get((self._workspace_id, self._project_id, fact_id))
+
+    async def get_belief(self, belief_id: str) -> Any:
+        return self._repository.beliefs.get((self._workspace_id, self._project_id, belief_id))
+
+    async def get_event(self, event_id: str) -> Any:
+        return self._repository.events.get((self._workspace_id, self._project_id, event_id))
+
+    async def get_link(self, link_id: str) -> Any:
+        return self._repository.asset_links.get((self._workspace_id, self._project_id, link_id))
+
     async def get_asset(self, asset_id: str) -> Any:
         if self._repository._media is None:
             return None
@@ -2014,11 +2045,18 @@ class _MemoryCanonReader:
 class InMemoryCanonRepository:
     """In-memory canonical PostgreSQL canon (ADR-012) with matching invariants."""
 
-    def __init__(self, journal: InMemoryCanonJournal | None = None, media: Any = None) -> None:
+    def __init__(
+        self,
+        journal: InMemoryCanonJournal | None = None,
+        media: Any = None,
+        schemas: InMemorySchemaVersionStore | None = None,
+    ) -> None:
         self._journal = journal
         self._media = media
+        self._schemas = schemas
         self.heads: dict[tuple[str, str, str], int] = {}
         self.envelopes: dict[str, Any] = {}
+        self.envelope_by_mutation: dict[str, str] = {}
         self.revisions: list[Any] = []
         self.entities: dict[tuple[str, str, str], CanonEntity] = {}
         self.facts: dict[tuple[str, str, str], Any] = {}
@@ -2043,7 +2081,6 @@ class InMemoryCanonRepository:
         envelope: Any,
         operations: list[Any],
         validator: Any = None,
-        allowed_entity_types: Any = None,
         origin: str = "author",
     ) -> int:
         existing = self.envelopes.get(envelope.commit_id)
@@ -2051,6 +2088,73 @@ class InMemoryCanonRepository:
             if existing.checksum != envelope.checksum:
                 raise RevisionConflict("commit id reused with a different checksum")
             return existing.revision
+        previous_commit_id = self.envelope_by_mutation.get(envelope.mutation_id)
+        if previous_commit_id is not None:
+            raise RevisionConflict(
+                f"mutation {envelope.mutation_id!r} already committed as {previous_commit_id!r}"
+            )
+        if (
+            canonicalize_operations(operations) != envelope.canonical
+            or operations_checksum(operations) != envelope.checksum
+        ):
+            raise RevisionConflict("commit envelope does not match supplied operations")
+        mutation = self._journal.mutations.get(envelope.mutation_id) if self._journal else None
+        effective_origin = origin
+        if mutation is not None:
+            if (
+                mutation.workspace_id != envelope.workspace_id
+                or mutation.project_id != envelope.project_id
+                or mutation.branch_id != envelope.branch_id
+                or mutation.expected_head != envelope.expected_head
+                or mutation.schema_version_id != envelope.schema_version_id
+            ):
+                raise RevisionConflict("commit envelope does not match its mutation set")
+            stored_operations = [
+                parse_operation(item.payload)
+                for item in await self._journal.list_operations(mutation_id=envelope.mutation_id)
+            ]
+            resolved_stored, _ = resolve_temporary_ids(
+                stored_operations,
+                new_id=lambda kind, temporary_id: format_canon_id(
+                    kind,
+                    hashlib.sha256(f"{envelope.mutation_id}:{temporary_id}".encode()).hexdigest()[
+                        :16
+                    ],
+                ),
+            )
+            if canonicalize_operations(resolved_stored) != envelope.canonical:
+                raise RevisionConflict("commit operations do not match the reviewed mutation")
+            effective_origin = mutation.origin
+            assert self._journal is not None
+            decisions = await self._journal.list_decisions(mutation_id=envelope.mutation_id)
+            latest_decision = decisions[-1].decision if decisions else None
+            if latest_decision == "rejected" or (
+                effective_origin not in {"author", "migration"} and latest_decision != "approved"
+            ):
+                code = "review_rejected" if latest_decision == "rejected" else "review_required"
+                raise CanonValidationError(
+                    DomainValidationReport(
+                        findings=(
+                            ValidationFinding(
+                                ValidationSeverity.INTEGRITY,
+                                code,
+                                "proposal has not passed the required review",
+                            ),
+                        )
+                    )
+                )
+        elif origin not in {"author", "migration"}:
+            raise CanonValidationError(
+                DomainValidationReport(
+                    findings=(
+                        ValidationFinding(
+                            ValidationSeverity.INTEGRITY,
+                            "review_required",
+                            "non-author direct commits are not permitted",
+                        ),
+                    )
+                )
+            )
         key = (envelope.workspace_id, envelope.project_id, envelope.branch_id)
         head = self.heads.get(key, 0)
         if head != envelope.expected_head:
@@ -2059,6 +2163,30 @@ class InMemoryCanonRepository:
         reader = _MemoryCanonReader(
             self, envelope.workspace_id, envelope.project_id, envelope.branch_id
         )
+        compiled = None
+        if envelope.schema_version_id is not None and self._schemas is not None:
+            version = await self._schemas.get(
+                workspace_id=envelope.workspace_id,
+                project_id=envelope.project_id,
+                version_id=envelope.schema_version_id,
+            )
+            if version is None or version.status is not SchemaVersionStatus.PUBLISHED:
+                raise CanonValidationError(
+                    DomainValidationReport(
+                        findings=(
+                            ValidationFinding(
+                                ValidationSeverity.INTEGRITY,
+                                "invalid_schema_version",
+                                "commit schema version is missing, outside this project, or unpublished",
+                            ),
+                        )
+                    )
+                )
+            compiled = compile_definition(
+                version.definition,
+                workspace_id=envelope.workspace_id,
+                project_id=envelope.project_id,
+            )
         context = ValidationContext(
             workspace_id=envelope.workspace_id,
             project_id=envelope.project_id,
@@ -2066,13 +2194,28 @@ class InMemoryCanonRepository:
             schema_version_id=envelope.schema_version_id,
             head_revision=envelope.expected_head,
             reader=reader,
+            allowed_entity_types=frozenset(
+                set(CORE_ENTITY_TYPES) | (set(compiled.entity_types) if compiled else set())
+            ),
+            entity_attribute_models=compiled.entity_models if compiled else {},
+            predicate_specs=compiled.predicate_specs if compiled else {},
         )
         report = await validator.validate(operations, context=context)
         if not report.ok:
             raise CanonValidationError(report)
         reserved = head + 1
         self.envelopes[envelope.commit_id] = envelope
+        self.envelope_by_mutation[envelope.mutation_id] = envelope.commit_id
         provenance_id = f"prov_{envelope.commit_id}"
+        self.provenance[provenance_id] = Provenance(
+            id=provenance_id,
+            workspace_id=envelope.workspace_id,
+            project_id=envelope.project_id,
+            branch_id=envelope.branch_id,
+            origin=OriginKind(effective_origin),
+            actor_user_id=envelope.actor_user_id,
+            created_at=utcnow(),
+        )
         for operation in operations:
             self._apply(envelope, operation, provenance_id, reserved)
             self.record_versions.append(
@@ -2105,6 +2248,10 @@ class InMemoryCanonRepository:
             )
         )
         if self._journal is not None:
+            if mutation is not None:
+                self._journal.mutations[mutation.id] = mutation.model_copy(
+                    update={"status": MutationStatus.COMMITTED, "updated_at": utcnow()}
+                )
             self._journal.outbox.setdefault(
                 f"commit:{envelope.commit_id}",
                 OutboxMessage(
@@ -2164,7 +2311,7 @@ class InMemoryCanonRepository:
             current = self.entities[key]
             self.entities[key] = current.model_copy(
                 update={
-                    "name": operation.name or current.name,
+                    "name": current.name if operation.name is None else operation.name,
                     "slug": operation.slug if operation.slug is not None else current.slug,
                     "attributes": operation.attributes
                     if operation.attributes is not None
@@ -2183,13 +2330,16 @@ class InMemoryCanonRepository:
                 project_id=pr,
                 branch_id=br,
                 proposition=operation.proposition,
+                confidence=operation.confidence,
                 provenance_id=provenance_id,
                 created_revision=revision,
                 valid_from=operation.valid_from,
                 valid_until=operation.valid_until,
             )
         elif isinstance(operation, CloseFactOp) and key in self.facts:
-            self.facts[key] = self.facts[key].model_copy(update={"closed_revision": revision})
+            self.facts[key] = self.facts[key].model_copy(
+                update={"status": FactStatus.CLOSED, "closed_revision": revision}
+            )
         elif isinstance(operation, AssertBeliefOp):
             self.beliefs[key] = Belief(
                 id=operation.id,
@@ -2225,7 +2375,7 @@ class InMemoryCanonRepository:
             current = self.events[key]
             self.events[key] = current.model_copy(
                 update={
-                    "name": operation.name or current.name,
+                    "name": current.name if operation.name is None else operation.name,
                     "world_position": operation.world_position
                     if operation.world_position is not None
                     else current.world_position,

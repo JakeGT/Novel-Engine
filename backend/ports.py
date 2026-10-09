@@ -565,7 +565,7 @@ class WorkspacePurgePort(Protocol):
 
 @runtime_checkable
 class CanonJournalPort(Protocol):
-    """Authoritative commit journal (ADR-011).
+    """Authoritative commit journal (ADR-012; workflow inherited from ADR-011).
 
     PostgreSQL owns branch heads, optimistic reservations, immutable commit
     envelopes, commit attempts, review decisions, and the transactional outbox.
@@ -616,6 +616,8 @@ class CanonJournalPort(Protocol):
         actor_user_id: str | None = None,
         note: str | None = None,
     ) -> ReviewDecision: ...
+
+    async def list_decisions(self, *, mutation_id: str) -> list[ReviewDecision]: ...
 
     async def reserve_head(
         self,
@@ -768,7 +770,6 @@ class CanonRepositoryPort(Protocol):
         envelope: CommitEnvelope,
         operations: Sequence[CanonOperation],
         validator: Any = None,
-        allowed_entity_types: frozenset[str] | None = None,
         origin: str = "author",
     ) -> int: ...
 

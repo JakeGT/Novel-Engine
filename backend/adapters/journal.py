@@ -1,4 +1,4 @@
-"""PostgreSQL-backed canon journal (ADR-011).
+"""PostgreSQL-backed canon journal (ADR-012; workflow inherited from ADR-011).
 
 Owns branches, optimistic head reservations, immutable commit envelopes, commit
 attempts, review decisions, canon revisions, and the transactional outbox.
@@ -220,24 +220,35 @@ class PostgresCanonJournal:
     ) -> None:
         async with session_scope(self._session_factory) as session:
             for operation in operations:
-                await session.execute(
-                    text(
-                        """
+                row = (
+                    await session.execute(
+                        text(
+                            """
                         INSERT INTO mutation_operations (
                             mutation_id, ordinal, workspace_id, project_id, operation_type, payload
                         )
                         SELECT :m, :ord, ms.workspace_id, ms.project_id, :type, CAST(:payload AS JSONB)
                         FROM mutation_sets ms WHERE ms.id = :m
-                        ON CONFLICT (mutation_id, ordinal) DO NOTHING
+                        ON CONFLICT (mutation_id, ordinal) DO UPDATE
+                        SET operation_type = mutation_operations.operation_type
+                        RETURNING operation_type, payload
                         """
-                    ),
-                    {
-                        "m": mutation_id,
-                        "ord": operation.ordinal,
-                        "type": operation.operation_type,
-                        "payload": json.dumps(operation.payload),
-                    },
-                )
+                        ),
+                        {
+                            "m": mutation_id,
+                            "ord": operation.ordinal,
+                            "type": operation.operation_type,
+                            "payload": json.dumps(operation.payload),
+                        },
+                    )
+                ).one()
+                if (
+                    row.operation_type != operation.operation_type
+                    or dict(row.payload) != operation.payload
+                ):
+                    raise RevisionConflict(
+                        "mutation operation ordinal was reused with different content"
+                    )
 
     async def list_operations(self, *, mutation_id: str) -> list[MutationOperation]:
         async with session_scope(self._session_factory) as session:
@@ -295,6 +306,29 @@ class PostgresCanonJournal:
             note=row.note,
             created_at=row.created_at,
         )
+
+    async def list_decisions(self, *, mutation_id: str) -> list[ReviewDecision]:
+        async with session_scope(self._session_factory) as session:
+            rows = (
+                await session.execute(
+                    text(
+                        "SELECT * FROM review_decisions "
+                        "WHERE mutation_id = :m ORDER BY created_at, id"
+                    ),
+                    {"m": mutation_id},
+                )
+            ).all()
+        return [
+            ReviewDecision(
+                id=row.id,
+                mutation_id=row.mutation_id,
+                decision=row.decision,
+                actor_user_id=row.actor_user_id,
+                note=row.note,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
 
     async def reserve_head(
         self,

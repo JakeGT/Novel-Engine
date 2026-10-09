@@ -113,3 +113,53 @@ def test_canon_entity_search(auth_client, fake_container) -> None:
     )
     results = auth_client.get(f"{base}/search?q=searchable").json()["items"]
     assert [item["name"] for item in results] == ["Searchable One"]
+
+
+def test_published_custom_type_and_attributes_are_enforced(auth_client, fake_container) -> None:
+    project_id = _project_id(fake_container)
+    definition = {
+        "label": "Ships",
+        "entity_extensions": [
+            {
+                "entity_type": "Ship",
+                "fields": [
+                    {"name": "hull", "field_type": "string", "required": True},
+                    {"name": "crew", "field_type": "integer", "minimum": 0},
+                ],
+            }
+        ],
+        "predicate_extensions": [],
+    }
+    draft = auth_client.post(
+        f"/api/v1/projects/{project_id}/schemas/drafts", json={"definition": definition}
+    )
+    assert draft.status_code == 201, draft.text
+    version_id = draft.json()["version"]["id"]
+    assert (
+        auth_client.post(f"/api/v1/projects/{project_id}/schemas/{version_id}/publish").status_code
+        == 200
+    )
+    base = f"/api/v1/projects/{project_id}/entities"
+
+    created = auth_client.post(
+        base,
+        json={
+            "type": "Ship",
+            "name": "Wayfarer",
+            "attributes": {"hull": "oak", "crew": 12},
+            "expected_revision": 0,
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    invalid = auth_client.post(
+        base,
+        json={
+            "type": "Ship",
+            "name": "Broken",
+            "attributes": {"crew": -1},
+            "expected_revision": 1,
+        },
+    )
+    assert invalid.status_code == 422, invalid.text
+    assert "invalid_attributes" in invalid.json()["detail"]

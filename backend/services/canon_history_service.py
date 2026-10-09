@@ -386,9 +386,11 @@ def _replay_entity(version: RecordVersion, current: CanonEntity | None) -> Canon
     if op == "update_entity":
         return current.model_copy(
             update={
-                "name": change.get("name") or current.name,
-                "slug": change.get("slug", current.slug),
-                "attributes": change.get("attributes") or current.attributes,
+                "name": current.name if change.get("name") is None else change["name"],
+                "slug": current.slug if change.get("slug") is None else change["slug"],
+                "attributes": current.attributes
+                if change.get("attributes") is None
+                else change["attributes"],
             }
         )
     if op == "retire_entity":

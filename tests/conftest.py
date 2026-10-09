@@ -143,8 +143,15 @@ def _build_fake_container(settings, tmp_path):
     journal = InMemoryCanonJournal()
     canon_writer = InMemoryCanonWriter()
     media_store = InMemoryMediaStore()
-    canon_repository = InMemoryCanonRepository(journal=journal, media=media_store)
-    mutation_service = MutationService(journal, canon_repository, local_mode=not settings.is_hosted)
+    canon_repository = InMemoryCanonRepository(
+        journal=journal, media=media_store, schemas=schema_versions
+    )
+    mutation_service = MutationService(
+        journal,
+        canon_repository,
+        local_mode=not settings.is_hosted,
+        schema_store=schema_versions,
+    )
     from backend.services.outbox_consumer import OutboxConsumer
     from backend.services.projection_service import GraphProjectionService
 

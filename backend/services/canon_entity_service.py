@@ -1,4 +1,4 @@
-"""Entity authoring over the mutation commit saga.
+"""Entity authoring over the atomic canonical mutation path.
 
 Every product write builds a typed operation, commits it through the
 ``MutationService`` (journal + graph writer), and returns the accepted canon

@@ -1,4 +1,4 @@
-"""Fact, belief, and event authoring over the mutation commit saga.
+"""Fact, belief, and event authoring over the atomic canonical mutation path.
 
 Every write builds a typed operation and commits through ``MutationService``.
 Validation enforces the core predicate registry (subject type, object shape,
@@ -18,7 +18,12 @@ from backend.domain.canon.errors import CanonError
 from backend.domain.canon.events import Event, EventParticipant
 from backend.domain.canon.ids import format_canon_id
 from backend.domain.canon.propositions import Proposition
-from backend.domain.canon.registry import Cardinality, predicate_spec, validate_proposition
+from backend.domain.canon.registry import (
+    CORE_PREDICATES,
+    Cardinality,
+    PredicateSpec,
+    validate_proposition,
+)
 from backend.domain.errors import ConflictError, NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.operations import (
@@ -33,6 +38,7 @@ from backend.domain.operations import (
 from backend.domain.tenancy import Permission
 from backend.ports import CanonRepositoryPort, SchemaVersionStorePort
 from backend.services.mutation_service import CommitResult, MutationService
+from backend.services.schema_compiler import compile_definition
 
 
 class CanonAssertionService:
@@ -68,6 +74,13 @@ class CanonAssertionService:
         idempotency_key: str,
         schema_version_id: str | None = None,
     ) -> CommitResult:
+        if schema_version_id is None and self._schema_store is not None:
+            published = await self._schema_store.get_published(
+                workspace_id=workspace_id, project_id=project_id
+            )
+            if published is None:
+                raise ValidationError("No published schema version exists for this project.")
+            schema_version_id = published.id
         mutation = await self._mutation.create_draft(
             scope,
             workspace_id=workspace_id,
@@ -89,12 +102,42 @@ class CanonAssertionService:
             raise NotFoundError("Referenced entity not found.")
         return entity
 
-    @staticmethod
-    def _validate_proposition(proposition: Proposition, subject_type: str) -> None:
-        try:
-            validate_proposition(proposition, subject_type=subject_type)
-        except CanonError as error:
-            raise ValidationError(str(error)) from error
+    async def _validate_proposition(
+        self,
+        proposition: Proposition,
+        subject_type: str,
+        workspace_id: str,
+        project_id: str,
+    ) -> PredicateSpec:
+        spec = CORE_PREDICATES.get(proposition.predicate)
+        if spec is not None:
+            try:
+                return validate_proposition(proposition, subject_type=subject_type)
+            except CanonError as error:
+                raise ValidationError(str(error)) from error
+        if self._schema_store is not None:
+            published = await self._schema_store.get_published(
+                workspace_id=workspace_id, project_id=project_id
+            )
+            if published is not None:
+                compiled = compile_definition(
+                    published.definition,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                )
+                spec = compiled.predicate_specs.get(proposition.predicate)
+        if spec is None:
+            raise ValidationError(f"unknown predicate {proposition.predicate!r}")
+        if subject_type not in spec.subject_types:
+            raise ValidationError(
+                f"predicate {spec.predicate!r} does not accept subject type {subject_type!r}"
+            )
+        if proposition.object.kind != spec.object_shape.value:
+            raise ValidationError(
+                f"predicate {spec.predicate!r} requires a {spec.object_shape.value} object, "
+                f"got {proposition.object.kind!r}"
+            )
+        return spec
 
     # --- facts ---
 
@@ -113,8 +156,7 @@ class CanonAssertionService:
     ) -> tuple[CommitResult, Fact]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         subject = await self._require_entity(workspace_id, project_id, proposition.subject_id)
-        self._validate_proposition(proposition, subject.type)
-        spec = predicate_spec(proposition.predicate)
+        spec = await self._validate_proposition(proposition, subject.type, workspace_id, project_id)
         if spec is not None and spec.cardinality == Cardinality.ONE:
             existing = await self._reader.list_facts(
                 workspace_id=workspace_id,
@@ -226,7 +268,7 @@ class CanonAssertionService:
         if holder.type != "Character":
             raise ValidationError("Belief holder must be a Character entity.")
         subject = await self._require_entity(workspace_id, project_id, proposition.subject_id)
-        self._validate_proposition(proposition, subject.type)
+        await self._validate_proposition(proposition, subject.type, workspace_id, project_id)
         belief_id = format_canon_id("belief", str(uuid7()))
         operation = AssertBeliefOp(
             id=belief_id,

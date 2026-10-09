@@ -1,7 +1,7 @@
 """Canonical project-scoped entity authoring API.
 
 Reads project a stable nested entity representation from the canon graph; writes
-build typed operations and commit them through the mutation saga. Every write
+build typed operations and commit them through the atomic canonical mutation path. Every write
 requires the client's expected revision (optimistic concurrency).
 """
 

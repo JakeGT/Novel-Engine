@@ -229,6 +229,7 @@ def build_container(settings: Settings | None = None) -> Container:
         container.canon_repository,
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
+        schema_store=container.schema_versions,
     )
     from backend.services.canon_entity_service import CanonEntityService
 

@@ -1,8 +1,9 @@
 import pytest
 
 from backend.domain.canon.propositions import Proposition, StringObject
+from backend.domain.canon.revisions import OriginKind
 from backend.domain.identity import AccessScope, AuthMode
-from backend.domain.journal import HeadConflict
+from backend.domain.journal import HeadConflict, RevisionConflict
 from backend.domain.operations import (
     AssertFactOp,
     CreateEntityOp,
@@ -22,7 +23,7 @@ def _scope() -> AccessScope:
 
 def _service() -> tuple[MutationService, InMemoryCanonJournal, InMemoryCanonRepository]:
     journal = InMemoryCanonJournal()
-    repository = InMemoryCanonRepository()
+    repository = InMemoryCanonRepository(journal=journal)
     return MutationService(journal, repository, local_mode=True), journal, repository
 
 
@@ -56,6 +57,59 @@ async def test_commit_creates_revision_and_is_idempotent() -> None:
     assert again.status == "committed"
     assert again.revision == 1
 
+    retried = await service.commit(scope, mutation.id)
+    assert retried == result
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_rejects_different_operations() -> None:
+    service, _journal, _repository = _service()
+    scope = _scope()
+    await service.create_draft(
+        scope,
+        workspace_id="ws1",
+        project_id="pr1",
+        operations=[CreateEntityOp(id="tmp:a", type="Character", name="A")],
+        expected_head=0,
+        idempotency_key="same-request",
+    )
+
+    with pytest.raises(RevisionConflict, match="different operations"):
+        await service.create_draft(
+            scope,
+            workspace_id="ws1",
+            project_id="pr1",
+            operations=[CreateEntityOp(id="tmp:b", type="Character", name="B")],
+            expected_head=0,
+            idempotency_key="same-request",
+        )
+
+
+@pytest.mark.asyncio
+async def test_model_proposal_requires_approval() -> None:
+    service, _journal, repository = _service()
+    scope = _scope()
+    mutation = await service.create_draft(
+        scope,
+        workspace_id="ws1",
+        project_id="pr1",
+        operations=[CreateEntityOp(id="tmp:a", type="Character", name="A")],
+        expected_head=0,
+        origin=OriginKind.MODEL.value,
+    )
+
+    with pytest.raises(CanonValidationError, match="review_required"):
+        await service.commit(scope, mutation.id)
+    assert (
+        await repository.get_head(
+            workspace_id="ws1", project_id="pr1", branch_id=mutation.branch_id
+        )
+        == 0
+    )
+
+    await service.approve(scope, mutation.id)
+    assert (await service.commit(scope, mutation.id)).revision == 1
+
 
 @pytest.mark.asyncio
 async def test_unknown_type_fails_validation_and_commit() -> None:
@@ -82,6 +136,24 @@ async def test_unknown_type_fails_validation_and_commit() -> None:
         )
         == 0
     )
+
+
+@pytest.mark.asyncio
+async def test_preview_rejects_missing_or_unpublished_schema_version() -> None:
+    service, _journal, _repository = _service()
+    scope = _scope()
+    mutation = await service.create_draft(
+        scope,
+        workspace_id="ws1",
+        project_id="pr1",
+        operations=[CreateEntityOp(id="tmp:a", type="Character", name="A")],
+        expected_head=0,
+        schema_version_id="scv_missing",
+    )
+
+    report = await service.validate(scope, mutation.id)
+    assert not report.ok
+    assert report.issues[0].code == "invalid_schema_version"
 
 
 @pytest.mark.asyncio

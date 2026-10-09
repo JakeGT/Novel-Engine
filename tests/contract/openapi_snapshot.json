@@ -1949,7 +1949,7 @@
     }
   },
   "info": {
-    "description": "Novel Engine API. Canonical routes are under /api/v1. Legacy prototype routes remain mounted at /api as temporary, deprecated aliases.",
+    "description": "Novel Engine API. Canonical and explicitly namespaced development routes are mounted under /api/v1; the deprecated /api aliases have been removed.",
     "title": "Novel Engine",
     "version": "0.1.0"
   },

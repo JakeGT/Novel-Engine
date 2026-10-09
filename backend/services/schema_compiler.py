@@ -19,6 +19,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
+from backend.domain.canon.registry import (
+    CORE_ENTITY_TYPES,
+    CORE_PREDICATES,
+    PredicateSpec,
+)
+from backend.domain.canon.registry import Cardinality as CanonCardinality
 from backend.domain.schema_defs import (
     Cardinality,
     EntityExtension,
@@ -50,6 +56,7 @@ class CompiledSchema:
     json_schema: dict[str, Any]
     entity_types: frozenset[str] = field(default_factory=frozenset)
     predicates: frozenset[str] = field(default_factory=frozenset)
+    predicate_specs: dict[str, PredicateSpec] = field(default_factory=dict)
     migration_notes: tuple[str, ...] = ()
 
 
@@ -101,11 +108,44 @@ def compile_definition(
         if cached is not None:
             return cached
 
+    declared_entity_types = set(CORE_ENTITY_TYPES) | {
+        extension.entity_type for extension in model.entity_extensions
+    }
+    for predicate in model.predicate_extensions:
+        if predicate.predicate in CORE_PREDICATES:
+            raise SchemaCompilationError(
+                f"project predicate {predicate.predicate!r} conflicts with a core predicate"
+            )
+        unknown_subjects = set(predicate.subject_types) - declared_entity_types
+        unknown_objects = set(predicate.object_types) - declared_entity_types
+        if unknown_subjects:
+            raise SchemaCompilationError(
+                f"predicate {predicate.predicate!r} has unknown subject types: "
+                f"{sorted(unknown_subjects)!r}"
+            )
+        if unknown_objects:
+            raise SchemaCompilationError(
+                f"predicate {predicate.predicate!r} has unknown object types: "
+                f"{sorted(unknown_objects)!r}"
+            )
+
     entity_models: dict[str, type[BaseModel]] = {}
     entity_json: dict[str, dict[str, Any]] = {}
     for extension in model.entity_extensions:
         entity_models[extension.entity_type] = _compile_entity(extension)
         entity_json[extension.entity_type] = _entity_json_schema(extension)
+
+    predicate_specs = {
+        predicate.predicate: PredicateSpec(
+            predicate=predicate.predicate,
+            subject_types=frozenset(predicate.subject_types),
+            object_shape=predicate.object_kind,
+            object_types=frozenset(predicate.object_types),
+            cardinality=CanonCardinality(predicate.cardinality.value),
+            temporal_allowed=predicate.temporal_allowed,
+        )
+        for predicate in model.predicate_extensions
+    }
 
     compiled = CompiledSchema(
         content_hash=content_hash,
@@ -144,6 +184,7 @@ def compile_definition(
         },
         entity_types=frozenset(entity_models),
         predicates=frozenset(p.predicate for p in model.predicate_extensions),
+        predicate_specs=predicate_specs,
     )
     if use_cache:
         _cache_put(workspace_id, project_id, compiled)

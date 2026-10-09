@@ -1,6 +1,6 @@
 """Fact, belief, and event canon APIs.
 
-Product-scoped authoring over the mutation saga. Reads project accepted canon;
+Product-scoped authoring over the atomic canonical mutation path. Reads accepted canon;
 writes require project-write + CSRF. Truth agreement is a derived query result.
 """
 

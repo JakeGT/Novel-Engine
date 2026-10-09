@@ -2,7 +2,7 @@
 
 Registration (asset/version metadata) is operator/administrator metadata and is not
 a canon mutation. Link acceptance and retirement ARE canon mutations: they build
-typed operations and commit through the mutation saga, so they are revisioned and
+typed operations and commit through the atomic mutation path, so they are revisioned and
 audited. Bytes remain in the scoped object store; Phase 2 only records identity and
 explicit links (no processing/scanning).
 """

@@ -7,7 +7,12 @@ from backend.adapters.canon_repository import PostgresCanonRepository
 from backend.adapters.journal import PostgresCanonJournal
 from backend.core.database import create_engine, create_session_factory
 from backend.domain.journal import CommitEnvelope, HeadConflict
-from backend.domain.operations import CreateEntityOp, RetireEntityOp
+from backend.domain.operations import (
+    CreateEntityOp,
+    RetireEntityOp,
+    canonicalize_operations,
+    operations_checksum,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -15,18 +20,18 @@ WORKSPACE = "ws_canon_it"
 PROJECT = "pr_canon_it"
 
 
-def _envelope(branch_id: str, commit_id: str, expected: int, checksum: str) -> CommitEnvelope:
+def _envelope(branch_id: str, commit_id: str, expected: int, operations) -> CommitEnvelope:
     return CommitEnvelope(
         commit_id=commit_id,
-        mutation_id="mut_canon_it",
+        mutation_id=f"mut_{commit_id}",
         workspace_id=WORKSPACE,
         project_id=PROJECT,
         branch_id=branch_id,
         revision=expected + 1,
         expected_head=expected,
-        schema_version_id="scv_canon_it",
-        canonical="[]",
-        checksum=checksum,
+        schema_version_id=None,
+        canonical=canonicalize_operations(operations),
+        checksum=operations_checksum(operations),
         actor_user_id="usr_canon_it",
         created_at=datetime.now(UTC),
     )
@@ -48,7 +53,7 @@ async def repository(disposable_database):
 async def test_commit_is_atomic_idempotent_and_advances_head(repository) -> None:
     repo, journal, branch = repository
     operation = CreateEntityOp(id="ent_canon_it", type="Character", name="Ivo")
-    envelope = _envelope(branch.id, "cmt_canon_it_1", 0, "ck1")
+    envelope = _envelope(branch.id, "cmt_canon_it_1", 0, [operation])
 
     revision = await repo.apply_commit(envelope=envelope, operations=[operation])
     assert revision == 1
@@ -75,9 +80,10 @@ async def test_commit_is_atomic_idempotent_and_advances_head(repository) -> None
 async def test_stale_head_commit_rolls_back(repository) -> None:
     repo, journal, branch = repository
     with pytest.raises(HeadConflict):
+        operation = CreateEntityOp(id="ent_bad", type="Character", name="Nope")
         await repo.apply_commit(
-            envelope=_envelope(branch.id, "cmt_canon_it_bad", 9, "ckbad"),
-            operations=[CreateEntityOp(id="ent_bad", type="Character", name="Nope")],
+            envelope=_envelope(branch.id, "cmt_canon_it_bad", 9, [operation]),
+            operations=[operation],
         )
 
     assert (
@@ -93,13 +99,13 @@ async def test_stale_head_commit_rolls_back(repository) -> None:
 @pytest.mark.asyncio
 async def test_retire_entity_updates_normalized_state(repository) -> None:
     repo, _journal, branch = repository
+    create = CreateEntityOp(id="ent_r", type="Character", name="Retire Me")
     await repo.apply_commit(
-        envelope=_envelope(branch.id, "cmt_canon_it_a", 0, "cka"),
-        operations=[CreateEntityOp(id="ent_r", type="Character", name="Retire Me")],
+        envelope=_envelope(branch.id, "cmt_canon_it_a", 0, [create]), operations=[create]
     )
+    retire = RetireEntityOp(id="ent_r")
     await repo.apply_commit(
-        envelope=_envelope(branch.id, "cmt_canon_it_b", 1, "ckb"),
-        operations=[RetireEntityOp(id="ent_r")],
+        envelope=_envelope(branch.id, "cmt_canon_it_b", 1, [retire]), operations=[retire]
     )
 
     entity = await repo.get_entity(workspace_id=WORKSPACE, project_id=PROJECT, entity_id="ent_r")
@@ -114,7 +120,7 @@ async def test_invalid_commit_rolls_back_without_advancing_head(repository) -> N
 
     repo, journal, branch = repository
     bad = CreateEntityOp(id="ent_bad", type="Alien", name="Zorp")
-    envelope = _envelope(branch.id, "cmt_bad", 0, "ckbad")
+    envelope = _envelope(branch.id, "cmt_bad", 0, [bad])
 
     with pytest.raises(CanonValidationError):
         await repo.apply_commit(envelope=envelope, operations=[bad])

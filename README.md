@@ -135,7 +135,7 @@ stored envelope-encrypted and never returned by the API; logs redact `sk-`/`sk-o
 ## Current limitations
 
 - The React application is a minimal TypeScript authoring shell (session, project switcher, entity list/create/detail with history and projection status); schema publish, mutation review, media panels, and end-to-end browser tests are still pending.
-- Canonical API routes live under `/api/v1` with stable DTOs and an `application/problem+json` error contract; the original prototype routes remain at `/api` as deprecated aliases pending migration.
-- Character and schema routes use the injected container; graph and RAG routes still use legacy module singletons pending 0G.
+- Canonical API routes live under `/api/v1` with stable DTOs and an `application/problem+json` error contract; deprecated `/api` aliases have been removed.
+- Product routes use the injected container. Generic graph writes are an explicitly namespaced, local/admin-only development surface and cannot bypass the hosted canon journal.
 - The world workflow and generic RAG answer endpoint are incomplete (`/api/v1/rag/query` returns 501).
 - The architecture document at the repository root records the original concept; `plan/` is the maintained implementation plan.

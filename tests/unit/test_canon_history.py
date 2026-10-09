@@ -1,4 +1,3 @@
-import json
 from datetime import UTC, datetime
 
 import pytest
@@ -14,6 +13,8 @@ from backend.domain.operations import (
     CreateEventOp,
     RetireEventOp,
     UpdateEntityOp,
+    canonicalize_operations,
+    operations_checksum,
 )
 from backend.services.canon_history_service import CanonHistoryService
 from tests.doubles import InMemoryCanonJournal, InMemoryCanonRepository
@@ -21,18 +22,18 @@ from tests.doubles import InMemoryCanonJournal, InMemoryCanonRepository
 pytestmark = pytest.mark.unit
 
 
-async def _apply(repo, branch, commit_id, expected, ops, checksum="c"):
+async def _apply(repo, branch, commit_id, expected, ops):
     envelope = CommitEnvelope(
         commit_id=commit_id,
-        mutation_id="mut_1",
+        mutation_id=f"mut_{commit_id}",
         workspace_id="ws",
         project_id="pr",
         branch_id=branch.id,
         revision=expected + 1,
         expected_head=expected,
         schema_version_id="scv_1",
-        canonical=json.dumps([op.model_dump(mode="json") for op in ops]),
-        checksum=checksum,
+        canonical=canonicalize_operations(ops),
+        checksum=operations_checksum(ops),
         actor_user_id="usr_1",
         created_at=datetime.now(UTC),
     )
@@ -48,9 +49,27 @@ async def test_revision_history_state_at_revision_and_tags() -> None:
     service = CanonHistoryService(canon=repo, journal=journal, local_mode=True)
 
     await _apply(
-        repo, branch, "cmt_1", 0, [CreateEntityOp(id="ent_1", type="Character", name="Mara")]
+        repo,
+        branch,
+        "cmt_1",
+        0,
+        [
+            CreateEntityOp(
+                id="ent_1",
+                type="Character",
+                name="Mara",
+                slug="mara",
+                attributes={"role": "scout"},
+            )
+        ],
     )
-    await _apply(repo, branch, "cmt_2", 1, [UpdateEntityOp(id="ent_1", name="Mara Voss")])
+    await _apply(
+        repo,
+        branch,
+        "cmt_2",
+        1,
+        [UpdateEntityOp(id="ent_1", name="Mara Voss", attributes={})],
+    )
 
     revisions = await service.list_revisions(scope, "ws", "pr")
     assert revisions[0].revision == 2
@@ -66,6 +85,8 @@ async def test_revision_history_state_at_revision_and_tags() -> None:
     assert at_one.name == "Mara"
     at_two = await service.entity_at_revision(scope, "ws", "pr", "ent_1", 2)
     assert at_two.name == "Mara Voss"
+    assert at_two.slug == "mara"
+    assert at_two.attributes == {}
 
     tag = await service.set_tag(scope, "ws", "pr", name="v1", revision=1)
     assert tag.revision == 1 and tag.commit_id == "cmt_1"
@@ -145,7 +166,7 @@ async def test_event_at_revision_includes_retirement() -> None:
                 kind="battle",
                 name="Fall of Harbor",
                 participants=[{"entity_id": "ent_1", "role": "witness"}],
-                location_ids=["ent_1"],
+                location_ids=[],
                 world_position="winter, year 12",
             )
         ],

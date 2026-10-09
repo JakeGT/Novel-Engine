@@ -101,8 +101,8 @@ def create_app(settings: Settings | None = None, container: Container | None = N
         title=resolved_settings.PROJECT_NAME,
         version=resolved_settings.PROJECT_VERSION,
         description=(
-            "Novel Engine API. Canonical routes are under /api/v1. Legacy prototype "
-            "routes remain mounted at /api as temporary, deprecated aliases."
+            "Novel Engine API. Canonical and explicitly namespaced development routes "
+            "are mounted under /api/v1; the deprecated /api aliases have been removed."
         ),
         lifespan=lifespan,
     )

@@ -39,7 +39,8 @@ Phase 2 includes:
 - a point-in-revision canon/history/provenance query boundary, immutable tags, and compensating
   revert proposals
 - invariant enforcement classes and a stable evaluator seam for the Phase 2.5 story-rule workflow
-- typed mutation sets, per-operation decisions, validation, optimistic concurrency, and idempotency
+- typed mutation sets, mutation-level review decisions, validation, optimistic concurrency, and
+  idempotency; per-operation review remains an explicit follow-up
 - an atomic PostgreSQL journal + normalized canon transaction and replayable Neo4j projection
 - project-scoped entity/canon APIs and a usable world/character authoring interface
 - media asset/version identity, authority, provenance, explicit links, and archive semantics
@@ -97,14 +98,14 @@ ADR-010 and is restated in ADR-012 as the Phase 2 delivery boundary. ADR-013 rec
 | 2A. Phase 1 closeout and Phase 2 contract | In progress (ADR-012, glossary, baseline, compatibility rules recorded; owner acceptance, hosted CI run, and clean-host rehearsal are external) | Phase 1 evidence |
 | 2B. Canon domain and core schema | Implemented | 2A |
 | 2C. Project schema governance and compiler | Implemented | 2B |
-| 2D. Revision, journal, outbox, and storage migrations | Implemented (ADR-012: normalized PostgreSQL canon + immutable journal commit in one transaction, projection watermarks; migrations 0013–0017) | 2A–2C |
-| 2E. Mutation validation, canonical commit, and projection recovery | Implemented (single-PostgreSQL-transaction commit, in-transaction authoritative validator, idempotent outbox consumer + replayable projector; mutation-set state machine, per-operation decisions, and commit telemetry deferred) | 2B–2D |
+| 2D. Revision, journal, outbox, and storage migrations | Implemented (ADR-012: normalized PostgreSQL canon + immutable journal commit in one transaction, projection watermarks; migrations 0013–0018) | 2A–2C |
+| 2E. Mutation validation, canonical commit, and projection recovery | Implemented (single-PostgreSQL-transaction commit, exact published-schema validation, protected-origin approval gate, deterministic retry identity, idempotent outbox consumer + replayable projector; full mutation state machine, per-operation decisions, and commit telemetry deferred) | 2B–2D |
 | 2F. Entity authoring and retirement | Implemented (canonical entity API over the mutation path with revision/ETag; link inspection/history, name-collision policy, and character-workflow port deferred) | 2C–2E |
 | 2G. Facts, beliefs, and events | Implemented (fact/belief/event APIs + derived truth agreement over canonical PostgreSQL; graph predicate projections, canon seed expansion, and close/reassert history deferred) | 2B–2F |
 | 2H. Provenance and history inspection | Implemented (revision/record history, entity/fact/belief/event state-at-revision, revision diffs, immutable tags, verification CLI, operator projection report; revert proposals and generalized provenance source-artefact IDs deferred) | 2D–2G |
 | 2I. Media identity and explicit evidence links | Implemented (asset/version identity + reviewed link roles through the mutation path; lifecycle transitions, PG media integration test, and reference-world asset seed deferred) | 2B–2E |
 | 2J. Project shell and authoring UI | Implemented (TypeScript + OpenAPI-generated client + router/query with scoped keys + project shell + entity list/create/detail/history/retire + component test; mutation-review/schema-publish/media UI, a11y automation, and e2e deferred) | 2F–2I APIs |
-| 2K. Archive upgrade, restore, and rebuild | Implemented (canon archive format v3 with canonical checksums, object bytes, strict preflight validation, idempotent import; v1 upgrader and automatic post-import projection rebuild deferred) | 2C–2I |
+| 2K. Archive upgrade, restore, and rebuild | Implemented with named deferrals (canon archive format v3 with canonical checksums, accepted mutation/review evidence, object bytes, strict preflight validation, resumable import; import-status ledger, v1 upgrader, and automatic post-import projection rebuild deferred) | 2C–2I |
 | 2L. Security, quality, and exit evidence | Implemented (threat/auth tests, dependency audit, invariant matrix + `phase-2-evidence.md`; property/fuzz + mutation testing, perf budgets, colliding-ID fixtures, and clean-host rehearsal deferred) | all workstreams |
 
 ## 2A. Phase 1 closeout and Phase 2 contract
@@ -241,7 +242,7 @@ Implemented in `backend/domain/canon/` with pure invariant tests in
 ## 2D. Revisions, journal, outbox, canonical storage, and projection migrations
 
 ADR-012 made PostgreSQL authoritative: normalized canon, the immutable journal commit, and
-projection watermarks are implemented (migrations `0013`–`0017`). The earlier Neo4j write path is
+projection watermarks are implemented (migrations `0013`–`0018`). The earlier Neo4j write path is
 retained only as the rebuildable projection and never participates in commit success.
 
 - [x] Add normalized, versioned PostgreSQL tables for entities, facts, beliefs, events, provenance,
@@ -355,8 +356,9 @@ retained only as the rebuildable projection and never participates in commit suc
       references, endpoint types, attributes, cardinality, lifecycle, provenance, and review policy
       in one authoritative validator invoked inside the canonical PostgreSQL transaction.
       (`backend/domain/validation.py::AuthoritativeValidator` runs inside
-      `PostgresCanonRepository.apply_commit`; the commit tx takes the project's declared
-      `allowed_entity_types`, with richer project-extension validation arriving in 2.5.)
+      `PostgresCanonRepository.apply_commit`; the transaction loads the exact published schema and
+      enforces compiled custom types, attributes, predicates, endpoints, temporal flags, and
+      cardinality. No caller can widen the allowed types.)
 - [x] Split validator results into permanently blocking built-in integrity failures, explicitly
       blocking deterministic author-rule failures, and advisory findings. Phase 2 implements the
       integrity path and evaluator interface; author-rule authoring/runs arrive in Phase 2.5.
@@ -452,9 +454,9 @@ retained only as the rebuildable projection and never participates in commit suc
       reads, closure/retirement, and mutation review.
       (`CanonAssertionService` + `/api/v1/projects/{id}/{facts,beliefs,events}`; per-operation review decisions
       remain 2E scope.)
-- [ ] Enforce predicate endpoint/value shape and cardinality from the exact project schema version.
-      Core predicate checks exist, but project extensions and commit-path cardinality enforcement are
-      not yet wired into the authoritative validator.
+- [x] Enforce predicate endpoint/value shape and cardinality from the exact project schema version.
+      The authoritative transaction loads and compiles the referenced published schema, validates
+      core and custom propositions, and accounts for earlier operations in the same batch.
 - [x] Support entity-reference and scalar proposition objects without encoding references as
       unvalidated strings (discriminated `Proposition` union of entity-ref/string/integer/decimal/boolean/enum/
       quantity/structured objects).
@@ -466,8 +468,9 @@ retained only as the rebuildable projection and never participates in commit suc
       open facts; the `Belief` model has no `is_true`).
 - [x] Validate event participants, roles, locations, causes, outcomes, and source references. Store
       unknown/fuzzy world-position input without fabricating exact chronology.
-      (Participants/locations must resolve to active entities and roles are non-empty; `world_position` is stored
-      verbatim as free text. Cause/outcome ids are accepted as references without cross-kind validation yet.)
+      (Participants/locations must resolve to active entities and roles are non-empty; locations
+      must be `Location` entities; causes/outcomes resolve to active entities or events;
+      `world_position` is stored verbatim as free text.)
 - [x] Implement current-root-revision queries and history queries. Do not expose Phase 3
       branch-overlay or point-in-world-time query parameters as if supported.
       (Reads project the current committed head only; per-revision diff/history queries are deferred to 2H.)
@@ -479,15 +482,17 @@ retained only as the rebuildable projection and never participates in commit suc
 - [ ] Add tests for cardinality conflicts, false beliefs, unknown dates, retired references,
       cross-project objects, invalid holders, projection equivalence, and close/reassert history.
       (Covered: cardinality conflict, false/unknown truth agreement, invalid holder/missing source, unknown
-      predicate, missing participant. Deferred with projections/history: projection equivalence, close/reassert
-      history, explicit retired-reference and cross-project-object cases.)
+      predicate, missing participant, retired-reference rejection, and project-scoped entity-ref
+      remapping on archive restore. Deferred with projections/history: projection equivalence and
+      close/reassert history.)
 
 ### 2G acceptance
 
 - [x] the same proposition can be objectively true, falsely believed, or unknown without collapsing
       those states
 - [ ] facts/beliefs/events retain complete provenance and revision history after closure
-- [ ] schema cardinality and reference rules hold under concurrent and safely rebased commits
+- [x] schema cardinality and reference rules hold at the locked canonical head, including within a
+      single operation batch (safe per-record rebasing remains Phase 3 work)
 - [ ] query projections agree with reified accepted canon for the checked revision (projections deferred)
 
 ## 2H. Provenance, revision history, and inspection
@@ -624,23 +629,28 @@ retained only as the rebuildable projection and never participates in commit suc
 - [x] Define archive format v2 with a canonical manifest, format/schema versions, project settings,
       root branch/head, schemas, entities, facts, beliefs, events, revisions, mutation/decision
       history, provenance, asset metadata/links, and permitted originals.
-      (Implemented as `novel-engine/canon-archive` format v3 — a superset of the requirements.)
+      (Implemented as `novel-engine/canon-archive` format v3. Accepted commits carry their source
+      origin, actor, mutation metadata, and review decisions; uncommitted/rejected proposal history
+      is not part of the canonical project archive.)
 - [x] Use canonical serialization and per-entry plus whole-manifest checksums. Strictly reject path
       traversal, duplicate identities, oversized/undeclared entries, checksum mismatch, invalid
       operation order, and cross-project references before durable writes
-      (`CanonArchiveService._validate`; `tests/application/test_canon_archive.py`).
+      (`CanonArchiveService._validate`; media entries count toward the entry cap, decoded object
+      bytes have a hard cap, and tests cover checksums, traversal, target preflight, and scoped refs.)
 - [ ] Retain a bounded v1 archive reader/upgrader for the Phase 1 graph/object format, or record an
       explicit owner decision to drop it while prototype data remains disposable. Never interpret a
       v1 property bag as validated v2 canon without a review/migration report. (v1 upgrader deferred;
       the Phase 1 graph-format `ProjectTransferService` v2 is retained untouched.)
-- [x] Make import resumable/idempotent by archive/import ID and stage it through validation before
+- [ ] Make import resumable/idempotent by archive/import ID and stage it through validation before
       canonical commit. A partial import must be retryable or removable without becoming visible as
-      a successful project (preflight `_validate`; deterministic remapped commit ids make re-import
-      idempotent; no separate import-ID ledger yet).
+      a successful project. Deterministic target-scoped commit/mutation IDs make replay resumable
+      and idempotent, and target preflight happens before writes; a project-level import-status
+      ledger/visibility gate and explicit removal workflow remain deferred.
 - [x] Define preserve/remap rules for stable project-owned IDs, provenance actors, schema versions,
       root branch, object keys, and external aliases when importing into another workspace/project
       (object keys remapped + deduped by checksum; schema versions mapped by content hash; commit ids
-      remapped deterministically; actor/alias carry-through is recorded as-is).
+      are deterministic and target-scoped; entity-reference project IDs are remapped; trusted
+      restore commits use migration provenance; actor/alias carry-through is recorded as-is).
 - [ ] Rebuild Neo4j projections and derived indexes from accepted archive/journal data, then compare
       canonical checksums and representative queries. (Deferred.)
 - [ ] Include export/import security audit events without story content and require owner-level

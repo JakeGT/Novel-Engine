@@ -7,6 +7,7 @@ Neo4j is not involved: application success is decided entirely here.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
@@ -19,6 +20,7 @@ from backend.domain.canon.entities import CanonEntity, EntityLifecycle
 from backend.domain.canon.events import Event, EventParticipant
 from backend.domain.canon.ids import format_canon_id
 from backend.domain.canon.propositions import Proposition
+from backend.domain.canon.registry import CORE_ENTITY_TYPES
 from backend.domain.canon.revisions import CanonRevision, OriginKind, Provenance
 from backend.domain.history import CanonTag, CanonTagHistoryEntry
 from backend.domain.journal import CommitEnvelope, HeadConflict, RevisionConflict
@@ -37,6 +39,10 @@ from backend.domain.operations import (
     RetireEntityOp,
     RetireEventOp,
     UpdateEntityOp,
+    canonicalize_operations,
+    operations_checksum,
+    parse_operation,
+    resolve_temporary_ids,
 )
 from backend.domain.projection import (
     CanonStorageError,
@@ -47,8 +53,12 @@ from backend.domain.projection import (
 from backend.domain.validation import (
     AuthoritativeValidator,
     CanonValidationError,
+    DomainValidationReport,
     ValidationContext,
+    ValidationFinding,
+    ValidationSeverity,
 )
+from backend.services.schema_compiler import compile_definition
 
 _DEFAULT_VALIDATOR = AuthoritativeValidator()
 
@@ -255,6 +265,74 @@ class _TxCanonReader:
         ).scalar()
         return int(value or 0)
 
+    async def get_fact(self, fact_id: str) -> Fact | None:
+        row = (
+            await self._session.execute(
+                text(
+                    "SELECT * FROM canon_facts "
+                    "WHERE workspace_id = :w AND project_id = :p AND branch_id = :b AND id = :id"
+                ),
+                {
+                    "w": self._workspace_id,
+                    "p": self._project_id,
+                    "b": self._branch_id,
+                    "id": fact_id,
+                },
+            )
+        ).first()
+        return _fact(row) if row else None
+
+    async def get_belief(self, belief_id: str) -> Belief | None:
+        row = (
+            await self._session.execute(
+                text(
+                    "SELECT * FROM canon_beliefs "
+                    "WHERE workspace_id = :w AND project_id = :p AND branch_id = :b AND id = :id"
+                ),
+                {
+                    "w": self._workspace_id,
+                    "p": self._project_id,
+                    "b": self._branch_id,
+                    "id": belief_id,
+                },
+            )
+        ).first()
+        return _belief(row) if row else None
+
+    async def get_event(self, event_id: str) -> Event | None:
+        row = (
+            await self._session.execute(
+                text(
+                    "SELECT * FROM canon_events "
+                    "WHERE workspace_id = :w AND project_id = :p AND branch_id = :b AND id = :id"
+                ),
+                {
+                    "w": self._workspace_id,
+                    "p": self._project_id,
+                    "b": self._branch_id,
+                    "id": event_id,
+                },
+            )
+        ).first()
+        return _event(row) if row else None
+
+    async def get_link(self, link_id: str) -> AssetLink | None:
+        row = (
+            await self._session.execute(
+                text(
+                    "SELECT * FROM media_asset_links "
+                    "WHERE workspace_id = :w AND project_id = :p AND branch_id = :b AND id = :id"
+                ),
+                {
+                    "w": self._workspace_id,
+                    "p": self._project_id,
+                    "b": self._branch_id,
+                    "id": link_id,
+                },
+            )
+        ).first()
+        return _link(row) if row else None
+
     async def get_asset(self, asset_id: str) -> MediaAsset | None:
         row = (
             await self._session.execute(
@@ -291,7 +369,6 @@ class PostgresCanonRepository:
         envelope: Any,
         operations: list[CanonOperation],
         validator: Any = None,
-        allowed_entity_types: frozenset[str] | None = None,
         origin: str = OriginKind.AUTHOR.value,
     ) -> int:
         validator = validator or _DEFAULT_VALIDATOR
@@ -306,6 +383,100 @@ class PostgresCanonRepository:
                 if existing.checksum != envelope.checksum:
                     raise RevisionConflict("commit id reused with a different checksum")
                 return int(existing.revision)
+
+            if (
+                canonicalize_operations(operations) != envelope.canonical
+                or operations_checksum(operations) != envelope.checksum
+            ):
+                raise RevisionConflict("commit envelope does not match supplied operations")
+
+            mutation = (
+                await session.execute(
+                    text("SELECT * FROM mutation_sets WHERE id = :id FOR UPDATE"),
+                    {"id": envelope.mutation_id},
+                )
+            ).first()
+            effective_origin = origin
+            if mutation is not None:
+                if (
+                    mutation.workspace_id != envelope.workspace_id
+                    or mutation.project_id != envelope.project_id
+                    or mutation.branch_id != envelope.branch_id
+                    or mutation.expected_head != envelope.expected_head
+                    or mutation.schema_version_id != envelope.schema_version_id
+                ):
+                    raise RevisionConflict("commit envelope does not match its mutation set")
+                stored_rows = (
+                    await session.execute(
+                        text(
+                            "SELECT payload FROM mutation_operations "
+                            "WHERE mutation_id = :m ORDER BY ordinal"
+                        ),
+                        {"m": envelope.mutation_id},
+                    )
+                ).all()
+                stored_operations = [parse_operation(_load(row.payload)) for row in stored_rows]
+                resolved_stored, _ = resolve_temporary_ids(
+                    stored_operations,
+                    new_id=lambda kind, temporary_id: format_canon_id(
+                        kind,
+                        hashlib.sha256(
+                            f"{envelope.mutation_id}:{temporary_id}".encode()
+                        ).hexdigest()[:16],
+                    ),
+                )
+                if canonicalize_operations(resolved_stored) != envelope.canonical:
+                    raise RevisionConflict("commit operations do not match the reviewed mutation")
+                effective_origin = mutation.origin
+                decision = (
+                    await session.execute(
+                        text(
+                            "SELECT decision FROM review_decisions "
+                            "WHERE mutation_id = :m ORDER BY created_at DESC, id DESC LIMIT 1"
+                        ),
+                        {"m": envelope.mutation_id},
+                    )
+                ).first()
+                latest_decision = decision.decision if decision else None
+                if latest_decision == "rejected":
+                    raise CanonValidationError(
+                        DomainValidationReport(
+                            findings=(
+                                ValidationFinding(
+                                    ValidationSeverity.INTEGRITY,
+                                    "review_rejected",
+                                    "the proposal was rejected during review",
+                                ),
+                            )
+                        )
+                    )
+                if (
+                    effective_origin not in {OriginKind.AUTHOR.value, OriginKind.MIGRATION.value}
+                    and latest_decision != "approved"
+                ):
+                    raise CanonValidationError(
+                        DomainValidationReport(
+                            findings=(
+                                ValidationFinding(
+                                    ValidationSeverity.INTEGRITY,
+                                    "review_required",
+                                    "non-author proposals require an explicit human approval",
+                                ),
+                            )
+                        )
+                    )
+            elif origin not in {OriginKind.AUTHOR.value, OriginKind.MIGRATION.value}:
+                raise CanonValidationError(
+                    DomainValidationReport(
+                        findings=(
+                            ValidationFinding(
+                                ValidationSeverity.INTEGRITY,
+                                "review_required",
+                                "non-author direct commits are not permitted",
+                            ),
+                        )
+                    )
+                )
 
             head = (
                 await session.execute(
@@ -339,6 +510,39 @@ class PostgresCanonRepository:
             reader = _TxCanonReader(
                 session, envelope.workspace_id, envelope.project_id, envelope.branch_id
             )
+            compiled = None
+            if envelope.schema_version_id is not None:
+                schema_row = (
+                    await session.execute(
+                        text(
+                            "SELECT definition FROM schema_versions "
+                            "WHERE workspace_id = :w AND project_id = :p AND id = :id "
+                            "AND status = 'published'"
+                        ),
+                        {
+                            "w": envelope.workspace_id,
+                            "p": envelope.project_id,
+                            "id": envelope.schema_version_id,
+                        },
+                    )
+                ).first()
+                if schema_row is None:
+                    raise CanonValidationError(
+                        DomainValidationReport(
+                            findings=(
+                                ValidationFinding(
+                                    ValidationSeverity.INTEGRITY,
+                                    "invalid_schema_version",
+                                    "commit schema version is missing, outside this project, or unpublished",
+                                ),
+                            )
+                        )
+                    )
+                compiled = compile_definition(
+                    _load(schema_row.definition),
+                    workspace_id=envelope.workspace_id,
+                    project_id=envelope.project_id,
+                )
             context = ValidationContext(
                 workspace_id=envelope.workspace_id,
                 project_id=envelope.project_id,
@@ -346,17 +550,12 @@ class PostgresCanonRepository:
                 schema_version_id=envelope.schema_version_id,
                 head_revision=envelope.expected_head,
                 reader=reader,
+                allowed_entity_types=frozenset(
+                    set(CORE_ENTITY_TYPES) | (set(compiled.entity_types) if compiled else set())
+                ),
+                entity_attribute_models=compiled.entity_models if compiled else {},
+                predicate_specs=compiled.predicate_specs if compiled else {},
             )
-            if allowed_entity_types is not None:
-                context = ValidationContext(
-                    workspace_id=context.workspace_id,
-                    project_id=context.project_id,
-                    branch_id=context.branch_id,
-                    schema_version_id=context.schema_version_id,
-                    head_revision=context.head_revision,
-                    reader=reader,
-                    allowed_entity_types=allowed_entity_types,
-                )
             report = await validator.validate(operations, context=context)
             if not report.ok:
                 raise CanonValidationError(report)
@@ -425,7 +624,7 @@ class PostgresCanonRepository:
                     "w": envelope.workspace_id,
                     "p": envelope.project_id,
                     "b": envelope.branch_id,
-                    "origin": origin,
+                    "origin": effective_origin,
                     "actor": envelope.actor_user_id,
                 },
             )
@@ -501,6 +700,14 @@ class PostgresCanonRepository:
                     "key": f"commit:{envelope.commit_id}",
                 },
             )
+            if mutation is not None:
+                await session.execute(
+                    text(
+                        "UPDATE mutation_sets SET status = 'committed', updated_at = now() "
+                        "WHERE id = :id"
+                    ),
+                    {"id": envelope.mutation_id},
+                )
         return reserved
 
     async def _record_version(
