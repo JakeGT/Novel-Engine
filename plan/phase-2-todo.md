@@ -102,7 +102,7 @@ ADR-010 and is restated in ADR-012 as the Phase 2 delivery boundary. ADR-013 rec
 | 2E. Mutation validation, canonical commit, and projection recovery | Implemented (single-PostgreSQL-transaction commit, exact published-schema validation, protected-origin approval gate, deterministic retry identity, idempotent outbox consumer + replayable projector; full mutation state machine, per-operation decisions, and commit telemetry deferred) | 2B–2D |
 | 2F. Entity authoring and retirement | Implemented (canonical entity API over the mutation path with revision/ETag; link inspection/history, name-collision policy, and character-workflow port deferred) | 2C–2E |
 | 2G. Facts, beliefs, and events | Implemented (fact/belief/event APIs + derived truth agreement over canonical PostgreSQL; graph predicate projections, canon seed expansion, and close/reassert history deferred) | 2B–2F |
-| 2H. Provenance and history inspection | Implemented (revision/record history, entity/fact/belief/event state-at-revision, revision diffs, immutable tags, verification CLI, operator projection report; revert proposals and generalized provenance source-artefact IDs deferred) | 2D–2G |
+| 2H. Provenance and history inspection | Implemented (revision/record history, entity/fact/belief/event state-at-revision, revision diffs, immutable tags, compensating revert proposals, verification CLI, operator projection report; generalized provenance source-artefact IDs deferred) | 2D–2G |
 | 2I. Media identity and explicit evidence links | Implemented (asset/version identity + reviewed link roles through the mutation path; lifecycle transitions, PG media integration test, and reference-world asset seed deferred) | 2B–2E |
 | 2J. Project shell and authoring UI | Implemented (TypeScript + OpenAPI-generated client + router/query with scoped keys + project shell + entity list/create/detail/history/retire + component test; mutation-review/schema-publish/media UI, a11y automation, and e2e deferred) | 2F–2I APIs |
 | 2K. Archive upgrade, restore, and rebuild | Implemented with named deferrals (canon archive format v3 with canonical checksums, accepted mutation/review evidence, object bytes, strict preflight validation, resumable import; import-status ledger, v1 upgrader, and automatic post-import projection rebuild deferred) | 2C–2I |
@@ -513,9 +513,12 @@ retained only as the rebuildable projection and never participates in commit suc
       `CanonAssertionService`; full evidence-provenance assembly beyond links remains deferred.)
 - [x] Add immutable named tags pointing to an exact root branch/revision with replacement history
       (`canon_tags`/`canon_tag_history`; `GET/POST /tags`, `DELETE /tags/{name}`, `GET /tags/{name}/history`).
-- [ ] Generate compensating mutation sets for eligible commit reverts, detect intervening conflicts,
+- [x] Generate compensating mutation sets for eligible commit reverts, detect intervening conflicts,
       preview the diff, and require the normal validation/review/commit path. Never delete or amend
-      a committed envelope. (Revert proposals remain deferred.)
+      a committed envelope. (`CanonHistoryService.propose_revert`/`commit_revert` +
+      `POST /projects/{id}/reverts/preview` and `/reverts`; invertible create/assert/link operations
+      produce inverse ops, non-invertible changes are surfaced for manual handling, and records
+      changed after the target revision are reported as intervening conflicts.)
 - [x] Distinguish security audit records from canon provenance: audit answers who invoked an action;
       provenance explains why a canonical record exists and from which evidence. (Tenancy
       `audit_events` vs `canon_provenance`/`canon_record_versions`.)
@@ -542,8 +545,9 @@ retained only as the rebuildable projection and never participates in commit suc
       and projection checksum mismatch (`backend.devtools.verify`)
 - [x] UI/API query results agree at the same revision and explain current state through commit,
       operation, decision, source version, and evidence where recorded
-- [ ] tags retain their original revision meaning and revert creates new reviewed history
-      (tags do; revert proposals are deferred)
+- [x] tags retain their original revision meaning and revert creates new reviewed history
+      (tags retain their revision; `commit_revert` applies compensating operations through the
+      normal mutation/review path as a new revision)
 
 ## 2I. Media identity and explicit evidence links
 
@@ -781,8 +785,9 @@ vertical slices rather than mocks alone.
       (in-memory round-trip preserves the checksum; a real clean-environment rehearsal is deferred)
 - [ ] the project shell supports entity/schema/canon review and history without generic graph tools
       (entity authoring/history works; schema/review UI is deferred)
-- [ ] one canon query boundary supports revision state, differences, and provenance; tags and revert
-      proposals preserve rather than rewrite history (state/diffs/tags exist; revert proposals are deferred)
+- [x] one canon query boundary supports revision state, differences, and provenance; tags and revert
+      proposals preserve rather than rewrite history (state-at-revision/diffs/tags/revert proposals
+      exist; generalized evidence provenance is deferred)
 - [x] built-in integrity rules are permanently blocking and author-rule contracts default to warning
       (integrity is blocking/non-suppressible; author-rule publication is Phase 2.5)
 - [ ] Phase 2 evidence, known deferrals, and owner acceptance are recorded before Phase 3 starts

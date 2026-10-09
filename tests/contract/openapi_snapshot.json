@@ -1590,6 +1590,59 @@
         "title": "RetireEntityRequest",
         "type": "object"
       },
+      "RevertCommitRequest": {
+        "properties": {
+          "expected_revision": {
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "from_revision": {
+            "title": "From Revision",
+            "type": "integer"
+          },
+          "to_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Revision"
+          }
+        },
+        "required": [
+          "from_revision",
+          "expected_revision"
+        ],
+        "title": "RevertCommitRequest",
+        "type": "object"
+      },
+      "RevertPreviewRequest": {
+        "properties": {
+          "from_revision": {
+            "title": "From Revision",
+            "type": "integer"
+          },
+          "to_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Revision"
+          }
+        },
+        "required": [
+          "from_revision"
+        ],
+        "title": "RevertPreviewRequest",
+        "type": "object"
+      },
       "Role": {
         "enum": [
           "owner",
@@ -6042,6 +6095,114 @@
         "summary": "Projection Lag",
         "tags": [
           "projection"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/reverts": {
+      "post": {
+        "operationId": "commit_revert_api_v1_projects__project_id__reverts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevertCommitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Commit Revert Api V1 Projects  Project Id  Reverts Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Commit Revert",
+        "tags": [
+          "canon-history"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/reverts/preview": {
+      "post": {
+        "operationId": "preview_revert_api_v1_projects__project_id__reverts_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevertPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Preview Revert Api V1 Projects  Project Id  Reverts Preview Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Revert",
+        "tags": [
+          "canon-history"
         ]
       }
     },

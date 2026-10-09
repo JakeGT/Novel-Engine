@@ -182,6 +182,7 @@ def _build_fake_container(settings, tmp_path):
         journal=journal,
         tenancy=tenancy_service,
         local_mode=not settings.is_hosted,
+        mutation=mutation_service,
     )
     from backend.services.media_service import MediaService
 

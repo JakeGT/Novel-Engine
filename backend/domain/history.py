@@ -76,3 +76,30 @@ class CanonTagHistoryEntry(BaseModel):
     revision: int
     commit_id: str
     replaced_at: datetime
+
+
+class RevertChange(BaseModel):
+    """One change in a reversibility preview; ``inverse`` is null when manual."""
+
+    model_config = {"extra": "forbid"}
+
+    revision: int
+    record_type: str
+    record_id: str
+    operation_type: str
+    inverse_operation: str | None = None
+    reason: str = ""
+
+
+class RevertProposal(BaseModel):
+    """A proposed compensating mutation set; never rewrites committed envelopes."""
+
+    model_config = {"extra": "forbid"}
+
+    from_revision: int
+    to_revision: int
+    head_revision: int
+    operations: list[dict[str, Any]] = Field(default_factory=list)
+    changes: list[RevertChange] = Field(default_factory=list)
+    conflicts: list[str] = Field(default_factory=list)
+    summary: str = ""

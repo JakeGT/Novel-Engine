@@ -266,6 +266,7 @@ def build_container(settings: Settings | None = None) -> Container:
         journal=container.journal,
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
+        mutation=container.mutation_service,
     )
     from backend.adapters.media_store import PostgresMediaStore
     from backend.services.media_service import MediaService

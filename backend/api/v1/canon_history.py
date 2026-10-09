@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Response
+from pydantic import BaseModel
 
 from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import get_canon_history_service
@@ -304,4 +305,55 @@ async def tag_history(
             }
             for e in entries
         ]
+    }
+
+
+class RevertPreviewRequest(BaseModel):
+    from_revision: int
+    to_revision: int | None = None
+
+
+class RevertCommitRequest(BaseModel):
+    from_revision: int
+    expected_revision: int
+    to_revision: int | None = None
+
+
+@router.post("/reverts/preview")
+async def preview_revert(
+    project_id: str,
+    body: RevertPreviewRequest,
+    scope: AccessScope = Depends(get_project_scope),
+    history: CanonHistoryService = Depends(get_canon_history_service),
+) -> dict:
+    proposal = await history.propose_revert(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        from_revision=body.from_revision,
+        to_revision=body.to_revision,
+    )
+    return proposal.model_dump(mode="json")
+
+
+@router.post("/reverts")
+async def commit_revert(
+    project_id: str,
+    body: RevertCommitRequest,
+    scope: AccessScope = Depends(require_project_scope),
+    history: CanonHistoryService = Depends(get_canon_history_service),
+) -> dict:
+    result = await history.commit_revert(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        from_revision=body.from_revision,
+        expected_head=body.expected_revision,
+        to_revision=body.to_revision,
+    )
+    return {
+        "commit_id": result.commit_id,
+        "revision": result.revision,
+        "checksum": result.checksum,
+        "status": result.status,
     }

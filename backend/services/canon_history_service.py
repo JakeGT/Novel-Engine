@@ -19,15 +19,29 @@ from backend.domain.history import (
     CanonTagHistoryEntry,
     HistoryError,
     RecordHistoryEntry,
+    RevertChange,
+    RevertProposal,
     RevisionSummary,
 )
 from backend.domain.identity import AccessScope
 from backend.domain.journal import Branch
+from backend.domain.operations import parse_operation
 from backend.domain.projection import RecordVersion
 from backend.domain.tenancy import Permission
 from backend.ports import CanonJournalPort, CanonRepositoryPort, TenancyStorePort
+from backend.services.mutation_service import CommitResult, MutationService
 
 _READ_RECORD_TYPES = {"entity", "fact", "belief", "event"}
+
+# Compensating operations for the invertible commit operations (2H revert proposals).
+# Operations without a safe automatic inverse are surfaced for manual handling.
+_INVERSE_OPERATIONS = {
+    "create_entity": "retire_entity",
+    "assert_fact": "close_fact",
+    "assert_belief": "close_belief",
+    "create_event": "retire_event",
+    "link_asset": "retire_asset_link",
+}
 
 
 class CanonHistoryService:
@@ -38,11 +52,13 @@ class CanonHistoryService:
         journal: CanonJournalPort,
         tenancy: object | None = None,
         local_mode: bool = False,
+        mutation: MutationService | None = None,
     ) -> None:
         self._canon = canon
         self._journal = journal
         self._tenancy = tenancy
         self._local_mode = local_mode
+        self._mutation = mutation
 
     async def _root_branch(self, workspace_id: str, project_id: str) -> Branch:
         return await self._journal.ensure_root_branch(
@@ -294,6 +310,128 @@ class CanonHistoryService:
         if event is None:
             raise NotFoundError("Event did not exist at that revision.")
         return event
+
+    async def propose_revert(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        *,
+        from_revision: int,
+        to_revision: int | None = None,
+    ) -> RevertProposal:
+        """Preview a compensating mutation set for the range ``(from_revision, to_revision]``.
+
+        Never mutates or rewrites committed history. Changes with no safe automatic
+        inverse are listed for manual handling, and any record modified after
+        ``to_revision`` is reported as an intervening conflict rather than reverted.
+        """
+        await self._authorize(scope, workspace_id, project_id)
+        branch = await self._root_branch(workspace_id, project_id)
+        head = await self._canon.get_head(
+            workspace_id=workspace_id, project_id=project_id, branch_id=branch.id
+        )
+        if to_revision is None:
+            to_revision = head
+        if from_revision < 0 or from_revision >= to_revision or to_revision > head:
+            raise ValidationError("invalid revert revision range")
+
+        entries = await self._canon.list_record_versions(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            min_revision=from_revision,
+            max_revision=to_revision,
+            limit=1000,
+        )
+        later = await self._canon.list_record_versions(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            min_revision=to_revision,
+            limit=1000,
+        )
+        later_keys = {(version.record_type, version.record_id) for version in later}
+
+        operations: list[dict] = []
+        changes: list[RevertChange] = []
+        conflicts: list[str] = []
+        ordered = sorted(
+            entries, key=lambda v: (v.revision, v.record_type, v.record_id), reverse=True
+        )
+        for version in ordered:
+            inverse = _INVERSE_OPERATIONS.get(version.operation_type)
+            if inverse is None:
+                changes.append(
+                    RevertChange(
+                        revision=version.revision,
+                        record_type=version.record_type,
+                        record_id=version.record_id,
+                        operation_type=version.operation_type,
+                        reason="no automatic inverse",
+                    )
+                )
+                continue
+            if (version.record_type, version.record_id) in later_keys:
+                conflicts.append(
+                    f"{version.record_type} {version.record_id} changed after r{to_revision}"
+                )
+                continue
+            operations.append({"op": inverse, "id": version.record_id})
+            changes.append(
+                RevertChange(
+                    revision=version.revision,
+                    record_type=version.record_type,
+                    record_id=version.record_id,
+                    operation_type=version.operation_type,
+                    inverse_operation=inverse,
+                    reason="compensating",
+                )
+            )
+
+        return RevertProposal(
+            from_revision=from_revision,
+            to_revision=to_revision,
+            head_revision=head,
+            operations=operations,
+            changes=changes,
+            conflicts=conflicts,
+            summary=(
+                f"revert r{from_revision + 1}..r{to_revision}: {len(operations)} compensating "
+                f"operation(s), {len(changes) - len(operations)} manual, {len(conflicts)} conflict(s)"
+            ),
+        )
+
+    async def commit_revert(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        *,
+        from_revision: int,
+        expected_head: int,
+        to_revision: int | None = None,
+    ) -> CommitResult:
+        """Apply a proposed revert as a new reviewed commit through the mutation path."""
+        if self._mutation is None:
+            raise HistoryError("revert commit is not configured")
+        proposal = await self.propose_revert(
+            scope, workspace_id, project_id, from_revision=from_revision, to_revision=to_revision
+        )
+        if proposal.conflicts:
+            raise ValidationError(
+                "revert blocked by intervening conflicts: " + "; ".join(proposal.conflicts)
+            )
+        if not proposal.operations:
+            raise ValidationError("nothing to revert")
+        await self._authorize_write(scope, workspace_id, project_id)
+        operations = [parse_operation(op) for op in proposal.operations]
+        mutation = await self._mutation.create_draft(
+            scope,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            operations=operations,
+            expected_head=expected_head,
+        )
+        return await self._mutation.commit(scope, mutation.id)
 
     async def list_tags(
         self, scope: AccessScope, workspace_id: str, project_id: str

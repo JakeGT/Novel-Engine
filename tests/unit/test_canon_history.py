@@ -180,3 +180,41 @@ async def test_event_at_revision_includes_retirement() -> None:
 
     retired = await service.event_at_revision(scope, "ws", "pr", "evt_1", 3)
     assert retired.retired_revision == 3
+
+
+@pytest.mark.asyncio
+async def test_revert_proposal_and_commit() -> None:
+    from backend.services.mutation_service import MutationService
+
+    journal = InMemoryCanonJournal()
+    repo = InMemoryCanonRepository(journal=journal)
+    mutation = MutationService(journal, repo, local_mode=True)
+    branch = await journal.ensure_root_branch(workspace_id="ws", project_id="pr")
+    scope = AccessScope(
+        actor_user_id="usr_1", auth_mode=AuthMode.LOCAL, workspace_id="ws", project_id="pr"
+    )
+    service = CanonHistoryService(canon=repo, journal=journal, local_mode=True, mutation=mutation)
+
+    await _apply(
+        repo, branch, "cmt_1", 0, [CreateEntityOp(id="ent_1", type="Character", name="Mara")]
+    )
+    proposition = Proposition(
+        subject_id="ent_1", predicate="HAS_NAME", object=StringObject(kind="string", value="Mara")
+    )
+    await _apply(repo, branch, "cmt_2", 1, [AssertFactOp(id="fact_1", proposition=proposition)])
+
+    proposal = await service.propose_revert(scope, "ws", "pr", from_revision=0)
+    assert {op["op"] for op in proposal.operations} == {"retire_entity", "close_fact"}
+    assert proposal.conflicts == []
+    assert proposal.head_revision == 2
+
+    result = await service.commit_revert(scope, "ws", "pr", from_revision=0, expected_head=2)
+    assert result.revision == 3
+    revert_entity = await repo.get_entity(workspace_id="ws", project_id="pr", entity_id="ent_1")
+    revert_fact = await repo.get_fact(workspace_id="ws", project_id="pr", fact_id="fact_1")
+    assert revert_entity is not None and revert_entity.lifecycle.value == "retired"
+    assert revert_fact is not None and revert_fact.status.value == "closed"
+
+    # A later change to the same record is reported as an intervening conflict.
+    conflicted = await service.propose_revert(scope, "ws", "pr", from_revision=0, to_revision=1)
+    assert any("changed after" in conflict for conflict in conflicted.conflicts)
