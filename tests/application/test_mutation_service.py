@@ -224,3 +224,55 @@ async def test_fact_references_resolve_within_the_set() -> None:
     facts = await repository.list_facts(workspace_id="ws1", project_id="pr1")
     assert len(facts) == 1
     assert not facts[0].proposition.subject_id.startswith("tmp:")
+
+
+@pytest.mark.asyncio
+async def test_project_schema_extension_type_is_enforced_in_transaction() -> None:
+    from backend.domain.schema_defs import SchemaDefinition
+    from backend.services.schema_compiler import compute_content_hash
+    from tests.doubles import InMemorySchemaVersionStore
+
+    journal = InMemoryCanonJournal()
+    schemas = InMemorySchemaVersionStore()
+    repository = InMemoryCanonRepository(journal=journal, schemas=schemas)
+    service = MutationService(journal, repository, local_mode=True)
+    scope = _scope()
+
+    definition = SchemaDefinition(
+        label="Project",
+        description="",
+        entity_extensions=[{"entity_type": "Artifact", "fields": []}],
+    )
+    payload = definition.model_dump(mode="json")
+    version = await schemas.create_draft(
+        workspace_id="ws1",
+        project_id="pr1",
+        definition=payload,
+        content_hash=compute_content_hash(payload),
+        compatibility="additive",
+        created_by_user_id="u1",
+    )
+    await schemas.publish(workspace_id="ws1", project_id="pr1", version_id=version.id)
+
+    # A hand-authored extension type declared in the published schema is accepted.
+    accepted = await service.create_draft(
+        scope,
+        workspace_id="ws1",
+        project_id="pr1",
+        operations=[CreateEntityOp(id="tmp:artifact", type="Artifact", name="Relic")],
+        expected_head=0,
+        schema_version_id=version.id,
+    )
+    assert (await service.commit(scope, accepted.id)).status == "committed"
+
+    # An undeclared type is rejected inside the canonical transaction.
+    rejected = await service.create_draft(
+        scope,
+        workspace_id="ws1",
+        project_id="pr1",
+        operations=[CreateEntityOp(id="tmp:bogus", type="Bogus", name="Nope")],
+        expected_head=1,
+        schema_version_id=version.id,
+    )
+    with pytest.raises(CanonValidationError):
+        await service.commit(scope, rejected.id)
