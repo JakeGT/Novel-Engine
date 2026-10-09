@@ -329,3 +329,15 @@ to matter next:
 - `plan/phase-2-todo.md`, `plan/phase-2-baseline.md`, `plan/phase-2-glossary.md` — Phase 2 contract.
 - `plan/api-surface.md` — guide to the API contract.
 - `plan/12-current-gap-analysis.md` — point-in-time map to the target design.
+
+## Hosted deployment (added 2026-10-09)
+
+`Dockerfile` builds one image (API, migration CLI, built web UI served by the API);
+`deploy/hosted/` holds the Compose stack, secret initialisation, backup script, and the ordered
+runbook for the jaketalling platform. The stack has run only as an isolated loopback smoke copy
+with throwaway secrets. It is **not deployed**, the Caddy and Cloudflare routes do not exist, the
+Authentik application's settings have not been inspected, and the live sign-in round trip is still
+open. Hosted/production sites hide `/docs` and `/openapi.json`, send security headers, and read
+secrets from files (`NOVEL_ENGINE_SECRETS_DIR`). `python -m backend.devtools.provision` creates
+the first workspace for a user who has signed in. Development store ports now bind to 127.0.0.1.
+

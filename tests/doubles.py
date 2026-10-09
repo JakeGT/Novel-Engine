@@ -734,6 +734,9 @@ class InMemoryIdentityStore:
     async def get_user(self, user_id: str) -> User | None:
         return self.users.get(user_id)
 
+    async def list_users(self) -> list[User]:
+        return list(self.users.values())
+
     async def get_user_for_identity(self, issuer: str, subject: str) -> User | None:
         user_id = self.identities.get((issuer, subject))
         return self.users.get(user_id) if user_id else None

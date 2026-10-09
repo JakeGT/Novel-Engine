@@ -1,0 +1,27 @@
+# Keep secrets, local state, and everything the image does not need out of the build context.
+.env
+.env.*
+!.env.example
+.git
+.github
+.venv
+.cache
+.claude
+.codex
+.gemini
+.codegraph
+.mcp.json
+data
+plan
+tests
+scripts
+**/__pycache__
+**/*.pyc
+frontend/node_modules
+frontend/dist
+frontend/test-results
+frontend/playwright-report
+frontend/e2e
+backend/debug
+*.md
+opencode.jsonc

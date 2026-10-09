@@ -40,3 +40,7 @@ Thumbs.db
 
 # envsitter local state
 .envsitter/
+
+# Hosted stack runtime state (deploy/hosted)
+deploy/hosted/secrets/
+deploy/hosted/backups/

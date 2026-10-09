@@ -7,6 +7,7 @@ from fastapi import FastAPI
 
 from backend.api.auth import project_access
 from backend.api.auth import router as auth_router
+from backend.api.frontend import SecurityHeadersMiddleware, frontend_directory, mount_frontend
 from backend.api.health import router as health_router
 from backend.api.middleware import CorrelationIdMiddleware
 from backend.api.problems import register_exception_handlers
@@ -109,7 +110,14 @@ def create_app(settings: Settings | None = None, container: Container | None = N
             "are mounted under /api/v1; the deprecated /api aliases have been removed."
         ),
         lifespan=lifespan,
+        # The docs describe the entire API surface, so a hosted or production
+        # site does not publish them.
+        docs_url="/docs" if resolved_settings.api_docs_enabled else None,
+        redoc_url="/redoc" if resolved_settings.api_docs_enabled else None,
+        openapi_url="/openapi.json" if resolved_settings.api_docs_enabled else None,
     )
+    if resolved_settings.is_hosted or resolved_settings.is_production:
+        app.add_middleware(SecurityHeadersMiddleware, settings=resolved_settings)
     app.add_middleware(CorrelationIdMiddleware)
     register_exception_handlers(app)
 
@@ -136,9 +144,15 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.include_router(health_router)
     app.include_router(auth_router)
 
-    @app.get("/")
-    def read_root():
-        return {"message": "Welcome to the Novel Engine API"}
+    frontend = frontend_directory(resolved_settings)
+    if frontend is not None:
+        # Registered last so every API route above takes precedence.
+        mount_frontend(app, frontend)
+    else:
+
+        @app.get("/")
+        def read_root():
+            return {"message": "Welcome to the Novel Engine API"}
 
     return app
 

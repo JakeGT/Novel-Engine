@@ -131,6 +131,14 @@ class PostgresIdentityStore:
             ).scalar_one_or_none()
             return _to_user(row) if row else None
 
+    async def list_users(self) -> list[User]:
+        """Every signed-in identity, oldest first (operator provisioning only)."""
+        async with session_scope(self._session_factory) as session:
+            rows = (
+                await session.execute(select(UserRow).order_by(UserRow.created_at, UserRow.id))
+            ).scalars()
+            return [_to_user(row) for row in rows]
+
     async def get_user_for_identity(self, issuer: str, subject: str) -> User | None:
         async with session_scope(self._session_factory) as session:
             identity = (

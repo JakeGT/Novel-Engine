@@ -1,3 +1,4 @@
+import os
 from typing import Literal
 from urllib.parse import quote_plus
 
@@ -14,6 +15,10 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
+        # Container deployments mount secrets as files (one per setting, named
+        # after it, e.g. /run/secrets/postgres_password). Environment variables
+        # still take precedence. Unset means no secrets directory is read.
+        secrets_dir=os.environ.get("NOVEL_ENGINE_SECRETS_DIR") or None,
     )
 
     PROJECT_NAME: str = "Novel Engine"
@@ -31,6 +36,13 @@ class Settings(BaseSettings):
     # endpoint refuses to serve in production.
     METRICS_ENABLED: bool = False
     METRICS_TOKEN: str = ""
+
+    # Directory holding the built frontend (index.html + assets/). When set, the
+    # API also serves the single-page app, so one container is the whole site.
+    FRONTEND_DIST_DIR: str = ""
+    # Interactive API docs and the OpenAPI document. Left unset, they are served
+    # only by a local, non-production instance; set explicitly to override.
+    API_DOCS_ENABLED: bool | None = None
 
     OPENAI_API_KEY: str = ""
     AI_MODEL: str = "gpt-4o"
@@ -100,6 +112,13 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.APP_ENV == "production"
+
+    @property
+    def api_docs_enabled(self) -> bool:
+        """Docs describe the whole API surface, so a hosted or production site hides them."""
+        if self.API_DOCS_ENABLED is not None:
+            return self.API_DOCS_ENABLED
+        return not (self.is_hosted or self.is_production)
 
     @property
     def is_hosted(self) -> bool:
