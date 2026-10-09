@@ -29,6 +29,8 @@ class SchemaVersionModel(BaseModel):
     compatibility: str
     created_at: datetime
     published_at: datetime | None = None
+    # The declarative definition this version was compiled from.
+    definition: dict[str, Any] = {}
 
 
 class SchemaDefinitionRequest(BaseModel):
@@ -89,6 +91,64 @@ async def create_schema_draft(
         version=SchemaVersionModel.model_validate(version),
         compatibility=report.category.value,
         migration_plan=migration_plan(report),
+    )
+
+
+class EntityTypeModel(BaseModel):
+    name: str
+    # False for a project extension.
+    core: bool
+    # JSON Schema for this type's stable attributes; null when attributes are free-form.
+    attributes_schema: dict[str, Any] | None = None
+
+
+class PredicateModel(BaseModel):
+    predicate: str
+    core: bool
+    subject_types: list[str]
+    # entity_ref, string, integer, decimal, boolean, enum, quantity, or structured.
+    object_shape: str
+    # Permitted target entity types when object_shape is entity_ref (empty = any).
+    object_types: list[str]
+    cardinality: str
+    temporal_allowed: bool
+
+
+class VocabularyModel(BaseModel):
+    """The entity types and predicates a write to this project may use right now."""
+
+    schema_version_id: str | None
+    schema_version: int | None
+    entity_types: list[EntityTypeModel]
+    predicates: list[PredicateModel]
+
+
+@router.get("/vocabulary", response_model=VocabularyModel)
+async def schema_vocabulary(
+    scope: AccessScope = Depends(get_project_scope),
+    service: SchemaService = Depends(get_schema_service),
+) -> VocabularyModel:
+    """Core vocabulary plus the published project extensions (for schema-derived forms)."""
+    vocabulary = await service.vocabulary(scope)
+    return VocabularyModel(
+        schema_version_id=vocabulary.schema_version_id,
+        schema_version=vocabulary.schema_version,
+        entity_types=[
+            EntityTypeModel(name=name, core=core, attributes_schema=attributes)
+            for name, core, attributes in vocabulary.entity_types
+        ],
+        predicates=[
+            PredicateModel(
+                predicate=spec.predicate,
+                core=core,
+                subject_types=sorted(spec.subject_types),
+                object_shape=spec.object_shape.value,
+                object_types=sorted(spec.object_types),
+                cardinality=spec.cardinality.value,
+                temporal_allowed=spec.temporal_allowed,
+            )
+            for spec, core in vocabulary.predicates
+        ],
     )
 
 

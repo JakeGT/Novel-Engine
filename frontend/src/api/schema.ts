@@ -528,6 +528,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Caller permissions in a project
+         * @description What the caller may do in the active project (drives permission-aware UI).
+         */
+        get: operations["project_access_api_v1_projects__project_id__access_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/archive/export": {
         parameters: {
             query?: never;
@@ -1548,6 +1568,26 @@ export interface paths {
         put?: never;
         /** Validate Schema Definition */
         post: operations["validate_schema_definition_api_v1_projects__project_id__schemas_validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/schemas/vocabulary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Schema Vocabulary
+         * @description Core vocabulary plus the published project extensions (for schema-derived forms).
+         */
+        get: operations["schema_vocabulary_api_v1_projects__project_id__schemas_vocabulary_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2641,6 +2681,17 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** EntityTypeModel */
+        EntityTypeModel: {
+            /** Attributes Schema */
+            attributes_schema?: {
+                [key: string]: unknown;
+            } | null;
+            /** Core */
+            core: boolean;
+            /** Name */
+            name: string;
+        };
         /** EntityUpdate */
         EntityUpdate: {
             /**
@@ -3049,6 +3100,23 @@ export interface components {
             /** Note */
             note?: string | null;
         };
+        /** PredicateModel */
+        PredicateModel: {
+            /** Cardinality */
+            cardinality: string;
+            /** Core */
+            core: boolean;
+            /** Object Shape */
+            object_shape: string;
+            /** Object Types */
+            object_types: string[];
+            /** Predicate */
+            predicate: string;
+            /** Subject Types */
+            subject_types: string[];
+            /** Temporal Allowed */
+            temporal_allowed: boolean;
+        };
         /** ProjectModel */
         ProjectModel: {
             /**
@@ -3315,6 +3383,13 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Definition
+             * @default {}
+             */
+            definition: {
+                [key: string]: unknown;
+            };
             /** Id */
             id: string;
             /** Project Id */
@@ -3444,6 +3519,20 @@ export interface components {
             predicates: string[];
             /** Valid */
             valid: boolean;
+        };
+        /**
+         * VocabularyModel
+         * @description The entity types and predicates a write to this project may use right now.
+         */
+        VocabularyModel: {
+            /** Entity Types */
+            entity_types: components["schemas"]["EntityTypeModel"][];
+            /** Predicates */
+            predicates: components["schemas"]["PredicateModel"][];
+            /** Schema Version */
+            schema_version: number | null;
+            /** Schema Version Id */
+            schema_version_id: string | null;
         };
         /** WorkspaceModel */
         WorkspaceModel: {
@@ -4715,6 +4804,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    project_access_api_v1_projects__project_id__access_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -7083,6 +7194,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    schema_vocabulary_api_v1_projects__project_id__schemas_vocabulary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VocabularyModel"];
                 };
             };
         };

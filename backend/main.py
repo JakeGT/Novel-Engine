@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from backend.api.auth import project_access
 from backend.api.auth import router as auth_router
 from backend.api.health import router as health_router
 from backend.api.middleware import CorrelationIdMiddleware
@@ -123,6 +124,13 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.include_router(canon_mutations_router, prefix="/api/v1")
     app.include_router(canon_characters_router, prefix="/api/v1")
     app.include_router(canon_archive_router, prefix="/api/v1")
+    app.add_api_route(
+        "/api/v1/projects/{project_id}/access",
+        project_access,
+        methods=["GET"],
+        tags=["tenancy"],
+        summary="Caller permissions in a project",
+    )
     app.include_router(media_router, prefix="/api/v1")
     app.include_router(projection_router, prefix="/api/v1")
     app.include_router(health_router)

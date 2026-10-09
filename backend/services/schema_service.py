@@ -9,9 +9,11 @@ canon).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from pydantic import ValidationError as PydanticValidationError
 
+from backend.domain.canon.registry import CORE_ENTITY_TYPES, CORE_PREDICATES, PredicateSpec
 from backend.domain.errors import ForbiddenError, NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.schema_defs import SchemaDefinition, SchemaDefinitionError
@@ -40,6 +42,16 @@ class ValidationReport:
     migration_plan: list[str] = field(default_factory=list)
     entity_types: list[str] = field(default_factory=list)
     predicates: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class Vocabulary:
+    schema_version_id: str | None
+    schema_version: int | None
+    # (name, is_core, attribute JSON Schema or None)
+    entity_types: list[tuple[str, bool, dict[str, Any] | None]]
+    # (spec, is_core)
+    predicates: list[tuple[PredicateSpec, bool]]
 
 
 class SchemaService:
@@ -91,6 +103,37 @@ class SchemaService:
         await self._authorize(scope, Permission.PROJECT_READ)
         return await self._store.list(
             workspace_id=scope.workspace_id or "", project_id=scope.project_id or ""
+        )
+
+    async def vocabulary(self, scope: AccessScope) -> Vocabulary:
+        """Entity types and predicates usable in this project: core plus published extensions."""
+        await self._authorize(scope, Permission.PROJECT_READ)
+        workspace_id, project_id = scope.workspace_id or "", scope.project_id or ""
+        published = await self._store.get_published(
+            workspace_id=workspace_id, project_id=project_id
+        )
+        entity_types: list[tuple[str, bool, dict[str, Any] | None]] = [
+            (name, True, None) for name in sorted(CORE_ENTITY_TYPES)
+        ]
+        predicates: list[tuple[PredicateSpec, bool]] = [
+            (CORE_PREDICATES[name], True) for name in sorted(CORE_PREDICATES)
+        ]
+        if published is not None:
+            compiled = compile_definition(
+                published.definition, workspace_id=workspace_id, project_id=project_id
+            )
+            for name in sorted(set(compiled.entity_types) - set(CORE_ENTITY_TYPES)):
+                model = compiled.entity_models.get(name)
+                entity_types.append(
+                    (name, False, model.model_json_schema() if model is not None else None)
+                )
+            for name in sorted(set(compiled.predicate_specs) - set(CORE_PREDICATES)):
+                predicates.append((compiled.predicate_specs[name], False))
+        return Vocabulary(
+            schema_version_id=published.id if published is not None else None,
+            schema_version=published.version if published is not None else None,
+            entity_types=entity_types,
+            predicates=predicates,
         )
 
     async def get_version(self, scope: AccessScope, version_id: str) -> SchemaVersion:

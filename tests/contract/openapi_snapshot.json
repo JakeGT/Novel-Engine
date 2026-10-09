@@ -1606,6 +1606,36 @@
         "title": "EntitySearchList",
         "type": "object"
       },
+      "EntityTypeModel": {
+        "properties": {
+          "attributes_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attributes Schema"
+          },
+          "core": {
+            "title": "Core",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "core"
+        ],
+        "title": "EntityTypeModel",
+        "type": "object"
+      },
       "EntityUpdate": {
         "properties": {
           "id": {
@@ -2678,6 +2708,55 @@
         "title": "OperationDecisionRequest",
         "type": "object"
       },
+      "PredicateModel": {
+        "properties": {
+          "cardinality": {
+            "title": "Cardinality",
+            "type": "string"
+          },
+          "core": {
+            "title": "Core",
+            "type": "boolean"
+          },
+          "object_shape": {
+            "title": "Object Shape",
+            "type": "string"
+          },
+          "object_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Object Types",
+            "type": "array"
+          },
+          "predicate": {
+            "title": "Predicate",
+            "type": "string"
+          },
+          "subject_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Subject Types",
+            "type": "array"
+          },
+          "temporal_allowed": {
+            "title": "Temporal Allowed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "predicate",
+          "core",
+          "subject_types",
+          "object_shape",
+          "object_types",
+          "cardinality",
+          "temporal_allowed"
+        ],
+        "title": "PredicateModel",
+        "type": "object"
+      },
       "ProjectModel": {
         "properties": {
           "created_at": {
@@ -3465,6 +3544,12 @@
             "title": "Created At",
             "type": "string"
           },
+          "definition": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Definition",
+            "type": "object"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -3865,6 +3950,55 @@
           "predicates"
         ],
         "title": "ValidationReportModel",
+        "type": "object"
+      },
+      "VocabularyModel": {
+        "description": "The entity types and predicates a write to this project may use right now.",
+        "properties": {
+          "entity_types": {
+            "items": {
+              "$ref": "#/components/schemas/EntityTypeModel"
+            },
+            "title": "Entity Types",
+            "type": "array"
+          },
+          "predicates": {
+            "items": {
+              "$ref": "#/components/schemas/PredicateModel"
+            },
+            "title": "Predicates",
+            "type": "array"
+          },
+          "schema_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Version"
+          },
+          "schema_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Version Id"
+          }
+        },
+        "required": [
+          "schema_version_id",
+          "schema_version",
+          "entity_types",
+          "predicates"
+        ],
+        "title": "VocabularyModel",
         "type": "object"
       },
       "WorkspaceModel": {
@@ -5650,6 +5784,30 @@
           }
         },
         "summary": "Accept Invitation",
+        "tags": [
+          "tenancy"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/access": {
+      "get": {
+        "description": "What the caller may do in the active project (drives permission-aware UI).",
+        "operationId": "project_access_api_v1_projects__project_id__access_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Project Access Api V1 Projects  Project Id  Access Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Caller permissions in a project",
         "tags": [
           "tenancy"
         ]
@@ -9635,6 +9793,28 @@
           }
         },
         "summary": "Validate Schema Definition",
+        "tags": [
+          "schema"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/schemas/vocabulary": {
+      "get": {
+        "description": "Core vocabulary plus the published project extensions (for schema-derived forms).",
+        "operationId": "schema_vocabulary_api_v1_projects__project_id__schemas_vocabulary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VocabularyModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Schema Vocabulary",
         "tags": [
           "schema"
         ]

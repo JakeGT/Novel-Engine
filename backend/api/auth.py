@@ -15,9 +15,14 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from backend.api.dependencies import get_auth_service, get_settings, get_tenancy_service
 from backend.core.config import Settings
 from backend.core.logging import log_event
-from backend.domain.errors import ForbiddenError, UnauthorizedError, ValidationError
+from backend.domain.errors import (
+    ForbiddenError,
+    NotFoundError,
+    UnauthorizedError,
+    ValidationError,
+)
 from backend.domain.identity import AccessScope, AuthMode, Session
-from backend.domain.tenancy import Permission
+from backend.domain.tenancy import ROLE_PERMISSIONS, Permission, Role
 from backend.services.auth_service import AuthenticatedSession, AuthService
 from backend.services.tenancy_service import TenancyService
 
@@ -212,6 +217,12 @@ async def _resolve_project_scope(
     mode = AuthMode.HOSTED if settings.is_hosted else AuthMode.LOCAL
     correlation_id = getattr(request.state, "correlation_id", "")
     if mode is AuthMode.LOCAL:
+        # Local mode has exactly one project. A path naming any other project is
+        # not found, so a request can never mix the URL's project with the local
+        # scope's project.
+        path_project = request.path_params.get("project_id")
+        if path_project is not None and path_project != settings.AUTH_LOCAL_PROJECT_ID:
+            raise NotFoundError("Project not found.")
         return AccessScope(
             actor_user_id=auth_session.user.id,
             auth_mode=mode,
@@ -265,6 +276,30 @@ async def require_project_scope(
     return await _resolve_project_scope(
         request, auth_session, settings, tenancy, permission=Permission.PROJECT_WRITE
     )
+
+
+async def project_access(
+    request: Request,
+    scope: AccessScope = Depends(get_project_scope),
+    settings: Settings = Depends(get_settings),
+    tenancy: TenancyService = Depends(get_tenancy_service),
+) -> dict[str, object]:
+    """What the caller may do in the active project (drives permission-aware UI)."""
+    if settings.is_hosted:
+        membership = await tenancy.require_membership(scope, scope.workspace_id or "")
+        role = membership.role
+    else:
+        role = Role.OWNER
+    permissions = sorted(permission.value for permission in ROLE_PERMISSIONS[role])
+    return {
+        "role": role.value,
+        "permissions": permissions,
+        "can_write": Permission.PROJECT_WRITE.value in permissions,
+        "can_admin": Permission.PROJECT_ADMIN.value in permissions,
+        "auth_mode": settings.AUTH_MODE,
+        # Hosted inference needs a workspace credential; local mode uses the server key.
+        "hosted": settings.is_hosted,
+    }
 
 
 @router.get("/login")
