@@ -228,3 +228,59 @@ async def test_list_mutations_filters_by_status_and_project(stack) -> None:
     everything = await journal.list_mutations(workspace_id=WS, project_id=PR)
     assert {m.id for m in everything} == {first.id, second.id}
     assert await journal.list_mutations(workspace_id=WS, project_id="pr_other") == []
+
+
+@pytest.mark.asyncio
+async def test_concurrent_commits_against_one_head_yield_exactly_one_revision(stack) -> None:
+    """Real PostgreSQL row locks: racing writers cannot both advance the same head."""
+    import asyncio
+
+    from backend.domain.journal import HeadConflict
+
+    service, journal, repository, _ = stack
+    drafts = [
+        await _draft(service, [CreateEntityOp(id=f"ent_race_{index}", type="Character", name="R")])
+        for index in range(8)
+    ]
+
+    results = await asyncio.gather(
+        *(service.commit(_scope(), draft.id) for draft in drafts), return_exceptions=True
+    )
+
+    winners = [result for result in results if not isinstance(result, Exception)]
+    losers = [result for result in results if isinstance(result, Exception)]
+    assert len(winners) == 1 and winners[0].revision == 1
+    assert len(losers) == 7 and all(isinstance(error, HeadConflict) for error in losers)
+    entities = await repository.list_entities(workspace_id=WS, project_id=PR)
+    assert len(entities) == 1
+    branch = await journal.ensure_root_branch(workspace_id=WS, project_id=PR)
+    assert await repository.get_head(workspace_id=WS, project_id=PR, branch_id=branch.id) == 1
+    commits = await repository.list_commits(workspace_id=WS, project_id=PR, branch_id=branch.id)
+    assert [commit.revision for commit in commits] == [1]
+    # The losing proposals rolled back completely and are still plain drafts.
+    statuses = sorted(
+        [
+            (
+                await journal.get_mutation(workspace_id=WS, project_id=PR, mutation_id=draft.id)
+            ).status.value
+            for draft in drafts
+        ]
+    )
+    assert statuses == ["committed"] + ["draft"] * 7
+
+
+@pytest.mark.asyncio
+async def test_the_same_proposal_committed_concurrently_is_idempotent(stack) -> None:
+    import asyncio
+
+    service, journal, repository, _ = stack
+    draft = await _draft(service, [CreateEntityOp(id="ent_twice", type="Character", name="T")])
+
+    results = await asyncio.gather(*(service.commit(_scope(), draft.id) for _ in range(6)))
+
+    assert {result.revision for result in results} == {1}
+    assert {result.commit_id for result in results} == {results[0].commit_id}
+    assert len(await journal.list_transitions(mutation_id=draft.id)) == 2
+    assert len(await journal.list_decisions(mutation_id=draft.id)) == 1
+    versions = await repository.list_record_versions(workspace_id=WS, project_id=PR)
+    assert len(versions) == 1

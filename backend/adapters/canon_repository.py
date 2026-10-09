@@ -525,16 +525,26 @@ class PostgresCanonRepository:
     ) -> int:
         validator = validator or _DEFAULT_VALIDATOR
         async with session_scope(self._session_factory) as session:
-            existing = (
-                await session.execute(
-                    text("SELECT revision, checksum FROM commit_envelopes WHERE commit_id = :c"),
-                    {"c": envelope.commit_id},
-                )
-            ).first()
-            if existing is not None:
+
+            async def already_committed() -> int | None:
+                """The revision this commit id already produced, if it has been applied."""
+                existing = (
+                    await session.execute(
+                        text(
+                            "SELECT revision, checksum FROM commit_envelopes WHERE commit_id = :c"
+                        ),
+                        {"c": envelope.commit_id},
+                    )
+                ).first()
+                if existing is None:
+                    return None
                 if existing.checksum != envelope.checksum:
                     raise RevisionConflict("commit id reused with a different checksum")
                 return int(existing.revision)
+
+            revision = await already_committed()
+            if revision is not None:
+                return revision
 
             if (
                 canonicalize_operations(operations) != envelope.canonical
@@ -548,6 +558,11 @@ class PostgresCanonRepository:
                     {"id": envelope.mutation_id},
                 )
             ).first()
+            # A concurrent retry of this same commit may have finished while this
+            # transaction waited for the lock; it must see that result, not re-run.
+            revision = await already_committed()
+            if revision is not None:
+                return revision
             effective_origin = origin
             intent = MutationIntent.EDIT.value
             status = MutationStatus.DRAFT
@@ -647,6 +662,10 @@ class PostgresCanonRepository:
             ).first()
             if head is None:
                 raise HeadConflict("branch not found in this project")
+            # Same check once the head is locked, for writers with no mutation row.
+            revision = await already_committed()
+            if revision is not None:
+                return revision
             if int(head.head_revision) != envelope.expected_head:
                 raise HeadConflict(
                     f"expected head {envelope.expected_head} but branch is at {head.head_revision}"
