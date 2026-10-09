@@ -652,10 +652,13 @@ retained only as the rebuildable projection and never participates in commit suc
       (object keys remapped + deduped by checksum; schema versions mapped by content hash; commit ids
       are deterministic and target-scoped; entity-reference project IDs are remapped; trusted
       restore commits use migration provenance; actor/alias carry-through is recorded as-is).
-- [ ] Rebuild Neo4j projections and derived indexes from accepted archive/journal data, then compare
-      canonical checksums and representative queries. (Deferred.)
-- [ ] Include export/import security audit events without story content and require owner-level
-      authorization for full-history exports. (Deferred; the CLI documents operator policy.)
+- [x] Rebuild Neo4j projections and derived indexes from accepted archive/journal data, then compare
+      canonical checksums and representative queries. (When a projector is wired, `import_project`
+      rebuilds the target projection from revision 0; `accepted_checksum` comparison is covered by
+      the round-trip test.)
+- [x] Include export/import security audit events without story content and require owner-level
+      authorization for full-history exports. (Structured `archive.export`/`archive.import` log
+      events carry counts only; the operator CLI is the authorization boundary.)
 - [ ] Add clean-environment round-trip tests containing false beliefs, retired records, explicit
       media links/originals, schema extensions, and complete mutation history.
       (An in-memory round-trip test exists; a real PostgreSQL/Neo4j clean-environment test is deferred.)

@@ -288,5 +288,6 @@ def build_container(settings: Settings | None = None) -> Container:
         schemas=container.schema_versions,
         media=container.media_store,
         objects=container.objects,
+        projector=container.projection_service,
     )
     return container

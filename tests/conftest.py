@@ -202,6 +202,7 @@ def _build_fake_container(settings, tmp_path):
         schemas=schema_versions,
         media=media_store,
         objects=objects,
+        projector=projection_service,
     )
     return Container(
         settings=settings,

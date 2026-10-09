@@ -108,6 +108,7 @@ async def test_archive_round_trip_preserves_canonical_checksum() -> None:
     result = await service.import_project("ws_b", "pr_b", archive)
     assert result["commits"] == 1
     assert result["assets"] == 1
+    assert result["projection_rebuilt"] is False  # no projector wired in this unit setup
 
     branch_b = await journal.ensure_root_branch(workspace_id="ws_b", project_id="pr_b", name="main")
     assert await canon.get_head(workspace_id="ws_b", project_id="pr_b", branch_id=branch_b.id) == 1
@@ -168,6 +169,31 @@ async def test_archive_rejects_unsafe_object_key() -> None:
     archive["checksum"] = _checksum(archive)
     with pytest.raises(ArchiveError, match="unsafe object key"):
         await service.import_project("ws_b", "pr_b", archive)
+
+
+@pytest.mark.asyncio
+async def test_import_rebuilds_projection_when_projector_present() -> None:
+    from backend.services.projection_service import GraphProjectionService
+    from tests.doubles import InMemoryCanonWriter
+
+    journal = InMemoryCanonJournal()
+    canon = InMemoryCanonRepository(journal=journal)
+    objects = InMemoryObjectStore()
+    media = InMemoryMediaStore()
+    projector = GraphProjectionService(canon=canon, writer=InMemoryCanonWriter())
+    service = CanonArchiveService(
+        canon=canon,
+        journal=journal,
+        schemas=InMemorySchemaVersionStore(),
+        media=media,
+        objects=objects,
+        projector=projector,
+    )
+    ws, pr = await _seed(service, journal, canon, objects, media)
+    archive = await service.export_project(ws, pr)
+
+    result = await service.import_project("ws_b", "pr_b", archive)
+    assert result["projection_rebuilt"] is True
 
 
 @pytest.mark.asyncio

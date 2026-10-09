@@ -19,9 +19,11 @@ import base64
 import binascii
 import hashlib
 import json
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from backend.core.logging import log_event
 from backend.domain.canon.propositions import EntityRefObject
 from backend.domain.canon.revisions import OriginKind
 from backend.domain.history import CanonTag
@@ -47,6 +49,8 @@ ARCHIVE_FORMAT = "novel-engine/canon-archive"
 FORMAT_VERSION = "3"
 MAX_ENTRIES = 100_000
 MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
+
+logger = logging.getLogger(__name__)
 
 
 class ArchiveError(RuntimeError):
@@ -102,12 +106,14 @@ class CanonArchiveService:
         schemas: SchemaVersionStorePort,
         media: MediaStorePort,
         objects: ObjectStorePort,
+        projector: object | None = None,
     ) -> None:
         self._canon = canon
         self._journal = journal
         self._schemas = schemas
         self._media = media
         self._objects = objects
+        self._projector = projector
 
     async def _root_branch_id(self, workspace_id: str, project_id: str) -> str:
         branch = await self._journal.ensure_root_branch(
@@ -271,6 +277,14 @@ class CanonArchiveService:
             "sections": {},
         }
         body["checksum"] = _checksum(body)
+        log_event(
+            logger,
+            "archive.export",
+            workspace_id=workspace_id,
+            project_id=project_id,
+            commits=len(commits),
+            objects=len(objects),
+        )
         return body
 
     # ---------------------------------------------------------------- import
@@ -470,12 +484,31 @@ class CanonArchiveService:
                 )
             )
 
+        projection_rebuilt = False
+        if self._projector is not None:
+            await self._projector.rebuild(  # type: ignore[attr-defined]
+                workspace_id=target_workspace_id,
+                project_id=target_project_id,
+                branch_id=branch_id,
+            )
+            projection_rebuilt = True
+
+        log_event(
+            logger,
+            "archive.import",
+            workspace_id=target_workspace_id,
+            project_id=target_project_id,
+            commits=len(archive["commits"]),
+            objects=object_count,
+            projection_rebuilt=projection_rebuilt,
+        )
         return {
             "objects": object_count,
             "assets": len(archive["media"]["assets"]),
             "versions": len(archive["media"]["versions"]),
             "commits": len(archive["commits"]),
             "checksum": archive_checksum,
+            "projection_rebuilt": projection_rebuilt,
         }
 
     async def accepted_checksum(self, workspace_id: str, project_id: str) -> str:
