@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from backend.core.metrics import metrics
 from backend.domain.projection import ProjectionStatus
 from backend.ports import CanonJournalPort
 from backend.services.projection_service import GraphProjectionService
@@ -77,6 +78,27 @@ class OutboxConsumer:
                 workspace_id=workspace_id, project_id=project_id, branch_id=branch_id
             )
         ).lag
+        if published:
+            metrics.increment(
+                "outbox_deliveries_total",
+                "Outbox messages by delivery outcome.",
+                amount=published,
+                outcome="published",
+            )
+        if failed:
+            metrics.increment(
+                "outbox_deliveries_total",
+                "Outbox messages by delivery outcome.",
+                amount=failed,
+                outcome="failed",
+            )
+        # The most recent drain's lag across whichever project was drained; a
+        # per-project series would put a project id in a label.
+        metrics.set_gauge(
+            "projection_lag_revisions_last_drain",
+            "Committed revisions not yet projected, as seen by the last outbox drain.",
+            lag,
+        )
         return OutboxDrainResult(
             processed=len(pending), published=published, failed=failed, lag=lag
         )

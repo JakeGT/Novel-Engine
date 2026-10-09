@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     SENTRY_DSN_BACKEND: str = ""
     SENTRY_DSN_WEB: str = ""
     SENTRY_TRACES_SAMPLE_RATE: float = 0.0
+    # Operational metrics (Prometheus text format at /health/metrics). Off by
+    # default. A token is required outside local development; without one the
+    # endpoint refuses to serve in production.
+    METRICS_ENABLED: bool = False
+    METRICS_TOKEN: str = ""
 
     OPENAI_API_KEY: str = ""
     AI_MODEL: str = "gpt-4o"

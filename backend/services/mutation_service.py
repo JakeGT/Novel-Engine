@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from backend.core.logging import log_event
+from backend.core.metrics import metrics, span
 from backend.domain.canon.assertions import Belief, Fact
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.events import Event
@@ -27,6 +28,7 @@ from backend.domain.errors import ValidationError as DomainValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.journal import (
     CommitEnvelope,
+    HeadConflict,
     MutationNotFound,
     MutationOperation,
     MutationSet,
@@ -154,6 +156,53 @@ _TARGET_RECORD = {
     "retire_event": "event",
     "retire_asset_link": "asset_link",
 }
+
+
+def _label(value: str) -> str:
+    """A metric-safe label: origins and outcomes come from fixed vocabularies."""
+    return value if value.isidentifier() and value.islower() else "other"
+
+
+def _commit_outcome(error: Exception) -> str:
+    if isinstance(error, HeadConflict):
+        return "head_conflict"
+    if isinstance(error, RevisionConflict):
+        return "revision_conflict"
+    if isinstance(error, CanonValidationError):
+        return "validation_failed"
+    return "error"
+
+
+def _record_commit(origin: str, outcome: str, seconds: float, operations: int) -> None:
+    metrics.increment(
+        "canon_commits_total",
+        "Canonical commit attempts by origin and outcome.",
+        origin=_label(origin),
+        outcome=outcome,
+    )
+    if outcome == "committed":
+        metrics.increment(
+            "canon_commit_operations_total",
+            "Operations accepted into canon.",
+            amount=operations,
+            origin=_label(origin),
+        )
+    if seconds:
+        metrics.observe(
+            "canon_commit_duration_seconds",
+            "Time spent in the canonical commit transaction.",
+            seconds,
+            outcome=outcome,
+        )
+
+
+def _record_transition(to_status: MutationStatus, origin: str) -> None:
+    metrics.increment(
+        "mutation_transitions_total",
+        "Review-driven mutation-set state changes.",
+        to_status=to_status.value,
+        origin=_label(origin),
+    )
 
 
 def _deterministic_id(mutation_id: str, kind: str, temporary_id: str) -> str:
@@ -642,6 +691,7 @@ class MutationService:
             transition_to=MutationStatus.APPROVED,
             correlation_id=scope.correlation_id,
         )
+        _record_transition(MutationStatus.APPROVED, mutation.origin)
 
     async def reject(self, scope: AccessScope, mutation_id: str, note: str | None = None) -> None:
         mutation = await self._require(scope, mutation_id, Permission.PROJECT_WRITE)
@@ -657,6 +707,7 @@ class MutationService:
             transition_to=MutationStatus.REJECTED,
             correlation_id=scope.correlation_id,
         )
+        _record_transition(MutationStatus.REJECTED, mutation.origin)
 
     async def retarget(
         self, scope: AccessScope, mutation_id: str, expected_head: int
@@ -712,6 +763,7 @@ class MutationService:
                 operation_types=[item.operation_type for item in accepted],
             )
             if gate.code == "review_required":
+                _record_commit(mutation.origin, "review_required", 0.0, 0)
                 if mutation.status is MutationStatus.DRAFT:
                     await self._journal.transition_mutation(
                         mutation_id=mutation_id,
@@ -761,13 +813,16 @@ class MutationService:
         # state transitions, and enqueue the outbox.
         started = time.perf_counter()
         try:
-            revision = await self._repository.apply_commit(
-                envelope=envelope,
-                operations=resolved,
-                validator=self._validator,
-                origin=mutation.origin,
-            )
+            with span("canon.commit", origin=_label(mutation.origin)):
+                revision = await self._repository.apply_commit(
+                    envelope=envelope,
+                    operations=resolved,
+                    validator=self._validator,
+                    origin=mutation.origin,
+                )
         except Exception as error:
+            duration = time.perf_counter() - started
+            _record_commit(mutation.origin, _commit_outcome(error), duration, 0)
             log_event(
                 logger,
                 "canon.commit.failed",
@@ -775,9 +830,11 @@ class MutationService:
                 mutation_id=mutation_id,
                 origin=mutation.origin,
                 error_type=type(error).__name__,
-                duration_ms=round((time.perf_counter() - started) * 1000, 3),
+                duration_ms=round(duration * 1000, 3),
             )
             raise
+        duration = time.perf_counter() - started
+        _record_commit(mutation.origin, "committed", duration, len(resolved))
         log_event(
             logger,
             "canon.commit",
@@ -785,7 +842,7 @@ class MutationService:
             revision=revision,
             operations=len(resolved),
             origin=mutation.origin,
-            duration_ms=round((time.perf_counter() - started) * 1000, 3),
+            duration_ms=round(duration * 1000, 3),
         )
         return CommitResult(
             commit_id=commit_id,

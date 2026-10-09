@@ -87,6 +87,55 @@ class DomainValidationReport:
         return not self.blocking
 
 
+class RuleEnforcement(StrEnum):
+    """How an author story rule is published. Warning is the default (ADR-013)."""
+
+    WARNING = "warning"
+    BLOCKING = "blocking"
+
+
+@dataclass(frozen=True)
+class RuleEvaluation:
+    """One author-rule result, before it is classified into a finding.
+
+    ``deterministic`` is false when the result depends on a model or heuristic;
+    ``complete`` is false when the evaluator lacked inputs it needed (for
+    example facts that only extraction could supply). Either makes the result
+    advisory no matter how the rule is published.
+    """
+
+    rule_id: str
+    message: str
+    operation_ordinal: int | None = None
+    enforcement: RuleEnforcement = RuleEnforcement.WARNING
+    deterministic: bool = True
+    complete: bool = True
+
+
+def classify_rule_evaluation(evaluation: RuleEvaluation) -> ValidationSeverity:
+    """Author rules block only when explicitly published as blocking *and* certain."""
+    if (
+        evaluation.enforcement is RuleEnforcement.BLOCKING
+        and evaluation.deterministic
+        and evaluation.complete
+    ):
+        return ValidationSeverity.BLOCKING_RULE
+    return ValidationSeverity.ADVISORY
+
+
+class InvariantEvaluator(Protocol):
+    """Seam for author story-invariant evaluation (authoring arrives in Phase 2.5).
+
+    Evaluators run after the built-in integrity checks, inside the same commit
+    transaction, and can only *add* findings: nothing they return can remove,
+    downgrade, or suppress a built-in integrity finding.
+    """
+
+    async def evaluate(
+        self, operations: Sequence[CanonOperation], *, context: ValidationContext
+    ) -> Sequence[RuleEvaluation]: ...
+
+
 class CanonValidationError(RuntimeError):
     """A commit was rejected by the authoritative validator (transaction rolls back)."""
 
@@ -154,7 +203,40 @@ class AuthoritativeValidator:
     run inside the canonical PostgreSQL transaction without service coupling.
     """
 
+    def __init__(self, evaluators: Sequence[InvariantEvaluator] = ()) -> None:
+        self._evaluators = tuple(evaluators)
+
     async def validate(
+        self, operations: Sequence[CanonOperation], *, context: ValidationContext
+    ) -> DomainValidationReport:
+        integrity = await self._validate_integrity(operations, context=context)
+        findings = list(integrity.findings)
+        for evaluator in self._evaluators:
+            try:
+                evaluations = await evaluator.evaluate(operations, context=context)
+            except Exception as error:
+                # A rule that cannot be evaluated is uncertain, so it may inform a
+                # reviewer but can never reject a commit.
+                findings.append(
+                    ValidationFinding(
+                        ValidationSeverity.ADVISORY,
+                        "rule_evaluation_failed",
+                        f"a story rule could not be evaluated ({type(error).__name__})",
+                    )
+                )
+                continue
+            for evaluation in evaluations:
+                findings.append(
+                    ValidationFinding(
+                        classify_rule_evaluation(evaluation),
+                        f"rule:{evaluation.rule_id}",
+                        evaluation.message,
+                        evaluation.operation_ordinal,
+                    )
+                )
+        return DomainValidationReport(findings=tuple(findings))
+
+    async def _validate_integrity(
         self, operations: Sequence[CanonOperation], *, context: ValidationContext
     ) -> DomainValidationReport:
         findings: list[ValidationFinding] = []
@@ -701,7 +783,11 @@ __all__ = [
     "CanonTxReader",
     "CanonValidationError",
     "DomainValidationReport",
+    "InvariantEvaluator",
+    "RuleEnforcement",
+    "RuleEvaluation",
     "ValidationContext",
     "ValidationFinding",
     "ValidationSeverity",
+    "classify_rule_evaluation",
 ]

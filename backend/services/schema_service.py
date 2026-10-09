@@ -13,12 +13,14 @@ from typing import Any
 
 from pydantic import ValidationError as PydanticValidationError
 
+from backend.core.metrics import metrics
 from backend.domain.canon.registry import CORE_ENTITY_TYPES, CORE_PREDICATES, PredicateSpec
 from backend.domain.errors import ForbiddenError, NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.schema_defs import SchemaDefinition, SchemaDefinitionError
 from backend.domain.schemas import (
     SchemaCompatibilityError,
+    SchemaGovernanceError,
     SchemaVersion,
 )
 from backend.domain.tenancy import Permission
@@ -86,6 +88,51 @@ class SchemaService:
             valid=True,
             content_hash=compiled.content_hash,
             compatibility=SchemaCompatibility.ADDITIVE.value,
+            entity_types=sorted(compiled.entity_types),
+            predicates=sorted(compiled.predicates),
+        )
+
+    async def validate_for_project(
+        self, scope: AccessScope, definition: SchemaDefinition | dict
+    ) -> ValidationReport:
+        """Validate a definition and report how it compares with the published version.
+
+        An ill-formed definition is reported as ``valid=False`` with its errors, and
+        the compatibility category is computed against this project's published
+        schema, so the preview matches what a draft or publish would decide.
+        """
+        await self._authorize(scope, Permission.PROJECT_WRITE)
+        workspace_id, project_id = scope.workspace_id or "", scope.project_id or ""
+        try:
+            model = self._parse(definition)
+            compiled = compile_definition(
+                model, workspace_id=workspace_id, project_id=project_id, use_cache=False
+            )
+        except (ValidationError, SchemaGovernanceError) as error:
+            metrics.increment(
+                "schema_validations_total", "Schema definition validations.", outcome="invalid"
+            )
+            return ValidationReport(
+                valid=False,
+                content_hash="",
+                compatibility="invalid",
+                errors=[getattr(error, "detail", None) or str(error)],
+            )
+        published = await self._store.get_published(
+            workspace_id=workspace_id, project_id=project_id
+        )
+        previous = published.parsed_definition() if published is not None else None
+        report = classify_compatibility(previous, model)
+        metrics.increment(
+            "schema_validations_total",
+            "Schema definition validations.",
+            outcome=report.category.value,
+        )
+        return ValidationReport(
+            valid=True,
+            content_hash=compiled.content_hash,
+            compatibility=report.category.value,
+            migration_plan=migration_plan(report),
             entity_types=sorted(compiled.entity_types),
             predicates=sorted(compiled.predicates),
         )
@@ -200,6 +247,9 @@ class SchemaService:
                 published.parsed_definition(), draft.parsed_definition()
             )
             if report.category is SchemaCompatibility.FORBIDDEN:
+                metrics.increment(
+                    "schema_publishes_total", "Schema publish attempts.", outcome="forbidden"
+                )
                 raise SchemaCompatibilityError(
                     "This schema change is forbidden: " + "; ".join(migration_plan(report))
                 )
@@ -209,6 +259,7 @@ class SchemaService:
         )
         if result is None:
             raise SchemaCompatibilityError("Schema version is not a publishable draft.")
+        metrics.increment("schema_publishes_total", "Schema publish attempts.", outcome="published")
         await self._audit(
             scope,
             "schema.published",

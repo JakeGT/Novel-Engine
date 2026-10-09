@@ -34,6 +34,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from backend.core.logging import log_event
+from backend.core.metrics import metrics
 from backend.domain.archive import ArchiveImport, ArchiveImportError, ImportStatus
 from backend.domain.canon.propositions import EntityRefObject
 from backend.domain.canon.revisions import OriginKind
@@ -293,6 +294,12 @@ class CanonArchiveService:
             await self._canon_writer.purge(  # type: ignore[attr-defined]
                 workspace_id=workspace_id, project_id=project_id
             )
+        metrics.increment(
+            "archive_operations_total",
+            "Archive operations by kind and outcome.",
+            operation="remove_import",
+            outcome="completed",
+        )
         return await self._canon.record_removed_import(record)
 
     async def _root_branch_id(self, workspace_id: str, project_id: str) -> str:
@@ -458,6 +465,12 @@ class CanonArchiveService:
             "sections": {},
         }
         body["checksum"] = _checksum(body)
+        metrics.increment(
+            "archive_operations_total",
+            "Archive operations by kind and outcome.",
+            operation="export",
+            outcome="completed",
+        )
         log_event(
             logger,
             "archive.export",
@@ -501,6 +514,12 @@ class CanonArchiveService:
             await self._canon.finish_import(
                 import_id=import_id, status=ImportStatus.FAILED, error=type(error).__name__
             )
+            metrics.increment(
+                "archive_operations_total",
+                "Archive operations by kind and outcome.",
+                operation="import",
+                outcome="failed",
+            )
             log_event(
                 logger,
                 "archive.import.failed",
@@ -513,6 +532,12 @@ class CanonArchiveService:
             raise
         if record.status is not ImportStatus.COMPLETED:
             await self._canon.finish_import(import_id=import_id, status=ImportStatus.COMPLETED)
+        metrics.increment(
+            "archive_operations_total",
+            "Archive operations by kind and outcome.",
+            operation="import",
+            outcome="completed",
+        )
         return {**result, "import_id": import_id}
 
     def _replay_plan(

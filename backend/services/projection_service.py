@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from backend.core.metrics import metrics
 from backend.domain.identity import utcnow
 from backend.domain.operations import parse_operation
 from backend.domain.projection import ProjectionStatus, ProjectionWatermark
@@ -139,6 +140,11 @@ class GraphProjectionService:
                     schema_version_id=envelope.schema_version_id,
                 )
             except Exception as error:  # surfaced as visible lag, never canon corruption
+                metrics.increment(
+                    "projection_commits_total",
+                    "Commits applied to the graph projection by outcome.",
+                    outcome="error",
+                )
                 await self._canon.set_watermark(
                     ProjectionWatermark(
                         projection=self._projection,
@@ -160,6 +166,11 @@ class GraphProjectionService:
                 )
             applied_revision = envelope.revision
             applied_count += 1
+            metrics.increment(
+                "projection_commits_total",
+                "Commits applied to the graph projection by outcome.",
+                outcome="applied",
+            )
             await self._canon.set_watermark(
                 ProjectionWatermark(
                     projection=self._projection,
@@ -181,6 +192,7 @@ class GraphProjectionService:
     async def rebuild(
         self, *, workspace_id: str, project_id: str, branch_id: str, batch: int = DEFAULT_BATCH
     ) -> ProjectionReport:
+        metrics.increment("projection_rebuilds_total", "Full projection rebuilds started.")
         await self._writer.discard(
             workspace_id=workspace_id, project_id=project_id, branch_id=branch_id
         )

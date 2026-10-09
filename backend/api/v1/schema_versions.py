@@ -68,7 +68,7 @@ async def validate_schema_definition(
     scope: AccessScope = Depends(require_project_scope),
     service: SchemaService = Depends(get_schema_service),
 ) -> ValidationReportModel:
-    report = service.validate(body.definition)
+    report = await service.validate_for_project(scope, body.definition)
     return ValidationReportModel(
         valid=report.valid,
         content_hash=report.content_hash,

@@ -26,7 +26,36 @@ ID_PREFIXES: dict[str, str] = {
     "asset_link": "alk",
     "project": "prj",
     "workspace": "wsp",
+    # Reserved for records later phases introduce. No tables exist for these yet;
+    # reserving the prefixes keeps today's ids from colliding with them.
+    "story_invariant": "inv",
+    "scene_contract": "sct",
+    "narrated_assertion": "nar",
+    "speech_act": "spa",
+    "disclosure": "dsc",
+    "alias_binding": "alb",
+    "resolution_example": "rex",
+    "canon_tag": "tag",
+    "finding_suppression": "sup",
+    "dependency_edge": "dep",
+    "read_model_watermark": "rmw",
 }
+
+# Kinds whose prefix is reserved but which have no implementation in this phase.
+RESERVED_ID_KINDS: frozenset[str] = frozenset(
+    {
+        "story_invariant",
+        "scene_contract",
+        "narrated_assertion",
+        "speech_act",
+        "disclosure",
+        "alias_binding",
+        "resolution_example",
+        "finding_suppression",
+        "dependency_edge",
+        "read_model_watermark",
+    }
+)
 
 _ID_PATTERN = re.compile(r"^[a-z][a-z0-9]*_[A-Za-z0-9_-]+$")
 

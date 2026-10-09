@@ -1,12 +1,34 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Response, status
+import hmac
+
+from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi.responses import PlainTextResponse
 
 from backend.api.dependencies import get_container
 from backend.container import Container
+from backend.core.metrics import metrics
 from backend.core.observability import sentry_enabled
 
 router = APIRouter(tags=["health"])
+
+
+@router.get("/health/metrics", include_in_schema=False)
+def operational_metrics(
+    request: Request, container: Container = Depends(get_container)
+) -> Response:
+    """Counters and timings in Prometheus text format; never ids or content."""
+    settings = container.settings
+    if not settings.METRICS_ENABLED:
+        return Response(status_code=status.HTTP_404_NOT_FOUND)
+    if settings.METRICS_TOKEN:
+        supplied = request.headers.get("Authorization", "")
+        if not hmac.compare_digest(supplied, f"Bearer {settings.METRICS_TOKEN}"):
+            return Response(status_code=status.HTTP_401_UNAUTHORIZED)
+    elif settings.APP_ENV == "production":
+        # Fail closed: production metrics are never served unauthenticated.
+        return Response(status_code=status.HTTP_403_FORBIDDEN)
+    return PlainTextResponse(metrics.render(), media_type="text/plain; version=0.0.4")
 
 
 @router.get("/health/live")
