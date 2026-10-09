@@ -21,6 +21,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from backend.container import build_container
+from backend.domain.errors import DomainError, ForbiddenError
 from backend.domain.identity import AccessScope, AuthMode
 
 
@@ -139,7 +140,17 @@ async def _run(args: argparse.Namespace) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    return asyncio.run(_run(args))
+    try:
+        return asyncio.run(_run(args))
+    except ForbiddenError:
+        print(
+            "refused: the acting user may not perform this archive operation. "
+            "Pass --actor USER_ID for a user who administers the project."
+        )
+        return 3
+    except DomainError as error:
+        print(f"refused: {error.detail}")
+        return 2
 
 
 if __name__ == "__main__":
