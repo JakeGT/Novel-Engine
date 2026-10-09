@@ -1,6 +1,6 @@
 # Phase 2 exit evidence
 
-- Status: Implemented with named deferrals; owner acceptance pending
+- Status: In progress; core implementation evidence collected, with named deferrals and owner acceptance pending
 - Scope: Canonical story-state authority (ADR-012/013), Phase 2 workstreams 2A–2L
 - Owner: project owner or designated technical lead
 - Date: 2026-10-09
@@ -34,7 +34,7 @@ Neo4j ordered migrations and checksums:
 ## Contract and seed
 
 - OpenAPI snapshot: `tests/contract/openapi_snapshot.json`, exact-checked by
-  `tests/contract/test_openapi.py`. SHA-256 `48d9976b2100c1506a00a7a9d98894c79e214f962810399c5a17f1da7d7f1ce0`.
+  `tests/contract/test_openapi.py`. SHA-256 `7f390ac31663e4beeabe704010d1f2f8b5811602ae58642f7166ff050f8d37a1`.
 - Canon archive format: `novel-engine/canon-archive` version `3`. Same-scope operations retain
   checksums; cross-project restores deliberately rewrite scoped entity references and recompute the
   affected envelope checksums. Accepted mutation/review evidence is recreated in the target journal
@@ -45,7 +45,7 @@ Neo4j ordered migrations and checksums:
 
 ## Test counts
 
-- Hermetic (unit + application + contract): **423 passed** (`make test`), no services/network/keys.
+- Hermetic (unit + application + contract): **426 passed** (`make test`), no services/network/keys.
 - Integration (disposable PostgreSQL/pgvector + `neo4j-test`): **61 passed** (`make integration-test`).
 - `make check` green (ruff lint + format, secret scan, `mypy backend` clean across 121 files, frontend
   build); `make audit` (pip-audit) clean.
@@ -84,31 +84,35 @@ Neo4j ordered migrations and checksums:
 | Projection replay/idempotency/rebuild + visible lag | `tests/unit/test_projection_service.py`, `tests/unit/test_outbox_consumer.py`, `tests/integration/test_projection.py` |
 | Outbox lag (not corruption) | `tests/unit/test_outbox_consumer.py` |
 | History / diffs / state-at-revision | `tests/unit/test_canon_history.py`, `tests/contract/test_canon_history.py` |
+| Compensating revert preview/commit | `tests/unit/test_canon_history.py` |
 | Media identity + explicit evidence links | `tests/unit/test_media_service.py`, `tests/contract/test_media.py` |
 | Archive round-trip + scope remapping + target preflight + tamper/traversal rejection | `tests/application/test_canon_archive.py` |
 | Verification CLI (head/checksum/watermark) | `tests/unit/test_verify_cli.py` |
 
 ## Known limitations and deferrals
 
-- **2H:** revert proposals (compensating mutation sets + intervening-conflict detection + preview)
-  are not implemented; provenance source-artefact identifiers are recorded on beliefs
-  (`source_ref`) but not generalized across all operations; explicit history/provenance authz/redaction
-  tests remain thin.
+- **2H:** compensating revert preview/commit exists for safely invertible creation/assertion/link
+  operations, with same-record intervening-conflict detection; dependency-aware conflicts and
+  non-invertible edits still require manual handling. Provenance source-artefact identifiers are
+  recorded on beliefs (`source_ref`) but not generalized across all operations; explicit
+  history/provenance authz/redaction tests remain thin.
 - **2J:** the frontend is TypeScript with a client generated from the committed OpenAPI
   snapshot, React Router + TanStack Query with project-scoped cache keys, and an entity
   list/create/detail shell with history and projection status, plus a component test. Deferred:
   mutation preview/review UI, schema publish UI, media panels, automated accessibility coverage,
   and the end-to-end browser workflow.
 - **2K:** no v1-archive upgrader (the graph-format `ProjectTransferService` v2 is untouched); archive
-  import has deterministic retry identity but no project-level import-status/visibility ledger or
-  explicit removal workflow, and it does not automatically rebuild projections or run
-  representative-query comparison.
+  import has deterministic retry identity and rebuilds Neo4j when a projector is configured, but
+  has no project-level import-status/visibility ledger, explicit removal workflow, durable security
+  audit record, or representative-query equivalence check.
 - **2L:** property/state-machine fuzzing and mutation testing are not adopted; Sentry spans/metrics
   and performance budgets are minimal; the reference world is not yet expanded with intentionally
   colliding IDs; migration tests from the full Phase-1 schema history and a clean-host rehearsal
   remain outstanding.
-- **2E residue:** mutation-set state-machine enforcement, per-operation accept/edit/reject decisions,
-  and commit telemetry remain deferred.
+- **2E residue:** mutation-set state-machine enforcement and per-operation accept/edit/reject
+  decisions remain deferred. The human-review gate is origin-based; destructive/high-impact
+  author operations do not yet have a separate classification and approval gate. Structured commit
+  telemetry exists, but provider-neutral metrics/spans remain 2L work.
 
 ## Owner sign-off
 

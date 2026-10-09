@@ -7,7 +7,9 @@ Import is preflight-validated and idempotent: commits replay under deterministic
 target-scoped commit ids, so re-importing the same archive into the same project
 is a no-op. Project-scoped entity references are rewritten for the target, so a
 cross-project restore can legitimately produce a different commit checksum.
-Derived projections are rebuilt separately from accepted canon.
+When a projector is configured, import rebuilds the graph projection from the
+accepted journal after canonical restore. Other derived indexes and semantic
+equivalence checks remain separate operator work.
 
 Credentials, sessions, provider usage, and unrelated tenant data are never
 included.

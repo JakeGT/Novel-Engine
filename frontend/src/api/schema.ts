@@ -561,6 +561,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/assets/{asset_id}/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retire Asset */
+        post: operations["retire_asset_api_v1_projects__project_id__assets__asset_id__retire_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/assets/{asset_id}/versions": {
         parameters: {
             query?: never;
@@ -573,6 +590,23 @@ export interface paths {
         put?: never;
         /** Register Version */
         post: operations["register_version_api_v1_projects__project_id__assets__asset_id__versions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/assets/{asset_id}/versions/{version_id}/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retire Version */
+        post: operations["retire_version_api_v1_projects__project_id__assets__asset_id__versions__version_id__retire_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -987,6 +1021,40 @@ export interface paths {
         get: operations["projection_lag_api_v1_projects__project_id__projection_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/reverts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Commit Revert */
+        post: operations["commit_revert_api_v1_projects__project_id__reverts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/reverts/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Revert */
+        post: operations["preview_revert_api_v1_projects__project_id__reverts_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2189,6 +2257,22 @@ export interface components {
         RetireEntityRequest: {
             /** Expected Revision */
             expected_revision: number;
+        };
+        /** RevertCommitRequest */
+        RevertCommitRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+            /** From Revision */
+            from_revision: number;
+            /** To Revision */
+            to_revision?: number | null;
+        };
+        /** RevertPreviewRequest */
+        RevertPreviewRequest: {
+            /** From Revision */
+            from_revision: number;
+            /** To Revision */
+            to_revision?: number | null;
         };
         /**
          * Role
@@ -3757,6 +3841,40 @@ export interface operations {
             };
         };
     };
+    retire_asset_api_v1_projects__project_id__assets__asset_id__retire_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_versions_api_v1_projects__project_id__assets__asset_id__versions_get: {
         parameters: {
             query?: never;
@@ -3811,6 +3929,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retire_version_api_v1_projects__project_id__assets__asset_id__versions__version_id__retire_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                asset_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4861,6 +5014,80 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    commit_revert_api_v1_projects__project_id__reverts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevertCommitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_revert_api_v1_projects__project_id__reverts_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevertPreviewRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

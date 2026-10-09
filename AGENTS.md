@@ -9,10 +9,10 @@ Novel Engine is an open-source fiction authoring system with self-hosted and fre
 ## Current maturity
 
 The repository is a stabilized prototype, not a production application. Phase 0 is complete.
-Phase 1 is implemented with explicit external/operational exit items remaining. Phase 2's
-implementation slices are complete with named review-UI, revert, seed, projection-query, and
-operational deferrals; owner acceptance remains pending. See `plan/phase-2-todo.md` and
-`plan/phase-2-evidence.md`.
+Phase 1 is implemented with explicit external/operational exit items remaining. Phase 2 is in
+progress: its core backend slices are implemented, while review-policy, review-UI, seed,
+projection-query, archive, and operational work remains; owner acceptance is pending. See
+`plan/phase-2-todo.md` and `plan/phase-2-evidence.md`.
 
 - Application lifecycle, dependency container, ports, and adapters exist; imports perform no
   external work.
@@ -86,6 +86,7 @@ make import-check
 make test
 make test-integration
 make migrate-verify
+make frontend-api-check
 make frontend-lint
 make frontend-build
 ```

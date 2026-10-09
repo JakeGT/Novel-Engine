@@ -1,10 +1,12 @@
 UV_CACHE_DIR ?= $(CURDIR)/.cache/uv
 PNPM_STORE_DIR ?= $(CURDIR)/.cache/pnpm-store
 export UV_CACHE_DIR
+# pnpm run/exec verify dependencies against the configured store; keep it the one frontend-install used.
+export pnpm_config_store_dir = $(PNPM_STORE_DIR)
 
 TYPE_CHECK_TARGETS = backend
 
-.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify verify seed reset-dev diagnostics retention reconcile project watch archive audit api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check secret-scan frontend-install frontend-lint frontend-typecheck frontend-test frontend-build check
+.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify verify seed reset-dev diagnostics retention reconcile project watch archive audit api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check secret-scan frontend-install frontend-api-check frontend-lint frontend-typecheck frontend-test frontend-build check
 
 help:
 	@echo "install             Install runtime Python dependencies"
@@ -36,6 +38,7 @@ help:
 	@echo "format-check        Check Python formatting"
 	@echo "secret-scan         Scan tracked files for credential shapes"
 	@echo "frontend-install    Install frontend dependencies"
+	@echo "frontend-api-check  Verify generated frontend API types match OpenAPI"
 	@echo "frontend-lint       Lint the frontend"
 	@echo "frontend-typecheck  Type-check the frontend"
 	@echo "frontend-test       Run frontend component tests"
@@ -131,6 +134,19 @@ secret-scan:
 frontend-install:
 	pnpm --dir frontend install --frozen-lockfile --store-dir "$(PNPM_STORE_DIR)"
 
+frontend-api-check:
+	@api_tmp=$$(mktemp); \
+	trap 'rm -f "$$api_tmp"' EXIT; \
+	pnpm --dir frontend exec openapi-typescript ../tests/contract/openapi_snapshot.json -o "$$api_tmp" || { \
+		echo "openapi-typescript failed; run: make frontend-install"; \
+		exit 1; \
+	}; \
+	cmp -s frontend/src/api/schema.ts "$$api_tmp" || { \
+		echo "frontend/src/api/schema.ts is stale; run: pnpm --dir frontend run gen:api"; \
+		diff -u frontend/src/api/schema.ts "$$api_tmp"; \
+		exit 1; \
+	}
+
 frontend-lint:
 	pnpm --dir frontend run lint
 
@@ -143,4 +159,4 @@ frontend-test:
 frontend-build:
 	pnpm --dir frontend run build
 
-check: lock-check lint format-check secret-scan typecheck test frontend-lint frontend-typecheck frontend-test frontend-build
+check: lock-check lint format-check secret-scan typecheck test frontend-api-check frontend-lint frontend-typecheck frontend-test frontend-build

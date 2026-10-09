@@ -1,18 +1,27 @@
 # Novel Engine
 
-Novel Engine is a planned open-source AI-assisted fiction system designed to preserve continuity across world facts, character beliefs, timelines, story plans, and generated scenes. It will support self-hosting and a free, invite-only multi-tenant deployment within `apps.jaketalling.com`.
+Novel Engine is an open-source AI-assisted fiction system designed to preserve continuity across
+world facts, character beliefs, timelines, story plans, and generated scenes. It supports a local
+self-hosted profile and is being built for a free, invite-only multi-tenant deployment within
+`apps.jaketalling.com`.
 
 The project combines:
 
-- Neo4j for canonical, queryable story state
-- PostgreSQL with pgvector for operational state and future vector retrieval
+- PostgreSQL for the immutable journal and normalized/versioned canonical story state
+- Neo4j, pgvector, search, and summaries as rebuildable projections
 - semantic retrieval for prose, summaries, and stylistic memory
 - structured model workflows for authoring and extraction
 - explicit provenance, temporal validity, and branch-aware state
 - a review boundary between AI proposals and accepted canon
 - user-controlled AI autonomy, local models or user-supplied OpenRouter access, and tiered consistency checking
 
-This repository is currently a stabilized local prototype; shared OIDC identity, invitations, multi-tenant authorization, and hosted deployment are planned but not implemented. PostgreSQL/pgvector foundations exist alongside graph CRUD, tagged-entity context retrieval, and part of the character creation workflow; the frontend and most planning/generation workflows are not yet implemented. See [the implementation plan](plan/README.md) for the target architecture and delivery sequence.
+This repository is a stabilized prototype, not a production application. Phase 0 is complete;
+Phase 1 identity, invitation-only tenancy, scoped persistence, encrypted OpenRouter BYOK, and
+distribution foundations are implemented with external rehearsals pending. Phase 2 provides typed
+canon, immutable project schemas, atomic PostgreSQL commits, history/provenance queries, replayable
+Neo4j projection, media identity, canonical archives, and a minimal entity-authoring shell. Review
+UI, temporal branching, prose planning/generation, and production operations remain planned. See
+[the implementation plan](plan/README.md) for authoritative status and delivery sequencing.
 
 ## Quick start
 
@@ -22,7 +31,7 @@ Prerequisites:
 - Node.js 24 LTS with pnpm 11
 - [uv](https://docs.astral.sh/uv/) for Python environments and locked dependencies
 - Docker with Compose
-- an OpenAI API key for live AI workflows
+- an OpenRouter/OpenAI-compatible API key only for live model workflows
 
 ```bash
 cp .env.example .env
@@ -56,8 +65,8 @@ make api
 
 ### Migrations
 
-- PostgreSQL uses Alembic (`migrations/versions/`); the head revision creates the
-  `vector_documents` table. Author a new revision with `uv run alembic revision -m "..."`,
+- PostgreSQL uses Alembic (`migrations/versions/`); the current head is
+  `0018_commit_integrity`. Author a new revision with `uv run alembic revision -m "..."`,
   implement `upgrade`/`downgrade`, and run `make migrate`.
 - Neo4j uses the ordered runner in `backend/graph/migrations.py`. Add a `Migration` to
   `NEO4J_MIGRATIONS`; the runner records applied IDs and checksums and fails on drift.
@@ -76,8 +85,8 @@ pnpm --dir frontend run dev
 The frontend is TypeScript and consumes a client generated from the committed OpenAPI
 snapshot (`pnpm --dir frontend run gen:api`, output committed under `frontend/src/api/`). It uses
 React Router and TanStack Query with workspace/project-scoped cache keys. Validate it with
-`make frontend-lint frontend-typecheck frontend-test frontend-build`; the generated client is
-excluded from lint.
+`make frontend-api-check frontend-lint frontend-typecheck frontend-test frontend-build`; the
+generated client is excluded from lint, while `frontend-api-check` detects snapshot drift.
 
 The API is served at `http://localhost:8000`; canonical routes are under `/api/v1` and interactive API documentation is at `http://localhost:8000/docs`. Neo4j Browser is at `http://localhost:7474` using the credentials configured in `.env`.
 
@@ -123,9 +132,10 @@ Operational tooling:
   names; no secrets or manuscript text).
 - `make retention` purges expired sessions, login attempts, invitations, and stale rate-limit
   hits without touching canonical data.
-- Project export/import is available through `ProjectTransferService` (checksummed graph
-  bundles, no credentials or sessions); a coordinated PostgreSQL/Neo4j/artefact backup
-  procedure is documented but not yet automated.
+- Canonical project export/import is available through `make archive` (checksummed archive v3,
+  including accepted history and permitted object bytes, but never credentials or sessions).
+  The older `ProjectTransferService` graph bundle remains transitional. A coordinated
+  PostgreSQL/Neo4j/object-store backup procedure is documented but not yet automated.
 
 Privacy: the only outbound connections are the configured OIDC provider, the AI provider
 (OpenRouter/OpenAI), and opt-in Sentry. Sentry is disabled unless a DSN is set and scrubs

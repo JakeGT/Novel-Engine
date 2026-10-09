@@ -99,13 +99,13 @@ ADR-010 and is restated in ADR-012 as the Phase 2 delivery boundary. ADR-013 rec
 | 2B. Canon domain and core schema | Implemented | 2A |
 | 2C. Project schema governance and compiler | Implemented | 2B |
 | 2D. Revision, journal, outbox, and storage migrations | Implemented (ADR-012: normalized PostgreSQL canon + immutable journal commit in one transaction, projection watermarks; migrations 0013–0018) | 2A–2C |
-| 2E. Mutation validation, canonical commit, and projection recovery | Implemented (single-PostgreSQL-transaction commit, exact published-schema validation, protected-origin approval gate, deterministic retry identity, idempotent outbox consumer + replayable projector; full mutation state machine, per-operation decisions, and commit telemetry deferred) | 2B–2D |
+| 2E. Mutation validation, canonical commit, and projection recovery | Implemented (single-PostgreSQL-transaction commit, exact published-schema validation, protected-origin approval gate, deterministic retry identity, commit telemetry, idempotent outbox consumer + replayable projector; full mutation state machine, per-operation decisions, and high-impact author-operation gate deferred) | 2B–2D |
 | 2F. Entity authoring and retirement | Implemented (canonical entity API over the mutation path with revision/ETag; link inspection/history, name-collision policy, and character-workflow port deferred) | 2C–2E |
 | 2G. Facts, beliefs, and events | Implemented (fact/belief/event APIs + derived truth agreement over canonical PostgreSQL; graph predicate projections, canon seed expansion, and close/reassert history deferred) | 2B–2F |
 | 2H. Provenance and history inspection | Implemented (revision/record history, entity/fact/belief/event state-at-revision, revision diffs, immutable tags, compensating revert proposals, verification CLI, operator projection report; generalized provenance source-artefact IDs deferred) | 2D–2G |
-| 2I. Media identity and explicit evidence links | Implemented (asset/version identity + reviewed link roles through the mutation path; lifecycle transitions, PG media integration test, and reference-world asset seed deferred) | 2B–2E |
+| 2I. Media identity and explicit evidence links | Implemented (asset/version identity + reviewed link roles through the mutation path and basic lifecycle transitions; immutable lifecycle audit, PG media integration test, and reference-world asset seed deferred) | 2B–2E |
 | 2J. Project shell and authoring UI | Implemented (TypeScript + OpenAPI-generated client + router/query with scoped keys + project shell + entity list/create/detail/history/retire + component test; mutation-review/schema-publish/media UI, a11y automation, and e2e deferred) | 2F–2I APIs |
-| 2K. Archive upgrade, restore, and rebuild | Implemented with named deferrals (canon archive format v3 with canonical checksums, accepted mutation/review evidence, object bytes, strict preflight validation, resumable import; import-status ledger, v1 upgrader, and automatic post-import projection rebuild deferred) | 2C–2I |
+| 2K. Archive upgrade, restore, and rebuild | Implemented with named deferrals (canon archive format v3 with canonical checksums, accepted mutation/review evidence, object bytes, strict preflight validation, resumable import, and configured Neo4j rebuild; import-status ledger, v1 upgrader, durable security audit, and query-equivalence proof deferred) | 2C–2I |
 | 2L. Security, quality, and exit evidence | Implemented (threat/auth tests, dependency audit, invariant matrix + `phase-2-evidence.md`; property/fuzz + mutation testing, perf budgets, colliding-ID fixtures, and clean-host rehearsal deferred) | all workstreams |
 
 ## 2A. Phase 1 closeout and Phase 2 contract
@@ -405,7 +405,7 @@ retained only as the rebuildable projection and never participates in commit suc
 - [x] retries are idempotent and concurrent stale-head commits receive a stable conflict response
 - [x] a crash at any canonical transaction boundary rolls back, while a projector crash resumes
       without silent loss or duplicate projection records
-- [x] rejected or unapproved protected operations never enter normalized canon or any projection
+- [x] rejected or unapproved protected-origin operations never enter normalized canon or any projection
 - [x] outbox/projector failure creates visible lag but cannot corrupt or roll back accepted canon
 
 ## 2F. Entity authoring and retirement
@@ -569,10 +569,11 @@ retained only as the rebuildable projection and never participates in commit suc
       via `ObjectStorePort.stat`; the archive carries and validates object bytes/checksums.)
 - [x] Enforce that rejected, retired, deleted, quarantined, or cross-project assets cannot receive
       new active canonical links (in-transaction validator requires an active asset/version).
-- [x] Define deletion/retirement behavior: referenced versions retire and remain auditable; complete
+- [ ] Define deletion/retirement behavior: referenced versions retire and remain auditable; complete
       project deletion follows the existing scoped purge; ordinary APIs never orphan link history.
       (`POST /assets/{id}/retire` and `POST /assets/{id}/versions/{version_id}/retire` record the
-      retirement revision; project deletion uses the scoped purge.)
+      current canon revision and project deletion uses the scoped purge; immutable lifecycle-change
+      history/audit is still required.)
 - [x] Add tests for identical asset IDs across projects, opaque keys, checksum mismatch, authority,
       attribution, lifecycle transitions, link review, retirement, and export/import
       (`tests/unit/test_media_service.py`, `tests/contract/test_media.py`,
@@ -591,7 +592,7 @@ retained only as the rebuildable projection and never participates in commit suc
       (`tsconfig.json`; `App.tsx`/`main.tsx`/pages).
 - [x] Generate a typed client from the committed OpenAPI contract and prevent hand-maintained API
       types from becoming a second contract (`pnpm run gen:api` → `frontend/src/api/schema.ts`,
-      committed; `client.ts` composes it).
+      committed; `client.ts` composes it; `make frontend-api-check` fails on generated-schema drift).
 - [x] Add routing and server-state libraries with workspace/project encoded in routes and cache keys.
       Never cache one project's response under an unscoped key (React Router `/projects/:projectId`;
       TanStack Query keys include workspace + project).
@@ -657,13 +658,13 @@ retained only as the rebuildable projection and never participates in commit suc
       (object keys remapped + deduped by checksum; schema versions mapped by content hash; commit ids
       are deterministic and target-scoped; entity-reference project IDs are remapped; trusted
       restore commits use migration provenance; actor/alias carry-through is recorded as-is).
-- [x] Rebuild Neo4j projections and derived indexes from accepted archive/journal data, then compare
+- [ ] Rebuild Neo4j projections and derived indexes from accepted archive/journal data, then compare
       canonical checksums and representative queries. (When a projector is wired, `import_project`
-      rebuilds the target projection from revision 0; `accepted_checksum` comparison is covered by
-      the round-trip test.)
-- [x] Include export/import security audit events without story content and require owner-level
-      authorization for full-history exports. (Structured `archive.export`/`archive.import` log
-      events carry counts only; the operator CLI is the authorization boundary.)
+      rebuilds Neo4j from revision 0; other indexes and representative-query equivalence remain.)
+- [ ] Include export/import security audit events without story content and require owner-level
+      authorization for full-history exports. (Structured `archive.export`/`archive.import` logs
+      carry counts only and the operator CLI documents the policy; no durable security-audit record
+      or application-level owner authorization exists yet.)
 - [ ] Add clean-environment round-trip tests containing false beliefs, retired records, explicit
       media links/originals, schema extensions, and complete mutation history.
       (An in-memory round-trip test exists; a real PostgreSQL/Neo4j clean-environment test is deferred.)
@@ -770,16 +771,18 @@ vertical slices rather than mocks alone.
 - [x] core and project schema versions validate every accepted canonical record
       (in-transaction validator + recorded `schema_version_id`; project-extension predicates land in 2.5)
 - [x] author edits produce audited, provenance-rich, revisioned commits through one canonical path
-- [x] model/import/high-impact proposals cannot bypass required human decisions
+- [ ] model/import/high-impact proposals cannot bypass required human decisions
       (`MutationService.commit` rejects non-author origins without an approved decision and records an
-      author-direct approval otherwise; per-operation decisions remain a review-UI addition)
+      author-direct decision otherwise; high-impact author-operation classification and
+      per-operation decisions remain review-workflow additions)
 - [x] objective facts and character beliefs are distinct in domain, storage, API, and UI
 - [x] entities and evidence links can be retired without erasing accepted history
 - [x] stale/concurrent commits fail predictably and retries cannot duplicate mutations
 - [x] PostgreSQL commits are atomic; Neo4j interruption produces only observable, replayable
       projection lag
 - [x] media identity and explicit evidence links obey project scope, authority, and lifecycle rules
-      (asset lifecycle transitions beyond registration are deferred)
+      (registration, active-link validation, link retirement, and basic asset/version retirement
+      exist; immutable lifecycle audit remains deferred)
 - [x] two projects cannot read, write, link, restore, or reference each other's canon/assets
 - [ ] a complete project archive restores into a clean environment with the same canonical checksum
       (in-memory round-trip preserves the checksum; a real clean-environment rehearsal is deferred)
