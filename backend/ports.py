@@ -969,6 +969,7 @@ class CanonRepositoryPort(Protocol):
         predicate: str | None = None,
         limit: int = 50,
         offset: int = 0,
+        object_entity_id: str | None = None,
     ) -> list[Fact]: ...
 
     async def get_belief(
@@ -998,6 +999,7 @@ class CanonRepositoryPort(Protocol):
         include_retired: bool = False,
         limit: int = 50,
         offset: int = 0,
+        entity_id: str | None = None,
     ) -> list[Event]: ...
 
     async def get_provenance(

@@ -64,17 +64,17 @@ def disposable_database() -> Iterator[DisposableDatabase]:
     with psycopg.connect(_psycopg_dsn("postgres"), autocommit=True) as connection:
         connection.execute(f'CREATE DATABASE "{name}"')
 
-    config = alembic_config()
-    config.set_main_option("sqlalchemy.url", _sqlalchemy_dsn(name))
-    command.upgrade(config, "head")
-
-    database = DisposableDatabase(
-        name=name,
-        psycopg_dsn=_psycopg_dsn(name),
-        sqlalchemy_dsn=_sqlalchemy_dsn(name),
-    )
+    # Everything after CREATE DATABASE is inside the try, so a failing migration
+    # cannot leave the disposable database behind.
     try:
-        yield database
+        config = alembic_config()
+        config.set_main_option("sqlalchemy.url", _sqlalchemy_dsn(name))
+        command.upgrade(config, "head")
+        yield DisposableDatabase(
+            name=name,
+            psycopg_dsn=_psycopg_dsn(name),
+            sqlalchemy_dsn=_sqlalchemy_dsn(name),
+        )
     finally:
         with psycopg.connect(_psycopg_dsn("postgres"), autocommit=True) as connection:
             connection.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')

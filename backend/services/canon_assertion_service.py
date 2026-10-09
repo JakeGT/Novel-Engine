@@ -236,6 +236,7 @@ class CanonAssertionService:
         include_closed: bool = False,
         subject_id: str | None = None,
         predicate: str | None = None,
+        object_entity_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[Fact]:
@@ -246,6 +247,7 @@ class CanonAssertionService:
             include_closed=include_closed,
             subject_id=subject_id,
             predicate=predicate,
+            object_entity_id=object_entity_id,
             limit=limit,
             offset=offset,
         )
@@ -488,6 +490,7 @@ class CanonAssertionService:
         project_id: str,
         *,
         include_retired: bool = False,
+        entity_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[Event]:
@@ -496,6 +499,7 @@ class CanonAssertionService:
             workspace_id=workspace_id,
             project_id=project_id,
             include_retired=include_retired,
+            entity_id=entity_id,
             limit=limit,
             offset=offset,
         )

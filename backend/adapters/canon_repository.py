@@ -1671,6 +1671,7 @@ class PostgresCanonRepository:
         predicate: str | None = None,
         limit: int = 50,
         offset: int = 0,
+        object_entity_id: str | None = None,
     ) -> list[Fact]:
         clauses = ["workspace_id = :w", "project_id = :p"]
         params: dict[str, Any] = {
@@ -1679,6 +1680,12 @@ class PostgresCanonRepository:
             "limit": limit,
             "offset": offset,
         }
+        if object_entity_id:
+            clauses.append(
+                "proposition->'object'->>'kind' = 'entity_ref' "
+                "AND proposition->'object'->>'entity_id' = :object_entity"
+            )
+            params["object_entity"] = object_entity_id
         if not include_closed:
             clauses.append("status = 'asserted'")
         if subject_id:
@@ -1769,10 +1776,27 @@ class PostgresCanonRepository:
         include_retired: bool = False,
         limit: int = 50,
         offset: int = 0,
+        entity_id: str | None = None,
     ) -> list[Event]:
         clauses = ["workspace_id = :w", "project_id = :p"]
+        params: dict[str, Any] = {
+            "w": workspace_id,
+            "p": project_id,
+            "limit": limit,
+            "offset": offset,
+        }
         if not include_retired:
             clauses.append("retired_revision IS NULL")
+        if entity_id:
+            # Events the entity takes part in, happens at, causes, or results from.
+            clauses.append(
+                "(participants @> CAST(:participant AS JSONB) "
+                "OR location_ids @> CAST(:member AS JSONB) "
+                "OR cause_ids @> CAST(:member AS JSONB) "
+                "OR outcome_ids @> CAST(:member AS JSONB))"
+            )
+            params["participant"] = json.dumps([{"entity_id": entity_id}])
+            params["member"] = json.dumps([entity_id])
         async with session_scope(self._session_factory) as session:
             rows = (
                 await session.execute(
@@ -1780,12 +1804,7 @@ class PostgresCanonRepository:
                         f"SELECT * FROM canon_events WHERE {' AND '.join(clauses)} "
                         "ORDER BY created_revision LIMIT :limit OFFSET :offset"
                     ),
-                    {
-                        "w": workspace_id,
-                        "p": project_id,
-                        "limit": limit,
-                        "offset": offset,
-                    },
+                    params,
                 )
             ).all()
         return [_event(row) for row in rows]

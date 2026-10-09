@@ -5886,6 +5886,7 @@ export interface operations {
         parameters: {
             query?: {
                 include_retired?: boolean;
+                entity_id?: string | null;
                 limit?: number;
                 offset?: number;
             };
@@ -6133,6 +6134,7 @@ export interface operations {
                 include_closed?: boolean;
                 subject_id?: string | null;
                 predicate?: string | null;
+                object_entity_id?: string | null;
                 limit?: number;
                 offset?: number;
             };

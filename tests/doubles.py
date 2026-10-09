@@ -3171,12 +3171,17 @@ class InMemoryCanonRepository:
         predicate: str | None = None,
         limit: int = 50,
         offset: int = 0,
+        object_entity_id: str | None = None,
     ):
         items = [
             f
             for (w, p, _), f in self.facts.items()
             if w == workspace_id
             and p == project_id
+            and (
+                object_entity_id is None
+                or getattr(f.proposition.object, "entity_id", None) == object_entity_id
+            )
             and (include_closed or f.closed_revision is None)
             and (subject_id is None or f.proposition.subject_id == subject_id)
             and (predicate is None or f.proposition.predicate == predicate)
@@ -3217,8 +3222,22 @@ class InMemoryCanonRepository:
         include_retired: bool = False,
         limit: int = 50,
         offset: int = 0,
+        entity_id: str | None = None,
     ):
-        items = [e for (w, p, _), e in self.events.items() if w == workspace_id and p == project_id]
+        items = [
+            e
+            for (w, p, _), e in self.events.items()
+            if w == workspace_id
+            and p == project_id
+            and (include_retired or e.retired_revision is None)
+            and (
+                entity_id is None
+                or any(participant.entity_id == entity_id for participant in e.participants)
+                or entity_id in e.location_ids
+                or entity_id in e.cause_ids
+                or entity_id in e.outcome_ids
+            )
+        ]
         return items[offset : offset + limit]
 
     async def get_provenance(

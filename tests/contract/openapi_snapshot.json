@@ -7623,6 +7623,22 @@
           },
           {
             "in": "query",
+            "name": "entity_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Entity Id"
+            }
+          },
+          {
+            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -8062,6 +8078,22 @@
                 }
               ],
               "title": "Predicate"
+            }
+          },
+          {
+            "in": "query",
+            "name": "object_entity_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Object Entity Id"
             }
           },
           {

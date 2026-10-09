@@ -343,7 +343,7 @@ async def me(
     settings: Settings = Depends(get_settings),
 ) -> dict[str, object]:
     user = auth_session.user
-    return {
+    body: dict[str, object] = {
         "user": {
             "id": user.id,
             "email": user.email,
@@ -351,6 +351,14 @@ async def me(
         },
         "auth_mode": settings.AUTH_MODE,
     }
+    if not settings.is_hosted:
+        # Local mode has one workspace and project and no tenancy rows to list;
+        # the client learns their ids here instead of from build-time config.
+        body["local"] = {
+            "workspace_id": settings.AUTH_LOCAL_WORKSPACE_ID,
+            "project_id": settings.AUTH_LOCAL_PROJECT_ID,
+        }
+    return body
 
 
 @router.post("/logout")

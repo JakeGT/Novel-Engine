@@ -199,6 +199,23 @@ async def test_evidence_provenance_and_references_on_postgres(stack) -> None:
         workspace_id=stack.ws, project_id=stack.pr, entity_id="ent_mara"
     ) == [("belief", "blf_1"), ("event", "evt_1"), ("fact", "fct_at")]
 
+    # Listing by referenced entity is answered by the database, not by scanning pages.
+    at_harbor = await stack.repo.list_facts(
+        workspace_id=stack.ws, project_id=stack.pr, object_entity_id="ent_harbor"
+    )
+    assert [fact.id for fact in at_harbor] == ["fct_at"]
+    assert (
+        await stack.repo.list_facts(
+            workspace_id=stack.ws, project_id=stack.pr, object_entity_id="ent_mara"
+        )
+        == []
+    )
+    for involved in ("ent_mara", "ent_harbor"):
+        events = await stack.repo.list_events(
+            workspace_id=stack.ws, project_id=stack.pr, entity_id=involved
+        )
+        assert [event.id for event in events] == ["evt_1"]
+
     # History inside one commit keeps operation order.
     diff = await stack.history.diff_revisions(
         stack.scope, stack.ws, stack.pr, from_revision=0, to_revision=1

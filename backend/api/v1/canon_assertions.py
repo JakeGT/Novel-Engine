@@ -181,6 +181,7 @@ async def list_facts(
     include_closed: bool = False,
     subject_id: str | None = None,
     predicate: str | None = None,
+    object_entity_id: str | None = None,
     limit: int = Query(50, le=200),
     offset: int = 0,
     scope: AccessScope = Depends(get_project_scope),
@@ -193,6 +194,7 @@ async def list_facts(
         include_closed=include_closed,
         subject_id=subject_id,
         predicate=predicate,
+        object_entity_id=object_entity_id,
         limit=limit,
         offset=offset,
     )
@@ -350,6 +352,7 @@ async def close_belief(
 async def list_events(
     project_id: str,
     include_retired: bool = False,
+    entity_id: str | None = None,
     limit: int = Query(50, le=200),
     offset: int = 0,
     scope: AccessScope = Depends(get_project_scope),
@@ -360,6 +363,7 @@ async def list_events(
         scope.workspace_id or "",
         project_id,
         include_retired=include_retired,
+        entity_id=entity_id,
         limit=limit,
         offset=offset,
     )

@@ -72,10 +72,10 @@ def second_database():
     name = f"novel_test_{uuid.uuid4().hex[:10]}"
     with psycopg.connect(_psycopg_dsn("postgres"), autocommit=True) as connection:
         connection.execute(f'CREATE DATABASE "{name}"')
-    config = alembic_config()
-    config.set_main_option("sqlalchemy.url", _sqlalchemy_dsn(name))
-    command.upgrade(config, "head")
     try:
+        config = alembic_config()
+        config.set_main_option("sqlalchemy.url", _sqlalchemy_dsn(name))
+        command.upgrade(config, "head")
         yield DisposableDatabase(
             name=name, psycopg_dsn=_psycopg_dsn(name), sqlalchemy_dsn=_sqlalchemy_dsn(name)
         )
