@@ -387,9 +387,10 @@ retained only as the rebuildable projection and never participates in commit suc
 - [x] Add an outbox consumer seam for derived graph/vector/search updates with retry count, source
       revision, idempotency key, and visible lag (`OutboxConsumer` + `outbox_messages.attempts`/
       `last_error`; `make watch` bounded dev runner).
-- [ ] Record audit/telemetry for state, latency, operation counts, recovery, and outcome without
-      logging canon payloads by default. (No canon payloads are logged; structured commit
-      telemetry is deferred.)
+- [x] Record audit/telemetry for state, latency, operation counts, recovery, and outcome without
+      logging canon payloads by default. (`canon.commit`/`canon.commit.failed` structured events carry
+      origin/revision/operation count/latency/error type; author-direct commits record an approval
+      decision with actor and reason. No canon payloads are logged.)
 - [x] Replace cross-store success fault tests with PostgreSQL transaction rollback tests plus
       projector crash/retry/duplicate-delivery/rebuild tests
       (`tests/integration/test_canon_repository.py`, `tests/unit/test_projection_service.py`,
@@ -765,8 +766,9 @@ vertical slices rather than mocks alone.
 - [x] core and project schema versions validate every accepted canonical record
       (in-transaction validator + recorded `schema_version_id`; project-extension predicates land in 2.5)
 - [x] author edits produce audited, provenance-rich, revisioned commits through one canonical path
-- [ ] model/import/high-impact proposals cannot bypass required human decisions
-      (the advisory/review policy for protected operations is deferred)
+- [x] model/import/high-impact proposals cannot bypass required human decisions
+      (`MutationService.commit` rejects non-author origins without an approved decision and records an
+      author-direct approval otherwise; per-operation decisions remain a review-UI addition)
 - [x] objective facts and character beliefs are distinct in domain, storage, API, and UI
 - [x] entities and evidence links can be retired without erasing accepted history
 - [x] stale/concurrent commits fail predictably and retries cannot duplicate mutations

@@ -10,10 +10,13 @@ rebuildable projection.
 from __future__ import annotations
 
 import hashlib
+import logging
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from backend.core.logging import log_event
 from backend.domain.canon.assertions import Belief, Fact
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.events import Event
@@ -48,6 +51,8 @@ from backend.domain.validation import (
 )
 from backend.ports import CanonJournalPort, CanonRepositoryPort, SchemaVersionStorePort
 from backend.services.schema_compiler import compile_definition
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -384,11 +389,41 @@ class MutationService:
         # ONE PostgreSQL transaction: lock head, run the authoritative validator,
         # reserve/advance the head, append the immutable envelope, apply operations
         # to normalized canon, record the revision, and enqueue the outbox.
-        revision = await self._repository.apply_commit(
-            envelope=envelope,
-            operations=resolved,
-            validator=self._validator,
+        started = time.perf_counter()
+        try:
+            revision = await self._repository.apply_commit(
+                envelope=envelope,
+                operations=resolved,
+                validator=self._validator,
+                origin=mutation.origin,
+            )
+        except Exception as error:
+            log_event(
+                logger,
+                "canon.commit.failed",
+                level=logging.WARNING,
+                mutation_id=mutation_id,
+                origin=mutation.origin,
+                error_type=type(error).__name__,
+                duration_ms=round((time.perf_counter() - started) * 1000, 3),
+            )
+            raise
+        if not decisions:
+            # Record the author-direct approval without story content.
+            await self._journal.record_decision(
+                mutation_id=mutation_id,
+                decision="approved",
+                actor_user_id=scope.actor_user_id,
+                note=f"{mutation.origin}-direct",
+            )
+        log_event(
+            logger,
+            "canon.commit",
+            mutation_id=mutation_id,
+            revision=revision,
+            operations=len(resolved),
             origin=mutation.origin,
+            duration_ms=round((time.perf_counter() - started) * 1000, 3),
         )
         return CommitResult(
             commit_id=commit_id,
