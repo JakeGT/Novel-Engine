@@ -44,9 +44,13 @@ from backend.domain.journal import (
     CommitEnvelope,
     HeadConflict,
     JournalError,
+    MutationNotFound,
     MutationOperation,
     MutationSet,
     MutationStatus,
+    MutationTransition,
+    OperationDecision,
+    OperationRevision,
     OutboxMessage,
     ReservationStatus,
     ReviewDecision,
@@ -73,6 +77,13 @@ from backend.domain.operations import (
     resolve_temporary_ids,
 )
 from backend.domain.projection import RecordVersion
+from backend.domain.review import (
+    MutationIntent,
+    effective_operations,
+    ensure_transition,
+    is_editable,
+    review_gate,
+)
 from backend.domain.schemas import SchemaVersion, SchemaVersionStatus
 from backend.domain.tenancy import (
     AuditEvent,
@@ -1301,6 +1312,9 @@ class InMemoryCanonJournal:
         self.mutations: dict[str, MutationSet] = {}
         self.mutation_keys: dict[tuple[str, str, str], str] = {}
         self.operations: dict[str, list[MutationOperation]] = {}
+        self.operation_revisions: list[OperationRevision] = []
+        self.operation_decisions: list[OperationDecision] = []
+        self.transitions: list[MutationTransition] = []
         self.decisions: list[ReviewDecision] = []
         self.reservations: dict[str, BranchReservation] = {}
         self.reservations_by_branch: dict[str, str] = {}
@@ -1365,6 +1379,7 @@ class InMemoryCanonJournal:
         schema_version_id: str | None = None,
         correlation_id: str = "",
         idempotency_key: str = "",
+        intent: str = "edit",
     ) -> MutationSet:
         if idempotency_key:
             key = (workspace_id, project_id, idempotency_key)
@@ -1385,6 +1400,7 @@ class InMemoryCanonJournal:
             correlation_id=correlation_id,
             idempotency_key=idempotency_key,
             expected_head=expected_head,
+            intent=intent,
             created_at=now,
             updated_at=now,
         )
@@ -1403,6 +1419,105 @@ class InMemoryCanonJournal:
             return None
         return mutation
 
+    def _require(self, mutation_id: str) -> MutationSet:
+        mutation = self.mutations.get(mutation_id)
+        if mutation is None:
+            raise MutationNotFound(f"mutation {mutation_id!r} not found")
+        return mutation
+
+    def apply_transition(
+        self,
+        mutation_id: str,
+        to_status: MutationStatus,
+        *,
+        actor_user_id: str | None,
+        reason: str,
+        correlation_id: str = "",
+    ) -> MutationSet:
+        mutation = self._require(mutation_id)
+        ensure_transition(mutation.status, to_status)
+        if not reason:
+            raise ValueError("a transition reason is required")
+        self.transitions.append(
+            MutationTransition(
+                id=self._id("operation"),
+                mutation_id=mutation_id,
+                from_status=mutation.status,
+                to_status=to_status,
+                actor_user_id=actor_user_id,
+                reason=reason,
+                correlation_id=correlation_id or mutation.correlation_id,
+                idempotency_key=mutation.idempotency_key,
+                created_at=self._now(),
+            )
+        )
+        updated = mutation.model_copy(update={"status": to_status, "updated_at": self._now()})
+        self.mutations[mutation_id] = updated
+        return updated
+
+    async def list_mutations(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[MutationSet]:
+        matches = [
+            mutation
+            for mutation in reversed(list(self.mutations.values()))
+            if mutation.workspace_id == workspace_id
+            and mutation.project_id == project_id
+            and (status is None or mutation.status.value == status)
+        ]
+        return matches[offset : offset + limit]
+
+    async def transition_mutation(
+        self,
+        *,
+        mutation_id: str,
+        to_status: MutationStatus,
+        actor_user_id: str | None,
+        reason: str,
+        correlation_id: str = "",
+    ) -> MutationSet:
+        return self.apply_transition(
+            mutation_id,
+            to_status,
+            actor_user_id=actor_user_id,
+            reason=reason,
+            correlation_id=correlation_id,
+        )
+
+    async def list_transitions(self, *, mutation_id: str) -> list[MutationTransition]:
+        return [item for item in self.transitions if item.mutation_id == mutation_id]
+
+    async def retarget_mutation(
+        self,
+        *,
+        mutation_id: str,
+        expected_head: int,
+        actor_user_id: str | None,
+        reason: str,
+    ) -> MutationSet:
+        mutation = self._require(mutation_id)
+        if not is_editable(mutation.status):
+            raise RevisionConflict(
+                f"mutation in state {mutation.status.value!r} cannot be retargeted"
+            )
+        self.mutations[mutation_id] = mutation.model_copy(
+            update={"expected_head": expected_head, "updated_at": self._now()}
+        )
+        if mutation.status is MutationStatus.APPROVED:
+            self.apply_transition(
+                mutation_id,
+                MutationStatus.NEEDS_REVIEW,
+                actor_user_id=actor_user_id,
+                reason=reason,
+            )
+        return self.mutations[mutation_id]
+
     async def record_operations(
         self, *, mutation_id: str, operations: list[MutationOperation]
     ) -> None:
@@ -1410,11 +1525,123 @@ class InMemoryCanonJournal:
         existing = {operation.ordinal: operation for operation in bucket}
         for operation in operations:
             previous = existing.get(operation.ordinal)
-            if previous is not None and previous != operation:
+            if previous is not None and (
+                previous.operation_type != operation.operation_type
+                or previous.payload != operation.payload
+            ):
                 raise RevisionConflict(
                     "mutation operation ordinal was reused with different content"
                 )
-        bucket.extend(op for op in operations if op.ordinal not in existing)
+        for operation in operations:
+            if operation.ordinal in existing:
+                continue
+            bucket.append(operation)
+            self.operation_revisions.append(
+                OperationRevision(
+                    mutation_id=mutation_id,
+                    ordinal=operation.ordinal,
+                    revision=operation.revision,
+                    operation_type=operation.operation_type,
+                    payload=operation.payload,
+                    reason="proposed",
+                    created_at=self._now(),
+                )
+            )
+
+    async def revise_operation(
+        self,
+        *,
+        mutation_id: str,
+        ordinal: int,
+        operation_type: str,
+        payload: dict[str, Any],
+        actor_user_id: str | None,
+        reason: str,
+    ) -> MutationOperation:
+        mutation = self._require(mutation_id)
+        if not is_editable(mutation.status):
+            raise RevisionConflict(f"mutation in state {mutation.status.value!r} cannot be edited")
+        bucket = self.operations.get(mutation_id, [])
+        for index, current in enumerate(bucket):
+            if current.ordinal == ordinal:
+                revised = MutationOperation(
+                    ordinal=ordinal,
+                    operation_type=operation_type,
+                    payload=payload,
+                    revision=current.revision + 1,
+                )
+                bucket[index] = revised
+                self.operation_revisions.append(
+                    OperationRevision(
+                        mutation_id=mutation_id,
+                        ordinal=ordinal,
+                        revision=revised.revision,
+                        operation_type=operation_type,
+                        payload=payload,
+                        actor_user_id=actor_user_id,
+                        reason=reason,
+                        created_at=self._now(),
+                    )
+                )
+                if mutation.status is MutationStatus.APPROVED:
+                    self.apply_transition(
+                        mutation_id,
+                        MutationStatus.NEEDS_REVIEW,
+                        actor_user_id=actor_user_id,
+                        reason="operation edited after approval",
+                    )
+                return revised
+        raise MutationNotFound(f"operation {ordinal} not found in {mutation_id!r}")
+
+    async def list_operation_revisions(self, *, mutation_id: str) -> list[OperationRevision]:
+        return sorted(
+            (item for item in self.operation_revisions if item.mutation_id == mutation_id),
+            key=lambda item: (item.ordinal, item.revision),
+        )
+
+    async def record_operation_decision(
+        self,
+        *,
+        mutation_id: str,
+        ordinal: int,
+        decision: str,
+        actor_user_id: str | None = None,
+        note: str | None = None,
+    ) -> OperationDecision:
+        mutation = self._require(mutation_id)
+        if not is_editable(mutation.status):
+            raise RevisionConflict(
+                f"mutation in state {mutation.status.value!r} cannot be reviewed"
+            )
+        current = next(
+            (op for op in self.operations.get(mutation_id, []) if op.ordinal == ordinal), None
+        )
+        if current is None:
+            raise MutationNotFound(f"operation {ordinal} not found in {mutation_id!r}")
+        if decision not in {"accepted", "rejected"}:
+            raise ValueError(f"unknown operation decision {decision!r}")
+        record = OperationDecision(
+            id=self._id("operation"),
+            mutation_id=mutation_id,
+            ordinal=ordinal,
+            operation_revision=current.revision,
+            decision=decision,
+            actor_user_id=actor_user_id,
+            note=note,
+            created_at=self._now(),
+        )
+        self.operation_decisions.append(record)
+        if mutation.status is MutationStatus.APPROVED:
+            self.apply_transition(
+                mutation_id,
+                MutationStatus.NEEDS_REVIEW,
+                actor_user_id=actor_user_id,
+                reason="operation decision changed after approval",
+            )
+        return record
+
+    async def list_operation_decisions(self, *, mutation_id: str) -> list[OperationDecision]:
+        return [item for item in self.operation_decisions if item.mutation_id == mutation_id]
 
     async def list_operations(self, *, mutation_id: str) -> list[MutationOperation]:
         return sorted(self.operations.get(mutation_id, []), key=lambda op: op.ordinal)
@@ -1426,7 +1653,17 @@ class InMemoryCanonJournal:
         decision: str,
         actor_user_id: str | None = None,
         note: str | None = None,
+        transition_to: MutationStatus | None = None,
+        correlation_id: str = "",
     ) -> ReviewDecision:
+        if transition_to is not None and self._require(mutation_id).status is not transition_to:
+            self.apply_transition(
+                mutation_id,
+                transition_to,
+                actor_user_id=actor_user_id,
+                reason=note or f"review decision: {decision}",
+                correlation_id=correlation_id,
+            )
         record = ReviewDecision(
             id=self._id("operation"),
             mutation_id=mutation_id,
@@ -2100,6 +2337,8 @@ class InMemoryCanonRepository:
             raise RevisionConflict("commit envelope does not match supplied operations")
         mutation = self._journal.mutations.get(envelope.mutation_id) if self._journal else None
         effective_origin = origin
+        intent = MutationIntent.EDIT.value
+        status = MutationStatus.DRAFT
         if mutation is not None:
             if (
                 mutation.workspace_id != envelope.workspace_id
@@ -2109,12 +2348,13 @@ class InMemoryCanonRepository:
                 or mutation.schema_version_id != envelope.schema_version_id
             ):
                 raise RevisionConflict("commit envelope does not match its mutation set")
-            stored_operations = [
-                parse_operation(item.payload)
-                for item in await self._journal.list_operations(mutation_id=envelope.mutation_id)
-            ]
+            assert self._journal is not None
+            accepted = effective_operations(
+                await self._journal.list_operations(mutation_id=envelope.mutation_id),
+                await self._journal.list_operation_decisions(mutation_id=envelope.mutation_id),
+            )
             resolved_stored, _ = resolve_temporary_ids(
-                stored_operations,
+                [parse_operation(item.payload) for item in accepted],
                 new_id=lambda kind, temporary_id: format_canon_id(
                     kind,
                     hashlib.sha256(f"{envelope.mutation_id}:{temporary_id}".encode()).hexdigest()[
@@ -2125,32 +2365,20 @@ class InMemoryCanonRepository:
             if canonicalize_operations(resolved_stored) != envelope.canonical:
                 raise RevisionConflict("commit operations do not match the reviewed mutation")
             effective_origin = mutation.origin
-            assert self._journal is not None
-            decisions = await self._journal.list_decisions(mutation_id=envelope.mutation_id)
-            latest_decision = decisions[-1].decision if decisions else None
-            if latest_decision == "rejected" or (
-                effective_origin not in {"author", "migration"} and latest_decision != "approved"
-            ):
-                code = "review_rejected" if latest_decision == "rejected" else "review_required"
-                raise CanonValidationError(
-                    DomainValidationReport(
-                        findings=(
-                            ValidationFinding(
-                                ValidationSeverity.INTEGRITY,
-                                code,
-                                "proposal has not passed the required review",
-                            ),
-                        )
-                    )
-                )
-        elif origin not in {"author", "migration"}:
+            intent = mutation.intent
+            status = mutation.status
+        gate = review_gate(
+            origin=effective_origin,
+            intent=intent,
+            status=status,
+            operation_types=[operation.op for operation in operations],
+        )
+        if not gate.ok:
             raise CanonValidationError(
                 DomainValidationReport(
                     findings=(
                         ValidationFinding(
-                            ValidationSeverity.INTEGRITY,
-                            "review_required",
-                            "non-author direct commits are not permitted",
+                            ValidationSeverity.INTEGRITY, gate.code or "", gate.message
                         ),
                     )
                 )
@@ -2249,8 +2477,19 @@ class InMemoryCanonRepository:
         )
         if self._journal is not None:
             if mutation is not None:
-                self._journal.mutations[mutation.id] = mutation.model_copy(
-                    update={"status": MutationStatus.COMMITTED, "updated_at": utcnow()}
+                if status is MutationStatus.DRAFT:
+                    await self._journal.record_decision(
+                        mutation_id=mutation.id,
+                        decision="approved",
+                        actor_user_id=envelope.actor_user_id,
+                        note=f"{effective_origin}-direct",
+                        transition_to=MutationStatus.APPROVED,
+                    )
+                self._journal.apply_transition(
+                    mutation.id,
+                    MutationStatus.COMMITTED,
+                    actor_user_id=envelope.actor_user_id,
+                    reason=f"committed as revision {reserved}",
                 )
             self._journal.outbox.setdefault(
                 f"commit:{envelope.commit_id}",

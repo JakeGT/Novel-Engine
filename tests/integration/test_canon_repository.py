@@ -13,6 +13,7 @@ from backend.domain.operations import (
     canonicalize_operations,
     operations_checksum,
 )
+from backend.domain.validation import CanonValidationError
 
 pytestmark = pytest.mark.integration
 
@@ -104,8 +105,16 @@ async def test_retire_entity_updates_normalized_state(repository) -> None:
         envelope=_envelope(branch.id, "cmt_canon_it_a", 0, [create]), operations=[create]
     )
     retire = RetireEntityOp(id="ent_r")
+    # The review gate runs inside the transaction: a direct author write of a
+    # destructive operation is refused and leaves canon untouched.
+    with pytest.raises(CanonValidationError, match="review_required"):
+        await repo.apply_commit(
+            envelope=_envelope(branch.id, "cmt_canon_it_b", 1, [retire]), operations=[retire]
+        )
     await repo.apply_commit(
-        envelope=_envelope(branch.id, "cmt_canon_it_b", 1, [retire]), operations=[retire]
+        envelope=_envelope(branch.id, "cmt_canon_it_b", 1, [retire]),
+        operations=[retire],
+        origin="migration",
     )
 
     entity = await repo.get_entity(workspace_id=WORKSPACE, project_id=PROJECT, entity_id="ent_r")

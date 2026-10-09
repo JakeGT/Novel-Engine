@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 import pytest
 
 from backend.domain.canon.propositions import EntityRefObject, Proposition
-from backend.domain.journal import CommitEnvelope, MutationOperation
+from backend.domain.journal import CommitEnvelope, MutationOperation, MutationStatus
 from backend.domain.operations import (
     AssertFactOp,
     CreateEntityOp,
@@ -63,6 +63,7 @@ async def _seed(service: CanonArchiveService, journal, canon, objects, media) ->
         decision="approved",
         actor_user_id="usr_reviewer",
         note="reviewed for archive",
+        transition_to=MutationStatus.APPROVED,
     )
     envelope = CommitEnvelope(
         commit_id="cmt_1",

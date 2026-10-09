@@ -37,7 +37,8 @@ async def _apply(repo, branch, commit_id, expected, ops):
         actor_user_id="usr_1",
         created_at=datetime.now(UTC),
     )
-    return await repo.apply_commit(envelope=envelope, operations=ops)
+    # Fixture history is replayed as trusted migration so setup needs no review.
+    return await repo.apply_commit(envelope=envelope, operations=ops, origin="migration")
 
 
 @pytest.mark.asyncio
@@ -184,7 +185,7 @@ async def test_event_at_revision_includes_retirement() -> None:
 
 @pytest.mark.asyncio
 async def test_revert_proposal_and_commit() -> None:
-    from backend.services.mutation_service import MutationService
+    from backend.services.mutation_service import MutationService, ReviewRequiredError
 
     journal = InMemoryCanonJournal()
     repo = InMemoryCanonRepository(journal=journal)
@@ -208,7 +209,16 @@ async def test_revert_proposal_and_commit() -> None:
     assert proposal.conflicts == []
     assert proposal.head_revision == 2
 
-    result = await service.commit_revert(scope, "ws", "pr", from_revision=0, expected_head=2)
+    # A revert is high-impact: unacknowledged, it waits in the review queue.
+    with pytest.raises(ReviewRequiredError) as parked:
+        await service.commit_revert(scope, "ws", "pr", from_revision=0, expected_head=2)
+    assert set(parked.value.reasons) == {"destructive_operation", "conflict_resolution"}
+    assert journal.mutations[parked.value.mutation_id].status.value == "needs_review"
+    await mutation.reject(scope, parked.value.mutation_id, note="superseded by acknowledged run")
+
+    result = await service.commit_revert(
+        scope, "ws", "pr", from_revision=0, expected_head=2, acknowledge_high_impact=True
+    )
     assert result.revision == 3
     revert_entity = await repo.get_entity(workspace_id="ws", project_id="pr", entity_id="ent_1")
     revert_fact = await repo.get_fact(workspace_id="ws", project_id="pr", fact_id="fact_1")

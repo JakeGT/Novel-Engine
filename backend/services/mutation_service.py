@@ -23,12 +23,17 @@ from backend.domain.canon.events import Event
 from backend.domain.canon.ids import format_canon_id
 from backend.domain.canon.registry import CORE_ENTITY_TYPES
 from backend.domain.canon.revisions import OriginKind
+from backend.domain.errors import ValidationError as DomainValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.journal import (
     CommitEnvelope,
     MutationNotFound,
     MutationOperation,
     MutationSet,
+    MutationStatus,
+    MutationTransition,
+    OperationDecision,
+    ReviewDecision,
     RevisionConflict,
 )
 from backend.domain.media import AssetLink
@@ -38,6 +43,16 @@ from backend.domain.operations import (
     operations_checksum,
     parse_operation,
     resolve_temporary_ids,
+)
+from backend.domain.review import (
+    MutationIntent,
+    OperationDecisionKind,
+    ReviewClassification,
+    classify_review,
+    effective_operations,
+    is_editable,
+    latest_operation_decisions,
+    review_gate,
 )
 from backend.domain.schemas import SchemaVersionStatus
 from backend.domain.tenancy import Permission
@@ -83,6 +98,55 @@ class CommitResult:
 class ReconcileResult:
     status: str
     revision: int | None = None
+
+
+@dataclass(frozen=True)
+class MutationReview:
+    """Everything a reviewer needs to decide on one mutation set."""
+
+    mutation: MutationSet
+    operations: list[MutationOperation]
+    operation_decisions: dict[int, OperationDecision]
+    decisions: list[ReviewDecision]
+    transitions: list[MutationTransition]
+    classification: ReviewClassification
+    head_revision: int
+    targets_before: dict[int, dict | None]
+    commit_id: str | None = None
+    committed_revision: int | None = None
+
+
+class ReviewRequiredError(CanonValidationError):
+    """The proposal needs an explicit approval; it is now waiting in the review queue."""
+
+    def __init__(self, mutation_id: str, reasons: tuple[str, ...], message: str) -> None:
+        self.mutation_id = mutation_id
+        self.reasons = reasons
+        super().__init__(
+            DomainValidationReport(
+                findings=(
+                    ValidationFinding(ValidationSeverity.INTEGRITY, "review_required", message),
+                )
+            )
+        )
+
+
+# Origins a client may name on a proposal. Migration/system/derived provenance is
+# reserved for trusted internal writers and can never be claimed over the API.
+PROPOSAL_ORIGINS = frozenset(
+    {OriginKind.AUTHOR.value, OriginKind.MODEL.value, OriginKind.IMPORT.value}
+)
+
+# Operations whose target already exists, so a reviewer can compare before/after.
+_TARGET_RECORD = {
+    "update_entity": "entity",
+    "retire_entity": "entity",
+    "close_fact": "fact",
+    "close_belief": "belief",
+    "amend_event": "event",
+    "retire_event": "event",
+    "retire_asset_link": "asset_link",
+}
 
 
 def _deterministic_id(mutation_id: str, kind: str, temporary_id: str) -> str:
@@ -194,6 +258,7 @@ class MutationService:
         origin: str = OriginKind.AUTHOR.value,
         schema_version_id: str | None = None,
         correlation_id: str = "",
+        intent: str = MutationIntent.EDIT.value,
     ) -> MutationSet:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         if branch_id is None:
@@ -211,6 +276,7 @@ class MutationService:
             schema_version_id=schema_version_id,
             correlation_id=correlation_id or scope.correlation_id,
             idempotency_key=idempotency_key,
+            intent=intent,
         )
         if (
             mutation.workspace_id != workspace_id
@@ -219,6 +285,7 @@ class MutationService:
             or mutation.expected_head != expected_head
             or mutation.origin != origin
             or mutation.schema_version_id != schema_version_id
+            or mutation.intent != intent
         ):
             raise RevisionConflict("idempotency key was reused with different mutation metadata")
         desired_operations = [
@@ -232,18 +299,59 @@ class MutationService:
         existing_operations = await self._journal.list_operations(mutation_id=mutation.id)
         if existing_operations and existing_operations != desired_operations:
             raise RevisionConflict("idempotency key was reused with different operations")
+        if existing_operations:
+            return mutation
         await self._journal.record_operations(
             mutation_id=mutation.id,
             operations=desired_operations,
         )
         return mutation
 
-    async def _load_operations(self, mutation_id: str) -> list[CanonOperation]:
-        stored = await self._journal.list_operations(mutation_id=mutation_id)
-        return [parse_operation(item.payload) for item in stored]
+    async def propose(
+        self,
+        scope: AccessScope,
+        *,
+        workspace_id: str,
+        project_id: str,
+        operations: Sequence[CanonOperation],
+        expected_head: int,
+        origin: str = OriginKind.AUTHOR.value,
+        idempotency_key: str = "",
+    ) -> MutationSet:
+        """Create a reviewable proposal bound to the project's published schema version."""
+        if origin not in PROPOSAL_ORIGINS:
+            raise DomainValidationError(f"Proposals may not use origin {origin!r}.")
+        if not operations:
+            raise DomainValidationError("A proposal needs at least one operation.")
+        schema_version_id: str | None = None
+        if self._schema_store is not None:
+            published = await self._schema_store.get_published(
+                workspace_id=workspace_id, project_id=project_id
+            )
+            if published is None:
+                raise DomainValidationError("No published schema version exists for this project.")
+            schema_version_id = published.id
+        return await self.create_draft(
+            scope,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            operations=operations,
+            expected_head=expected_head,
+            idempotency_key=idempotency_key,
+            origin=origin,
+            schema_version_id=schema_version_id,
+        )
 
-    async def validate(self, scope: AccessScope, mutation_id: str) -> ValidationReport:
-        """Non-transactional preview. The commit revalidates authoritatively in-tx."""
+    async def _effective(self, mutation_id: str) -> list[MutationOperation]:
+        """Current operation revisions that reviewers have not rejected."""
+        return effective_operations(
+            await self._journal.list_operations(mutation_id=mutation_id),
+            await self._journal.list_operation_decisions(mutation_id=mutation_id),
+        )
+
+    async def _require(
+        self, scope: AccessScope, mutation_id: str, permission: Permission
+    ) -> MutationSet:
         mutation = await self._journal.get_mutation(
             workspace_id=scope.workspace_id or "",
             project_id=scope.project_id or "",
@@ -251,10 +359,105 @@ class MutationService:
         )
         if mutation is None:
             raise MutationNotFound(f"mutation {mutation_id!r} not found")
-        await self._authorize(
-            scope, mutation.workspace_id, mutation.project_id, Permission.PROJECT_WRITE
+        await self._authorize(scope, mutation.workspace_id, mutation.project_id, permission)
+        return mutation
+
+    async def list_mutations(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        *,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[MutationSet]:
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        return await self._journal.list_mutations(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            status=status,
+            limit=limit,
+            offset=offset,
         )
-        operations = await self._load_operations(mutation_id)
+
+    async def _target_before(self, mutation: MutationSet, operation: MutationOperation) -> dict:
+        record_type = _TARGET_RECORD[operation.operation_type]
+        target_id = str(operation.payload.get("id", ""))
+        scope = {"workspace_id": mutation.workspace_id, "project_id": mutation.project_id}
+        record: object | None
+        if record_type == "entity":
+            record = await self._repository.get_entity(**scope, entity_id=target_id)
+        elif record_type == "fact":
+            record = await self._repository.get_fact(**scope, fact_id=target_id)
+        elif record_type == "belief":
+            record = await self._repository.get_belief(**scope, belief_id=target_id)
+        elif record_type == "event":
+            record = await self._repository.get_event(**scope, event_id=target_id)
+        else:
+            record = await self._repository.get_link(**scope, link_id=target_id)
+        if record is None:
+            return {}
+        return record.model_dump(mode="json")  # type: ignore[attr-defined,no-any-return]
+
+    async def review(self, scope: AccessScope, mutation_id: str) -> MutationReview:
+        mutation = await self._require(scope, mutation_id, Permission.PROJECT_READ)
+        operations = await self._journal.list_operations(mutation_id=mutation_id)
+        operation_decisions = await self._journal.list_operation_decisions(mutation_id=mutation_id)
+        accepted = effective_operations(operations, operation_decisions)
+        targets_before: dict[int, dict | None] = {}
+        for operation in operations:
+            if operation.operation_type in _TARGET_RECORD:
+                targets_before[operation.ordinal] = await self._target_before(mutation, operation)
+        commit_id: str | None = None
+        committed_revision: int | None = None
+        if mutation.status is MutationStatus.COMMITTED:
+            envelope = await self._repository.get_envelope(_deterministic_commit_id(mutation_id))
+            if envelope is not None:
+                commit_id, committed_revision = envelope.commit_id, envelope.revision
+        return MutationReview(
+            mutation=mutation,
+            operations=operations,
+            operation_decisions=latest_operation_decisions(operation_decisions, operations),
+            decisions=await self._journal.list_decisions(mutation_id=mutation_id),
+            transitions=await self._journal.list_transitions(mutation_id=mutation_id),
+            classification=classify_review(
+                origin=mutation.origin,
+                intent=mutation.intent,
+                operation_types=[item.operation_type for item in accepted],
+            ),
+            head_revision=await self._repository.get_head(
+                workspace_id=mutation.workspace_id,
+                project_id=mutation.project_id,
+                branch_id=mutation.branch_id,
+            ),
+            targets_before=targets_before,
+            commit_id=commit_id,
+            committed_revision=committed_revision,
+        )
+
+    async def validate(self, scope: AccessScope, mutation_id: str) -> ValidationReport:
+        """Non-transactional preview. The commit revalidates authoritatively in-tx."""
+        mutation = await self._require(scope, mutation_id, Permission.PROJECT_WRITE)
+        accepted = await self._effective(mutation_id)
+        ordinals = [item.ordinal for item in accepted]
+        operations = [parse_operation(item.payload) for item in accepted]
+        issues: list[ValidationIssue] = []
+        head = await self._repository.get_head(
+            workspace_id=mutation.workspace_id,
+            project_id=mutation.project_id,
+            branch_id=mutation.branch_id,
+        )
+        if mutation.status is not MutationStatus.COMMITTED and head != mutation.expected_head:
+            issues.append(
+                ValidationIssue(
+                    -1,
+                    "stale_head",
+                    f"proposal targets revision {mutation.expected_head} but canon is at {head}",
+                )
+            )
+        if not operations:
+            issues.append(ValidationIssue(-1, "empty_mutation", "no accepted operations remain"))
         reader = _RepositoryReader(self._repository, mutation.workspace_id, mutation.project_id)
         compiled = None
         if mutation.schema_version_id is not None:
@@ -270,8 +473,9 @@ class MutationService:
             if version is None or version.status is not SchemaVersionStatus.PUBLISHED:
                 return ValidationReport(
                     issues=(
+                        *issues,
                         ValidationIssue(
-                            0,
+                            -1,
                             "invalid_schema_version",
                             "mutation schema version is missing, outside this project, or unpublished",
                         ),
@@ -298,74 +502,187 @@ class MutationService:
                 predicate_specs=compiled.predicate_specs if compiled else {},
             ),
         )
-        return ValidationReport(
-            issues=tuple(
-                ValidationIssue(f.operation_ordinal or 0, f.code, f.message)
-                for f in report.blocking
+        issues.extend(
+            ValidationIssue(
+                ordinals[f.operation_ordinal] if f.operation_ordinal is not None else -1,
+                f.code,
+                f.message,
             )
+            for f in report.blocking
+        )
+        return ValidationReport(issues=tuple(issues))
+
+    async def submit(
+        self, scope: AccessScope, mutation_id: str, reason: str | None = None
+    ) -> MutationSet:
+        """Send a draft to the review queue."""
+        mutation = await self._require(scope, mutation_id, Permission.PROJECT_WRITE)
+        if mutation.status is MutationStatus.NEEDS_REVIEW:
+            return mutation
+        return await self._journal.transition_mutation(
+            mutation_id=mutation_id,
+            to_status=MutationStatus.NEEDS_REVIEW,
+            actor_user_id=scope.actor_user_id,
+            reason=reason or "submitted for review",
+            correlation_id=scope.correlation_id,
+        )
+
+    async def revise_operation(
+        self,
+        scope: AccessScope,
+        mutation_id: str,
+        ordinal: int,
+        operation: CanonOperation,
+        reason: str | None = None,
+    ) -> MutationOperation:
+        """Edit one proposed operation as a new revision; prior review evidence is kept."""
+        await self._require(scope, mutation_id, Permission.PROJECT_WRITE)
+        return await self._journal.revise_operation(
+            mutation_id=mutation_id,
+            ordinal=ordinal,
+            operation_type=operation.op,
+            payload=operation.model_dump(mode="json"),
+            actor_user_id=scope.actor_user_id,
+            reason=reason or "edited during review",
+        )
+
+    async def decide_operation(
+        self,
+        scope: AccessScope,
+        mutation_id: str,
+        ordinal: int,
+        decision: str,
+        note: str | None = None,
+    ) -> OperationDecision:
+        await self._require(scope, mutation_id, Permission.PROJECT_WRITE)
+        kind = OperationDecisionKind(decision)
+        return await self._journal.record_operation_decision(
+            mutation_id=mutation_id,
+            ordinal=ordinal,
+            decision=kind.value,
+            actor_user_id=scope.actor_user_id,
+            note=note,
         )
 
     async def approve(self, scope: AccessScope, mutation_id: str, note: str | None = None) -> None:
-        mutation = await self._journal.get_mutation(
-            workspace_id=scope.workspace_id or "",
-            project_id=scope.project_id or "",
-            mutation_id=mutation_id,
-        )
-        if mutation is None:
-            raise MutationNotFound(f"mutation {mutation_id!r} not found")
-        await self._authorize(
-            scope, mutation.workspace_id, mutation.project_id, Permission.PROJECT_WRITE
-        )
+        mutation = await self._require(scope, mutation_id, Permission.PROJECT_WRITE)
+        if not is_editable(mutation.status):
+            raise RevisionConflict(
+                f"mutation in state {mutation.status.value!r} cannot be approved"
+            )
+        if not await self._effective(mutation_id):
+            raise CanonValidationError(
+                DomainValidationReport(
+                    findings=(
+                        ValidationFinding(
+                            ValidationSeverity.INTEGRITY,
+                            "empty_mutation",
+                            "no accepted operations remain to approve",
+                        ),
+                    )
+                )
+            )
         await self._journal.record_decision(
             mutation_id=mutation_id,
             decision="approved",
             actor_user_id=scope.actor_user_id,
             note=note,
+            transition_to=MutationStatus.APPROVED,
+            correlation_id=scope.correlation_id,
         )
+
+    async def reject(self, scope: AccessScope, mutation_id: str, note: str | None = None) -> None:
+        mutation = await self._require(scope, mutation_id, Permission.PROJECT_WRITE)
+        if not is_editable(mutation.status):
+            raise RevisionConflict(
+                f"mutation in state {mutation.status.value!r} cannot be rejected"
+            )
+        await self._journal.record_decision(
+            mutation_id=mutation_id,
+            decision="rejected",
+            actor_user_id=scope.actor_user_id,
+            note=note,
+            transition_to=MutationStatus.REJECTED,
+            correlation_id=scope.correlation_id,
+        )
+
+    async def retarget(
+        self, scope: AccessScope, mutation_id: str, expected_head: int
+    ) -> MutationSet:
+        """Recover a stale proposal by pointing it at the current head (re-review required)."""
+        await self._require(scope, mutation_id, Permission.PROJECT_WRITE)
+        return await self._journal.retarget_mutation(
+            mutation_id=mutation_id,
+            expected_head=expected_head,
+            actor_user_id=scope.actor_user_id,
+            reason=f"retargeted to revision {expected_head}",
+        )
+
+    async def commit_author_change(
+        self, scope: AccessScope, mutation_id: str, *, acknowledge_high_impact: bool = False
+    ) -> CommitResult:
+        """Commit an author-originated change made through a dedicated product action.
+
+        A high-impact change (destructive, bulk, or a revert) commits only when the
+        author explicitly acknowledged it; that acknowledgement is recorded as the
+        approval decision. Without it the proposal is parked in the review queue.
+        Protected origins can never be self-acknowledged through this path.
+        """
+        mutation = await self._require(scope, mutation_id, Permission.PROJECT_WRITE)
+        if (
+            acknowledge_high_impact
+            and mutation.origin == OriginKind.AUTHOR.value
+            and mutation.status in {MutationStatus.DRAFT, MutationStatus.NEEDS_REVIEW}
+        ):
+            classification = classify_review(
+                origin=mutation.origin,
+                intent=mutation.intent,
+                operation_types=[
+                    item.operation_type for item in await self._effective(mutation_id)
+                ],
+            )
+            if classification.requires_review:
+                names = ", ".join(reason.value for reason in classification.reasons)
+                await self.approve(
+                    scope, mutation_id, note=f"author acknowledged high-impact change ({names})"
+                )
+        return await self.commit(scope, mutation_id)
 
     async def commit(self, scope: AccessScope, mutation_id: str) -> CommitResult:
-        mutation = await self._journal.get_mutation(
-            workspace_id=scope.workspace_id or "",
-            project_id=scope.project_id or "",
-            mutation_id=mutation_id,
-        )
-        if mutation is None:
-            raise MutationNotFound(f"mutation {mutation_id!r} not found")
-        await self._authorize(
-            scope, mutation.workspace_id, mutation.project_id, Permission.PROJECT_WRITE
-        )
+        mutation = await self._require(scope, mutation_id, Permission.PROJECT_WRITE)
+        accepted = await self._effective(mutation_id)
 
-        decisions = await self._journal.list_decisions(mutation_id=mutation_id)
-        latest_decision = decisions[-1].decision if decisions else None
-        if latest_decision == "rejected":
-            raise CanonValidationError(
-                DomainValidationReport(
-                    findings=(
-                        ValidationFinding(
-                            ValidationSeverity.INTEGRITY,
-                            "review_rejected",
-                            "the proposal was rejected during review",
-                        ),
+        if mutation.status is not MutationStatus.COMMITTED:
+            gate = review_gate(
+                origin=mutation.origin,
+                intent=mutation.intent,
+                status=mutation.status,
+                operation_types=[item.operation_type for item in accepted],
+            )
+            if gate.code == "review_required":
+                if mutation.status is MutationStatus.DRAFT:
+                    await self._journal.transition_mutation(
+                        mutation_id=mutation_id,
+                        to_status=MutationStatus.NEEDS_REVIEW,
+                        actor_user_id=scope.actor_user_id,
+                        reason=gate.message,
+                        correlation_id=scope.correlation_id,
+                    )
+                raise ReviewRequiredError(
+                    mutation_id, tuple(reason.value for reason in gate.reasons), gate.message
+                )
+            if not gate.ok:
+                raise CanonValidationError(
+                    DomainValidationReport(
+                        findings=(
+                            ValidationFinding(
+                                ValidationSeverity.INTEGRITY, gate.code or "", gate.message
+                            ),
+                        )
                     )
                 )
-            )
-        if (
-            mutation.origin not in {OriginKind.AUTHOR.value, OriginKind.MIGRATION.value}
-            and latest_decision != "approved"
-        ):
-            raise CanonValidationError(
-                DomainValidationReport(
-                    findings=(
-                        ValidationFinding(
-                            ValidationSeverity.INTEGRITY,
-                            "review_required",
-                            "non-author proposals require an explicit human approval",
-                        ),
-                    )
-                )
-            )
 
-        operations = await self._load_operations(mutation_id)
+        operations = [parse_operation(item.payload) for item in accepted]
         resolved, _mapping = resolve_temporary_ids(
             operations, new_id=lambda kind, tmp: _deterministic_id(mutation_id, kind, tmp)
         )
@@ -386,9 +703,10 @@ class MutationService:
             actor_user_id=scope.actor_user_id,
             created_at=datetime.now(UTC),
         )
-        # ONE PostgreSQL transaction: lock head, run the authoritative validator,
-        # reserve/advance the head, append the immutable envelope, apply operations
-        # to normalized canon, record the revision, and enqueue the outbox.
+        # ONE PostgreSQL transaction: lock head, evaluate the review gate, run the
+        # authoritative validator, reserve/advance the head, append the immutable
+        # envelope, apply operations to normalized canon, record the revision and
+        # state transitions, and enqueue the outbox.
         started = time.perf_counter()
         try:
             revision = await self._repository.apply_commit(
@@ -408,14 +726,6 @@ class MutationService:
                 duration_ms=round((time.perf_counter() - started) * 1000, 3),
             )
             raise
-        if not decisions:
-            # Record the author-direct approval without story content.
-            await self._journal.record_decision(
-                mutation_id=mutation_id,
-                decision="approved",
-                actor_user_id=scope.actor_user_id,
-                note=f"{mutation.origin}-direct",
-            )
         log_event(
             logger,
             "canon.commit",
@@ -443,8 +753,10 @@ class MutationService:
 
 __all__ = [
     "CommitResult",
+    "MutationReview",
     "MutationService",
     "ReconcileResult",
+    "ReviewRequiredError",
     "ValidationIssue",
     "ValidationReport",
 ]

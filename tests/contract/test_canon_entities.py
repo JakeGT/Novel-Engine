@@ -56,7 +56,18 @@ def test_canon_entity_create_read_edit_retire(auth_client, fake_container) -> No
     assert edited.status_code == 200, edited.text
     assert edited.json()["name"] == "Aria II"
 
-    retired = auth_client.post(f"{base}/{entity_id}/retire", json={"expected_revision": 2})
+    # Retirement is destructive: without an explicit acknowledgement it is parked
+    # for review instead of committing.
+    parked = auth_client.post(f"{base}/{entity_id}/retire", json={"expected_revision": 2})
+    assert parked.status_code == 409, parked.text
+    assert parked.json()["code"] == "review_required"
+    assert parked.json()["field_errors"]["reasons"] == "destructive_operation"
+    assert auth_client.get(f"{base}/{entity_id}").json()["lifecycle"] == "active"
+
+    retired = auth_client.post(
+        f"{base}/{entity_id}/retire",
+        json={"expected_revision": 2, "acknowledge_high_impact": True},
+    )
     assert retired.status_code == 200, retired.text
     assert retired.json()["lifecycle"] == "retired"
 

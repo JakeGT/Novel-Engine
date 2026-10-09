@@ -48,6 +48,14 @@ class CloseRequest(BaseModel):
     expected_revision: int
 
 
+class RetireRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int
+    # Retirement is destructive: without this explicit acknowledgement the request
+    # is parked as a proposal awaiting review (409 ``review_required``).
+    acknowledge_high_impact: bool = False
+
+
 class BeliefRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     holder_entity_id: str
@@ -420,7 +428,7 @@ async def amend_event(
 async def retire_event(
     project_id: str,
     event_id: str,
-    body: CloseRequest,
+    body: RetireRequest,
     response: Response,
     scope: AccessScope = Depends(require_project_scope),
     service: CanonAssertionService = Depends(get_canon_assertion_service),
@@ -431,6 +439,7 @@ async def retire_event(
         project_id,
         event_id,
         expected_revision=body.expected_revision,
+        acknowledge_high_impact=body.acknowledge_high_impact,
     )
     response.headers["ETag"] = f'"{result.revision}"'
     return _event_model(event)

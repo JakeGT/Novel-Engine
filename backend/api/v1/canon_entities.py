@@ -58,6 +58,9 @@ class UpdateEntityRequest(BaseModel):
 
 class RetireEntityRequest(BaseModel):
     expected_revision: int = Field(ge=0)
+    # Retirement is destructive: without this explicit acknowledgement the request
+    # is parked as a proposal awaiting review (409 ``review_required``).
+    acknowledge_high_impact: bool = False
 
 
 def _model(entity: CanonEntity) -> CanonEntityModel:
@@ -183,6 +186,7 @@ async def canon_retire_entity(
         project_id,
         entity_id,
         expected_revision=body.expected_revision,
+        acknowledge_high_impact=body.acknowledge_high_impact,
     )
     response.headers["ETag"] = f'"{result.revision}"'
     return _model(entity)

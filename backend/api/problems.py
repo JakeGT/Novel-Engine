@@ -10,12 +10,14 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from backend.api.middleware import get_correlation_id
 from backend.domain.errors import DomainError
 from backend.domain.identity import IdentityError, IdentityProviderUnavailable
-from backend.domain.journal import HeadConflict, RevisionConflict
+from backend.domain.journal import HeadConflict, MutationNotFound, RevisionConflict
 from backend.domain.operations import OperationValidationError
+from backend.domain.review import IllegalTransition
 from backend.domain.schemas import SchemaCompatibilityError, SchemaGovernanceError
 from backend.domain.tenancy import InvitationNotFound, TenancyError
 from backend.domain.validation import CanonValidationError
 from backend.ports import AIError
+from backend.services.mutation_service import ReviewRequiredError
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 
@@ -210,6 +212,49 @@ def register_exception_handlers(app: FastAPI) -> None:
                 title="Mutation validation failed",
                 code="validation_error",
                 detail=str(exc),
+                correlation_id=_correlation_id(request),
+            ),
+        )
+
+    @app.exception_handler(ReviewRequiredError)
+    async def _handle_review_required(request: Request, exc: ReviewRequiredError) -> JSONResponse:
+        return _problem_response(
+            409,
+            problem_body(
+                status=409,
+                title="Review required",
+                code="review_required",
+                detail=str(exc),
+                field_errors={
+                    "mutation_id": exc.mutation_id,
+                    "reasons": ",".join(exc.reasons),
+                },
+                correlation_id=_correlation_id(request),
+            ),
+        )
+
+    @app.exception_handler(IllegalTransition)
+    async def _handle_illegal_transition(request: Request, exc: IllegalTransition) -> JSONResponse:
+        return _problem_response(
+            409,
+            problem_body(
+                status=409,
+                title="Invalid mutation state",
+                code="invalid_state",
+                detail=str(exc),
+                correlation_id=_correlation_id(request),
+            ),
+        )
+
+    @app.exception_handler(MutationNotFound)
+    async def _handle_mutation_not_found(request: Request, exc: MutationNotFound) -> JSONResponse:
+        return _problem_response(
+            404,
+            problem_body(
+                status=404,
+                title="Not found",
+                code="not_found",
+                detail="Mutation or operation not found.",
                 correlation_id=_correlation_id(request),
             ),
         )

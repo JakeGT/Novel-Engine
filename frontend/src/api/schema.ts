@@ -1010,6 +1010,183 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/mutations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Mutations */
+        get: operations["list_mutations_api_v1_projects__project_id__mutations_get"];
+        put?: never;
+        /** Propose Mutation */
+        post: operations["propose_mutation_api_v1_projects__project_id__mutations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Mutation */
+        get: operations["get_mutation_api_v1_projects__project_id__mutations__mutation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve Mutation */
+        post: operations["approve_mutation_api_v1_projects__project_id__mutations__mutation_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/commit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Commit Mutation */
+        post: operations["commit_mutation_api_v1_projects__project_id__mutations__mutation_id__commit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/operations/{ordinal}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Revise Operation */
+        put: operations["revise_operation_api_v1_projects__project_id__mutations__mutation_id__operations__ordinal__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/operations/{ordinal}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decide Operation */
+        post: operations["decide_operation_api_v1_projects__project_id__mutations__mutation_id__operations__ordinal__decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject Mutation */
+        post: operations["reject_mutation_api_v1_projects__project_id__mutations__mutation_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/retarget": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retarget Mutation
+         * @description Recover a stale proposal: point it at a newer head and re-review it.
+         */
+        post: operations["retarget_mutation_api_v1_projects__project_id__mutations__mutation_id__retarget_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit Mutation */
+        post: operations["submit_mutation_api_v1_projects__project_id__mutations__mutation_id__submit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate Mutation
+         * @description Advisory preview only; the commit revalidates inside its transaction.
+         */
+        post: operations["validate_mutation_api_v1_projects__project_id__mutations__mutation_id__validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/projection": {
         parameters: {
             query?: never;
@@ -1623,6 +1800,20 @@ export interface components {
             /** Token */
             token: string;
         };
+        /** AmendEventOp */
+        AmendEventOp: {
+            /** Id */
+            id: string;
+            /** Name */
+            name?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "amend_event";
+            /** World Position */
+            world_position?: string | null;
+        };
         /** AmendEventRequest */
         AmendEventRequest: {
             /** Expected Revision */
@@ -1631,6 +1822,46 @@ export interface components {
             name?: string | null;
             /** World Position */
             world_position?: string | null;
+        };
+        /** AssertBeliefOp */
+        AssertBeliefOp: {
+            /**
+             * Confidence
+             * @default 1
+             */
+            confidence: number;
+            /** Holder Entity Id */
+            holder_entity_id: string;
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "assert_belief";
+            proposition: components["schemas"]["Proposition"];
+            /** Source Ref */
+            source_ref?: string | null;
+        };
+        /** AssertFactOp */
+        AssertFactOp: {
+            /**
+             * Confidence
+             * @default 1
+             */
+            confidence: number;
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "assert_fact";
+            proposition: components["schemas"]["Proposition"];
+            /** Valid From */
+            valid_from?: string | null;
+            /** Valid Until */
+            valid_until?: string | null;
         };
         /** AssertFactRequest */
         AssertFactRequest: {
@@ -1686,6 +1917,16 @@ export interface components {
             proposition: components["schemas"]["PropositionRequest"];
             /** Source Ref */
             source_ref: string;
+        };
+        /** BooleanObject */
+        BooleanObject: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "boolean";
+            /** Value */
+            value: boolean;
         };
         /** CanonEntityListResponse */
         CanonEntityListResponse: {
@@ -1752,6 +1993,26 @@ export interface components {
              */
             use_cache: boolean;
         };
+        /** CloseBeliefOp */
+        CloseBeliefOp: {
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "close_belief";
+        };
+        /** CloseFactOp */
+        CloseFactOp: {
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "close_fact";
+        };
         /** CloseRequest */
         CloseRequest: {
             /** Expected Revision */
@@ -1805,6 +2066,26 @@ export interface components {
             /** @default openrouter */
             provider: components["schemas"]["CredentialProvider"];
         };
+        /** CreateEntityOp */
+        CreateEntityOp: {
+            /** Attributes */
+            attributes?: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "create_entity";
+            /** Slug */
+            slug?: string | null;
+            /** Type */
+            type: string;
+        };
         /** CreateEntityRequest */
         CreateEntityRequest: {
             /** Attributes */
@@ -1819,6 +2100,30 @@ export interface components {
             slug?: string | null;
             /** Type */
             type: string;
+        };
+        /** CreateEventOp */
+        CreateEventOp: {
+            /** Cause Ids */
+            cause_ids?: string[];
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Location Ids */
+            location_ids?: string[];
+            /** Name */
+            name: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "create_event";
+            /** Outcome Ids */
+            outcome_ids?: string[];
+            /** Participants */
+            participants?: components["schemas"]["EventParticipant"][];
+            /** World Position */
+            world_position?: string | null;
         };
         /** CreateInvitationRequest */
         CreateInvitationRequest: {
@@ -1882,6 +2187,16 @@ export interface components {
          * @enum {string}
          */
         CredentialProvider: "openrouter";
+        /** DecimalObject */
+        DecimalObject: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "decimal";
+            /** Value */
+            value: number | string;
+        };
         /**
          * EdgeCreate
          * @example {
@@ -1996,6 +2311,18 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** EntityRefObject */
+        EntityRefObject: {
+            /** Entity Id */
+            entity_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "entity_ref";
+            /** Project Id */
+            project_id: string;
+        };
         /** EntitySearchItem */
         EntitySearchItem: {
             /** Id */
@@ -2028,6 +2355,18 @@ export interface components {
              * @description Registered node type (full replacement).
              */
             type: string;
+        };
+        /** EnumObject */
+        EnumObject: {
+            /** Allowed */
+            allowed: string[];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "enum";
+            /** Value */
+            value: string;
         };
         /** EventModel */
         EventModel: {
@@ -2131,6 +2470,16 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** IntegerObject */
+        IntegerObject: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "integer";
+            /** Value */
+            value: number;
+        };
         /** InvitationCreatedModel */
         InvitationCreatedModel: {
             invitation: components["schemas"]["InvitationModel"];
@@ -2164,6 +2513,32 @@ export interface components {
             /** Workspace Id */
             workspace_id: string;
         };
+        /** LinkAssetOp */
+        LinkAssetOp: {
+            /** Asset Id */
+            asset_id: string;
+            /** Asset Version Id */
+            asset_version_id?: string | null;
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "link_asset";
+            /**
+             * Role
+             * @default EVIDENCE_FOR
+             */
+            role: string;
+            /** Target Id */
+            target_id: string;
+            /**
+             * Target Record Type
+             * @default entity
+             */
+            target_record_type: string;
+        };
         /** MembershipModel */
         MembershipModel: {
             /**
@@ -2182,6 +2557,146 @@ export interface components {
             /** Workspace Id */
             workspace_id: string;
         };
+        /** MutationCommitModel */
+        MutationCommitModel: {
+            /** Checksum */
+            checksum: string;
+            /** Commit Id */
+            commit_id: string;
+            /** Revision */
+            revision: number;
+            /** Status */
+            status: string;
+        };
+        /** MutationDetailModel */
+        MutationDetailModel: {
+            /** Actor User Id */
+            actor_user_id?: string | null;
+            /** Commit Id */
+            commit_id?: string | null;
+            /** Committed Revision */
+            committed_revision?: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decisions */
+            decisions: components["schemas"]["ReviewDecisionModel"][];
+            /** Expected Revision */
+            expected_revision: number;
+            /** Head Revision */
+            head_revision: number;
+            /** Id */
+            id: string;
+            /** Intent */
+            intent: string;
+            /** Is Stale */
+            is_stale: boolean;
+            /** Operations */
+            operations: components["schemas"]["MutationOperationModel"][];
+            /** Origin */
+            origin: string;
+            /** Requires Review */
+            requires_review: boolean;
+            /** Review Reasons */
+            review_reasons: string[];
+            /** Schema Version Id */
+            schema_version_id?: string | null;
+            /** Status */
+            status: string;
+            /** Transitions */
+            transitions: components["schemas"]["MutationTransitionModel"][];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** MutationListResponse */
+        MutationListResponse: {
+            /** Items */
+            items: components["schemas"]["MutationSummaryModel"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /** MutationOperationModel */
+        MutationOperationModel: {
+            decision?: components["schemas"]["OperationDecisionModel"] | null;
+            /** Operation Type */
+            operation_type: string;
+            /** Ordinal */
+            ordinal: number;
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Revision */
+            revision: number;
+            /** Target Before */
+            target_before?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * MutationStatus
+         * @enum {string}
+         */
+        MutationStatus: "draft" | "validating" | "needs_review" | "approved" | "committing" | "committed" | "rejected" | "recovery_required";
+        /** MutationSummaryModel */
+        MutationSummaryModel: {
+            /** Actor User Id */
+            actor_user_id?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Expected Revision */
+            expected_revision: number;
+            /** Id */
+            id: string;
+            /** Intent */
+            intent: string;
+            /** Origin */
+            origin: string;
+            /** Schema Version Id */
+            schema_version_id?: string | null;
+            /** Status */
+            status: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** MutationTransitionModel */
+        MutationTransitionModel: {
+            /** Actor User Id */
+            actor_user_id?: string | null;
+            /** Correlation Id */
+            correlation_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** From Status */
+            from_status: string;
+            /** Reason */
+            reason: string;
+            /** To Status */
+            to_status: string;
+        };
+        /** MutationValidationModel */
+        MutationValidationModel: {
+            /** Issues */
+            issues: components["schemas"]["ValidationIssueModel"][];
+            /** Ok */
+            ok: boolean;
+        };
         /** NodeUpdateItem */
         NodeUpdateItem: {
             /** Id */
@@ -2192,6 +2707,33 @@ export interface components {
             };
             /** Type */
             type: string;
+        };
+        /**
+         * OperationDecisionKind
+         * @enum {string}
+         */
+        OperationDecisionKind: "accepted" | "rejected";
+        /** OperationDecisionModel */
+        OperationDecisionModel: {
+            /** Actor User Id */
+            actor_user_id?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decision */
+            decision: string;
+            /** Note */
+            note?: string | null;
+            /** Operation Revision */
+            operation_revision: number;
+        };
+        /** OperationDecisionRequest */
+        OperationDecisionRequest: {
+            decision: components["schemas"]["OperationDecisionKind"];
+            /** Note */
+            note?: string | null;
         };
         /** ProjectModel */
         ProjectModel: {
@@ -2214,6 +2756,35 @@ export interface components {
             /** Workspace Id */
             workspace_id: string;
         };
+        /** ProposeMutationRequest */
+        ProposeMutationRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+            /**
+             * Idempotency Key
+             * @default
+             */
+            idempotency_key: string;
+            /** Operations */
+            operations: (components["schemas"]["CreateEntityOp"] | components["schemas"]["UpdateEntityOp"] | components["schemas"]["RetireEntityOp"] | components["schemas"]["AssertFactOp"] | components["schemas"]["CloseFactOp"] | components["schemas"]["AssertBeliefOp"] | components["schemas"]["CloseBeliefOp"] | components["schemas"]["CreateEventOp"] | components["schemas"]["AmendEventOp"] | components["schemas"]["RetireEventOp"] | components["schemas"]["LinkAssetOp"] | components["schemas"]["RetireAssetLinkOp"])[];
+            /**
+             * Origin
+             * @default author
+             */
+            origin: string;
+        };
+        /**
+         * Proposition
+         * @description Subject + declared predicate + exactly one typed object.
+         */
+        Proposition: {
+            /** Object */
+            object: components["schemas"]["EntityRefObject"] | components["schemas"]["StringObject"] | components["schemas"]["IntegerObject"] | components["schemas"]["DecimalObject"] | components["schemas"]["BooleanObject"] | components["schemas"]["EnumObject"] | components["schemas"]["QuantityObject"] | components["schemas"]["StructuredObject"];
+            /** Predicate */
+            predicate: string;
+            /** Subject Id */
+            subject_id: string;
+        };
         /** PropositionRequest */
         PropositionRequest: {
             /** Object */
@@ -2224,6 +2795,18 @@ export interface components {
             predicate: string;
             /** Subject Id */
             subject_id: string;
+        };
+        /** QuantityObject */
+        QuantityObject: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "quantity";
+            /** Unit */
+            unit: string;
+            /** Value */
+            value: number | string;
         };
         /** QueryRequest */
         QueryRequest: {
@@ -2253,13 +2836,68 @@ export interface components {
             /** Questions */
             questions: components["schemas"]["QuestionItem"][];
         };
+        /** RetargetRequest */
+        RetargetRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** RetireAssetLinkOp */
+        RetireAssetLinkOp: {
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "retire_asset_link";
+        };
+        /** RetireEntityOp */
+        RetireEntityOp: {
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "retire_entity";
+        };
         /** RetireEntityRequest */
         RetireEntityRequest: {
+            /**
+             * Acknowledge High Impact
+             * @default false
+             */
+            acknowledge_high_impact: boolean;
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** RetireEventOp */
+        RetireEventOp: {
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "retire_event";
+        };
+        /** RetireRequest */
+        RetireRequest: {
+            /**
+             * Acknowledge High Impact
+             * @default false
+             */
+            acknowledge_high_impact: boolean;
             /** Expected Revision */
             expected_revision: number;
         };
         /** RevertCommitRequest */
         RevertCommitRequest: {
+            /**
+             * Acknowledge High Impact
+             * @default false
+             */
+            acknowledge_high_impact: boolean;
             /** Expected Revision */
             expected_revision: number;
             /** From Revision */
@@ -2273,6 +2911,32 @@ export interface components {
             from_revision: number;
             /** To Revision */
             to_revision?: number | null;
+        };
+        /** ReviewDecisionModel */
+        ReviewDecisionModel: {
+            /** Actor User Id */
+            actor_user_id?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decision */
+            decision: string;
+            /** Note */
+            note?: string | null;
+        };
+        /** ReviewNoteRequest */
+        ReviewNoteRequest: {
+            /** Note */
+            note?: string | null;
+        };
+        /** ReviseOperationRequest */
+        ReviseOperationRequest: {
+            /** Operation */
+            operation: components["schemas"]["CreateEntityOp"] | components["schemas"]["UpdateEntityOp"] | components["schemas"]["RetireEntityOp"] | components["schemas"]["AssertFactOp"] | components["schemas"]["CloseFactOp"] | components["schemas"]["AssertBeliefOp"] | components["schemas"]["CloseBeliefOp"] | components["schemas"]["CreateEventOp"] | components["schemas"]["AmendEventOp"] | components["schemas"]["RetireEventOp"] | components["schemas"]["LinkAssetOp"] | components["schemas"]["RetireAssetLinkOp"];
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * Role
@@ -2337,10 +3001,50 @@ export interface components {
         SetRoleRequest: {
             role: components["schemas"]["Role"];
         };
+        /** StringObject */
+        StringObject: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "string";
+            /** Value */
+            value: string;
+        };
+        /** StructuredObject */
+        StructuredObject: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "structured";
+            /** Value */
+            value: {
+                [key: string]: unknown;
+            };
+        };
         /** TransferOwnershipRequest */
         TransferOwnershipRequest: {
             /** To User Id */
             to_user_id: string;
+        };
+        /** UpdateEntityOp */
+        UpdateEntityOp: {
+            /** Attributes */
+            attributes?: {
+                [key: string]: unknown;
+            } | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "update_entity";
+            /** Slug */
+            slug?: string | null;
         };
         /** UpdateEntityRequest */
         UpdateEntityRequest: {
@@ -2367,6 +3071,15 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** ValidationIssueModel */
+        ValidationIssueModel: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Ordinal */
+            ordinal: number;
         };
         /** ValidationReportModel */
         ValidationReportModel: {
@@ -4729,7 +5442,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CloseRequest"];
+                "application/json": components["schemas"]["RetireRequest"];
             };
         };
         responses: {
@@ -4991,6 +5704,390 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_mutations_api_v1_projects__project_id__mutations_get: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["MutationStatus"] | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MutationListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_mutation_api_v1_projects__project_id__mutations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposeMutationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MutationDetailModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_mutation_api_v1_projects__project_id__mutations__mutation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                mutation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MutationDetailModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_mutation_api_v1_projects__project_id__mutations__mutation_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                mutation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewNoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MutationDetailModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    commit_mutation_api_v1_projects__project_id__mutations__mutation_id__commit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                mutation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MutationCommitModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revise_operation_api_v1_projects__project_id__mutations__mutation_id__operations__ordinal__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                mutation_id: string;
+                ordinal: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviseOperationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MutationDetailModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_operation_api_v1_projects__project_id__mutations__mutation_id__operations__ordinal__decision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                mutation_id: string;
+                ordinal: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperationDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MutationDetailModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_mutation_api_v1_projects__project_id__mutations__mutation_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                mutation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewNoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MutationDetailModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retarget_mutation_api_v1_projects__project_id__mutations__mutation_id__retarget_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                mutation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetargetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MutationDetailModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_mutation_api_v1_projects__project_id__mutations__mutation_id__submit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                mutation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewNoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MutationDetailModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    validate_mutation_api_v1_projects__project_id__mutations__mutation_id__validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                mutation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MutationValidationModel"];
                 };
             };
             /** @description Validation Error */

@@ -68,16 +68,66 @@ class MutationSet(BaseModel):
     correlation_id: str = ""
     idempotency_key: str = ""
     expected_head: int = 0
+    intent: str = "edit"
     created_at: datetime
     updated_at: datetime
 
 
 class MutationOperation(BaseModel):
+    """The current revision of one proposed operation in a mutation set."""
+
     model_config = {"extra": "forbid"}
 
     ordinal: int
     operation_type: str
     payload: dict[str, Any] = Field(default_factory=dict)
+    revision: int = 1
+
+
+class OperationRevision(BaseModel):
+    """Immutable history entry for an operation; an edit appends a new revision."""
+
+    model_config = {"extra": "forbid"}
+
+    mutation_id: str
+    ordinal: int
+    revision: int
+    operation_type: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    actor_user_id: str | None = None
+    reason: str = ""
+    created_at: datetime
+
+
+class OperationDecision(BaseModel):
+    """A reviewer's accept/reject decision bound to one operation revision."""
+
+    model_config = {"extra": "forbid"}
+
+    id: str
+    mutation_id: str
+    ordinal: int
+    operation_revision: int
+    decision: str
+    actor_user_id: str | None = None
+    note: str | None = None
+    created_at: datetime
+
+
+class MutationTransition(BaseModel):
+    """Append-only record of one mutation-set state change."""
+
+    model_config = {"extra": "forbid"}
+
+    id: str
+    mutation_id: str
+    from_status: MutationStatus
+    to_status: MutationStatus
+    actor_user_id: str | None = None
+    reason: str
+    correlation_id: str = ""
+    idempotency_key: str = ""
+    created_at: datetime
 
 
 class BranchReservation(BaseModel):

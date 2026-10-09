@@ -13,6 +13,7 @@ from typing import Any
 
 from sqlalchemy import text
 
+from backend.adapters.journal import apply_transition
 from backend.adapters.system import uuid7
 from backend.core.database import session_scope
 from backend.domain.canon.assertions import Belief, Fact, FactStatus
@@ -23,7 +24,14 @@ from backend.domain.canon.propositions import Proposition
 from backend.domain.canon.registry import CORE_ENTITY_TYPES
 from backend.domain.canon.revisions import CanonRevision, OriginKind, Provenance
 from backend.domain.history import CanonTag, CanonTagHistoryEntry
-from backend.domain.journal import CommitEnvelope, HeadConflict, RevisionConflict
+from backend.domain.journal import (
+    CommitEnvelope,
+    HeadConflict,
+    MutationOperation,
+    MutationStatus,
+    OperationDecision,
+    RevisionConflict,
+)
 from backend.domain.media import AssetLifecycle, AssetLink, LinkRole, MediaAsset, MediaAssetVersion
 from backend.domain.operations import (
     AmendEventOp,
@@ -50,6 +58,7 @@ from backend.domain.projection import (
     ProjectionWatermark,
     RecordVersion,
 )
+from backend.domain.review import MutationIntent, effective_operations, review_gate
 from backend.domain.validation import (
     AuthoritativeValidator,
     CanonValidationError,
@@ -320,7 +329,7 @@ class _TxCanonReader:
         row = (
             await self._session.execute(
                 text(
-                    "SELECT * FROM media_asset_links "
+                    "SELECT * FROM asset_links "
                     "WHERE workspace_id = :w AND project_id = :p AND branch_id = :b AND id = :id"
                 ),
                 {
@@ -397,6 +406,8 @@ class PostgresCanonRepository:
                 )
             ).first()
             effective_origin = origin
+            intent = MutationIntent.EDIT.value
+            status = MutationStatus.DRAFT
             if mutation is not None:
                 if (
                     mutation.workspace_id != envelope.workspace_id
@@ -409,15 +420,47 @@ class PostgresCanonRepository:
                 stored_rows = (
                     await session.execute(
                         text(
-                            "SELECT payload FROM mutation_operations "
-                            "WHERE mutation_id = :m ORDER BY ordinal"
+                            "SELECT ordinal, operation_type, payload, revision "
+                            "FROM mutation_operations WHERE mutation_id = :m ORDER BY ordinal"
                         ),
                         {"m": envelope.mutation_id},
                     )
                 ).all()
-                stored_operations = [parse_operation(_load(row.payload)) for row in stored_rows]
+                decision_rows = (
+                    await session.execute(
+                        text(
+                            "SELECT * FROM operation_decisions WHERE mutation_id = :m ORDER BY seq"
+                        ),
+                        {"m": envelope.mutation_id},
+                    )
+                ).all()
+                # Only the reviewed, non-rejected current operation revisions may commit.
+                accepted = effective_operations(
+                    [
+                        MutationOperation(
+                            ordinal=row.ordinal,
+                            operation_type=row.operation_type,
+                            payload=dict(_load(row.payload)),
+                            revision=row.revision,
+                        )
+                        for row in stored_rows
+                    ],
+                    [
+                        OperationDecision(
+                            id=row.id,
+                            mutation_id=row.mutation_id,
+                            ordinal=row.ordinal,
+                            operation_revision=row.operation_revision,
+                            decision=row.decision,
+                            actor_user_id=row.actor_user_id,
+                            note=row.note,
+                            created_at=row.created_at,
+                        )
+                        for row in decision_rows
+                    ],
+                )
                 resolved_stored, _ = resolve_temporary_ids(
-                    stored_operations,
+                    [parse_operation(item.payload) for item in accepted],
                     new_id=lambda kind, temporary_id: format_canon_id(
                         kind,
                         hashlib.sha256(
@@ -428,51 +471,23 @@ class PostgresCanonRepository:
                 if canonicalize_operations(resolved_stored) != envelope.canonical:
                     raise RevisionConflict("commit operations do not match the reviewed mutation")
                 effective_origin = mutation.origin
-                decision = (
-                    await session.execute(
-                        text(
-                            "SELECT decision FROM review_decisions "
-                            "WHERE mutation_id = :m ORDER BY created_at DESC, id DESC LIMIT 1"
-                        ),
-                        {"m": envelope.mutation_id},
-                    )
-                ).first()
-                latest_decision = decision.decision if decision else None
-                if latest_decision == "rejected":
-                    raise CanonValidationError(
-                        DomainValidationReport(
-                            findings=(
-                                ValidationFinding(
-                                    ValidationSeverity.INTEGRITY,
-                                    "review_rejected",
-                                    "the proposal was rejected during review",
-                                ),
-                            )
-                        )
-                    )
-                if (
-                    effective_origin not in {OriginKind.AUTHOR.value, OriginKind.MIGRATION.value}
-                    and latest_decision != "approved"
-                ):
-                    raise CanonValidationError(
-                        DomainValidationReport(
-                            findings=(
-                                ValidationFinding(
-                                    ValidationSeverity.INTEGRITY,
-                                    "review_required",
-                                    "non-author proposals require an explicit human approval",
-                                ),
-                            )
-                        )
-                    )
-            elif origin not in {OriginKind.AUTHOR.value, OriginKind.MIGRATION.value}:
+                intent = mutation.intent
+                status = MutationStatus(mutation.status)
+
+            # The review gate is evaluated here, inside the commit transaction, so no
+            # service, import, or direct repository caller can skip a required approval.
+            gate = review_gate(
+                origin=effective_origin,
+                intent=intent,
+                status=status,
+                operation_types=[operation.op for operation in operations],
+            )
+            if not gate.ok:
                 raise CanonValidationError(
                     DomainValidationReport(
                         findings=(
                             ValidationFinding(
-                                ValidationSeverity.INTEGRITY,
-                                "review_required",
-                                "non-author direct commits are not permitted",
+                                ValidationSeverity.INTEGRITY, gate.code or "", gate.message
                             ),
                         )
                     )
@@ -701,12 +716,47 @@ class PostgresCanonRepository:
                 },
             )
             if mutation is not None:
-                await session.execute(
-                    text(
-                        "UPDATE mutation_sets SET status = 'committed', updated_at = now() "
-                        "WHERE id = :id"
-                    ),
-                    {"id": envelope.mutation_id},
+                if status is MutationStatus.DRAFT:
+                    # A low-impact direct commit is its own approval; record it as
+                    # review evidence in the same transaction as the canon it accepts.
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO review_decisions (
+                                id, mutation_id, workspace_id, project_id, decision,
+                                actor_user_id, note
+                            )
+                            VALUES (:id, :m, :w, :p, 'approved', :actor, :note)
+                            """
+                        ),
+                        {
+                            "id": format_canon_id("operation", str(uuid7())),
+                            "m": envelope.mutation_id,
+                            "w": envelope.workspace_id,
+                            "p": envelope.project_id,
+                            "actor": envelope.actor_user_id,
+                            "note": f"{effective_origin}-direct",
+                        },
+                    )
+                    await apply_transition(
+                        session,
+                        mutation,
+                        MutationStatus.APPROVED,
+                        actor_user_id=envelope.actor_user_id,
+                        reason=f"{effective_origin}-direct",
+                    )
+                    mutation = (
+                        await session.execute(
+                            text("SELECT * FROM mutation_sets WHERE id = :id"),
+                            {"id": envelope.mutation_id},
+                        )
+                    ).one()
+                await apply_transition(
+                    session,
+                    mutation,
+                    MutationStatus.COMMITTED,
+                    actor_user_id=envelope.actor_user_id,
+                    reason=f"committed as revision {reserved}",
                 )
         return reserved
 

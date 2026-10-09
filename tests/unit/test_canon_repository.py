@@ -108,9 +108,15 @@ async def test_retire_fact_and_watermark() -> None:
     create = CreateEntityOp(id="ent_1", type="Character", name="Mara")
     await repo.apply_commit(envelope=_envelope([create]), operations=[create])
     retire = RetireEntityOp(id="ent_1")
+    # A direct author write may not skip the approval a destructive change needs.
+    with pytest.raises(CanonValidationError, match="review_required"):
+        await repo.apply_commit(
+            envelope=_envelope([retire], commit_id="cmt_2", expected=1), operations=[retire]
+        )
     await repo.apply_commit(
         envelope=_envelope([retire], commit_id="cmt_2", expected=1),
         operations=[retire],
+        origin="migration",
     )
 
     entity = await repo.get_entity(workspace_id="ws", project_id="pr", entity_id="ent_1")
@@ -201,6 +207,7 @@ async def test_update_style_operations_require_existing_active_records() -> None
         await repo.apply_commit(
             envelope=_envelope(operations, commit_id="cmt_missing_records"),
             operations=operations,
+            origin="migration",
         )
     assert {finding.code for finding in raised.value.report.blocking} == {
         "unknown_fact",

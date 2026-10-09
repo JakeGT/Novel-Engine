@@ -186,7 +186,8 @@ def clear_tenancy(dsn: str) -> bool:
         with psycopg.connect(dsn, autocommit=True) as connection:
             connection.execute(
                 "TRUNCATE TABLE outbox_messages, canon_revisions, commit_attempts, "
-                "commit_envelopes, review_decisions, mutation_operations, mutation_sets, "
+                "commit_envelopes, review_decisions, mutation_transitions, operation_decisions, "
+                "mutation_operation_revisions, mutation_operations, mutation_sets, "
                 "branch_reservations, branches, schema_versions, audit_events, invitations, "
                 "projects, memberships, workspaces, external_identities, sessions, "
                 "login_attempts, users RESTART IDENTITY CASCADE"

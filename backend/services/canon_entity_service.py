@@ -184,6 +184,7 @@ class CanonEntityService:
         *,
         expected_revision: int,
         idempotency_key: str = "",
+        acknowledge_high_impact: bool = False,
     ) -> tuple[CommitResult, CanonEntity]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         await self._require_active(workspace_id, project_id, entity_id)
@@ -197,6 +198,7 @@ class CanonEntityService:
             expected_revision,
             idempotency_key,
             schema_version_id,
+            acknowledge_high_impact=acknowledge_high_impact,
         )
         entity = await self._reader.get_entity(
             workspace_id=workspace_id, project_id=project_id, entity_id=entity_id
@@ -220,6 +222,8 @@ class CanonEntityService:
         expected_revision: int,
         idempotency_key: str,
         schema_version_id: str | None,
+        *,
+        acknowledge_high_impact: bool = False,
     ) -> CommitResult:
         mutation = await self._mutation.create_draft(
             scope,
@@ -230,7 +234,9 @@ class CanonEntityService:
             idempotency_key=idempotency_key,
             schema_version_id=schema_version_id,
         )
-        return await self._mutation.commit(scope, mutation.id)
+        return await self._mutation.commit_author_change(
+            scope, mutation.id, acknowledge_high_impact=acknowledge_high_impact
+        )
 
 
 __all__ = ["CanonEntityService"]

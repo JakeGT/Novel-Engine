@@ -93,6 +93,10 @@ def get_canon_assertion_service(
     return container.canon_assertion_service
 
 
+def get_mutation_service(container: Container = Depends(get_container)) -> Any:
+    return container.mutation_service
+
+
 def get_journal(container: Container = Depends(get_container)) -> Any:
     return container.journal
 

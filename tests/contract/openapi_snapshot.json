@@ -15,6 +15,48 @@
         "title": "AcceptInvitationRequest",
         "type": "object"
       },
+      "AmendEventOp": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "op": {
+            "const": "amend_event",
+            "default": "amend_event",
+            "title": "Op",
+            "type": "string"
+          },
+          "world_position": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "World Position"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "AmendEventOp",
+        "type": "object"
+      },
       "AmendEventRequest": {
         "additionalProperties": false,
         "properties": {
@@ -49,6 +91,104 @@
           "expected_revision"
         ],
         "title": "AmendEventRequest",
+        "type": "object"
+      },
+      "AssertBeliefOp": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "default": 1.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "holder_entity_id": {
+            "title": "Holder Entity Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "op": {
+            "const": "assert_belief",
+            "default": "assert_belief",
+            "title": "Op",
+            "type": "string"
+          },
+          "proposition": {
+            "$ref": "#/components/schemas/Proposition"
+          },
+          "source_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ref"
+          }
+        },
+        "required": [
+          "id",
+          "holder_entity_id",
+          "proposition"
+        ],
+        "title": "AssertBeliefOp",
+        "type": "object"
+      },
+      "AssertFactOp": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "default": 1.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "op": {
+            "const": "assert_fact",
+            "default": "assert_fact",
+            "title": "Op",
+            "type": "string"
+          },
+          "proposition": {
+            "$ref": "#/components/schemas/Proposition"
+          },
+          "valid_from": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid From"
+          },
+          "valid_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid Until"
+          }
+        },
+        "required": [
+          "id",
+          "proposition"
+        ],
+        "title": "AssertFactOp",
         "type": "object"
       },
       "AssertFactRequest": {
@@ -200,6 +340,26 @@
           "expected_revision"
         ],
         "title": "BeliefRequest",
+        "type": "object"
+      },
+      "BooleanObject": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "boolean",
+            "default": "boolean",
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "BooleanObject",
         "type": "object"
       },
       "CanonEntityListResponse": {
@@ -366,6 +526,46 @@
         "title": "CharacterQuestionsRequest",
         "type": "object"
       },
+      "CloseBeliefOp": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "op": {
+            "const": "close_belief",
+            "default": "close_belief",
+            "title": "Op",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "CloseBeliefOp",
+        "type": "object"
+      },
+      "CloseFactOp": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "op": {
+            "const": "close_fact",
+            "default": "close_fact",
+            "title": "Op",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "CloseFactOp",
+        "type": "object"
+      },
       "CloseRequest": {
         "additionalProperties": false,
         "properties": {
@@ -500,6 +700,52 @@
         "title": "CreateCredentialRequest",
         "type": "object"
       },
+      "CreateEntityOp": {
+        "additionalProperties": false,
+        "properties": {
+          "attributes": {
+            "additionalProperties": true,
+            "title": "Attributes",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "op": {
+            "const": "create_entity",
+            "default": "create_entity",
+            "title": "Op",
+            "type": "string"
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "name"
+        ],
+        "title": "CreateEntityOp",
+        "type": "object"
+      },
       "CreateEntityRequest": {
         "properties": {
           "attributes": {
@@ -538,6 +784,75 @@
           "expected_revision"
         ],
         "title": "CreateEntityRequest",
+        "type": "object"
+      },
+      "CreateEventOp": {
+        "additionalProperties": false,
+        "properties": {
+          "cause_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Cause Ids",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "location_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Location Ids",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "op": {
+            "const": "create_event",
+            "default": "create_event",
+            "title": "Op",
+            "type": "string"
+          },
+          "outcome_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Outcome Ids",
+            "type": "array"
+          },
+          "participants": {
+            "items": {
+              "$ref": "#/components/schemas/EventParticipant"
+            },
+            "title": "Participants",
+            "type": "array"
+          },
+          "world_position": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "World Position"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name"
+        ],
+        "title": "CreateEventOp",
         "type": "object"
       },
       "CreateInvitationRequest": {
@@ -705,6 +1020,34 @@
         ],
         "title": "CredentialProvider",
         "type": "string"
+      },
+      "DecimalObject": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "decimal",
+            "default": "decimal",
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "DecimalObject",
+        "type": "object"
       },
       "EdgeCreate": {
         "example": {
@@ -930,6 +1273,31 @@
         "title": "EntityList",
         "type": "object"
       },
+      "EntityRefObject": {
+        "additionalProperties": false,
+        "properties": {
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "entity_ref",
+            "default": "entity_ref",
+            "title": "Kind",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_id",
+          "project_id"
+        ],
+        "title": "EntityRefObject",
+        "type": "object"
+      },
       "EntitySearchItem": {
         "properties": {
           "id": {
@@ -1003,6 +1371,34 @@
           "type"
         ],
         "title": "EntityUpdate",
+        "type": "object"
+      },
+      "EnumObject": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed",
+            "type": "array"
+          },
+          "kind": {
+            "const": "enum",
+            "default": "enum",
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "allowed"
+        ],
+        "title": "EnumObject",
         "type": "object"
       },
       "EventModel": {
@@ -1299,6 +1695,26 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "IntegerObject": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "integer",
+            "default": "integer",
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "IntegerObject",
+        "type": "object"
+      },
       "InvitationCreatedModel": {
         "properties": {
           "invitation": {
@@ -1386,6 +1802,57 @@
         "title": "InvitationModel",
         "type": "object"
       },
+      "LinkAssetOp": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_id": {
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "asset_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Version Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "op": {
+            "const": "link_asset",
+            "default": "link_asset",
+            "title": "Op",
+            "type": "string"
+          },
+          "role": {
+            "default": "EVIDENCE_FOR",
+            "title": "Role",
+            "type": "string"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_record_type": {
+            "default": "entity",
+            "title": "Target Record Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "asset_id",
+          "target_id"
+        ],
+        "title": "LinkAssetOp",
+        "type": "object"
+      },
       "MembershipModel": {
         "properties": {
           "created_at": {
@@ -1420,6 +1887,394 @@
         "title": "MembershipModel",
         "type": "object"
       },
+      "MutationCommitModel": {
+        "properties": {
+          "checksum": {
+            "title": "Checksum",
+            "type": "string"
+          },
+          "commit_id": {
+            "title": "Commit Id",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "commit_id",
+          "revision",
+          "checksum",
+          "status"
+        ],
+        "title": "MutationCommitModel",
+        "type": "object"
+      },
+      "MutationDetailModel": {
+        "properties": {
+          "actor_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor User Id"
+          },
+          "commit_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit Id"
+          },
+          "committed_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Committed Revision"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewDecisionModel"
+            },
+            "title": "Decisions",
+            "type": "array"
+          },
+          "expected_revision": {
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "head_revision": {
+            "title": "Head Revision",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "intent": {
+            "title": "Intent",
+            "type": "string"
+          },
+          "is_stale": {
+            "title": "Is Stale",
+            "type": "boolean"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/MutationOperationModel"
+            },
+            "title": "Operations",
+            "type": "array"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "requires_review": {
+            "title": "Requires Review",
+            "type": "boolean"
+          },
+          "review_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Review Reasons",
+            "type": "array"
+          },
+          "schema_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Version Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "transitions": {
+            "items": {
+              "$ref": "#/components/schemas/MutationTransitionModel"
+            },
+            "title": "Transitions",
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "origin",
+          "intent",
+          "expected_revision",
+          "created_at",
+          "updated_at",
+          "head_revision",
+          "is_stale",
+          "requires_review",
+          "review_reasons",
+          "operations",
+          "decisions",
+          "transitions"
+        ],
+        "title": "MutationDetailModel",
+        "type": "object"
+      },
+      "MutationListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MutationSummaryModel"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "limit",
+          "offset"
+        ],
+        "title": "MutationListResponse",
+        "type": "object"
+      },
+      "MutationOperationModel": {
+        "properties": {
+          "decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationDecisionModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "operation_type": {
+            "title": "Operation Type",
+            "type": "string"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "target_before": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Before"
+          }
+        },
+        "required": [
+          "ordinal",
+          "revision",
+          "operation_type",
+          "payload"
+        ],
+        "title": "MutationOperationModel",
+        "type": "object"
+      },
+      "MutationStatus": {
+        "enum": [
+          "draft",
+          "validating",
+          "needs_review",
+          "approved",
+          "committing",
+          "committed",
+          "rejected",
+          "recovery_required"
+        ],
+        "title": "MutationStatus",
+        "type": "string"
+      },
+      "MutationSummaryModel": {
+        "properties": {
+          "actor_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor User Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expected_revision": {
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "intent": {
+            "title": "Intent",
+            "type": "string"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "schema_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Version Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "origin",
+          "intent",
+          "expected_revision",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "MutationSummaryModel",
+        "type": "object"
+      },
+      "MutationTransitionModel": {
+        "properties": {
+          "actor_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor User Id"
+          },
+          "correlation_id": {
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "from_status": {
+            "title": "From Status",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "to_status": {
+            "title": "To Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_status",
+          "to_status",
+          "reason",
+          "correlation_id",
+          "created_at"
+        ],
+        "title": "MutationTransitionModel",
+        "type": "object"
+      },
+      "MutationValidationModel": {
+        "properties": {
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationIssueModel"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "issues"
+        ],
+        "title": "MutationValidationModel",
+        "type": "object"
+      },
       "NodeUpdateItem": {
         "properties": {
           "id": {
@@ -1442,6 +2297,85 @@
           "properties"
         ],
         "title": "NodeUpdateItem",
+        "type": "object"
+      },
+      "OperationDecisionKind": {
+        "enum": [
+          "accepted",
+          "rejected"
+        ],
+        "title": "OperationDecisionKind",
+        "type": "string"
+      },
+      "OperationDecisionModel": {
+        "properties": {
+          "actor_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor User Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "operation_revision": {
+            "title": "Operation Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "decision",
+          "operation_revision",
+          "created_at"
+        ],
+        "title": "OperationDecisionModel",
+        "type": "object"
+      },
+      "OperationDecisionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/OperationDecisionKind"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "title": "OperationDecisionRequest",
         "type": "object"
       },
       "ProjectModel": {
@@ -1484,6 +2418,159 @@
         "title": "ProjectModel",
         "type": "object"
       },
+      "ProposeMutationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "idempotency_key": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "amend_event": "#/components/schemas/AmendEventOp",
+                  "assert_belief": "#/components/schemas/AssertBeliefOp",
+                  "assert_fact": "#/components/schemas/AssertFactOp",
+                  "close_belief": "#/components/schemas/CloseBeliefOp",
+                  "close_fact": "#/components/schemas/CloseFactOp",
+                  "create_entity": "#/components/schemas/CreateEntityOp",
+                  "create_event": "#/components/schemas/CreateEventOp",
+                  "link_asset": "#/components/schemas/LinkAssetOp",
+                  "retire_asset_link": "#/components/schemas/RetireAssetLinkOp",
+                  "retire_entity": "#/components/schemas/RetireEntityOp",
+                  "retire_event": "#/components/schemas/RetireEventOp",
+                  "update_entity": "#/components/schemas/UpdateEntityOp"
+                },
+                "propertyName": "op"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/CreateEntityOp"
+                },
+                {
+                  "$ref": "#/components/schemas/UpdateEntityOp"
+                },
+                {
+                  "$ref": "#/components/schemas/RetireEntityOp"
+                },
+                {
+                  "$ref": "#/components/schemas/AssertFactOp"
+                },
+                {
+                  "$ref": "#/components/schemas/CloseFactOp"
+                },
+                {
+                  "$ref": "#/components/schemas/AssertBeliefOp"
+                },
+                {
+                  "$ref": "#/components/schemas/CloseBeliefOp"
+                },
+                {
+                  "$ref": "#/components/schemas/CreateEventOp"
+                },
+                {
+                  "$ref": "#/components/schemas/AmendEventOp"
+                },
+                {
+                  "$ref": "#/components/schemas/RetireEventOp"
+                },
+                {
+                  "$ref": "#/components/schemas/LinkAssetOp"
+                },
+                {
+                  "$ref": "#/components/schemas/RetireAssetLinkOp"
+                }
+              ]
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Operations",
+            "type": "array"
+          },
+          "origin": {
+            "default": "author",
+            "title": "Origin",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operations",
+          "expected_revision"
+        ],
+        "title": "ProposeMutationRequest",
+        "type": "object"
+      },
+      "Proposition": {
+        "additionalProperties": false,
+        "description": "Subject + declared predicate + exactly one typed object.",
+        "properties": {
+          "object": {
+            "discriminator": {
+              "mapping": {
+                "boolean": "#/components/schemas/BooleanObject",
+                "decimal": "#/components/schemas/DecimalObject",
+                "entity_ref": "#/components/schemas/EntityRefObject",
+                "enum": "#/components/schemas/EnumObject",
+                "integer": "#/components/schemas/IntegerObject",
+                "quantity": "#/components/schemas/QuantityObject",
+                "string": "#/components/schemas/StringObject",
+                "structured": "#/components/schemas/StructuredObject"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/EntityRefObject"
+              },
+              {
+                "$ref": "#/components/schemas/StringObject"
+              },
+              {
+                "$ref": "#/components/schemas/IntegerObject"
+              },
+              {
+                "$ref": "#/components/schemas/DecimalObject"
+              },
+              {
+                "$ref": "#/components/schemas/BooleanObject"
+              },
+              {
+                "$ref": "#/components/schemas/EnumObject"
+              },
+              {
+                "$ref": "#/components/schemas/QuantityObject"
+              },
+              {
+                "$ref": "#/components/schemas/StructuredObject"
+              }
+            ],
+            "title": "Object"
+          },
+          "predicate": {
+            "title": "Predicate",
+            "type": "string"
+          },
+          "subject_id": {
+            "title": "Subject Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subject_id",
+          "predicate",
+          "object"
+        ],
+        "title": "Proposition",
+        "type": "object"
+      },
       "PropositionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1507,6 +2594,39 @@
           "object"
         ],
         "title": "PropositionRequest",
+        "type": "object"
+      },
+      "QuantityObject": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "quantity",
+            "default": "quantity",
+            "title": "Kind",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value",
+          "unit"
+        ],
+        "title": "QuantityObject",
         "type": "object"
       },
       "QueryRequest": {
@@ -1576,8 +2696,68 @@
         "title": "QuestionSheet",
         "type": "object"
       },
+      "RetargetRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "title": "RetargetRequest",
+        "type": "object"
+      },
+      "RetireAssetLinkOp": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "op": {
+            "const": "retire_asset_link",
+            "default": "retire_asset_link",
+            "title": "Op",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "RetireAssetLinkOp",
+        "type": "object"
+      },
+      "RetireEntityOp": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "op": {
+            "const": "retire_entity",
+            "default": "retire_entity",
+            "title": "Op",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "RetireEntityOp",
+        "type": "object"
+      },
       "RetireEntityRequest": {
         "properties": {
+          "acknowledge_high_impact": {
+            "default": false,
+            "title": "Acknowledge High Impact",
+            "type": "boolean"
+          },
           "expected_revision": {
             "minimum": 0.0,
             "title": "Expected Revision",
@@ -1590,8 +2770,52 @@
         "title": "RetireEntityRequest",
         "type": "object"
       },
+      "RetireEventOp": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "op": {
+            "const": "retire_event",
+            "default": "retire_event",
+            "title": "Op",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "RetireEventOp",
+        "type": "object"
+      },
+      "RetireRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "acknowledge_high_impact": {
+            "default": false,
+            "title": "Acknowledge High Impact",
+            "type": "boolean"
+          },
+          "expected_revision": {
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "title": "RetireRequest",
+        "type": "object"
+      },
       "RevertCommitRequest": {
         "properties": {
+          "acknowledge_high_impact": {
+            "default": false,
+            "title": "Acknowledge High Impact",
+            "type": "boolean"
+          },
           "expected_revision": {
             "title": "Expected Revision",
             "type": "integer"
@@ -1641,6 +2865,146 @@
           "from_revision"
         ],
         "title": "RevertPreviewRequest",
+        "type": "object"
+      },
+      "ReviewDecisionModel": {
+        "properties": {
+          "actor_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor User Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "decision",
+          "created_at"
+        ],
+        "title": "ReviewDecisionModel",
+        "type": "object"
+      },
+      "ReviewNoteRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "ReviewNoteRequest",
+        "type": "object"
+      },
+      "ReviseOperationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "operation": {
+            "discriminator": {
+              "mapping": {
+                "amend_event": "#/components/schemas/AmendEventOp",
+                "assert_belief": "#/components/schemas/AssertBeliefOp",
+                "assert_fact": "#/components/schemas/AssertFactOp",
+                "close_belief": "#/components/schemas/CloseBeliefOp",
+                "close_fact": "#/components/schemas/CloseFactOp",
+                "create_entity": "#/components/schemas/CreateEntityOp",
+                "create_event": "#/components/schemas/CreateEventOp",
+                "link_asset": "#/components/schemas/LinkAssetOp",
+                "retire_asset_link": "#/components/schemas/RetireAssetLinkOp",
+                "retire_entity": "#/components/schemas/RetireEntityOp",
+                "retire_event": "#/components/schemas/RetireEventOp",
+                "update_entity": "#/components/schemas/UpdateEntityOp"
+              },
+              "propertyName": "op"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CreateEntityOp"
+              },
+              {
+                "$ref": "#/components/schemas/UpdateEntityOp"
+              },
+              {
+                "$ref": "#/components/schemas/RetireEntityOp"
+              },
+              {
+                "$ref": "#/components/schemas/AssertFactOp"
+              },
+              {
+                "$ref": "#/components/schemas/CloseFactOp"
+              },
+              {
+                "$ref": "#/components/schemas/AssertBeliefOp"
+              },
+              {
+                "$ref": "#/components/schemas/CloseBeliefOp"
+              },
+              {
+                "$ref": "#/components/schemas/CreateEventOp"
+              },
+              {
+                "$ref": "#/components/schemas/AmendEventOp"
+              },
+              {
+                "$ref": "#/components/schemas/RetireEventOp"
+              },
+              {
+                "$ref": "#/components/schemas/LinkAssetOp"
+              },
+              {
+                "$ref": "#/components/schemas/RetireAssetLinkOp"
+              }
+            ],
+            "title": "Operation"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "title": "ReviseOperationRequest",
         "type": "object"
       },
       "Role": {
@@ -1807,6 +3171,47 @@
         "title": "SetRoleRequest",
         "type": "object"
       },
+      "StringObject": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "string",
+            "default": "string",
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "StringObject",
+        "type": "object"
+      },
+      "StructuredObject": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "structured",
+            "default": "structured",
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "additionalProperties": true,
+            "title": "Value",
+            "type": "object"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "StructuredObject",
+        "type": "object"
+      },
       "TransferOwnershipRequest": {
         "properties": {
           "to_user_id": {
@@ -1819,6 +3224,60 @@
           "to_user_id"
         ],
         "title": "TransferOwnershipRequest",
+        "type": "object"
+      },
+      "UpdateEntityOp": {
+        "additionalProperties": false,
+        "properties": {
+          "attributes": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attributes"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "op": {
+            "const": "update_entity",
+            "default": "update_entity",
+            "title": "Op",
+            "type": "string"
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "UpdateEntityOp",
         "type": "object"
       },
       "UpdateEntityRequest": {
@@ -1907,6 +3366,29 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "ValidationIssueModel": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ordinal",
+          "code",
+          "message"
+        ],
+        "title": "ValidationIssueModel",
         "type": "object"
       },
       "ValidationReportModel": {
@@ -5571,7 +7053,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CloseRequest"
+                "$ref": "#/components/schemas/RetireRequest"
               }
             }
           },
@@ -6051,6 +7533,676 @@
         "summary": "Retire Link",
         "tags": [
           "media"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mutations": {
+      "get": {
+        "operationId": "list_mutations_api_v1_projects__project_id__mutations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/MutationStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MutationListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Mutations",
+        "tags": [
+          "canon-mutations"
+        ]
+      },
+      "post": {
+        "operationId": "propose_mutation_api_v1_projects__project_id__mutations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposeMutationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MutationDetailModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propose Mutation",
+        "tags": [
+          "canon-mutations"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}": {
+      "get": {
+        "operationId": "get_mutation_api_v1_projects__project_id__mutations__mutation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mutation_id",
+            "required": true,
+            "schema": {
+              "title": "Mutation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MutationDetailModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Mutation",
+        "tags": [
+          "canon-mutations"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/approve": {
+      "post": {
+        "operationId": "approve_mutation_api_v1_projects__project_id__mutations__mutation_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mutation_id",
+            "required": true,
+            "schema": {
+              "title": "Mutation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewNoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MutationDetailModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Mutation",
+        "tags": [
+          "canon-mutations"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/commit": {
+      "post": {
+        "operationId": "commit_mutation_api_v1_projects__project_id__mutations__mutation_id__commit_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mutation_id",
+            "required": true,
+            "schema": {
+              "title": "Mutation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MutationCommitModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Commit Mutation",
+        "tags": [
+          "canon-mutations"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/operations/{ordinal}": {
+      "put": {
+        "operationId": "revise_operation_api_v1_projects__project_id__mutations__mutation_id__operations__ordinal__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mutation_id",
+            "required": true,
+            "schema": {
+              "title": "Mutation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "ordinal",
+            "required": true,
+            "schema": {
+              "title": "Ordinal",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviseOperationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MutationDetailModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revise Operation",
+        "tags": [
+          "canon-mutations"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/operations/{ordinal}/decision": {
+      "post": {
+        "operationId": "decide_operation_api_v1_projects__project_id__mutations__mutation_id__operations__ordinal__decision_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mutation_id",
+            "required": true,
+            "schema": {
+              "title": "Mutation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "ordinal",
+            "required": true,
+            "schema": {
+              "title": "Ordinal",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MutationDetailModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide Operation",
+        "tags": [
+          "canon-mutations"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/reject": {
+      "post": {
+        "operationId": "reject_mutation_api_v1_projects__project_id__mutations__mutation_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mutation_id",
+            "required": true,
+            "schema": {
+              "title": "Mutation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewNoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MutationDetailModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Mutation",
+        "tags": [
+          "canon-mutations"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/retarget": {
+      "post": {
+        "description": "Recover a stale proposal: point it at a newer head and re-review it.",
+        "operationId": "retarget_mutation_api_v1_projects__project_id__mutations__mutation_id__retarget_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mutation_id",
+            "required": true,
+            "schema": {
+              "title": "Mutation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetargetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MutationDetailModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retarget Mutation",
+        "tags": [
+          "canon-mutations"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/submit": {
+      "post": {
+        "operationId": "submit_mutation_api_v1_projects__project_id__mutations__mutation_id__submit_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mutation_id",
+            "required": true,
+            "schema": {
+              "title": "Mutation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewNoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MutationDetailModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Mutation",
+        "tags": [
+          "canon-mutations"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/validate": {
+      "post": {
+        "description": "Advisory preview only; the commit revalidates inside its transaction.",
+        "operationId": "validate_mutation_api_v1_projects__project_id__mutations__mutation_id__validate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mutation_id",
+            "required": true,
+            "schema": {
+              "title": "Mutation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MutationValidationModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate Mutation",
+        "tags": [
+          "canon-mutations"
         ]
       }
     },

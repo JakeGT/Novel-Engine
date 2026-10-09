@@ -27,6 +27,7 @@ from backend.domain.identity import AccessScope
 from backend.domain.journal import Branch
 from backend.domain.operations import parse_operation
 from backend.domain.projection import RecordVersion
+from backend.domain.review import MutationIntent
 from backend.domain.tenancy import Permission
 from backend.ports import CanonJournalPort, CanonRepositoryPort, TenancyStorePort
 from backend.services.mutation_service import CommitResult, MutationService
@@ -409,8 +410,13 @@ class CanonHistoryService:
         from_revision: int,
         expected_head: int,
         to_revision: int | None = None,
+        acknowledge_high_impact: bool = False,
     ) -> CommitResult:
-        """Apply a proposed revert as a new reviewed commit through the mutation path."""
+        """Apply a proposed revert as a new reviewed commit through the mutation path.
+
+        A revert is always high-impact: it commits only with the author's explicit
+        acknowledgement, otherwise it is parked in the review queue.
+        """
         if self._mutation is None:
             raise HistoryError("revert commit is not configured")
         proposal = await self.propose_revert(
@@ -430,8 +436,11 @@ class CanonHistoryService:
             project_id=project_id,
             operations=operations,
             expected_head=expected_head,
+            intent=MutationIntent.REVERT.value,
         )
-        return await self._mutation.commit(scope, mutation.id)
+        return await self._mutation.commit_author_change(
+            scope, mutation.id, acknowledge_high_impact=acknowledge_high_impact
+        )
 
     async def list_tags(
         self, scope: AccessScope, workspace_id: str, project_id: str

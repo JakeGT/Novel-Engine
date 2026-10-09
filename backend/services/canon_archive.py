@@ -29,7 +29,7 @@ from backend.core.logging import log_event
 from backend.domain.canon.propositions import EntityRefObject
 from backend.domain.canon.revisions import OriginKind
 from backend.domain.history import CanonTag
-from backend.domain.journal import CommitEnvelope, MutationOperation
+from backend.domain.journal import CommitEnvelope, MutationOperation, MutationStatus
 from backend.domain.media import MediaAsset, MediaAssetVersion
 from backend.domain.operations import (
     AssertBeliefOp,
@@ -39,6 +39,7 @@ from backend.domain.operations import (
     operations_checksum,
     parse_operation,
 )
+from backend.domain.review import MutationIntent, classify_review
 from backend.ports import (
     CanonJournalPort,
     CanonRepositoryPort,
@@ -171,6 +172,7 @@ class CanonArchiveService:
                     "mutation": (
                         {
                             "correlation_id": mutation.correlation_id,
+                            "intent": mutation.intent,
                             "decisions": [
                                 {
                                     "decision": decision.decision,
@@ -412,13 +414,17 @@ class CanonArchiveService:
             raw_mutation = raw.get("mutation") or {}
             decisions = raw_mutation.get("decisions") or []
             source_origin = raw.get("origin") or OriginKind.MIGRATION.value
+            intent = raw_mutation.get("intent") or MutationIntent.EDIT.value
             latest_decision = decisions[-1].get("decision") if decisions else None
-            if source_origin not in {OriginKind.AUTHOR.value, OriginKind.MIGRATION.value} and (
-                latest_decision != "approved"
-            ):
-                # Older archives may contain accepted protected-origin commits
-                # from before the approval gate. Restore them as migrations
-                # rather than fabricating a human decision.
+            needs_review = classify_review(
+                origin=source_origin,
+                intent=intent,
+                operation_types=[operation.op for operation in item["operations"]],
+            ).requires_review
+            if needs_review and latest_decision != "approved":
+                # Older archives may contain accepted commits from before the
+                # review gate covered them. Restore them as migrations rather
+                # than fabricating a human decision.
                 source_origin = OriginKind.MIGRATION.value
             mutation = await self._journal.create_mutation(
                 workspace_id=target_workspace_id,
@@ -430,6 +436,7 @@ class CanonArchiveService:
                 schema_version_id=schema_map.get(raw.get("schema_version_id") or ""),
                 correlation_id=raw_mutation.get("correlation_id") or "",
                 idempotency_key=f"archive:{new_commit_id}",
+                intent=intent,
             )
             await self._journal.record_operations(
                 mutation_id=mutation.id,
@@ -444,12 +451,20 @@ class CanonArchiveService:
             )
             existing_decisions = await self._journal.list_decisions(mutation_id=mutation.id)
             if not existing_decisions:
-                for decision in decisions:
+                for index, decision in enumerate(decisions):
+                    # The accepted source decision restores the approved state the
+                    # commit transaction requires; it is recorded, never invented.
+                    restores_approval = (
+                        index == len(decisions) - 1
+                        and decision["decision"] == "approved"
+                        and mutation.status is MutationStatus.DRAFT
+                    )
                     await self._journal.record_decision(
                         mutation_id=mutation.id,
                         decision=decision["decision"],
                         actor_user_id=decision.get("actor_user_id"),
-                        note=decision.get("note"),
+                        note=decision.get("note") or "restored review decision",
+                        transition_to=MutationStatus.APPROVED if restores_approval else None,
                     )
             await self._canon.apply_commit(
                 envelope=CommitEnvelope(
@@ -618,6 +633,10 @@ class CanonArchiveService:
             mutation = raw.get("mutation")
             if mutation is not None and not isinstance(mutation, dict):
                 raise ArchiveError("commit mutation metadata must be an object or null")
+            if (mutation or {}).get("intent", MutationIntent.EDIT.value) not in {
+                item.value for item in MutationIntent
+            }:
+                raise ArchiveError("unknown mutation intent in commit metadata")
             decisions = (mutation or {}).get("decisions", [])
             if not isinstance(decisions, list):
                 raise ArchiveError("commit review decisions must be a list")

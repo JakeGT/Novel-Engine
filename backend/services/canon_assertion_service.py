@@ -73,6 +73,8 @@ class CanonAssertionService:
         expected_revision: int,
         idempotency_key: str,
         schema_version_id: str | None = None,
+        *,
+        acknowledge_high_impact: bool = False,
     ) -> CommitResult:
         if schema_version_id is None and self._schema_store is not None:
             published = await self._schema_store.get_published(
@@ -90,7 +92,9 @@ class CanonAssertionService:
             idempotency_key=idempotency_key,
             schema_version_id=schema_version_id,
         )
-        return await self._mutation.commit(scope, mutation.id)
+        return await self._mutation.commit_author_change(
+            scope, mutation.id, acknowledge_high_impact=acknowledge_high_impact
+        )
 
     async def _require_entity(
         self, workspace_id: str, project_id: str, entity_id: str
@@ -442,6 +446,7 @@ class CanonAssertionService:
         *,
         expected_revision: int,
         idempotency_key: str = "",
+        acknowledge_high_impact: bool = False,
     ) -> tuple[CommitResult, Event]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         existing = await self._reader.get_event(
@@ -451,7 +456,13 @@ class CanonAssertionService:
             raise NotFoundError("Event not found.")
         operation = RetireEventOp(id=event_id)
         result = await self._commit(
-            scope, workspace_id, project_id, [operation], expected_revision, idempotency_key
+            scope,
+            workspace_id,
+            project_id,
+            [operation],
+            expected_revision,
+            idempotency_key,
+            acknowledge_high_impact=acknowledge_high_impact,
         )
         event = await self._reader.get_event(
             workspace_id=workspace_id, project_id=project_id, event_id=event_id

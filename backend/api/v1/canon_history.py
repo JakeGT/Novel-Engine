@@ -317,6 +317,9 @@ class RevertCommitRequest(BaseModel):
     from_revision: int
     expected_revision: int
     to_revision: int | None = None
+    # A revert is high-impact: without this explicit acknowledgement it is parked
+    # as a proposal awaiting review (409 ``review_required``).
+    acknowledge_high_impact: bool = False
 
 
 @router.post("/reverts/preview")
@@ -350,6 +353,7 @@ async def commit_revert(
         from_revision=body.from_revision,
         expected_head=body.expected_revision,
         to_revision=body.to_revision,
+        acknowledge_high_impact=body.acknowledge_high_impact,
     )
     return {
         "commit_id": result.commit_id,

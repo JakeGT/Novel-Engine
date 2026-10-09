@@ -26,6 +26,10 @@ from backend.domain.journal import (
     CommitEnvelope,
     MutationOperation,
     MutationSet,
+    MutationStatus,
+    MutationTransition,
+    OperationDecision,
+    OperationRevision,
     OutboxMessage,
     ReviewDecision,
 )
@@ -596,17 +600,74 @@ class CanonJournalPort(Protocol):
         schema_version_id: str | None = None,
         correlation_id: str = "",
         idempotency_key: str = "",
+        intent: str = "edit",
     ) -> MutationSet: ...
 
     async def get_mutation(
         self, *, workspace_id: str, project_id: str, mutation_id: str
     ) -> MutationSet | None: ...
 
+    async def list_mutations(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[MutationSet]: ...
+
+    async def transition_mutation(
+        self,
+        *,
+        mutation_id: str,
+        to_status: MutationStatus,
+        actor_user_id: str | None,
+        reason: str,
+        correlation_id: str = "",
+    ) -> MutationSet: ...
+
+    async def list_transitions(self, *, mutation_id: str) -> list[MutationTransition]: ...
+
+    async def retarget_mutation(
+        self,
+        *,
+        mutation_id: str,
+        expected_head: int,
+        actor_user_id: str | None,
+        reason: str,
+    ) -> MutationSet: ...
+
     async def record_operations(
         self, *, mutation_id: str, operations: Sequence[MutationOperation]
     ) -> None: ...
 
     async def list_operations(self, *, mutation_id: str) -> list[MutationOperation]: ...
+
+    async def revise_operation(
+        self,
+        *,
+        mutation_id: str,
+        ordinal: int,
+        operation_type: str,
+        payload: dict[str, Any],
+        actor_user_id: str | None,
+        reason: str,
+    ) -> MutationOperation: ...
+
+    async def list_operation_revisions(self, *, mutation_id: str) -> list[OperationRevision]: ...
+
+    async def record_operation_decision(
+        self,
+        *,
+        mutation_id: str,
+        ordinal: int,
+        decision: str,
+        actor_user_id: str | None = None,
+        note: str | None = None,
+    ) -> OperationDecision: ...
+
+    async def list_operation_decisions(self, *, mutation_id: str) -> list[OperationDecision]: ...
 
     async def record_decision(
         self,
@@ -615,6 +676,8 @@ class CanonJournalPort(Protocol):
         decision: str,
         actor_user_id: str | None = None,
         note: str | None = None,
+        transition_to: MutationStatus | None = None,
+        correlation_id: str = "",
     ) -> ReviewDecision: ...
 
     async def list_decisions(self, *, mutation_id: str) -> list[ReviewDecision]: ...

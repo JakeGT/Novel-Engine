@@ -12,6 +12,7 @@ from backend.api.problems import register_exception_handlers
 from backend.api.v1.canon_assertions import router as canon_assertions_router
 from backend.api.v1.canon_entities import router as canon_entities_router
 from backend.api.v1.canon_history import router as canon_history_router
+from backend.api.v1.canon_mutations import router as canon_mutations_router
 from backend.api.v1.credentials import router as credentials_router
 from backend.api.v1.media import router as media_router
 from backend.api.v1.projection import router as projection_router
@@ -117,6 +118,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.include_router(canon_entities_router, prefix="/api/v1")
     app.include_router(canon_assertions_router, prefix="/api/v1")
     app.include_router(canon_history_router, prefix="/api/v1")
+    app.include_router(canon_mutations_router, prefix="/api/v1")
     app.include_router(media_router, prefix="/api/v1")
     app.include_router(projection_router, prefix="/api/v1")
     app.include_router(health_router)
