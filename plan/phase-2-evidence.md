@@ -233,7 +233,7 @@ complete; each is the boundary of what was built.
 
 These cannot be completed by code and are the only unchecked items in `phase-2-todo.md`.
 
-1. Accept or reject `phase-1-evidence.md` and record the decision.
+1. ~~Accept or reject `phase-1-evidence.md`.~~ Accepted by the owner on 2026-10-09.
 2. Run the first clean-checkout hosted CI workflow and link its result (push `phase-2-closure`).
 3. Run, or time-box, the clean-host install and coordinated PostgreSQL/Neo4j/object-store
    backup/restore rehearsal. A project archive round trip is not a database backup.

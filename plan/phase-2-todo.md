@@ -110,7 +110,8 @@ ADR-010 and is restated in ADR-012 as the Phase 2 delivery boundary. ADR-013 rec
 
 ## 2A. Phase 1 closeout and Phase 2 contract
 
-- [ ] Obtain owner acceptance of `phase-1-evidence.md` and record the accepting commit/date.
+- [x] Obtain owner acceptance of `phase-1-evidence.md` and record the accepting commit/date.
+      (Accepted by the owner on 2026-10-09, against commit `02ad806`.)
 - [ ] Run the first clean-checkout hosted CI workflow and link its immutable result.
 - [ ] Complete or explicitly time-box the clean-host and coordinated backup/restore rehearsal; do
       not mislabel project archive round-tripping as a database backup.
@@ -134,7 +135,7 @@ ADR-010 and is restated in ADR-012 as the Phase 2 delivery boundary. ADR-013 rec
 
 ### 2A acceptance
 
-- [ ] the Phase 1 evidence has an explicit owner decision
+- [x] the Phase 1 evidence has an explicit owner decision (accepted 2026-10-09)
 - [x] the commit protocol has one accepted state diagram and one named authority per datum
 - [x] every Phase 2 backlog item maps to a workstream and acceptance criterion below
 - [x] deferred Phase 3+ behavior is named rather than partially implied by APIs

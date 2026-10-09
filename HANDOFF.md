@@ -260,7 +260,7 @@ then `pnpm --dir frontend run gen:api`.
 
 **Phase 2 has no remaining code work.** What is open is owner or operational:
 
-1. Accept or reject `plan/phase-1-evidence.md`.
+1. ~~Accept or reject `plan/phase-1-evidence.md`.~~ Accepted by the owner on 2026-10-09.
 2. Push `phase-2-closure` and run the first clean-checkout hosted CI workflow. The `e2e-browser`
    job and the API-drift step were added in this work and have never run in hosted CI, so expect to
    fix environment details there.
