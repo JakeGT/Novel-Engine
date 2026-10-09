@@ -33,6 +33,7 @@ class MediaService:
         objects: ObjectStorePort,
         mutation: MutationService,
         reader: CanonRepositoryPort,
+        journal: object | None = None,
         tenancy: object | None = None,
         local_mode: bool = False,
     ) -> None:
@@ -40,6 +41,7 @@ class MediaService:
         self._objects = objects
         self._mutation = mutation
         self._reader = reader
+        self._journal = journal
         self._tenancy = tenancy
         self._local_mode = local_mode
 
@@ -135,6 +137,46 @@ class MediaService:
         if version is None:
             raise NotFoundError("Asset version not found.")
         return version
+
+    async def _retired_revision(self, workspace_id: str, project_id: str) -> int | None:
+        if self._journal is None:
+            return None
+        branch = await self._journal.ensure_root_branch(  # type: ignore[attr-defined]
+            workspace_id=workspace_id, project_id=project_id
+        )
+        return await self._reader.get_head(
+            workspace_id=workspace_id, project_id=project_id, branch_id=branch.id
+        )
+
+    async def retire_asset(
+        self, scope: AccessScope, workspace_id: str, project_id: str, asset_id: str
+    ) -> MediaAsset:
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_ADMIN)
+        revision = await self._retired_revision(workspace_id, project_id)
+        retired = await self._media.retire_asset(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            asset_id=asset_id,
+            retired_revision=revision,
+        )
+        if retired is None:
+            raise NotFoundError("Asset not found.")
+        return retired
+
+    async def retire_version(
+        self, scope: AccessScope, workspace_id: str, project_id: str, version_id: str
+    ) -> MediaAssetVersion:
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_ADMIN)
+        revision = await self._retired_revision(workspace_id, project_id)
+        retired = await self._media.retire_version(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            version_id=version_id,
+            retired_revision=revision,
+        )
+        if retired is None:
+            raise NotFoundError("Asset version not found.")
+        return retired
 
     # ------------------------------------------------------------------- links
     async def list_links(

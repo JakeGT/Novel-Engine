@@ -2667,6 +2667,45 @@ class InMemoryMediaStore:
         self.versions.setdefault((version.workspace_id, version.project_id, version.id), version)
         return self.versions[(version.workspace_id, version.project_id, version.id)]
 
+    async def retire_asset(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        asset_id: str,
+        retired_revision: int | None = None,
+    ) -> MediaAsset | None:
+        from backend.domain.media import AssetLifecycle
+
+        key = (workspace_id, project_id, asset_id)
+        asset = self.assets.get(key)
+        if asset is None:
+            return None
+        retired = asset.model_copy(
+            update={
+                "lifecycle": AssetLifecycle.RETIRED,
+                "retired_revision": retired_revision,
+            }
+        )
+        self.assets[key] = retired
+        return retired
+
+    async def retire_version(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        version_id: str,
+        retired_revision: int | None = None,
+    ) -> MediaAssetVersion | None:
+        key = (workspace_id, project_id, version_id)
+        version = self.versions.get(key)
+        if version is None:
+            return None
+        retired = version.model_copy(update={"retired_revision": retired_revision})
+        self.versions[key] = retired
+        return retired
+
     async def create_version(
         self,
         *,

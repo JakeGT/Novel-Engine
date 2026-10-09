@@ -40,6 +40,7 @@ def _version(version: Any) -> dict[str, Any]:
         "authority": version.authority,
         "visibility": version.visibility,
         "created_revision": version.created_revision,
+        "retired_revision": version.retired_revision,
         "created_at": version.created_at,
     }
 
@@ -123,6 +124,29 @@ async def register_version(
         authority=payload.get("authority"),
         visibility=payload.get("visibility"),
     )
+    return _version(version)
+
+
+@router.post("/assets/{asset_id}/retire")
+async def retire_asset(
+    project_id: str,
+    asset_id: str,
+    scope: AccessScope = Depends(require_project_scope),
+    media: MediaService = Depends(get_media_service),
+) -> dict[str, Any]:
+    asset = await media.retire_asset(scope, scope.workspace_id or "", project_id, asset_id)
+    return _asset(asset)
+
+
+@router.post("/assets/{asset_id}/versions/{version_id}/retire")
+async def retire_version(
+    project_id: str,
+    asset_id: str,
+    version_id: str,
+    scope: AccessScope = Depends(require_project_scope),
+    media: MediaService = Depends(get_media_service),
+) -> dict[str, Any]:
+    version = await media.retire_version(scope, scope.workspace_id or "", project_id, version_id)
     return _version(version)
 
 

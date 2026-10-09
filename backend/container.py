@@ -276,6 +276,7 @@ def build_container(settings: Settings | None = None) -> Container:
         objects=container.objects,
         mutation=container.mutation_service,
         reader=container.canon_repository,
+        journal=container.journal,
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
     )

@@ -964,6 +964,24 @@ class MediaStorePort(Protocol):
         self, *, workspace_id: str, project_id: str, asset_id: str
     ) -> list[MediaAssetVersion]: ...
 
+    async def retire_asset(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        asset_id: str,
+        retired_revision: int | None = None,
+    ) -> MediaAsset | None: ...
+
+    async def retire_version(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        version_id: str,
+        retired_revision: int | None = None,
+    ) -> MediaAssetVersion | None: ...
+
     async def import_asset(self, asset: MediaAsset) -> MediaAsset: ...
 
     async def import_version(self, version: MediaAssetVersion) -> MediaAssetVersion: ...

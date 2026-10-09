@@ -190,6 +190,7 @@ def _build_fake_container(settings, tmp_path):
         objects=objects,
         mutation=mutation_service,
         reader=canon_repository,
+        journal=journal,
         tenancy=tenancy_service,
         local_mode=not settings.is_hosted,
     )

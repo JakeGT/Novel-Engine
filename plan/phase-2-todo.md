@@ -564,9 +564,10 @@ retained only as the rebuildable projection and never participates in commit suc
       via `ObjectStorePort.stat`; the archive carries and validates object bytes/checksums.)
 - [x] Enforce that rejected, retired, deleted, quarantined, or cross-project assets cannot receive
       new active canonical links (in-transaction validator requires an active asset/version).
-- [ ] Define deletion/retirement behavior: referenced versions retire and remain auditable; complete
+- [x] Define deletion/retirement behavior: referenced versions retire and remain auditable; complete
       project deletion follows the existing scoped purge; ordinary APIs never orphan link history.
-      (Link retirement is implemented; asset lifecycle transitions beyond registration are deferred.)
+      (`POST /assets/{id}/retire` and `POST /assets/{id}/versions/{version_id}/retire` record the
+      retirement revision; project deletion uses the scoped purge.)
 - [x] Add tests for identical asset IDs across projects, opaque keys, checksum mismatch, authority,
       attribution, lifecycle transitions, link review, retirement, and export/import
       (`tests/unit/test_media_service.py`, `tests/contract/test_media.py`,

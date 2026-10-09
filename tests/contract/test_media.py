@@ -81,6 +81,17 @@ def test_media_asset_version_and_link_flow(auth_client, fake_container) -> None:
     after = auth_client.get(f"/api/v1/projects/{project_id}/assets/{asset_id}/links")
     assert after.json()["items"] == []
 
+    retired_version = auth_client.post(
+        f"/api/v1/projects/{project_id}/assets/{asset_id}/versions/{version_body['id']}/retire"
+    )
+    assert retired_version.status_code == 200, retired_version.text
+    assert retired_version.json()["retired_revision"] is not None
+
+    retired_asset = auth_client.post(f"/api/v1/projects/{project_id}/assets/{asset_id}/retire")
+    assert retired_asset.status_code == 200, retired_asset.text
+    assert retired_asset.json()["lifecycle"] == "retired"
+    assert retired_asset.json()["retired_revision"] is not None
+
 
 def test_media_requires_session(api_client, fake_container) -> None:
     project_id = fake_container.settings.AUTH_LOCAL_PROJECT_ID

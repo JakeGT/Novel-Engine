@@ -201,6 +201,50 @@ class PostgresMediaStore:
             ).all()
         return [_asset_version(row) for row in rows]
 
+    async def retire_asset(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        asset_id: str,
+        retired_revision: int | None = None,
+    ) -> MediaAsset | None:
+        async with session_scope(self._session_factory) as session:
+            result = await session.execute(
+                text(
+                    "UPDATE media_assets SET lifecycle='retired', retired_revision=:rev "
+                    "WHERE workspace_id=:w AND project_id=:p AND id=:id"
+                ),
+                {"w": workspace_id, "p": project_id, "id": asset_id, "rev": retired_revision},
+            )
+            if not result.rowcount:  # type: ignore[attr-defined]
+                return None
+        return await self.get_asset(
+            workspace_id=workspace_id, project_id=project_id, asset_id=asset_id
+        )
+
+    async def retire_version(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        version_id: str,
+        retired_revision: int | None = None,
+    ) -> MediaAssetVersion | None:
+        async with session_scope(self._session_factory) as session:
+            result = await session.execute(
+                text(
+                    "UPDATE media_asset_versions SET retired_revision=:rev "
+                    "WHERE workspace_id=:w AND project_id=:p AND id=:id"
+                ),
+                {"w": workspace_id, "p": project_id, "id": version_id, "rev": retired_revision},
+            )
+            if not result.rowcount:  # type: ignore[attr-defined]
+                return None
+        return await self.get_version(
+            workspace_id=workspace_id, project_id=project_id, version_id=version_id
+        )
+
     async def import_asset(self, asset: MediaAsset) -> MediaAsset:
         """Insert an archived asset with its preserved id (idempotent)."""
         async with session_scope(self._session_factory) as session:
