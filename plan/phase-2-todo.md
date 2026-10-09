@@ -1,9 +1,9 @@
 # Phase 2 todo — Trustworthy canon
 
-- Status: Accepted by the project owner on 2026-10-09. All code-completable 2B–2L work is committed. Still open and operational: the first clean-checkout hosted CI run, the clean-host backup/restore rehearsal, the live Authentik round trip, and the decision on the proposed ADR-014/015/016.
+- Status: Accepted by the project owner on 2026-10-09. All code-completable 2B–2L work is committed. Still open and operational: the first clean-checkout hosted CI run, the live Authentik round trip, and the clean-host backup/restore rehearsal (deferred by the owner on 2026-10-10 until the project is complete and moved to a permanent host). ADR-014/015/016 were accepted on 2026-10-10.
 - Scope: CAN-002–CAN-013 and the Phase 2 portions of AST-001/AST-004/AST-008 and EXT-003–EXT-006
 - Depends on: Phase 1 technical foundation and acceptance of the remaining owner/operational exit items
-- Architecture: ADR-003, ADR-004, ADR-005, ADR-009, ADR-010, ADR-012 (supersedes ADR-011), ADR-013, and the proposed ADR-014/015/016 recorded while closing the phase
+- Architecture: ADR-003, ADR-004, ADR-005, ADR-009, ADR-010, ADR-012 (supersedes ADR-011), ADR-013, and ADR-014/015/016 (accepted 2026-10-10)
 - Exit owner: project owner or designated technical lead
 
 ## Objective
@@ -113,8 +113,10 @@ ADR-010 and is restated in ADR-012 as the Phase 2 delivery boundary. ADR-013 rec
 - [x] Obtain owner acceptance of `phase-1-evidence.md` and record the accepting commit/date.
       (Accepted by the owner on 2026-10-09, against commit `02ad806`.)
 - [ ] Run the first clean-checkout hosted CI workflow and link its immutable result.
-- [ ] Complete or explicitly time-box the clean-host and coordinated backup/restore rehearsal; do
+- [x] Complete or explicitly time-box the clean-host and coordinated backup/restore rehearsal; do
       not mislabel project archive round-tripping as a database backup.
+      (Time-boxed, not performed: deferred by the owner on 2026-10-10 until the project is complete and moved to a permanent host. It must be done before real writing depends on the
+      hosted site.)
 - [x] Refresh `12-current-gap-analysis.md` from the Phase 1 implementation rather than its Phase 0
       baseline, and reconcile historical phase labels in `10-backlog.md` with this plan.
       (A "Phase 1 implementation update" section was appended to `12-current-gap-analysis.md`.)
@@ -804,7 +806,7 @@ retained only as the rebuildable projection and never participates in commit suc
       no canon bodies logged)
 - [ ] a clean install completes the authoring → commit → history → export/restore workflow
       (automated against a fresh database by the end-to-end browser test and the clean-environment
-      restore test; a rehearsal on a clean *host* remains the owner's 2A item)
+      restore test; the rehearsal on a clean *host* is deferred by the owner on 2026-10-10 until the project is complete and moved to a permanent host)
 
 ## Suggested implementation slices
 

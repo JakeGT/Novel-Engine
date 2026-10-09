@@ -1,6 +1,6 @@
 # ADR-015: Entity handles, evidence references, and checksum-stable operation evolution
 
-- Status: Proposed (implemented in Phase 2; awaiting owner acceptance with the Phase 2 evidence)
+- Status: Accepted by the project owner on 2026-10-10 (implemented in Phase 2)
 - Date: 2026-10-09
 - Owners: project owner, implementer
 - Related: ADR-012, `03-domain-and-temporal-model.md`, `phase-2-todo.md` 2F/2H

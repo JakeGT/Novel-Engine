@@ -3,8 +3,8 @@
 - Status: **Accepted by the project owner on 2026-10-09** (recorded against commit `22955a7` on
   `phase-2-closure`). Every code-completable Phase 2 item is implemented and verified as recorded
   below. The remaining items are operational and stay open (see "Open owner items"): the hosted CI
-  run, the clean-host backup/restore rehearsal, the live Authentik round trip, and the decision on
-  ADR-014–016.
+  run, the live Authentik round trip, and the clean-host backup/restore rehearsal (deferred by the
+  owner on 2026-10-10 until the project moves to a permanent host). ADR-014–016 were accepted on 2026-10-10.
 - Scope: Canonical story-state authority (ADR-012/013), Phase 2 workstreams 2A–2L
 - Owner: project owner or designated technical lead
 - Date: 2026-10-09
@@ -229,7 +229,7 @@ complete; each is the boundary of what was built.
 - The `e2e-browser` CI job and the CI API-drift step were added but have never run in hosted CI.
 - Metrics are off by default and no Grafana dashboard is provisioned.
 - The legacy generic graph API still exists for local use; removing it is future work.
-- ADR-014, ADR-015, and ADR-016 record decisions made during this work and are `Proposed`.
+- ADR-014, ADR-015, and ADR-016 record decisions made during this work; the owner accepted them on 2026-10-10.
 
 ## Open owner items
 
@@ -239,11 +239,12 @@ These cannot be completed by code and are the only unchecked items in `phase-2-t
 2. Run the first clean-checkout hosted CI workflow and link its result (push `phase-2-closure`).
 3. Run, or time-box, the clean-host install and coordinated PostgreSQL/Neo4j/object-store
    backup/restore rehearsal. A project archive round trip is not a database backup.
+   **Deferred by the owner on 2026-10-10** until the project is complete and on a permanent host.
 4. Perform the live Authentik browser round trip for hosted mode.
-5. Accept, amend, or reject ADR-014, ADR-015, and ADR-016.
+5. ~~Accept, amend, or reject ADR-014, ADR-015, and ADR-016.~~ Accepted by the owner on 2026-10-10.
 6. ~~Accept this evidence and authorize the next phase.~~ Accepted by the owner on 2026-10-09.
 
 ## Owner sign-off
 
 - [x] Project owner accepts the Phase 2 evidence and authorizes the next phase (2026-10-09, commit
-      `22955a7`). ADR-014, ADR-015, and ADR-016 are still awaiting a decision.
+      `22955a7`). ADR-014, ADR-015, and ADR-016 were accepted on 2026-10-10.

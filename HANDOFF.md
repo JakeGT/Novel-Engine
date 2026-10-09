@@ -67,7 +67,7 @@ before diagnosing that as an application failure.
 | `tests/{unit,application,contract,integration}` | Test suites (`tests/e2e/README.md` points to `frontend/e2e/`). |
 | `plan/` | Product, architecture, delivery, decisions (`plan/decisions/`), per-phase evidence. |
 
-## 4. Architecture you must preserve (ADR-012/013, proposed ADR-014/015/016)
+## 4. Architecture you must preserve (ADR-012–016)
 
 Canonical authority by datum (see `plan/decisions/012-postgres-canon-and-replayable-graph.md`):
 
@@ -266,8 +266,9 @@ then `pnpm --dir frontend run gen:api`.
    fix environment details there.
 3. Run, or time-box, the clean-host install and coordinated PostgreSQL/Neo4j/object-store
    backup/restore rehearsal.
+   **Deferred by the owner on 2026-10-10** until the project is complete and on a permanent host.
 4. Perform the live Authentik browser round trip.
-5. Accept, amend, or reject ADR-014, ADR-015, and ADR-016 (they are implemented and `Proposed`).
+5. ~~Accept, amend, or reject ADR-014, ADR-015, and ADR-016.~~ Accepted by the owner on 2026-10-10.
 6. ~~Accept `plan/phase-2-evidence.md`.~~ Accepted by the owner on 2026-10-09.
 
 Known limitations of what was built are listed in `plan/phase-2-evidence.md`. The ones most likely

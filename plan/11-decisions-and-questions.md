@@ -29,9 +29,9 @@ The project owner answered the original architecture questionnaires on 2026-10-0
 | Operational and canon store | PostgreSQL owns projects, jobs, reviews, the immutable journal, normalized/versioned canon, branch heads, outbox, and audit |
 | Derived graph | Neo4j is an optional replayable projection with an applied-revision watermark; it is not part of canonical commit success |
 | Phase 2 authoring | Low-impact author edits use the journal with recorded author approval; model/import/bulk/protected changes require a distinct human decision |
-| Review workflow (proposed) | Mutation sets are a state machine with per-operation decisions and immutable operation revisions; protected-origin, destructive, bulk, and revert changes need an explicit approval evaluated inside the commit transaction (ADR-014, awaiting acceptance) |
-| Entity handles and evidence (proposed) | Names are handles, not identity; slugs are unique among active entities; external ids bind one entity per project; evidence is a bounded pointer; reviewer identity is shown only to members who can write (ADR-015, awaiting acceptance) |
-| Projection and restore (proposed) | The canon projection has its own Neo4j labels and a versioned layout; a restore is ledgered and verified before it is successful; Phase 1 graph archives become review proposals only (ADR-016, awaiting acceptance) |
+| Review workflow | Mutation sets are a state machine with per-operation decisions and immutable operation revisions; protected-origin, destructive, bulk, and revert changes need an explicit approval evaluated inside the commit transaction (ADR-014, awaiting acceptance) |
+| Entity handles and evidence | Names are handles, not identity; slugs are unique among active entities; external ids bind one entity per project; evidence is a bounded pointer; reviewer identity is shown only to members who can write (ADR-015, awaiting acceptance) |
+| Projection and restore | The canon projection has its own Neo4j labels and a versioned layout; a restore is ledgered and verified before it is successful; Phase 1 graph archives become review proposals only (ADR-016, awaiting acceptance) |
 | Phase 2 temporal scope | One root branch plus system revisions; fork/merge and world/narrative-time behavior remain Phase 3 |
 | Phase 2 media scope | Identity, immutable-version metadata, authority/provenance, explicit links, and archives only; secure ingestion/processing remains later |
 | Prototype data | Disposable; deterministic seed data replaces preservation of current databases |

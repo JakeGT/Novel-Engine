@@ -1,6 +1,6 @@
 # ADR-014: Mutation review workflow and the high-impact gate
 
-- Status: Proposed (implemented in Phase 2; awaiting owner acceptance with the Phase 2 evidence)
+- Status: Accepted by the project owner on 2026-10-10 (implemented in Phase 2)
 - Date: 2026-10-09
 - Owners: project owner, implementer
 - Related: ADR-012 (decision 1), ADR-013, `phase-2-todo.md` 2E

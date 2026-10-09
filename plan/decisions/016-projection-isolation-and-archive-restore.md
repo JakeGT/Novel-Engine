@@ -1,6 +1,6 @@
 # ADR-016: Projection isolation, verified restore, and legacy archives
 
-- Status: Proposed (implemented in Phase 2; awaiting owner acceptance with the Phase 2 evidence)
+- Status: Accepted by the project owner on 2026-10-10 (implemented in Phase 2)
 - Date: 2026-10-09
 - Owners: project owner, implementer
 - Related: ADR-012, ADR-010, `05-storage-and-integrity.md`, `phase-2-todo.md` 2D/2G/2K
