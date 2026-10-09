@@ -2,10 +2,12 @@
 
 Applies one immutable commit envelope in a single Neo4j transaction and records a
 ``CommitMarker``. Re-applying the same tuple is a no-op; a differing checksum
-raises ``RevisionConflict``. Canon objects are stored with per-kind labels
-(``Entity``/``Fact``/``Belief``/``Event``/``Provenance``) and composite
-``(workspace_id, project_id, id)`` identity; complex values are stored as JSON
-strings so no nested-map property assumptions leak into the schema.
+raises ``RevisionConflict``. Canon objects are stored with their own labels
+(``CanonEntity``/``CanonFact``/``CanonBelief``/``CanonEvent``/``CanonProvenance``/
+``CanonAsset``) so the projection can never read or overwrite nodes written by
+the legacy generic graph API, which shares this database and uses ``Entity``
+plus a type label. Identity is the composite ``(workspace_id, project_id, id)``;
+complex values are stored as JSON strings.
 """
 
 from __future__ import annotations
@@ -39,7 +41,6 @@ from backend.domain.operations import (
 )
 from backend.graph.manager import GraphManager
 
-_LABEL = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 # A predicate becomes a relationship type only when it is a plain identifier, so
 # no project-supplied text is ever interpolated into Cypher unchecked.
 _PREDICATE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
@@ -98,7 +99,7 @@ class Neo4jCanonWriter:
                 }
                 tx.run(
                     """
-                    MERGE (p:Provenance {workspace_id: $workspace_id, project_id: $project_id, id: $provenance_id})
+                    MERGE (p:CanonProvenance {workspace_id: $workspace_id, project_id: $project_id, id: $provenance_id})
                     SET p.branch_id = $branch_id, p.commit_id = $commit_id, p.revision = $revision
                     """,
                     **ctx,
@@ -119,19 +120,15 @@ class Neo4jCanonWriter:
 
     def _apply_operation(self, tx: Any, operation: CanonOperation, ctx: dict[str, Any]) -> None:
         if isinstance(operation, CreateEntityOp):
-            label = operation.type
-            if not _LABEL.match(label):
-                raise CanonWriteError(f"invalid entity type label {label!r}")
             tx.run(
-                f"""
-                MERGE (n:Entity {{workspace_id: $workspace_id, project_id: $project_id, id: $id}})
+                """
+                MERGE (n:CanonEntity {workspace_id: $workspace_id, project_id: $project_id, id: $id})
                 ON CREATE SET n.created_revision = $revision
                 SET n.branch_id = $branch_id, n.kind = 'entity', n.type = $type,
                     n.name = $name, n.slug = $slug, n.attributes = $attributes,
                     n.aliases = $aliases, n.external_ids = $external_ids,
                     n.lifecycle = 'active', n.commit_id = $commit_id, n.revision = $revision,
                     n.schema_version_id = $schema_version_id
-                SET n:{label}
                 """,
                 id=operation.id,
                 type=operation.type,
@@ -146,7 +143,7 @@ class Neo4jCanonWriter:
             self._require(
                 tx.run(
                     """
-                    MATCH (n:Entity {workspace_id: $workspace_id, project_id: $project_id, id: $id})
+                    MATCH (n:CanonEntity {workspace_id: $workspace_id, project_id: $project_id, id: $id})
                     SET n.commit_id = $commit_id, n.revision = $revision
                     FOREACH (_ IN CASE WHEN $name IS NULL THEN [] ELSE [1] END | SET n.name = $name)
                     FOREACH (_ IN CASE WHEN $slug IS NULL THEN [] ELSE [1] END | SET n.slug = $slug)
@@ -169,7 +166,7 @@ class Neo4jCanonWriter:
             self._require(
                 tx.run(
                     """
-                    MATCH (n:Entity {workspace_id: $workspace_id, project_id: $project_id, id: $id})
+                    MATCH (n:CanonEntity {workspace_id: $workspace_id, project_id: $project_id, id: $id})
                     SET n.lifecycle = 'retired', n.retired_revision = $revision,
                         n.commit_id = $commit_id, n.revision = $revision
                     RETURN n.id AS id
@@ -182,14 +179,14 @@ class Neo4jCanonWriter:
         elif isinstance(operation, AssertFactOp):
             tx.run(
                 """
-                MERGE (f:Fact {workspace_id: $workspace_id, project_id: $project_id, id: $id})
+                MERGE (f:CanonFact {workspace_id: $workspace_id, project_id: $project_id, id: $id})
                 ON CREATE SET f.created_revision = $revision
                 SET f.branch_id = $branch_id, f.subject_id = $subject_id, f.predicate = $predicate,
                     f.proposition = $proposition, f.status = 'asserted', f.confidence = $confidence,
                     f.provenance_id = $provenance_id, f.valid_from = $valid_from,
                     f.valid_until = $valid_until, f.commit_id = $commit_id, f.revision = $revision
                 WITH f
-                OPTIONAL MATCH (s:Entity {workspace_id: $workspace_id, project_id: $project_id, id: $subject_id})
+                OPTIONAL MATCH (s:CanonEntity {workspace_id: $workspace_id, project_id: $project_id, id: $subject_id})
                 FOREACH (_ IN CASE WHEN s IS NULL THEN [] ELSE [1] END | MERGE (s)-[:ASSERTS]->(f))
                 """,
                 id=operation.id,
@@ -209,8 +206,8 @@ class Neo4jCanonWriter:
                 # when it closes, and rebuilt from the journal like everything else.
                 tx.run(
                     f"""
-                    MATCH (s:Entity {{workspace_id: $workspace_id, project_id: $project_id, id: $subject_id}})
-                    MATCH (o:Entity {{workspace_id: $workspace_id, project_id: $project_id, id: $object_id}})
+                    MATCH (s:CanonEntity {{workspace_id: $workspace_id, project_id: $project_id, id: $subject_id}})
+                    MATCH (o:CanonEntity {{workspace_id: $workspace_id, project_id: $project_id, id: $object_id}})
                     MERGE (s)-[r:{predicate} {{fact_id: $id}}]->(o)
                     SET r.projection = 'fact', r.predicate = $predicate,
                         r.commit_id = $commit_id, r.revision = $revision
@@ -225,7 +222,7 @@ class Neo4jCanonWriter:
             self._require(
                 tx.run(
                     """
-                    MATCH (f:Fact {workspace_id: $workspace_id, project_id: $project_id, id: $id})
+                    MATCH (f:CanonFact {workspace_id: $workspace_id, project_id: $project_id, id: $id})
                     SET f.status = 'closed', f.closed_revision = $revision,
                         f.commit_id = $commit_id, f.revision = $revision
                     RETURN f.id AS id
@@ -237,9 +234,9 @@ class Neo4jCanonWriter:
             )
             tx.run(
                 """
-                MATCH (f:Fact {workspace_id: $workspace_id, project_id: $project_id, id: $id})
-                MATCH (:Entity {workspace_id: $workspace_id, project_id: $project_id, id: f.subject_id})
-                      -[r]->(:Entity)
+                MATCH (f:CanonFact {workspace_id: $workspace_id, project_id: $project_id, id: $id})
+                MATCH (:CanonEntity {workspace_id: $workspace_id, project_id: $project_id, id: f.subject_id})
+                      -[r]->(:CanonEntity)
                 WHERE r.projection = 'fact' AND r.fact_id = $id
                 DELETE r
                 """,
@@ -249,7 +246,7 @@ class Neo4jCanonWriter:
         elif isinstance(operation, AssertBeliefOp):
             tx.run(
                 """
-                MERGE (b:Belief {workspace_id: $workspace_id, project_id: $project_id, id: $id})
+                MERGE (b:CanonBelief {workspace_id: $workspace_id, project_id: $project_id, id: $id})
                 ON CREATE SET b.created_revision = $revision
                 SET b.branch_id = $branch_id, b.holder_entity_id = $holder_entity_id,
                     b.proposition = $proposition, b.confidence = $confidence,
@@ -257,7 +254,7 @@ class Neo4jCanonWriter:
                     b.source_ref = $source_ref,
                     b.commit_id = $commit_id, b.revision = $revision
                 WITH b
-                OPTIONAL MATCH (h:Entity {workspace_id: $workspace_id, project_id: $project_id, id: $holder_entity_id})
+                OPTIONAL MATCH (h:CanonEntity {workspace_id: $workspace_id, project_id: $project_id, id: $holder_entity_id})
                 FOREACH (_ IN CASE WHEN h IS NULL THEN [] ELSE [1] END | MERGE (h)-[:BELIEVES]->(b))
                 """,
                 id=operation.id,
@@ -271,7 +268,7 @@ class Neo4jCanonWriter:
             self._require(
                 tx.run(
                     """
-                    MATCH (b:Belief {workspace_id: $workspace_id, project_id: $project_id, id: $id})
+                    MATCH (b:CanonBelief {workspace_id: $workspace_id, project_id: $project_id, id: $id})
                     SET b.status = 'closed', b.closed_revision = $revision,
                         b.commit_id = $commit_id, b.revision = $revision
                     RETURN b.id AS id
@@ -287,7 +284,7 @@ class Neo4jCanonWriter:
             ]
             tx.run(
                 """
-                MERGE (e:Event {workspace_id: $workspace_id, project_id: $project_id, id: $id})
+                MERGE (e:CanonEvent {workspace_id: $workspace_id, project_id: $project_id, id: $id})
                 ON CREATE SET e.created_revision = $revision
                 SET e.branch_id = $branch_id, e.event_kind = $kind, e.name = $name,
                     e.participants = $participants,
@@ -296,7 +293,7 @@ class Neo4jCanonWriter:
                     e.commit_id = $commit_id, e.revision = $revision
                 WITH e
                 UNWIND $participant_edges AS pe
-                OPTIONAL MATCH (p:Entity {workspace_id: $workspace_id, project_id: $project_id, id: pe.entity_id})
+                OPTIONAL MATCH (p:CanonEntity {workspace_id: $workspace_id, project_id: $project_id, id: pe.entity_id})
                 FOREACH (_ IN CASE WHEN p IS NULL THEN [] ELSE [1] END |
                     MERGE (p)-[r:PARTICIPATED_IN]->(e) SET r.role = pe.role)
                 """,
@@ -315,7 +312,7 @@ class Neo4jCanonWriter:
             self._require(
                 tx.run(
                     """
-                    MATCH (e:Event {workspace_id: $workspace_id, project_id: $project_id, id: $id})
+                    MATCH (e:CanonEvent {workspace_id: $workspace_id, project_id: $project_id, id: $id})
                     SET e.commit_id = $commit_id, e.revision = $revision
                     FOREACH (_ IN CASE WHEN $name IS NULL THEN [] ELSE [1] END | SET e.name = $name)
                     FOREACH (_ IN CASE WHEN $world_position IS NULL THEN [] ELSE [1] END |
@@ -333,7 +330,7 @@ class Neo4jCanonWriter:
             self._require(
                 tx.run(
                     """
-                    MATCH (e:Event {workspace_id: $workspace_id, project_id: $project_id, id: $id})
+                    MATCH (e:CanonEvent {workspace_id: $workspace_id, project_id: $project_id, id: $id})
                     SET e.lifecycle = 'retired', e.retired_revision = $revision,
                         e.commit_id = $commit_id, e.revision = $revision
                     RETURN e.id AS id
@@ -346,8 +343,8 @@ class Neo4jCanonWriter:
         elif isinstance(operation, LinkAssetOp):
             tx.run(
                 """
-                MERGE (a:Asset {workspace_id: $workspace_id, project_id: $project_id, id: $asset_id})
-                MERGE (t:Entity {workspace_id: $workspace_id, project_id: $project_id, id: $target_id})
+                MERGE (a:CanonAsset {workspace_id: $workspace_id, project_id: $project_id, id: $asset_id})
+                MERGE (t:CanonEntity {workspace_id: $workspace_id, project_id: $project_id, id: $target_id})
                 MERGE (a)-[r:EVIDENCE_FOR {link_id: $id}]->(t)
                 SET r.role = $role, r.asset_version_id = $asset_version_id,
                     r.commit_id = $commit_id, r.revision = $revision
@@ -362,9 +359,9 @@ class Neo4jCanonWriter:
         elif isinstance(operation, RetireAssetLinkOp):
             tx.run(
                 """
-                MATCH (a:Asset {workspace_id: $workspace_id, project_id: $project_id})
+                MATCH (a:CanonAsset {workspace_id: $workspace_id, project_id: $project_id})
                       -[r:EVIDENCE_FOR {link_id: $id}]->
-                      (:Entity {workspace_id: $workspace_id, project_id: $project_id})
+                      (:CanonEntity {workspace_id: $workspace_id, project_id: $project_id})
                 DELETE r
                 """,
                 id=operation.id,
@@ -427,8 +424,8 @@ class Neo4jCanonWriter:
         with self._manager.driver.session() as session:
             records = session.run(
                 """
-                MATCH (s:Entity {workspace_id: $workspace_id, project_id: $project_id})
-                      -[r]->(o:Entity {workspace_id: $workspace_id, project_id: $project_id})
+                MATCH (s:CanonEntity {workspace_id: $workspace_id, project_id: $project_id})
+                      -[r]->(o:CanonEntity {workspace_id: $workspace_id, project_id: $project_id})
                 WHERE r.projection = 'fact'
                 RETURN r.fact_id AS fact_id, s.id AS subject_id, type(r) AS predicate,
                        o.id AS object_id
@@ -448,7 +445,7 @@ class Neo4jCanonWriter:
         with self._manager.driver.session() as session:
             record = session.run(
                 f"""
-                MATCH (n:Entity {{workspace_id: $workspace_id, project_id: $project_id, id: $id}})
+                MATCH (n:CanonEntity {{workspace_id: $workspace_id, project_id: $project_id, id: $id}})
                 WHERE n.kind = 'entity'
                 RETURN {self._ENTITY_RETURN}
                 """,
@@ -473,7 +470,7 @@ class Neo4jCanonWriter:
         with self._manager.driver.session() as session:
             records = session.run(
                 f"""
-                MATCH (n:Entity {{workspace_id: $workspace_id, project_id: $project_id}})
+                MATCH (n:CanonEntity {{workspace_id: $workspace_id, project_id: $project_id}})
                 WHERE n.kind = 'entity' {type_clause} {retired_clause}
                 RETURN {self._ENTITY_RETURN}
                 ORDER BY n.name, n.id
@@ -502,7 +499,7 @@ class Neo4jCanonWriter:
         with self._manager.driver.session() as session:
             records = session.run(
                 f"""
-                MATCH (n:Entity {{workspace_id: $workspace_id, project_id: $project_id}})
+                MATCH (n:CanonEntity {{workspace_id: $workspace_id, project_id: $project_id}})
                 WHERE n.kind = 'entity' AND toLower(n.name) CONTAINS toLower($needle)
                       {type_clause} {retired_clause}
                 RETURN {self._ENTITY_RETURN}
@@ -523,7 +520,7 @@ class Neo4jCanonWriter:
                 """
                 MATCH (n) WHERE n.workspace_id = $w AND n.project_id = $p
                       AND coalesce(n.branch_id, '') = $b
-                      AND (n:Entity OR n:Fact OR n:Belief OR n:Event OR n:Provenance)
+                      AND (n:CanonEntity OR n:CanonFact OR n:CanonBelief OR n:CanonEvent OR n:CanonProvenance)
                 WITH collect(n) AS nodes, count(n) AS deleted
                 FOREACH (x IN nodes | DETACH DELETE x)
                 RETURN deleted
@@ -550,8 +547,8 @@ class Neo4jCanonWriter:
             result = session.run(
                 f"""
                 MATCH (n) WHERE n.workspace_id = $w {project_clause}
-                      AND (n:Entity OR n:Fact OR n:Belief OR n:Event OR n:Provenance
-                           OR n:Asset OR n:CommitMarker)
+                      AND (n:CanonEntity OR n:CanonFact OR n:CanonBelief OR n:CanonEvent OR n:CanonProvenance
+                           OR n:CanonAsset OR n:CommitMarker)
                 DETACH DELETE n
                 """,
                 w=workspace_id,
@@ -599,7 +596,7 @@ class Neo4jCanonWriter:
         with self._manager.driver.session() as session:
             record = session.run(
                 f"""
-                MATCH (f:Fact {{workspace_id: $workspace_id, project_id: $project_id, id: $id}})
+                MATCH (f:CanonFact {{workspace_id: $workspace_id, project_id: $project_id, id: $id}})
                 RETURN {self._FACT_RETURN}
                 """,
                 workspace_id=workspace_id,
@@ -625,7 +622,7 @@ class Neo4jCanonWriter:
         with self._manager.driver.session() as session:
             records = session.run(
                 f"""
-                MATCH (f:Fact {{workspace_id: $workspace_id, project_id: $project_id}})
+                MATCH (f:CanonFact {{workspace_id: $workspace_id, project_id: $project_id}})
                 WHERE true {closed_clause} {subject_clause} {predicate_clause}
                 RETURN {self._FACT_RETURN}
                 ORDER BY f.created_revision, f.id
@@ -671,7 +668,7 @@ class Neo4jCanonWriter:
         with self._manager.driver.session() as session:
             record = session.run(
                 f"""
-                MATCH (b:Belief {{workspace_id: $workspace_id, project_id: $project_id, id: $id}})
+                MATCH (b:CanonBelief {{workspace_id: $workspace_id, project_id: $project_id, id: $id}})
                 RETURN {self._BELIEF_RETURN}
                 """,
                 workspace_id=workspace_id,
@@ -695,7 +692,7 @@ class Neo4jCanonWriter:
         with self._manager.driver.session() as session:
             records = session.run(
                 f"""
-                MATCH (b:Belief {{workspace_id: $workspace_id, project_id: $project_id}})
+                MATCH (b:CanonBelief {{workspace_id: $workspace_id, project_id: $project_id}})
                 WHERE true {closed_clause} {holder_clause}
                 RETURN {self._BELIEF_RETURN}
                 ORDER BY b.created_revision, b.id
@@ -744,7 +741,7 @@ class Neo4jCanonWriter:
         with self._manager.driver.session() as session:
             record = session.run(
                 f"""
-                MATCH (e:Event {{workspace_id: $workspace_id, project_id: $project_id, id: $id}})
+                MATCH (e:CanonEvent {{workspace_id: $workspace_id, project_id: $project_id, id: $id}})
                 RETURN {self._EVENT_RETURN}
                 """,
                 workspace_id=workspace_id,
@@ -766,7 +763,7 @@ class Neo4jCanonWriter:
         with self._manager.driver.session() as session:
             records = session.run(
                 f"""
-                MATCH (e:Event {{workspace_id: $workspace_id, project_id: $project_id}})
+                MATCH (e:CanonEvent {{workspace_id: $workspace_id, project_id: $project_id}})
                 WHERE true {retired_clause}
                 RETURN {self._EVENT_RETURN}
                 ORDER BY e.created_revision, e.id

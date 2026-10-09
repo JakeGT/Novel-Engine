@@ -103,7 +103,24 @@ def test_entity_scope_migration_replaces_global_id_constraint() -> None:
         "0001_initial_graph_schema",
         "0002_entity_scope_identity",
         "0003_canon_scope_identity",
+        "0004_canon_projection_labels",
     ]
+
+
+def test_canon_projection_gets_its_own_labels_and_leaves_legacy_nodes() -> None:
+    from backend.graph.migrations import CANON_PROJECTION_LABELS
+
+    statements = CANON_PROJECTION_LABELS.statements
+    joined = " ".join(statements)
+    for label in ("CanonEntity", "CanonFact", "CanonBelief", "CanonEvent", "CanonProvenance"):
+        assert f"FOR (n:{label}) REQUIRE (n.workspace_id, n.project_id, n.id) IS UNIQUE" in joined
+    # Only previously projected canon is discarded: every delete is guarded so a
+    # legacy graph node (Entity plus a type label) can never match it.
+    deletes = [statement for statement in statements if "DELETE" in statement]
+    assert len(deletes) == 4
+    assert "n.kind = 'entity' AND n.commit_id IS NOT NULL" in deletes[0]
+    assert "NOT n:Entity" in deletes[1] and "NOT n:Entity" in deletes[2]
+    assert deletes[3].startswith("MATCH (m:CommitMarker)")
 
 
 def test_runner_applies_pending_and_records_ledger() -> None:

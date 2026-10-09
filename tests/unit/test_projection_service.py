@@ -133,3 +133,61 @@ async def test_projection_retries_after_transient_failure() -> None:
     assert second.status is ProjectionStatus.CURRENT
     assert second.applied == 1
     assert (await service.lag(workspace_id=WS, project_id=PR, branch_id=BR)).current
+
+
+@pytest.mark.asyncio
+async def test_watermark_from_an_older_projection_layout_forces_a_rebuild() -> None:
+    """A stale-layout watermark is lag, never freshness, and is replayed from genesis."""
+    from backend.domain.identity import AccessScope, AuthMode, utcnow
+    from backend.domain.operations import CreateEntityOp
+    from backend.domain.projection import ProjectionStatus, ProjectionWatermark
+    from backend.services.mutation_service import MutationService
+    from backend.services.projection_service import (
+        PROJECTION_SCHEMA_VERSION,
+        GraphProjectionService,
+    )
+    from tests.doubles import InMemoryCanonJournal, InMemoryCanonRepository, InMemoryCanonWriter
+
+    journal = InMemoryCanonJournal()
+    repo = InMemoryCanonRepository(journal=journal)
+    writer = InMemoryCanonWriter()
+    scope = AccessScope(
+        actor_user_id="u", auth_mode=AuthMode.LOCAL, workspace_id="ws", project_id="pr"
+    )
+    mutation = MutationService(journal, repo, local_mode=True)
+    draft = await mutation.create_draft(
+        scope,
+        workspace_id="ws",
+        project_id="pr",
+        operations=[CreateEntityOp(id="ent_1", type="Character", name="Mara")],
+        expected_head=0,
+    )
+    await mutation.commit(scope, draft.id)
+    branch = await journal.ensure_root_branch(workspace_id="ws", project_id="pr")
+    target = {"workspace_id": "ws", "project_id": "pr", "branch_id": branch.id}
+
+    # The previous layout believed it was current at revision 1 and left a node behind.
+    await repo.set_watermark(
+        ProjectionWatermark(
+            projection="graph",
+            revision=1,
+            projection_schema_version="1",
+            status=ProjectionStatus.CURRENT,
+            updated_at=utcnow(),
+            **target,
+        )
+    )
+    writer.entities[("ws", "pr", "ent_stale")] = {"branch_id": branch.id, "name": "leftover"}
+    service = GraphProjectionService(canon=repo, writer=writer)
+    assert PROJECTION_SCHEMA_VERSION != "1"
+
+    lag = await service.lag(**target)
+    assert (lag.applied_revision, lag.lag, lag.current) == (0, 1, False)
+
+    report = await service.project_pending(**target)
+    assert report.applied == 1 and report.error is None
+    assert ("ws", "pr", "ent_stale") not in writer.entities
+    assert ("ws", "pr", "ent_1") in writer.entities
+    watermark = await repo.get_watermark(projection="graph", **target)
+    assert watermark.projection_schema_version == PROJECTION_SCHEMA_VERSION
+    assert (await service.lag(**target)).current

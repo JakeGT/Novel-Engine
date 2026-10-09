@@ -16,6 +16,7 @@ def test_canon_scope_migration_is_registered() -> None:
         "0001_initial_graph_schema",
         "0002_entity_scope_identity",
         "0003_canon_scope_identity",
+        "0004_canon_projection_labels",
     ]
     canon = next(m for m in NEO4J_MIGRATIONS if m.id == "0003_canon_scope_identity")
     joined = " ".join(canon.statements)

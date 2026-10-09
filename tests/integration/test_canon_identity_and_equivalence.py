@@ -337,7 +337,7 @@ async def test_journal_normalized_canon_and_neo4j_projection_agree(
         # A tampered projection is detected by record and field.
         with neo4j_driver.session() as session:
             session.run(
-                "MATCH (n:Entity {workspace_id: $w, project_id: $p, id: 'ent_harbor'}) "
+                "MATCH (n:CanonEntity {workspace_id: $w, project_id: $p, id: 'ent_harbor'}) "
                 "SET n.name = 'Tampered'",
                 w=stack.ws,
                 p=stack.pr,

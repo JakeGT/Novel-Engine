@@ -17,7 +17,8 @@ from backend.domain.projection import ProjectionStatus, ProjectionWatermark
 from backend.ports import CanonRepositoryPort, CanonWriterPort
 
 GRAPH_PROJECTION = "graph"
-PROJECTION_SCHEMA_VERSION = "1"
+# 2: the projection moved to its own Canon* labels (Neo4j migration 0004).
+PROJECTION_SCHEMA_VERSION = "2"
 DEFAULT_BATCH = 100
 
 
@@ -60,9 +61,24 @@ class GraphProjectionService:
         self._schema_version = schema_version
 
     async def _current_watermark(self, ws: str, pr: str, br: str) -> ProjectionWatermark | None:
-        return await self._canon.get_watermark(
+        """The watermark for this projection layout, or ``None`` if there is none.
+
+        A watermark written by an older projection schema says nothing about the
+        current layout, so it is treated as "nothing applied" (visible lag) and
+        the next run rebuilds from genesis instead of trusting stale freshness.
+        """
+        watermark = await self._canon.get_watermark(
             projection=self._projection, workspace_id=ws, project_id=pr, branch_id=br
         )
+        if watermark is not None and watermark.projection_schema_version != self._schema_version:
+            return None
+        return watermark
+
+    async def _has_stale_layout(self, ws: str, pr: str, br: str) -> bool:
+        watermark = await self._canon.get_watermark(
+            projection=self._projection, workspace_id=ws, project_id=pr, branch_id=br
+        )
+        return watermark is not None and watermark.projection_schema_version != self._schema_version
 
     async def lag(self, *, workspace_id: str, project_id: str, branch_id: str) -> ProjectionLag:
         head = await self._canon.get_head(
@@ -91,6 +107,11 @@ class GraphProjectionService:
         branch_id: str,
         limit: int = DEFAULT_BATCH,
     ) -> ProjectionReport:
+        if await self._has_stale_layout(workspace_id, project_id, branch_id):
+            # Drop anything written under the previous layout before replaying.
+            await self._writer.discard(
+                workspace_id=workspace_id, project_id=project_id, branch_id=branch_id
+            )
         watermark = await self._current_watermark(workspace_id, project_id, branch_id)
         applied_revision = watermark.revision if watermark is not None else 0
         commits = await self._canon.list_commits(

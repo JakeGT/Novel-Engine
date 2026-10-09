@@ -91,7 +91,11 @@ def pg_engine(disposable_database: DisposableDatabase):
 
 def _clear_entities(driver: Driver) -> None:
     with driver.session() as session:
-        session.run("MATCH (n:Entity) DETACH DELETE n")
+        session.run(
+            "MATCH (n) WHERE n:Entity OR n:CanonEntity OR n:CanonFact OR n:CanonBelief "
+            "OR n:CanonEvent OR n:CanonProvenance OR n:CanonAsset OR n:CommitMarker "
+            "DETACH DELETE n"
+        )
 
 
 @pytest.fixture

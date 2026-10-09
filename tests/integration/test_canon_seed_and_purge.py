@@ -218,3 +218,59 @@ async def test_dev_reset_clears_every_canon_table(seeded) -> None:
     assert clear_tenancy(dsn) is True
     counts = await _row_counts(factory, "true", {})
     assert set(counts.values()) == {0}, counts
+
+
+@pytest.mark.asyncio
+async def test_canon_projection_and_legacy_graph_do_not_see_each_other(
+    seeded, neo4j_settings, neo4j_driver
+) -> None:
+    """Both stores share one Neo4j database and one project scope."""
+    from backend.adapters.graph import Neo4jGraphRepository
+    from backend.graph.schema import Node
+
+    _report, stores, _factory, _dsn = seeded
+    manager = GraphManager(neo4j_settings)
+    writer = Neo4jCanonWriter(manager)
+    legacy = Neo4jGraphRepository(manager)
+    projector = GraphProjectionService(canon=stores["repository"], writer=writer)
+    equivalence = CanonEquivalenceService(
+        canon=stores["repository"], journal=stores["journal"], writer=writer
+    )
+    try:
+        await writer.purge(**PRIMARY)
+        # Legacy nodes typed like canon kinds, one reusing a canon entity id.
+        for node_id, node_type, properties in (
+            ("legacy_belief", "Belief", {"proposition": "not a canon proposition"}),
+            ("legacy_event", "Event", {"name": "Legacy event"}),
+            ("ent_seed_mara", "Character", {"name": "Legacy Mara"}),
+        ):
+            legacy.add_node(Node(id=node_id, type=node_type, properties=properties, **PRIMARY))
+        branch = await stores["journal"].ensure_root_branch(**PRIMARY)
+        report = await projector.project_pending(branch_id=branch.id, **PRIMARY)
+        assert report.error is None
+
+        # Canon reads and the equivalence proof ignore every legacy node.
+        result = await equivalence.verify(SEED_WORKSPACE_ID, SEED_PROJECT_ID)
+        assert result.ok, result.problems
+        assert {b.id for b in await writer.list_beliefs(limit=100, **PRIMARY)} == {
+            "blf_seed_mara_haunted",
+            "blf_seed_iven_pop",
+            "blf_seed_iven_compass",
+        }
+        assert (await writer.get_entity(entity_id="ent_seed_mara", **PRIMARY)).name == "Mara Venn"
+
+        # Legacy reads see only legacy nodes, including the colliding id.
+        characters = legacy.get_nodes(node_type="Character", **PRIMARY)
+        assert [node.id for node in characters] == ["ent_seed_mara"]
+        assert legacy.get_node("ent_seed_mara", **PRIMARY).properties["name"] == "Legacy Mara"
+        assert legacy.get_node("ent_seed_iven", **PRIMARY) is None
+
+        # Rebuilding or purging the projection never deletes legacy nodes.
+        await projector.rebuild(branch_id=branch.id, **PRIMARY)
+        await writer.purge(**PRIMARY)
+        assert legacy.get_node("legacy_belief", **PRIMARY) is not None
+        assert legacy.get_node("ent_seed_mara", **PRIMARY).properties["name"] == "Legacy Mara"
+    finally:
+        await writer.purge(**PRIMARY)
+        legacy.delete_project_nodes(SEED_WORKSPACE_ID, SEED_PROJECT_ID)
+        manager.close()

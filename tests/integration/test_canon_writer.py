@@ -70,7 +70,7 @@ async def test_canon_writer_applies_idempotently_and_rejects_checksum_drift(
         with neo4j_driver.session() as session:
             record = session.run(
                 """
-                MATCH (n:Entity {workspace_id: $workspace_id, project_id: $project_id, id: 'ent_int_1'})
+                MATCH (n:CanonEntity {workspace_id: $workspace_id, project_id: $project_id, id: 'ent_int_1'})
                 RETURN n.name AS name, n.lifecycle AS lifecycle
                 """,
                 **_SCOPE,

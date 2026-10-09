@@ -31,8 +31,9 @@ def reset_neo4j(manager: GraphManager) -> int:
     with manager.driver.session() as session:
         # Legacy graph entities plus every node kind the canon projection writes.
         result = session.run(
-            "MATCH (n) WHERE n:Entity OR n:Fact OR n:Belief OR n:Event OR n:Provenance "
-            "OR n:Asset OR n:CommitMarker DETACH DELETE n"
+            "MATCH (n) WHERE n:Entity OR n:CanonEntity OR n:CanonFact OR n:CanonBelief "
+            "OR n:CanonEvent OR n:CanonProvenance OR n:CanonAsset OR n:CommitMarker "
+            "DETACH DELETE n"
         )
         return result.consume().counters.nodes_deleted
 
