@@ -1,9 +1,9 @@
 # Phase 2 todo — Trustworthy canon
 
-- Status: In progress (implementation slices 2B–2L committed on PostgreSQL-canonical authority; owner acceptance, first clean-checkout hosted CI run, and clean-host rehearsal remain external)
+- Status: Implementation complete, awaiting owner acceptance (all code-completable 2B–2L work is committed; owner acceptance of the Phase 1 and Phase 2 evidence, the first clean-checkout hosted CI run, the clean-host backup/restore rehearsal, and the live Authentik round-trip are external and still open)
 - Scope: CAN-002–CAN-013 and the Phase 2 portions of AST-001/AST-004/AST-008 and EXT-003–EXT-006
 - Depends on: Phase 1 technical foundation and acceptance of the remaining owner/operational exit items
-- Architecture: ADR-003, ADR-004, ADR-005, ADR-009, ADR-010, and ADR-012 (supersedes ADR-011)
+- Architecture: ADR-003, ADR-004, ADR-005, ADR-009, ADR-010, ADR-012 (supersedes ADR-011), ADR-013, and the proposed ADR-014/015/016 recorded while closing the phase
 - Exit owner: project owner or designated technical lead
 
 ## Objective
@@ -39,8 +39,8 @@ Phase 2 includes:
 - a point-in-revision canon/history/provenance query boundary, immutable tags, and compensating
   revert proposals
 - invariant enforcement classes and a stable evaluator seam for the Phase 2.5 story-rule workflow
-- typed mutation sets, mutation-level review decisions, validation, optimistic concurrency, and
-  idempotency; per-operation review remains an explicit follow-up
+- typed mutation sets, a review state machine with per-operation decisions and a high-impact
+  gate, validation, optimistic concurrency, and idempotency
 - an atomic PostgreSQL journal + normalized canon transaction and replayable Neo4j projection
 - project-scoped entity/canon APIs and a usable world/character authoring interface
 - media asset/version identity, authority, provenance, explicit links, and archive semantics
@@ -99,14 +99,14 @@ ADR-010 and is restated in ADR-012 as the Phase 2 delivery boundary. ADR-013 rec
 | 2B. Canon domain and core schema | Implemented | 2A |
 | 2C. Project schema governance and compiler | Implemented | 2B |
 | 2D. Revision, journal, outbox, and storage migrations | Implemented (ADR-012: normalized PostgreSQL canon + immutable journal commit in one transaction, projection watermarks; migrations 0013–0018) | 2A–2C |
-| 2E. Mutation validation, canonical commit, and projection recovery | Implemented (single-PostgreSQL-transaction commit, exact published-schema validation, protected-origin approval gate, deterministic retry identity, commit telemetry, idempotent outbox consumer + replayable projector; full mutation state machine, per-operation decisions, and high-impact author-operation gate deferred) | 2B–2D |
-| 2F. Entity authoring and retirement | Implemented (canonical entity API over the mutation path with revision/ETag; link inspection/history, name-collision policy, and character-workflow port deferred) | 2C–2E |
-| 2G. Facts, beliefs, and events | Implemented (fact/belief/event APIs + derived truth agreement over canonical PostgreSQL; graph predicate projections, canon seed expansion, and close/reassert history deferred) | 2B–2F |
-| 2H. Provenance and history inspection | Implemented (revision/record history, entity/fact/belief/event state-at-revision, revision diffs, immutable tags, compensating revert proposals, verification CLI, operator projection report; generalized provenance source-artefact IDs deferred) | 2D–2G |
-| 2I. Media identity and explicit evidence links | Implemented (asset/version identity + reviewed link roles through the mutation path and basic lifecycle transitions; immutable lifecycle audit, PG media integration test, and reference-world asset seed deferred) | 2B–2E |
-| 2J. Project shell and authoring UI | Implemented (TypeScript + OpenAPI-generated client + router/query with scoped keys + project shell + entity list/create/detail/history/retire + component test; mutation-review/schema-publish/media UI, a11y automation, and e2e deferred) | 2F–2I APIs |
-| 2K. Archive upgrade, restore, and rebuild | Implemented with named deferrals (canon archive format v3 with canonical checksums, accepted mutation/review evidence, object bytes, strict preflight validation, resumable import, and configured Neo4j rebuild; import-status ledger, v1 upgrader, durable security audit, and query-equivalence proof deferred) | 2C–2I |
-| 2L. Security, quality, and exit evidence | Implemented (threat/auth tests, dependency audit, invariant matrix + `phase-2-evidence.md`; property/fuzz + mutation testing, perf budgets, colliding-ID fixtures, and clean-host rehearsal deferred) | all workstreams |
+| 2E. Mutation validation, canonical commit, and projection recovery | Implemented (single-PostgreSQL-transaction commit, exact published-schema validation, review state machine with transition log, per-operation decisions and immutable operation revisions, high-impact gate evaluated in-transaction, deterministic retry identity, commit telemetry, idempotent outbox consumer + replayable projector) | 2B–2D |
+| 2F. Entity authoring and retirement | Implemented (canonical entity API with revision/ETag, naming policy for slugs/aliases/external ids, acknowledged retirement, guided character workflow as review proposals) | 2C–2E |
+| 2G. Facts, beliefs, and events | Implemented (fact/belief/event APIs + derived truth agreement, typed relationship projection, canonical reference world with labelled proposals, close/reassert history) | 2B–2F |
+| 2H. Provenance and history inspection | Implemented (revision/record history, state-at-revision, diffs, tags, evidence provenance with redaction, dependency-aware revert proposals with edit inverses, verification CLIs, projection report) | 2D–2G |
+| 2I. Media identity and explicit evidence links | Implemented (asset/version identity, reviewed link roles through the mutation path, lifecycle retirement with an immutable audit, PostgreSQL coverage, reference-world asset) | 2B–2E |
+| 2J. Project shell and authoring UI | Implemented (permission-aware shell; schema-derived entity forms, filters, relationships; character view with the guided proposal workflow; schema, proposal-review, history/provenance/revert, and asset views; stale-head recovery; automated accessibility checks; component and browser end-to-end tests) | 2F–2I APIs |
+| 2K. Archive upgrade, restore, and rebuild | Implemented (archive v3, strict preflight, import status ledger with resume/removal, verified projection rebuild, owner authorization + security audit, bounded Phase 1 graph upgrader, clean-environment restore test) | 2C–2I |
+| 2L. Security, quality, and exit evidence | Implemented (threat/auth tests, invariant matrix, property/state-machine tests, colliding-id fixtures, upgrade migration tests, metrics, performance budgets, rule-classification tests; mutation-testing tooling not adopted; clean-host rehearsal is an owner item) | all workstreams |
 
 ## 2A. Phase 1 closeout and Phase 2 contract
 
@@ -254,8 +254,9 @@ retained only as the rebuildable projection and never participates in commit suc
       `SceneContract`, `NarratedAssertion`/`SpeechAct`, `Disclosure`, `AliasBinding`/
       `ResolutionExample`, `CanonTag`, `FindingSuppression`, dependency-edge, and read-model
       watermark records. Do not add inactive tables merely to reserve names.
-      (`ID_PREFIXES` in `backend/domain/canon/ids.py`; `CanonTag` is implemented, the rest are
-      reserved prefixes only and no inactive tables were added.)
+      (`ID_PREFIXES` + `RESERVED_ID_KINDS` in `backend/domain/canon/ids.py`. The prefixes were not
+      actually present before the Phase 2 closure work; they are now, with a test that they are
+      distinct and unimplemented. `CanonTag` is implemented; no inactive tables were added.)
 - [x] Define one PostgreSQL canon repository/unit-of-work port that reads state at a revision and
       applies a validated envelope atomically with branch head, revision, decisions, and outbox
       (`CanonRepositoryPort` + `PostgresCanonRepository.apply_commit`; `InMemoryCanonRepository` mirrors it).
@@ -301,8 +302,9 @@ retained only as the rebuildable projection and never participates in commit suc
       and `Provenance`, a `CommitMarker` uniqueness constraint, and workspace/project/branch indexes.)
 - [x] Model frequent graph relationships as rebuildable projections while keeping reified fact,
       belief, and event identity/provenance inspectable.
-      (Scoped identity constraints model reified facts/beliefs/events; projection rebuild behavior is
-      deferred to the retrieval/consistency work in Phases 3+.)
+      (Reified facts/beliefs/events are projected under the projection's own `Canon*` labels —
+      Neo4j migration `0004_canon_projection_labels`, ADR-016 — and open entity-to-entity facts
+      also project as typed relationships that are rebuilt from the journal.)
 - [x] Add repository ports for schema, canon queries, journal/commit coordination, and outbox with
       in-memory fakes that implement the same concurrency/idempotency behavior.
       (`CanonJournalPort` + `PostgresCanonJournal` + `InMemoryCanonJournal` with matching invariants.)
@@ -320,6 +322,9 @@ retained only as the rebuildable projection and never participates in commit suc
 - [x] migrations apply to an empty environment, apply idempotently where supported, and verify
       exact constraints/indexes
 - [x] every durable canon/workflow record has tenant/project ownership and a declared deletion rule
+      (one table list, `backend/adapters/canon_tables.py`, drives project/workspace deletion,
+      failed-import removal, and the development reset; before the closure work project
+      deletion left canon rows and most projected nodes behind)
 - [x] a branch head cannot advance twice from the same expected revision
 - [x] the same commit ID/checksum cannot be reused for different operations
 - [x] no canonical projection depends on Neo4j internal IDs
@@ -348,10 +353,11 @@ retained only as the rebuildable projection and never participates in commit suc
       mutation set. References may target existing objects or earlier co-created operations only
       (`resolve_temporary_ids` derives durable ids from the mutation id so retries are stable;
       unresolved temporary references are rejected).
-- [ ] Define mutation-set states and legal transitions separately from per-operation review
+- [x] Define mutation-set states and legal transitions separately from per-operation review
       decisions. Every transition records actor, time, reason, and correlation/idempotency IDs.
-      (States and legal transitions are defined in `backend/domain/journal.py`; explicit transition
-      enforcement with actor/time/reason recording is not yet wired through the service.)
+      (`backend/domain/review.py::LEGAL_TRANSITIONS`; `mutation_transitions` is append-only and
+      written by the journal and by the commit transaction; `committed`/`rejected` are terminal and
+      the status set is a database CHECK constraint — migration `0019_review_workflow`, ADR-014.)
 - [x] Centralize authorization, project/branch scope, exact schema version, operation shape,
       references, endpoint types, attributes, cardinality, lifecycle, provenance, and review policy
       in one authoritative validator invoked inside the canonical PostgreSQL transaction.
@@ -370,10 +376,13 @@ retained only as the rebuildable projection and never participates in commit suc
 - [x] Revalidate every mutable assumption against the transactional head/state used for the commit;
       preview validation is advisory and cannot authorize a later write (`commit` runs the validator
       in-transaction at the locked head; `validate` is a preview only).
-- [ ] Implement per-operation accept/edit/reject decisions. Editing creates a new operation
+- [x] Implement per-operation accept/edit/reject decisions. Editing creates a new operation
       revision and invalidates prior validation rather than mutating accepted review evidence.
-      (Mutation-level decisions are recorded; per-operation decisions and edit-as-new-revision are
-      deferred to the review slice 2F/2G.)
+      (`operation_decisions` bind to an operation revision; `mutation_operation_revisions` keeps
+      every revision; the committed set is the current revisions minus rejected ones, recomputed
+      inside the commit transaction. Editing, re-deciding, or retargeting after approval returns
+      the set to `needs_review`. There is no stored validation result to invalidate: validation is
+      always recomputed, in preview and again in-transaction. `/projects/{id}/mutations` API.)
 - [x] Replace the transitional PostgreSQL/Neo4j saga with ADR-012's single PostgreSQL transaction:
       validate/review → envelope + normalized canon → head/revision + outbox (`fa36e87`).
 - [x] Make Neo4j application idempotent by immutable commit/mutation IDs and reject a checksum
@@ -396,8 +405,10 @@ retained only as the rebuildable projection and never participates in commit suc
       (`tests/integration/test_canon_repository.py`, `tests/unit/test_projection_service.py`,
       `tests/integration/test_projection.py`).
 - [x] Add concurrent-commit, replay, checksum mismatch, authorization-revocation, stale-schema,
-      stale-head, and partial-decision tests (replay/idempotency, checksum mismatch, stale-head, and
-      crash tests are present; true multi-worker concurrency relies on the journal constraints).
+      stale-head, and partial-decision tests (replay/idempotency, checksum mismatch, stale-head,
+      crash, partial-decision, and viewer-authorization tests are present, plus a Hypothesis state
+      machine over every review action order; true multi-worker concurrency still relies on the
+      journal's row lock and unique constraints rather than a multi-process test).
 
 ### 2E acceptance
 
@@ -420,22 +431,30 @@ retained only as the rebuildable projection and never participates in commit suc
       (`CanonEntityService` builds typed operations and commits through `MutationService`.)
 - [x] Return one stable nested entity representation across create/read/update/search/history and
       never expose raw Neo4j properties or storage identifiers (`CanonEntityModel`).
-- [ ] Define display-name collision, slug, alias, and external-identifier behavior without treating
-      names as identity. (Slug is stored; name-collision policy, aliases, and external identifiers are deferred.)
+- [x] Define display-name collision, slug, alias, and external-identifier behavior without treating
+      names as identity. (`backend/domain/canon/naming.py`, ADR-015: duplicate names are advisory;
+      slugs are validated, derived when omitted, and unique among active entities; aliases are
+      bounded and searchable; an external identifier resolves to one entity per project. Enforced
+      in the commit transaction and by a partial unique index — migration `0020_entity_identity`.)
 - [x] Implement deterministic structured search by type/name/alias/status before adding richer
-      hybrid retrieval in later phases. (Type + case-insensitive name substring; alias/status search later.)
+      hybrid retrieval in later phases. (Type filter + case-insensitive substring over name, slug,
+      and aliases; `include_retired` for status; lookup by external identifier.)
 - [x] Make retirement fail or warn predictably for protected/referenced entities according to the
-      accepted policy; preserve incoming/outgoing historical references. (Retire is a journaled
-      operation; retired entities are excluded from active defaults and remain readable with
-      `include_retired`; referenced-protection warnings are deferred to 2G reference checks.)
+      accepted policy; preserve incoming/outgoing historical references. (Retirement is a
+      destructive operation that needs an explicit acknowledgement or review — ADR-014. Retiring
+      an entity that live facts/beliefs/events/links still reference is allowed and reported as the
+      advisory finding `referenced_entity`; history and references are preserved.)
 - [x] Gate or disable existing generic graph mutation endpoints in hosted mode and prove they cannot
       bypass the journal. Keep any local/admin escape hatch clearly unsafe and non-product.
       (Generic entity/edge writes now require `require_local_graph_write`, platform-admin + local-only;
       the generic project-scoped surface moved to `/api/v1/graph/projects/{project_id}/...` so the canonical
       product API owns `/api/v1/projects/{project_id}/entities`.)
-- [ ] Port the guided character workflow so extracted/generated nodes remain proposals and accepted
-      results commit through the same mutation path. (Deferred; character service still targets the
-      generic graph port.)
+- [x] Port the guided character workflow so extracted/generated nodes remain proposals and accepted
+      results commit through the same mutation path.
+      (`backend/services/canon_character_workflow.py` + `/projects/{id}/characters/{entity_id}/
+      questions|proposals`: model output becomes a `model`-origin mutation set in the review
+      queue, each operation citing the questionnaire answer it came from; unmappable output is
+      discarded with a reason. The legacy graph-writing character endpoints are local-only.)
 - [x] Add contract/application/integration tests for permissions, project isolation, pagination,
       revision conflicts, undeclared schema, co-created links, retirement, and direct adapter calls.
       (`tests/contract/test_canon_entities.py`, `tests/contract/test_workspace_scope.py`,
@@ -474,51 +493,61 @@ retained only as the rebuildable projection and never participates in commit suc
       `world_position` is stored verbatim as free text.)
 - [x] Implement current-root-revision queries and history queries. Do not expose Phase 3
       branch-overlay or point-in-world-time query parameters as if supported.
-      (Reads project the current committed head only; per-revision diff/history queries are deferred to 2H.)
-- [ ] Add safe Neo4j projections for declared high-value predicates and prove they rebuild from
-      accepted reified records/journal state (deferred: no predicate projections/materializations yet).
-- [ ] Expand the reference world with objective truths, a secret, a false belief, an event, a
-      retired entity, scalar/entity-reference facts, and deliberate invalid proposals
-      (deferred: canon seed data not yet authored; the graph seed is unchanged).
-- [ ] Add tests for cardinality conflicts, false beliefs, unknown dates, retired references,
+      (Reads project the current committed head; per-revision state, diffs, and record history are
+      served by the 2H history API.)
+- [x] Add safe Neo4j projections for declared high-value predicates and prove they rebuild from
+      accepted reified records/journal state. (Every open entity-to-entity fact projects as a typed
+      relationship between `CanonEntity` nodes, created and removed with the fact; rebuilt from the
+      journal and compared with canon by `CanonEquivalenceService` — ADR-016.)
+- [x] Expand the reference world with objective truths, a secret, a false belief, an event, a
+      retired entity, scalar/entity-reference facts, and deliberate invalid proposals.
+      (`backend/seed/canon.py`, committed through the mutation path by `make seed`: truths, an
+      author-only secret, false/unknown/true beliefs, a fuzzy and an unknown event date, a
+      close-and-reassert history, a retired entity, a media link, and 4 valid + 21 invalid labelled
+      proposals that each name the finding they must raise.)
+- [x] Add tests for cardinality conflicts, false beliefs, unknown dates, retired references,
       cross-project objects, invalid holders, projection equivalence, and close/reassert history.
-      (Covered: cardinality conflict, false/unknown truth agreement, invalid holder/missing source, unknown
-      predicate, missing participant, retired-reference rejection, and project-scoped entity-ref
-      remapping on archive restore. Deferred with projections/history: projection equivalence and
-      close/reassert history.)
+      (All covered: the labelled-proposal suite in `tests/application/test_canon_seed.py`, and
+      projection equivalence plus close/reassert history against real PostgreSQL and Neo4j in
+      `tests/integration/test_canon_identity_and_equivalence.py`.)
 
 ### 2G acceptance
 
 - [x] the same proposition can be objectively true, falsely believed, or unknown without collapsing
       those states
-- [ ] facts/beliefs/events retain complete provenance and revision history after closure
+- [x] facts/beliefs/events retain complete provenance and revision history after closure
+      (record versions keep every assert/close in commit order; provenance assembles origin,
+      decisions, and evidence; proven on PostgreSQL)
 - [x] schema cardinality and reference rules hold at the locked canonical head, including within a
       single operation batch (safe per-record rebasing remains Phase 3 work)
-- [ ] query projections agree with reified accepted canon for the checked revision (projections deferred)
+- [x] query projections agree with reified accepted canon for the checked revision
+      (`CanonEquivalenceService`; `make project PROJECT_ARGS=--verify`)
 
 ## 2H. Provenance, revision history, and inspection
 
 - [x] Add revision list/read APIs showing actor/origin, timestamp, summary, operation/decision counts,
       source references, schema version, expected/result head, and recovery status without exposing
       secret payloads to unauthorized users.
-      (`GET /revisions`, `GET /revisions/{commit_id}`; actor/origin and recovery status are not yet
-      surfaced on the revision summary.)
+      (`GET /revisions`, `GET /revisions/{commit_id}` now carry origin, intent, mutation id,
+      decision and evidence counts, and status; the actor is withheld from read-only members.)
 - [x] Add entity/fact/belief/event history APIs that map changes back to mutation operations and
       provenance sources (`GET /entities|facts|beliefs|events/{id}/history` over `canon_record_versions`).
 - [x] Define and implement the storage-neutral canon query boundary for state at a canonical
       revision, revision-to-revision differences, belief holders/truth-agreement inputs, and full
       evidence provenance. Phase 3 extends the same contract with branch/world/narrative/POV
       evaluation rather than creating a second query layer.
-      (`*_at_revision` for entity/fact/belief/event + `diff_revisions` + derived truth agreement in
-      `CanonAssertionService`; full evidence-provenance assembly beyond links remains deferred.)
+      (`*_at_revision` for entity/fact/belief/event + `diff_revisions` + derived truth agreement +
+      `record_provenance`, which assembles commit, origin, review decisions, and evidence.)
 - [x] Add immutable named tags pointing to an exact root branch/revision with replacement history
       (`canon_tags`/`canon_tag_history`; `GET/POST /tags`, `DELETE /tags/{name}`, `GET /tags/{name}/history`).
 - [x] Generate compensating mutation sets for eligible commit reverts, detect intervening conflicts,
       preview the diff, and require the normal validation/review/commit path. Never delete or amend
-      a committed envelope. (`CanonHistoryService.propose_revert`/`commit_revert` +
-      `POST /projects/{id}/reverts/preview` and `/reverts`; invertible create/assert/link operations
-      produce inverse ops, non-invertible changes are surfaced for manual handling, and records
-      changed after the target revision are reported as intervening conflicts.)
+      a committed envelope. (`CanonHistoryService.propose_revert`/`commit_revert`: creations are
+      removed, entity edits and event amendments are restored to their exact prior state, closed
+      facts/beliefs and retired links are re-asserted as new records, records created inside the
+      range collapse to one removal, same-record later changes and references from live canon
+      outside the revert are reported as conflicts, and retirements are listed for manual handling
+      because no un-retire operation exists. A revert is always high-impact.)
 - [x] Distinguish security audit records from canon provenance: audit answers who invoked an action;
       provenance explains why a canonical record exists and from which evidence. (Tenancy
       `audit_events` vs `canon_provenance`/`canon_record_versions`.)
@@ -528,11 +557,15 @@ retained only as the rebuildable projection and never participates in commit suc
 - [x] Provide an operator projection report for lag, failed delivery, checksum mismatch, and rebuild
       status; never repair checksum disagreement by mutating canon (`GET /projects/{id}/projection`
       exposes status/last_error/failed_deliveries; `make watch`; `make project --rebuild`).
-- [ ] Record source artefact identifiers and bounded evidence locations, not copied manuscript/media
-      content, in provenance metadata. (Beliefs record `source_ref`; generalization across all
-      operations is deferred.)
-- [ ] Add authorization/redaction tests for history, provenance, audit, and diagnostics.
-      (Unauthenticated history access is tested as 401; dedicated redaction assertions are deferred.)
+- [x] Record source artefact identifiers and bounded evidence locations, not copied manuscript/media
+      content, in provenance metadata. (Every operation accepts up to ten `EvidenceRef`s whose
+      fields are identifier-shaped, so content cannot be stored; kept per record in
+      `canon_evidence` — ADR-015.)
+- [x] Add authorization/redaction tests for history, provenance, audit, and diagnostics.
+      (`tests/application/test_provenance_and_history_authz.py`: non-members are refused, another
+      project is not found, viewers cannot tag/revert/review, and viewers see origin and evidence
+      but not reviewer identities or notes. Audit records and metrics are asserted content-free in
+      the archive and metrics tests.)
 
 ### 2H acceptance
 
@@ -569,15 +602,18 @@ retained only as the rebuildable projection and never participates in commit suc
       via `ObjectStorePort.stat`; the archive carries and validates object bytes/checksums.)
 - [x] Enforce that rejected, retired, deleted, quarantined, or cross-project assets cannot receive
       new active canonical links (in-transaction validator requires an active asset/version).
-- [ ] Define deletion/retirement behavior: referenced versions retire and remain auditable; complete
+- [x] Define deletion/retirement behavior: referenced versions retire and remain auditable; complete
       project deletion follows the existing scoped purge; ordinary APIs never orphan link history.
-      (`POST /assets/{id}/retire` and `POST /assets/{id}/versions/{version_id}/retire` record the
-      current canon revision and project deletion uses the scoped purge; immutable lifecycle-change
-      history/audit is still required.)
+      (Registration, import, and retirement append an immutable `media_lifecycle_events` row in
+      the same transaction — migration `0021_media_lifecycle`, `GET /assets/{id}/lifecycle`.
+      Project deletion now also erases the project's canon, journal, schema, and media rows and
+      its whole projection; before the closure work those rows were left behind.)
 - [x] Add tests for identical asset IDs across projects, opaque keys, checksum mismatch, authority,
       attribution, lifecycle transitions, link review, retirement, and export/import
       (`tests/unit/test_media_service.py`, `tests/contract/test_media.py`,
-      `tests/application/test_canon_archive.py`; asset lifecycle transitions not yet covered).
+      `tests/application/test_canon_archive.py`, and against PostgreSQL in
+      `tests/integration/test_media_canon.py` and `test_canon_seed_and_purge.py`. The PostgreSQL
+      test found that every `link_asset` commit had been failing on a wrong table name; fixed.)
 
 ### 2I acceptance
 
@@ -598,38 +634,59 @@ retained only as the rebuildable projection and never participates in commit suc
       TanStack Query keys include workspace + project).
 - [x] Build a project shell with project switcher, active schema/revision indicator, navigation,
       permission state, degraded-store status, and no-provider-safe behavior.
-      (Switcher, canonical-head/`projection` status, nav; explicit permission/no-provider panels are
-      minimal.)
-- [ ] Build world/entity list, filters, detail, create/edit, typed property, relationship, history,
+      (Workspace/project switcher, canonical head and projection lag, the caller's role from
+      `GET /access` with write actions hidden for read-only members, an import banner when a
+      restore is not complete, and a clear message when no AI provider is configured.)
+- [x] Build world/entity list, filters, detail, create/edit, typed property, relationship, history,
       and retirement views. Forms derive from the governed schema rather than hardcoded type bags.
-      (List/detail/create/history/retire exist; filtered lists, edit form, and schema-derived fields
-      are deferred.)
-- [ ] Build a character-focused view over the same entity/fact/belief/event APIs; do not create a
-      parallel persistence model. (Deferred.)
-- [ ] Build schema draft/validate/publish and compatibility-report views with clear project scope.
-      (Deferred.)
-- [ ] Build mutation preview/review UI with operation diffs, validation failures, per-operation
-      decisions where required, expected/current head, and stable conflict recovery. (Deferred.)
-- [ ] Build revision/provenance inspection and basic asset metadata/link panels. Do not implement
-      media upload, processing, or similarity UI in this phase. (Entity history is shown; a dedicated
-      revision/provenance inspector and asset panels are deferred.)
+      (Type/retired/search filters; create and edit forms built from `GET /schemas/vocabulary` —
+      typed fields for extension types, key/value attributes for core types; aliases and slug;
+      advisory name-collision warning; facts in both directions with assert/close; acknowledged
+      retirement. Enum, quantity, and structured fact values are entered as JSON because the
+      vocabulary does not carry enum domains.)
+- [x] Build a character-focused view over the same entity/fact/belief/event APIs; do not create a
+      parallel persistence model. (Attributes, aliases, facts, beliefs with the derived truth
+      agreement labelled as derived, events, and the guided workflow, which ends at the proposal
+      to review. Beliefs and events are read-only here; they are authored through the API or a
+      proposal.)
+- [x] Build schema draft/validate/publish and compatibility-report views with clear project scope.
+      (Version list, definition editor, validation with errors, compatibility category and
+      migration plan, draft, publish.)
+- [x] Build mutation preview/review UI with operation diffs, validation failures, per-operation
+      decisions where required, expected/current head, and stable conflict recovery.
+      (Queue with status filter; per-operation before/after, accept/reject with note, edit as a
+      new revision; blocking vs advisory validation issues; stale banner with retarget;
+      approve/reject/commit; transition log. A commit is shown as accepted only after it returns.)
+- [x] Build revision/provenance inspection and basic asset metadata/link panels. Do not implement
+      media upload, processing, or similarity UI in this phase. (Revision list, per-record
+      provenance that says when reviewer details were withheld, revert preview and acknowledged
+      commit, asset list with versions and lifecycle audit, links on an entity. Read-only for
+      assets: registration and linking remain API/operator actions.)
 - [x] Clearly label draft, proposed, canonical, retired, and recovery-pending state. Never
       optimistically display an ambiguous commit as accepted (entity lifecycle badges + projection
       current/lag/error status).
-- [ ] Preserve keyboard operation, focus/error management, accessible labels, contrast, and reduced
-      motion; add automated accessibility coverage for the primary workflow. (Deferred.)
-- [ ] Add component tests with generated contract fixtures and an end-to-end browser test for the
-      full Phase 2 vertical workflow. (A vitest component test exists; e2e is deferred.)
+- [x] Preserve keyboard operation, focus/error management, accessible labels, contrast, and reduced
+      motion; add automated accessibility coverage for the primary workflow. (Labelled controls,
+      errors associated with fields and announced, visible focus, reduced-motion support; axe
+      assertions in the component tests and WCAG 2.1 A/AA checks including contrast on five pages
+      of the browser run.)
+- [x] Add component tests with generated contract fixtures and an end-to-end browser test for the
+      full Phase 2 vertical workflow. (34 vitest component tests with fixtures typed from the
+      generated contract; `make e2e` runs a Playwright test against a real API on a disposable
+      PostgreSQL database: schema publish, create, edit with stale-head recovery, provenance,
+      review and commit of a model proposal, acknowledged retirement, revision list, export.)
 
 ### 2J acceptance
 
-- [ ] an editor can complete the Phase 2 workflow without generic graph endpoints or database tools
-      (entity authoring works end-to-end; schema/review UI is deferred)
-- [ ] stale-head and validation conflicts preserve entered form data and present a recovery path
-      (the API returns a stable `revision_conflict`; in-form recovery is deferred)
+- [x] an editor can complete the Phase 2 workflow without generic graph endpoints or database tools
+      (proven by the browser end-to-end test)
+- [x] stale-head and validation conflicts preserve entered form data and present a recovery path
+      (component test and the browser test, which makes the head move while a form is open)
 - [x] workspace/project switches cannot display stale data from the previous scope (query keys are
       scoped by workspace + project)
-- [ ] the core workflow passes keyboard and automated accessibility checks (deferred)
+- [x] the core workflow passes keyboard and automated accessibility checks (a keyboard-only
+      browser test creates and retires an entity with a visible focus indicator, and axe
+      WCAG 2.1 A/AA checks pass; a manual screen-reader pass has not been done)
 
 ## 2K. Archive upgrade, restore, and rebuild
 
@@ -644,37 +701,45 @@ retained only as the rebuildable projection and never participates in commit suc
       operation order, and cross-project references before durable writes
       (`CanonArchiveService._validate`; media entries count toward the entry cap, decoded object
       bytes have a hard cap, and tests cover checksums, traversal, target preflight, and scoped refs.)
-- [ ] Retain a bounded v1 archive reader/upgrader for the Phase 1 graph/object format, or record an
+- [x] Retain a bounded v1 archive reader/upgrader for the Phase 1 graph/object format, or record an
       explicit owner decision to drop it while prototype data remains disposable. Never interpret a
-      v1 property bag as validated v2 canon without a review/migration report. (v1 upgrader deferred;
-      the Phase 1 graph-format `ProjectTransferService` v2 is retained untouched.)
-- [ ] Make import resumable/idempotent by archive/import ID and stage it through validation before
+      v1 property bag as validated v2 canon without a review/migration report.
+      (`backend/services/graph_archive_upgrade.py` + `make archive ARCHIVE_ARGS=--upgrade-graph`:
+      a checksum-verified, size-capped reader that files what fits the canon vocabulary as an
+      `import`-origin proposal needing approval and reports everything else — ADR-016.)
+- [x] Make import resumable/idempotent by archive/import ID and stage it through validation before
       canonical commit. A partial import must be retryable or removable without becoming visible as
-      a successful project. Deterministic target-scoped commit/mutation IDs make replay resumable
-      and idempotent, and target preflight happens before writes; a project-level import-status
-      ledger/visibility gate and explicit removal workflow remain deferred.
+      a successful project. (`archive_imports` ledger — migration `0022_archive_imports`: recorded
+      after validation and target preflight and before the first write, `completed` only after
+      replay, projection rebuild, and verification; a failed import resumes on retry or is removed
+      with `--remove-import`; the project's `/projection` status and `/imports` expose it.)
 - [x] Define preserve/remap rules for stable project-owned IDs, provenance actors, schema versions,
       root branch, object keys, and external aliases when importing into another workspace/project
       (object keys remapped + deduped by checksum; schema versions mapped by content hash; commit ids
       are deterministic and target-scoped; entity-reference project IDs are remapped; trusted
       restore commits use migration provenance; actor/alias carry-through is recorded as-is).
-- [ ] Rebuild Neo4j projections and derived indexes from accepted archive/journal data, then compare
-      canonical checksums and representative queries. (When a projector is wired, `import_project`
-      rebuilds Neo4j from revision 0; other indexes and representative-query equivalence remain.)
-- [ ] Include export/import security audit events without story content and require owner-level
-      authorization for full-history exports. (Structured `archive.export`/`archive.import` logs
-      carry counts only and the operator CLI documents the policy; no durable security-audit record
-      or application-level owner authorization exists yet.)
-- [ ] Add clean-environment round-trip tests containing false beliefs, retired records, explicit
+- [x] Rebuild Neo4j projections and derived indexes from accepted archive/journal data, then compare
+      canonical checksums and representative queries. (Import rebuilds the graph projection and
+      then requires `CanonEquivalenceService` to pass: journal replay vs normalized canon vs the
+      projection read through product queries. Canon has no derived vector index in Phase 2.)
+- [x] Include export/import security audit events without story content and require owner-level
+      authorization for full-history exports. (`export_project_as`/`import_project_as`/
+      `remove_import_as` require project administration and write `audit_events` rows with counts
+      and checksums only; `POST /projects/{id}/archive/export`. Import remains an operator CLI.)
+- [x] Add clean-environment round-trip tests containing false beliefs, retired records, explicit
       media links/originals, schema extensions, and complete mutation history.
-      (An in-memory round-trip test exists; a real PostgreSQL/Neo4j clean-environment test is deferred.)
+      (`tests/integration/test_archive_clean_environment.py` restores the reference world into a
+      separate PostgreSQL database, an empty object store, and an empty graph scope. The reference
+      world uses the core schema; schema-extension restore is covered in-memory by content hash.)
 
 ### 2K acceptance
 
 - [x] a Phase 2 project round-trips into a clean environment with the same canonical checksum
-      (in-memory `accepted_checksum` preserved across export/import)
-- [ ] omitted derived data rebuilds without changing accepted canon (projection rebuild exists but is
-      not wired to import)
+      (same-scope envelope checksums are preserved; a cross-project restore rewrites
+      project-scoped entity references, so those envelopes are recomputed and the restore is
+      proven by journal/normalized/projection equivalence instead)
+- [x] omitted derived data rebuilds without changing accepted canon (import rebuilds the projection
+      and verifies it; a rebuild reproduces the same projection checksum)
 - [x] corrupted or malicious archives fail before exposing a partially accepted project
 - [x] export never includes credentials, sessions, unrelated tenant data, or unapproved originals
       (archive carries canon objects/bytes and media identity only)
@@ -691,47 +756,54 @@ retained only as the rebuildable projection and never participates in commit suc
       fact/belief separation, cardinality, retirement, optimistic heads, mutation decisions,
       idempotency, transaction/projector recovery, outbox lag, media links, and archive round-trip
       ("Critical invariant matrix" in `phase-2-evidence.md`).
-- [ ] Include invariant-classification tests proving author rules default to warning, blocking is
+- [x] Include invariant-classification tests proving author rules default to warning, blocking is
       explicit, incomplete/extraction-dependent evaluation cannot block, and built-in integrity
-      checks cannot be suppressed or weakened. (Integrity non-suppression is tested; author-rule
-      classification arrives in Phase 2.5.)
+      checks cannot be suppressed or weakened. (`InvariantEvaluator` seam in
+      `backend/domain/validation.py` + `tests/unit/test_invariant_classification.py`. Rule
+      *authoring* and persistence remain Phase 2.5.)
 - [x] Maintain hermetic unit/application/contract tests with in-memory ports; keep PostgreSQL/Neo4j
-      behavior in disposable integration tests and browser workflows in e2e. (Hermetic + integration
-      are in place; e2e is deferred.)
-- [ ] Add property/state-machine tests for schema compilation, mutation transitions, revision heads,
+      behavior in disposable integration tests and browser workflows in e2e.
+- [x] Add property/state-machine tests for schema compilation, mutation transitions, revision heads,
       and recovery. Add mutation testing for the highest-risk validators if tooling is reliable.
-      (Deferred.)
-- [ ] Expand the two-tenant deterministic reference world with intentionally colliding IDs/names and
-      labeled valid/invalid canon proposals. (The two-workspace seed exists; intentional collisions
-      are deferred.)
-- [ ] Add migration tests from the supported Phase 1 schema and archive v1 policy; verify reset/seed
-      and empty-database paths. (Apply-from-empty and reset/seed are tested; the Phase 1→2 history
-      migration chain and archive v1 policy are deferred.)
-- [ ] Add Sentry spans/metrics and Grafana-ready counters for commit states, conflicts, recovery,
-      outbox lag, schema failures, and archive operations without recording canon bodies. (Sentry
-      scrubbing exists; commit/projection metrics are deferred.)
-- [ ] Set and measure initial performance budgets for paginated entity reads, validation, small
+      (Hypothesis: `tests/unit/test_properties.py`. No mutation-testing tool was adopted; instead
+      the review state machine was run against three deliberately broken invariants and detects
+      all of them.)
+- [x] Expand the two-tenant deterministic reference world with intentionally colliding IDs/names and
+      labeled valid/invalid canon proposals. (A second tenant's project reuses the same entity and
+      fact ids, names, and slugs with different truths; isolation is asserted in memory and on
+      PostgreSQL + Neo4j.)
+- [x] Add migration tests from the supported Phase 1 schema and archive v1 policy; verify reset/seed
+      and empty-database paths. (`tests/integration/test_phase_upgrade_migrations.py` upgrades
+      real Phase 1 rows and pre-review canon to head and rolls back and forward; the archive v1
+      policy is the upgrader above; reset is asserted to clear every canon table.)
+- [x] Add Sentry spans/metrics and Grafana-ready counters for commit states, conflicts, recovery,
+      outbox lag, schema failures, and archive operations without recording canon bodies.
+      (`backend/core/metrics.py`: Prometheus text format at `/health/metrics`, off by default and
+      token-protected; labels restricted to fixed vocabularies; a Sentry span around the commit
+      transaction when error reporting is enabled.)
+- [x] Set and measure initial performance budgets for paginated entity reads, validation, small
       commits, history queries, and representative exports; correctness remains the release gate.
-      (Deferred.)
+      (`tests/integration/test_performance_budgets.py`; measurements in `phase-2-evidence.md`.)
 - [x] Run `make check`, integration, e2e, migration verification, dependency audit, secret scan,
       archive/restore, recovery fault matrix, and clean-host workflows from a clean checkout.
-      (`make check` (incl. frontend), integration, `make migrate-verify`, `make audit`, `make
-      secret-scan`, archive round-trip, and recovery fault tests run; e2e and clean-host are deferred.)
+      (All of these ran locally and are recorded in `phase-2-evidence.md`, including e2e and a
+      real export/restore; the clean-*host* run and the first hosted CI run are owner items.)
 - [x] Create `phase-2-evidence.md` with commit, migration/checksum inventory, OpenAPI checksum, test
       counts, known limitations, recovery results, archive checksum comparison, and owner sign-off
       (`plan/phase-2-evidence.md`; owner sign-off pending).
 
 ### 2L acceptance
 
-- [ ] all critical invariants have automated positive and adversarial coverage (positive + key
-      adversarial cases exist; full matrix coverage is partial)
+- [x] all critical invariants have automated positive and adversarial coverage (see the invariant
+      matrix in `phase-2-evidence.md`; property tests search for counterexamples)
 - [x] no critical/high unaccepted dependency or security finding remains (`make audit` clean)
 - [x] failure injection proves canonical transactions roll back cleanly and projections replay or
       stop for explicit operator action
 - [x] diagnostics and telemetry expose state without story text, secrets, or raw media (redacted logs;
       no canon bodies logged)
 - [ ] a clean install completes the authoring → commit → history → export/restore workflow
-      (deferred to the clean-host rehearsal)
+      (automated against a fresh database by the end-to-end browser test and the clean-environment
+      restore test; a rehearsal on a clean *host* remains the owner's 2A item)
 
 ## Suggested implementation slices
 
@@ -769,30 +841,28 @@ vertical slices rather than mocks alone.
 ## Phase 2 exit gate
 
 - [x] core and project schema versions validate every accepted canonical record
-      (in-transaction validator + recorded `schema_version_id`; project-extension predicates land in 2.5)
+      (in-transaction validator + recorded `schema_version_id`, including project-extension types
+      and predicates)
 - [x] author edits produce audited, provenance-rich, revisioned commits through one canonical path
-- [ ] model/import/high-impact proposals cannot bypass required human decisions
-      (`MutationService.commit` rejects non-author origins without an approved decision and records an
-      author-direct decision otherwise; high-impact author-operation classification and
-      per-operation decisions remain review-workflow additions)
+- [x] model/import/high-impact proposals cannot bypass required human decisions
+      (the review gate is evaluated inside the commit transaction — ADR-014)
 - [x] objective facts and character beliefs are distinct in domain, storage, API, and UI
 - [x] entities and evidence links can be retired without erasing accepted history
 - [x] stale/concurrent commits fail predictably and retries cannot duplicate mutations
 - [x] PostgreSQL commits are atomic; Neo4j interruption produces only observable, replayable
       projection lag
 - [x] media identity and explicit evidence links obey project scope, authority, and lifecycle rules
-      (registration, active-link validation, link retirement, and basic asset/version retirement
-      exist; immutable lifecycle audit remains deferred)
+      (with an immutable lifecycle audit)
 - [x] two projects cannot read, write, link, restore, or reference each other's canon/assets
-- [ ] a complete project archive restores into a clean environment with the same canonical checksum
-      (in-memory round-trip preserves the checksum; a real clean-environment rehearsal is deferred)
-- [ ] the project shell supports entity/schema/canon review and history without generic graph tools
-      (entity authoring/history works; schema/review UI is deferred)
+- [x] a complete project archive restores into a clean environment with the same canonical checksum
+      (`tests/integration/test_archive_clean_environment.py`; see the 2K note on cross-project
+      checksums. The clean-*host* rehearsal remains an owner item under 2A.)
+- [x] the project shell supports entity/schema/canon review and history without generic graph tools
 - [x] one canon query boundary supports revision state, differences, and provenance; tags and revert
-      proposals preserve rather than rewrite history (state-at-revision/diffs/tags/revert proposals
-      exist; generalized evidence provenance is deferred)
+      proposals preserve rather than rewrite history
 - [x] built-in integrity rules are permanently blocking and author-rule contracts default to warning
-      (integrity is blocking/non-suppressible; author-rule publication is Phase 2.5)
+      (integrity is non-suppressible; the evaluator seam classifies rule results; rule authoring is
+      Phase 2.5)
 - [ ] Phase 2 evidence, known deferrals, and owner acceptance are recorded before Phase 3 starts
       (`phase-2-evidence.md` records evidence + deferrals; owner acceptance is pending)
 

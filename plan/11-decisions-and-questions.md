@@ -1,6 +1,6 @@
 # Decisions and remaining questions
 
-The project owner answered the original architecture questionnaires on 2026-10-05. On 2026-10-06 the product direction shifted from subscription SaaS toward an open-source/free product with an invite-only multi-tenant portfolio deployment. ADR-008 records the distribution pivot; ADR-009 accepts shared identity and invite-only tenancy. On 2026-10-07 ADR-010 accepted first-class multimodal context and a shared embedding-space boundary. On 2026-10-08 ADR-012 superseded ADR-011's split authority: PostgreSQL owns journal plus normalized canon, while Neo4j is replayable. ADR-012 retains the author-review and root-branch boundaries. ADR-013 accepts warning-default declarative story invariants while keeping built-in integrity rules permanently blocking.
+The project owner answered the original architecture questionnaires on 2026-10-05. On 2026-10-06 the product direction shifted from subscription SaaS toward an open-source/free product with an invite-only multi-tenant portfolio deployment. ADR-008 records the distribution pivot; ADR-009 accepts shared identity and invite-only tenancy. On 2026-10-07 ADR-010 accepted first-class multimodal context and a shared embedding-space boundary. On 2026-10-08 ADR-012 superseded ADR-011's split authority: PostgreSQL owns journal plus normalized canon, while Neo4j is replayable. ADR-012 retains the author-review and root-branch boundaries. ADR-013 accepts warning-default declarative story invariants while keeping built-in integrity rules permanently blocking. On 2026-10-09, closing Phase 2 produced three further decisions (ADR-014, ADR-015, ADR-016); they are implemented but recorded as proposed until the owner accepts them.
 
 ## Current direction
 
@@ -29,6 +29,9 @@ The project owner answered the original architecture questionnaires on 2026-10-0
 | Operational and canon store | PostgreSQL owns projects, jobs, reviews, the immutable journal, normalized/versioned canon, branch heads, outbox, and audit |
 | Derived graph | Neo4j is an optional replayable projection with an applied-revision watermark; it is not part of canonical commit success |
 | Phase 2 authoring | Low-impact author edits use the journal with recorded author approval; model/import/bulk/protected changes require a distinct human decision |
+| Review workflow (proposed) | Mutation sets are a state machine with per-operation decisions and immutable operation revisions; protected-origin, destructive, bulk, and revert changes need an explicit approval evaluated inside the commit transaction (ADR-014, awaiting acceptance) |
+| Entity handles and evidence (proposed) | Names are handles, not identity; slugs are unique among active entities; external ids bind one entity per project; evidence is a bounded pointer; reviewer identity is shown only to members who can write (ADR-015, awaiting acceptance) |
+| Projection and restore (proposed) | The canon projection has its own Neo4j labels and a versioned layout; a restore is ledgered and verified before it is successful; Phase 1 graph archives become review proposals only (ADR-016, awaiting acceptance) |
 | Phase 2 temporal scope | One root branch plus system revisions; fork/merge and world/narrative-time behavior remain Phase 3 |
 | Phase 2 media scope | Identity, immutable-version metadata, authority/provenance, explicit links, and archives only; secure ingestion/processing remains later |
 | Prototype data | Disposable; deterministic seed data replaces preservation of current databases |

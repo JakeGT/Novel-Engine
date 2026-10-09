@@ -27,7 +27,7 @@ Read in this order:
 19. [API surface](api-surface.md) — canonical `/api/v1` routes and the problem error contract.
 20. [Phase 0 baseline](phase-0-baseline.md) — pre-refactor API, storage, workflow, and worktree inventory.
 21. [Phase 1 todo](phase-1-todo.md) — execution-ready identity, tenancy, distribution, provider-credential, and isolation checklist.
-22. [Phase 2 todo](phase-2-todo.md) — execution plan and live completion dashboard for governed schema, revisioned canon, mutation commits, evidence assets, authoring UI, and archive recovery.
+22. [Phase 2 todo](phase-2-todo.md) — execution plan and completion dashboard for governed schema, revisioned canon, mutation review and commits, evidence assets, authoring UI, and archive recovery. Evidence: [phase-2-evidence.md](phase-2-evidence.md).
 23. [Author rules, canon queries, and derived views](18-author-rules-canon-queries-and-derived-views.md) — story invariants, explanation/history queries, reader disclosure, scene contracts, derived projections, MCP, and suppressions.
 
 Architectural decisions that become settled should be recorded in `decisions/` using [the ADR template](decisions/000-template.md).
@@ -57,30 +57,35 @@ Architectural decisions that become settled should be recorded in `decisions/` u
 | Implemented | Acceptance criteria and quality gates pass. |
 | Deferred | Intentionally excluded from the current release. |
 
-Core domain decisions are recorded under `decisions/`. ADR-008 proposes the open-source/free distribution pivot, ADR-009 accepts invite-only tenancy through shared portfolio identity (Authentik), ADR-010 accepts multimodal context with a shared embedding-space boundary, ADR-012 makes PostgreSQL authoritative canon with Neo4j as a replayable projection (superseding ADR-011), and ADR-013 accepts warning-default declarative story invariants while making built-in integrity checks permanently blocking. Licensing and governance remain owner decisions in `11-decisions-and-questions.md`.
+Core domain decisions are recorded under `decisions/`. ADR-008 proposes the open-source/free distribution pivot, ADR-009 accepts invite-only tenancy through shared portfolio identity (Authentik), ADR-010 accepts multimodal context with a shared embedding-space boundary, ADR-012 makes PostgreSQL authoritative canon with Neo4j as a replayable projection (superseding ADR-011), and ADR-013 accepts warning-default declarative story invariants while making built-in integrity checks permanently blocking. ADR-014 (review workflow and high-impact gate), ADR-015 (entity handles, evidence, and checksum-stable operation evolution), and ADR-016 (projection isolation, verified restore, and legacy archives) record decisions made while closing Phase 2 and are **proposed**, awaiting owner acceptance. Licensing and governance remain owner decisions in `11-decisions-and-questions.md`.
 
 ## Current repository baseline
 
-Implemented or partially implemented:
+Implemented and verified (see the per-phase evidence documents):
 
 - Phase 0 lifecycle, ports, migrations, deterministic tests, seed/reset, stable `/api/v1`, and
   PostgreSQL/pgvector + Neo4j infrastructure
 - Phase 1 OIDC/local identity, invitation-only tenancy, scoped stores, encrypted OpenRouter BYOK,
-  object storage, project transfer, and the minimal authenticated React shell
-- Phase 2 typed entity/fact/belief/event domain, immutable project schema versions/runtime
-  compilation, atomic PostgreSQL journal + normalized canon, history/provenance/tags/revert APIs,
-  media identity/lifecycle, canonical archive v3, and a replayable Neo4j projection
-- a minimal TypeScript project/entity authoring shell backed by the generated `/api/v1` client
+  object storage, and project transfer
+- Phase 2 trustworthy canon: typed entities/facts/beliefs/events; immutable project schema
+  versions; an atomic PostgreSQL journal and normalized canon; a review state machine with
+  per-operation decisions and a high-impact gate evaluated in the commit transaction; naming
+  policy; evidence provenance, history, tags, and compensating reverts; media identity with a
+  lifecycle audit; a verified, ledgered archive restore; a replayable Neo4j projection with
+  journal/canon/projection equivalence checks; and an authoring and review UI with browser
+  end-to-end coverage
 
-Not yet product-ready:
+Phase 2 is implementation-complete and **awaiting owner acceptance**. The open items are owner or
+operational actions: acceptance of the Phase 1 and Phase 2 evidence and of ADR-014–016, the first
+hosted CI run, the clean-host backup/restore rehearsal, and the live Authentik round trip.
 
-- branch-overlay closure and a structured fuzzy/invented-calendar `WorldTime` model
-- mutation-state transitions, per-operation review, high-impact author-operation classification,
-  and record/dependency-level rebasing
-- full schema/review/media UI, automated accessibility and browser coverage, generalized evidence
-  provenance, richer seed fixtures, and durable archive import/audit status
-- projection query-equivalence checks, performance budgets, and clean-host/backup rehearsals
-- manuscript import, extraction/entity-resolution evaluation, story planning, scene generation,
-  consistency workflows, temporal branching, and production operations
-- declarative story invariants, reader disclosures, narrated assertions/belief propagation, scene
-  contracts, impact preview, spoiler-safe exports, purpose-built temporal views, and MCP transport
+Not yet built (later phases):
+
+- story-invariant authoring, scene contracts, manuscript import, and extraction/entity-resolution
+  evaluation (Phase 2.5)
+- branch forks/overlays/merges, a structured fuzzy/invented-calendar `WorldTime` model,
+  world/narrative-time and point-of-view queries, reader disclosures, and record/dependency-level
+  rebasing (Phase 3)
+- explainable context, derived vector/search memory, and media ingestion/processing (Phase 4)
+- story planning, scene generation, consistency workflows, and extraction-to-commit (Phase 5–6)
+- production operations, backup automation, and release hardening (Phase 7)

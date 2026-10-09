@@ -1,59 +1,73 @@
 # API surface
 
-- Status: Phase 0 (0F). Canonical routes are under `/api/v1`.
-- Error contract: every failure returns `application/problem+json` with `type`, `title`,
-  `status`, `code`, `detail`, `field_errors`, and `correlation_id`. The
-  `X-Correlation-ID` response header echoes the request value or a generated UUIDv7.
+- Status: Phase 2. The committed contract is `tests/contract/openapi_snapshot.json` (145
+  operations), exact-checked by `tests/contract/test_openapi.py`; the frontend client is generated
+  from it and `make frontend-api-check` fails on drift. This page is a guide to that contract, not a
+  second source of truth.
+- Error contract: every failure returns `application/problem+json` with `type`, `title`, `status`,
+  `code`, `detail`, `field_errors`, and `correlation_id`. The `X-Correlation-ID` response header
+  echoes the request value or a generated UUIDv7.
+- Scope: project routes are `/api/v1/projects/{project_id}/...`. Hosted mode requires an
+  `X-Workspace-Id` header and authorizes workspace membership and project ownership on every
+  request. Local mode has exactly one workspace and project; a URL naming any other project is
+  `404`.
+- Writes require the CSRF header and an explicit `expected_revision`; a successful commit returns
+  the new revision in `ETag`.
 
-## Canonical `/api/v1`
+## Canonical product API (`/api/v1/projects/{project_id}`)
 
-| Method | Path | Notes |
+| Area | Routes | Notes |
 | --- | --- | --- |
-| GET | `/entities` | List by `type` with `limit`/`offset` pagination. |
-| GET | `/entities/search` | Name/ID autocomplete (`q`, `type`). Declared before `/{entity_id}`. |
-| POST | `/entities` | Create/upsert; rejects unknown types and invalid identifiers with 400. |
-| GET | `/entities/{entity_id}` | Read one entity. |
-| PUT | `/entities/{entity_id}` | Full replacement; rejects path/body id mismatch. |
-| GET | `/entities/{entity_id}/edges` | Incoming and outgoing edges. |
-| POST | `/edges` | Create edge; validates type and endpoint existence. |
-| GET | `/edges` | Find edges by `source_id`/`target_id`/`type`. |
-| GET/POST | `/schema/node-types` | List or register a custom node type. |
-| DELETE | `/schema/node-types/{node_type}` | Remove a custom node type (core types are 404). |
-| GET/POST | `/schema/edge-types` | List or register a custom edge type. |
-| DELETE | `/schema/edge-types/{edge_type}` | Remove a custom edge type. |
-| POST | `/context` | Explicit-tag plus optional semantic anchors, policy traversal, summary. |
-| POST | `/characters/init` | Create a character anchor. |
-| POST | `/characters/generate-questions` | Structured questionnaire (AI). |
-| POST | `/characters/process-answers` | Structured graph update (AI), applied to the graph. |
-| POST | `/rag/query` | **Placeholder-disabled:** returns 501 `not_implemented`. |
+| Access | `GET /access` | Caller's role and permissions; drives permission-aware UI. |
+| Schema | `GET /schemas`, `GET /schemas/{id}`, `GET /schemas/vocabulary`, `POST /schemas/validate`, `POST /schemas/drafts`, `POST /schemas/{id}/publish` | Immutable versions. `vocabulary` lists core plus published entity types (with attribute JSON Schema) and predicates. `validate` reports errors and compatibility against the published version. Publish needs project administration; a forbidden change is `409 schema_incompatible`. |
+| Entities | `GET/POST /entities`, `GET /entities/search`, `GET /entities/by-external-id`, `GET /entities/name-collisions`, `GET/PATCH /entities/{id}`, `POST /entities/{id}/retire` | Names are handles, not identity (ADR-015). Search covers name, slug, and aliases. Retire needs `acknowledge_high_impact`. |
+| Facts, beliefs, events | `GET/POST /facts`, `GET /facts/{id}`, `POST /facts/{id}/close`; `GET/POST /beliefs`, `GET /beliefs/{id}`, `POST /beliefs/{id}/close`, `GET /beliefs/{id}/truth-agreement`; `GET/POST /events`, `GET/PATCH /events/{id}`, `POST /events/{id}/retire` | Truth agreement is a derived query result, never a stored field. |
+| Proposals and review | `GET/POST /mutations`, `GET /mutations/{id}`, `POST /mutations/{id}/validate`, `/submit`, `/approve`, `/reject`, `/retarget`, `/commit`; `PUT /mutations/{id}/operations/{ordinal}`; `POST /mutations/{id}/operations/{ordinal}/decision` | Review state machine (ADR-014). Validation is an advisory preview; the commit revalidates in its transaction. A client may propose as `author`, `model`, or `import` only. |
+| Guided character workflow | `POST /characters/{entity_id}/questions`, `POST /characters/{entity_id}/proposals` | Spends the workspace's provider budget. Returns a proposal in the review queue; never writes canon. |
+| History and provenance | `GET /revisions`, `GET /revisions/{commit_id}`, `GET /revisions/{from}/diff/{to}`, `GET /{entities\|facts\|beliefs\|events}/{id}/history`, `GET /{...}/{id}/at-revision/{revision}`, `GET /provenance/{record_type}/{record_id}`, `GET/POST /tags`, `DELETE /tags/{name}`, `GET /tags/{name}/history`, `POST /reverts/preview`, `POST /reverts` | Provenance withholds reviewer identities and notes from read-only members and says so. A revert is a new commit and needs `acknowledge_high_impact`. |
+| Media | `GET/POST /assets`, `GET /assets/{id}`, `GET /assets/{id}/lifecycle`, `GET/POST /assets/{id}/versions`, `POST /assets/{id}/retire`, `POST /assets/{id}/versions/{vid}/retire`, `GET/POST /assets/{id}/links`, `GET /links`, `POST /links/{id}/retire` | Identity, immutable versions, and explicit links only. No upload, scanning, or processing exists. |
+| Projection | `GET /projection` | Graph projection head, applied revision, lag, last error, and the latest archive import. |
+| Archive | `POST /archive/export`, `GET /imports`, `DELETE /imports/{import_id}` | Export and import removal need project administration and are audited. Import itself is an operator CLI (`make archive`), not an HTTP route. |
 
-### Entity representation
+### Review-related responses
 
-`{ "id", "type", "properties": {...}, "created_at" }`. Create, read, and update
-return the same shape. Embeddings and other storage-only fields are never exposed,
-and `created_at` is normalized to timezone-aware UTC.
+| Status | `code` | Meaning |
+| --- | --- | --- |
+| 409 | `review_required` | The change needs an explicit approval. It has been parked as a proposal; `field_errors.mutation_id` names it and `field_errors.reasons` says why. |
+| 409 | `revision_conflict` | The branch head moved or a commit id was reused; reload and retry (or retarget a proposal). |
+| 409 | `invalid_state` | The proposal or import is in a state that does not allow the action (for example it is already committed). |
+| 422 | `validation_error` | The authoritative validator rejected the operations; `detail` lists the finding codes. |
 
-### Health
+## Tenancy, credentials, and identity
 
-`/health/live` (process alive), `/health/ready` (Neo4j migration + connectivity,
-PostgreSQL readiness + migration; 503 when degraded), `/health/capabilities`
-(optional embeddings/AI/vector availability; no secrets, no model load, no writes).
+- `/api/v1/workspaces` and `/workspaces/{id}/members|projects|invitations|ownership`,
+  `/api/v1/invitations/accept`: invite-only tenancy (Phase 1).
+- `/api/v1/credentials` (+ `/{id}/rotate`, `/{id}/revoke`): envelope-encrypted OpenRouter BYOK;
+  plaintext is never returned.
+- `/auth/login`, `/auth/callback`, `/auth/me`, `/auth/logout`: OIDC (hosted) or local session.
 
-## Legacy aliases
+## Health and operations
 
-The original prototype `/api` routes were removed in Phase 1 (1A) once `/api/v1`
-covered the maintained surface. Only `/api/v1`, `/health/*`, and `/auth/*` are served;
-there is no `/api` alias router.
+- `/health/live`, `/health/ready` (store connectivity and read-only migration verification; 503 when
+  degraded), `/health/capabilities` (no secrets, no model load, no writes).
+- `/health/metrics`: Prometheus text format, counts and timings only. Off unless
+  `METRICS_ENABLED`; requires `METRICS_TOKEN` as a bearer token when set, and is never served
+  unauthenticated in production. Deliberately not part of the OpenAPI contract.
 
-## Pending
+## Local/admin graph surface (not the product API)
 
-- Edge validity/provenance (`valid_from`/`valid_until`) exists on the domain model but is
-  not persisted; it is explicitly excluded from the v1 `EdgeModel` until temporal
-  semantics land (FND-008.4).
-- Edge deletion/retirement (`FND-008.5`) is exposed for nodes (`DELETE /entities/{id}`)
-  but not yet for edges.
-- The graph and RAG answer generation pipeline is future-phase work; `/api/v1/rag/query`
-  is deliberately 501 so placeholder text cannot be mistaken for generated output.
-- Character graph proposals are validated and applied immediately; atomic, reviewable
-  mutation application is Phase 1.
-- Shared OIDC authentication, invitation-derived workspace/project scoping, and pagination cursors are Phase 1.
+`/api/v1/graph/projects/{project_id}/...` and the pre-project aliases `/api/v1/entities`,
+`/edges`, `/schema/*`, `/context`, `/characters/*`, and `/rag/query` are the Phase 0 generic graph
+API. It reads and writes the legacy Neo4j graph, which is separate from canon: canon projects into
+its own `Canon*` labels (ADR-016), so the two never see each other's nodes.
+
+- Reads and `/context` (explicit-tag plus optional semantic anchors) remain available.
+- Every write, including `/characters/init` and `/characters/process-answers`, is restricted to
+  local mode and a platform administrator. Hosted deployments cannot write through this surface.
+- `/rag/query` is deliberately `501 not_implemented`.
+
+## Not yet in the API
+
+Branch forks and overlays, world/narrative-time and point-of-view query parameters, story-invariant
+authoring, scene contracts, manuscript import, generation, media upload/processing, and an HTTP
+archive import are later-phase work. No route accepts parameters that imply they are enforced.

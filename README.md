@@ -17,11 +17,14 @@ The project combines:
 
 This repository is a stabilized prototype, not a production application. Phase 0 is complete;
 Phase 1 identity, invitation-only tenancy, scoped persistence, encrypted OpenRouter BYOK, and
-distribution foundations are implemented with external rehearsals pending. Phase 2 provides typed
-canon, immutable project schemas, atomic PostgreSQL commits, history/provenance queries, replayable
-Neo4j projection, media identity, canonical archives, and a minimal entity-authoring shell. Review
-UI, temporal branching, prose planning/generation, and production operations remain planned. See
-[the implementation plan](plan/README.md) for authoritative status and delivery sequencing.
+distribution foundations are implemented with external rehearsals pending. Phase 2 (trustworthy
+canon) is implementation-complete and awaiting owner acceptance: typed canon and immutable project
+schemas, atomic PostgreSQL commits behind a review gate with per-operation decisions, evidence
+provenance and history, compensating reverts, media identity, a verified archive restore, a
+replayable Neo4j projection, and an authoring and review UI. Story rules, manuscript import,
+temporal branching, point-of-view filtering, prose planning/generation, and production operations
+remain planned. See [the implementation plan](plan/README.md) and
+[the Phase 2 evidence](plan/phase-2-evidence.md) for authoritative status.
 
 ## Quick start
 
@@ -42,7 +45,7 @@ make seed
 make api
 ```
 
-`make infra-up` starts PostgreSQL/pgvector and Neo4j and waits for both to be healthy. `make migrate` applies explicit Alembic and Neo4j migrations; application startup verifies migration state but never mutates schemas. `make seed` applies the deterministic reference world (idempotent; graph always, vector documents only when embeddings are available). `make reset-dev` clears development stores first and refuses to run in production or against non-local stores. `uv` creates and manages `.venv` automatically. On Windows, run the commands shown in `Makefile` directly if `make` is unavailable; no manual virtual-environment activation is required.
+`make infra-up` starts PostgreSQL/pgvector and Neo4j and waits for both to be healthy. `make migrate` applies explicit Alembic and Neo4j migrations; application startup verifies migration state but never mutates schemas. `make seed` applies the deterministic reference worlds (idempotent): the legacy graph manifest, and the canonical reference world, which is committed through the same mutation path product writes use. Vector documents are indexed only when embeddings are available. `make reset-dev` clears development stores first and refuses to run in production or against non-local stores. `uv` creates and manages `.venv` automatically. On Windows, run the commands shown in `Makefile` directly if `make` is unavailable; no manual virtual-environment activation is required.
 
 Local semantic embeddings are optional. The base install is small and degrades gracefully;
 install `sentence-transformers` with `uv sync --locked --extra embeddings` when you need
@@ -66,7 +69,7 @@ make api
 ### Migrations
 
 - PostgreSQL uses Alembic (`migrations/versions/`); the current head is
-  `0018_commit_integrity`. Author a new revision with `uv run alembic revision -m "..."`,
+  `0022_archive_imports`. Keep revision ids at 32 characters or fewer. Author a new revision with `uv run alembic revision -m "..."`,
   implement `upgrade`/`downgrade`, and run `make migrate`.
 - Neo4j uses the ordered runner in `backend/graph/migrations.py`. Add a `Migration` to
   `NEO4J_MIGRATIONS`; the runner records applied IDs and checksums and fails on drift.
@@ -87,6 +90,9 @@ snapshot (`pnpm --dir frontend run gen:api`, output committed under `frontend/sr
 React Router and TanStack Query with workspace/project-scoped cache keys. Validate it with
 `make frontend-api-check frontend-lint frontend-typecheck frontend-test frontend-build`; the
 generated client is excluded from lint, while `frontend-api-check` detects snapshot drift.
+`make e2e` runs the Playwright browser tests against a real API on a disposable PostgreSQL
+database (start the test profile first; install the browser once with
+`make frontend-e2e-install`).
 
 The API is served at `http://localhost:8000`; canonical routes are under `/api/v1` and interactive API documentation is at `http://localhost:8000/docs`. Neo4j Browser is at `http://localhost:7474` using the credentials configured in `.env`.
 
@@ -99,6 +105,7 @@ make lint
 make test
 make test-integration
 make frontend-build
+make e2e
 ```
 
 `make test` runs the hermetic unit/application/contract suite with no services, network, API keys, model downloads, or persistent writes. `make test-integration` targets disposable PostgreSQL and Neo4j services (start the test Neo4j with `docker compose --profile test up -d --wait neo4j-test`). Tests that spend model tokens are marked `llm` and excluded from both commands.
@@ -132,10 +139,19 @@ Operational tooling:
   names; no secrets or manuscript text).
 - `make retention` purges expired sessions, login attempts, invitations, and stale rate-limit
   hits without touching canonical data.
-- Canonical project export/import is available through `make archive` (checksummed archive v3,
+- `make project` advances the Neo4j projection; `make project PROJECT_ARGS=--verify` checks that
+  the journal, normalized canon, and the projection agree; `make verify` checks journal
+  consistency. Neither ever changes canon.
+- Canonical project export/restore is available through `make archive` (checksummed archive v3,
   including accepted history and permitted object bytes, but never credentials or sessions).
-  The older `ProjectTransferService` graph bundle remains transitional. A coordinated
-  PostgreSQL/Neo4j/object-store backup procedure is documented but not yet automated.
+  It acts as `--actor USER_ID`, requires a project administrator in a hosted deployment, and
+  writes a security-audit record. A restore is recorded in a status ledger and is only marked
+  complete after it has been verified; `--imports` shows the ledger and `--remove-import` erases a
+  failed one. `--upgrade-graph` files a Phase 1 graph bundle as a proposal for review rather than
+  restoring it. A coordinated PostgreSQL/Neo4j/object-store backup procedure is documented but not
+  yet automated; a project archive is not a database backup.
+- Operational metrics are available in Prometheus text format at `/health/metrics` when
+  `METRICS_ENABLED=true` (counts and timings only; set `METRICS_TOKEN` outside local development).
 
 Privacy: the only outbound connections are the configured OIDC provider, the AI provider
 (OpenRouter/OpenAI), and opt-in Sentry. Sentry is disabled unless a DSN is set and scrubs

@@ -175,3 +175,34 @@ project schema versions, reified facts/beliefs/events, root-branch revisions, a
 recoverable PostgreSQL journal/outbox with idempotent Neo4j application, provenance
 and retirement, and media identity. ADR-012 has since reopened canonical storage/commit work so
 PostgreSQL becomes authoritative and Neo4j replayable; see `plan/phase-2-todo.md`.
+
+## Phase 2 implementation update (2026-10-09)
+
+Phase 2 built trustworthy canon on the Phase 1 boundary. This section supersedes the paragraphs
+above where they differ; `plan/phase-2-evidence.md` holds the evidence and the known limitations.
+
+Now implemented and tested:
+
+- PostgreSQL-authoritative canon: an immutable journal and normalized/versioned entities, facts,
+  beliefs, events, provenance, and evidence, committed in one transaction (ADR-012)
+- immutable, compiled project schema versions with a vocabulary endpoint for schema-derived forms
+- a mutation review state machine with per-operation decisions, immutable operation revisions,
+  and a high-impact gate evaluated inside the commit transaction (ADR-014, proposed)
+- entity naming policy, evidence references, provenance with redaction, tags, and compensating
+  reverts (ADR-015, proposed)
+- a replayable Neo4j projection under its own labels, with journal/canon/projection equivalence
+  checks; complete project deletion; a ledgered, verified archive restore and a bounded Phase 1
+  archive upgrader (ADR-016, proposed)
+- media identity, immutable versions, explicit links, and a lifecycle audit
+- a guided character workflow that only ever produces review proposals
+- an authoring and review UI with automated accessibility checks and browser end-to-end tests
+- property/state-machine tests, upgrade-migration tests, performance budgets, and operational
+  metrics
+
+Still open before later phases: owner acceptance of the Phase 1 and Phase 2 evidence and of
+ADR-014–016, the first hosted CI run, the clean-host and coordinated backup/restore rehearsal, the
+live Authentik browser round trip, and the PostgreSQL RLS decision carried from Phase 1.
+
+The next transition is Phase 2.5 (text-first author workflow probe): manuscript import, explicit
+entity marks, scoped alias memory, bounded extraction into grouped proposals, and declarative story
+invariants on the evaluator seam Phase 2 established.
