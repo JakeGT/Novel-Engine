@@ -8,7 +8,7 @@ one exact Caddy route, one OIDC client.
 Status: the stack has been started in an isolated, loopback-only copy with throwaway secrets
 (migrations applied, server healthy, UI served, docs hidden, backup script run). **It has not been
 deployed on the platform, and no live Authentik sign-in has been completed.** Do the steps below in
-order; do not add the Cloudflare route until step 6 passes.
+order.
 
 | Piece | Where |
 |---|---|
@@ -74,10 +74,16 @@ above with strict matching; the application must be gated to `platform-admin` an
 Its client id is the generated one, not the slug, so `scripts/verify-identity.sh`'s
 `check_oidc_app` (which looks providers up by `client_id == slug`) does not cover it as written.
 
-## 6. Private sign-in round trip (before any public route)
+## 6. Publish, then do the sign-in round trip straight away
 
-Point the hostname at Caddy on this machine only, for example a temporary hosts entry or
-`curl --resolve`, and with a browser:
+A browser sign-in cannot be done privately on this platform: Caddy publishes no host port, TLS
+exists only at Cloudflare, the session cookies are `Secure`, and Authentik redirects back to the
+public `https://` address. So the route goes live first and the round trip follows immediately.
+What is exposed in between is listed at the end of this file: the UI shell, `/health/live`, and a
+redirect to Authentik, which admits only `platform-admin` and `app-users`.
+
+Add `novel-engine.jaketalling.com -> http://caddy:80` in the Cloudflare tunnel dashboard, check
+`curl -fsS https://novel-engine.jaketalling.com/health/live`, then with a browser:
 
 1. Open the site, sign in through Authentik, land back signed in (`/auth/me` shows your user).
 2. `docker compose exec server python -m backend.devtools.provision --list-users` shows you.
@@ -92,10 +98,7 @@ Point the hostname at Caddy on this machine only, for example a temporary hosts 
 
 Record the result in `plan/phase-2-evidence.md` (the open "live Authentik round trip" item).
 
-## 7. Publish
-
-Add `novel-engine.jaketalling.com -> http://caddy:80` in the Cloudflare tunnel dashboard, then
-`curl -fsS https://novel-engine.jaketalling.com/health/live`.
+If the round trip fails, remove the Cloudflare route again until it is fixed.
 
 ## Upgrade, roll back, stop
 
