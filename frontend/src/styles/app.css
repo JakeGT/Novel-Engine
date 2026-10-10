@@ -1605,6 +1605,13 @@ button.tile strong {
   border-top: 1px solid var(--line-strong);
 }
 
+.change-editor {
+  padding: 1rem 1.1rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+}
+
 .change.skipped {
   opacity: 0.75;
 }

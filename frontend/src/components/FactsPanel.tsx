@@ -2,50 +2,10 @@ import { useQuery } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type CanonEntity, type Fact, type VocabularyPredicate } from '../api/client'
+import { buildObject, type Entered } from '../lib/facts'
 import { objectText, predicateLabel, typeLabel, typePlural } from '../lib/words'
 import { entryPath, scopedKey, useCanonWrite, useEntries, useProject } from '../project'
 import { Button, ErrorNotice, Loading, UndoNotice, WriteProblem } from './ui'
-
-interface Entered {
-  value: string
-  unit: string
-}
-
-function buildObject(
-  predicate: VocabularyPredicate,
-  entered: Entered,
-  projectId: string,
-): { object?: Record<string, unknown>; error?: string } {
-  const text = entered.value.trim()
-  if (!text) return { error: 'Finish the sentence first.' }
-  switch (predicate.object_shape) {
-    case 'entity_ref':
-      return { object: { kind: 'entity_ref', entity_id: text, project_id: projectId } }
-    case 'string':
-      return { object: { kind: 'string', value: text } }
-    case 'integer':
-      return /^-?\d+$/.test(text)
-        ? { object: { kind: 'integer', value: Number(text) } }
-        : { error: 'Enter a whole number.' }
-    case 'decimal':
-      return Number.isNaN(Number(text))
-        ? { error: 'Enter a number.' }
-        : { object: { kind: 'decimal', value: text } }
-    case 'boolean':
-      return { object: { kind: 'boolean', value: text === 'true' } }
-    case 'quantity':
-      if (Number.isNaN(Number(text))) return { error: 'Enter a number for the amount.' }
-      if (!entered.unit.trim()) return { error: 'Add a unit, such as km or years.' }
-      return { object: { kind: 'quantity', value: text, unit: entered.unit.trim() } }
-    default:
-      // Lists of allowed values and structured values carry extra fields; enter them as JSON.
-      try {
-        return { object: { kind: predicate.object_shape, ...(JSON.parse(text) as object) } }
-      } catch {
-        return { error: 'Enter this value as JSON.' }
-      }
-  }
-}
 
 const JSON_HINTS: Record<string, string> = {
   enum: 'Enter as JSON, for example {"value": "wary", "allowed": ["wary", "open"]}',

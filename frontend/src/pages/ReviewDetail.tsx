@@ -9,6 +9,7 @@ import {
   type MutationOperation,
   type MutationValidation,
 } from '../api/client'
+import { ChangeEditor, type Candidate } from '../components/ChangeEditor'
 import { ConversationEvidence, SetupSuggestions } from '../components/Conversations'
 import { Icon } from '../components/icons'
 import { RestoreDialog } from '../components/RestoreDialog'
@@ -24,6 +25,7 @@ import {
   ReadOnlyNotice,
 } from '../components/ui'
 import { useConversationFor } from '../lib/conversations'
+import { hasChangeForm } from '../lib/facts'
 import { IMPORTANCE_KEY, NEEDS_DETAIL_KEY, TAGS_KEY } from '../lib/marks'
 import { fullDate, timeAgo } from '../lib/time'
 import {
@@ -115,6 +117,7 @@ function ChangeCard({
   operation,
   title,
   issues,
+  candidates,
   editable,
   busy,
   onDecide,
@@ -123,6 +126,7 @@ function ChangeCard({
   operation: MutationOperation
   title: string
   issues: Issue[]
+  candidates: Candidate[]
   editable: boolean
   busy: boolean
   onDecide: (decision: 'accepted' | 'rejected', note: string | null) => void
@@ -130,6 +134,7 @@ function ChangeCard({
 }) {
   const [note, setNote] = useState('')
   const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState(false)
   const [text, setText] = useState('')
   const [reason, setReason] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
@@ -165,6 +170,11 @@ function ChangeCard({
       <div className="change-head">
         <span className="change-title">{title}</span>
         {operation.revision > 1 && <Badge tone="info">Edited</Badge>}
+        {editable && hasChangeForm(operation.operation_type) && !form && (
+          <Button size="sm" variant="ghost" icon="edit" aria-label={`Edit change ${number}: ${title}`} onClick={() => setForm(true)}>
+            Edit
+          </Button>
+        )}
         {editable ? (
           <div className="segmented" role="group" aria-label={`Change ${number}: ${title}`}>
             <button
@@ -211,7 +221,16 @@ function ChangeCard({
         </p>
       ))}
 
-      {rows.length > 0 && (
+      {form && (
+        <ChangeEditor
+          operation={operation}
+          candidates={candidates}
+          busy={busy}
+          onSave={(payload) => onRevise(payload, null)}
+          onCancel={() => setForm(false)}
+        />
+      )}
+      {!form && rows.length > 0 && (
         <div className="table-wrap">
           <table className="diff-table">
             <thead>
@@ -266,7 +285,7 @@ function ChangeCard({
                     setEditing(true)
                   }}
                 >
-                  Edit change {number}
+                  Edit change {number} as stored
                 </Button>
               </div>
             </>
@@ -388,6 +407,19 @@ export function ReviewDetail() {
   const canCommit = editable && !change.is_stale && included.length > 0
   const names = new Map([...entries.names, ...namesFromOperations(change.operations)])
   const groups = groupOperations(change.operations)
+  // What a fact can be about or point to: the story's entries and the ones this set would add.
+  const candidates: Candidate[] = [
+    ...entries.items
+      .filter((item) => item.lifecycle === 'active')
+      .map((item) => ({ id: item.id, name: item.name, type: item.type })),
+    ...change.operations
+      .filter((item) => item.operation_type === 'create_entity' && item.decision?.decision !== 'rejected')
+      .map((item) => ({
+        id: String(item.payload.id),
+        name: String(item.payload.name),
+        type: String(item.payload.type),
+      })),
+  ]
   // One decision for a whole group: only the changes that differ are sent, in order.
   const decideAll = (items: MutationOperation[], decision: 'accepted' | 'rejected') =>
     action.mutate(async () => {
@@ -619,6 +651,7 @@ export function ReviewDetail() {
                       operation={operation}
                       title={describeOperation(operation, names)}
                       issues={issuesFor(operation.ordinal)}
+                      candidates={candidates}
                       editable={editable}
                       busy={busy}
                       onDecide={(decision, operationNote) =>

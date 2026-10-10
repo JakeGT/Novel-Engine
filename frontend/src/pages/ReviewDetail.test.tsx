@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { entity, mutation, operation } from '../test/fixtures'
+import { entity, mutation, operation, VOCABULARY } from '../test/fixtures'
 import {
   expectAccessible,
   mockApi,
@@ -418,6 +418,94 @@ describe('ReviewDetail', () => {
     )
   })
 
+  it('edits a suggested entry with a form, sending only the fields the author changed', async () => {
+    const api = mockApi({
+      ...entries,
+      'GET /schemas/vocabulary': VOCABULARY,
+      'GET /mutations/mut_1': mutation(),
+      'PUT /operations/0': mutation(),
+    })
+    const user = userEvent.setup()
+    renderInProject(<ReviewDetail />, at)
+
+    await user.click(await screen.findByRole('button', { name: 'Edit change 1: Add character “Iven”' }))
+    const form = screen.getByRole('form', { name: 'Edit change 1' })
+    const name = within(form).getByLabelText('Name')
+    await user.clear(name)
+    await user.type(name, 'Iven Roe')
+    await user.type(within(form).getByLabelText('Tags'), 'rival')
+    await user.click(within(form).getByRole('button', { name: 'Add a detail' }))
+    await user.type(within(form).getByLabelText('Detail 1 name'), 'role')
+    await user.type(within(form).getByLabelText('Detail 1 value'), 'smuggler')
+    await user.click(within(form).getByRole('button', { name: 'Save edit' }))
+
+    await waitFor(() => expect(api.find('PUT', '/operations/0')).toHaveLength(1))
+    expect(api.find('PUT', '/operations/0')[0].body).toMatchObject({
+      operation: {
+        op: 'create_entity',
+        id: 'tmp:a',
+        name: 'Iven Roe',
+        attributes: { role: 'smuggler', _tags: ['rival'] },
+      },
+    })
+  })
+
+  it('edits a suggested fact as a sentence, and keeps the form open when it is unfinished', async () => {
+    const fact = operation({
+      operation_type: 'assert_fact',
+      payload: {
+        op: 'assert_fact',
+        id: 'tmp:fact-0',
+        proposition: {
+          subject_id: 'ent_mara',
+          predicate: 'LOCATED_AT',
+          object: { kind: 'entity_ref', entity_id: 'ent_harbor', project_id: 'prj_1' },
+        },
+      },
+    })
+    const api = mockApi({
+      'GET /assist/sessions': { items: [] },
+      'GET /entities': {
+        items: [
+          entity(),
+          entity({ id: 'ent_harbor', type: 'Location', name: 'Lantern Harbor' }),
+          entity({ id: 'ent_cove', type: 'Location', name: 'Gull Cove' }),
+        ],
+        limit: 200,
+        offset: 0,
+      },
+      'GET /schemas/vocabulary': VOCABULARY,
+      'GET /mutations/mut_1': mutation({ operations: [fact] }),
+      'PUT /operations/0': mutation({ operations: [fact] }),
+    })
+    const user = userEvent.setup()
+    renderInProject(<ReviewDetail />, at)
+
+    await user.click(await screen.findByRole('button', { name: /^Edit change 1:/ }))
+    const form = await screen.findByRole('form', { name: 'Edit change 1' })
+    const target = within(form).getByLabelText('Who or what')
+    expect(target).toHaveValue('ent_harbor')
+
+    await user.selectOptions(target, '')
+    await user.click(within(form).getByRole('button', { name: 'Save edit' }))
+    expect(within(form).getByRole('alert')).toHaveTextContent('Finish the sentence first.')
+    expect(api.find('PUT', '/operations/0')).toHaveLength(0)
+
+    await user.selectOptions(target, 'ent_cove')
+    await user.click(within(form).getByRole('button', { name: 'Save edit' }))
+    await waitFor(() => expect(api.find('PUT', '/operations/0')).toHaveLength(1))
+    expect(api.find('PUT', '/operations/0')[0].body).toMatchObject({
+      operation: {
+        op: 'assert_fact',
+        proposition: {
+          subject_id: 'ent_mara',
+          predicate: 'LOCATED_AT',
+          object: { kind: 'entity_ref', entity_id: 'ent_cove', project_id: 'prj_1' },
+        },
+      },
+    })
+  })
+
   it('keeps an edited change open with the text when the server rejects it', async () => {
     mockApi({
       ...entries,
@@ -428,7 +516,7 @@ describe('ReviewDetail', () => {
     renderInProject(<ReviewDetail />, at)
 
     await user.click(await screen.findByText('More about change 1'))
-    await user.click(screen.getByRole('button', { name: 'Edit change 1' }))
+    await user.click(screen.getByRole('button', { name: 'Edit change 1 as stored' }))
     const editor = screen.getByLabelText('Change 1 (JSON)')
     await user.clear(editor)
     await user.type(editor, '{{"op":"create_entity","id":"tmp:a","type":"Nope","name":"Iven"}')
