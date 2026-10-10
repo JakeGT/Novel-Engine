@@ -76,6 +76,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ai/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Allowance
+         * @description What the signed-in person has spent of their assistant allowance, before they spend more.
+         */
+        get: operations["get_allowance_api_v1_ai_usage_get"];
+        /**
+         * Set Allowance
+         * @description An owner sets how much each person may spend through the workspace's key in a day.
+         */
+        put: operations["set_allowance_api_v1_ai_usage_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/characters/generate-questions": {
         parameters: {
             query?: never;
@@ -2376,6 +2400,21 @@ export interface components {
             /** Provider */
             provider: string | null;
         };
+        /** AllowanceModel */
+        AllowanceModel: {
+            /** Limit Tokens */
+            limit_tokens: number | null;
+            /** Period Hours */
+            period_hours: number;
+            /** Requests */
+            requests: number;
+            /** Site Limit Tokens */
+            site_limit_tokens: number | null;
+            /** Used Tokens */
+            used_tokens: number;
+            /** Workspace Limit Tokens */
+            workspace_limit_tokens: number | null;
+        };
         /** AmendEventOp */
         AmendEventOp: {
             /** Evidence */
@@ -3977,6 +4016,11 @@ export interface components {
             /** Workspace Id */
             workspace_id: string;
         };
+        /** SetAllowanceRequest */
+        SetAllowanceRequest: {
+            /** Daily Tokens */
+            daily_tokens?: number | null;
+        };
         /** SetRoleRequest */
         SetRoleRequest: {
             role: components["schemas"]["Role"];
@@ -4247,6 +4291,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AiChoiceModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_allowance_api_v1_ai_usage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AllowanceModel"];
+                };
+            };
+        };
+    };
+    set_allowance_api_v1_ai_usage_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAllowanceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AllowanceModel"];
                 };
             };
             /** @description Validation Error */

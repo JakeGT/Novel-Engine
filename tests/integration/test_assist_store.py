@@ -145,3 +145,24 @@ async def test_a_workspaces_model_choice_is_kept_replaced_and_removed(disposable
         assert await settings.get("ws2") == ("google", "m-3")
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_a_workspaces_allowance_is_kept_replaced_and_removed(disposable_database) -> None:
+    from backend.adapters.allowance_store import PostgresAllowanceStore
+
+    engine = create_engine(disposable_database.settings())
+    try:
+        store = PostgresAllowanceStore(create_session_factory(engine))
+        assert await store.get("ws1") is None
+        await store.set(workspace_id="ws1", daily_tokens=50_000, actor_user_id="u1")
+        await store.set(workspace_id="ws1", daily_tokens=80_000, actor_user_id=None)
+        await store.set(workspace_id="ws2", daily_tokens=30_000, actor_user_id="u2")
+
+        assert await store.get("ws1") == 80_000
+        await store.set(workspace_id="ws1", daily_tokens=None, actor_user_id="u1")
+        assert await store.get("ws1") is None
+        assert await store.delete_workspace("ws2") == 1
+        assert await store.get("ws2") is None
+    finally:
+        await engine.dispose()

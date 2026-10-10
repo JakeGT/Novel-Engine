@@ -1,3 +1,4 @@
+import { AllowanceNote } from './Allowance'
 import { useMutation } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { api } from '../api/client'
@@ -68,6 +69,7 @@ export function AskForChanges({
           />
         )}
       </Field>
+      <AllowanceNote />
       <AssistantProblem error={ask.error} />
       {result && !ask.isPending && (
         <div className="notice plain" role="status">

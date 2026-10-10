@@ -73,6 +73,7 @@ class Container:
     assist_sessions: Any = None
     assist_session_service: Any = None
     ai_settings: Any = None
+    allowances: Any = None
     graph_upgrade_service: Any = None
 
     async def aclose(self) -> None:
@@ -185,6 +186,9 @@ def build_container(settings: Settings | None = None) -> Container:
     from backend.adapters.ai_settings_store import PostgresAiSettingsStore
 
     container.ai_settings = PostgresAiSettingsStore(database.session_factory)
+    from backend.adapters.allowance_store import PostgresAllowanceStore
+
+    container.allowances = PostgresAllowanceStore(database.session_factory)
 
     from backend.adapters.purge import StoreWorkspacePurge
 
@@ -197,6 +201,7 @@ def build_container(settings: Settings | None = None) -> Container:
         artifacts=container.artifacts,
         assist=container.assist_sessions,
         ai_settings=container.ai_settings,
+        allowances=container.allowances,
     )
     container.tenancy_service = TenancyService(
         container.tenancy,
@@ -216,6 +221,7 @@ def build_container(settings: Settings | None = None) -> Container:
     )
     container.usage_service = ProviderUsageService(
         container.usage,
+        allowances=container.allowances,
         limit=UsageLimit(
             per_job_token_limit=resolved.PROVIDER_PER_JOB_TOKEN_LIMIT,
             per_job_cost_limit=resolved.PROVIDER_PER_JOB_COST_LIMIT,

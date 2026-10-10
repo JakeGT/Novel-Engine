@@ -12,6 +12,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+from backend.domain.errors import DomainError
 from backend.domain.identity import utcnow
 
 
@@ -75,8 +76,24 @@ class UsageLimit:
         self.period_cost_limit = period_cost_limit
 
 
-class UsageLimitExceeded(RuntimeError):
+class UsageLimitExceeded(DomainError):
     """A per-job or rolling-period token/cost limit would be exceeded."""
+
+    status_code = 429
+    code = "usage_limit"
+
+
+class Allowance(BaseModel):
+    """What one person may spend through a workspace's key in a period, and has."""
+
+    period_seconds: int
+    # The limit in force: the lower of the site's and the workspace's. None = no limit.
+    limit_tokens: int | None
+    used_tokens: int
+    requests: int
+    # What a workspace owner chose, if anything, and the site's own ceiling.
+    workspace_limit_tokens: int | None
+    site_limit_tokens: int | None
 
 
 class UsageError(RuntimeError):

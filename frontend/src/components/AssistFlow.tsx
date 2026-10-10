@@ -1,3 +1,4 @@
+import { AllowanceNote } from './Allowance'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -48,6 +49,21 @@ export function AssistantProblem({ error, onManual }: { error: unknown; onManual
           )}
           {onManual && <Button onClick={onManual}>Fill it in by hand</Button>}
         </div>
+      </div>
+    )
+  }
+  if (isApiError(error, 'usage_limit')) {
+    return (
+      <div className="notice warn" role="alert">
+        <p>
+          <strong>Your assistant allowance is used up for now.</strong> It frees up again over
+          the next day. Nothing was changed, and everything can still be done by hand.
+        </p>
+        {onManual && (
+          <div className="actions">
+            <Button onClick={onManual}>Fill it in by hand</Button>
+          </div>
+        )}
       </div>
     )
   }
@@ -186,6 +202,7 @@ export function AssistFlow({ entity, initialType, types, onClose, onManual, resu
               ? 'Answers kept. You can close this and pick it up later from the project’s home page.'
               : 'Your answers are kept as you go, so you can close this and pick it up later.'}
         </p>
+        <AllowanceNote />
         <AssistantProblem error={draft.error} onManual={manual} />
         <div className="actions end">
           <Button
@@ -292,6 +309,8 @@ export function AssistFlow({ entity, initialType, types, onClose, onManual, resu
           />
         )}
       </Field>
+
+      <AllowanceNote />
 
       <AssistantProblem error={questions.error ?? draft.error} onManual={manual} />
       <div className="actions end">

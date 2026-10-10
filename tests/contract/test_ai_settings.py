@@ -190,3 +190,51 @@ def test_removing_the_chosen_key_falls_back_to_one_that_remains(hosted_client, h
 def test_ai_settings_require_a_session(api_client) -> None:
     assert api_client.get("/api/v1/ai/settings").status_code == 401
     assert api_client.get("/api/v1/ai/providers").status_code == 401
+
+
+def test_an_owner_sets_a_daily_allowance_and_it_is_shown_before_it_is_spent(
+    hosted_client, hosted_container
+):
+    headers, project_id = _studio(hosted_client, hosted_container)
+    _connect(hosted_client, headers, "openrouter", "sk-or-key")
+
+    before = hosted_client.get("/api/v1/ai/usage", headers=headers).json()
+    assert before["used_tokens"] == 0 and before["workspace_limit_tokens"] is None
+    assert before["limit_tokens"] == before["site_limit_tokens"] == 2_000_000
+
+    too_small = hosted_client.put("/api/v1/ai/usage", json={"daily_tokens": 5}, headers=headers)
+    assert too_small.status_code == 422
+
+    chosen = hosted_client.put("/api/v1/ai/usage", json={"daily_tokens": 20_000}, headers=headers)
+    assert chosen.status_code == 200, chosen.text
+    assert chosen.json()["limit_tokens"] == 20_000
+
+    # One call is counted against it.
+    hosted_container.ai.queue(SHEET)
+    assert _ask(hosted_client, headers, project_id).status_code == 200
+    spent = hosted_client.get("/api/v1/ai/usage", headers=headers).json()
+    assert spent["requests"] == 1
+
+    # Once it is used up the assistant refuses plainly, before calling the provider.
+    # (The scripted model reports no tokens, so a spent record stands in for real use.)
+    first = hosted_container.usage.records[0]
+    hosted_container.usage.records.append(
+        first.model_copy(update={"id": "usage-spent", "prompt_tokens": 25_000})
+    )
+    assert hosted_client.get("/api/v1/ai/usage", headers=headers).json()["used_tokens"] == 25_000
+    calls = len(hosted_container.ai.calls)
+    refused = _ask(hosted_client, headers, project_id)
+    assert refused.status_code == 429, refused.text
+    assert refused.json()["code"] == "usage_limit"
+    assert "everything can still be done by hand" in refused.json()["detail"]
+    assert len(hosted_container.ai.calls) == calls
+
+    # Removing the workspace's own limit leaves the site's.
+    cleared = hosted_client.put("/api/v1/ai/usage", json={"daily_tokens": None}, headers=headers)
+    assert cleared.json()["limit_tokens"] == 2_000_000
+    assert _ask_ok(hosted_client, hosted_container, headers, project_id)
+
+
+def _ask_ok(client, container, headers, project_id: str) -> bool:
+    container.ai.queue(SHEET)
+    return _ask(client, headers, project_id).status_code == 200

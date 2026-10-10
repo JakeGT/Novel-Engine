@@ -143,4 +143,40 @@ describe('AssistantPage', () => {
     )
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
+  it('shows what has been used of the daily allowance and lets an owner set it', async () => {
+    let allowance = {
+      period_hours: 24,
+      limit_tokens: 2000000,
+      used_tokens: 12400,
+      requests: 3,
+      workspace_limit_tokens: null as number | null,
+      site_limit_tokens: 2000000,
+    }
+    const api = mockApi({
+      'GET /ai/providers': providers,
+      'GET /credentials': [credential('openrouter')],
+      'GET /ai/settings': { provider: 'openrouter', model: 'm', chosen: true },
+      'GET /ai/models': { models: ['m'], listed: true },
+      'GET /ai/usage': () => allowance,
+      'PUT /ai/usage': () => (allowance = { ...allowance, limit_tokens: 200000, workspace_limit_tokens: 200000 }),
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<AssistantPage />)
+
+    const card = await screen.findByRole('region', { name: 'Daily allowance' })
+    expect(card).toHaveTextContent('You have used 12,400 of 2,000,000 tokens in the last day, over 3 requests.')
+    await expectAccessible(container)
+
+    const box = within(card).getByLabelText('Allowance for each person, per day (tokens)')
+    await user.type(box, 'lots')
+    await user.click(within(card).getByRole('button', { name: 'Save allowance' }))
+    expect(await within(card).findByRole('alert')).toHaveTextContent('Enter a whole number')
+    expect(api.find('PUT', '/ai/usage')).toHaveLength(0)
+
+    await user.clear(box)
+    await user.type(box, '200,000')
+    await user.click(within(card).getByRole('button', { name: 'Save allowance' }))
+    await waitFor(() => expect(card).toHaveTextContent('of 200,000 tokens'))
+    expect(api.find('PUT', '/ai/usage')[0].body).toEqual({ daily_tokens: 200000 })
+  })
 })

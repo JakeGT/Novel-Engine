@@ -77,6 +77,13 @@ class CredentialService:
             return
         await self._tenancy.require_permission(scope, workspace_id, Permission.WORKSPACE_ADMIN)
 
+    async def require_admin(self, scope: AccessScope, workspace_id: str) -> None:
+        """Who may decide how a workspace's key is used: the same people who manage it."""
+        await self._require_admin(scope, workspace_id)
+
+    async def require_use(self, scope: AccessScope, workspace_id: str) -> None:
+        await self._require_use(scope, workspace_id)
+
     async def _require_use(self, scope: AccessScope, workspace_id: str) -> None:
         # Using an existing credential for inference only needs project-write
         # authority, so editors can run generation without workspace admin.

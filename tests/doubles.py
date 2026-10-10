@@ -3809,3 +3809,22 @@ class InMemoryAiSettingsStore:
 
     async def delete_workspace(self, workspace_id: str) -> int:
         return 1 if self.rows.pop(workspace_id, None) is not None else 0
+
+
+class InMemoryAllowanceStore:
+    def __init__(self) -> None:
+        self.rows: dict[str, int] = {}
+
+    async def get(self, workspace_id: str) -> int | None:
+        return self.rows.get(workspace_id)
+
+    async def set(
+        self, *, workspace_id: str, daily_tokens: int | None, actor_user_id: str | None
+    ) -> None:
+        if daily_tokens is None:
+            self.rows.pop(workspace_id, None)
+        else:
+            self.rows[workspace_id] = daily_tokens
+
+    async def delete_workspace(self, workspace_id: str) -> int:
+        return 1 if self.rows.pop(workspace_id, None) is not None else 0

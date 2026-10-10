@@ -1,3 +1,4 @@
+import { AllowanceNote } from './Allowance'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -144,6 +145,8 @@ export function GodHand({
             </Field>
           </div>
         )}
+
+        <AllowanceNote />
 
         <AssistantProblem error={change.error} />
         <div className="actions end">

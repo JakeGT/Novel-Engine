@@ -394,6 +394,15 @@ export const api = {
   aiSettings: (workspaceId: string) => request<AiChoice>('/api/v1/ai/settings', { workspaceId }),
   chooseAi: (workspaceId: string, body: { provider: string; model: string }) =>
     request<AiChoice>('/api/v1/ai/settings', { method: 'PUT', workspaceId, json: body }),
+  /** What the signed-in person has spent of their assistant allowance. */
+  aiUsage: (workspaceId: string) =>
+    request<Schemas['AllowanceModel']>('/api/v1/ai/usage', { workspaceId }),
+  setAiUsage: (workspaceId: string, dailyTokens: number | null) =>
+    request<Schemas['AllowanceModel']>('/api/v1/ai/usage', {
+      method: 'PUT',
+      workspaceId,
+      json: { daily_tokens: dailyTokens },
+    }),
   /** The models the workspace's key can use, read live from the provider. */
   aiModels: (workspaceId: string, provider: string) =>
     request<Schemas['ModelListModel']>(

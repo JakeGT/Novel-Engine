@@ -65,6 +65,7 @@ def _build_fake_container(settings, tmp_path):
         FakeIdentityProvider,
         FakeMigrationVerifier,
         InMemoryAiSettingsStore,
+        InMemoryAllowanceStore,
         InMemoryAssistSessionStore,
         InMemoryCanonJournal,
         InMemoryCanonRepository,
@@ -117,6 +118,7 @@ def _build_fake_container(settings, tmp_path):
     objects = InMemoryObjectStore()
     assist_sessions = InMemoryAssistSessionStore()
     ai_settings = InMemoryAiSettingsStore()
+    allowances = InMemoryAllowanceStore()
     purger = StoreWorkspacePurge(
         graph=graph,
         vectors=vectors,
@@ -126,6 +128,7 @@ def _build_fake_container(settings, tmp_path):
         artifacts=artifacts,
         assist=assist_sessions,
         ai_settings=ai_settings,
+        allowances=allowances,
     )
     tenancy_service = TenancyService(
         tenancy,
@@ -140,6 +143,7 @@ def _build_fake_container(settings, tmp_path):
     )
     usage_service = ProviderUsageService(
         usage_store,
+        allowances=allowances,
         limit=UsageLimit(per_job_token_limit=200_000, period_token_limit=2_000_000),
     )
     from backend.services.schema_service import SchemaService

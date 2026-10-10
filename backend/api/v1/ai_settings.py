@@ -6,11 +6,12 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.api.auth import get_workspace_scope, require_session, require_workspace_scope
-from backend.api.dependencies import get_credential_service
+from backend.api.dependencies import get_credential_service, get_usage_service
 from backend.domain.identity import AccessScope
 from backend.domain.providers import PROVIDERS
 from backend.ports import AIProviderError
 from backend.services.credential_service import MAX_MODEL_LENGTH, AiChoice, CredentialService
+from backend.services.usage_service import MAX_ALLOWANCE, MIN_ALLOWANCE, ProviderUsageService
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -102,3 +103,67 @@ async def list_models(
         # Some providers do not offer a list through this route; that is not an error
         # for the author, who can still type a model name.
         return ModelListModel(models=[], listed=False)
+
+
+class AllowanceModel(BaseModel):
+    # How long the allowance covers, in hours.
+    period_hours: int
+    # The limit in force for one person; null when there is none.
+    limit_tokens: int | None
+    # What the signed-in person has used in the period.
+    used_tokens: int
+    requests: int
+    # What an owner chose for this workspace, if anything, and the site's own ceiling.
+    workspace_limit_tokens: int | None
+    site_limit_tokens: int | None
+
+
+class SetAllowanceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Null removes the workspace's own limit, leaving the site's.
+    daily_tokens: int | None = Field(default=None, ge=MIN_ALLOWANCE, le=MAX_ALLOWANCE)
+
+
+async def _allowance(usage: ProviderUsageService, scope: AccessScope) -> AllowanceModel:
+    found = await usage.allowance(
+        workspace_id=scope.workspace_id or "", actor_user_id=scope.actor_user_id
+    )
+    return AllowanceModel(
+        period_hours=max(1, found.period_seconds // 3600),
+        limit_tokens=found.limit_tokens,
+        used_tokens=found.used_tokens,
+        requests=found.requests,
+        workspace_limit_tokens=found.workspace_limit_tokens,
+        site_limit_tokens=found.site_limit_tokens,
+    )
+
+
+@router.get("/usage")
+async def get_allowance(
+    scope: AccessScope = Depends(get_workspace_scope),
+    credentials: CredentialService = Depends(get_credential_service),
+    usage: ProviderUsageService = Depends(get_usage_service),
+) -> AllowanceModel:
+    """What the signed-in person has spent of their assistant allowance, before they spend more."""
+    assert scope.workspace_id is not None
+    await credentials.require_use(scope, scope.workspace_id)
+    return await _allowance(usage, scope)
+
+
+@router.put("/usage")
+async def set_allowance(
+    body: SetAllowanceRequest,
+    scope: AccessScope = Depends(require_workspace_scope),
+    credentials: CredentialService = Depends(get_credential_service),
+    usage: ProviderUsageService = Depends(get_usage_service),
+) -> AllowanceModel:
+    """An owner sets how much each person may spend through the workspace's key in a day."""
+    assert scope.workspace_id is not None
+    await credentials.require_admin(scope, scope.workspace_id)
+    await usage.set_allowance(
+        workspace_id=scope.workspace_id,
+        daily_tokens=body.daily_tokens,
+        actor_user_id=scope.actor_user_id,
+    )
+    return await _allowance(usage, scope)

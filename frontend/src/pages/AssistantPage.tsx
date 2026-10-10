@@ -1,3 +1,4 @@
+import { AllowanceCard } from '../components/Allowance'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { api, isApiError, type AiChoice, type AiProvider } from '../api/client'
@@ -278,6 +279,8 @@ export function AssistantPage() {
                 choice={choice.data}
               />
             )}
+
+            {connected.length > 0 && workspaceId && <AllowanceCard workspaceId={workspaceId} />}
 
             <section className="card" aria-labelledby="keys-heading">
               <div className="card-head">

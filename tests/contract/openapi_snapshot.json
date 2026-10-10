@@ -52,6 +52,65 @@
         "title": "AiChoiceModel",
         "type": "object"
       },
+      "AllowanceModel": {
+        "properties": {
+          "limit_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Tokens"
+          },
+          "period_hours": {
+            "title": "Period Hours",
+            "type": "integer"
+          },
+          "requests": {
+            "title": "Requests",
+            "type": "integer"
+          },
+          "site_limit_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Limit Tokens"
+          },
+          "used_tokens": {
+            "title": "Used Tokens",
+            "type": "integer"
+          },
+          "workspace_limit_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Limit Tokens"
+          }
+        },
+        "required": [
+          "period_hours",
+          "limit_tokens",
+          "used_tokens",
+          "requests",
+          "workspace_limit_tokens",
+          "site_limit_tokens"
+        ],
+        "title": "AllowanceModel",
+        "type": "object"
+      },
       "AmendEventOp": {
         "additionalProperties": false,
         "properties": {
@@ -4478,6 +4537,26 @@
         "title": "SchemaVersionModel",
         "type": "object"
       },
+      "SetAllowanceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "daily_tokens": {
+            "anyOf": [
+              {
+                "maximum": 50000000.0,
+                "minimum": 20000.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Tokens"
+          }
+        },
+        "title": "SetAllowanceRequest",
+        "type": "object"
+      },
       "SetRoleRequest": {
         "properties": {
           "role": {
@@ -5068,6 +5147,68 @@
           }
         },
         "summary": "Choose Ai",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/v1/ai/usage": {
+      "get": {
+        "description": "What the signed-in person has spent of their assistant allowance, before they spend more.",
+        "operationId": "get_allowance_api_v1_ai_usage_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllowanceModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Allowance",
+        "tags": [
+          "ai"
+        ]
+      },
+      "put": {
+        "description": "An owner sets how much each person may spend through the workspace's key in a day.",
+        "operationId": "set_allowance_api_v1_ai_usage_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAllowanceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllowanceModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Allowance",
         "tags": [
           "ai"
         ]
