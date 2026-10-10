@@ -57,6 +57,7 @@ def built_frontend(tmp_path):
     (dist / "assets").mkdir(parents=True)
     (dist / "index.html").write_text("<!doctype html><title>Novel Engine</title><div id=root>")
     (dist / "assets" / "index-abc123.js").write_text("console.log('app')")
+    (dist / "assets" / "inter.woff2").write_bytes(b"wOF2")
     (dist / "favicon.svg").write_text("<svg/>")
     (tmp_path / "secret.txt").write_text("outside the build")
     return dist
@@ -72,6 +73,7 @@ def test_app_shell_is_served_for_ui_routes_only(settings_factory, tmp_path, buil
             assert page.headers["Cache-Control"] == "no-cache"
         assert client.get("/assets/index-abc123.js").text == "console.log('app')"
         assert client.get("/favicon.svg").text == "<svg/>"
+        assert client.get("/assets/inter.woff2").headers["content-type"] == "font/woff2"
 
         # API routes still answer as the API, and API misses are problems, not HTML.
         assert client.get("/health/live").json() == {"status": "alive"}

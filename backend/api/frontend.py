@@ -7,6 +7,7 @@ unless ``FRONTEND_DIST_DIR`` points at a real build.
 
 from __future__ import annotations
 
+import mimetypes
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -18,6 +19,9 @@ from starlette.types import ASGIApp
 
 from backend.api.problems import PROBLEM_MEDIA_TYPE, problem_body
 from backend.core.config import Settings
+
+# Slim base images have no system MIME table entry for web fonts.
+mimetypes.add_type("font/woff2", ".woff2")
 
 # Paths the API owns. A miss under these is an API 404, never the app shell, so a
 # client that mistypes an endpoint gets a problem response instead of HTML.
