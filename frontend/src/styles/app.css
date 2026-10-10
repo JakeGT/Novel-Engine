@@ -818,8 +818,27 @@ h2.eyebrow {
   color: var(--ink);
 }
 
+.brand {
+  line-height: 1;
+}
+
+/* Centre the seal on the wordmark's capitals, not on its line box: the line box
+   includes room for descenders, which leaves the letters sitting high. Where the
+   browser can trim the text box to the capitals this is exact; elsewhere the seal
+   is nudged up by the measured difference. */
 .brand .logo {
   flex: none;
+  transform: translateY(-0.1em);
+}
+
+@supports (text-box: trim-both cap alphabetic) {
+  .brand {
+    text-box: trim-both cap alphabetic;
+  }
+
+  .brand .logo {
+    transform: none;
+  }
 }
 
 .project-switch {

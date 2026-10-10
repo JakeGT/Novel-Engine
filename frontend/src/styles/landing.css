@@ -1,7 +1,8 @@
 /* The front page: a printed thing, with one living element (the ink). */
 /* In-page links glide to their section rather than jumping (the base stylesheet
    turns this off for people who prefer reduced motion). */
-html:has(.landing) {
+html:has(.landing),
+html:has(.library) {
   scroll-behavior: smooth;
 }
 

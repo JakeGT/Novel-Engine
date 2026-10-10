@@ -105,15 +105,15 @@ function Library() {
   const name = firstName(session.data)
 
   return (
-    <div className="library">
+    <div className="library" id="top">
       <a className="skip" href="#main">
         Skip to content
       </a>
       <header className="library-top">
-        <span className="brand">
+        <a className="brand" href="#top" aria-label="Novel Engine, back to the top">
           <Logo />
           Novel Engine
-        </span>
+        </a>
         <div className="actions">
           <ThemeToggle />
           <span className="avatar sm round tint-violet" aria-hidden="true">

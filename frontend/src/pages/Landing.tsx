@@ -41,16 +41,16 @@ const LADDER: { name: string; text: string; ready: boolean }[] = [
 /** The public front page. Describes what the product does today, and labels what is still to come. */
 export function Landing() {
   return (
-    <div className="landing">
+    <div className="landing" id="top">
       <a className="skip" href="#main">
         Skip to content
       </a>
       <header className="landing-nav">
         <div className="inner">
-          <span className="brand">
+          <a className="brand" href="#top" aria-label="Novel Engine, back to the top">
             <Logo />
             Novel Engine
-          </span>
+          </a>
           <nav className="links" aria-label="Page sections">
             <a href="#trouble">Why</a>
             <a href="#how">How it works</a>
@@ -260,10 +260,10 @@ export function Landing() {
 
       <footer>
         <div className="inner">
-          <span className="brand">
+          <a className="brand" href="#top" aria-label="Novel Engine, back to the top">
             <Logo />
             Novel Engine
-          </span>
+          </a>
           <span>Set in Newsreader and Instrument Sans. Invitation only.</span>
         </div>
       </footer>

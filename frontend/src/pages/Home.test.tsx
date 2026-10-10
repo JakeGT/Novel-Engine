@@ -35,6 +35,11 @@ describe('Home', () => {
     const { container } = renderHome()
 
     expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('needs a memory.')
+    // The logo and title lead back to the top of the page.
+    expect(screen.getAllByRole('link', { name: 'Novel Engine, back to the top' })[0]).toHaveAttribute(
+      'href',
+      '#top',
+    )
     expect(screen.getAllByRole('link', { name: /Sign in|Open your library/ })[0]).toHaveAttribute(
       'href',
       '/auth/login',
