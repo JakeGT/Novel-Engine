@@ -922,6 +922,19 @@ h2.eyebrow {
   line-height: 1.4rem;
 }
 
+.nav-more > summary {
+  padding: 0.4rem 0.65rem;
+  font-family: var(--font-ui);
+  font-size: 0.9rem;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.nav-more .check {
+  padding: 0.5rem 0.65rem 0;
+  color: var(--ink-2);
+}
+
 .nav-link.sub {
   padding-left: 2.45rem;
   font-family: var(--font-text);

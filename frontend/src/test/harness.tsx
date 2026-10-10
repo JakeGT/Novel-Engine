@@ -169,6 +169,22 @@ export function renderInProject(ui: ReactElement, options: RenderOptions = {}) {
  * Automated accessibility check. Colour contrast needs real layout, so it is
  * checked in the browser run (e2e) instead of jsdom.
  */
+// Words that belong to the engine, not to an author. The interface says "entry",
+// "version", "kind of fact" and "setup" (see lib/words.ts and plan document 19);
+// these may appear only inside a block marked as technical detail.
+const INTERNAL_TERMS =
+  /\b(mutations?|predicates?|schemas?|entit(?:y|ies)|payloads?|ordinals?|cardinality|idempoten\w*|revisions?)\b|\b(?:ent|fct|blf|mut|scv|brf|chg)_\w+|\btmp:\w+/gi
+
+/** Fails when a rendered screen shows an author one of the engine's own terms or ids. */
+export function expectPlainLanguage(container: HTMLElement): void {
+  const copy = container.cloneNode(true) as HTMLElement
+  for (const technical of copy.querySelectorAll('pre, code, [data-technical], details.more, [data-testid="location"]')) {
+    technical.remove()
+  }
+  const text = copy.textContent ?? ''
+  expect([...new Set(text.match(INTERNAL_TERMS) ?? [])]).toEqual([])
+}
+
 export async function expectAccessible(container: HTMLElement): Promise<void> {
   const results = await axe.run(container, {
     rules: { 'color-contrast': { enabled: false }, region: { enabled: false } },
@@ -176,4 +192,6 @@ export async function expectAccessible(container: HTMLElement): Promise<void> {
   expect(
     results.violations.map((violation) => `${violation.id}: ${violation.help}`),
   ).toEqual([])
+  // Every screen that is checked for accessibility is checked for plain words too.
+  expectPlainLanguage(container)
 }

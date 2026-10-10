@@ -9,6 +9,7 @@ import { NewEntryDialog } from '../components/NewEntryDialog'
 import { Logo } from '../components/Logo'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { Button, EmptyState, Loading } from '../components/ui'
+import { rememberVisit, useMenu, type PageId } from '../lib/levels'
 import { displayName, useSession, useSignOut } from '../lib/session'
 import { initial, isOpenChange, roleLabel, typePlural } from '../lib/words'
 import {
@@ -57,6 +58,13 @@ function NavItem({
   )
 }
 
+// Pages a brand-new project does not need in its menu yet (see lib/levels.ts).
+const LATER_PAGES: { id: PageId; label: string; icon: IconName }[] = [
+  { id: 'history', label: 'History', icon: 'clock' },
+  { id: 'customize', label: 'Types and fields', icon: 'sliders' },
+  { id: 'media', label: 'Media', icon: 'image' },
+]
+
 export function ProjectLayout() {
   const { projectId = '' } = useParams()
   const navigate = useNavigate()
@@ -91,6 +99,19 @@ export function ProjectLayout() {
     queryFn: () => api.listSchemaVersions(scope),
   })
   const entries = useEntries(scope)
+
+  // A page the author has opened once stays in their menu.
+  useEffect(() => {
+    const page = location.pathname.split('/')[3]
+    if (page === 'history' || page === 'customize' || page === 'media') rememberVisit(projectId, page)
+  }, [location.pathname, projectId])
+
+  // More than the starter setup means the author has made types or kinds of fact of their own.
+  const menu = useMenu(
+    projectId,
+    entries.items.filter((item) => item.lifecycle === 'active').length,
+    (schemas.data?.length ?? 0) > 1,
+  )
 
   const canWrite = access.data?.can_write ?? false
   const canAdmin = access.data?.can_admin ?? false
@@ -207,6 +228,8 @@ export function ProjectLayout() {
     (a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0) || a.localeCompare(b),
   )
 
+  const later = LATER_PAGES.filter((page) => !menu.shown(page.id))
+
   const banners =
     (importState && importState.status !== 'completed') ||
     status?.status === 'error' ||
@@ -309,19 +332,25 @@ export function ProjectLayout() {
             >
               Review
             </NavItem>
-            <NavItem to={`${base}/history`} icon="clock">
-              History
-            </NavItem>
+            {menu.shown('history') && (
+              <NavItem to={`${base}/history`} icon="clock">
+                History
+              </NavItem>
+            )}
           </div>
 
           <div className="nav-group">
             <span className="eyebrow nav-title">Set up</span>
-            <NavItem to={`${base}/customize`} icon="sliders">
-              Types and fields
-            </NavItem>
-            <NavItem to={`${base}/media`} icon="image">
-              Media
-            </NavItem>
+            {menu.shown('customize') && (
+              <NavItem to={`${base}/customize`} icon="sliders">
+                Types and fields
+              </NavItem>
+            )}
+            {menu.shown('media') && (
+              <NavItem to={`${base}/media`} icon="image">
+                Media
+              </NavItem>
+            )}
             {access.data?.hosted && (
               <NavItem to={`${base}/assistant`} icon="spark">
                 AI assistant
@@ -333,6 +362,28 @@ export function ProjectLayout() {
               </NavItem>
             )}
           </div>
+
+          {/* Nothing is hidden: pages a new project does not need yet wait here. */}
+          {(later.length > 0 || menu.showAll) && (
+            <details className="nav-more">
+              <summary>More</summary>
+              <div className="nav-group">
+                {later.map((page) => (
+                  <NavItem key={page.id} to={`${base}/${page.id}`} icon={page.icon}>
+                    {page.label}
+                  </NavItem>
+                ))}
+                <label className="check small">
+                  <input
+                    type="checkbox"
+                    checked={menu.showAll}
+                    onChange={(event) => menu.setShowAll(event.target.checked)}
+                  />
+                  <span>Always show every page</span>
+                </label>
+              </div>
+            </details>
+          )}
         </nav>
 
         <div className="sidebar-foot">

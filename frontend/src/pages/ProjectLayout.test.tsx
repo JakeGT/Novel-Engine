@@ -62,6 +62,31 @@ describe('ProjectLayout', () => {
     await expectAccessible(container)
   })
 
+  it('keeps a new project’s menu short, with every other page one click away', async () => {
+    window.localStorage.clear()
+    mockApi(pages)
+    const user = userEvent.setup()
+    renderShell()
+
+    // Two entries: still getting the first idea down.
+    const nav = await screen.findByRole('navigation', { name: 'Project' })
+    await within(nav).findByRole('link', { name: /Characters/ })
+    const more = within(nav).getByText('More').closest('details') as HTMLElement
+    expect(more).not.toHaveAttribute('open')
+    for (const name of ['History', 'Types and fields', 'Media']) {
+      expect(within(more).getByRole('link', { name, hidden: true })).toBeInTheDocument()
+    }
+    expect(within(nav).getByRole('link', { name: /Story bible/ })).toBeVisible()
+
+    // An author who wants the whole menu says so once, and it is remembered.
+    await user.click(within(nav).getByText('More'))
+    await user.click(within(more).getByLabelText('Always show every page'))
+    expect(within(more).queryByRole('link', { name: 'History' })).not.toBeInTheDocument()
+    expect(within(nav).getByRole('link', { name: 'History' })).toBeInTheDocument()
+    expect(window.localStorage.getItem('novel-engine.menu.show-all')).toBe('yes')
+    window.localStorage.clear()
+  })
+
   it('adds an entry by hand from anywhere and lands on it', async () => {
     const api = mockApi({ ...pages, 'POST /entities': reply(201, entity({ id: 'ent_new', name: 'Tobin' })) })
     const user = userEvent.setup()
