@@ -243,6 +243,54 @@ describe('ReviewDetail', () => {
     expect(within(first).getByRole('alert')).toHaveTextContent('This must be fixed first: That short name is taken.')
   })
 
+  it('undoes a set of changes that was just added, in one step from where it was added', async () => {
+    const api = mockApi({
+      ...entries,
+      'GET /mutations/mut_1': mutation({ status: 'committed', committed_revision: 3 }),
+      'POST /reverts/preview': {
+        from_revision: 2,
+        to_revision: 3,
+        head_revision: 3,
+        operations: [{ op: 'retire_entity', id: 'ent_mara' }],
+        changes: [],
+        conflicts: [],
+        summary: 'revert r3',
+      },
+      'POST /reverts': { mutation_id: 'mut_9', commit_id: 'cmt_9', revision: 4, already_applied: false },
+    })
+    const user = userEvent.setup()
+    renderInProject(<ReviewDetail />, at)
+
+    await user.click(await screen.findByRole('button', { name: 'Undo these changes' }))
+    const dialog = screen.getByRole('dialog', { name: 'Undo these changes?' })
+    expect(await within(dialog).findByText('Archive “Mara Venn”')).toBeInTheDocument()
+    // Going back to the version just before this one takes back exactly these changes.
+    expect(api.find('POST', '/reverts/preview')[0].body).toEqual({ from_revision: 2, to_revision: null })
+    expect(within(dialog).getByRole('button', { name: 'Keep the changes' })).toHaveFocus()
+
+    await user.click(within(dialog).getByLabelText(/I understand this changes a lot/))
+    await user.click(within(dialog).getByRole('button', { name: 'Undo these changes' }))
+
+    expect(await screen.findByText(/Undone\. Your story is back as it was, saved as version 4\./)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Undo these changes' })).not.toBeInTheDocument()
+  })
+
+  it('does not offer a one-step undo once other changes have been saved after it', async () => {
+    mockApi({
+      ...entries,
+      'GET /mutations/mut_1': mutation({ status: 'committed', committed_revision: 2 }),
+    })
+    renderInProject(<ReviewDetail />, at)
+
+    // Undoing it alone would also undo the later work, so the author is sent to History instead.
+    expect(await screen.findByText(/can no longer be undone on its own/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Undo these changes' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Go back to an earlier version in History/ })).toHaveAttribute(
+      'href',
+      '/projects/prj_1/history',
+    )
+  })
+
   it('keeps an edited change open with the text when the server rejects it', async () => {
     mockApi({
       ...entries,

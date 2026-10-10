@@ -11,6 +11,7 @@ import {
 } from '../api/client'
 import { ConversationEvidence } from '../components/Conversations'
 import { Icon } from '../components/icons'
+import { RestoreDialog } from '../components/RestoreDialog'
 import {
   ConfirmDialog,
   Badge,
@@ -276,7 +277,7 @@ function ChangeCard({
 
 /** One set of suggested changes: read it as sentences, keep or skip each, then add it to canon. */
 export function ReviewDetail() {
-  const { scope, canWrite, userId } = useProject()
+  const { scope, canWrite, userId, headRevision } = useProject()
   const { mutationId = '' } = useParams()
   const location = useLocation()
   const invalidate = useInvalidateProject(scope)
@@ -298,6 +299,8 @@ export function ReviewDetail() {
 
   // Every review action returns the fresh change set; reload everything that depends on it.
   const [discarding, setDiscarding] = useState(false)
+  const [undoing, setUndoing] = useState(false)
+  const [undone, setUndone] = useState<number | null>(null)
   const action = useMutation({
     mutationFn: (run: () => Promise<Detail>) => run(),
     onSuccess: async () => {
@@ -363,6 +366,7 @@ export function ReviewDetail() {
       return latest ?? change
     })
   const done = committed !== null || change.status === 'committed'
+  const addedAt = committed?.revision ?? change.committed_revision ?? null
 
   return (
     <>
@@ -433,6 +437,39 @@ export function ReviewDetail() {
               See what to fill in next
             </Link>
           </p>
+        ) : null}
+        {done && canWrite && (
+          // Taking it back is offered where it was added; it is exact only while nothing came after.
+          <div className="actions">
+            {undone !== null ? (
+              <p className="notice plain" role="status">
+                Undone. Your story is back as it was, saved as version {undone}.
+              </p>
+            ) : addedAt !== null && addedAt === headRevision ? (
+              <>
+                <Button icon="undo" onClick={() => setUndoing(true)}>
+                  Undo these changes
+                </Button>
+                <span className="hint">Takes back everything this added, as a new version.</span>
+              </>
+            ) : (
+              <span className="hint">
+                Other changes have been saved since, so this can no longer be undone on its own.{' '}
+                <Link to={`/projects/${scope.projectId}/history`}>Go back to an earlier version in History.</Link>
+              </span>
+            )}
+          </div>
+        )}
+        {undoing && addedAt !== null && (
+          <RestoreDialog
+            undoing
+            revision={addedAt - 1}
+            onClose={() => setUndoing(false)}
+            onDone={(revision) => setUndone(revision)}
+          />
+        )}
+        {done ? (
+          <></>
         ) : change.status === 'rejected' ? (
           <p className="notice danger" role="status">
             These changes were discarded. None of them are part of your story, and they can no

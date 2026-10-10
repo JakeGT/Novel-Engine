@@ -53,7 +53,8 @@ provider by the implementer. Draft quality is unknown until the owner uses it wi
 - [ ] "Revise this change" by asking, instead of editing its stored form.
 - [ ] Check a drafted proposal against existing canon for contradictions before review (today:
       the structural validator only).
-- [ ] Undo an accepted proposal in one step from the review screen (today: History → go back).
+- [x] Undo an accepted proposal in one step from the review screen, while it is still the latest
+      version; after later changes the author is pointed to History.
 
 ## C. The God Hand
 
