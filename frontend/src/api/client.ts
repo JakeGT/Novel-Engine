@@ -33,6 +33,7 @@ export type EntityListResponse = Schemas['CanonEntityListResponse']
 export type AssistBrief = Schemas['AssistBriefRequest']
 export type AssistQuestionSheet = Schemas['AssistQuestionSheetModel']
 export type AssistProposalRequest = Schemas['AssistProposalRequest']
+export type ChangeProposal = Schemas['ChangeProposalModel']
 
 export interface Scope {
   workspaceId: string | null
@@ -423,6 +424,9 @@ export const api = {
     send<AssistQuestionSheet>(scope, 'POST', '/assist/questions', body),
   assistProposal: (scope: Scope, body: AssistProposalRequest) =>
     send<CharacterProposal>(scope, 'POST', '/assist/proposals', body),
+  /** The God Hand: one instruction, every change it implies, as a proposal (or questions). */
+  assistChange: (scope: Scope, body: Schemas['ChangeRequest']) =>
+    send<ChangeProposal>(scope, 'POST', '/assist/changes', body),
   /** Entries that are only a name so far: the to-do list for filling in. */
   needsDetail: (scope: Scope) => get<EntityListResponse>(scope, '/entities/needs-detail', { limit: 50 }),
 

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, isApiError, type CanonEntity, type Scope } from '../api/client'
 import { CommandPalette } from '../components/CommandPalette'
+import { GodHand } from '../components/GodHand'
 import { Icon, type IconName } from '../components/icons'
 import { NewEntryDialog } from '../components/NewEntryDialog'
 import { Logo } from '../components/Logo'
@@ -117,6 +118,8 @@ export function ProjectLayout() {
   const [newEntry, setNewEntry] = useState<{ type?: string; entity?: CanonEntity } | null>(null)
   const openNewEntry = useCallback((type?: string) => setNewEntry({ type }), [])
   const openFillIn = useCallback((entity: CanonEntity) => setNewEntry({ entity }), [])
+  const [godHand, setGodHand] = useState<{ entity?: CanonEntity } | null>(null)
+  const openGodHand = useCallback((entity?: CanonEntity) => setGodHand({ entity }), [])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -171,6 +174,7 @@ export function ProjectLayout() {
     userId: session.data?.user.id ?? null,
     newEntry: openNewEntry,
     fillIn: openFillIn,
+    godHand: openGodHand,
   }
   const local = !workspaceId
   const projectName =
@@ -359,6 +363,11 @@ export function ProjectLayout() {
           <span className="spacer" />
           <ThemeToggle />
           {canWrite && (
+            <Button icon="hand" onClick={() => openGodHand()} title="Change anything in the story by saying so">
+              God Hand
+            </Button>
+          )}
+          {canWrite && (
             <Button variant="primary" icon="plus" onClick={() => openNewEntry()}>
               New entry
             </Button>
@@ -413,9 +422,17 @@ export function ProjectLayout() {
           canWrite={canWrite}
           onClose={() => setPaletteOpen(false)}
           onNewEntry={openNewEntry}
+          onGodHand={openGodHand}
         />
       )}
     </div>
+      {godHand && (
+        <GodHand
+          key={godHand.entity?.id ?? 'any'}
+          entity={godHand.entity}
+          onClose={() => setGodHand(null)}
+        />
+      )}
       {newEntry && (
         <NewEntryDialog
           // A fresh dialog for each thing, so nothing typed for one leaks into the next.

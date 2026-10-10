@@ -693,6 +693,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/assist/changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assist Change
+         * @description The God Hand: one instruction, every change it implies, as a proposal for review.
+         */
+        post: operations["assist_change_api_v1_projects__project_id__assist_changes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/assist/proposals": {
         parameters: {
             query?: never;
@@ -2316,6 +2336,38 @@ export interface components {
             slug?: string | null;
             /** Type */
             type: string;
+        };
+        /** ChangeProposalModel */
+        ChangeProposalModel: {
+            /** Discarded */
+            discarded: components["schemas"]["DiscardedItemModel"][];
+            /** Mutation Id */
+            mutation_id: string | null;
+            /** Notes */
+            notes: string[];
+            /** Operation Count */
+            operation_count: number;
+            /** Questions */
+            questions: string[];
+            /** Session Id */
+            session_id: string;
+            /** Status */
+            status: string | null;
+            /** Understood */
+            understood: string;
+            /** Validation Issues */
+            validation_issues: components["schemas"]["ProposalIssueModel"][];
+            /** Validation Ok */
+            validation_ok: boolean;
+        };
+        /** ChangeRequest */
+        ChangeRequest: {
+            /** Entity Id */
+            entity_id?: string | null;
+            /** Expected Revision */
+            expected_revision: number;
+            /** Instruction */
+            instruction: string;
         };
         /** CharacterAnswerModel */
         CharacterAnswerModel: {
@@ -5300,6 +5352,41 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assist_change_api_v1_projects__project_id__assist_changes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeProposalModel"];
                 };
             };
             /** @description Validation Error */

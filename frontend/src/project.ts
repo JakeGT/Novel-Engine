@@ -19,6 +19,8 @@ export interface ProjectContext {
   newEntry?: (type?: string) => void
   /** Open the assistant to fill in an entry that already exists. */
   fillIn?: (entity: CanonEntity) => void
+  /** Open the God Hand, optionally focused on the entry being looked at. */
+  godHand?: (entity?: CanonEntity) => void
 }
 
 const ProjectReactContext = createContext<ProjectContext | null>(null)

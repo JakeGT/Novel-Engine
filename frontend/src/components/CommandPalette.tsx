@@ -21,10 +21,11 @@ interface Props {
   canWrite: boolean
   onClose: () => void
   onNewEntry: (type?: string) => void
+  onGodHand?: () => void
 }
 
 /** Jump to any entry or page, or start a new entry, from the keyboard. */
-export function CommandPalette({ scope, canWrite, onClose, onNewEntry }: Props) {
+export function CommandPalette({ scope, canWrite, onClose, onNewEntry, onGodHand }: Props) {
   const navigate = useNavigate()
   const [text, setText] = useState('')
   const [index, setIndex] = useState(0)
@@ -58,6 +59,15 @@ export function CommandPalette({ scope, canWrite, onClose, onNewEntry }: Props) 
           run: () => {
             onClose()
             onNewEntry()
+          },
+        },
+        {
+          key: 'god-hand',
+          label: 'Change anything (God Hand)',
+          icon: 'hand' as const,
+          run: () => {
+            onClose()
+            onGodHand?.()
           },
         },
       ]

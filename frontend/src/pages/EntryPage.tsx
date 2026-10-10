@@ -165,7 +165,7 @@ function Events({ entity }: { entity: CanonEntity }) {
 }
 
 function Assistant({ entity, bare }: { entity: CanonEntity; bare: boolean }) {
-  const { fillIn } = useProject()
+  const { fillIn, godHand } = useProject()
   return (
     <section className={`card ${bare ? '' : 'quiet'}`} aria-labelledby="assistant-heading">
       <div className="card-head">
@@ -182,9 +182,16 @@ function Assistant({ entity, bare }: { entity: CanonEntity; bare: boolean }) {
           <Icon name="chat" size={15} />
         </span>
       </div>
-      <Button variant={bare ? 'primary' : 'default'} icon="spark" onClick={() => fillIn?.(entity)}>
-        {bare ? 'Fill it in with the assistant' : 'Ask me about it'}
-      </Button>
+      <div className="actions">
+        <Button variant={bare ? 'primary' : 'default'} icon="spark" onClick={() => fillIn?.(entity)}>
+          {bare ? 'Fill it in with the assistant' : 'Ask me about it'}
+        </Button>
+        {!bare && (
+          <Button icon="hand" onClick={() => godHand?.(entity)}>
+            Change something
+          </Button>
+        )}
+      </div>
     </section>
   )
 }

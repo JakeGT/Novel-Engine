@@ -1810,3 +1810,22 @@ details.more[open] > summary {
   border-color: var(--ink);
   color: var(--ink);
 }
+
+/* On a phone the top bar keeps its actions and shortens the search prompt. */
+@media (max-width: 640px) {
+  .topbar {
+    gap: 0.4rem;
+  }
+
+  .topbar .search-trigger {
+    flex: 0 1 auto;
+  }
+
+  .topbar .search-trigger span {
+    display: none;
+  }
+
+  .topbar .btn {
+    padding-inline: 0.6rem;
+  }
+}

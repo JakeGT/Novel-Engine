@@ -27,7 +27,7 @@ interface Props {
 const EXAMPLE =
   'Mara Venn is a harbor pilot in Saltmere. She belongs to the Harbor Guild, owns a brass sextant, and doesn’t trust Tobin Ashe.'
 
-function AssistantProblem({ error, onManual }: { error: unknown; onManual?: () => void }) {
+export function AssistantProblem({ error, onManual }: { error: unknown; onManual?: () => void }) {
   const { scope, access } = useProject()
   if (!error) return null
   if (isApiError(error, 'capability_unavailable') || isApiError(error, 'provider_failure')) {

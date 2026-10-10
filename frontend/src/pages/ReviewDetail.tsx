@@ -39,6 +39,31 @@ const HIDDEN_KEYS = new Set(['op', 'id', 'evidence', 'proposition', 'project_id'
 
 type Issue = MutationValidation['issues'][number]
 
+/** Changes of one kind are reviewed together, in the order they will be applied. */
+const GROUPS: { label: string; types: string[] }[] = [
+  { label: 'New entries', types: ['create_entity'] },
+  { label: 'Changes to entries', types: ['update_entity'] },
+  { label: 'Facts ended', types: ['close_fact'] },
+  { label: 'New facts', types: ['assert_fact'] },
+  { label: 'Beliefs ended', types: ['close_belief'] },
+  { label: 'New beliefs', types: ['assert_belief'] },
+  { label: 'Events', types: ['create_event', 'amend_event', 'retire_event'] },
+  { label: 'Archived', types: ['retire_entity'] },
+]
+
+function groupOperations(operations: MutationOperation[]): { label: string; items: MutationOperation[] }[] {
+  const known = new Set(GROUPS.flatMap((group) => group.types))
+  const groups = GROUPS.map((group) => ({
+    label: group.label,
+    items: operations.filter((operation) => group.types.includes(operation.operation_type)),
+  }))
+  groups.push({
+    label: 'Other changes',
+    items: operations.filter((operation) => !known.has(operation.operation_type)),
+  })
+  return groups.filter((group) => group.items.length > 0)
+}
+
 /** Field-by-field rows for a change: what it sets, and what was there before when it edits. */
 function fieldRows(operation: MutationOperation): { key: string; before?: unknown; after: unknown }[] {
   const before = operation.target_before ?? null
@@ -256,6 +281,8 @@ export function ReviewDetail() {
   const entries = useEntries(scope)
   const arrival = (location.state ?? {}) as {
     fromAssistant?: boolean
+    understood?: string
+    notes?: string[]
     discarded?: { kind: string; reason: string }[]
   }
 
@@ -320,6 +347,18 @@ export function ReviewDetail() {
   const needsApproval = change.status !== 'approved' && (change.requires_review || change.status !== 'draft')
   const canCommit = editable && !change.is_stale && included.length > 0
   const names = new Map([...entries.names, ...namesFromOperations(change.operations)])
+  const groups = groupOperations(change.operations)
+  // One decision for a whole group: only the changes that differ are sent, in order.
+  const decideAll = (items: MutationOperation[], decision: 'accepted' | 'rejected') =>
+    action.mutate(async () => {
+      let latest: Detail | undefined
+      for (const item of items) {
+        if (item.decision?.decision !== decision) {
+          latest = await api.decideOperation(scope, mutationId, item.ordinal, decision, null)
+        }
+      }
+      return latest ?? change
+    })
   const done = committed !== null || change.status === 'committed'
 
   return (
@@ -342,9 +381,24 @@ export function ReviewDetail() {
         {arrival.fromAssistant && open && (
           <div className="notice" role="status">
             <p>
-              <strong>Nothing has been added to your story yet.</strong> The assistant drafted the
-              changes below. Keep the ones you want, skip the rest, then add them to canon.
+              <strong>Nothing has been added to your story yet.</strong>{' '}
+              {arrival.understood
+                ? `Here is what the assistant understood: ${arrival.understood}`
+                : 'The assistant drafted the changes below.'}{' '}
+              Keep the ones you want, skip the rest, then add them to canon.
             </p>
+            {(arrival.notes ?? []).length > 0 && (
+              <>
+                <p>
+                  <strong>Worth knowing before you decide:</strong>
+                </p>
+                <ul>
+                  {(arrival.notes ?? []).map((item, index) => (
+                    <li key={index}>• {item}</li>
+                  ))}
+                </ul>
+              </>
+            )}
             {(arrival.discarded ?? []).length > 0 && (
               <>
                 <p>Some ideas could not be turned into valid changes and were left out:</p>
@@ -438,29 +492,70 @@ export function ReviewDetail() {
               ))}
             </div>
           )}
-          <ol className="stack">
-            {change.operations.map((operation) => (
-              <ChangeCard
-                key={`${operation.ordinal}-${operation.revision}`}
-                operation={operation}
-                title={describeOperation(operation, names)}
-                issues={issuesFor(operation.ordinal)}
-                editable={editable}
-                busy={busy}
-                onDecide={(decision, operationNote) =>
-                  action.mutate(() =>
-                    api.decideOperation(scope, mutationId, operation.ordinal, decision, operationNote),
-                  )
-                }
-                onRevise={async (payload, reason) => {
-                  // A failed edit is reported inside the editor, which keeps the text.
-                  await api.reviseOperation(scope, mutationId, operation.ordinal, payload, reason)
-                  setValidation(null)
-                  await invalidate()
-                }}
-              />
-            ))}
-          </ol>
+          {groups.length > 1 && (
+            <p className="muted small" role="status">
+              {groups.map((group) => `${group.items.length} ${group.label.toLowerCase()}`).join(' · ')}
+            </p>
+          )}
+          {groups.map((group) => {
+            const kept = group.items.filter((item) => item.decision?.decision !== 'rejected').length
+            return (
+              <section key={group.label} aria-label={group.label} className="stack tight">
+                {groups.length > 1 && (
+                  <div className="actions" style={{ justifyContent: 'space-between', marginTop: '0.75rem' }}>
+                    <h3 className="eyebrow">
+                      {group.label} · {kept} of {group.items.length} kept
+                    </h3>
+                    {editable && group.items.length > 1 && (
+                      <span className="actions">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={busy}
+                          aria-label={`Keep all ${group.label.toLowerCase()}`}
+                          onClick={() => decideAll(group.items, 'accepted')}
+                        >
+                          Keep all
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={busy}
+                          aria-label={`Skip all ${group.label.toLowerCase()}`}
+                          onClick={() => decideAll(group.items, 'rejected')}
+                        >
+                          Skip all
+                        </Button>
+                      </span>
+                    )}
+                  </div>
+                )}
+                <ol>
+                  {group.items.map((operation) => (
+                    <ChangeCard
+                      key={`${operation.ordinal}-${operation.revision}`}
+                      operation={operation}
+                      title={describeOperation(operation, names)}
+                      issues={issuesFor(operation.ordinal)}
+                      editable={editable}
+                      busy={busy}
+                      onDecide={(decision, operationNote) =>
+                        action.mutate(() =>
+                          api.decideOperation(scope, mutationId, operation.ordinal, decision, operationNote),
+                        )
+                      }
+                      onRevise={async (payload, reason) => {
+                        // A failed edit is reported inside the editor, which keeps the text.
+                        await api.reviseOperation(scope, mutationId, operation.ordinal, payload, reason)
+                        setValidation(null)
+                        await invalidate()
+                      }}
+                    />
+                  ))}
+                </ol>
+              </section>
+            )
+          })}
         </section>
 
         {commit.isError &&

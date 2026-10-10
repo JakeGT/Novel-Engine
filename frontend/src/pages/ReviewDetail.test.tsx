@@ -2,7 +2,14 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { entity, mutation, operation } from '../test/fixtures'
-import { expectAccessible, mockApi, problem, renderInProject, VIEWER } from '../test/harness'
+import {
+  expectAccessible,
+  mockApi,
+  problem,
+  renderInProject,
+  VIEWER,
+  type RecordedCall,
+} from '../test/harness'
 import { ReviewDetail } from './ReviewDetail'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -62,6 +69,64 @@ describe('ReviewDetail', () => {
       'approve',
       'commit',
     ])
+  })
+
+  it('groups a large set of changes and decides a whole group at once', async () => {
+    const extras = ['Ana', 'Bo', 'Cy'].map((name, index) =>
+      operation({ ordinal: index, payload: { op: 'create_entity', id: `tmp:${name}`, type: 'Character', name } }),
+    )
+    let current = mutation({
+      operations: [
+        ...extras,
+        operation({
+          ordinal: 3,
+          operation_type: 'close_fact',
+          payload: { op: 'close_fact', id: 'fct_1' },
+          target_before: null,
+        }),
+      ],
+    })
+    const api = mockApi({
+      ...entries,
+      'GET /mutations/mut_1': () => current,
+      'POST /decision': (call: RecordedCall) => {
+        const ordinal = Number(call.path.split('/').at(-2))
+        current = {
+          ...current,
+          operations: current.operations.map((item) =>
+            item.ordinal === ordinal
+              ? { ...item, decision: { decision: 'rejected', actor_user_id: 'usr_1', note: null, operation_revision: 1, created_at: '2026-10-09T10:00:00Z' } }
+              : item,
+          ),
+        }
+        return current
+      },
+    })
+    const user = userEvent.setup()
+    renderInProject(<ReviewDetail />, {
+      ...at,
+      state: {
+        fromAssistant: true,
+        understood: 'Three people join the story.',
+        notes: ['Bo is mentioned by one other fact.'],
+      },
+    })
+
+    expect(await screen.findByText('3 new entries · 1 facts ended')).toBeInTheDocument()
+    // What the assistant understood, and what else it affects, are shown before deciding.
+    expect(screen.getByText(/Three people join the story\./)).toBeInTheDocument()
+    expect(screen.getByText(/Bo is mentioned by one other fact\./)).toBeInTheDocument()
+
+    const people = screen.getByRole('region', { name: 'New entries' })
+    expect(within(people).getByText('New entries · 3 of 3 kept')).toBeInTheDocument()
+    await user.click(within(people).getByRole('button', { name: 'Skip all new entries' }))
+
+    expect(await within(people).findByText('New entries · 0 of 3 kept')).toBeInTheDocument()
+    expect(api.find('POST', '/decision')).toHaveLength(3)
+    expect(screen.getByText('1 of 4 changes will be added')).toBeInTheDocument()
+    // A single-item group has nothing to decide in bulk.
+    const ended = screen.getByRole('region', { name: 'Facts ended' })
+    expect(within(ended).queryByRole('button', { name: /all/ })).not.toBeInTheDocument()
   })
 
   it('does not claim success when the commit fails because the story moved on', async () => {

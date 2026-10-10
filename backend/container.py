@@ -288,9 +288,9 @@ def build_container(settings: Settings | None = None) -> Container:
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
     )
-    from backend.services.canon_creation_workflow import CanonCreationWorkflow
+    from backend.services.canon_change_workflow import CanonChangeWorkflow
 
-    container.canon_character_workflow = CanonCreationWorkflow(
+    container.canon_character_workflow = CanonChangeWorkflow(
         ai=container.ai,
         mutation=container.mutation_service,
         reader=container.canon_repository,

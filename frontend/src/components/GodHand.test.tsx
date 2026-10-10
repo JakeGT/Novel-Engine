@@ -1,0 +1,103 @@
+import { screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { entity } from '../test/fixtures'
+import { expectAccessible, mockApi, problem, renderInProject } from '../test/harness'
+import { GodHand } from './GodHand'
+
+afterEach(() => vi.unstubAllGlobals())
+
+const proposal = {
+  mutation_id: 'mut_8',
+  status: 'needs_review',
+  operation_count: 3,
+  session_id: 'chg_1',
+  understood: 'Mara moves to Saltmere.',
+  questions: [],
+  notes: ['The current location is ended.'],
+  discarded: [],
+  validation_ok: true,
+  validation_issues: [],
+}
+
+describe('GodHand', () => {
+  it('turns one instruction into changes to review, never straight into canon', async () => {
+    const api = mockApi({ 'POST /assist/changes': proposal })
+    const onClose = vi.fn()
+    const user = userEvent.setup()
+    const { container } = renderInProject(<GodHand entity={entity()} onClose={onClose} />)
+
+    const dialog = screen.getByRole('dialog', { name: 'The God Hand' })
+    await user.click(within(dialog).getByRole('button', { name: 'Show me what would change' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Say what should change')
+    expect(api.find('POST', '/assist/changes')).toHaveLength(0)
+    await expectAccessible(container)
+
+    // An example fills the box; the author can also just type.
+    await user.click(within(dialog).getByRole('button', { name: 'Move the Harbor Guild to Saltmere.' }))
+    const box = within(dialog).getByLabelText('What should change?')
+    await user.clear(box)
+    await user.type(box, 'She lives in Saltmere now.')
+    await user.click(within(dialog).getByRole('button', { name: 'Show me what would change' }))
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId('location').at(-1)).toHaveTextContent('/projects/prj_1/review/mut_8'),
+    )
+    // The entry being looked at goes along, so "she" can be resolved; the head is re-read.
+    expect(api.find('POST', '/assist/changes')[0].body).toEqual({
+      instruction: 'She lives in Saltmere now.',
+      entity_id: 'ent_mara',
+      expected_revision: 5,
+    })
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it('asks instead of guessing, and sends the answer with the instruction', async () => {
+    let calls = 0
+    const api = mockApi({
+      'POST /assist/changes': () => {
+        calls += 1
+        return calls === 1
+          ? { ...proposal, mutation_id: null, status: null, operation_count: 0, questions: ['Which harbor do you mean?'] }
+          : proposal
+      },
+    })
+    const onClose = vi.fn()
+    const user = userEvent.setup()
+    renderInProject(<GodHand onClose={onClose} />)
+
+    await user.type(screen.getByLabelText('What should change?'), 'Burn the harbor down.')
+    await user.click(screen.getByRole('button', { name: 'Show me what would change' }))
+
+    expect(await screen.findByText(/Which harbor do you mean\?/)).toBeInTheDocument()
+    // Nothing was proposed, so the dialog stays open with what was typed.
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('What should change?')).toHaveValue('Burn the harbor down.')
+
+    await user.type(screen.getByLabelText('Your answer'), 'Lantern Harbor.')
+    await user.click(screen.getByRole('button', { name: 'Show me what would change' }))
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(api.find('POST', '/assist/changes')[1].body).toMatchObject({
+      instruction: 'Burn the harbor down.\n\nTo be clear: Lantern Harbor.',
+      entity_id: null,
+    })
+  })
+
+  it('says plainly when no AI provider is connected or nothing would change', async () => {
+    mockApi({ 'POST /assist/changes': problem(503, 'capability_unavailable', 'No provider.') })
+    const user = userEvent.setup()
+    const first = renderInProject(<GodHand onClose={vi.fn()} />)
+    await user.type(screen.getByLabelText('What should change?'), 'Anything.')
+    await user.click(screen.getByRole('button', { name: 'Show me what would change' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('The assistant isn’t available right now')
+    first.unmount()
+
+    mockApi({
+      'POST /assist/changes': problem(400, 'validation_error', 'That instruction did not lead to any change.'),
+    })
+    renderInProject(<GodHand onClose={vi.fn()} />)
+    await user.type(screen.getByLabelText('What should change?'), 'Mara is Mara.')
+    await user.click(screen.getByRole('button', { name: 'Show me what would change' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('did not lead to any change')
+  })
+})

@@ -28,6 +28,7 @@ from backend.api.v1.canon_characters import (
 from backend.api.v1.router import _provider_context
 from backend.core.config import Settings
 from backend.domain.identity import AccessScope
+from backend.services.canon_change_workflow import MAX_INSTRUCTION_LENGTH, CanonChangeWorkflow
 from backend.services.canon_character_workflow import MAX_ANSWERS, CharacterAnswer
 from backend.services.canon_creation_workflow import (
     MAX_DESCRIPTION_LENGTH,
@@ -149,5 +150,84 @@ async def assist_proposal(
                 severity=issue.severity,
             )
             for issue in result.validation.issues
+        ],
+    )
+
+
+class ChangeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # What should change, in the author's words.
+    instruction: str = Field(min_length=1, max_length=MAX_INSTRUCTION_LENGTH)
+    # The entry the author is looking at, if any, so "she" and "here" can be resolved.
+    entity_id: str | None = Field(default=None, max_length=200)
+    expected_revision: int = Field(ge=0)
+
+
+class ChangeProposalModel(BaseModel):
+    # Null when the assistant asked questions instead of proposing; nothing was created.
+    mutation_id: str | None
+    status: str | None
+    operation_count: int
+    session_id: str
+    # One sentence restating what will change.
+    understood: str
+    # Asked instead of guessing when the instruction was ambiguous.
+    questions: list[str]
+    # Other things in the story this affects, for the author to consider.
+    notes: list[str]
+    discarded: list[DiscardedItemModel]
+    validation_ok: bool
+    validation_issues: list[ProposalIssueModel]
+
+
+@router.post("/changes", response_model=ChangeProposalModel)
+async def assist_change(
+    project_id: str,
+    body: ChangeRequest,
+    workflow: CanonChangeWorkflow = Depends(get_canon_character_workflow),
+    credentials: CredentialService = Depends(get_credential_service),
+    usage: ProviderUsageService = Depends(get_usage_service),
+    settings: Settings = Depends(get_settings),
+    scope: AccessScope = Depends(require_project_scope),
+) -> ChangeProposalModel:
+    """The God Hand: one instruction, every change it implies, as a proposal for review."""
+    credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
+        settings=settings, credentials=credentials, usage=usage, scope=scope
+    )
+    result = await workflow.change_by_instruction(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        instruction=body.instruction,
+        focus_entity_id=body.entity_id,
+        expected_revision=body.expected_revision,
+        credential=api_key,
+        provider_base_url=provider_base_url,
+        usage_sink=usage_sink,
+    )
+    if credential_id:
+        await credentials.mark_used(scope.workspace_id or "", credential_id)
+    issues = result.validation.issues if result.validation is not None else []
+    return ChangeProposalModel(
+        mutation_id=result.mutation.id if result.mutation is not None else None,
+        status=result.mutation.status.value if result.mutation is not None else None,
+        operation_count=result.operation_count,
+        session_id=result.session_id,
+        understood=result.understood,
+        questions=result.questions,
+        notes=result.notes,
+        discarded=[
+            DiscardedItemModel(kind=item.kind, reason=item.reason) for item in result.discarded
+        ],
+        validation_ok=result.validation.ok if result.validation is not None else True,
+        validation_issues=[
+            ProposalIssueModel(
+                ordinal=issue.ordinal,
+                code=issue.code,
+                message=issue.message,
+                severity=issue.severity,
+            )
+            for issue in issues
         ],
     )
