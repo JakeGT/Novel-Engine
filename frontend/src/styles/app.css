@@ -820,6 +820,10 @@ h2.eyebrow {
 
 .brand {
   line-height: 1;
+  /* Painted as one piece. Where the brand lands on a fraction of a pixel (it does
+     in the sidebar), the seal and the letters would otherwise each round their own
+     way and end up a pixel apart. */
+  will-change: transform;
 }
 
 .brand .logo {
