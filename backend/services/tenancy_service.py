@@ -120,17 +120,38 @@ class TenancyService:
             detail=detail,
         )
 
-    def _authorize_workspace_creation(self, scope: AccessScope) -> None:
-        """Hosted deployments are invitation-gated: only platform admins may create a workspace.
+    async def _authorize_workspace_creation(self, scope: AccessScope) -> None:
+        """Who may create a workspace in a hosted deployment.
 
-        Local mode is a trusted single-user deployment and is always permitted.
+        Platform admins always may. Anyone else may create one workspace of their
+        own (a personal workspace) when that is enabled: the identity provider has
+        already decided they may use the product, so a second gate here would only
+        leave them signed in with nowhere to work. Unlimited self-creation stays a
+        separate, off-by-default setting. Local mode is a trusted single-user
+        deployment and is always permitted.
         """
         settings = self._settings
         if settings is None or not settings.is_hosted or settings.ALLOW_WORKSPACE_SELF_CREATION:
             return
         if scope.actor_user_id in settings.platform_admin_user_ids:
             return
-        raise ForbiddenError("Workspace creation requires platform administrator provisioning.")
+        if settings.ALLOW_PERSONAL_WORKSPACE and not await self._owns_a_workspace(
+            scope.actor_user_id
+        ):
+            return
+        raise ForbiddenError(
+            "You already have a workspace of your own. Ask a platform administrator if you "
+            "need another."
+            if settings.ALLOW_PERSONAL_WORKSPACE
+            else "Workspace creation requires platform administrator provisioning."
+        )
+
+    async def _owns_a_workspace(self, user_id: str) -> bool:
+        for workspace in await self._store.list_workspaces_for_user(user_id):
+            membership = await self._store.get_membership(workspace.id, user_id)
+            if membership is not None and membership.role is Role.OWNER:
+                return True
+        return False
 
     async def list_workspaces(self, scope: AccessScope) -> list[Workspace]:
         return await self._store.list_workspaces_for_user(scope.actor_user_id)
@@ -140,7 +161,7 @@ class TenancyService:
         return await self._authorize(scope, workspace_id, Permission.WORKSPACE_READ)
 
     async def create_workspace(self, scope: AccessScope, *, slug: str, name: str) -> Workspace:
-        self._authorize_workspace_creation(scope)
+        await self._authorize_workspace_creation(scope)
         workspace = await self._store.create_workspace(slug=slug, name=name)
         await self._store.add_membership(
             workspace_id=workspace.id, user_id=scope.actor_user_id, role=Role.OWNER

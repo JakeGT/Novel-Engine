@@ -57,6 +57,9 @@ class IdentityClaims(BaseModel):
     email: str | None = None
     display_name: str | None = None
     raw: dict[str, Any] = Field(default_factory=dict)
+    # The signed ID token as issued. Kept with the session only, so sign-out can
+    # prove to the provider whose session is ending and be returned to the app.
+    id_token: str | None = None
 
 
 class Session(BaseModel):
@@ -68,6 +71,8 @@ class Session(BaseModel):
     created_at: datetime = Field(default_factory=utcnow)
     expires_at: datetime
     rotated_from: str | None = None
+    # Hosted sessions only; presented to the identity provider at sign-out.
+    id_token: str | None = None
 
 
 class LoginAttempt(BaseModel):

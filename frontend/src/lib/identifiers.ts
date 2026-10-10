@@ -6,9 +6,21 @@ export function slugify(name: string): string {
     .normalize('NFKD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
+    // Apostrophes join, they do not separate: "Jake's" is "jakes", not "jake-s".
+    .replace(/['’]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 60)
+}
+
+/**
+ * A workspace address has to be unique across the whole site, so a few random
+ * characters are added to what the author typed: "Jake's library" → "jakes-library-x7k2".
+ */
+export function uniqueSlug(name: string): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(4))
+  const suffix = Array.from(bytes, (byte) => 'abcdefghijkmnpqrstuvwxyz23456789'[byte % 32]).join('')
+  return `${slugify(name).slice(0, 50) || 'library'}-${suffix}`
 }
 
 /** "Sea ship" → "SeaShip": type names are single identifiers. */

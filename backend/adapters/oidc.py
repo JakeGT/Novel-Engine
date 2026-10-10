@@ -183,7 +183,8 @@ class OIDCIdentityProvider:
         id_token = response.json().get("id_token")
         if not id_token:
             raise InvalidIdentityToken("token response did not include an id_token")
-        return await self._validate_id_token(id_token, expected_nonce)
+        claims = await self._validate_id_token(id_token, expected_nonce)
+        return claims.model_copy(update={"id_token": id_token})
 
     async def logout_url(
         self,
@@ -202,8 +203,8 @@ class OIDCIdentityProvider:
         if not id_token_hint:
             # A return address is only honoured alongside the ID token that proves
             # whose session is ending; Authentik answers 400 to one sent on its own
-            # (with or without a client id). No ID token is kept after sign-in, so
-            # the provider ends the session and shows its own signed-out page.
+            # (with or without a client id). Without a token (a session from before
+            # tokens were kept) the provider ends the session on its own page.
             return str(endpoint)
         params: dict[str, str] = {
             "post_logout_redirect_uri": post_logout_redirect_uri,

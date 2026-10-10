@@ -398,6 +398,7 @@ class SessionStorePort(Protocol):
         ttl_seconds: int,
         csrf_token: str,
         rotated_from: str | None = None,
+        id_token: str | None = None,
     ) -> Session: ...
 
     async def get(self, session_id: str) -> Session | None: ...

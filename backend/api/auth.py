@@ -367,10 +367,11 @@ async def logout(
     auth: AuthService = Depends(get_auth_service),
     settings: Settings = Depends(get_settings),
 ) -> JSONResponse:
+    id_token = auth_session.session.id_token
     await auth.logout(auth_session.session.id)
     body: dict[str, object] = {"status": "logged_out"}
     if settings.is_hosted:
-        body["logout_url"] = await auth.hosted_logout_url()
+        body["logout_url"] = await auth.hosted_logout_url(id_token)
     response = JSONResponse(body)
     _clear_session_cookies(response, settings)
     return response
@@ -382,8 +383,12 @@ async def logout_redirect(
     auth: AuthService = Depends(get_auth_service),
     settings: Settings = Depends(get_settings),
 ) -> RedirectResponse:
-    await auth.logout(request.cookies.get(settings.SESSION_COOKIE_NAME))
-    target = await auth.hosted_logout_url() if settings.is_hosted else "/"
+    raw_session = request.cookies.get(settings.SESSION_COOKIE_NAME)
+    current = await auth.resolve(raw_session)
+    id_token = current.session.id_token if current is not None else None
+    # Resolving may have rotated the session; end whichever one is current.
+    await auth.logout(current.session.id if current is not None else raw_session)
+    target = await auth.hosted_logout_url(id_token) if settings.is_hosted else "/"
     response = RedirectResponse(target, status_code=302)
     _clear_session_cookies(response, settings)
     return response

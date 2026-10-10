@@ -87,11 +87,52 @@ describe('Home', () => {
     expect(api.find('POST', '/projects')[0].body).toEqual({ name: 'The Salt Road', slug: 'the-salt-road' })
   })
 
-  it('explains an account with no workspace instead of showing an empty picker', async () => {
-    mockApi({ 'GET /auth/me': session, 'GET /workspaces': [] })
+  it('onboards a newly admitted person: they name a story and land in it', async () => {
+    const api = mockApi({
+      'GET /auth/me': session,
+      'GET /workspaces': [],
+      'POST /workspaces': reply(201, { ...workspace, id: 'ws_new' }),
+      'POST /workspaces/ws_new/projects': reply(201, { ...project, id: 'prj_new', workspace_id: 'ws_new' }),
+    })
+    const user = userEvent.setup()
+    const { container } = renderHome()
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Let’s set up your library, Jake.' }),
+    ).toBeInTheDocument()
+    // A first visit is never greeted as a return.
+    expect(screen.queryByText(/Welcome back/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Name your library')).toHaveValue('Jake’s library')
+    await expectAccessible(container)
+
+    await user.click(screen.getByRole('button', { name: 'Create my library' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('working title')
+    expect(api.find('POST', '/workspaces')).toHaveLength(0)
+
+    await user.type(screen.getByLabelText('What is your first story called?'), 'The Salt Road')
+    await user.click(screen.getByRole('button', { name: 'Create my library' }))
+
+    expect(await screen.findByText('project page')).toBeInTheDocument()
+    const made = api.find('POST', '/workspaces')[0].body as { name: string; slug: string }
+    expect(made.name).toBe('Jake’s library')
+    // The address is made unique, since workspace addresses are shared across the site.
+    expect(made.slug).toMatch(/^jakes-library-[a-z2-9]{4}$/)
+    expect(api.find('POST', '/projects')[0].body).toEqual({ name: 'The Salt Road', slug: 'the-salt-road' })
+    expect(sessionStorage.getItem('novel_active_workspace')).toBe('ws_new')
+  })
+
+  it('says so plainly where new libraries are switched off', async () => {
+    mockApi({
+      'GET /auth/me': session,
+      'GET /workspaces': [],
+      'POST /workspaces': problem(403, 'forbidden', 'Workspace creation requires platform administrator provisioning.'),
+    })
+    const user = userEvent.setup()
     renderHome()
-    expect(await screen.findByText('You’re signed in, but not in a workspace yet')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'New project' })).not.toBeInTheDocument()
+
+    await user.type(await screen.findByLabelText('What is your first story called?'), 'The Salt Road')
+    await user.click(screen.getByRole('button', { name: 'Create my library' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('cannot be created on this site right now')
   })
 
   it('offers the single project of a self-hosted copy', async () => {

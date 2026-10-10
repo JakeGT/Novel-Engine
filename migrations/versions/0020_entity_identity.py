@@ -83,7 +83,6 @@ def upgrade() -> None:
         "ON canon_evidence (workspace_id, project_id, record_type, record_id, revision)"
     )
 
-
     # History within one commit needs a stable order (edits and reverts depend on it).
     op.execute(
         "ALTER TABLE canon_record_versions ADD COLUMN IF NOT EXISTS ordinal INTEGER NOT NULL "

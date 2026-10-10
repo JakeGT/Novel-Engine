@@ -52,6 +52,7 @@ class SessionRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     rotated_from: Mapped[str | None] = mapped_column(Text, nullable=True)
+    id_token: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class LoginAttemptRow(Base):
@@ -179,6 +180,7 @@ class PostgresSessionStore:
         ttl_seconds: int,
         csrf_token: str,
         rotated_from: str | None = None,
+        id_token: str | None = None,
     ) -> Session:
         raw_token = generate_token()
         now = utcnow()
@@ -192,6 +194,7 @@ class PostgresSessionStore:
                     created_at=now,
                     expires_at=expires_at,
                     rotated_from=rotated_from,
+                    id_token=id_token,
                 )
             )
         return Session(
@@ -201,6 +204,7 @@ class PostgresSessionStore:
             created_at=now,
             expires_at=expires_at,
             rotated_from=rotated_from,
+            id_token=id_token,
         )
 
     async def get(self, session_id: str) -> Session | None:
@@ -221,6 +225,7 @@ class PostgresSessionStore:
                 created_at=row.created_at,
                 expires_at=row.expires_at,
                 rotated_from=row.rotated_from,
+                id_token=row.id_token,
             )
 
     async def revoke(self, session_id: str) -> bool:

@@ -314,6 +314,10 @@ export const api = {
 
   listWorkspaces: () => request<Workspace[]>('/api/v1/workspaces'),
 
+  /** A person who owns no workspace may create one of their own. */
+  createWorkspace: (body: Schemas['CreateWorkspaceRequest']) =>
+    request<Workspace>('/api/v1/workspaces', { method: 'POST', json: body }),
+
   /** Ends the session. Hosted mode answers with the identity provider's sign-out address. */
   logout: () => request<{ status: string; logout_url?: string }>('/auth/logout', { method: 'POST' }),
 

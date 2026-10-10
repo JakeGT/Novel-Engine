@@ -97,6 +97,12 @@ Record the result in `plan/phase-2-evidence.md` (the open "live Authentik round 
 
 If the round trip fails, remove the Cloudflare route again until it is fixed.
 
+## First sign-in
+
+Anyone Authentik lets in gets an account on first sign-in and is asked to name a first story and a
+library of their own. The `backend.devtools.provision` command is no longer needed for that; it
+remains for giving someone a workspace by hand.
+
 ## Upgrade, roll back, stop
 
 Run `./backup.sh` first. Build the new image, set `NOVEL_ENGINE_VERSION`, `docker compose up -d

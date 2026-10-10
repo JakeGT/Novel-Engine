@@ -1898,3 +1898,28 @@ details.more[open] > summary {
   background: var(--surface);
   border-color: var(--line-strong);
 }
+
+/* ---------------------------------------------------------- onboarding --- */
+.onboarding {
+  display: grid;
+  gap: 1.4rem;
+  max-width: 40rem;
+  padding-top: clamp(1rem, 6vh, 4rem);
+}
+
+.onboarding h1 {
+  font-size: clamp(2.6rem, 6vw, 4.2rem);
+  font-weight: 380;
+  line-height: 0.98;
+  letter-spacing: -0.035em;
+}
+
+.onboarding .lede {
+  font-size: 1.2rem;
+  font-style: italic;
+  color: var(--ink-2);
+}
+
+.onboarding .steps {
+  margin-top: 1.5rem;
+}

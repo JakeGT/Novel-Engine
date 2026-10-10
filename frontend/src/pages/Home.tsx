@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { api, type Project } from '../api/client'
+import { api, isApiError, type Project } from '../api/client'
 import { Icon } from '../components/icons'
 import { Logo } from '../components/Logo'
 import { ThemeToggle } from '../components/ThemeToggle'
-import { Button, Dialog, EmptyState, ErrorNotice, Field, Loading } from '../components/ui'
-import { slugify } from '../lib/identifiers'
+import { Button, Dialog, ErrorNotice, Field, Loading } from '../components/ui'
+import { slugify, uniqueSlug } from '../lib/identifiers'
 import { pendingInvite } from '../lib/invite'
 import { displayName, firstName, useSession, useSignOut } from '../lib/session'
 import { initial } from '../lib/words'
@@ -85,6 +85,101 @@ function NewProjectDialog({ workspaceId, onClose }: { workspaceId: string; onClo
   )
 }
 
+/**
+ * A newly admitted person's first screen. Getting in was decided at sign-in, so
+ * there is nothing to wait for: they name a place of their own and a first story,
+ * and land in it ready to describe that story.
+ */
+function Onboarding({ name }: { name: string }) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [workspace, setWorkspace] = useState(name ? `${name}’s library` : 'My library')
+  const [story, setStory] = useState('')
+  const [problems, setProblems] = useState<{ workspace?: string; story?: string }>({})
+
+  const create = useMutation({
+    mutationFn: async () => {
+      const made = await api.createWorkspace({ name: workspace.trim(), slug: uniqueSlug(workspace) })
+      setActiveWorkspaceId(made.id)
+      const project = await api.createProject(made.id, { name: story.trim(), slug: slugify(story) })
+      return project
+    },
+    onSuccess: async (project) => {
+      await queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+      navigate(`/projects/${project.id}`)
+    },
+    // A workspace may have been made before the project failed: show it rather than ask again.
+    onError: () => queryClient.invalidateQueries({ queryKey: ['workspaces'] }),
+  })
+
+  const onSubmit = (event: FormEvent) => {
+    event.preventDefault()
+    const found: { workspace?: string; story?: string } = {}
+    if (!workspace.trim()) found.workspace = 'Give your library a name.'
+    if (slugify(story).length < 2) found.story = 'Give your story a working title of at least two letters.'
+    setProblems(found)
+    if (Object.keys(found).length === 0) create.mutate()
+  }
+  const refused = isApiError(create.error) && create.error.status === 403
+
+  return (
+    <section className="onboarding" aria-labelledby="onboarding-heading">
+      <p className="eyebrow">Welcome</p>
+      <h1 id="onboarding-heading">{name ? `Let’s set up your library, ${name}.` : 'Let’s set up your library.'}</h1>
+      <p className="lede">
+        Your library is a private place for your stories. Each story gets its own story bible.
+        You can invite other people in later.
+      </p>
+      <form className="stack" onSubmit={onSubmit} noValidate>
+        <Field label="What is your first story called?" hint="A working title is fine; you can change it." error={problems.story}>
+          {(props) => (
+            <input
+              {...props}
+              data-autofocus
+              autoFocus
+              value={story}
+              placeholder="The Salt Road"
+              onChange={(event) => setStory(event.target.value)}
+            />
+          )}
+        </Field>
+        <Field label="Name your library" error={problems.workspace}>
+          {(props) => (
+            <input {...props} value={workspace} onChange={(event) => setWorkspace(event.target.value)} />
+          )}
+        </Field>
+        {refused ? (
+          <p className="notice warn" role="alert">
+            New libraries cannot be created on this site right now. Ask the person who invited
+            you to add you to theirs, then reload this page.
+          </p>
+        ) : (
+          <ErrorNotice error={create.error} prefix="Your library was not created" />
+        )}
+        <div className="actions">
+          <Button variant="primary" size="lg" type="submit" disabled={create.isPending}>
+            {create.isPending ? 'Setting up…' : 'Create my library'}
+          </Button>
+        </div>
+      </form>
+      <ol className="steps" aria-label="What happens next">
+        <li className="step done">
+          <strong>Sign in</strong>
+          <span className="muted">You’re in.</span>
+        </li>
+        <li className="step">
+          <strong>Name your story</strong>
+          <span className="muted">That’s this page.</span>
+        </li>
+        <li className="step">
+          <strong>Describe it</strong>
+          <span className="muted">Tell the assistant about it in your own words, and review what it drafts.</span>
+        </li>
+      </ol>
+    </section>
+  )
+}
+
 function Library() {
   const session = useSession()
   const { signOut, pending: signingOut } = useSignOut()
@@ -107,6 +202,8 @@ function Library() {
   })
   const [creating, setCreating] = useState(false)
   const name = firstName(session.data)
+  // Nothing to come back to yet: this is the first visit, and onboarding takes over.
+  const firstVisit = !local && workspaces.isSuccess && list.length === 0
   const joined = Boolean((useLocation().state as { joined?: boolean } | null)?.joined)
 
   return (
@@ -132,12 +229,15 @@ function Library() {
       </header>
 
       <main id="main" className="section-gap">
-        <div className="page-head">
-          <div>
-            <h1>{name ? `Welcome back, ${name}.` : 'Welcome back.'}</h1>
-            <p className="lede">Pick a project to open its story bible.</p>
+        {/* Shown only once it is known there is something to come back to. */}
+        {(local || (workspaces.isSuccess && !firstVisit)) && (
+          <div className="page-head">
+            <div>
+              <h1>{name ? `Welcome back, ${name}.` : 'Welcome back.'}</h1>
+              <p className="lede">Pick a project to open its story bible.</p>
+            </div>
           </div>
-        </div>
+        )}
 
         {joined && (
           <p className="notice ok" role="status">
@@ -162,12 +262,7 @@ function Library() {
         {!local && workspaces.isPending && <Loading>Finding your workspaces…</Loading>}
         {!local && <ErrorNotice error={workspaces.error} prefix="Could not load your workspaces" />}
 
-        {!local && workspaces.isSuccess && list.length === 0 && (
-          <EmptyState icon="key" title="You’re signed in, but not in a workspace yet">
-            Novel Engine is invitation-only. Ask the person who invited you to add you to their
-            workspace, then reload this page.
-          </EmptyState>
-        )}
+        {!local && workspaces.isSuccess && list.length === 0 && <Onboarding name={name} />}
 
         {!local && list.length > 1 && (
           <div className="chips" role="group" aria-label="Workspace">

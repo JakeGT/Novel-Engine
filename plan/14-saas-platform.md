@@ -185,3 +185,34 @@ hosted instance is the alternative; it would revise ADR-008 and add cost exposur
 as an owner decision in [`audit-2026-10-10.md`](audit-2026-10-10.md).
 
 Status: the hosted deployment went live on 2026-10-10 for the owner (`deploy/hosted`).
+
+## Revision 2026-10-10 (second): one gate, then onboarding
+
+The owner decided, following the platform guide (`platform-guide.md`, section 4): **who may use
+Novel Engine is decided once, by Authentik.** A person who completes sign-in gets an account and is
+onboarded: they name a first story and a library (a workspace of their own) and land in it. There
+is no second, in-product gate.
+
+- A signed-in person who owns no workspace may create one (`ALLOW_PERSONAL_WORKSPACE`, on by
+  default). Creating more than one is still limited to platform admins unless
+  `ALLOW_WORKSPACE_SELF_CREATION` is set.
+- Workspace invitations remain, for sharing a workspace with someone, not for admission.
+- This supersedes the statements in this document, ADR-009, and the Phase 1 evidence that hosted
+  workspaces can only be created by a platform admin.
+- Hosted sessions last 12 hours on the platform deployment, because Authentik sends no notice when
+  access is removed.
+- Sign-out returns to the product's front page: the ID token from sign-in is kept with the session
+  (never exposed by the API) and sent to the provider at sign-out, which is the only form in which
+  Authentik accepts a return address.
+
+The provider-key question is settled the same way for now: bring-your-own-key stays, and onboarding
+ends on the project's first screen with a prompt to connect a key; everything works by hand until
+then.
+
+Not adopted from the platform guide, by the owner's decision that gaps which are not security
+issues may stay: a `/healthz` alias, port 8080, `platform-admin` group membership as the source of
+admin rights (a configured list of user ids is used instead), and the platform's visual style
+(Novel Engine keeps its own). Known and left: the two database password files are mode `0444`
+inside an owner-only directory, and nothing prevents local single-user mode being configured with
+`APP_ENV=production` on a self-hosted install.
+

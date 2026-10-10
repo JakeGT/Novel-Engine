@@ -8,7 +8,7 @@ The project owner answered the original architecture questionnaires on 2026-10-0
 | --- | --- |
 | Product | Open-source-first, self-hostable fiction authoring and continuity engine |
 | Primary deployments | Invite-only multi-tenant portfolio instance under `apps.jaketalling.com`, plus a self-hosted Docker Compose profile |
-| Access | Shared portfolio identity followed by a Novel Engine invitation; no public app signup, subscription, or payment system |
+| Access | Shared portfolio identity (Authentik) is the only gate; a person who signs in is onboarded and creates a personal workspace. Workspace invitations are for sharing, not admission (revised 2026-10-10) |
 | AI usage | User-supplied OpenRouter key or OpenAI-compatible local inference; fake/no-provider workflows remain supported |
 | Project funding | No token resale or platform-credit ledger in the current roadmap |
 | Identity | Authentik (self-hosted) shared across `*.jaketalling.com`; Novel Engine owns application sessions and authorization. See ADR-009 |

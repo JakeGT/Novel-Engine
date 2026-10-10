@@ -22,7 +22,7 @@ const STARTERS = [
 
 /** The project's front door: what is in the bible, what needs attention, what to do next. */
 export function Overview() {
-  const { scope, canWrite, newEntry, fillIn, headRevision, userId } = useProject()
+  const { scope, canWrite, canAdmin, access, newEntry, fillIn, headRevision, userId } = useProject()
   const session = useSession()
   const entries = useEntries(scope)
   const portraits = usePortraits(scope)
@@ -40,6 +40,13 @@ export function Overview() {
     queryKey: scopedKey(scope, 'entities', 'needs-detail'),
     queryFn: () => api.needsDetail(scope),
   })
+  // Only an owner can connect a key, and only a hosted site keeps keys per workspace.
+  const keys = useQuery({
+    queryKey: ['credentials', scope.workspaceId],
+    queryFn: () => api.listCredentials(scope.workspaceId as string),
+    enabled: Boolean(access?.hosted && canAdmin && scope.workspaceId),
+  })
+  const noKey = keys.isSuccess && !keys.data.some((key) => key.status === 'active')
   const anyFact = useQuery({
     queryKey: scopedKey(scope, 'facts', 'any'),
     queryFn: () => api.listFacts(scope, { limit: 1 }),
@@ -94,6 +101,24 @@ export function Overview() {
             </p>
           )}
         </section>
+
+        {noKey && (
+          <section className="card quiet" aria-labelledby="key-heading">
+            <div className="card-head">
+              <div>
+                <h2 id="key-heading">Connect the assistant</h2>
+                <p className="muted">
+                  The assistant drafts entries and links from what you tell it, and it runs on your
+                  own OpenRouter key so you control the cost. It takes a minute to connect. Until
+                  then, everything can be filled in by hand.
+                </p>
+              </div>
+            </div>
+            <Link className="btn" to={`${base}/assistant`}>
+              Connect an AI key
+            </Link>
+          </section>
+        )}
 
         <section aria-labelledby="how-heading" className="stack">
           <h2 id="how-heading">How it works</h2>

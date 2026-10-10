@@ -400,3 +400,13 @@ Later the same day: pictures on entries (upload, portrait, removal; `Pictures.ts
 `InvitePage.tsx`) were added. The hosted content security policy now allows `blob:` images, because
 pictures are fetched with the workspace header and shown from a local object address.
 
+## Platform guide and first run (2026-10-10)
+
+`platform-guide.md` (from the owner) describes the hosting platform's contract. Decisions taken
+from it: Authentik is the only gate, so a newly admitted person is onboarded and creates one
+personal workspace (`ALLOW_PERSONAL_WORKSPACE`); the app keeps its own visual style; sign-out
+returns to the front page, which required keeping the ID token on the session (migration
+`0023_session_id_token`). Hosted sessions are 12 hours. Non-security gaps against the guide were
+left by the owner's decision and are listed in `plan/14-saas-platform.md`. Resend is available for
+product email (sender `novel-engine@notify.jaketalling.com`); nothing sends email yet.
+

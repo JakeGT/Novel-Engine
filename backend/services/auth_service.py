@@ -80,6 +80,7 @@ class AuthService:
                 ttl_seconds=self._settings.SESSION_TTL_SECONDS,
                 csrf_token=generate_token(24),
                 rotated_from=session.id,
+                id_token=session.id_token,
             )
             await self._session_store.revoke(session.id)
             return AuthenticatedSession(user=user, session=rotated, rotated_session=rotated)
@@ -117,7 +118,7 @@ class AuthService:
             expected_nonce=attempt.nonce,
         )
         user = await self._identity_store.get_or_create_user(claims)
-        return await self._new_session(user.id)
+        return await self._new_session(user.id, id_token=claims.id_token)
 
     async def start_local_login(self) -> Session:
         claims = IdentityClaims(
@@ -128,22 +129,30 @@ class AuthService:
         user = await self._identity_store.get_or_create_user(claims)
         return await self._new_session(user.id)
 
-    async def _new_session(self, user_id: str) -> Session:
+    async def _new_session(self, user_id: str, *, id_token: str | None = None) -> Session:
         return await self._session_store.create(
             user_id=user_id,
             ttl_seconds=self._settings.SESSION_TTL_SECONDS,
             csrf_token=generate_token(24),
+            id_token=id_token,
         )
 
     async def logout(self, raw_session_id: str | None) -> None:
         if raw_session_id:
             await self._session_store.revoke(raw_session_id)
 
-    async def hosted_logout_url(self) -> str:
+    async def hosted_logout_url(self, id_token: str | None = None) -> str:
+        """Where to send the browser to end the provider's session too.
+
+        With the session's ID token the provider returns the person to the app's
+        front page; without one it ends the session on its own page.
+        """
         post_logout = self._settings.OIDC_POST_LOGOUT_REDIRECT_URI or "/"
         if not self._identity_provider.is_available():
             return post_logout
-        return await self._identity_provider.logout_url(post_logout_redirect_uri=post_logout)
+        return await self._identity_provider.logout_url(
+            post_logout_redirect_uri=post_logout, id_token_hint=id_token
+        )
 
     @staticmethod
     def csrf_valid(session: Session, header_value: str | None) -> bool:

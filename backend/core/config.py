@@ -96,6 +96,9 @@ class Settings(BaseSettings):
     PLATFORM_ADMIN_USER_IDS: str = ""
     # Hosted workspaces are invitation-gated: only platform admins may create one.
     ALLOW_WORKSPACE_SELF_CREATION: bool = False
+    # A signed-in person who owns no workspace may create one for themselves. Who
+    # may sign in at all is decided by the identity provider, not here.
+    ALLOW_PERSONAL_WORKSPACE: bool = True
 
     # Provider credentials and usage limits. An empty KEK disables credential storage.
     CREDENTIAL_KEK: str = ""

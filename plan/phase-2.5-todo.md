@@ -22,7 +22,7 @@ provider by the implementer. Draft quality is unknown until the owner uses it wi
 | E. Stored, resumable conversations | AST-EXP-004 | Not started |
 | F. Start from a premise | AST-EXP-005 | Covered by A in practice; no dedicated first-run |
 | G. Link suggestions (semantic) | AST-EXP-007 | Not started |
-| H. First run and sample project | AST-EXP-008 | Not started; blocked on the provider-key decision |
+| H. First run and sample project | AST-EXP-008 | Onboarding implemented; sample project not started |
 | I. Levels and plain-language test | AST-EXP-009 | Not started (vocabulary mapping exists) |
 | J. By-asking paths for existing features; belief editor; members | AST-EXP-010 | People page implemented; belief editor and by-asking paths open |
 | K. Session budgets and assistant threat cases | AST-EXP-011 | Not started |
@@ -104,7 +104,17 @@ provider by the implementer. Draft quality is unknown until the owner uses it wi
       harmless but should be cleaned up or offered for re-linking.
 - [ ] No thumbnails: the full image is fetched wherever a portrait is shown.
 
-## D, E, G, H, I, K
+## H. First run
+
+- [x] A signed-in person who owns no workspace may create one of their own (one personal
+      workspace; more need a platform admin).
+- [x] Onboarding: name a first story and a library, and land in the project, which opens on
+      "Describe your story" (`Home.tsx`).
+- [x] An owner with no AI key connected is prompted to connect one on the empty project screen.
+- [x] Sign-out returns to the front page (the session keeps the ID token for the provider).
+- [ ] A sample project; a guided first conversation; measuring time to first accepted entry.
+
+## D, E, G, I, K
 
 Not started; see the roadmap and backlog for acceptance criteria. Suggested order once the owner
 has tried A–C with a real provider: D (tune what exists), E (conversations), the rest of B, then H
@@ -112,5 +122,4 @@ and I together once the provider-key decision is made.
 
 ## Open owner decisions that block work here
 
-1. How a new author gets a working assistant on first run (blocks H).
-2. Whether the first real-provider runs show the default model is good enough, or it should change.
+1. Whether the first real-provider runs show the default model is good enough, or it should change.

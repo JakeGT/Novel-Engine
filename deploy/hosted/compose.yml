@@ -28,9 +28,14 @@ x-app: &app
     OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?set OIDC_CLIENT_ID}
     OIDC_REDIRECT_URI: https://novel-engine.jaketalling.com/auth/callback
     OIDC_POST_LOGOUT_REDIRECT_URI: https://novel-engine.jaketalling.com/
-    # Invitation-only. Nobody creates a workspace through the site; the first one is provisioned
-    # from the command line (README.md). Platform admins are Novel Engine user ids (usr_...).
+    # Who may sign in is decided by Authentik. Once in, a person sets up one workspace of their
+    # own; only platform admins (Novel Engine user ids) may create more.
     ALLOW_WORKSPACE_SELF_CREATION: "false"
+    # A signed-in person who owns no workspace may create one of their own.
+    ALLOW_PERSONAL_WORKSPACE: "true"
+    # Authentik sends no notice when someone's access is removed, so sessions are kept
+    # short: removal takes effect within this many seconds (12 hours).
+    SESSION_TTL_SECONDS: "43200"
     PLATFORM_ADMIN_USER_IDS: ${PLATFORM_ADMIN_USER_IDS:-}
     # The model the assistant uses, as an OpenRouter id (hosted inference runs on the
     # workspace's own OpenRouter key). It must support structured output.

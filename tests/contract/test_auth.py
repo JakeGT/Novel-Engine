@@ -85,5 +85,35 @@ def test_hosted_logout_returns_provider_logout_url(hosted_client, hosted_contain
     response = hosted_client.post("/auth/logout", headers={"X-CSRF-Token": csrf})
 
     assert response.status_code == 200
-    assert response.json()["logout_url"].startswith("https://idp.test/end-session")
+    # The session's own ID token goes with the return address, so the provider
+    # sends the person back to the app instead of leaving them on its page.
+    logout_url = response.json()["logout_url"]
+    assert logout_url.startswith("https://idp.test/end-session?post_logout_redirect_uri=")
+    assert logout_url.endswith("&id_token_hint=id-token-for-code-123")
     assert hosted_client.get("/auth/me").status_code == 401
+    # The token is never part of what the session endpoint reports.
+    assert "id_token" not in response.text.replace("id_token_hint", "")
+
+
+def test_hosted_logout_by_link_also_returns_home_and_survives_rotation(
+    hosted_client, hosted_container
+) -> None:
+    login = hosted_client.get("/auth/login", follow_redirects=False)
+    state = parse_qs(urlparse(login.headers["location"]).query)["state"][0]
+    hosted_client.get(f"/auth/callback?state={state}&code=code-123", follow_redirects=False)
+    me = hosted_client.get("/auth/me")
+    assert me.status_code == 200 and "id_token" not in me.text
+
+    # Age the session past the rotation threshold: the replacement keeps the token.
+    store = hosted_container.auth_service._session_store
+    from datetime import timedelta
+
+    for key, session in list(store.sessions.items()):
+        store.sessions[key] = session.model_copy(
+            update={"created_at": session.created_at - timedelta(hours=2)}
+        )
+
+    response = hosted_client.get("/auth/logout", follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["location"].endswith("&id_token_hint=id-token-for-code-123")
+    assert store.sessions == {}

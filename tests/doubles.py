@@ -659,6 +659,7 @@ class FakeIdentityProvider:
         )
         self._available = available
         self.authorization_calls: list[dict[str, str]] = []
+        self.logout_calls: list[dict[str, Any]] = []
         self.exchange_calls: list[dict[str, str]] = []
         self.closed = False
 
@@ -695,7 +696,8 @@ class FakeIdentityProvider:
         )
         if code != self._authorized_code:
             raise InvalidIdentityToken("authorization code rejected")
-        return self._claims
+        # A real provider returns the signed token alongside the validated claims.
+        return self._claims.model_copy(update={"id_token": f"id-token-for-{code}"})
 
     async def logout_url(
         self,
@@ -704,7 +706,13 @@ class FakeIdentityProvider:
         id_token_hint: str | None = None,
         state: str | None = None,
     ) -> str:
-        return f"https://idp.test/end-session?post_logout_redirect_uri={post_logout_redirect_uri}"
+        self.logout_calls.append({"id_token_hint": id_token_hint})
+        if not id_token_hint:
+            return "https://idp.test/end-session"
+        return (
+            f"https://idp.test/end-session?post_logout_redirect_uri={post_logout_redirect_uri}"
+            f"&id_token_hint={id_token_hint}"
+        )
 
     async def aclose(self) -> None:
         self.closed = True
@@ -756,6 +764,7 @@ class InMemorySessionStore:
         ttl_seconds: int,
         csrf_token: str,
         rotated_from: str | None = None,
+        id_token: str | None = None,
     ) -> Session:
         from datetime import timedelta
 
@@ -768,6 +777,7 @@ class InMemorySessionStore:
             created_at=now,
             expires_at=now + timedelta(seconds=ttl_seconds),
             rotated_from=rotated_from,
+            id_token=id_token,
         )
         self.sessions[raw] = session
         return session
