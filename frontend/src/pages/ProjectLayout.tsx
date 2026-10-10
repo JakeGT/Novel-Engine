@@ -339,6 +339,8 @@ export function ProjectLayout() {
             )}
           </div>
 
+          {/* No heading over nothing: a new single-project install has no set-up pages yet. */}
+          {(menu.shown('customize') || menu.shown('media') || access.data?.hosted) && (
           <div className="nav-group">
             <span className="eyebrow nav-title">Set up</span>
             {menu.shown('customize') && (
@@ -362,6 +364,7 @@ export function ProjectLayout() {
               </NavItem>
             )}
           </div>
+          )}
 
           {/* Nothing is hidden: pages a new project does not need yet wait here. */}
           {(later.length > 0 || menu.showAll) && (

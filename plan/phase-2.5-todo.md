@@ -9,23 +9,25 @@
 
 **Standing limitation:** every assistant workflow below is tested with a scripted model, plus a
 check that its output format converts to a strict JSON schema. None has been run against a real
-provider by the implementer. Draft quality is unknown until the owner uses it with a key.
+provider by the implementer. The owner runs the real model by hand and reports back over time
+(decided 2026-10-10); that feedback, not a separate evaluation gate, is how drafts are tuned.
+Each item says "scripted model only" where no real run has confirmed it.
 
 ## Dashboard
 
 | Workstream | Backlog | Status |
 | --- | --- | --- |
 | A. Assisted creation and fill-in | AST-EXP-001, 002 | Implemented (scripted model only) |
-| B. Grouped review | AST-EXP-006 | Partly implemented |
+| B. Grouped review | AST-EXP-006 | Implemented (revise-by-asking: scripted model only) |
 | C. The God Hand | AST-EXP-017 | Implemented, first version (scripted model only) |
-| D. Real-provider verification and evaluation set | AST-EXP-003 | Not started; needs a provider key |
+| D. Real-provider verification and evaluation set | AST-EXP-003 | Closed by owner decision (2026-10-10): verified by the owner's manual runs over time; no evaluation set or gate was built |
 | E. Stored, resumable conversations | AST-EXP-004 | Implemented (scripted model only) |
 | F. Start from a premise | AST-EXP-005 | Covered by A in practice; no dedicated first-run |
-| G. Link suggestions (semantic) | AST-EXP-007 | Not started |
-| H. First run and sample project | AST-EXP-008 | Onboarding implemented; sample project not started |
-| I. Levels and plain-language test | AST-EXP-009 | Not started (vocabulary mapping exists) |
-| J. By-asking paths for existing features; belief editor; members | AST-EXP-010 | People page implemented; belief editor and by-asking paths open |
-| K. Session budgets and assistant threat cases | AST-EXP-011 | Not started |
+| G. Link suggestions | AST-EXP-007 | Implemented by asking the model (scripted model only); no embeddings; precision not measured |
+| H. First run and sample project | AST-EXP-008 | Onboarding and sample story implemented; time to first entry not measured |
+| I. Levels and plain-language test | AST-EXP-009 | Levels 1–2 in the menu; plain-language check on every tested screen; need-based suggestions not built |
+| J. By-asking paths for existing features; belief editor; members | AST-EXP-010 | People page and belief editor implemented; asking for undo, invitations or setup is pointed to the right page, not carried out |
+| K. Session budgets and assistant threat cases | AST-EXP-011 | Daily per-person allowance, shown before it is spent; threat cases are tests. No per-conversation budget |
 | L. Pictures on entries | AST-EXP-018 | Implemented for entries; scenes wait for Phase 2.6 |
 | M. Design direction | AST-EXP-016 | Implemented; awaiting more owner feedback |
 | N. Intuitive design rules and review | — | Rules adopted (document 21); first review applied; not yet tested with people |
@@ -42,7 +44,10 @@ provider by the implementer. Draft quality is unknown until the owner uses it wi
 - [x] "New entry" opens the assistant; "Fill it in by hand" is one action away and keeps what was
       typed; the no-provider case falls back cleanly (`AssistFlow.tsx`).
 - [x] Output format is provider-safe (strict JSON schema test).
-- [ ] Run against a real provider and tune prompts (workstream D).
+- [x] Run against a real provider: done by the owner by hand, repeatedly (workstream D).
+- [x] A new value for a one-at-a-time fact replaces the current one (ended, then added); a value
+      already recorded is not added again; two values in one draft keep the first. Found by the
+      owner's real run, where a second "located at" made the whole set unsaveable.
 
 ## B. Grouped review
 
@@ -51,10 +56,19 @@ provider by the implementer. Draft quality is unknown until the owner uses it wi
 - [x] "Keep all" and "Skip all" per group.
 - [x] What the assistant understood, and what else the change affects, are shown above the
       changes when arriving from the assistant.
-- [ ] Bulk decisions in one request (today: one request per change, sent in order).
-- [ ] "Revise this change" by asking, instead of editing its stored form.
-- [ ] Check a drafted proposal against existing canon for contradictions before review (today:
-      the structural validator only).
+- [x] Bulk decisions in one request, recorded in one transaction: all or none
+      (`POST /mutations/{id}/operations/decisions`).
+- [x] Edit a change with a form: entries with the usual fields, facts and beliefs as the sentence
+      they read as. Editing the stored form remains under "More" for other kinds.
+- [x] Revise the changes by asking (`POST /assist/revisions`): the assistant edits or skips
+      changes already in the set; each edit is a recorded revision with the author's words as its
+      reason; it cannot add a change. **Scripted model only.**
+- [x] A set of changes is checked against the story when it is opened and after each decision:
+      a likely duplicate under another type, an archived twin, a name two changes share, a fact
+      already recorded. Advisory, model-free, worded with names (`canon_consistency.py`).
+- [x] Committing announces itself in a dialog with the next step, instead of a notice out of view.
+- [ ] The check does not judge meaning: two facts that contradict each other in sense, but not in
+      structure, are not noticed. That needs a model and is not built.
 - [x] Undo an accepted proposal in one step from the review screen, while it is still the latest
       version; after later changes the author is pointed to History.
 
@@ -88,7 +102,11 @@ provider by the implementer. Draft quality is unknown until the owner uses it wi
       to sign in and returned to the link afterwards (`InvitePage.tsx`).
 - [x] Members are listed with a display name; email addresses are returned only to members who
       can invite.
-- [ ] Inviting by asking the assistant; a by-hand belief editor; undo and custom types by asking.
+- [x] A by-hand belief editor on every character's page: who is how sure that what is true of
+      whom; a belief can be ended, with Undo (`BeliefsPanel.tsx`).
+- [x] Asked for something that is not a story change (undo, invitations, setup, the AI key), the
+      God Hand says where it is done and links there. **Scripted model only.**
+- [ ] It does not carry those out itself: no restore, invitation or type is made by asking.
 
 ## L. Pictures on entries
 
@@ -150,8 +168,10 @@ What it showed, and what was done:
       carries over; the old id works for 60 more seconds; new cookies are delivered on errors
       too) and made harmless in general (rule C9 in document 21: keep-alive while the site is
       open; a refused request waits for sign-in in another tab and is then sent again).
-- [ ] Suggested fields on a type; suggestions shown inside the "Change anything" dialog when it
-      asks a question; decimal and choice-list kinds of fact.
+- [x] Suggestions that come with no change are named in the "Change anything" dialog, with a
+      link to Types and fields.
+- [ ] Suggested fields on a type; adding a suggestion from inside that dialog; decimal and
+      choice-list kinds of fact.
 
 ## Q. Finding and ranking entries; review page layout (2026-10-10)
 
@@ -171,7 +191,7 @@ Done at the owner's request, following `~/Projects/Common/rules.md`:
 - [x] Review page: one status notice, then the changes; setup suggestions after them; the
       author's description and answers in a closed, labelled disclosure; left-out ideas
       collapsed; details one per row; before/after readable at phone width.
-- [ ] Importance and tags are not yet used by search ranking or the home page lists.
+- [x] Search results and the home page's lists rank by importance and show tags.
 - [ ] Relations between entries ("family of the protagonist") are tags the assistant writes, not
       derived from facts, so they do not update by themselves when facts change.
 
@@ -183,14 +203,46 @@ Done at the owner's request, following `~/Projects/Common/rules.md`:
       "Describe your story" (`Home.tsx`).
 - [x] An owner with no AI key connected is prompted to connect one on the empty project screen.
 - [x] Sign-out returns to the front page (the session keeps the ID token for the provider).
-- [ ] A sample project; a guided first conversation; measuring time to first accepted entry.
+- [x] A sample story (`sample_story.py`, `POST /entities/sample`): eight original entries with
+      tags, importance, facts, one entry to fill in and one belief that disagrees with the facts.
+      It loads only into an empty project, as one version by the person asking; on a hosted site
+      it opens as a project of its own.
+- [ ] A guided first conversation beyond the existing empty-project screen; measuring time to
+      first accepted entry (nothing measures it).
 
-## D, E, G, I, K
+## K. Allowance and threat cases (2026-10-10)
 
-Not started; see the roadmap and backlog for acceptance criteria. Suggested order once the owner
-has tried A–C with a real provider: D (tune what exists), E (conversations), the rest of B, then H
-and I together once the provider-key decision is made.
+- [x] A workspace owner sets how many tokens one person may spend through the workspace's key in
+      a day (migration 0027); the lower of that and the site's limit applies. The Assistant page
+      shows what has been used; the assistant's dialogs warn from 80%.
+- [x] A used-up allowance is refused before the provider is called, as a plain 429. It was an
+      unhandled server error before.
+- [x] Threat cases as tests (`tests/contract/test_assist_threats.py`): hostile text stays in the
+      author's turn; a model that obeys it still yields a bounded, typed, project-confined
+      proposal that cannot approve itself; an author's words are not logged; a failing provider
+      changes nothing and its message is not passed on.
+- [ ] No budget per conversation, and no estimate of what one request will cost before it is
+      sent: only what has been used so far.
+
+## G. Link suggestions (2026-10-10)
+
+- [x] From the story bible index, the assistant reads the entries and suggests facts between
+      existing ones that their details imply (`POST /assist/links`). Recorded facts are not
+      repeated; a one-at-a-time fact is never corrected this way; nothing is merged.
+      **Scripted model only.**
+- [ ] Not semantic search: there are no embeddings, and a project larger than the listing limits
+      is only partly read. Precision is not measured.
+
+## I. Levels and plain language (2026-10-10)
+
+- [x] A project with fewer than three entries shows Home, Story bible and Review; History, Media
+      and Types and fields wait under "More" until the project grows, the author opens one, or
+      asks to always see every page (`lib/levels.ts`). Nothing is gated.
+- [x] Every screen the component tests check for accessibility is also checked for the engine's
+      own terms and ids (`expectPlainLanguage`), outside blocks marked as technical detail.
+- [ ] Levels 3–5 have nothing to show yet (plans, scenes, timelines are later phases).
+      Suggestions offered by need ("want to track where people are over time?") are not built.
 
 ## Open owner decisions that block work here
 
-1. Whether the first real-provider runs show the default model is good enough, or it should change.
+1. None blocking. The owner tests by hand and reports back; fixes follow from what is pasted.

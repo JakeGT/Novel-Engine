@@ -467,3 +467,26 @@ screenshot; cite rule ids). Entries carry marks (`_tags`, `_importance`, `_needs
 never shown as details (`frontend/src/lib/marks.ts`, `components/EntryMarks.tsx`). `byPriority`
 is the one ordering for entry lists. `BiblePage` has three views: index, `?view=all`, `?type=`.
 
+## Rest of Phase 2.5 (2026-10-10)
+
+The owner closed workstream D: he tests against the real model by hand and reports back over
+time, so nothing waits on an evaluation set. What was built after that, in order:
+
+- **Review:** edit a change with a form; keep or skip a group in one all-or-nothing request;
+  a model-free check against the story when a set is opened (duplicates under another type,
+  archived twins, facts already recorded); revise the set by asking the assistant; a dialog on
+  commit. A new value for a one-at-a-time fact now replaces the old one instead of blocking the
+  whole set.
+- **Allowance:** an owner sets a daily token allowance per person (migration `0027`); it is
+  shown on the Assistant page and warned about from 80%. A used-up allowance was an unhandled
+  500 and is now a 429.
+- **Threat cases** for the assistant are tests (`tests/contract/test_assist_threats.py`).
+- **Beliefs by hand**, a **sample story**, **link suggestions**, a **shorter menu for a new
+  project**, and a **plain-language check** that runs wherever the accessibility check does.
+- "Change anything" points to the right page when asked for something that is not a story change.
+
+Not done, and said so in `plan/phase-2.5-todo.md`: nothing by asking actually performs an undo,
+an invitation or a setup change; no per-conversation budget or cost estimate; link suggestions
+use the chat model, not embeddings, and their precision is unmeasured; contradictions in meaning
+are not detected; time to first entry is not measured. Revise-by-asking, link suggestions and
+the pointing-elsewhere behaviour have only ever run against the scripted model.

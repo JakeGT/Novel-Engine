@@ -35,7 +35,7 @@ Added 2026-10-10 (ADR-017, `19-assistant-first-experience.md`). These are releas
   - **Status:** Implemented 2026-10-10 (`canon_creation_workflow.py`, `/assist/*`, `AssistFlow.tsx`). Tested with a scripted model only.
 - **AST-EXP-002 · P1 — To-fill-in list and fill-in interview:** bare entries are listed; the assistant fills in any entry.
   - **Status:** Implemented 2026-10-10 (`GET /entities/needs-detail`).
-- **AST-EXP-003 · P1 — Real-provider verification and evaluation set:** run the built flows against real models; labelled set for drafted entries and links; record precision, recall, duplicate rate, kept-rate. Acceptance: a versioned baseline exists and regressions fail a gate.
+- **AST-EXP-003 · P1 — Real-provider verification and evaluation set:** run the built flows against real models; labelled set for drafted entries and links; record precision, recall, duplicate rate, kept-rate. Acceptance: a versioned baseline exists and regressions fail a gate. *Closed 2026-10-10 by owner decision: verification is the owner's manual runs; the labelled set and gate were not built.*
 - **AST-EXP-004 · P1 — Stored, resumable conversations:** description, questions, answers, and proposal kept together as evidence. Acceptance: a closed session can be read from the change it produced; an open one can be resumed.
   - **Status:** Implemented 2026-10-10 (`/assist/sessions`), exercised with the scripted model only. Not yet in project exports.
 - **AST-EXP-005 · P1 — Start from a premise:** one conversation produces a starter world and open questions. Acceptance: document 19's premise measure on a new account.
