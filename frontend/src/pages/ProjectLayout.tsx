@@ -216,7 +216,7 @@ export function ProjectLayout() {
       >
         <Link className="brand" to="/" title="All projects">
           <Logo />
-          Novel Engine
+          <span className="wordmark">Novel Engine</span>
         </Link>
 
         <div className="project-switch">

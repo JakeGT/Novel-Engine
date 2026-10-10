@@ -49,7 +49,7 @@ export function Landing() {
         <div className="inner">
           <a className="brand" href="#top" aria-label="Novel Engine, back to the top">
             <Logo />
-            Novel Engine
+            <span className="wordmark">Novel Engine</span>
           </a>
           <nav className="links" aria-label="Page sections">
             <a href="#trouble">Why</a>
@@ -262,7 +262,7 @@ export function Landing() {
         <div className="inner">
           <a className="brand" href="#top" aria-label="Novel Engine, back to the top">
             <Logo />
-            Novel Engine
+            <span className="wordmark">Novel Engine</span>
           </a>
           <span>Set in Newsreader and Instrument Sans. Invitation only.</span>
         </div>

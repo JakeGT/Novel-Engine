@@ -112,7 +112,7 @@ function Library() {
       <header className="library-top">
         <a className="brand" href="#top" aria-label="Novel Engine, back to the top">
           <Logo />
-          Novel Engine
+          <span className="wordmark">Novel Engine</span>
         </a>
         <div className="actions">
           <ThemeToggle />

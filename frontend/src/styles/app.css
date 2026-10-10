@@ -822,23 +822,18 @@ h2.eyebrow {
   line-height: 1;
 }
 
-/* Centre the seal on the wordmark's capitals, not on its line box: the line box
-   includes room for descenders, which leaves the letters sitting high. Where the
-   browser can trim the text box to the capitals this is exact; elsewhere the seal
-   is nudged up by the measured difference. */
 .brand .logo {
   flex: none;
-  transform: translateY(-0.1em);
 }
 
-@supports (text-box: trim-both cap alphabetic) {
-  .brand {
-    text-box: trim-both cap alphabetic;
-  }
-
-  .brand .logo {
-    transform: none;
-  }
+/* Centre the wordmark on the seal by its capitals. A line of text is centred by
+   its line box, which reserves room below for tails (g, p, y), so the capitals
+   and the baseline sit high beside a square mark. The offset is measured for
+   the bundled face: it puts the middle of the capital letters level with the
+   middle of the seal. */
+.brand .wordmark {
+  display: inline-block;
+  transform: translateY(0.14em);
 }
 
 .project-switch {
