@@ -665,6 +665,23 @@ class MutationService:
             note=note,
         )
 
+    async def decide_operations(
+        self,
+        scope: AccessScope,
+        mutation_id: str,
+        decisions: Sequence[tuple[int, str, str | None]],
+    ) -> list[OperationDecision]:
+        """Keep or skip several changes at once: recorded together, or not at all."""
+        await self._require(scope, mutation_id, Permission.PROJECT_WRITE)
+        return await self._journal.record_operation_decisions(
+            mutation_id=mutation_id,
+            decisions=[
+                (ordinal, OperationDecisionKind(decision).value, note)
+                for ordinal, decision, note in decisions
+            ],
+            actor_user_id=scope.actor_user_id,
+        )
+
     async def approve(self, scope: AccessScope, mutation_id: str, note: str | None = None) -> None:
         mutation = await self._require(scope, mutation_id, Permission.PROJECT_WRITE)
         if not is_editable(mutation.status):

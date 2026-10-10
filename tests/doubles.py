@@ -1723,6 +1723,24 @@ class InMemoryCanonJournal:
             )
         return record
 
+    async def record_operation_decisions(
+        self, *, mutation_id: str, decisions, actor_user_id: str | None = None
+    ) -> list[OperationDecision]:
+        known = {op.ordinal for op in self.operations.get(mutation_id, [])}
+        for ordinal, _decision, _note in decisions:
+            if ordinal not in known:
+                raise MutationNotFound(f"operation {ordinal} not found in {mutation_id!r}")
+        return [
+            await self.record_operation_decision(
+                mutation_id=mutation_id,
+                ordinal=ordinal,
+                decision=decision,
+                actor_user_id=actor_user_id,
+                note=note,
+            )
+            for ordinal, decision, note in decisions
+        ]
+
     async def list_operation_decisions(self, *, mutation_id: str) -> list[OperationDecision]:
         return [item for item in self.operation_decisions if item.mutation_id == mutation_id]
 

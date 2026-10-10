@@ -8,7 +8,7 @@ from backend.adapters.canon_repository import PostgresCanonRepository
 from backend.adapters.journal import PostgresCanonJournal
 from backend.core.database import create_engine, create_session_factory, session_scope
 from backend.domain.identity import AccessScope, AuthMode
-from backend.domain.journal import MutationStatus, RevisionConflict
+from backend.domain.journal import MutationNotFound, MutationStatus, RevisionConflict
 from backend.domain.operations import CreateEntityOp, RetireEntityOp
 from backend.domain.review import IllegalTransition
 from backend.domain.validation import CanonValidationError
@@ -284,3 +284,31 @@ async def test_the_same_proposal_committed_concurrently_is_idempotent(stack) -> 
     assert len(await journal.list_decisions(mutation_id=draft.id)) == 1
     versions = await repository.list_record_versions(workspace_id=WS, project_id=PR)
     assert len(versions) == 1
+
+
+@pytest.mark.asyncio
+async def test_bulk_decisions_are_recorded_together_or_not_at_all(stack) -> None:
+    service, journal, _repository, _ = stack
+    mutation = await _draft(
+        service,
+        [
+            CreateEntityOp(id="tmp:a", type="Character", name="Ana"),
+            CreateEntityOp(id="tmp:b", type="Character", name="Bo"),
+        ],
+        origin="model",
+    )
+
+    with pytest.raises(MutationNotFound):
+        await service.decide_operations(
+            _scope(), mutation.id, [(0, "rejected", None), (7, "rejected", None)]
+        )
+    assert await journal.list_operation_decisions(mutation_id=mutation.id) == []
+
+    await service.decide_operations(
+        _scope("usr_reviewer"), mutation.id, [(0, "rejected", "twin"), (1, "accepted", None)]
+    )
+    decisions = await journal.list_operation_decisions(mutation_id=mutation.id)
+    assert [(d.ordinal, d.decision, d.actor_user_id, d.note) for d in decisions] == [
+        (0, "rejected", "usr_reviewer", "twin"),
+        (1, "accepted", "usr_reviewer", None),
+    ]

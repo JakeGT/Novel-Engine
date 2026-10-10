@@ -1563,6 +1563,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/operations/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decide Operations
+         * @description Keep or skip several changes in one request: all are recorded, or none.
+         */
+        post: operations["decide_operations_api_v1_projects__project_id__mutations__mutation_id__operations_decisions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/mutations/{mutation_id}/operations/{ordinal}": {
         parameters: {
             query?: never;
@@ -3527,6 +3547,14 @@ export interface components {
             /** Type */
             type: string;
         };
+        /** OperationDecisionItem */
+        OperationDecisionItem: {
+            decision: components["schemas"]["OperationDecisionKind"];
+            /** Note */
+            note?: string | null;
+            /** Ordinal */
+            ordinal: number;
+        };
         /**
          * OperationDecisionKind
          * @enum {string}
@@ -3553,6 +3581,11 @@ export interface components {
             decision: components["schemas"]["OperationDecisionKind"];
             /** Note */
             note?: string | null;
+        };
+        /** OperationDecisionsRequest */
+        OperationDecisionsRequest: {
+            /** Decisions */
+            decisions: components["schemas"]["OperationDecisionItem"][];
         };
         /** PredicateModel */
         PredicateModel: {
@@ -7616,6 +7649,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MutationCommitModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_operations_api_v1_projects__project_id__mutations__mutation_id__operations_decisions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                mutation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperationDecisionsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MutationDetailModel"];
                 };
             };
             /** @description Validation Error */

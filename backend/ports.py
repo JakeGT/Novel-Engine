@@ -679,6 +679,14 @@ class CanonJournalPort(Protocol):
         note: str | None = None,
     ) -> OperationDecision: ...
 
+    async def record_operation_decisions(
+        self,
+        *,
+        mutation_id: str,
+        decisions: Sequence[tuple[int, str, str | None]],
+        actor_user_id: str | None = None,
+    ) -> list[OperationDecision]: ...
+
     async def list_operation_decisions(self, *, mutation_id: str) -> list[OperationDecision]: ...
 
     async def record_decision(

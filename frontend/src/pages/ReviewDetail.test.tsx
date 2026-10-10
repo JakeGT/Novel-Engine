@@ -99,12 +99,12 @@ describe('ReviewDetail', () => {
     const api = mockApi({
       ...entries,
       'GET /mutations/mut_1': () => current,
-      'POST /decision': (call: RecordedCall) => {
-        const ordinal = Number(call.path.split('/').at(-2))
+      'POST /operations/decisions': (call: RecordedCall) => {
+        const chosen = (call.body as { decisions: { ordinal: number }[] }).decisions.map((item) => item.ordinal)
         current = {
           ...current,
           operations: current.operations.map((item) =>
-            item.ordinal === ordinal
+            chosen.includes(item.ordinal)
               ? { ...item, decision: { decision: 'rejected', actor_user_id: 'usr_1', note: null, operation_revision: 1, created_at: '2026-10-09T10:00:00Z' } }
               : item,
           ),
@@ -132,7 +132,11 @@ describe('ReviewDetail', () => {
     await user.click(within(people).getByRole('button', { name: 'Skip all new entries' }))
 
     expect(await within(people).findByText('New entries · 0 of 3 kept')).toBeInTheDocument()
-    expect(api.find('POST', '/decision')).toHaveLength(3)
+    // One request carries the whole group, so it is recorded together or not at all.
+    expect(api.find('POST', '/operations/decisions')).toHaveLength(1)
+    expect(api.find('POST', '/operations/decisions')[0].body).toEqual({
+      decisions: [0, 1, 2].map((ordinal) => ({ ordinal, decision: 'rejected' })),
+    })
     expect(screen.getByText('1 of 4 changes will be added')).toBeInTheDocument()
     // A single-item group has nothing to decide in bulk.
     const ended = screen.getByRole('region', { name: 'Facts ended' })

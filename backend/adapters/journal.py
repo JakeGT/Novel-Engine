@@ -564,48 +564,70 @@ class PostgresCanonJournal:
         actor_user_id: str | None = None,
         note: str | None = None,
     ) -> OperationDecision:
+        recorded = await self.record_operation_decisions(
+            mutation_id=mutation_id,
+            decisions=[(ordinal, decision, note)],
+            actor_user_id=actor_user_id,
+        )
+        return recorded[0]
+
+    async def record_operation_decisions(
+        self,
+        *,
+        mutation_id: str,
+        decisions: Sequence[tuple[int, str, str | None]],
+        actor_user_id: str | None = None,
+    ) -> list[OperationDecision]:
+        """Record several per-operation decisions together: all of them, or none."""
         async with session_scope(self._session_factory) as session:
             mutation = await _lock_mutation(session, mutation_id)
             status = MutationStatus(mutation.status)
             if not is_editable(status):
                 raise RevisionConflict(f"mutation in state {status.value!r} cannot be reviewed")
-            operation = (
-                await session.execute(
-                    text(
-                        "SELECT revision FROM mutation_operations "
-                        "WHERE mutation_id = :m AND ordinal = :ord"
-                    ),
-                    {"m": mutation_id, "ord": ordinal},
-                )
-            ).first()
-            if operation is None:
-                raise MutationNotFound(f"operation {ordinal} not found in {mutation_id!r}")
-            row = (
-                await session.execute(
-                    text(
-                        """
-                        INSERT INTO operation_decisions (
-                            id, mutation_id, ordinal, operation_revision, workspace_id,
-                            project_id, decision, actor_user_id, note
+            revisions = {
+                row.ordinal: row.revision
+                for row in (
+                    await session.execute(
+                        text(
+                            "SELECT ordinal, revision FROM mutation_operations "
+                            "WHERE mutation_id = :m"
+                        ),
+                        {"m": mutation_id},
+                    )
+                ).all()
+            }
+            rows = []
+            for ordinal, decision, note in decisions:
+                if ordinal not in revisions:
+                    raise MutationNotFound(f"operation {ordinal} not found in {mutation_id!r}")
+                rows.append(
+                    (
+                        await session.execute(
+                            text(
+                                """
+                                INSERT INTO operation_decisions (
+                                    id, mutation_id, ordinal, operation_revision, workspace_id,
+                                    project_id, decision, actor_user_id, note
+                                )
+                                VALUES (:id, :m, :ord, :rev, :w, :p, :decision, :actor, :note)
+                                RETURNING *
+                                """
+                            ),
+                            {
+                                "id": format_canon_id("operation", str(uuid7())),
+                                "m": mutation_id,
+                                "ord": ordinal,
+                                "rev": revisions[ordinal],
+                                "w": mutation.workspace_id,
+                                "p": mutation.project_id,
+                                "decision": decision,
+                                "actor": actor_user_id,
+                                "note": note,
+                            },
                         )
-                        VALUES (:id, :m, :ord, :rev, :w, :p, :decision, :actor, :note)
-                        RETURNING *
-                        """
-                    ),
-                    {
-                        "id": format_canon_id("operation", str(uuid7())),
-                        "m": mutation_id,
-                        "ord": ordinal,
-                        "rev": operation.revision,
-                        "w": mutation.workspace_id,
-                        "p": mutation.project_id,
-                        "decision": decision,
-                        "actor": actor_user_id,
-                        "note": note,
-                    },
+                    ).one()
                 )
-            ).one()
-            if status is MutationStatus.APPROVED:
+            if rows and status is MutationStatus.APPROVED:
                 await apply_transition(
                     session,
                     mutation,
@@ -613,7 +635,7 @@ class PostgresCanonJournal:
                     actor_user_id=actor_user_id,
                     reason="operation decision changed after approval",
                 )
-        return _operation_decision(row)
+        return [_operation_decision(row) for row in rows]
 
     async def list_operation_decisions(self, *, mutation_id: str) -> list[OperationDecision]:
         async with session_scope(self._session_factory) as session:

@@ -114,6 +114,20 @@ class OperationDecisionRequest(BaseModel):
     note: str | None = Field(default=None, max_length=500)
 
 
+class OperationDecisionItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ordinal: int = Field(ge=0)
+    decision: OperationDecisionKind
+    note: str | None = Field(default=None, max_length=500)
+
+
+class OperationDecisionsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decisions: list[OperationDecisionItem] = Field(min_length=1, max_length=500)
+
+
 class ReviewNoteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -332,6 +346,23 @@ async def decide_operation(
     service: MutationService = Depends(get_mutation_service),
 ) -> MutationDetailModel:
     await service.decide_operation(scope, mutation_id, ordinal, body.decision.value, body.note)
+    return _detail(await service.review(scope, mutation_id))
+
+
+@router.post("/{mutation_id}/operations/decisions", response_model=MutationDetailModel)
+async def decide_operations(
+    project_id: str,
+    mutation_id: str,
+    body: OperationDecisionsRequest,
+    scope: AccessScope = Depends(require_project_scope),
+    service: MutationService = Depends(get_mutation_service),
+) -> MutationDetailModel:
+    """Keep or skip several changes in one request: all are recorded, or none."""
+    await service.decide_operations(
+        scope,
+        mutation_id,
+        [(item.ordinal, item.decision.value, item.note) for item in body.decisions],
+    )
     return _detail(await service.review(scope, mutation_id))
 
 

@@ -541,6 +541,15 @@ export const api = {
   validateMutation: (scope: Scope, mutationId: string) =>
     send<MutationValidation>(scope, 'POST', `/mutations/${id(mutationId)}/validate`),
 
+  /** Several keep/skip decisions in one request: all are recorded, or none. */
+  decideOperations: (
+    scope: Scope,
+    mutationId: string,
+    decisions: { ordinal: number; decision: 'accepted' | 'rejected'; note?: string | null }[],
+  ) =>
+    send<MutationDetail>(scope, 'POST', `/mutations/${id(mutationId)}/operations/decisions`, {
+      decisions,
+    } satisfies Schemas['OperationDecisionsRequest']),
   decideOperation: (
     scope: Scope,
     mutationId: string,

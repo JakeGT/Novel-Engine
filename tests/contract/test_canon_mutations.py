@@ -151,3 +151,48 @@ def test_mutation_api_requires_authentication(api_client, fake_container) -> Non
     assert (
         api_client.post(base, json={"operations": [_create("A")], "expected_revision": 0})
     ).status_code in {401, 403}
+
+
+def test_several_changes_are_decided_in_one_request_or_not_at_all(
+    auth_client, fake_container
+) -> None:
+    _publish_schema(auth_client, _project_id(fake_container))
+    base = _base(fake_container)
+    mutation_id = auth_client.post(
+        base,
+        json={
+            "operations": [_create("Ana"), _create("Bo", "tmp:b"), _create("Cy", "tmp:c")],
+            "expected_revision": 0,
+            "origin": "model",
+        },
+    ).json()["id"]
+
+    decided = auth_client.post(
+        f"{base}/{mutation_id}/operations/decisions",
+        json={
+            "decisions": [
+                {"ordinal": 0, "decision": "rejected"},
+                {"ordinal": 2, "decision": "rejected", "note": "not needed"},
+            ]
+        },
+    )
+    assert decided.status_code == 200, decided.text
+    kinds = [(op["decision"] or {}).get("decision") for op in decided.json()["operations"]]
+    assert kinds == ["rejected", None, "rejected"]
+
+    # One unknown change refuses the whole request: nothing is half-recorded.
+    refused = auth_client.post(
+        f"{base}/{mutation_id}/operations/decisions",
+        json={
+            "decisions": [
+                {"ordinal": 1, "decision": "rejected"},
+                {"ordinal": 9, "decision": "rejected"},
+            ]
+        },
+    )
+    assert refused.status_code == 404, refused.text
+    after = auth_client.get(f"{base}/{mutation_id}").json()
+    assert after["operations"][1]["decision"] is None
+
+    empty = auth_client.post(f"{base}/{mutation_id}/operations/decisions", json={"decisions": []})
+    assert empty.status_code == 422

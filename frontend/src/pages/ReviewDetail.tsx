@@ -424,16 +424,13 @@ export function ReviewDetail() {
         type: String(item.payload.type),
       })),
   ]
-  // One decision for a whole group: only the changes that differ are sent, in order.
+  // One decision for a whole group: only the changes that differ are sent, in one request.
   const decideAll = (items: MutationOperation[], decision: 'accepted' | 'rejected') =>
     action.mutate(async () => {
-      let latest: Detail | undefined
-      for (const item of items) {
-        if (item.decision?.decision !== decision) {
-          latest = await api.decideOperation(scope, mutationId, item.ordinal, decision, null)
-        }
-      }
-      return latest ?? change
+      const decisions = items
+        .filter((item) => item.decision?.decision !== decision)
+        .map((item) => ({ ordinal: item.ordinal, decision }))
+      return decisions.length > 0 ? api.decideOperations(scope, mutationId, decisions) : change
     })
   const done = committed !== null || change.status === 'committed'
   // Shown on arrival from the assistant, and again later from the kept conversation.

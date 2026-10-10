@@ -3271,6 +3271,37 @@
         "title": "NodeUpdateItem",
         "type": "object"
       },
+      "OperationDecisionItem": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/OperationDecisionKind"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "ordinal": {
+            "minimum": 0.0,
+            "title": "Ordinal",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ordinal",
+          "decision"
+        ],
+        "title": "OperationDecisionItem",
+        "type": "object"
+      },
       "OperationDecisionKind": {
         "enum": [
           "accepted",
@@ -3348,6 +3379,25 @@
           "decision"
         ],
         "title": "OperationDecisionRequest",
+        "type": "object"
+      },
+      "OperationDecisionsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/OperationDecisionItem"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Decisions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "decisions"
+        ],
+        "title": "OperationDecisionsRequest",
         "type": "object"
       },
       "PredicateModel": {
@@ -10469,6 +10519,68 @@
           }
         },
         "summary": "Commit Mutation",
+        "tags": [
+          "canon-mutations"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/operations/decisions": {
+      "post": {
+        "description": "Keep or skip several changes in one request: all are recorded, or none.",
+        "operationId": "decide_operations_api_v1_projects__project_id__mutations__mutation_id__operations_decisions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mutation_id",
+            "required": true,
+            "schema": {
+              "title": "Mutation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationDecisionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MutationDetailModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide Operations",
         "tags": [
           "canon-mutations"
         ]
