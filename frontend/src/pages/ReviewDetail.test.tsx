@@ -66,7 +66,13 @@ describe('ReviewDetail', () => {
     expect(api.find('POST', '/operations/1/decision')[0].body).toEqual({ decision: 'rejected', note: null })
 
     await user.click(screen.getByRole('button', { name: 'Approve and add to canon' }))
-    expect(await screen.findByText('Added to canon as version 4.')).toBeInTheDocument()
+    // The result is announced where the author is looking, with the next step in it.
+    const added = await screen.findByRole('dialog', { name: 'Added to your story' })
+    expect(added).toHaveTextContent('The change is now part of your story, saved as version 4.')
+    expect(within(added).getByRole('link', { name: 'See what to fill in next' })).toHaveAttribute('href', '/projects/prj_1')
+    await user.click(within(added).getByRole('button', { name: 'Stay on this page' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByText('Added to canon as version 4.')).toBeInTheDocument()
     // Approval is still its own recorded step, sent before the commit.
     expect(api.calls.filter((call) => call.method === 'POST').map((call) => call.path.split('/').pop())).toEqual([
       'decision',

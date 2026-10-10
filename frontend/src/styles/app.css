@@ -1612,10 +1612,6 @@ button.tile strong {
   border-radius: var(--radius-m);
 }
 
-.change.skipped {
-  opacity: 0.75;
-}
-
 .change.skipped .change-title {
   text-decoration: line-through;
   color: var(--ink-3);

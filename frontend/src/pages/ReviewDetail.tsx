@@ -15,6 +15,7 @@ import { Icon } from '../components/icons'
 import { RestoreDialog } from '../components/RestoreDialog'
 import {
   ConfirmDialog,
+  Dialog,
   Badge,
   Button,
   ChangeStateBadge,
@@ -367,6 +368,7 @@ export function ReviewDetail() {
   })
   // Approval and the commit are separate, recorded steps on the server; one button
   // runs the approval when it is still needed and then the commit.
+  const [announce, setAnnounce] = useState(false)
   const commit = useMutation({
     mutationFn: async (needsApproval: boolean) => {
       if (needsApproval) await api.approveMutation(scope, mutationId, note.trim() || null)
@@ -375,6 +377,8 @@ export function ReviewDetail() {
     // Only a success from the commit call makes this canon.
     onSuccess: async (result) => {
       setCommitted({ revision: result.revision })
+      // Said in a dialog: the notice at the top of a long page is out of view from here.
+      setAnnounce(true)
       await invalidate()
     },
     onError: () => invalidate(),
@@ -511,6 +515,37 @@ export function ReviewDetail() {
             </Link>
           </p>
         ) : null}
+        {announce && committed && (
+          <Dialog
+            title="Added to your story"
+            onClose={() => {
+              setAnnounce(false)
+              window.scrollTo({ top: 0 })
+            }}
+          >
+            <div className="stack">
+              <p>
+                {included.length === 1 ? 'The change is' : `All ${included.length} changes are`} now
+                part of your story, saved as version {committed.revision}. You can undo this from
+                this page.
+              </p>
+              <div className="actions end">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setAnnounce(false)
+                    window.scrollTo({ top: 0 })
+                  }}
+                >
+                  Stay on this page
+                </Button>
+                <Link className="btn primary" data-autofocus to={`/projects/${scope.projectId}`}>
+                  See what to fill in next
+                </Link>
+              </div>
+            </div>
+          </Dialog>
+        )}
         {done && canWrite && (
           // Taking it back is offered where it was added; it is exact only while nothing came after.
           <div className="actions">
