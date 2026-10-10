@@ -13,6 +13,16 @@ import {
 } from '../attributes'
 import { COMMON_TYPES, typeLabel, typeLook, words } from '../lib/words'
 import { scopedKey, useCanonWrite, useProject } from '../project'
+import {
+  IMPORTANCE,
+  IMPORTANCE_KEY,
+  TAGS_KEY,
+  detailsOf,
+  importanceOf,
+  marksOf,
+  parseTags,
+  tagsOf,
+} from '../lib/marks'
 import { Icon } from './icons'
 import { Button, Field, WriteProblem } from './ui'
 
@@ -48,7 +58,10 @@ export function EntityForm({ entity, initialType, initialName, onSaved, onCancel
   const [name, setName] = useState(entity?.name ?? initialName ?? '')
   const [slug, setSlug] = useState(entity?.slug ?? '')
   const [aliases, setAliases] = useState((entity?.aliases ?? []).join(', '))
-  const [rows, setRows] = useState<AttributeRow[]>(toRows(entity?.attributes))
+  // Details and marks are edited separately and saved together.
+  const [rows, setRows] = useState<AttributeRow[]>(toRows(detailsOf(entity?.attributes)))
+  const [tags, setTags] = useState(entity ? tagsOf(entity).join(', ') : '')
+  const [importance, setImportance] = useState(entity ? importanceOf(entity) : '')
   const [typed, setTyped] = useState<Record<string, string>>({})
   const [touchedTyped, setTouchedTyped] = useState(false)
   const [problems, setProblems] = useState<Record<string, string>>({})
@@ -79,7 +92,14 @@ export function EntityForm({ entity, initialType, initialName, onSaved, onCancel
     if (slugError) errors.slug = slugError
     const parsed = governed ? parseSchemaValues(fields, typedValues) : parseRows(rows)
     Object.assign(errors, parsed.errors)
-    return { errors, attributes: parsed.attributes }
+    // Marks ride along with the details; a "fill in later" mark is left as it was.
+    const marks: Record<string, unknown> = { ...marksOf(entity?.attributes) }
+    const tagList = parseTags(tags)
+    if (tagList.length > 0) marks[TAGS_KEY] = tagList
+    else delete marks[TAGS_KEY]
+    if (importance) marks[IMPORTANCE_KEY] = importance
+    else delete marks[IMPORTANCE_KEY]
+    return { errors, attributes: { ...parsed.attributes, ...marks } }
   }
 
   const buildUpdate = (expectedRevision: number): UpdateEntityRequest => {
@@ -311,8 +331,37 @@ export function EntityForm({ entity, initialType, initialName, onSaved, onCancel
         </fieldset>
       )}
 
+      <div className="grid-2">
+        <Field
+          label="Tags (optional)"
+          hint="Short labels that tell this entry apart at a glance, separated by commas: protagonist, John’s professor."
+        >
+          {(props) => (
+            <input {...props} value={tags} autoComplete="off" onChange={(event) => setTags(event.target.value)} />
+          )}
+        </Field>
+        <Field
+          label="How much it matters to the story"
+          hint={
+            IMPORTANCE.find((item) => item.value === importance)?.hint ??
+            'Lists show the entries that matter most first.'
+          }
+        >
+          {(props) => (
+            <select {...props} value={importance} onChange={(event) => setImportance(event.target.value)}>
+              <option value="">Not decided</option>
+              {IMPORTANCE.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          )}
+        </Field>
+      </div>
+
       <details className="more" open={Boolean(problems.slug) || undefined}>
-        <summary>More options</summary>
+        <summary>Short name for links</summary>
         <Field
           label="Short name for links"
           hint={

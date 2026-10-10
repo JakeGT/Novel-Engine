@@ -11,6 +11,7 @@ from __future__ import annotations
 from backend.adapters.system import uuid7
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.ids import format_canon_id
+from backend.domain.canon.marks import details, needs_detail
 from backend.domain.canon.naming import MAX_SLUG_LENGTH, slugify
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
@@ -88,11 +89,12 @@ class CanonEntityService:
     async def needs_detail(
         self, scope: AccessScope, workspace_id: str, project_id: str, *, limit: int = 50
     ) -> list[CanonEntity]:
-        """Active entries that are only a name so far: no details and nothing stated about them.
+        """Active entries still to be filled in.
 
-        These are typically entries created because something else mentioned
-        them. The list is derived on every call, so an entry leaves it as soon
-        as it gains a detail or a fact of its own; nothing is stored.
+        Either marked so (created from a passing mention, by the assistant or by
+        hand), or only a name so far: no details and nothing stated about them.
+        The second kind is derived on every call, so such an entry leaves the list
+        as soon as it gains a detail or a fact of its own.
         """
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
         bare: list[CanonEntity] = []
@@ -102,7 +104,12 @@ class CanonEntityService:
                 workspace_id=workspace_id, project_id=project_id, limit=200, offset=offset
             )
             for entity in page:
-                if entity.attributes:
+                if needs_detail(entity.attributes):
+                    bare.append(entity)
+                    if len(bare) >= limit:
+                        break
+                    continue
+                if details(entity.attributes):
                     continue
                 stated = await self._reader.list_facts(
                     workspace_id=workspace_id, project_id=project_id, subject_id=entity.id, limit=1

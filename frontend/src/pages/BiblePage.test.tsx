@@ -14,28 +14,76 @@ const items = [
 ]
 
 describe('BiblePage', () => {
-  it('lists active entries, filters by type, and hides archived ones until asked', async () => {
+  it('opens on an index of its parts, and each part lists its entries', async () => {
     mockApi({ 'GET /entities': { items, limit: 200, offset: 0 }, 'GET /links': { items: [] } })
     const user = userEvent.setup()
     const { container } = renderInProject(<BiblePage />, { path: 'bible', at: 'bible' })
 
-    expect(await screen.findByRole('link', { name: /Mara Venn/ })).toHaveAttribute(
+    // The first page is a way in, not a list of everything.
+    const characters = await screen.findByRole('link', { name: 'Characters, 1 entry' })
+    expect(characters).toHaveAttribute('href', '/projects/prj_1/bible?type=Character')
+    // Each part names a few of what is inside, so it can be recognised without opening it.
+    expect(characters).toHaveTextContent('Mara Venn')
+    expect(screen.getByRole('link', { name: 'Locations, 1 entry' })).toHaveTextContent('Lantern Harbor')
+    expect(screen.getByRole('link', { name: 'Everything, 2 entries' })).toHaveAttribute(
+      'href',
+      '/projects/prj_1/bible?view=all',
+    )
+    expect(screen.queryByRole('link', { name: /^Mara Venn/ })).not.toBeInTheDocument()
+    await expectAccessible(container)
+
+    await user.click(characters)
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Characters')
+    expect(screen.getByRole('link', { name: /^Mara Venn/ })).toHaveAttribute(
       'href',
       '/projects/prj_1/entries/ent_mara',
     )
-    expect(screen.getByRole('link', { name: /Lantern Harbor/ })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Lantern Harbor/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Old Captain/ })).not.toBeInTheDocument()
-    expect(screen.getByText('2 entries')).toBeInTheDocument()
-    await expectAccessible(container)
-
-    const filters = screen.getByRole('group', { name: 'Filter by type' })
-    await user.click(within(filters).getByRole('button', { name: /Locations/ }))
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Locations')
-    expect(screen.queryByRole('link', { name: /Mara Venn/ })).not.toBeInTheDocument()
-
-    await user.click(within(filters).getByRole('button', { name: /Everything/ }))
     await user.click(screen.getByLabelText('Show archived'))
     expect(screen.getByRole('link', { name: /Old Captain/ })).toHaveTextContent('Archived')
+  })
+
+  it('shows everything by type, the most important first, a few at a time', async () => {
+    const cast = [
+      entity({ id: 'ent_bg', name: 'A Dockhand', aliases: [], attributes: { _importance: 'background' }, created_revision: 9 }),
+      entity({ id: 'ent_unranked', name: 'Zed', aliases: [], attributes: {}, created_revision: 8 }),
+      entity({
+        id: 'ent_main',
+        name: 'Mara Venn',
+        aliases: [],
+        attributes: { role: 'pilot', _importance: 'main', _tags: ['protagonist', 'harbor pilot'] },
+        created_revision: 1,
+      }),
+      entity({ id: 'ent_prof', name: 'The Professor', aliases: [], attributes: { _tags: ['Mara’s mentor'], _importance: 'supporting', _needs_detail: true }, created_revision: 2 }),
+      ...[1, 2, 3, 4].map((n) =>
+        entity({ id: `ent_m${n}`, name: `Minor ${n}`, aliases: [], attributes: { _importance: 'minor' }, created_revision: 2 + n }),
+      ),
+      entity({ id: 'ent_harbor', type: 'Location', name: 'Lantern Harbor', aliases: [], attributes: {} }),
+    ]
+    mockApi({ 'GET /entities': { items: cast, limit: 200, offset: 0 }, 'GET /links': { items: [] } })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<BiblePage />, { path: 'bible', at: 'bible?view=all' })
+
+    const section = await screen.findByRole('region', { name: /^Characters/ })
+    const names = () =>
+      [...section.querySelectorAll('.entry-name')].map((element) => element.textContent)
+    // Main, then supporting, then minor (newest first): not alphabetical.
+    expect(names()).toEqual(['Mara Venn', 'The Professor', 'Minor 4', 'Minor 3', 'Minor 2'])
+    // Tags and standing are visible in the list, and a reserved name never is.
+    const mara = within(section).getByRole('link', { name: /^Mara Venn/ })
+    expect(mara).toHaveTextContent('Main')
+    expect(mara).toHaveTextContent('protagonist')
+    expect(within(section).getByRole('link', { name: /^The Professor/ })).toHaveTextContent('To fill in')
+    expect(container).not.toHaveTextContent('_importance')
+    expect(container).not.toHaveTextContent('_tags')
+    expect(screen.getByRole('region', { name: /^Locations/ })).toBeInTheDocument()
+    await expectAccessible(container)
+
+    // The rest are one labelled click away, and unranked entries come before background ones.
+    await user.click(within(section).getByRole('button', { name: 'Show 3 more characters' }))
+    expect(names().slice(5)).toEqual(['Minor 1', 'Zed', 'A Dockhand'])
+    expect(within(section).queryByRole('button', { name: /Show/ })).not.toBeInTheDocument()
   })
 
   it('searches on the server so nicknames and unloaded entries are found', async () => {

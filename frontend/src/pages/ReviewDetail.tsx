@@ -9,7 +9,7 @@ import {
   type MutationOperation,
   type MutationValidation,
 } from '../api/client'
-import { ConversationEvidence } from '../components/Conversations'
+import { ConversationEvidence, SetupSuggestions } from '../components/Conversations'
 import { Icon } from '../components/icons'
 import { RestoreDialog } from '../components/RestoreDialog'
 import {
@@ -23,6 +23,8 @@ import {
   Loading,
   ReadOnlyNotice,
 } from '../components/ui'
+import { useConversationFor } from '../lib/conversations'
+import { IMPORTANCE_KEY, NEEDS_DETAIL_KEY, TAGS_KEY } from '../lib/marks'
 import { fullDate, timeAgo } from '../lib/time'
 import {
   CHANGE_STATES,
@@ -43,31 +45,42 @@ const HIDDEN_KEYS = new Set(['op', 'id', 'evidence', 'proposition', 'project_id'
 type Issue = MutationValidation['issues'][number]
 
 /** Changes of one kind are reviewed together, in the order they will be applied. */
-const GROUPS: { label: string; types: string[] }[] = [
-  { label: 'New entries', types: ['create_entity'] },
-  { label: 'Changes to entries', types: ['update_entity'] },
-  { label: 'Facts ended', types: ['close_fact'] },
-  { label: 'New facts', types: ['assert_fact'] },
-  { label: 'Beliefs ended', types: ['close_belief'] },
-  { label: 'New beliefs', types: ['assert_belief'] },
-  { label: 'Events', types: ['create_event', 'amend_event', 'retire_event'] },
-  { label: 'Archived', types: ['retire_entity'] },
+const GROUPS: { label: string; one: string; types: string[] }[] = [
+  { label: 'New entries', one: 'new entry', types: ['create_entity'] },
+  { label: 'Changes to entries', one: 'change to an entry', types: ['update_entity'] },
+  { label: 'Facts ended', one: 'fact ended', types: ['close_fact'] },
+  { label: 'New facts', one: 'new fact', types: ['assert_fact'] },
+  { label: 'Beliefs ended', one: 'belief ended', types: ['close_belief'] },
+  { label: 'New beliefs', one: 'new belief', types: ['assert_belief'] },
+  { label: 'Events', one: 'event', types: ['create_event', 'amend_event', 'retire_event'] },
+  { label: 'Archived', one: 'archived', types: ['retire_entity'] },
 ]
 
-function groupOperations(operations: MutationOperation[]): { label: string; items: MutationOperation[] }[] {
+function groupOperations(
+  operations: MutationOperation[],
+): { label: string; one: string; items: MutationOperation[] }[] {
   const known = new Set(GROUPS.flatMap((group) => group.types))
   const groups = GROUPS.map((group) => ({
     label: group.label,
+    one: group.one,
     items: operations.filter((operation) => group.types.includes(operation.operation_type)),
   }))
   groups.push({
     label: 'Other changes',
+    one: 'other change',
     items: operations.filter((operation) => !known.has(operation.operation_type)),
   })
   return groups.filter((group) => group.items.length > 0)
 }
 
 /** Field-by-field rows for a change: what it sets, and what was there before when it edits. */
+// Marks are stored beside details under reserved names; an author sees these words.
+const MARK_LABELS: Record<string, string> = {
+  [TAGS_KEY]: 'Tags',
+  [IMPORTANCE_KEY]: 'Importance',
+  [NEEDS_DETAIL_KEY]: 'Marked to fill in later',
+}
+
 type Row = { key: string; label: string; before?: unknown; after: unknown }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
@@ -89,7 +102,7 @@ function fieldRows(operation: MutationOperation): Row[] {
           .filter(([name, item]) => !was || !same(was[name], item))
           .map(([name, item]) => ({
             key: `attributes.${name}`,
-            label: words(name),
+            label: MARK_LABELS[name] ?? words(name),
             before: was ? was[name] : undefined,
             after: item,
           }))
@@ -318,6 +331,7 @@ export function ReviewDetail() {
   const [committed, setCommitted] = useState<{ revision: number } | null>(null)
 
   // Every review action returns the fresh change set; reload everything that depends on it.
+  const session = useConversationFor(mutationId)
   const [discarding, setDiscarding] = useState(false)
   const [undoing, setUndoing] = useState(false)
   const [undone, setUndone] = useState<number | null>(null)
@@ -386,6 +400,10 @@ export function ReviewDetail() {
       return latest ?? change
     })
   const done = committed !== null || change.status === 'committed'
+  // Shown on arrival from the assistant, and again later from the kept conversation.
+  const understood = arrival.understood || session.data?.understood || ''
+  const notes = arrival.notes?.length ? arrival.notes : (session.data?.notes ?? [])
+  const leftOut = arrival.discarded ?? []
   const addedAt = committed?.revision ?? change.committed_revision ?? null
 
   return (
@@ -405,44 +423,47 @@ export function ReviewDetail() {
       </div>
 
       <div className="section-gap">
-        {arrival.fromAssistant && open && (
+        {/* One notice says where things stand; the changes themselves come straight after. */}
+        {open && (
           <div className="notice" role="status">
             <p>
-              <strong>Nothing has been added to your story yet.</strong>{' '}
-              {arrival.understood
-                ? `Here is what the assistant understood: ${arrival.understood}`
-                : 'The assistant drafted the changes below.'}{' '}
-              Keep the ones you want, skip the rest, then add them to canon.
+              <strong>Not part of your story yet.</strong>{' '}
+              {understood ? `The assistant understood: ${understood} ` : ''}
+              {change.requires_review
+                ? `It needs your approval because ${change.review_reasons
+                    .map((reason) => REVIEW_REASONS[reason] ?? reason)
+                    .join(' and ')}.`
+                : 'It is a small change by an author, so it can be added straight away.'}
             </p>
-            {(arrival.notes ?? []).length > 0 && (
-              <>
+            {notes.length > 0 && (
+              <div>
                 <p>
                   <strong>Worth knowing before you decide:</strong>
                 </p>
                 <ul>
-                  {(arrival.notes ?? []).map((item, index) => (
+                  {notes.map((item, index) => (
                     <li key={index}>• {item}</li>
                   ))}
                 </ul>
-              </>
+              </div>
             )}
-            {(arrival.discarded ?? []).length > 0 && (
-              <>
-                <p>Some ideas could not be turned into valid changes and were left out:</p>
+            {leftOut.length > 0 && (
+              <details className="more">
+                <summary>
+                  {leftOut.length === 1
+                    ? 'One idea could not be turned into a valid change and was left out'
+                    : `${leftOut.length} ideas could not be turned into valid changes and were left out`}
+                </summary>
                 <ul>
-                  {(arrival.discarded ?? []).map((item, index) => (
+                  {leftOut.map((item, index) => (
                     <li key={index}>
                       {words(item.kind)}: {item.reason}
                     </li>
                   ))}
                 </ul>
-              </>
+              </details>
             )}
           </div>
-        )}
-
-        {change.origin === 'model' && (
-          <ConversationEvidence mutationId={mutationId} wordsOnly={Boolean(arrival.fromAssistant && open)} />
         )}
 
         {done ? (
@@ -495,18 +516,7 @@ export function ReviewDetail() {
             These changes were discarded. None of them are part of your story, and they can no
             longer be changed.
           </p>
-        ) : (
-          <p className="notice plain" role="note">
-            <span>
-              <strong>Not part of your story yet.</strong>{' '}
-              {change.requires_review
-                ? `This needs your approval because ${change.review_reasons
-                    .map((reason) => REVIEW_REASONS[reason] ?? reason)
-                    .join(' and ')}.`
-                : 'This is a small change by an author, so it can be added straight away.'}
-            </span>
-          </p>
-        )}
+        ) : null}
 
         {change.is_stale && (
           <div className="notice warn" role="alert">
@@ -558,7 +568,11 @@ export function ReviewDetail() {
           )}
           {groups.length > 1 && (
             <p className="muted small" role="status">
-              {groups.map((group) => `${group.items.length} ${group.label.toLowerCase()}`).join(' · ')}
+              {groups
+                .map((group) =>
+                  group.items.length === 1 ? `1 ${group.one}` : `${group.items.length} ${group.label.toLowerCase()}`,
+                )
+                .join(' · ')}
             </p>
           )}
           {groups.map((group) => {
@@ -668,6 +682,11 @@ export function ReviewDetail() {
             </div>
           </section>
         )}
+
+        {/* After the changes: things to act on next, then the record of where it came from. */}
+        {session.data && session.data.suggestions.length > 0 && <SetupSuggestions session={session.data} />}
+        <ErrorNotice error={session.error} prefix="Could not load where this came from" />
+        {session.data && <ConversationEvidence session={session.data} />}
 
         {/* Kept apart from the main action: discarding cannot be taken back. */}
         {editable && (

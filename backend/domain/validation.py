@@ -21,6 +21,7 @@ from pydantic import ValidationError as PydanticValidationError
 from backend.domain.canon.assertions import Belief, Fact, FactStatus
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
 from backend.domain.canon.events import Event
+from backend.domain.canon.marks import details
 from backend.domain.canon.naming import (
     aliases_problem,
     external_ids_problem,
@@ -444,7 +445,8 @@ class AuthoritativeValidator:
                 model = context.entity_attribute_models.get(operation.type)
                 if model is not None:
                     try:
-                        model.model_validate(operation.attributes)
+                        # Marks (tags, importance) sit beside the details, not in the type.
+                        model.model_validate(details(operation.attributes))
                     except PydanticValidationError as error:
                         blocking(index, "invalid_attributes", str(error))
                 await validate_handles(
@@ -482,7 +484,7 @@ class AuthoritativeValidator:
                     model = context.entity_attribute_models.get(current.type)
                     if model is not None:
                         try:
-                            model.model_validate(attributes)
+                            model.model_validate(details(attributes))
                         except PydanticValidationError as error:
                             blocking(index, "invalid_attributes", str(error))
                     updated = current.model_copy(

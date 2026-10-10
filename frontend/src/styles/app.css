@@ -429,7 +429,8 @@ legend {
   pointer-events: none;
 }
 
-.search input {
+/* As specific as the general field rule, or its padding wins and the icon sits on the text. */
+.search input:not([type='checkbox']):not([type='radio']) {
   padding-left: 2.3rem;
 }
 
@@ -1641,7 +1642,8 @@ button.tile strong {
   border-top: 1px solid var(--line);
   text-align: left;
   vertical-align: top;
-  overflow-wrap: anywhere;
+  /* Breaks a long word only when it cannot fit, and never squeezes a column to one letter. */
+  overflow-wrap: break-word;
 }
 
 .diff-table thead th {
@@ -1658,7 +1660,6 @@ button.tile strong {
   width: 9rem;
   color: var(--ink-3);
   font-weight: 560;
-  text-transform: capitalize;
 }
 
 .diff-table .was {
@@ -2039,5 +2040,202 @@ details.more[open] > summary {
 
 .backdrop.signed-out .dialog-body {
   padding: 1.6rem;
+}
+
+/* ------------------------------------------------- story bible lists --- */
+/* Rows, not cards: a list of like things to scan, with the marks that tell
+   them apart on the same line as the name. */
+.entry-rows {
+  display: grid;
+}
+
+.entry-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.25rem;
+  border-top: 1px solid var(--line);
+  color: inherit;
+  text-decoration: none;
+}
+
+.entry-rows li:first-child .entry-row {
+  border-top: 0;
+}
+
+.entry-row:hover {
+  background: var(--surface-2);
+}
+
+.entry-row .entry-text {
+  display: grid;
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.entry-row .entry-name {
+  font-size: 1.15rem;
+  line-height: 1.25;
+}
+
+.entry-row .entry-sub {
+  overflow: hidden;
+  color: var(--ink-3);
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entry-row .entry-sub:empty {
+  display: none;
+}
+
+.entry-head .marks {
+  justify-content: flex-start;
+}
+
+.entry-row.archived .entry-name {
+  color: var(--ink-3);
+  text-decoration: line-through;
+}
+
+.marks {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.3rem;
+}
+
+.mark {
+  padding: 0.05rem 0.5rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-ui);
+  font-size: 0.74rem;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+/* How central an entry is reads before its tags: filled, and darker the more it matters. */
+.mark.rank {
+  border-color: transparent;
+  background: var(--surface-3);
+  font-weight: 600;
+}
+
+.mark.rank.main {
+  background: var(--ink);
+  color: var(--bg);
+}
+
+.mark.rank.supporting {
+  background: var(--ink-2);
+  color: var(--bg);
+}
+
+.mark.quiet {
+  border-color: transparent;
+  color: var(--ink-3);
+}
+
+.mark.todo {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.list-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-top: 1.5rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--ink);
+  font-size: 1.35rem;
+}
+
+.list-heading a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.list-heading a:hover {
+  text-decoration: underline;
+}
+
+.list-heading .count,
+.index-count {
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  color: var(--ink-3);
+}
+
+.index {
+  display: grid;
+  border-top: 1px solid var(--ink);
+}
+
+.index-row {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.9rem 0.25rem;
+  border-bottom: 1px solid var(--line);
+  color: inherit;
+  text-decoration: none;
+}
+
+.index-row:hover {
+  background: var(--surface-2);
+}
+
+.index-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.index-name {
+  font-size: 1.4rem;
+  line-height: 1.2;
+}
+
+.index-sub {
+  overflow: hidden;
+  color: var(--ink-3);
+  font-family: var(--font-ui);
+  font-size: 0.88rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip[aria-current='page'] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--bg);
+}
+
+@media (max-width: 640px) {
+  .entry-row {
+    flex-wrap: wrap;
+  }
+
+  .entry-row .marks {
+    flex-basis: 100%;
+    justify-content: flex-start;
+    padding-left: 2.6rem;
+  }
+}
+
+/* On a phone the before and after share the width evenly, so neither is crushed. */
+@media (max-width: 640px) {
+  .diff-table {
+    table-layout: fixed;
+  }
+
+  .diff-table tbody th,
+  .diff-table thead th:first-child {
+    width: 5.5rem;
+  }
 }
 

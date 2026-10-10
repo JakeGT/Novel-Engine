@@ -1,5 +1,8 @@
 # Intuitive design rules
 
+- **Superseded as the primary ruleset on 2026-10-10** by the owner's shared library,
+  `~/Projects/Common/rules.md` (rule ids V, I, D, F, S, T). This document remains as the record
+  of the first review and of this product's own vocabulary; where the two differ, Common wins.
 - Status: Adopted 2026-10-10 at the owner's request. These rules bind every screen; a change that
   breaks one needs a stated reason next to the code.
 - Companions: [`19-assistant-first-experience.md`](19-assistant-first-experience.md) (what the

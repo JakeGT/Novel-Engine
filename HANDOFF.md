@@ -459,3 +459,11 @@ to know: while someone keeps the site open, their session keeps renewing, so rem
 in Authentik takes effect when they next have to sign in (closing the tab, or twelve hours idle),
 not sooner.
 
+## Design rules, marks, and the story bible (2026-10-10)
+
+UI work follows the owner's shared rules in `~/Projects/Common/rules.md` (review from a
+screenshot; cite rule ids). Entries carry marks (`_tags`, `_importance`, `_needs_detail`) inside
+`attributes`; they are stripped before type validation (`backend/domain/validation.py`) and
+never shown as details (`frontend/src/lib/marks.ts`, `components/EntryMarks.tsx`). `byPriority`
+is the one ordering for entry lists. `BiblePage` has three views: index, `?view=all`, `?type=`.
+

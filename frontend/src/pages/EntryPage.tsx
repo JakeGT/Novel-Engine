@@ -6,6 +6,7 @@ import { ActivityPanel } from '../components/ActivityPanel'
 import { ArchiveEntry } from '../components/ArchiveEntry'
 import { EntityForm } from '../components/EntityForm'
 import { FactsPanel } from '../components/FactsPanel'
+import { EntryMarks } from '../components/EntryMarks'
 import { Icon } from '../components/icons'
 import { PicturesPanel, Portrait } from '../components/Pictures'
 import {
@@ -15,11 +16,13 @@ import {
   ErrorNotice,
   Loading,
   ReadOnlyNotice,
+  WriteProblem,
 } from '../components/ui'
+import { NEEDS_DETAIL_KEY, detailsOf, needsDetail } from '../lib/marks'
 import { mainPicture } from '../lib/pictures'
 import { rememberEntry } from '../lib/recent'
 import { objectText, predicateLabel, typeLabel, typePlural, valueText, words, type Tone } from '../lib/words'
-import { scopedKey, useEntries, useProject } from '../project'
+import { scopedKey, useCanonWrite, useEntries, useProject } from '../project'
 
 const AGREEMENT: Record<string, { label: string; tone: Tone }> = {
   agrees: { label: 'True in canon', tone: 'ok' },
@@ -28,7 +31,8 @@ const AGREEMENT: Record<string, { label: string; tone: Tone }> = {
 }
 
 function Details({ entity, onEdit }: { entity: CanonEntity; onEdit?: () => void }) {
-  const attributes = Object.entries(entity.attributes ?? {})
+  // Tags and importance are shown with the name, not listed as details.
+  const attributes = Object.entries(detailsOf(entity.attributes))
   return (
     <section className="card" aria-labelledby="details-heading">
       <div className="card-head">
@@ -171,13 +175,27 @@ function Events({ entity }: { entity: CanonEntity }) {
 }
 
 function Assistant({ entity, bare }: { entity: CanonEntity; bare: boolean }) {
-  const { fillIn, godHand } = useProject()
+  const { scope, fillIn, godHand } = useProject()
+  const marked = needsDetail(entity)
+  // The author can say an entry needs nothing more, without going through the questions.
+  const settle = useCanonWrite<CanonEntity>((expectedRevision) =>
+    api.updateEntity(scope, entity.id, {
+      attributes: Object.fromEntries(
+        Object.entries(entity.attributes ?? {}).filter(([key]) => key !== NEEDS_DETAIL_KEY),
+      ),
+      expected_revision: expectedRevision,
+    }),
+  )
   return (
     <section className={`card ${bare ? '' : 'quiet'}`} aria-labelledby="assistant-heading">
       <div className="card-head">
         <div>
           <h2 id="assistant-heading">
-            {bare ? `${entity.name} is just a name so far` : `Tell the assistant more about ${entity.name}`}
+            {marked
+              ? `${entity.name} is waiting to be filled in`
+              : bare
+                ? `${entity.name} is just a name so far`
+                : `Tell the assistant more about ${entity.name}`}
           </h2>
           <p className="muted small">
             The assistant asks a few questions, then drafts the details and the links to the rest
@@ -197,7 +215,13 @@ function Assistant({ entity, bare }: { entity: CanonEntity; bare: boolean }) {
             Change something
           </Button>
         )}
+        {marked && (
+          <Button variant="ghost" disabled={settle.pending} onClick={() => void settle.submit()}>
+            {settle.pending ? 'Saving…' : 'It needs nothing more'}
+          </Button>
+        )}
       </div>
+      <WriteProblem write={settle} scope={scope} />
     </section>
   )
 }
@@ -229,11 +253,13 @@ export function EntryPage() {
     // Remembered so it can be offered again wherever an entry is being chosen.
     if (entity) rememberEntry(scope.projectId, entity.id)
   }, [entity, scope.projectId])
+  // Waiting to be filled in: marked so when it was created, or still only a name.
   const bare =
     Boolean(entity) &&
-    Object.keys(entity?.attributes ?? {}).length === 0 &&
-    stated.isSuccess &&
-    stated.data.items.length === 0
+    (needsDetail(entity as CanonEntity) ||
+      (Object.keys(detailsOf(entity?.attributes)).length === 0 &&
+        stated.isSuccess &&
+        stated.data.items.length === 0))
 
   return (
     <>
@@ -257,6 +283,9 @@ export function EntryPage() {
                 {(entity.aliases ?? []).length > 0 && (
                   <span className="muted">also known as {(entity.aliases ?? []).join(', ')}</span>
                 )}
+              </div>
+              <div style={{ marginTop: '0.5rem' }}>
+                <EntryMarks entity={entity} limit={6} />
               </div>
             </div>
             {editable && (

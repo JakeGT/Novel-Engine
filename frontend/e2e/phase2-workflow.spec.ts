@@ -123,6 +123,9 @@ test('author, review, archive, and export a project end to end', async ({ page }
   const recent = page.getByRole('region', { name: 'Recently added' })
   await expect(recent.getByRole('img', { name: 'Picture of Mara Venn' })).toBeVisible()
   await page.getByRole('navigation', { name: 'Project' }).getByRole('link', { name: /Story bible/ }).click()
+  // The story bible opens on an index of its parts; "Everything" lists the entries.
+  await expectAccessible(page)
+  await page.getByRole('link', { name: /^Everything, / }).click()
   await expect(page.getByRole('img', { name: 'Picture of Mara Venn' })).toBeVisible()
   await page.getByRole('link', { name: /Mara Venn/ }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Mara Venn' })).toBeVisible()
@@ -168,6 +171,7 @@ test('author, review, archive, and export a project end to end', async ({ page }
 
   // --- only the accepted change became canon ----------------------------------------
   await page.getByRole('navigation', { name: 'Project' }).getByRole('link', { name: /Story bible/ }).click()
+  await page.getByRole('link', { name: /^Everything, / }).click()
   await expect(page.getByRole('link', { name: /Lantern Harbor/ })).toBeVisible()
   await expect(page.getByRole('link', { name: /Unwanted Extra/ })).toHaveCount(0)
   await expectAccessible(page)

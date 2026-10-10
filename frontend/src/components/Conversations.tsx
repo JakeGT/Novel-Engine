@@ -112,47 +112,30 @@ export function OpenConversations() {
 }
 
 /**
- * What the author told the assistant that led to a set of suggested changes:
- * their own words, quoted back, so a reviewer can judge the changes against them.
+ * What the author told the assistant that led to a set of suggested changes, in
+ * their own words. It is there to check the changes against, not to be read first,
+ * so it is closed until asked for and its label says what is inside.
  */
-export function ConversationEvidence({
-  mutationId,
-  wordsOnly = false,
-}: {
-  mutationId: string
-  /** Leave out the assistant's summary when the page has just shown it. */
-  wordsOnly?: boolean
-}) {
-  const { scope } = useProject()
-  const found = useQuery({
-    queryKey: scopedKey(scope, 'assist-session-for', mutationId),
-    queryFn: () => api.assistSessionFor(scope, mutationId),
-  })
-  if (found.error) return <ErrorNotice error={found.error} prefix="Could not load where this came from" />
-  const session = found.data
-  if (!session) return null
-
+export function ConversationEvidence({ session }: { session: AssistSession }) {
+  const answers = session.answers.length
+  const what = session.kind === 'change' ? 'your instruction' : 'your description'
   return (
-    <>
-    {session.suggestions.length > 0 && <SetupSuggestions session={session} />}
-    <section className="card quiet" aria-labelledby="evidence-heading">
-      <div className="card-head">
-        <div>
-          <h2 id="evidence-heading">Where this came from</h2>
-          <p className="muted">
-            What the assistant was told, {timeAgo(session.created_at)}. The changes below should
-            say nothing more than this.
-          </p>
-        </div>
-      </div>
+    <details className="more evidence">
+      <summary>
+        What you told the assistant: {what}
+        {answers > 0 ? ` and ${answers === 1 ? 'one answer' : `${answers} answers`}` : ''}
+      </summary>
       <div className="stack tight">
+        <p className="muted small">
+          Written {timeAgo(session.created_at)}. The changes should say nothing more than this.
+        </p>
         {session.description.trim() && (
           <div>
             <p className="label">{session.kind === 'change' ? 'The instruction' : 'The description'}</p>
             <blockquote className="quoted">{session.description}</blockquote>
           </div>
         )}
-        {session.answers.length > 0 && (
+        {answers > 0 && (
           <div>
             <p className="label">Questions and answers</p>
             <dl className="qa">
@@ -165,25 +148,8 @@ export function ConversationEvidence({
             </dl>
           </div>
         )}
-        {!wordsOnly && session.understood && (
-          <div>
-            <p className="label">How the assistant understood it</p>
-            <p>{session.understood}</p>
-          </div>
-        )}
-        {!wordsOnly && session.notes.length > 0 && (
-          <div>
-            <p className="label">Worth knowing before you decide</p>
-            <ul>
-              {session.notes.map((item, index) => (
-                <li key={index}>• {item}</li>
-              ))}
-            </ul>
-          </div>
-        )}
       </div>
-    </section>
-    </>
+    </details>
   )
 }
 
@@ -214,7 +180,7 @@ const suggestionTitle = (item: SchemaSuggestion) =>
  * fact. Nothing is added unless an owner chooses to; after adding, the same
  * description can be drafted again so what was left out can be included.
  */
-function SetupSuggestions({ session }: { session: AssistSession }) {
+export function SetupSuggestions({ session }: { session: AssistSession }) {
   const { scope, canWrite, canAdmin, headRevision, refreshHead } = useProject()
   const invalidate = useInvalidateProject(scope)
   const queryClient = useQueryClient()
@@ -340,7 +306,7 @@ function SetupSuggestions({ session }: { session: AssistSession }) {
           The assistant asked a question instead of drafting. Use “Change anything” to answer it.
         </p>
       )}
-      <div className="actions">
+      <div className="actions" style={{ marginTop: '0.75rem' }}>
         {canAdmin && missing.length > 0 && (
           <Button
             variant="primary"

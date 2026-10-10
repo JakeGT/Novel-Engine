@@ -30,9 +30,10 @@ describe('ReviewDetail', () => {
     expect(screen.getByText('Update “Mara Venn”')).toBeInTheDocument()
     const diff = screen.getAllByRole('table')[1]
     expect(within(diff).getByRole('row', { name: /Name/ })).toHaveTextContent('Mara VennMara Venn-Marsh')
-    expect(screen.getByRole('note')).toHaveTextContent(
-      'This needs your approval because it did not come directly from an author',
-    )
+    // One notice says where things stand, then the changes follow directly.
+    const standing = screen.getAllByRole('status')[0]
+    expect(standing).toHaveTextContent('Not part of your story yet.')
+    expect(standing).toHaveTextContent('It needs your approval because it did not come directly from an author')
     expect(screen.getByText('All 2 changes will be added')).toBeInTheDocument()
     await expectAccessible(container)
   })
@@ -115,7 +116,7 @@ describe('ReviewDetail', () => {
       },
     })
 
-    expect(await screen.findByText('3 new entries · 1 facts ended')).toBeInTheDocument()
+    expect(await screen.findByText('3 new entries · 1 fact ended')).toBeInTheDocument()
     // What the assistant understood, and what else it affects, are shown before deciding.
     expect(screen.getByText(/Three people join the story\./)).toBeInTheDocument()
     expect(screen.getByText(/Bo is mentioned by one other fact\./)).toBeInTheDocument()
@@ -161,12 +162,22 @@ describe('ReviewDetail', () => {
     })
     const { container } = renderInProject(<ReviewDetail />, at)
 
-    const evidence = await screen.findByRole('region', { name: 'Where this came from' })
-    expect(within(evidence).getByText('Iven is Mara’s brother.')).toBeInTheDocument()
+    // What the assistant understood and noticed is needed to decide, so it is in view.
+    const standing = (await screen.findByText(/The assistant understood: Add Iven\./)).closest(
+      '[role="status"]',
+    ) as HTMLElement
+    expect(standing).toHaveTextContent('Mara has no family recorded.')
+    // The author's own words are there to check against, closed until asked for,
+    // under a label that says what is inside. They come after the changes.
+    const summary = screen.getByText('What you told the assistant: your description and one answer')
+    const evidence = summary.closest('details') as HTMLDetailsElement
+    expect(evidence.open).toBe(false)
+    const changes = screen.getByRole('heading', { name: 'The changes' })
+    expect(changes.compareDocumentPosition(evidence) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await userEvent.setup().click(summary)
+    expect(within(evidence).getByText('Iven is Mara’s brother.')).toBeVisible()
     expect(within(evidence).getByText('Where does he live?')).toBeInTheDocument()
     expect(within(evidence).getByText('Saltmere.')).toBeInTheDocument()
-    expect(within(evidence).getByText('Add Iven.')).toBeInTheDocument()
-    expect(evidence).toHaveTextContent('Mara has no family recorded.')
     // Asked for by the change it produced, not by an id the author has to know.
     expect(api.find('GET', '/assist/sessions')[0].search.get('mutation_id')).toBe('mut_1')
     await expectAccessible(container)

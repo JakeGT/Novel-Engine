@@ -23,6 +23,16 @@ from pydantic import BaseModel, Field
 from backend.adapters.system import uuid7
 from backend.core.logging import log_event
 from backend.domain.canon.entities import CanonEntity
+from backend.domain.canon.marks import (
+    IMPORTANCE_KEY,
+    MARK_KEYS,
+    NEEDS_DETAIL_KEY,
+    TAGS_KEY,
+    clean_importance,
+    clean_tags,
+    marks,
+    needs_detail,
+)
 from backend.domain.canon.naming import normalize_name, slugify
 from backend.domain.canon.propositions import (
     BooleanObject,
@@ -106,6 +116,16 @@ class DraftEntity(BaseModel):
     attributes: list[DraftAttribute] = Field(
         default_factory=list, description="Stable descriptive traits, e.g. role, appearance"
     )
+    tags: list[str] = Field(
+        default_factory=list,
+        description="Up to three short lower-case phrases that tell it apart at a glance",
+    )
+    importance: str = Field(
+        default="", description="main, supporting, minor or background; empty if unclear"
+    )
+    needs_more: bool = Field(
+        default=False, description="True when the author said little about it so far"
+    )
 
 
 class DraftFact(BaseModel):
@@ -181,11 +201,22 @@ def _subject_update(
         if alias.strip() and normalize_name(alias) not in seen:
             seen.add(normalize_name(alias))
             aliases.append(alias.strip())
-    if not attributes and not aliases:
+    # Filling an entry in is what its "fill in later" mark was waiting for. Tags are
+    # added to, and an importance the author already has is never overridden.
+    merged = {**subject.attributes, **attributes}
+    tags = clean_tags([*subject.attributes.get(TAGS_KEY, []), *item.tags])
+    if tags:
+        merged[TAGS_KEY] = tags
+    level = clean_importance(item.importance)
+    if level and IMPORTANCE_KEY not in merged:
+        merged[IMPORTANCE_KEY] = level
+    if attributes:
+        merged.pop(NEEDS_DETAIL_KEY, None)
+    if merged == subject.attributes and not aliases:
         return None
     return UpdateEntityOp(
         id=subject.id,
-        attributes={**subject.attributes, **attributes} if attributes else None,
+        attributes=merged if merged != subject.attributes else None,
         aliases=[*subject.aliases, *aliases] if aliases else None,
         evidence=evidence,
     )
@@ -374,8 +405,16 @@ class CanonCreationWorkflow(CanonCharacterWorkflow):
                 "use its id directly as the ref in facts.\n"
                 "- when the author is filling in an existing entry, include it once in entities "
                 "with its exact name and type, carrying any new attributes or aliases.\n"
-                "- a thing that is only mentioned still gets an entity with just its name and "
-                "type, so the author can fill it in later.\n"
+                "- be generous with entries: anyone or anything the description or an answer "
+                "mentions, even in passing, gets an entity with its name and type, so the "
+                "author can fill it in later. Set needs_more to true on any entity the author "
+                "said little about.\n"
+                "- give each entity up to three short tags, in lower case, that tell it apart "
+                "at a glance: its role in the story (protagonist, antagonist, mentor, rival) "
+                "and how it relates to the main characters (“John’s professor”, “family of "
+                "the protagonist”). Use only what the author’s words support.\n"
+                "- set importance to main (the story is about them), supporting, minor or "
+                "background, when the author’s words make it clear; otherwise leave it empty.\n"
                 f"- entity types must be one of: {sorted(entity_types)}\n"
                 "- put lasting descriptive traits (role, appearance, temperament) in the "
                 "entity's attributes as short key/value text.\n"
@@ -534,8 +573,16 @@ class CanonCreationWorkflow(CanonCharacterWorkflow):
             attributes = {
                 pair.key.strip(): pair.value.strip()
                 for pair in item.attributes[:MAX_ATTRIBUTES]
-                if pair.key.strip() and pair.value.strip()
+                if pair.key.strip() and pair.value.strip() and pair.key.strip() not in MARK_KEYS
             }
+            # An entry made from a passing mention is marked to be filled in later.
+            attributes.update(
+                marks(
+                    tags=item.tags,
+                    importance=item.importance,
+                    needs_detail=item.needs_more or not attributes,
+                )
+            )
             operations.append(
                 CreateEntityOp(
                     id=temporary,
@@ -613,6 +660,21 @@ class CanonCreationWorkflow(CanonCharacterWorkflow):
                     evidence=evidence(belief.question_id),
                 )
             )
+        # Filling an entry in, in any way, is what its "fill in later" mark was waiting for.
+        if subject is not None and needs_detail(subject.attributes) and operations:
+            for position, operation in enumerate(operations):
+                if isinstance(operation, UpdateEntityOp) and operation.id == subject.id:
+                    current = (
+                        subject.attributes if operation.attributes is None else operation.attributes
+                    )
+                    cleared = {k: v for k, v in current.items() if k != NEEDS_DETAIL_KEY}
+                    operations[position] = operation.model_copy(update={"attributes": cleared})
+                    break
+            else:
+                cleared = {k: v for k, v in subject.attributes.items() if k != NEEDS_DETAIL_KEY}
+                operations.append(
+                    UpdateEntityOp(id=subject.id, attributes=cleared, evidence=evidence(None))
+                )
         return operations, discarded
 
 

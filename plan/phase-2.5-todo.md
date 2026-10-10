@@ -153,6 +153,28 @@ What it showed, and what was done:
 - [ ] Suggested fields on a type; suggestions shown inside the "Change anything" dialog when it
       asks a question; decimal and choice-list kinds of fact.
 
+## Q. Finding and ranking entries; review page layout (2026-10-10)
+
+Done at the owner's request, following `~/Projects/Common/rules.md`:
+
+- [x] Entries carry tags, an importance (main, supporting, minor, background), and a "fill in
+      later" mark, stored beside their details under reserved names
+      (`backend/domain/canon/marks.py`). The assistant sets them on what it drafts; an author
+      edits tags and importance in the entry form.
+- [x] The assistant is told to create an entry for anyone or anything mentioned, even in passing,
+      and to mark thin ones; marked entries appear under "To fill in" until filled in or the
+      author says they need nothing more. **Prompt behaviour unverified until a real run.**
+- [x] Lists are ordered by importance, then newest; never alphabetically.
+- [x] The story bible opens on an index of its parts. "Everything" shows each type under its own
+      heading, five at a time with a labelled "show more". A type's page lists all of it. Tags
+      and importance are visible in every list.
+- [x] Review page: one status notice, then the changes; setup suggestions after them; the
+      author's description and answers in a closed, labelled disclosure; left-out ideas
+      collapsed; details one per row; before/after readable at phone width.
+- [ ] Importance and tags are not yet used by search ranking or the home page lists.
+- [ ] Relations between entries ("family of the protagonist") are tags the assistant writes, not
+      derived from facts, so they do not update by themselves when facts change.
+
 ## H. First run
 
 - [x] A signed-in person who owns no workspace may create one of their own (one personal

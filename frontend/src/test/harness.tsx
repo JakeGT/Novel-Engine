@@ -143,7 +143,12 @@ export function renderInProject(ui: ReactElement, options: RenderOptions = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const context = projectContext(options.context)
   const base = '/projects/prj_1'
-  const entry = { pathname: options.at ? `${base}/${options.at}` : base, state: options.state }
+  const [path, search] = (options.at ?? '').split('?')
+  const entry = {
+    pathname: path ? `${base}/${path}` : base,
+    search: search ? `?${search}` : '',
+    state: options.state,
+  }
   const result = render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[entry]}>
