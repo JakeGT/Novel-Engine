@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AssetLink } from '../api/client'
 import { mainPicture } from '../lib/pictures'
 import { entity } from '../test/fixtures'
-import { expectAccessible, mockApi, problem, renderInProject, reply, VIEWER } from '../test/harness'
+import { expectAccessible, mockApi, problem, renderInProject, reply, VIEWER, type RecordedCall } from '../test/harness'
 import { PicturesPanel } from './Pictures'
 
 function link(overrides: Partial<AssetLink> = {}): AssetLink {
@@ -44,6 +44,38 @@ describe('PicturesPanel', () => {
     expect(await screen.findByRole('img', { name: 'Picture 2 of Mara Venn' })).toBeInTheDocument()
     expect(screen.getByText('Main')).toBeInTheDocument()
     await expectAccessible(container)
+  })
+
+  it('makes another picture the main one, and reuses a picture from elsewhere in the project', async () => {
+    const elsewhere = link({ id: 'lnk_9', asset_id: 'ast_9', asset_version_id: 'asv_9', target_record_id: 'ent_tobin' })
+    const api = mockApi({
+      'GET /links': (call: RecordedCall) => ({
+        items: call.search.get('target_id')
+          ? [link(), link({ id: 'lnk_2', asset_id: 'ast_2', asset_version_id: 'asv_2', created_revision: 5 })]
+          : [link(), elsewhere],
+      }),
+      'GET /content': new Blob(['x']),
+      'POST /assets/ast_1/links': reply(201, link({ id: 'lnk_3', created_revision: 6 })),
+      'POST /links/lnk_1/retire': {},
+      'POST /assets/ast_9/links': reply(201, link({ id: 'lnk_4', asset_id: 'ast_9' })),
+    })
+    const user = userEvent.setup()
+    renderInProject(<PicturesPanel entity={entity()} />)
+
+    // The older picture is linked afresh, which makes it the newest, and its old link retired.
+    await user.click(await screen.findByRole('button', { name: 'Make picture 2 the main picture of Mara Venn' }))
+    await waitFor(() => expect(api.find('POST', '/links/lnk_1/retire')).toHaveLength(1))
+    expect(api.find('POST', '/assets/ast_1/links')[0].body).toMatchObject({ target_id: 'ent_mara', expected_revision: 3 })
+    expect(api.find('POST', '/links/lnk_1/retire')[0].body).toEqual({ expected_revision: 4 })
+
+    await user.click(screen.getByText('Use a picture already in your project'))
+    await user.click(await screen.findByRole('button', { name: 'Use picture 1 from your project for Mara Venn' }))
+    await waitFor(() => expect(api.find('POST', '/assets/ast_9/links')).toHaveLength(1))
+    expect(api.find('POST', '/assets/ast_9/links')[0].body).toMatchObject({
+      target_id: 'ent_mara',
+      asset_version_id: 'asv_9',
+      role: 'DEPICTS',
+    })
   })
 
   it('uploads a chosen image against the current version and reports a clash', async () => {

@@ -74,6 +74,30 @@ export function PicturesPanel({ entity }: { entity: CanonEntity }) {
     () => setRemoved(null),
   )
 
+  // The newest picture is the main one, so making another the main one links it afresh
+  // and retires its older link: two small versions, and nothing is lost if the second fails.
+  const promote = useCanonWrite<unknown, AssetLink>(async (expectedRevision, link) => {
+    await api.relinkPicture(scope, link, expectedRevision)
+    return api.retireLink(scope, link.id, expectedRevision + 1)
+  })
+  // Pictures already in the project, on other entries, that this entry does not have.
+  const everywhere = useQuery({
+    queryKey: scopedKey(scope, 'links', 'all'),
+    queryFn: () => api.listLinks(scope, { include_retired: false }),
+    enabled: canWrite && active,
+  })
+  const mine = new Set(pictures.map((link) => link.asset_version_id))
+  const library: AssetLink[] = []
+  for (const link of everywhere.data?.items ?? []) {
+    if (isPicture(link) && !mine.has(link.asset_version_id) && link.target_record_id !== entity.id) {
+      mine.add(link.asset_version_id)
+      library.push(link)
+    }
+  }
+  const reuse = useCanonWrite<unknown, AssetLink>((expectedRevision, link) =>
+    api.relinkPicture(scope, { ...link, target_record_id: entity.id }, expectedRevision),
+  )
+
   const [problem, setProblem] = useState<string | null>(null)
   const onFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -134,6 +158,17 @@ export function PicturesPanel({ entity }: { entity: CanonEntity }) {
           <li key={link.id}>
             <Thumbnail link={link} label={`Picture ${index + 1} of ${entity.name}`} />
             {index === 0 && pictures.length > 1 && <Badge tone="accent">Main</Badge>}
+            {canWrite && active && index > 0 && (
+              <button
+                type="button"
+                className="btn ghost sm"
+                aria-label={`Make picture ${index + 1} the main picture of ${entity.name}`}
+                disabled={promote.pending}
+                onClick={() => void promote.submit(link)}
+              >
+                Make main
+              </button>
+            )}
             {canWrite && active && (
               <button
                 type="button"
@@ -158,8 +193,31 @@ export function PicturesPanel({ entity }: { entity: CanonEntity }) {
           ))}
         </ul>
       )}
+      {canWrite && active && library.length > 0 && (
+        <details className="more">
+          <summary>Use a picture already in your project</summary>
+          <ul className="pictures">
+            {library.map((link, index) => (
+              <li key={link.id}>
+                <Thumbnail link={link} label={`Picture ${index + 1} from your project`} />
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  aria-label={`Use picture ${index + 1} from your project for ${entity.name}`}
+                  disabled={reuse.pending}
+                  onClick={() => void reuse.submit(link)}
+                >
+                  Use this
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       <WriteProblem write={add} scope={scope} />
       <WriteProblem write={remove} scope={scope} />
+      <WriteProblem write={promote} scope={scope} />
+      <WriteProblem write={reuse} scope={scope} />
     </section>
   )
 }
