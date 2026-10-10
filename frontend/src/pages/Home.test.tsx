@@ -34,7 +34,7 @@ describe('Home', () => {
     mockApi({ 'GET /auth/me': problem(401, 'unauthenticated', 'Sign in.') })
     const { container } = renderHome()
 
-    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('Your story’s memory.')
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('needs a memory.')
     expect(screen.getAllByRole('link', { name: /Sign in|Open your library/ })[0]).toHaveAttribute(
       'href',
       '/auth/login',

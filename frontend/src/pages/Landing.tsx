@@ -1,133 +1,43 @@
-import { Icon, type IconName } from '../components/icons'
+import { Icon } from '../components/icons'
+import { InkCanvas } from '../components/InkCanvas'
 import { ThemeToggle } from '../components/ThemeToggle'
 
-const PILLARS: { icon: IconName; tint: string; title: string; text: string }[] = [
+const REMEMBERS: { title: string; text: string }[] = [
   {
-    icon: 'book',
-    tint: 'violet',
-    title: 'It remembers everything',
-    text: 'Every character, place, object and secret lives in one story bible. Connect them with plain facts — who knows whom, who owns what, where everyone is.',
+    title: 'Facts, not notes',
+    text: '“Mara is a member of the Harbor Guild” is a fact the bible understands. It shows on both entries, and you end it when it stops being true.',
   },
   {
-    icon: 'shield',
-    tint: 'teal',
-    title: 'Nothing changes behind your back',
-    text: 'Suggestions from the AI assistant or an import never touch your canon directly. You see each change, keep or skip it, and only then does it become true.',
+    title: 'Belief and truth, apart',
+    text: 'Record what a character thinks happened. The bible shows whether the story agrees, contradicts it, or has not said.',
   },
   {
-    icon: 'clock',
-    tint: 'amber',
-    title: 'Every change has a history',
-    text: 'Each save is a version. See what changed, when, and why — and wind the whole bible back to any earlier point without losing a thing.',
-  },
-]
-
-const FEATURES: { icon: IconName; title: string; text: string }[] = [
-  {
-    icon: 'link',
-    title: 'Facts, not just notes',
-    text: '“Mara is a member of the Harbor Guild” is a fact the bible understands: it shows on both entries, and you end it when it stops being true.',
+    title: 'Nothing behind your back',
+    text: 'Whatever the assistant drafts waits for you. You read it as plain sentences, keep or skip each one, and only then is it true.',
   },
   {
-    icon: 'eye',
-    title: 'What they believe vs. what is true',
-    text: 'Record what a character thinks happened. The bible shows whether canon agrees, contradicts it, or says nothing yet.',
+    title: 'Every version kept',
+    text: 'Each time you accept something, a version is saved. See what changed and why, and go back to any earlier point.',
   },
   {
-    icon: 'inbox',
-    title: 'A review inbox',
-    text: 'Bigger or riskier changes wait for you in one place, written as plain sentences with a before and after.',
+    title: 'Loose threads, listed',
+    text: 'Mention someone new and they get a place in the bible and a spot on your to-do list, ready to be filled in when you know more.',
   },
   {
-    icon: 'sliders',
-    title: 'Shaped to your world',
-    text: 'Add your own kinds of entries — ships, spells, bloodlines — with the fields that matter to your story.',
-  },
-  {
-    icon: 'chat',
-    title: 'A guided character interview',
-    text: 'Optional. Connect your own AI key and it asks questions about a character, then drafts suggestions for you to review.',
-  },
-  {
-    icon: 'key',
-    title: 'Private and by invitation',
-    text: 'Your workspace is yours. Access is by invitation, with owner, editor and read-only roles.',
+    title: 'Yours, and private',
+    text: 'It runs on your own AI key, so you control the cost. Access is by invitation, with owner, editor and read-only roles.',
   },
 ]
 
-function Collage() {
-  return (
-    <div className="collage" aria-hidden="true">
-      <div className="mock mock-entry">
-        <div className="mock-head">
-          <span className="avatar lg tint-violet">M</span>
-          <div>
-            <div className="mock-title">Mara Venn</div>
-            <span className="badge accent">Character</span>{' '}
-            <span className="muted small">also “The Fox”</span>
-          </div>
-        </div>
-        <div className="mock-lines">
-          <span>
-            <span>is a member of</span> <strong>the Harbor Guild</strong>
-          </span>
-          <span>
-            <span>is located at</span> <strong>Saltmere</strong>
-          </span>
-          <span>
-            <span>owns</span> <strong>the brass sextant</strong>
-          </span>
-        </div>
-      </div>
+const LADDER: { name: string; text: string; ready: boolean }[] = [
+  { name: 'Start', text: 'Describe an idea. Get a story bible.', ready: true },
+  { name: 'Shape', text: 'Fill in, connect, and correct your world.', ready: true },
+  { name: 'Plan', text: 'Talk your way to arcs, beats, and scenes.', ready: false },
+  { name: 'Write', text: 'Draft scenes with the bible beside you.', ready: false },
+  { name: 'Control', text: 'Timelines, secrets, what-ifs, and rules.', ready: false },
+]
 
-      <div className="mock mock-web">
-        <svg className="web" viewBox="0 0 220 170" width="100%" role="presentation">
-          <line x1="110" y1="85" x2="42" y2="34" />
-          <line x1="110" y1="85" x2="182" y2="40" />
-          <line x1="110" y1="85" x2="50" y2="138" />
-          <line x1="110" y1="85" x2="176" y2="134" />
-          <line x1="42" y1="34" x2="182" y2="40" />
-          <circle cx="110" cy="85" r="19" fill="var(--tint-violet-bg)" />
-          <circle cx="42" cy="34" r="13" fill="var(--tint-rose-bg)" />
-          <circle cx="182" cy="40" r="13" fill="var(--tint-teal-bg)" />
-          <circle cx="50" cy="138" r="13" fill="var(--tint-amber-bg)" />
-          <circle cx="176" cy="134" r="13" fill="var(--tint-blue-bg)" />
-          <text x="110" y="88.5" textAnchor="middle">Mara</text>
-          <text x="42" y="14" textAnchor="middle" className="lbl">Harbor Guild</text>
-          <text x="182" y="20" textAnchor="middle" className="lbl">Saltmere</text>
-          <text x="50" y="164" textAnchor="middle" className="lbl">Sextant</text>
-          <text x="176" y="160" textAnchor="middle" className="lbl">The Storm</text>
-        </svg>
-      </div>
-
-      <div className="mock mock-review">
-        <span className="eyebrow">Suggested change · AI assistant</span>
-        <div className="mock-row">
-          <span>
-            Mara <span className="muted">knows</span> <strong>Tobin Ashe</strong>
-          </span>
-          <span className="mock-toggle">
-            <span className="on">Keep</span>
-            <span>Skip</span>
-          </span>
-        </div>
-        <div className="mock-row">
-          <span>
-            Mara <span className="muted">owns</span> <strong>a second ship</strong>
-          </span>
-          <span className="mock-toggle">
-            <span>Keep</span>
-            <span className="on" style={{ color: 'var(--danger)' }}>
-              Skip
-            </span>
-          </span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/** The public front page. Describes only what the product does today. */
+/** The public front page. Describes what the product does today, and labels what is still to come. */
 export function Landing() {
   return (
     <div className="landing">
@@ -138,14 +48,14 @@ export function Landing() {
         <div className="inner">
           <span className="brand">
             <span className="brand-mark">
-              <Icon name="feather" size={17} />
+              <Icon name="feather" size={16} />
             </span>
             Novel Engine
           </span>
           <nav className="links" aria-label="Page sections">
-            <a href="#why">Why</a>
+            <a href="#trouble">Why</a>
             <a href="#how">How it works</a>
-            <a href="#features">Features</a>
+            <a href="#remembers">What it remembers</a>
           </nav>
           <ThemeToggle />
           <a className="btn primary" href="/auth/login">
@@ -156,135 +66,195 @@ export function Landing() {
 
       <main id="main">
         <section className="hero">
+          <InkCanvas className="hero-ink" />
           <div className="inner">
+            <p className="eyebrow">A story bible that keeps itself</p>
+            <h1>
+              Every story
+              <br />
+              needs a <em>memory.</em>
+            </h1>
+            <p className="sub">
+              Tell Novel Engine about your world the way you would tell a friend. It asks what it
+              needs to know, writes it all down, and connects it — one place that holds what is
+              true in your story, for as long as the story runs.
+            </p>
+            <div className="cta">
+              <a className="btn primary lg" href="/auth/login">
+                Open your library <Icon name="arrowRight" />
+              </a>
+              <a className="text-link" href="#how">
+                See how it works
+              </a>
+            </div>
+            <p className="fine">Invitation only for now. Sign in with the account you were invited with.</p>
+          </div>
+          <p className="figure-note" aria-hidden="true">
+            Fig. 1 — ink, finding its threads.
+          </p>
+        </section>
+
+        <section className="band" id="trouble">
+          <div className="inner split">
+            <h2 className="statement">
+              Long stories <em>forget.</em>
+              <br />
+              This one won’t.
+            </h2>
             <div>
-              <span className="hero-kicker">
-                <Icon name="spark" size={15} /> A story bible that keeps itself straight
-              </span>
-              <h1>
-                Your story’s <em>memory</em>.
-              </h1>
-              <p className="sub">
-                Novel Engine keeps every character, place and secret consistent across a long
-                book, so you can write chapter thirty without rereading the first twenty-nine.
+              <p className="dropcap">
+                Somewhere past the hundredth page, every novelist becomes their own continuity
+                editor. Novel Engine doesn’t write your book. It remembers it — who everyone is,
+                how they are connected, what they believe, and how each of those things came to be
+                true.
               </p>
-              <div className="cta">
-                <a className="btn primary lg" href="/auth/login">
-                  Open your library <Icon name="arrowRight" />
-                </a>
-                <a className="btn lg" href="#how">
-                  See how it works
-                </a>
-              </div>
-              <p className="fine">Invitation only for now. Sign in with the account you were invited with.</p>
-            </div>
-            <Collage />
-          </div>
-        </section>
-
-        <section className="band tinted" id="why">
-          <div className="inner">
-            <p className="quote">
-              Long stories <em>forget things</em>. Novel Engine doesn’t write your book — it
-              remembers it.
-            </p>
-            <div className="slips">
-              <div className="slip">
-                <strong>Eye colours drift.</strong>
-                Green in chapter two, grey by chapter nineteen.
-              </div>
-              <div className="slip">
-                <strong>The dead walk back in.</strong>
-                A character killed off-page turns up at the wedding.
-              </div>
-              <div className="slip">
-                <strong>Secrets leak.</strong>
-                Someone knows a thing they were never told.
-              </div>
-              <div className="slip">
-                <strong>Notes rot.</strong>
-                The wiki says one thing, the draft says another, and nobody knows which won.
-              </div>
+              <ol className="errata" aria-label="The kind of mistakes long stories make">
+                <li>
+                  <span>p. 14</span> Her eyes are green. <span>p. 311</span> Her eyes are grey.
+                </li>
+                <li>
+                  <span>ch. 9</span> He dies at the bridge. <span>ch. 30</span> He toasts the bride.
+                </li>
+                <li>
+                  <span>act ii</span> Nobody told her the secret. <span>act iii</span> She acts on it.
+                </li>
+              </ol>
             </div>
           </div>
         </section>
 
-        <section className="band">
+        <section className="band ruled" id="how">
           <div className="inner">
-            <h2>One source of truth for your world.</h2>
-            <p className="lede">
-              Not a pile of notes. A record of what is true in your story, that only changes when
-              you say so.
-            </p>
-            <div className="pillars">
-              {PILLARS.map((pillar) => (
-                <article className="pillar" key={pillar.title}>
-                  <span className={`glyph tint-${pillar.tint}`}>
-                    <Icon name={pillar.icon} size={22} />
+            <p className="eyebrow">How it works</p>
+            <ol className="chapters">
+              <li>
+                <div className="chapter-text">
+                  <span className="numeral" aria-hidden="true">
+                    I
                   </span>
-                  <h3>{pillar.title}</h3>
-                  <p>{pillar.text}</p>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="band tinted" id="how">
-          <div className="inner">
-            <h2>From blank page to living bible in three steps.</h2>
-            <ol className="how">
-              <li>
-                <h3>Add who and what matters</h3>
-                <p>
-                  Start with a name. Characters, places, factions, objects — add detail whenever
-                  you have it, not before.
-                </p>
+                  <h3>Describe it</h3>
+                  <p>
+                    One character or the whole premise, a sentence or a page. No forms, no fields,
+                    nothing to learn first.
+                  </p>
+                </div>
+                <figure className="specimen note" aria-hidden="true">
+                  <p>
+                    Mara Venn is a harbor pilot in Saltmere. She belongs to the Harbor Guild, owns a
+                    brass sextant, and doesn’t trust Tobin Ashe
+                    <span className="caret" />
+                  </p>
+                </figure>
               </li>
               <li>
-                <h3>Connect them with facts</h3>
-                <p>
-                  Build sentences from a menu: <em>Mara · is a member of · the Harbor Guild.</em>{' '}
-                  No forms to learn, no syntax.
-                </p>
+                <div className="chapter-text">
+                  <span className="numeral" aria-hidden="true">
+                    II
+                  </span>
+                  <h3>Answer a few questions</h3>
+                  <p>
+                    The assistant asks only what your description left open — in your story’s own
+                    names — and you answer as many as you like. Or skip them all.
+                  </p>
+                </div>
+                <figure className="specimen script" aria-hidden="true">
+                  <p>
+                    <span>Assistant</span>Why doesn’t Mara trust Tobin?
+                  </p>
+                  <p>
+                    <span>You</span>He sold the guild’s charts to the navy. She can’t prove it.
+                  </p>
+                  <p>
+                    <span>Assistant</span>Does Tobin know she suspects him?
+                  </p>
+                </figure>
               </li>
               <li>
-                <h3>Review, then it’s canon</h3>
-                <p>
-                  Keep the changes you want, skip the rest. Everything you accept is saved as a new
-                  version you can always return to.
-                </p>
+                <div className="chapter-text">
+                  <span className="numeral" aria-hidden="true">
+                    III
+                  </span>
+                  <h3>Keep what’s true</h3>
+                  <p>
+                    It drafts the entries and the links between them. You read each one as a plain
+                    sentence, keep or skip it, and the rest becomes your story bible.
+                  </p>
+                </div>
+                <figure className="specimen proof" aria-hidden="true">
+                  <p className="kept">
+                    <span>keep</span>Mara Venn is a member of the Harbor Guild
+                  </p>
+                  <p className="kept">
+                    <span>keep</span>Mara Venn believes Tobin Ashe sold the charts
+                  </p>
+                  <p className="struck">
+                    <span>skip</span>Tobin Ashe is located at the naval yard
+                  </p>
+                </figure>
               </li>
             </ol>
           </div>
         </section>
 
-        <section className="band" id="features">
-          <div className="inner">
-            <h2>Built for the long haul of a novel.</h2>
-            <div className="features">
-              {FEATURES.map((feature) => (
-                <div className="feature" key={feature.title}>
-                  <span className="glyph">
-                    <Icon name={feature.icon} size={19} />
-                  </span>
-                  <h3>{feature.title}</h3>
-                  <p>{feature.text}</p>
-                </div>
-              ))}
+        <section className="band" id="remembers">
+          <div className="inner split wide-left">
+            <figure className="specimen entry" aria-hidden="true">
+              <p className="headword">
+                Mara Venn <span>character · also “The Fox”</span>
+              </p>
+              <p>
+                <i>is a member of</i> the Harbor Guild
+              </p>
+              <p>
+                <i>is located at</i> Saltmere
+              </p>
+              <p>
+                <i>owns</i> a brass sextant
+              </p>
+              <p className="belief">
+                <i>believes</i> Tobin Ashe sold the charts <span>the story hasn’t said</span>
+              </p>
+              <p className="margin">Version 12 · added by you · 3 changes</p>
+            </figure>
+            <div>
+              <p className="eyebrow">What it remembers</p>
+              <h2>One source of truth, written in sentences.</h2>
+              <dl className="ledger">
+                {REMEMBERS.map((item) => (
+                  <div key={item.title}>
+                    <dt>{item.title}</dt>
+                    <dd>{item.text}</dd>
+                  </div>
+                ))}
+              </dl>
             </div>
           </div>
         </section>
 
-        <section className="band closing">
+        <section className="band ruled">
           <div className="inner">
-            <div className="panel">
-              <h2>Stop rereading. Start writing.</h2>
-              <p>Your characters, your world, your rules — kept straight for as long as the story runs.</p>
-              <a className="btn primary lg" href="/auth/login">
-                Open your library <Icon name="arrowRight" />
-              </a>
-            </div>
+            <p className="eyebrow">It grows with the book</p>
+            <h2 className="narrow">Start with a sentence. Learn the rest when you need it.</h2>
+            <ol className="ladder">
+              {LADDER.map((step) => (
+                <li key={step.name} className={step.ready ? 'ready' : ''}>
+                  <strong>{step.name}</strong>
+                  <span>{step.text}</span>
+                  <em>{step.ready ? 'Here today' : 'Being built'}</em>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </section>
+
+        <section className="closing">
+          <div className="inner">
+            <h2>
+              Begin with <em>a sentence.</em>
+            </h2>
+            <a className="btn lg" href="/auth/login">
+              Open your library <Icon name="arrowRight" />
+            </a>
           </div>
         </section>
       </main>
@@ -293,11 +263,11 @@ export function Landing() {
         <div className="inner">
           <span className="brand">
             <span className="brand-mark">
-              <Icon name="feather" size={17} />
+              <Icon name="feather" size={16} />
             </span>
             Novel Engine
           </span>
-          <span>Canon-first authoring for long fiction.</span>
+          <span>Set in Newsreader and Instrument Sans. Invitation only.</span>
         </div>
       </footer>
     </div>

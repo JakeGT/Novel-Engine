@@ -38,7 +38,7 @@ async function expectAccessible(page: Page) {
 test('author, review, archive, and export a project end to end', async ({ page }) => {
   // --- the public front page, sign in (local mode), open the project ------------
   await page.goto('/')
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('Your story’s memory')
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('needs a memory')
   await expectAccessible(page)
   await page.getByRole('link', { name: 'Sign in' }).click()
   await page.getByRole('link', { name: /Your project/ }).click()
