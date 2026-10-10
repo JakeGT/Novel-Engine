@@ -156,3 +156,17 @@ and can be shared without granting access to later or author-only project state.
 - Google Docs integration priority and synchronization direction
 - supported LaTeX/Markdown round-trip guarantees
 - operator/user-configurable retention limits for immutable draft/generation versions
+
+## Revision 2026-10-10: prose as a second way in
+
+"The first manuscript intake path precedes generation" described prose intake as the first
+workflow after canon. Under ADR-017, description and interview come first (Phases 2.5–2.6) and
+intake is Phase 2.7: another input to the same proposal and review loop.
+
+- An author can write a scene with no plan, no hierarchy, and no marks; structure is offered, not
+  required, and may be derived from accepted scenes later.
+- Clarification of an earlier contradiction: explicitly marked entities resolve deterministically
+  and need no model; extraction from unmarked prose needs a provider. Intake works without a
+  provider for the first and reports the second as unavailable.
+- Scene drafting from a plan, and "revise this passage so that…", are assistant paths of the
+  scene studio (Phase 5); writing by hand is always available.

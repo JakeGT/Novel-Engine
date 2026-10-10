@@ -13,7 +13,8 @@ The project owner answered the original architecture questionnaires on 2026-10-0
 | Project funding | No token resale or platform-credit ledger in the current roadmap |
 | Identity | Authentik (self-hosted) shared across `*.jaketalling.com`; Novel Engine owns application sessions and authorization. See ADR-009 |
 | Collaboration | Workspaces and project sharing use owner/editor/viewer roles; real-time co-editing is not initially required |
-| First complete workflow | Plan scene → preview context → draft → review mutations → commit canon |
+| Author experience | Assistant-first: every capability has an assistant path (describe → interview → draft → review) and a by-hand path; advanced features are kept and revealed by level; the assistant never writes canon (ADR-017, proposed 2026-10-10 on the owner's direction) |
+| First complete workflow | Describe the story → fill in by interview → plan by conversation → plan a scene → draft → check → review changes → new version (revised 2026-10-10) |
 | Context | Include previous prose using semantic, temporal, narrative, continuity, and author-importance signals |
 | Multimodal context | Text, images, audio, and video are typed evidence with explicit authority, provenance, branch/time/POV scope, and provider delivery trace |
 | Multimodal embeddings | Evaluate EmbeddingGemma 2 as the preferred local candidate at 768/512 dimensions; adopt only after Novel Engine retrieval/resource benchmarks |
@@ -29,9 +30,9 @@ The project owner answered the original architecture questionnaires on 2026-10-0
 | Operational and canon store | PostgreSQL owns projects, jobs, reviews, the immutable journal, normalized/versioned canon, branch heads, outbox, and audit |
 | Derived graph | Neo4j is an optional replayable projection with an applied-revision watermark; it is not part of canonical commit success |
 | Phase 2 authoring | Low-impact author edits use the journal with recorded author approval; model/import/bulk/protected changes require a distinct human decision |
-| Review workflow | Mutation sets are a state machine with per-operation decisions and immutable operation revisions; protected-origin, destructive, bulk, and revert changes need an explicit approval evaluated inside the commit transaction (ADR-014, awaiting acceptance) |
-| Entity handles and evidence | Names are handles, not identity; slugs are unique among active entities; external ids bind one entity per project; evidence is a bounded pointer; reviewer identity is shown only to members who can write (ADR-015, awaiting acceptance) |
-| Projection and restore | The canon projection has its own Neo4j labels and a versioned layout; a restore is ledgered and verified before it is successful; Phase 1 graph archives become review proposals only (ADR-016, awaiting acceptance) |
+| Review workflow | Mutation sets are a state machine with per-operation decisions and immutable operation revisions; protected-origin, destructive, bulk, and revert changes need an explicit approval evaluated inside the commit transaction (ADR-014, accepted 2026-10-10) |
+| Entity handles and evidence | Names are handles, not identity; slugs are unique among active entities; external ids bind one entity per project; evidence is a bounded pointer; reviewer identity is shown only to members who can write (ADR-015, accepted 2026-10-10) |
+| Projection and restore | The canon projection has its own Neo4j labels and a versioned layout; a restore is ledgered and verified before it is successful; Phase 1 graph archives become review proposals only (ADR-016, accepted 2026-10-10) |
 | Phase 2 temporal scope | One root branch plus system revisions; fork/merge and world/narrative-time behavior remain Phase 3 |
 | Phase 2 media scope | Identity, immutable-version metadata, authority/provenance, explicit links, and archives only; secure ingestion/processing remains later |
 | Prototype data | Disposable; deterministic seed data replaces preservation of current databases |
@@ -86,3 +87,15 @@ For each remaining selection:
 2. Create or amend an ADR with security, data, cost, and migration consequences.
 3. Update the roadmap/backlog and API contracts.
 4. Add acceptance tests that protect the decision.
+
+## Open owner decisions as of 2026-10-10
+
+From the plan audit ([`audit-2026-10-10.md`](audit-2026-10-10.md)):
+
+1. How a new author gets a working assistant on first run (guided bring-your-own-key, a capped
+   hosted starter allowance, or a local default).
+2. ADR-017 and the resequenced roadmap (Phases 2.5, 2.6, 2.7).
+3. Whether to defer audio and video, Google Docs and LaTeX intake, the local-inference connector,
+   and voice fingerprints out of release one.
+4. Whether Neo4j remains required infrastructure after Phase 3's query prototype.
+5. Licensing and governance; PostgreSQL row-level security (carried).

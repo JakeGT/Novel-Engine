@@ -367,3 +367,15 @@ The multimodal context system is release-ready when:
 - [EmbeddingGemma 2 model card](https://ai.google.dev/gemma/docs/embeddinggemma/model_card_2)
 - [Google Hugging Face model repository](https://huggingface.co/google/embeddinggemma-2)
 - [Qwen3-Embedding-0.6B comparison candidate](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B)
+
+## Revision 2026-10-10: defaults and the assistant path
+
+- **Drop it in.** The author adds an image or a recording and the assistant asks what it is, then
+  proposes links and, where needed, bare entries. Authority, visibility, branch scope, and
+  validity have defaults (author reference, author-visible, main branch, always) and are advanced
+  controls.
+- **Delivery placement, corrected.** Asset identity, immutable version metadata, authority,
+  provenance, explicit links, a lifecycle audit, and archive inclusion shipped in Phase 2; secure
+  ingestion and processing did not and remain Phase 4.
+- **Scope.** Images come first. Whether audio and video stay in release one is an owner decision
+  listed in [`audit-2026-10-10.md`](audit-2026-10-10.md).

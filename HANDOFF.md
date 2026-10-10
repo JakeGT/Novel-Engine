@@ -371,3 +371,19 @@ default `gpt-4o` is not a valid OpenRouter id, so hosted AI calls could not have
 The older character-only endpoints remain but the UI no longer uses them; their output model
 still contains a free-form object that strict structured output rejects.
 
+## Plan revision and second redesign (2026-10-10)
+
+The owner directed that the product be easy to use, assistant-first, and learned gradually, and
+that the interface stop looking like a generated dashboard.
+
+- **Plan.** Audited in full and revised: `plan/audit-2026-10-10.md` (findings by document and the
+  decisions needed from the owner), `plan/19-assistant-first-experience.md` (the loop, levels,
+  capability map, story planning by conversation, definition of done), ADR-017 (proposed), and a
+  resequenced roadmap: 2.5 assistant-led creation, 2.6 story planning through conversation, 2.7
+  text intake. Read 19 before building anything author-facing.
+- **Design.** `plan/20-design-direction.md`: "ink on paper". Newsreader and Instrument Sans, warm
+  paper, one cinnabar accent, hairline rules instead of cards, print layouts, and a WebGL2 ink
+  shader on the landing page (`InkCanvas.tsx`). WebGPU was considered and not used.
+- **Open owner decisions** are listed at the end of the audit; the first (how a new author gets a
+  working assistant without their own key) blocks the first-run design.
+

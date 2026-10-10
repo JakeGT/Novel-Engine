@@ -170,3 +170,18 @@ Before a public release, add:
 - local OpenAI-compatible and OpenRouter adapter contract tests
 - privacy/outbound-connection documentation review
 - license, notices, contribution, and security documents present
+
+## Revision 2026-10-10: first run and the provider key
+
+The product is now assistant-first (ADR-017), which raises a conflict this document did not have
+to resolve: "the portfolio instance never supplies a platform key" means a newly invited author
+cannot use the main way in until they have obtained an OpenRouter key.
+
+Until the owner decides otherwise, the position is unchanged, and the mitigation is the first-run
+work in Phase 2.5: provider setup is a guided first step, with the cost of a typical first session
+stated; the by-hand path is fully usable in the meantime; and the assistant explains, wherever it
+appears, why it is unavailable and how to connect a key. A capped starter allowance funded by the
+hosted instance is the alternative; it would revise ADR-008 and add cost exposure, and is listed
+as an owner decision in [`audit-2026-10-10.md`](audit-2026-10-10.md).
+
+Status: the hosted deployment went live on 2026-10-10 for the owner (`deploy/hosted`).

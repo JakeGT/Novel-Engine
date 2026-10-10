@@ -199,10 +199,38 @@ Now implemented and tested:
 - property/state-machine tests, upgrade-migration tests, performance budgets, and operational
   metrics
 
-Still open before later phases: owner acceptance of the Phase 1 and Phase 2 evidence and of
-ADR-014–016, the first hosted CI run, the clean-host and coordinated backup/restore rehearsal, the
-live Authentik browser round trip, and the PostgreSQL RLS decision carried from Phase 1.
+Phase 1 and Phase 2 evidence and ADR-014–016 were accepted by the owner (2026-10-09/10). Still
+open: the first hosted CI run, the clean-host backup/restore rehearsal (deferred by the owner), and
+the PostgreSQL RLS decision carried from Phase 1.
 
-The next transition is Phase 2.5 (text-first author workflow probe): manuscript import, explicit
-entity marks, scoped alias memory, bounded extraction into grouped proposals, and declarative story
-invariants on the evaluator seam Phase 2 established.
+## After Phase 2: work done outside the written plan (2026-10-09/10)
+
+- **Deployment.** One image (API, migrations, built UI), a hosted Compose stack, and a runbook;
+  live at `novel-engine.jaketalling.com` behind Authentik. Sign-in was performed by the owner.
+- **Interface.** Rebuilt around author vocabulary: landing page, library, story bible, entry
+  pages with a sentence builder for facts, one-step review, history with restore, form-based
+  types and fields, search palette, light and dark themes.
+- **Assisted creation.** Describe → optional questions → one proposal of entries, details, and
+  links; a derived to-fill-in list; the same assistant fills in any entry; a starter schema on
+  project creation.
+
+## Gaps against the assistant-first direction (ADR-017)
+
+Measured against [`19-assistant-first-experience.md`](19-assistant-first-experience.md):
+
+- **Unverified:** the assistant has run only against a scripted model. Draft quality with real
+  providers is unknown.
+- **No assistant path yet** for: review ("revise this"), undo, custom types, invitations, story
+  planning, scenes, rules, timelines, points of view, what-ifs, context, media, checks, exports.
+- **No by-hand path yet** for: beliefs, members and invitations.
+- **No story structure:** canon has no story, arc, beat, scene-plan, or thread records.
+- **Conversations are not stored** beyond an evidence reference; they cannot be resumed.
+- **Linking is by name and alias only;** there are no semantic suggestions.
+- **Review does not scale:** every change is decided one at a time.
+- **No first-run:** a new account lands in an empty library; provider setup is a settings page.
+- **Levels are informal:** advanced screens are tucked under "Set up" and "Advanced", but nothing
+  yet decides what to offer when.
+- **A new author needs their own OpenRouter key** before the assistant works (owner decision).
+
+The next transition is Phase 2.5 as revised (assistant-led creation), then 2.6 (story planning
+through conversation), then 2.7 (text intake).

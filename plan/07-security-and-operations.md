@@ -139,3 +139,22 @@ If selected, a separately authenticated companion makes outbound connections fro
 - spend spike investigation
 - shared IdP outage/key rotation and invitation abuse
 - suspected provider-key or tenant-data exposure
+
+## Revision 2026-10-10: the in-product assistant
+
+Additions to the threat model and operations for ADR-017:
+
+- **Injection through the author's own text.** Descriptions, answers, and pasted prose are data.
+  They cannot change the assistant's instructions, widen its tools, or cause a commit; the only
+  output is a typed proposal that the validators and the review gate handle like any other.
+- **Runaway sessions.** An interview is several model calls. A session has a budget in calls and
+  tokens, shown to the author, enforced before each call, and counted against the existing
+  per-job and per-period limits.
+- **Conversation retention.** Stored conversations contain the author's story. They are
+  workspace-scoped, exported and deleted with the project, excluded from logs and telemetry, and
+  sent only to the provider the author configured.
+- **Degraded assistant.** Provider outage, a missing key, or an exhausted budget leaves every
+  by-hand path working and says plainly why the assistant is unavailable.
+- **Deployment reality.** The product is live for the owner ahead of the "runbooks before beta"
+  gate below. Backup is scripted; restore onto a clean host is unrehearsed (deferred by the owner
+  on 2026-10-10 until the project moves to a permanent host).

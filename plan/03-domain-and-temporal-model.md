@@ -228,3 +228,21 @@ Project extensions use a safe declarative schema language rather than Python sou
 7. Validate again at canonical commit against the exact schema version reviewed.
 
 Compiled models are process-local caches keyed by workspace/project/schema-version hash. They are never treated as executable user code or serialized as the durable schema. A schema change creates a new version and an explicit migration/projection plan; it never mutates the meaning of historical records silently.
+
+## Revision 2026-10-10: defaults, plan records, and conversational provenance
+
+- **Defaults.** Every scoped concept has a default that lets an author ignore it: one main
+  branch; world time unspecified ("at some point") unless the author states order or dates; the
+  author's own point of view; alias bindings unscoped until a conflict appears; the starter types.
+  The assistant asks for a time, a viewpoint, or a scope only when two statements cannot both be
+  true without one.
+- **Plan records are intent.** Story, arc, beat, and scene plan are canon-governed records with
+  history and review, created mainly through the planning interview (Phase 2.6). A planned event
+  is never an event; no query or export may present intent as fact.
+- **Provenance from conversation.** A proposal drafted from a description or an interview cites
+  the stored conversation as its source, with the question an item came from as its location.
+  This is in use today with an evidence reference; durable conversation records are Phase 2.5.
+- **Bare entries.** An entry may exist with only a name and a type. "Needs detail" is derived (no
+  details and no facts of its own), not stored, so it cannot drift.
+- **Types.** The core set stays as specified; the interface leads with five and offers the rest
+  on request. A new type or kind of fact may be proposed in the same proposal that first needs it.

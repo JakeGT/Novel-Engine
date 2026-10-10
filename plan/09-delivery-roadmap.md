@@ -98,23 +98,92 @@ Exit criteria:
 - entities can be retired without losing history
 - project export round-trips into a clean environment
 
-## Phase 2.5 — Text-first author workflow probe
+## Phase 2.5 — Assistant-led creation
 
-Goal: validate extraction quality, entity resolution, review ergonomics, and authored continuity
-rules with real prose before broader generation and multimodal scope.
+Revised 2026-10-10 (ADR-017, [`19-assistant-first-experience.md`](19-assistant-first-experience.md)).
+The former Phase 2.5 (prose intake) is now Phase 2.7.
+
+Goal: a new author goes from an idea to a reviewed, connected story bible by describing it, and
+never has to learn the data model to do so.
+
+Already built on 2026-10-10, ahead of this plan and counted here: assisted creation (describe one
+thing or a whole idea → optional questions → one proposal of entries, details, and links), the
+to-fill-in list, filling in any entry by interview, a starter schema on project creation, the
+redesigned interface. **Not yet verified against a real model.**
+
+Work:
+
+- verify and tune assisted creation with real providers; a labelled evaluation set for drafted
+  entries and links built from the reference world
+- start from a premise: one conversation produces a starter world and a to-do list
+- conversations are stored (description, questions, answers, proposal) and can be resumed
+- link suggestions for existing entries using the derived vector index, confirmed by the author,
+  never merged automatically
+- grouped review: proposals summarised by kind, safe bulk decisions, "revise this change" by
+  asking, and a check of drafted proposals against existing canon before review
+- first-run: guided provider setup, a first session inside a real project, and an optional sample
+  project (pulled forward from Phase 7)
+- the level model: what is shown and offered at Levels 1–2, and the plain-language test over
+  rendered screens
+- by-asking paths for capabilities that exist only by hand: undo ("take it back to before…"),
+  custom types and kinds of fact, inviting collaborators (with a members page)
+- a by-hand editor for beliefs
+- session budgets and cost shown before model calls; assistant-specific threat cases
+
+Exit criteria:
+
+- the measures in document 19 for first entry and premise-to-linked-entries are met on new
+  accounts with a real provider
+- every Level 1–2 capability in the capability map has tested assistant and by-hand paths
+- the project is fully usable with no provider configured
+- drafted-change precision, recall, duplicate rate, and kept-rate are recorded against a
+  versioned baseline
+- no Level 1–2 screen shows an internal term outside technical details
+
+## Phase 2.6 — Story planning through conversation
+
+Goal: an author builds a complete story plan by talking it through, grounded in the story bible.
+
+Work (story structure pulled forward from Phase 5):
+
+- story, arc, beat, and scene-plan records as canon-governed intent, distinct from fact, with
+  history, proposals, and review
+- the planning interview: premise and stakes → arcs → turning points → beats → scenes, stopping at
+  any depth, each round ending in a reviewable proposal
+- "what happens next?": two or three grounded directions with what each would change
+- threads, promises, and payoffs as records; open ones shown as to-dos
+- scene plans drafted from a sentence; missing point of view, place, or intent are questions, not
+  errors; typed scene contracts stay optional and inferred where possible
+- an outline view and editor as the by-hand path
+- readiness shown in plain words ("this scene needs a place")
+- evaluation fixtures for plan quality and groundedness
+
+Exit criteria:
+
+- a first plan (arcs and at least six beats) is accepted within the document 19 target
+- a plan can be built with no provider through the outline editor
+- planned intent never appears as established fact in any query or export
+- gaps are reported as open items, never filled by invention
+- an author who does not outline can ignore the plan entirely and is not blocked
+
+## Phase 2.7 — Text intake (formerly Phase 2.5)
+
+Goal: prose that already exists becomes another way into the same loop, and validates extraction
+quality, entity resolution, and authored continuity rules with real text.
 
 Work:
 
 - paste and Markdown manuscript/scene import with immutable source versions
 - explicit entity marks and @-mentions as the primary deterministic signal
-- time/POV-scoped alias and epithet memory with reviewed positive/negative corrections
-- bounded structured extraction into grouped, confidence-tiered mutation proposals
-- bulk-safe review actions, including accept-all eligible low-risk changes and evidence diffs
+- time/POV-scoped alias and epithet memory with reviewed positive/negative corrections, asked as
+  one question at a time ("is 'the Fox' Mara?")
+- bounded structured extraction into the grouped proposals built in Phase 2.5
 - typed scene preconditions/postconditions and readiness/postflight results
-- declarative story invariants with warning default and explicit blocking enablement
+- story rules written as a sentence, drafted into a declarative invariant with examples it would
+  and would not catch; warning by default and explicit enablement to block (ADR-013)
 - commit, provenance/blame, revision comparison, tag, and compensating revert views
-- basic authoring UI; expose read-only MCP canon queries if authentication is ready
-- labeled extraction/entity-resolution evaluation set built from the reference world
+- proposal-only MCP canon access if authentication is ready
+- labelled extraction/entity-resolution evaluation set built from the reference world
 
 Exit criteria:
 
@@ -129,6 +198,11 @@ Exit criteria:
 ## Phase 3 — Time, branches, and knowledge
 
 Goal: canonical queries are correct for a selected branch, world time, and point of view.
+
+Author experience (document 19): all of this is Level 5. Defaults are one main branch, unspecified
+world time, and the author's own point of view, so earlier levels never choose among them. The
+assistant paths are "this happened three years before the war", "Tobin doesn't know this", and
+"what if Mara refused?"; each is offered only when the story shows the problem it solves.
 
 Work:
 
@@ -161,6 +235,10 @@ Exit criteria:
 ## Phase 4 — Explainable context and derived memory
 
 Goal: the author can preview and control reliable text and media scene context.
+
+Author experience: Level 4. The assistant explains each source in a sentence and accepts "don't
+use that"; pin, exclude, and budget controls are the by-hand path. Media arrives by "drop it in
+and the assistant asks what it is"; authority, visibility, and scope have defaults.
 
 Work:
 
@@ -197,9 +275,13 @@ Exit criteria:
 
 Goal: an author can plan and draft a scene using controlled multimodal context.
 
+Author experience: Level 4. Story structure and scene plans moved to Phase 2.6; this phase drafts
+from them. Findings appear as margin notes with "explain" and "fix" by asking; tiers, profiles,
+and suppressions are the advanced view. One "Check" action states its cost before it runs.
+
 Work:
 
-- story/arc/beat/scene-plan models and APIs
+- (story/arc/beat/scene-plan models and APIs: moved to Phase 2.6)
 - typed scene contracts and project-defined character-arc state paths
 - narrative threads, requirements, intended changes, reveals, and payoffs
 - scene readiness checks
@@ -232,6 +314,9 @@ Exit criteria:
 ## Phase 6 — Extraction, review, and commit loop
 
 Goal: a drafted scene can safely evolve canon.
+
+Author experience: Level 4. Extracted changes use the grouped review from Phase 2.5; a plan can be
+derived from accepted scenes for authors who do not outline.
 
 Work:
 
@@ -268,7 +353,7 @@ Work:
 - performance profiling and query/index tuning
 - accessibility and keyboard workflow audit
 - dependency/security scanning
-- onboarding, sample project, and recovery UX
+- recovery UX (onboarding and the sample project moved to Phase 2.5)
 - Tier 3 scheduled/on-demand chapter, act, and project audits
 - reproducible release artefacts, upgrade notes, contributor/security policies, and license notices
 - direct OpenAI-compatible local inference route and provider capability diagnostics
@@ -291,7 +376,7 @@ Exit criteria:
 - advanced graph/timeline visualization
 - manuscript-wide revision and continuity reports
 - importers for common writing tools beyond the release-one paste/Markdown intake path
-- agentic planning assistants operating strictly on proposals
+- delegated autonomy beyond "keep the safe ones for me" (the in-product assistant itself is Phases 2.5–2.6)
 - public demo or managed multi-user hosting, with a separate funding/privacy/operations decision
 - open signup or public community hosting beyond the invite-only portfolio deployment
 
@@ -301,12 +386,17 @@ Exit criteria:
 stable boundaries
   -> OIDC identity + invite-only tenancy + self-hosted packaging
     -> project-scoped canon + journal
-      -> text-first import/extraction/review probe
+      -> assistant-led creation + grouped review + first-run
+        -> story planning through conversation
+        -> text intake/extraction probe
         -> time/branch/reader+character knowledge semantics
           -> explainable text/media context + indexing
           -> planning + consistency + generation jobs
             -> extraction + review + commit
               -> open-source release hardening
 ```
+
+Every phase from 2.5 onward is subject to the definition of done in document 19: an assistant
+path, a by-hand path, a level, safe defaults, and tests of each.
 
 Skipping an earlier semantic layer creates expensive ambiguity later. In particular, generation should not precede a stable review/commit model, and branching should not be bolted onto unscoped mutable graph records.

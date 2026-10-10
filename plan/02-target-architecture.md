@@ -223,3 +223,26 @@ security isolation, or deployment. Likely first candidates are the worker and me
 processing/embedding pipeline because codec/scanning workloads and a multimodal model should not
 block API processes. Neo4j query profiling and context budgets should precede caching or
 distributed architecture.
+
+## Revision 2026-10-10: the assistant as an application module
+
+ADR-017 and [`19-assistant-first-experience.md`](19-assistant-first-experience.md) add a module
+this document did not have.
+
+- **Assistant module.** Application workflows `DescribeAndPropose`, `InterviewSession`,
+  `FillInEntry`, `PlanStoryInterview`, `ProposeNextBeats`, and `AskCanon`. Each takes the author's
+  words and existing canon, and returns a proposal through the mutation review workflow. None can
+  commit. `DescribeAndPropose` and `FillInEntry` exist (`canon_creation_workflow.py`); the rest
+  are scheduled in Phases 2.5–2.6.
+- **One tool boundary.** The in-product assistant, review agents, and MCP clients share one tool
+  set: the read-only canon query, history, and provenance operations, plus proposal-only writes.
+- **Schema extensions ride in the proposal.** "A model cannot introduce an unknown type without an
+  explicit schema-extension decision" stands; the extension is drafted in plain language inside
+  the same proposal, and the author's approval is that decision.
+- **Defaults on every read.** Where this document says a read resolves branch and timeline
+  position, the defaults are the main branch and the latest revision. An author who never selects
+  them never sees them.
+- **Staging is not only for extraction.** Proposals come from descriptions, interviews, planning,
+  imports, extraction, and external assistants alike.
+- The "Package direction" tree below predates PostgreSQL-authoritative canon (ADR-012) and is
+  kept as history; the current layout is `backend/{api,services,domain,adapters,core}`.

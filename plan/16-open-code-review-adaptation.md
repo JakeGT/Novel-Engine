@@ -220,7 +220,7 @@ It does not see the reviewer's full exploratory conversation or unsupported retr
 - Is there an explicit exception or intentional-inconsistency marker?
 - Is the finding within review scope?
 
-Hard deterministic contradictions survive without a model verifier. Model-originated high-severity findings require verifier support or author confirmation before becoming blocking.
+Hard deterministic contradictions survive without a model verifier. Model-originated high-severity findings require verifier support or author confirmation before being shown as high severity; they never block a commit. Only deterministic, current, complete evaluation may block (ADR-013, `13-consistency-system.md`). (Corrected 2026-10-10: this sentence previously said such findings could become blocking.)
 
 ## Preview and coverage report
 
@@ -270,3 +270,10 @@ Before committing fully, implement an offline experiment against the seeded refe
 ## Reuse boundary
 
 OpenCodeReview is Apache-2.0, but direct code reuse is not currently recommended. Novel Engine needs Python/PostgreSQL/Neo4j services, structured-document anchoring, tenant isolation, provider-usage controls, and graph-based overlapping bundles. Reuse the tested architecture pattern and cite upstream inspiration; implement domain-native components and preserve upstream attribution if any source code is later adapted.
+
+## Revision 2026-10-10
+
+The read-only tool list in this document is also the toolset of the in-product assistant
+(ADR-017, `02-target-architecture.md`), not only of review agents. Profile names are
+Default/Balanced/Thorough/Custom, as in `13-consistency-system.md`. The author-facing preview is
+one line by default; bundles, rule families, and expansions are the advanced view.

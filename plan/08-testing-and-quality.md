@@ -118,12 +118,26 @@ For a release candidate:
 - manual release-one workflow is completed with a fresh project
 - media export/restore/reindex/deletion and cross-tenant object-access drills pass
 
-## Immediate test cleanup
+## Revision 2026-10-10: gates for the assistant and the learning curve
 
-1. Create `tests/unit`, `tests/application`, `tests/integration`, and `tests/e2e`.
-2. Mark existing root endpoint tests as legacy integration tests.
-3. Replace `requests` against localhost with an in-process client where possible.
-4. Inject graph/vector/AI dependencies so import and test collection need no services.
-5. Add characterization tests for entity tags and current graph DTOs before refactoring.
-6. Keep test output in normal tooling/CI artefacts rather than committing generated reports.
-7. Add CI only after the deterministic test command succeeds from a clean checkout.
+(The "Immediate test cleanup" list that stood here was Phase 0 work and is complete.)
+
+Added to the invariant matrix and release gates (ADR-017):
+
+| Invariant | Evidence required |
+| --- | --- |
+| The assistant never writes canon | Every assistant workflow ends in a proposal; a commit without approval is refused (tested for creation and fill-in) |
+| Every capability has two paths | A scripted-model test of the assistant path and a no-provider test of the by-hand path, per capability-map row |
+| Existing entries are linked, not duplicated | Fixtures with name, alias, and case variants (name matching tested; semantic suggestions Phase 2.5) |
+| Unusable model output is reported | Discarded items are returned with reasons and shown to the author |
+| Output formats are provider-safe | Each structured format converts to a strict JSON schema |
+| Plain language | No internal term on a Level 1–3 screen outside technical details, checked over rendered screens |
+| No provider, no dead end | The full Level 1–3 workflow passes with no provider configured |
+| Intent is never fact | Plan records never appear in fact queries or exports (Phase 2.6) |
+
+Release gate additions: the assistant-led release-one workflow is completed on a fresh project
+with a real provider, and again with no provider; the learning-curve measures in document 19 are
+met; drafted-change quality is at or above its recorded baseline.
+
+Known gap: as of 2026-10-10 no test exercises a real model. The scripted model proves the
+plumbing and the validation, not the quality of what is drafted.

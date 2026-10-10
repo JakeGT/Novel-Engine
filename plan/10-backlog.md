@@ -27,6 +27,29 @@ Phase 0 execution details, sub-items, dependencies, and exit evidence are mainta
 - **FND-009 · P0 — Seed environment:** create deterministic PostgreSQL/Neo4j/vector/object fixtures for multiple isolated projects and the reference world, with reset/reseed commands safe only outside production.
   - **Status:** Implemented (P0-09). Two placeholder workspaces/projects support isolation fixtures without requiring production tenancy; verified by `tests/integration/test_seed_world.py` and `tests/unit/test_reset_guard.py`.
 
+## Assistant and learning curve
+
+Added 2026-10-10 (ADR-017, `19-assistant-first-experience.md`). These are release-one essential.
+
+- **AST-EXP-001 · P1 — Assisted creation:** describe one thing or a whole idea, optional questions, one proposal of entries, details, and links; existing entries linked by name.
+  - **Status:** Implemented 2026-10-10 (`canon_creation_workflow.py`, `/assist/*`, `AssistFlow.tsx`). Tested with a scripted model only.
+- **AST-EXP-002 · P1 — To-fill-in list and fill-in interview:** bare entries are listed; the assistant fills in any entry.
+  - **Status:** Implemented 2026-10-10 (`GET /entities/needs-detail`).
+- **AST-EXP-003 · P1 — Real-provider verification and evaluation set:** run the built flows against real models; labelled set for drafted entries and links; record precision, recall, duplicate rate, kept-rate. Acceptance: a versioned baseline exists and regressions fail a gate.
+- **AST-EXP-004 · P1 — Stored, resumable conversations:** description, questions, answers, and proposal kept together as evidence. Acceptance: a closed session can be read from the change it produced; an open one can be resumed.
+- **AST-EXP-005 · P1 — Start from a premise:** one conversation produces a starter world and open questions. Acceptance: document 19's premise measure on a new account.
+- **AST-EXP-006 · P1 — Grouped review:** proposals summarised by kind, safe bulk decisions, "revise this change" by asking, pre-review check against canon. Acceptance: a 40-change proposal is decided in under ten actions without blind approval.
+- **AST-EXP-007 · P1 — Link suggestions:** semantic candidates for linking existing entries, confirmed by the author. Acceptance: no automatic merge; suggestion precision recorded.
+- **AST-EXP-008 · P1 — First run:** guided provider setup, first session in a real project, optional sample project. Acceptance: first accepted entry within 3 minutes.
+- **AST-EXP-009 · P1 — Levels and plain language:** default visibility by level, need-based suggestions, one name mapping, a rendered-screen test for internal terms.
+- **AST-EXP-010 · P1 — By-asking paths for existing features:** undo, custom types and kinds of fact, invitations (with a members page); belief editor by hand.
+- **AST-EXP-011 · P1 — Session budgets and assistant threat cases:** per-session call/token budget shown before calls; injection, retention, and degraded-provider tests.
+- **AST-EXP-012 · P1 — Plan records:** story, arc, beat, scene plan, and thread as canon-governed intent. Acceptance: intent never appears as fact.
+- **AST-EXP-013 · P1 — Planning interview and "what happens next":** top-down, stoppable at any depth, grounded in the bible, gaps left open. Acceptance: document 19's first-plan measure; groundedness and invention rate recorded.
+- **AST-EXP-014 · P1 — Outline editor and readiness in plain words:** the by-hand path for plans.
+- **AST-EXP-015 · P2 — "Keep the safe ones for me":** opt-in delegation of additive, reversible changes of kinds the author has approved before; everything listed and reversible.
+- **AST-EXP-016 · P1 — Design direction:** the interface reads as a creative tool, not a dashboard (`20-design-direction.md`).
+
 ## Open-source distribution
 
 - **OSS-001 · P0 — Reference deployment:** one documented Docker Compose path with health checks, persistent volumes, safe network defaults, and an upgrade contract.
