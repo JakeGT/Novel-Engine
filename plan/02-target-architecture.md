@@ -229,8 +229,9 @@ distributed architecture.
 ADR-017 and [`19-assistant-first-experience.md`](19-assistant-first-experience.md) add a module
 this document did not have.
 
-- **Assistant module.** Application workflows `DescribeAndPropose`, `InterviewSession`,
-  `FillInEntry`, `PlanStoryInterview`, `ProposeNextBeats`, and `AskCanon`. Each takes the author's
+- **Assistant module.** Application workflows `ChangeByInstruction` (the God Hand: any instruction
+  about the story → one proposal of every change it implies), `DescribeAndPropose`,
+  `InterviewSession`, `FillInEntry`, `PlanStoryInterview`, `ProposeNextBeats`, and `AskCanon`. Each takes the author's
   words and existing canon, and returns a proposal through the mutation review workflow. None can
   commit. `DescribeAndPropose` and `FillInEntry` exist (`canon_creation_workflow.py`); the rest
   are scheduled in Phases 2.5–2.6.

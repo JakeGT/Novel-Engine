@@ -133,8 +133,9 @@ today; the rest are scheduled in the roadmap.
 
 ### Always present
 
-- the assistant: one place to describe, ask, and be asked, on every screen, which always ends in
-  a proposal (*built* for creation and fill-in)
+- the assistant (the God Hand): one place on every screen to describe, ask, be asked, and change
+  anything in the story by saying so; it always ends in a proposal (*built* for creation and
+  fill-in; changing existing canon is Phase 2.5)
 - search that reaches every entry and every feature (*built*)
 - review: what is waiting for the author's decision (*built*; grouping Phase 2.5)
 - the to-do list: what is unfinished (*built* for bare entries)

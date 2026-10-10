@@ -203,6 +203,7 @@ assistant task is bounded, versioned, schema-constrained, and ends in a proposal
 | Start from a premise | a paragraph | starter world + open questions | Phase 2.5 |
 | Suggest links | an entry, semantic candidates | candidate facts for confirmation | Phase 2.5 |
 | Revise a proposed change | the change, an instruction | a new revision of that operation | Phase 2.5 |
+| Change by instruction (God Hand) | any instruction, tool access to all canon | every implied operation of any kind + consequences + questions | Phase 2.5 |
 | Planning interview | premise, bible, plan so far | arcs, beats, scene plans, open items | Phase 2.6 |
 | What happens next | plan and bible | 2–3 directions with consequences | Phase 2.6 |
 | Draft a rule | a sentence | invariant + caught/not-caught examples | Phase 2.7 |

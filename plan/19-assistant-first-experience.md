@@ -77,6 +77,45 @@ Describe  ->  Interview (optional)  ->  Draft  ->  Review  ->  Canon
 - **Review must scale.** A proposal with forty changes is reviewed by group ("12 new entries, 20
   links, 8 details"), with safe bulk actions, not forty separate clicks. (Phase 2.5.)
 
+## The God Hand: one agent that can change anything
+
+The original design (`architecture.md`) had a "God Hand": a natural-language command centre
+through which the author could change almost anything in the story. The first version of this
+revision dropped it by accident, describing an assistant path per capability but no single agent.
+It is restored here as the centre of the assistant, added 2026-10-10 at the owner's prompting.
+
+- **What it is.** One conversational agent, available on every screen, that takes any instruction
+  about the story in plain words — "Mara is Tobin's sister, not his rival", "move the guild to
+  Saltmere", "Tobin dies at the bridge; everyone who trusted him should know", "merge these two
+  characters", "rename the Harbor Guild everywhere" — works out everything that has to change, and
+  shows it as one proposal.
+- **It has access to everything.** It reads all of canon (entries, facts, beliefs, events, plan,
+  history, and later timelines, points of view, and prose) through the shared query tools, and it
+  can propose every kind of change, not only additions: editing and renaming, ending facts that
+  stop being true, archiving, re-linking, changing beliefs, restructuring the plan, adding types.
+- **It proposes; the author disposes.** "Access to everything" is access to *propose* everything.
+  Every change goes through review and the same gates as any other (ADR-012, ADR-014): nothing is
+  applied silently, destructive and wide changes are called out as such, and the whole proposal
+  can be taken back as one step after it is accepted.
+- **It shows consequences.** Before review it reports what the instruction touches beyond what was
+  asked: facts that would contradict it, characters whose beliefs no longer match, plan items that
+  depend on it. It asks rather than guesses when the instruction is ambiguous ("which Tobin?").
+- **It is the general case of every assistant path.** Assisted creation, filling in an entry, the
+  planning interview, and "revise this change" are the same agent with a narrower brief. The
+  capability map below describes what it must be able to do; it is the surface through which the
+  author asks.
+- **A quick-link by-hand equivalent stays.** The original design paired the God Hand with a fast
+  manual way to add or edit a single fact. The sentence builder on each entry is that today.
+
+What exists on 2026-10-10 is the creation half only: the assistant can add entries and facts and
+add details to one entry. It cannot yet change, end, rename, archive, or merge. The full God Hand
+is Phase 2.5 work, after real-provider verification and grouped review, because an agent that
+edits widely needs review that scales and an evaluation set before it can be trusted.
+
+Risks specific to it: wide proposals from short instructions (mitigated by grouped review, the
+consequences report, and one-step undo); instructions that conflict with canon (reported, never
+resolved silently); and cost (a session budget, shown before it is spent).
+
 ## Levels: how the product reveals itself
 
 The product has five levels. A level is not a setting or a gate: every feature is always
@@ -117,6 +156,7 @@ Review loop applied to that capability. A capability without both paths is not d
 
 | Capability | Assistant path | By-hand path | Level | Phase |
 | --- | --- | --- | --- | --- |
+| Change anything by saying it (the God Hand) | One instruction → every affected change in one proposal, with consequences shown | The by-hand path of each change | 1 | 2.5 |
 | Add entries (people, places, things) | Describe one or many; assistant drafts entries, details, links | Entry form | 1 | **Built** (2026-10-10) |
 | Fill in an entry | Interview about that entry; to-do list of bare entries | Edit dialog | 1 | **Built** |
 | Connect entries | Drafted with entries; link suggestions for existing ones | Sentence builder | 2 | Built by name; semantic suggestions 2.5 |

@@ -116,6 +116,10 @@ Work:
 - verify and tune assisted creation with real providers; a labelled evaluation set for drafted
   entries and links built from the reference world
 - start from a premise: one conversation produces a starter world and a to-do list
+- the God Hand: one agent on every screen that takes any instruction about the story and proposes
+  every change it implies, including edits, renames, ending facts, archiving, and merges, with a
+  report of what else is affected and one-step undo of the accepted proposal (after grouped review
+  and the evaluation set exist)
 - conversations are stored (description, questions, answers, proposal) and can be resumed
 - link suggestions for existing entries using the derived vector index, confirmed by the author,
   never merged automatically
@@ -135,6 +139,8 @@ Exit criteria:
 - the measures in document 19 for first entry and premise-to-linked-entries are met on new
   accounts with a real provider
 - every Level 1–2 capability in the capability map has tested assistant and by-hand paths
+- a plain-language instruction that changes existing canon produces one reviewable proposal that
+  includes its consequences, and nothing is applied without approval
 - the project is fully usable with no provider configured
 - drafted-change precision, recall, duplicate rate, and kept-rate are recorded against a
   versioned baseline
