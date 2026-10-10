@@ -1,3 +1,4 @@
+import { byPriority, tagsOf } from '../lib/marks'
 import { useQuery } from '@tanstack/react-query'
 import { useState, type KeyboardEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -84,14 +85,25 @@ export function CommandPalette({ scope, canWrite, onClose, onNewEntry, onGodHand
   const opened = recentEntries(scope.projectId)
     .map((entryId) => entries.byId.get(entryId))
     .filter((item): item is NonNullable<typeof item> => Boolean(item))
-  const suggested = [...opened, ...entries.items.filter((item) => !opened.includes(item))].slice(0, 6)
-  const found = term.length >= 2 ? (search.data?.items ?? []) : suggested
+  // Then the entries that matter most to the story, not whatever sorts first by name.
+  const suggested = [
+    ...opened,
+    ...entries.items.filter((item) => !opened.includes(item)).sort(byPriority),
+  ].slice(0, 6)
+  // A name that starts with what was typed comes first; among equals, the more important entry.
+  const starts = (name: string) => (name.toLowerCase().startsWith(lower) ? 0 : 1)
+  const found =
+    term.length >= 2
+      ? [...(search.data?.items ?? [])].sort((a, b) => starts(a.name) - starts(b.name) || byPriority(a, b))
+      : suggested
   const entryCommands: Command[] = found
     .filter((item) => item.lifecycle === 'active' || term.length >= 2)
     .map((item) => ({
       key: item.id,
       label: item.name,
-      meta: typeLabel(item.type) + (item.lifecycle === 'active' ? '' : ' · archived'),
+      meta: [typeLabel(item.type), tagsOf(item)[0], item.lifecycle === 'active' ? '' : 'archived']
+        .filter(Boolean)
+        .join(' · '),
       type: item.type,
       entryId: item.id,
       run: go(entryPath(scope, item.id)),

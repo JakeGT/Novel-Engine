@@ -2,9 +2,11 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import { OpenConversations } from '../components/Conversations'
+import { EntryMarks } from '../components/EntryMarks'
 import { Icon } from '../components/icons'
 import { Portrait } from '../components/Pictures'
 import { Button, ErrorNotice, Loading, TypeAvatar } from '../components/ui'
+import { byPriority } from '../lib/marks'
 import { usePortraits } from '../lib/pictures'
 import { firstName, useSession } from '../lib/session'
 import { timeAgo } from '../lib/time'
@@ -201,7 +203,7 @@ export function Overview() {
             <span className="badge accent">{todo.data?.items.length}</span>
           </div>
           <ul className="rows">
-            {(todo.data?.items ?? []).slice(0, 8).map((item) => (
+            {[...(todo.data?.items ?? [])].sort(byPriority).slice(0, 8).map((item) => (
               <li className="row" key={item.id}>
                 <Portrait entity={item} link={portraits.get(item.id)} size="sm" />
                 <Link className="grow" to={entryPath(scope, item.id)}>
@@ -248,9 +250,9 @@ export function Overview() {
             {newest.map((item) => (
               <li className="row" key={item.id}>
                 <Portrait entity={item} link={portraits.get(item.id)} size="sm" />
-                <Link className="grow" to={entryPath(scope, item.id)}>
-                  {item.name}
-                </Link>
+                <span className="grow">
+                  <Link to={entryPath(scope, item.id)}>{item.name}</Link> <EntryMarks entity={item} />
+                </span>
                 <span className="muted small">{typeLabel(item.type)}</span>
               </li>
             ))}
