@@ -21,20 +21,19 @@ describe('EntityForm', () => {
     const user = userEvent.setup()
     const { container } = renderInProject(<EntityForm />)
 
-    // The type list comes from the vocabulary, including the project's own type.
-    await screen.findByRole('option', { name: 'Ship (project type)' })
-    await user.selectOptions(screen.getByLabelText('Type'), 'Ship')
-    const attributes = screen.getByRole('group', { name: 'Ship attributes' })
-    expect(within(attributes).getByLabelText('tonnage (required)')).toBeInTheDocument()
-    expect(within(attributes).getByRole('combobox', { name: 'rig' })).toBeInTheDocument()
+    // The type choices come from the vocabulary, including the project's own type.
+    await user.click(await screen.findByRole('radio', { name: 'Ship' }))
+    const attributes = screen.getByRole('group', { name: 'Ship details' })
+    expect(within(attributes).getByLabelText('Tonnage (required)')).toBeInTheDocument()
+    expect(within(attributes).getByRole('combobox', { name: 'Rig' })).toBeInTheDocument()
 
     await user.type(screen.getByLabelText('Name'), 'Dawn Runner')
-    await user.type(within(attributes).getByLabelText('tonnage (required)'), 'heavy')
-    await user.type(within(attributes).getByLabelText('motto'), 'much too long a motto')
-    await user.click(screen.getByRole('button', { name: 'Create entity' }))
+    await user.type(within(attributes).getByLabelText('Tonnage (required)'), 'heavy')
+    await user.type(within(attributes).getByLabelText('Motto'), 'much too long a motto')
+    await user.click(screen.getByRole('button', { name: 'Add to story bible' }))
 
     // Invalid input is caught before any request, and tied to its field.
-    const tonnage = within(attributes).getByLabelText('tonnage (required)')
+    const tonnage = within(attributes).getByLabelText('Tonnage (required)')
     expect(tonnage).toHaveAttribute('aria-invalid', 'true')
     expect(tonnage).toHaveAccessibleDescription('tonnage must be a whole number.')
     expect(api.find('POST', '/entities')).toHaveLength(0)
@@ -42,9 +41,9 @@ describe('EntityForm', () => {
 
     await user.clear(tonnage)
     await user.type(tonnage, '120')
-    await user.clear(within(attributes).getByLabelText('motto'))
-    await user.selectOptions(within(attributes).getByRole('combobox', { name: 'rig' }), 'brig')
-    await user.click(screen.getByRole('button', { name: 'Create entity' }))
+    await user.clear(within(attributes).getByLabelText('Motto'))
+    await user.selectOptions(within(attributes).getByRole('combobox', { name: 'Rig' }), 'brig')
+    await user.click(screen.getByRole('button', { name: 'Add to story bible' }))
 
     await waitFor(() => expect(api.find('POST', '/entities')).toHaveLength(1))
     expect(api.find('POST', '/entities')[0].body).toEqual({
@@ -57,6 +56,24 @@ describe('EntityForm', () => {
     })
   })
 
+  it('leads with the usual types and keeps the rest one click away', async () => {
+    mockApi({
+      ...base,
+      'GET /schemas/vocabulary': {
+        ...VOCABULARY,
+        entity_types: [...VOCABULARY.entity_types, { name: 'Secret', core: true, attributes_schema: null }],
+      },
+    })
+    const user = userEvent.setup()
+    renderInProject(<EntityForm initialType="Location" />)
+
+    expect(await screen.findByRole('radio', { name: 'Location' })).toBeChecked()
+    const more = await screen.findByRole('button', { name: 'Show all 4 types' })
+    expect(screen.queryByRole('radio', { name: 'Secret' })).not.toBeInTheDocument()
+    await user.click(more)
+    expect(screen.getByRole('radio', { name: 'Secret' })).toBeInTheDocument()
+  })
+
   it('offers a free-form key/value editor for core types', async () => {
     const api = mockApi({
       ...base,
@@ -66,14 +83,14 @@ describe('EntityForm', () => {
     renderInProject(<EntityForm />)
 
     await user.type(await screen.findByLabelText('Name'), 'Mara')
-    await user.type(screen.getByLabelText('Aliases'), 'The Fox, Venn')
-    await user.click(screen.getByRole('button', { name: 'Add attribute' }))
-    await user.type(screen.getByLabelText('Attribute 1 name'), 'age')
-    await user.type(screen.getByLabelText('Attribute 1 value'), '30')
-    await user.click(screen.getByRole('button', { name: 'Add attribute' }))
-    await user.type(screen.getByLabelText('Attribute 2 name'), 'role')
-    await user.type(screen.getByLabelText('Attribute 2 value'), 'pilot')
-    await user.click(screen.getByRole('button', { name: 'Create entity' }))
+    await user.type(screen.getByLabelText('Also known as'), 'The Fox, Venn')
+    await user.click(screen.getByRole('button', { name: 'Add a detail' }))
+    await user.type(screen.getByLabelText('Detail 1 name'), 'age')
+    await user.type(screen.getByLabelText('Detail 1 value'), '30')
+    await user.click(screen.getByRole('button', { name: 'Add a detail' }))
+    await user.type(screen.getByLabelText('Detail 2 name'), 'role')
+    await user.type(screen.getByLabelText('Detail 2 value'), 'pilot')
+    await user.click(screen.getByRole('button', { name: 'Add to story bible' }))
 
     await waitFor(() => expect(api.find('POST', '/entities')).toHaveLength(1))
     expect(api.find('POST', '/entities')[0].body).toMatchObject({
@@ -93,8 +110,8 @@ describe('EntityForm', () => {
     renderInProject(<EntityForm />)
 
     await user.type(await screen.findByLabelText('Name'), 'Mara Venn')
-    expect(await screen.findByText(/Names are not identity/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Create entity' }))
+    expect(await screen.findByText(/Two entries can share a name/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Add to story bible' }))
     await waitFor(() => expect(api.find('POST', '/entities')).toHaveLength(1))
   })
 
@@ -113,22 +130,22 @@ describe('EntityForm', () => {
     const { context } = renderInProject(<EntityForm />)
 
     await user.type(await screen.findByLabelText('Name'), 'Mara Venn')
-    await user.type(screen.getByLabelText('Slug'), 'mara')
-    await user.click(screen.getByRole('button', { name: 'Add attribute' }))
-    await user.type(screen.getByLabelText('Attribute 1 name'), 'role')
-    await user.type(screen.getByLabelText('Attribute 1 value'), 'pilot')
-    await user.click(screen.getByRole('button', { name: 'Create entity' }))
+    await user.type(screen.getByLabelText('Short name for links'), 'mara')
+    await user.click(screen.getByRole('button', { name: 'Add a detail' }))
+    await user.type(screen.getByLabelText('Detail 1 name'), 'role')
+    await user.type(screen.getByLabelText('Detail 1 value'), 'pilot')
+    await user.click(screen.getByRole('button', { name: 'Add to story bible' }))
 
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('Canon changed while you were editing')
+    expect(alert).toHaveTextContent('Someone else changed the story while you were editing')
     expect(alert).toHaveTextContent('everything you entered is still here')
     // Nothing the author typed was lost.
     expect(screen.getByLabelText('Name')).toHaveValue('Mara Venn')
-    expect(screen.getByLabelText('Slug')).toHaveValue('mara')
-    expect(screen.getByLabelText('Attribute 1 value')).toHaveValue('pilot')
+    expect(screen.getByLabelText('Short name for links')).toHaveValue('mara')
+    expect(screen.getByLabelText('Detail 1 value')).toHaveValue('pilot')
     expect(api.find('POST', '/entities')[0].body).toMatchObject({ expected_revision: 3 })
 
-    await user.click(screen.getByRole('button', { name: 'Reload head and resubmit' }))
+    await user.click(screen.getByRole('button', { name: 'Save on top of the latest version' }))
 
     await waitFor(() => expect(api.find('POST', '/entities')).toHaveLength(2))
     expect(context.refreshHead).toHaveBeenCalledTimes(1)
@@ -150,12 +167,12 @@ describe('EntityForm', () => {
     renderInProject(<EntityForm />)
 
     await user.type(await screen.findByLabelText('Name'), 'Mara Venn')
-    await user.type(screen.getByLabelText('Slug'), 'taken')
-    await user.click(screen.getByRole('button', { name: 'Create entity' }))
+    await user.type(screen.getByLabelText('Short name for links'), 'taken')
+    await user.click(screen.getByRole('button', { name: 'Add to story bible' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('slug is used by another entity')
     expect(screen.getByLabelText('Name')).toHaveValue('Mara Venn')
-    expect(screen.getByLabelText('Slug')).toHaveValue('taken')
+    expect(screen.getByLabelText('Short name for links')).toHaveValue('taken')
   })
 
   it('sends only the fields an edit changed', async () => {
@@ -168,7 +185,9 @@ describe('EntityForm', () => {
     const onSaved = vi.fn()
     const { container } = renderInProject(<EntityForm entity={original} onSaved={onSaved} />)
 
-    expect(await screen.findByLabelText('Type')).toBeDisabled()
+    // An entry keeps the type it was created with, so editing offers no type choice.
+    await screen.findByLabelText('Name')
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Nothing has changed')
 

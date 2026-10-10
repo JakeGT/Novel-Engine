@@ -1,0 +1,151 @@
+import { screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { entity, mutation, operation } from '../test/fixtures'
+import { expectAccessible, mockApi, problem, renderInProject, VIEWER } from '../test/harness'
+import { ReviewDetail } from './ReviewDetail'
+
+afterEach(() => vi.unstubAllGlobals())
+
+const at = { path: 'review/:mutationId', at: 'review/mut_1' }
+const entries = { 'GET /entities': { items: [entity()], limit: 200, offset: 0 } }
+
+describe('ReviewDetail', () => {
+  it('reads each change as a sentence with a before and after', async () => {
+    mockApi({ ...entries, 'GET /mutations/mut_1': mutation() })
+    const { container } = renderInProject(<ReviewDetail />, at)
+
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('Changes from the AI assistant')
+    expect(screen.getByText('Add character “Iven”')).toBeInTheDocument()
+    expect(screen.getByText('Update “Mara Venn”')).toBeInTheDocument()
+    const diff = screen.getAllByRole('table')[1]
+    expect(within(diff).getByRole('row', { name: /Name/ })).toHaveTextContent('Mara VennMara Venn-Marsh')
+    expect(screen.getByRole('note')).toHaveTextContent(
+      'This needs your approval because it did not come directly from an author',
+    )
+    expect(screen.getByText('All 2 changes will be added')).toBeInTheDocument()
+    await expectAccessible(container)
+  })
+
+  it('skips one change, then approves and adds the rest to canon in one step', async () => {
+    const skipped = mutation({
+      operations: [
+        operation(),
+        operation({
+          ordinal: 1,
+          payload: { op: 'create_entity', id: 'tmp:b', type: 'Character', name: 'Extra' },
+          decision: { decision: 'rejected', actor_user_id: 'usr_1', note: null, operation_revision: 1, created_at: '2026-10-09T10:00:00Z' },
+        }),
+      ],
+    })
+    let current = mutation({ operations: [operation(), operation({ ordinal: 1, payload: { op: 'create_entity', id: 'tmp:b', type: 'Character', name: 'Extra' } })] })
+    const api = mockApi({
+      ...entries,
+      'GET /mutations/mut_1': () => current,
+      'POST /operations/1/decision': () => (current = skipped),
+      'POST /mutations/mut_1/approve': () => (current = { ...skipped, status: 'approved' }),
+      'POST /mutations/mut_1/commit': { mutation_id: 'mut_1', commit_id: 'cmt_9', revision: 4, already_applied: false },
+    })
+    const user = userEvent.setup()
+    renderInProject(<ReviewDetail />, at)
+
+    const second = await screen.findByRole('group', { name: 'Change 2: Add character “Extra”' })
+    await user.click(within(second).getByRole('button', { name: 'Skip' }))
+    expect(await screen.findByText('1 of 2 changes will be added')).toBeInTheDocument()
+    expect(api.find('POST', '/operations/1/decision')[0].body).toEqual({ decision: 'rejected', note: null })
+
+    await user.click(screen.getByRole('button', { name: 'Approve and add to canon' }))
+    expect(await screen.findByText('Added to canon as version 4.')).toBeInTheDocument()
+    // Approval is still its own recorded step, sent before the commit.
+    expect(api.calls.filter((call) => call.method === 'POST').map((call) => call.path.split('/').pop())).toEqual([
+      'decision',
+      'approve',
+      'commit',
+    ])
+  })
+
+  it('does not claim success when the commit fails because the story moved on', async () => {
+    mockApi({
+      ...entries,
+      'GET /mutations/mut_1': mutation({ status: 'approved' }),
+      'POST /mutations/mut_1/commit': problem(409, 'revision_conflict', 'The branch head changed.'),
+    })
+    const user = userEvent.setup()
+    renderInProject(<ReviewDetail />, at)
+
+    await user.click(await screen.findByRole('button', { name: 'Add to canon' }))
+    expect(await screen.findByText(/Your story changed while you were reviewing/)).toBeInTheDocument()
+    expect(screen.queryByText(/Added to canon/)).not.toBeInTheDocument()
+  })
+
+  it('blocks adding an out-of-date set of changes until it is updated', async () => {
+    const api = mockApi({
+      ...entries,
+      'GET /mutations/mut_1': mutation({ is_stale: true, head_revision: 6 }),
+      'POST /mutations/mut_1/retarget': mutation({ expected_revision: 6, head_revision: 6 }),
+    })
+    const user = userEvent.setup()
+    renderInProject(<ReviewDetail />, at)
+
+    expect(await screen.findByText(/Your story has moved on since this was written/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Approve and add to canon' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Update to version 6' }))
+    await waitFor(() => expect(api.find('POST', '/retarget')).toHaveLength(1))
+    expect(api.find('POST', '/retarget')[0].body).toEqual({ expected_revision: 6 })
+  })
+
+  it('reports problems found by a check against the change they belong to', async () => {
+    mockApi({
+      ...entries,
+      'GET /mutations/mut_1': mutation(),
+      'POST /mutations/mut_1/validate': {
+        ok: false,
+        head_revision: 3,
+        issues: [{ ordinal: 0, code: 'slug_conflict', severity: 'blocking', message: 'That short name is taken.' }],
+      },
+    })
+    const user = userEvent.setup()
+    renderInProject(<ReviewDetail />, at)
+
+    await user.click(await screen.findByRole('button', { name: 'Check for problems' }))
+    expect(await screen.findByText(/problems that would stop these being added/)).toBeInTheDocument()
+    const first = screen.getByText('Add character “Iven”').closest('li') as HTMLElement
+    expect(within(first).getByRole('alert')).toHaveTextContent('This must be fixed first: That short name is taken.')
+  })
+
+  it('keeps an edited change open with the text when the server rejects it', async () => {
+    mockApi({
+      ...entries,
+      'GET /mutations/mut_1': mutation(),
+      'PUT /operations/0': problem(422, 'validation_error', 'Unknown entity type.'),
+    })
+    const user = userEvent.setup()
+    renderInProject(<ReviewDetail />, at)
+
+    await user.click(await screen.findByText('More about change 1'))
+    await user.click(screen.getByRole('button', { name: 'Edit change 1' }))
+    const editor = screen.getByLabelText('Change 1 (JSON)')
+    await user.clear(editor)
+    await user.type(editor, '{{"op":"create_entity","id":"tmp:a","type":"Nope","name":"Iven"}')
+    await user.click(screen.getByRole('button', { name: 'Save edited change' }))
+
+    expect(await screen.findByText('Unknown entity type.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Change 1 (JSON)')).toHaveValue(
+      '{"op":"create_entity","id":"tmp:a","type":"Nope","name":"Iven"}',
+    )
+  })
+
+  it('shows finished and read-only states without any decision controls', async () => {
+    mockApi({ ...entries, 'GET /mutations/mut_1': mutation({ status: 'committed', committed_revision: 4 }) })
+    const first = renderInProject(<ReviewDetail />, at)
+    expect(await screen.findByText('Added to canon as version 4.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /canon/ })).not.toBeInTheDocument()
+    first.unmount()
+
+    mockApi({ ...entries, 'GET /mutations/mut_1': mutation() })
+    renderInProject(<ReviewDetail />, { ...at, context: { access: VIEWER } })
+    expect(await screen.findByText(/You can read this project but not change it/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Skip' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Discard all' })).not.toBeInTheDocument()
+  })
+})

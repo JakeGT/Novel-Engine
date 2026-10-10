@@ -343,3 +343,15 @@ Hosted/production sites hide `/docs` and `/openapi.json`, send security headers,
 secrets from files (`NOVEL_ENGINE_SECRETS_DIR`). `python -m backend.devtools.provision` creates
 the first workspace for a user who has signed in. Development store ports now bind to 127.0.0.1.
 
+## Frontend redesign (2026-10-10)
+
+The owner asked for the UI to be rebuilt for a gentle learning curve. The frontend was rewritten:
+landing page, library, sidebar shell with search palette, story bible, entry page with a sentence
+builder for facts, one-button review ("Approve and add to canon"), history with "go back to this
+version", form-based types and fields, and an AI-key page. Old addresses redirect. Server terms are
+translated in `frontend/src/lib/words.ts` (entity → entry, mutation → suggested change, revision →
+version, retire → archive, predicate → kind of fact). New projects are set up automatically (starter
+schema), both by the API and, for older projects, by the app on first open. `GET .../revisions` now
+pages back from the newest revision (it previously returned the oldest page). See
+`frontend/README.md`.
+

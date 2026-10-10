@@ -2,9 +2,10 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 
 // The full Phase 2 vertical workflow in a real browser against a real backend:
-// publish a schema, author an entity, recover from a stale head, inspect
-// provenance, review and commit a model-origin proposal, retire with an explicit
-// acknowledgement, and export the project's history.
+// open a brand-new project (set up automatically), add an entry, recover from a
+// clash with someone else's change, inspect its activity, review and commit a
+// model-origin proposal, archive with an explicit acknowledgement, and export
+// the project's history.
 
 const PROJECT = 'local-project'
 const API = `/api/v1/projects/${PROJECT}`
@@ -23,49 +24,56 @@ async function expectAccessible(page: Page) {
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze()
-  expect(results.violations.map((violation) => `${violation.id}: ${violation.help}`)).toEqual([])
+  // Name the offending elements so a failure says where to look.
+  expect(
+    results.violations.map(
+      (violation) =>
+        `${violation.id}: ${violation.help} [${violation.nodes.map((node) => node.target.join(' ')).join(' | ')}]`,
+    ),
+  ).toEqual([])
 }
 
-test('author, review, retire, and export a project end to end', async ({ page }) => {
-  // --- sign in (local mode) and open the project -----------------------------
+test('author, review, archive, and export a project end to end', async ({ page }) => {
+  // --- the public front page, sign in (local mode), open the project ------------
   await page.goto('/')
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Your story’s memory')
+  await expectAccessible(page)
   await page.getByRole('link', { name: 'Sign in' }).click()
-  await page.getByRole('link', { name: 'Open project' }).click()
-  await expect(page.getByText('Canon head')).toContainText('r0')
-  await expect(page.getByText('Your role: owner')).toBeVisible()
+  await page.getByRole('link', { name: /Your project/ }).click()
 
-  // --- publish the project schema ---------------------------------------------
-  await page.getByRole('link', { name: 'Schema' }).click()
-  await expect(page.getByText('No schema version is published yet')).toBeVisible()
-  await page.getByRole('button', { name: 'Validate' }).click()
-  await expect(page.getByText('The definition is valid.')).toBeVisible()
-  await page.getByRole('button', { name: 'Save as draft' }).click()
-  await expect(page.getByText(/Saved as draft v1/)).toBeVisible()
-  await page.getByRole('button', { name: 'Publish v1' }).click()
-  await expect(page.getByText('Published', { exact: true })).toBeVisible()
+  // --- a new project is ready to use without any setup step ----------------------
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('build your story bible')
+  await expect(page.getByText('Version 0 · saved')).toBeVisible()
+  await expect
+    .poll(async () => {
+      const versions = await (await page.request.get(`${API}/schemas`)).json()
+      return versions.map((version: { status: string }) => version.status)
+    })
+    .toEqual(['published'])
   await expectAccessible(page)
 
-  // --- create an entity --------------------------------------------------------
-  await page.getByRole('link', { name: 'Entities' }).click()
-  const create = page.getByRole('form', { name: 'Create entity' })
+  // --- add an entry ---------------------------------------------------------------
+  await page.getByRole('button', { name: /Add a character/ }).click()
+  const create = page.getByRole('form', { name: 'New entry' })
+  await expect(create.getByRole('radio', { name: 'Character' })).toBeChecked()
   await create.getByLabel('Name', { exact: true }).fill('Mara Ven')
-  await create.getByLabel('Aliases').fill('The Fox')
-  await create.getByRole('button', { name: 'Add attribute' }).click()
-  await create.getByLabel('Attribute 1 name').fill('role')
-  await create.getByLabel('Attribute 1 value').fill('harbor pilot')
-  await create.getByRole('button', { name: 'Create entity' }).click()
-  await expect(page.getByRole('link', { name: 'Mara Ven' })).toBeVisible()
-  await expect(page.getByText('Canon head')).toContainText('r1')
+  await create.getByLabel('Also known as').fill('The Fox')
+  await create.getByRole('button', { name: 'Add a detail' }).click()
+  await create.getByLabel('Detail 1 name').fill('role')
+  await create.getByLabel('Detail 1 value').fill('harbor pilot')
+  await expectAccessible(page)
+  await create.getByRole('button', { name: 'Add to story bible' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Mara Ven' })).toBeVisible()
+  await expect(page.getByText('Version 1 · saved')).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Details' })).toContainText('harbor pilot')
   await expectAccessible(page)
 
-  // --- edit it, recovering from a stale head without losing the entered data ---
-  await page.getByRole('link', { name: 'Mara Ven' }).click()
-  await expect(page.getByRole('heading', { name: /Mara Ven/ })).toBeVisible()
-  await page.getByRole('button', { name: 'Edit' }).click()
-  const edit = page.getByRole('form', { name: 'Edit entity' })
+  // --- edit it, recovering from a clash without losing the entered data -----------
+  await page.getByRole('button', { name: 'Edit' }).first().click()
+  const edit = page.getByRole('form', { name: 'Edit Mara Ven' })
   await edit.getByLabel('Name', { exact: true }).fill('Mara Venn')
 
-  // Someone else commits while the form is open: the head moves to r2.
+  // Someone else commits while the form is open: the head moves to version 2.
   const other = await post(page, '/entities', {
     type: 'Location',
     name: 'Saltkeep',
@@ -74,17 +82,25 @@ test('author, review, retire, and export a project end to end', async ({ page })
   expect(other.status()).toBe(201)
 
   await edit.getByRole('button', { name: 'Save changes' }).click()
-  await expect(page.getByText('Canon changed while you were editing.')).toBeVisible()
+  await expect(page.getByText('Someone else changed the story while you were editing.')).toBeVisible()
   await expect(edit.getByLabel('Name', { exact: true })).toHaveValue('Mara Venn')
-  await page.getByRole('button', { name: 'Reload head and resubmit' }).click()
-  await expect(page.getByRole('heading', { name: /Mara Venn/ })).toBeVisible()
-  await expect(page.getByText('Canon head')).toContainText('r3')
+  await page.getByRole('button', { name: 'Save on top of the latest version' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Mara Venn' })).toBeVisible()
+  await expect(page.getByText('Version 3 · saved')).toBeVisible()
 
-  // --- history and provenance ---------------------------------------------------
-  const provenance = page.getByRole('region', { name: 'History and provenance' })
-  await expect(provenance.getByText('update_entity')).toBeVisible()
-  await expect(provenance.getByText('create_entity')).toBeVisible()
-  await expect(provenance.getByText(/origin author/).first()).toBeVisible()
+  // --- a fact, built as a sentence --------------------------------------------------
+  const facts = page.getByRole('region', { name: 'Facts' })
+  await facts.getByLabel('How the sentence continues').selectOption('LOCATED_AT')
+  await facts.getByLabel('What Mara Venn is located at').selectOption({ label: 'Saltkeep (Location)' })
+  await facts.getByRole('button', { name: 'Add fact' }).click()
+  await expect(facts.getByRole('listitem').first()).toContainText('Mara Venn is located at Saltkeep')
+  await expect(page.getByText('Version 4 · saved')).toBeVisible()
+
+  // --- activity explains every change -----------------------------------------------
+  const activity = page.getByRole('region', { name: 'Activity' })
+  await expect(activity.getByText('Edited')).toBeVisible()
+  await expect(activity.getByText('Added')).toBeVisible()
+  await expect(activity.getByText(/by you/).first()).toBeVisible()
   await expectAccessible(page)
 
   // --- a model-origin proposal arrives and is reviewed in the UI -----------------
@@ -93,7 +109,7 @@ test('author, review, retire, and export a project end to end', async ({ page })
       { op: 'create_entity', id: 'tmp:harbor', type: 'Location', name: 'Lantern Harbor' },
       { op: 'create_entity', id: 'tmp:extra', type: 'Character', name: 'Unwanted Extra' },
     ],
-    expected_revision: 3,
+    expected_revision: 4,
     origin: 'model',
   })
   expect(proposed.status()).toBe(201)
@@ -103,43 +119,56 @@ test('author, review, retire, and export a project end to end', async ({ page })
   expect(blocked.status()).toBe(409)
   expect((await blocked.json()).code).toBe('review_required')
 
-  await page.getByRole('link', { name: /^Review/ }).click()
-  await page.getByRole('link', { name: 'Change from model' }).click()
-  await expect(page.getByText(/Not canon yet\. 2 of 2 operations/)).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Commit to canon' })).toBeDisabled()
+  await page.getByRole('navigation', { name: 'Project' }).getByRole('link', { name: /Review/ }).click()
+  await page.getByRole('link', { name: 'Changes from the AI assistant' }).click()
+  await expect(page.getByText('All 2 changes will be added')).toBeVisible()
+  await expect(page.getByText('Add location “Lantern Harbor”')).toBeVisible()
   await expectAccessible(page)
 
-  await page.getByLabel('Note for operation 2 (optional)').fill('not part of this story')
-  await page.getByRole('button', { name: 'Reject operation 2' }).click()
-  await expect(page.getByText('Rejected · will not be committed')).toBeVisible()
-  await page.getByRole('button', { name: 'Check against canon' }).click()
-  await expect(page.getByText('No blocking problems found.')).toBeVisible()
-  await page.getByRole('button', { name: 'Approve', exact: true }).click()
-  await expect(page.getByRole('heading', { name: /Proposal/ })).toContainText(
-    'Approved · not yet canon',
-  )
-  await page.getByRole('button', { name: 'Commit to canon' }).click()
-  await expect(page.getByText('Committed to canon as revision r4.')).toBeVisible()
+  await page
+    .getByRole('group', { name: 'Change 2: Add character “Unwanted Extra”' })
+    .getByRole('button', { name: 'Skip' })
+    .click()
+  await expect(page.getByText('1 of 2 changes will be added')).toBeVisible()
+  await page.getByRole('button', { name: 'Check for problems' }).click()
+  await expect(page.getByText('No problems found.')).toBeVisible()
+  await page.getByRole('button', { name: 'Approve and add to canon' }).click()
+  await expect(page.getByText('Added to canon as version 5.')).toBeVisible()
 
-  // --- only the accepted operation became canon ----------------------------------
-  await page.getByRole('link', { name: 'Entities' }).click()
-  await expect(page.getByRole('link', { name: 'Lantern Harbor' })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Unwanted Extra' })).toHaveCount(0)
-
-  // --- retire with an explicit high-impact acknowledgement -----------------------
-  await page.getByRole('link', { name: 'Lantern Harbor' }).click()
-  await page.getByRole('button', { name: 'Retire…' }).click()
-  await expect(page.getByRole('button', { name: 'Retire entity' })).toBeDisabled()
-  await page.getByLabel('I understand this is a high-impact change').check()
-  await page.getByRole('button', { name: 'Retire entity' }).click()
-  await expect(page.getByRole('heading', { name: /Lantern Harbor/ })).toContainText('Retired')
-  await expect(page.getByText('Canon head')).toContainText('r5')
-
-  // --- the revision list explains every commit ------------------------------------
-  await page.getByRole('link', { name: 'History' }).click()
-  await expect(page.getByRole('row')).toHaveCount(6) // header + r1..r5
-  await expect(page.getByRole('row', { name: /r4/ })).toContainText('model')
+  // --- only the accepted change became canon ----------------------------------------
+  await page.getByRole('navigation', { name: 'Project' }).getByRole('link', { name: /Story bible/ }).click()
+  await expect(page.getByRole('link', { name: /Lantern Harbor/ })).toBeVisible()
+  await expect(page.getByRole('link', { name: /Unwanted Extra/ })).toHaveCount(0)
   await expectAccessible(page)
+
+  // --- archive with an explicit acknowledgement --------------------------------------
+  await page.getByRole('link', { name: /Lantern Harbor/ }).click()
+  await page.getByRole('button', { name: 'Archive' }).click()
+  await expect(page.getByRole('button', { name: 'Archive entry' })).toBeDisabled()
+  await expectAccessible(page)
+  await page.getByLabel('I understand this is a significant change').check()
+  await page.getByRole('button', { name: 'Archive entry' }).click()
+  await expect(page.getByText('This entry is archived.')).toBeVisible()
+  await expect(page.getByText('Version 6 · saved')).toBeVisible()
+
+  // --- history explains every version, newest first -----------------------------------
+  await page.getByRole('navigation', { name: 'Project' }).getByRole('link', { name: 'History' }).click()
+  const versions = page.getByRole('main').getByRole('listitem')
+  await expect(versions).toHaveCount(6)
+  await expect(versions.first()).toContainText('Version 6')
+  await expect(versions.filter({ hasText: 'Version 5' })).toContainText('the AI assistant')
+  await expectAccessible(page)
+
+  // --- types and fields, in dark mode too -----------------------------------------------
+  await page.getByRole('navigation', { name: 'Project' }).getByRole('link', { name: 'Types and fields' }).click()
+  await expect(page.getByRole('region', { name: 'Kinds of fact' })).toBeVisible()
+  await expectAccessible(page)
+  await page.getByRole('button', { name: 'Switch to dark theme' }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  // Let the colour transitions finish so contrast is measured on the final colours.
+  await page.waitForTimeout(400)
+  await expectAccessible(page)
+  await page.getByRole('button', { name: 'Switch to light theme' }).click()
 
   // --- export: the archive carries the whole accepted history ---------------------
   const exported = await post(page, '/archive/export', {})
@@ -147,14 +176,14 @@ test('author, review, retire, and export a project end to end', async ({ page })
   const archive = await exported.json()
   expect(archive.format).toBe('novel-engine/canon-archive')
   expect(archive.commits.map((commit: { revision: number }) => commit.revision)).toEqual([
-    1, 2, 3, 4, 5,
+    1, 2, 3, 4, 5, 6,
   ])
-  expect(archive.project.head_revision).toBe(5)
+  expect(archive.project.head_revision).toBe(6)
   const names = archive.canon.entities.map((entity: { name: string }) => entity.name).sort()
   expect(names).toEqual(['Lantern Harbor', 'Mara Venn', 'Saltkeep'])
   expect(JSON.stringify(archive)).not.toContain('Unwanted Extra')
   const origins = archive.commits.map((commit: { origin: string }) => commit.origin)
-  expect(origins).toEqual(['author', 'author', 'author', 'model', 'author'])
+  expect(origins).toEqual(['author', 'author', 'author', 'author', 'model', 'author'])
 })
 
 // Keyboard-only: every step below uses Tab/Shift+Tab, typing, Enter, and Space.
@@ -193,44 +222,52 @@ test('the core authoring path works with the keyboard alone', async ({ page }) =
 
   await page.goto('/')
   // The previous test signed in on its own context; sign in again by keyboard.
-  await tabTo(/^(Sign in|Open project)$/)
-  if ((await page.evaluate(() => document.activeElement?.textContent ?? '')).trim() === 'Sign in') {
-    await page.keyboard.press('Enter')
-    // Signing in navigates away and back; wait for the page before tabbing on.
-    await expect(page.getByRole('link', { name: 'Open project' })).toBeVisible()
-    await tabTo('Open project')
-  }
+  await tabTo('Sign in')
   await expectVisibleFocus()
   await page.keyboard.press('Enter')
-  await expect(page.getByText('Canon head')).toBeVisible()
+  // Signing in navigates away and back; wait for the library before tabbing on.
+  await expect(page.getByRole('link', { name: /Your project/ })).toBeVisible()
+  await tabTo(/Your project/)
+  await expectVisibleFocus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByText(/Version \d+ · saved/)).toBeVisible()
+
+  // Open the new-entry dialog; focus lands on the name, and Tab stays inside the dialog.
+  await tabTo('New entry')
+  await page.keyboard.press('Enter')
+  const form = page.getByRole('form', { name: 'New entry' })
+  const name = form.getByLabel('Name', { exact: true })
+  await expect(name).toBeFocused()
+  await expectVisibleFocus()
 
   // Submitting an empty form by keyboard reports the problem on the field itself.
-  await tabTo('Create entity')
   await page.keyboard.press('Enter')
-  const name = page.getByRole('form', { name: 'Create entity' }).getByLabel('Name', { exact: true })
   await expect(name).toHaveAttribute('aria-invalid', 'true')
   const describedBy = await name.getAttribute('aria-describedby')
   expect(describedBy).toBeTruthy()
   await expect(page.locator(`#${describedBy!.split(' ')[0]}`)).toBeVisible()
 
-  // Fill the form and create the entity without touching the pointer.
-  await name.focus()
-  await expectVisibleFocus()
+  // Fill the form and add the entry without touching the pointer.
   await page.keyboard.type('Keyboard Kestrel')
-  await tabTo('Create entity')
+  await tabTo('Add to story bible')
   await page.keyboard.press('Enter')
-  await expect(page.getByRole('link', { name: 'Keyboard Kestrel' })).toBeVisible()
+  await expect(page.getByRole('heading', { level: 1, name: 'Keyboard Kestrel' })).toBeVisible()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
 
-  // Open it and retire it: checkbox by Space, confirmation by Enter.
-  await page.getByRole('link', { name: 'Keyboard Kestrel' }).focus()
+  // Archive it: checkbox by Space, confirmation by Enter.
+  await tabTo('Archive')
   await page.keyboard.press('Enter')
-  await expect(page.getByRole('heading', { name: /Keyboard Kestrel/ })).toBeVisible()
-  await tabTo('Retire…')
-  await page.keyboard.press('Enter')
-  await tabTo(/I understand this is a high-impact change/)
+  await tabTo(/I understand this is a significant change/)
   await page.keyboard.press('Space')
-  await tabTo('Retire entity')
+  await tabTo('Archive entry')
   await expectVisibleFocus()
   await page.keyboard.press('Enter')
-  await expect(page.getByRole('heading', { name: /Keyboard Kestrel/ })).toContainText('Retired')
+  await expect(page.getByText('This entry is archived.')).toBeVisible()
+
+  // The search palette opens, finds, and navigates from the keyboard.
+  await page.keyboard.press('Control+k')
+  await page.keyboard.type('Mara')
+  await expect(page.getByRole('option').first()).toContainText('Mara Venn')
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('heading', { level: 1, name: 'Mara Venn' })).toBeVisible()
 })

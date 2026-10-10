@@ -1,7 +1,7 @@
-import { useQueryClient } from '@tanstack/react-query'
-import { useCallback, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { createContext, useCallback, useContext, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { isStaleHead, type ProjectAccess, type Scope } from './api/client'
+import { api, isStaleHead, type CanonEntity, type ProjectAccess, type Scope } from './api/client'
 
 /** Everything a project page needs; provided by ProjectLayout through the router outlet. */
 export interface ProjectContext {
@@ -13,15 +13,67 @@ export interface ProjectContext {
   access?: ProjectAccess
   canWrite: boolean
   canAdmin: boolean
+  /** The signed-in user's id, so their own actions can read as "you". */
+  userId?: string | null
+  /** Open the "new entry" dialog, optionally with a type already chosen. */
+  newEntry?: (type?: string) => void
 }
 
+const ProjectReactContext = createContext<ProjectContext | null>(null)
+
+/** Lets pieces rendered outside the page outlet (dialogs, the search palette) use the project. */
+export const ProjectProvider = ProjectReactContext.Provider
+
 export function useProject(): ProjectContext {
-  return useOutletContext<ProjectContext>()
+  const provided = useContext(ProjectReactContext)
+  const outlet = useOutletContext<ProjectContext | undefined>()
+  return (provided ?? outlet) as ProjectContext
 }
 
 /** Every cache key starts with workspace + project so one scope can never serve another. */
 export function scopedKey(scope: Scope, ...parts: unknown[]): unknown[] {
   return [parts[0], scope.workspaceId, scope.projectId, ...parts.slice(1)]
+}
+
+/** The most entries one screen loads at once; lists say so when they reach it. */
+export const ENTRY_LIMIT = 200
+
+export interface Entries {
+  items: CanonEntity[]
+  /** Entry id → name, including archived entries, for writing facts as sentences. */
+  names: Map<string, string>
+  byId: Map<string, CanonEntity>
+  loading: boolean
+  error: unknown
+  /** True when the project holds more entries than were loaded. */
+  truncated: boolean
+}
+
+/** Every entry in the project (archived included), shared by all the screens that name entries. */
+export function useEntries(scope: Scope): Entries {
+  const query = useQuery({
+    queryKey: scopedKey(scope, 'entities', 'all'),
+    queryFn: () => api.listEntities(scope, { include_retired: true, limit: ENTRY_LIMIT }),
+  })
+  const items = query.data?.items ?? []
+  return {
+    items,
+    names: new Map(items.map((item) => [item.id, item.name])),
+    byId: new Map(items.map((item) => [item.id, item])),
+    loading: query.isPending,
+    error: query.error,
+    truncated: items.length >= ENTRY_LIMIT,
+  }
+}
+
+export function entryPath(scope: Scope, entityId: string): string {
+  return `/projects/${scope.projectId}/entries/${entityId}`
+}
+
+/** "you" for the signed-in user; otherwise a neutral word, never a raw account id. */
+export function actorLabel(actorId: string | null | undefined, userId: string | null | undefined): string {
+  if (!actorId) return ''
+  return actorId === userId ? 'you' : 'a collaborator'
 }
 
 export function useInvalidateProject(scope: Scope): () => Promise<void> {

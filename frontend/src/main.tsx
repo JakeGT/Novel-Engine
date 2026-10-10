@@ -1,8 +1,14 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import * as Sentry from '@sentry/react'
-import './index.css'
+import '@fontsource-variable/inter/index.css'
+import '@fontsource-variable/fraunces/opsz.css'
+import '@fontsource-variable/fraunces/opsz-italic.css'
+import './styles/tokens.css'
+import './styles/app.css'
+import './styles/landing.css'
 import App from './App'
+import { applyInitialTheme } from './lib/theme'
 
 const sentryDsn = import.meta.env.VITE_SENTRY_DSN_WEB
 
@@ -14,6 +20,8 @@ if (sentryDsn) {
     tracesSampleRate: 0,
   })
 }
+
+applyInitialTheme()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

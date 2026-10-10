@@ -178,6 +178,16 @@ export interface AssetLifecycleEvent {
   created_at: string
 }
 
+export interface Credential {
+  id: string
+  provider: string
+  label: string
+  key_last4: string
+  status: string
+  created_at: string
+  last_used_at: string | null
+}
+
 export interface SessionInfo {
   user: { id: string; email: string | null; display_name: string | null }
   auth_mode: string
@@ -297,8 +307,29 @@ export const api = {
 
   listWorkspaces: () => request<Workspace[]>('/api/v1/workspaces'),
 
+  /** Ends the session. Hosted mode answers with the identity provider's sign-out address. */
+  logout: () => request<{ status: string; logout_url?: string }>('/auth/logout', { method: 'POST' }),
+
   listProjects: (workspaceId: string) =>
     request<Project[]>(`/api/v1/workspaces/${id(workspaceId)}/projects`, { workspaceId }),
+
+  createProject: (workspaceId: string, body: Schemas['CreateProjectRequest']) =>
+    request<Project>(`/api/v1/workspaces/${id(workspaceId)}/projects`, {
+      method: 'POST',
+      workspaceId,
+      json: body,
+    }),
+
+  // --- AI provider keys (workspace owners; hosted mode) -------------------------
+  listCredentials: (workspaceId: string) =>
+    request<Credential[]>('/api/v1/credentials', { workspaceId }),
+  createCredential: (workspaceId: string, body: { label: string; key: string }) =>
+    request<Credential>('/api/v1/credentials', { method: 'POST', workspaceId, json: body }),
+  revokeCredential: (workspaceId: string, credentialId: string) =>
+    request<Credential>(`/api/v1/credentials/${id(credentialId)}/revoke`, {
+      method: 'POST',
+      workspaceId,
+    }),
 
   access: (scope: Scope) => get<ProjectAccess>(scope, '/access'),
 

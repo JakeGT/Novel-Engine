@@ -1,22 +1,69 @@
-import { useQuery } from '@tanstack/react-query'
-import { NavLink, Outlet, useNavigate, useParams } from 'react-router-dom'
-import { api, type Scope } from '../api/client'
-import { Badge } from '../components/ui'
-import { scopedKey, type ProjectContext } from '../project'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { api, isApiError, type Scope } from '../api/client'
+import { CommandPalette } from '../components/CommandPalette'
+import { Icon, type IconName } from '../components/icons'
+import { NewEntryDialog } from '../components/NewEntryDialog'
+import { ThemeToggle } from '../components/ThemeToggle'
+import { Button, EmptyState, Loading } from '../components/ui'
+import { displayName, useSession, useSignOut } from '../lib/session'
+import { initial, isOpenChange, typePlural } from '../lib/words'
+import {
+  ProjectProvider,
+  scopedKey,
+  useEntries,
+  useInvalidateProject,
+  type ProjectContext,
+} from '../project'
 import { getActiveWorkspaceId } from '../scope'
 
 const IMPORT_TEXT: Record<string, string> = {
-  importing: 'An archive import is in progress. What you see here is incomplete until it finishes.',
+  importing: 'A backup is being restored into this project. What you see is incomplete until it finishes.',
   failed:
-    'An archive import into this project failed part-way. This project is not a complete restore: an owner should retry the import or remove it.',
-  removed: 'A failed archive import was removed from this project.',
+    'Restoring a backup into this project stopped part-way, so this project is incomplete. An owner should retry the restore or remove it.',
+  removed: 'A failed restore was removed from this project.',
+}
+
+/** The entry types every new project starts with; nothing project-specific. */
+const STARTER_SCHEMA = {
+  label: 'Starter schema',
+  description: '',
+  entity_extensions: [],
+  predicate_extensions: [],
+}
+
+function NavItem({
+  to,
+  icon,
+  end,
+  children,
+  trailing,
+}: {
+  to: string
+  icon: IconName
+  end?: boolean
+  children: string
+  trailing?: React.ReactNode
+}) {
+  return (
+    <NavLink to={to} end={end} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+      <Icon name={icon} />
+      {children}
+      {trailing}
+    </NavLink>
+  )
 }
 
 export function ProjectLayout() {
   const { projectId = '' } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const workspaceId = getActiveWorkspaceId()
   const scope: Scope = { workspaceId, projectId }
+  const invalidate = useInvalidateProject(scope)
+  const session = useSession()
+  const { signOut, pending: signingOut } = useSignOut()
 
   const projection = useQuery({
     queryKey: scopedKey(scope, 'projection'),
@@ -33,10 +80,79 @@ export function ProjectLayout() {
     enabled: Boolean(workspaceId),
   })
   const pending = useQuery({
-    queryKey: scopedKey(scope, 'mutations', 'needs_review'),
-    queryFn: () => api.listMutations(scope, { status: 'needs_review', limit: 100 }),
+    queryKey: scopedKey(scope, 'mutations', 'open'),
+    queryFn: () => api.listMutations(scope, { limit: 100 }),
     refetchInterval: 30_000,
   })
+  const schemas = useQuery({
+    queryKey: scopedKey(scope, 'schemas'),
+    queryFn: () => api.listSchemaVersions(scope),
+  })
+  const entries = useEntries(scope)
+
+  const canWrite = access.data?.can_write ?? false
+  const canAdmin = access.data?.can_admin ?? false
+
+  // A project cannot hold anything until its entry types are published once.
+  // Do that quietly for the owner the first time the project is opened.
+  const setup = useMutation({
+    mutationFn: async () => {
+      const draft = await api.createSchemaDraft(scope, STARTER_SCHEMA)
+      return api.publishSchema(scope, draft.version.id)
+    },
+    onSettled: () => invalidate(),
+  })
+  const needsSetup = schemas.isSuccess && schemas.data.length === 0
+  const startedSetup = useRef(false)
+  useEffect(() => {
+    if (needsSetup && canAdmin && !startedSetup.current) {
+      startedSetup.current = true
+      setup.mutate()
+    }
+  }, [needsSetup, canAdmin, setup])
+
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [newEntry, setNewEntry] = useState<{ type?: string } | null>(null)
+  const openNewEntry = useCallback((type?: string) => setNewEntry({ type }), [])
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setPaletteOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  if (isApiError(access.error) && [401, 403, 404].includes(access.error.status)) {
+    const signedOut = access.error.status === 401
+    return (
+      <div className="center-page">
+        <EmptyState
+          icon="key"
+          title={signedOut ? 'You’ve been signed out' : 'This project isn’t available to you'}
+          action={
+            signedOut ? (
+              <a className="btn primary" href="/auth/login">
+                Sign in again
+              </a>
+            ) : (
+              <Link className="btn primary" to="/">
+                Back to your library
+              </Link>
+            )
+          }
+        >
+          {signedOut
+            ? 'Your session ended. Sign in to pick up where you left off.'
+            : 'It may have been removed, or you may not have been invited to it.'}
+        </EmptyState>
+      </div>
+    )
+  }
 
   const status = projection.data
   const context: ProjectContext = {
@@ -44,118 +160,262 @@ export function ProjectLayout() {
     headRevision: status?.head_revision ?? 0,
     refreshHead: async () => {
       const fresh = await projection.refetch()
-      if (fresh.data === undefined) throw fresh.error ?? new Error('Could not reload the head.')
+      if (fresh.data === undefined) throw fresh.error ?? new Error('Could not reload the latest version.')
       return fresh.data.head_revision
     },
     access: access.data,
-    canWrite: access.data?.can_write ?? false,
-    canAdmin: access.data?.can_admin ?? false,
+    canWrite,
+    canAdmin,
+    userId: session.data?.user.id ?? null,
+    newEntry: openNewEntry,
   }
-  const projectName = projects.data?.find((item) => item.id === projectId)?.name ?? projectId
+  const local = !workspaceId
+  const projectName =
+    projects.data?.find((item) => item.id === projectId)?.name ?? (local ? 'Your project' : 'Project')
   const base = `/projects/${projectId}`
-  const awaiting = pending.data?.items.length ?? 0
+  const awaiting = (pending.data?.items ?? []).filter((item) => isOpenChange(item.status)).length
   const importState = status?.import
 
+  const active = entries.items.filter((item) => item.lifecycle === 'active')
+  const counts = new Map<string, number>()
+  for (const item of active) counts.set(item.type, (counts.get(item.type) ?? 0) + 1)
+  const typesInUse = [...counts.keys()].sort(
+    (a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0) || a.localeCompare(b),
+  )
+
+  const banners =
+    (importState && importState.status !== 'completed') ||
+    status?.status === 'error' ||
+    needsSetup ||
+    setup.isError
+
   return (
-    <div className="shell">
+    <ProjectProvider value={context}>
+    <div className="app">
       <a className="skip" href="#main">
         Skip to content
       </a>
-      <header className="row">
-        <div>
-          <p className="brand">Novel Engine</p>
-          <p className="tagline">
-            Project <strong>{projectName}</strong>
-          </p>
-        </div>
-        <div className="row">
-          {projects.data && projects.data.length > 1 && (
-            <label className="switcher">
-              Project
-              <select value={projectId} onChange={(event) => navigate(`/projects/${event.target.value}`)}>
-                {projects.data.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+      <button
+        type="button"
+        className={`scrim ${menuOpen ? 'open' : ''}`}
+        aria-label="Close menu"
+        tabIndex={menuOpen ? 0 : -1}
+        onClick={() => setMenuOpen(false)}
+      />
+
+      <aside
+        className={`sidebar ${menuOpen ? 'open' : ''}`}
+        id="sidebar"
+        // Following any link in the menu closes it on a small screen.
+        onClick={(event) => {
+          if ((event.target as HTMLElement).closest('a')) setMenuOpen(false)
+        }}
+      >
+        <Link className="brand" to="/" title="All projects">
+          <span className="brand-mark">
+            <Icon name="feather" size={17} />
+          </span>
+          Novel Engine
+        </Link>
+
+        <div className="project-switch">
+          <span className="eyebrow">Project</span>
+          {projects.data && projects.data.length > 1 ? (
+            <select
+              aria-label="Switch project"
+              value={projectId}
+              onChange={(event) => navigate(`/projects/${event.target.value}`)}
+            >
+              {projects.data.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="project-name">{projectName}</span>
           )}
-          <NavLink to="/">Switch workspace</NavLink>
         </div>
-      </header>
 
-      <nav aria-label="Project">
-        <ul className="tabs">
-          <li>
-            <NavLink to={base} end>
-              Entities
-            </NavLink>
-          </li>
-          <li>
-            <NavLink to={`${base}/mutations`}>
-              Review{awaiting > 0 ? ` (${awaiting})` : ''}
-            </NavLink>
-          </li>
-          <li>
-            <NavLink to={`${base}/revisions`}>History</NavLink>
-          </li>
-          <li>
-            <NavLink to={`${base}/schema`}>Schema</NavLink>
-          </li>
-          <li>
-            <NavLink to={`${base}/assets`}>Media</NavLink>
-          </li>
-        </ul>
-      </nav>
+        <nav aria-label="Project" className="stack">
+          <div className="nav-group">
+            <NavItem to={base} icon="home" end>
+              Home
+            </NavItem>
+            <NavItem
+              to={`${base}/bible`}
+              icon="book"
+              trailing={active.length > 0 ? <span className="count">{active.length}</span> : null}
+            >
+              Story bible
+            </NavItem>
+            {typesInUse.map((type) => (
+              <Link
+                key={type}
+                to={`${base}/bible?type=${encodeURIComponent(type)}`}
+                className={`nav-link sub ${
+                  location.pathname === `${base}/bible` &&
+                  new URLSearchParams(location.search).get('type') === type
+                    ? 'active'
+                    : ''
+                }`}
+              >
+                {typePlural(type)}
+                <span className="count">{counts.get(type)}</span>
+              </Link>
+            ))}
+            <NavItem
+              to={`${base}/review`}
+              icon="inbox"
+              trailing={
+                awaiting > 0 ? (
+                  <span className="pill">
+                    {awaiting}
+                    <span className="sr-only"> waiting</span>
+                  </span>
+                ) : null
+              }
+            >
+              Review
+            </NavItem>
+            <NavItem to={`${base}/history`} icon="clock">
+              History
+            </NavItem>
+          </div>
 
-      <section className="panel status" aria-label="Project status" aria-live="polite">
-        {projection.isSuccess && status ? (
-          <>
-            <span>
-              Canon head <strong>r{status.head_revision}</strong>
-            </span>
-            {status.status === 'error' ? (
-              <Badge tone="danger">Graph index needs operator attention</Badge>
-            ) : status.current ? (
-              <Badge tone="ok">Graph index current</Badge>
+          <div className="nav-group">
+            <span className="eyebrow nav-title">Set up</span>
+            <NavItem to={`${base}/customize`} icon="sliders">
+              Types and fields
+            </NavItem>
+            <NavItem to={`${base}/media`} icon="image">
+              Media
+            </NavItem>
+            {access.data?.hosted && (
+              <NavItem to={`${base}/assistant`} icon="spark">
+                AI assistant
+              </NavItem>
+            )}
+          </div>
+        </nav>
+
+        <div className="sidebar-foot">
+          <div className="save-state" aria-live="polite">
+            {projection.isError ? (
+              <>
+                <span className="dot danger" aria-hidden="true" />
+                Status unavailable
+              </>
+            ) : !status ? (
+              <span className="muted">Loading…</span>
             ) : (
-              <Badge tone="warn">
-                Graph index {status.lag} revision{status.lag === 1 ? '' : 's'} behind (canon is
-                unaffected)
-              </Badge>
+              <>
+                <span className={`dot ${status.status === 'error' ? 'warn' : ''}`} aria-hidden="true" />
+                <span>Version {status.head_revision} · saved</span>
+              </>
             )}
-            {status.failed_deliveries > 0 && (
-              <Badge tone="warn">Failed index deliveries: {status.failed_deliveries}</Badge>
-            )}
-          </>
-        ) : projection.isError ? (
-          <span className="error" role="alert">
-            Project status is unavailable: {(projection.error as Error).message}
-          </span>
-        ) : (
-          <span className="muted">Loading project status…</span>
-        )}
-        {access.data && (
-          <Badge tone={access.data.can_write ? 'neutral' : 'warn'}>
-            Your role: {access.data.role}
-            {access.data.can_write ? '' : ' (read-only)'}
-          </Badge>
-        )}
-      </section>
+          </div>
+          {access.data && !canWrite && <span className="badge warn">Read-only access</span>}
+          <div className="user-row">
+            <span className="avatar sm round tint-violet" aria-hidden="true">
+              {initial(displayName(session.data))}
+            </span>
+            <span className="who small">
+              <strong>{displayName(session.data)}</strong>
+              {access.data && <span className="muted">{access.data.role}</span>}
+            </span>
+            <button
+              type="button"
+              className="btn ghost icon"
+              aria-label="Sign out"
+              title="Sign out"
+              disabled={signingOut}
+              onClick={() => void signOut()}
+            >
+              <Icon name="logout" />
+            </button>
+          </div>
+        </div>
+      </aside>
 
-      {importState && importState.status !== 'completed' && (
-        <p className={`notice ${importState.status === 'failed' ? 'danger' : 'warn'}`} role="alert">
-          {IMPORT_TEXT[importState.status] ?? `Archive import status: ${importState.status}.`}{' '}
-          <span className="muted">
-            ({importState.commits_applied} of {importState.commits_total} revisions restored)
-          </span>
-        </p>
+      <div className="main">
+        <header className="topbar">
+          <button
+            type="button"
+            className="btn ghost icon menu-btn"
+            aria-label="Open menu"
+            aria-expanded={menuOpen}
+            aria-controls="sidebar"
+            onClick={() => setMenuOpen(true)}
+          >
+            <Icon name="menu" />
+          </button>
+          <button type="button" className="search-trigger" onClick={() => setPaletteOpen(true)}>
+            <Icon name="search" />
+            <span>Search your story bible…</span>
+            <kbd>Ctrl K</kbd>
+          </button>
+          <span className="spacer" />
+          <ThemeToggle />
+          {canWrite && (
+            <Button variant="primary" icon="plus" onClick={() => openNewEntry()}>
+              New entry
+            </Button>
+          )}
+        </header>
+
+        <main id="main" className="content" tabIndex={-1}>
+          {banners && (
+          <div className="stack" style={{ marginBottom: '1.25rem' }}>
+            {importState && importState.status !== 'completed' && (
+              <p className={`notice ${importState.status === 'failed' ? 'danger' : 'warn'}`} role="alert">
+                <span>
+                  {IMPORT_TEXT[importState.status] ?? `Restore status: ${importState.status}.`}{' '}
+                  <span className="muted">
+                    ({importState.commits_applied} of {importState.commits_total} versions restored)
+                  </span>
+                </span>
+              </p>
+            )}
+            {status?.status === 'error' && (
+              <p className="notice warn" role="alert">
+                <span>
+                  <strong>Search is out of date.</strong> Your story bible itself is safe and
+                  complete; the person who runs this site needs to rebuild the search index.
+                </span>
+              </p>
+            )}
+            {needsSetup && setup.isPending && <Loading>Getting your story bible ready…</Loading>}
+            {needsSetup && !canAdmin && access.isSuccess && (
+              <p className="notice plain" role="note">
+                This project is still being set up by its owner. You can look around, but nothing
+                can be added yet.
+              </p>
+            )}
+            {setup.isError && (
+              <p className="notice danger" role="alert">
+                <span>
+                  <strong>The project could not be set up automatically.</strong>{' '}
+                  <Link to={`${base}/customize`}>Finish setting up by hand</Link>.
+                </span>
+              </p>
+            )}
+          </div>
+          )}
+          <Outlet context={context} />
+        </main>
+      </div>
+
+      {paletteOpen && (
+        <CommandPalette
+          scope={scope}
+          canWrite={canWrite}
+          onClose={() => setPaletteOpen(false)}
+          onNewEntry={openNewEntry}
+        />
       )}
-
-      <main id="main" tabIndex={-1}>
-        <Outlet context={context} />
-      </main>
     </div>
+      {newEntry && <NewEntryDialog type={newEntry.type} onClose={() => setNewEntry(null)} />}
+    </ProjectProvider>
   )
 }

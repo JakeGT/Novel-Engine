@@ -114,14 +114,27 @@ class CanonHistoryService:
     ) -> list[RevisionSummary]:
         await self._authorize(scope, workspace_id, project_id)
         branch = await self._root_branch(workspace_id, project_id)
-        commits = await self._canon.list_commits(
-            workspace_id=workspace_id,
-            project_id=project_id,
-            branch_id=branch.id,
-            after_revision=0,
-            limit=limit + offset,
+        # Newest first. Revisions on a branch are contiguous from 1 to the head, so
+        # the page ``offset`` back from the head is a known window; reading from
+        # revision 1 instead would return the oldest commits once a project has
+        # more revisions than one page.
+        head = await self._canon.get_head(
+            workspace_id=workspace_id, project_id=project_id, branch_id=branch.id
         )
-        commits = sorted(commits, key=lambda c: c.revision, reverse=True)[offset : offset + limit]
+        newest = head - offset
+        oldest = max(newest - limit, 0)
+        commits = (
+            await self._canon.list_commits(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                branch_id=branch.id,
+                after_revision=oldest,
+                limit=newest - oldest,
+            )
+            if newest > oldest
+            else []
+        )
+        commits = sorted(commits, key=lambda c: c.revision, reverse=True)
         show_actors = await self._permits(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         summaries: list[RevisionSummary] = []
         for commit in commits:

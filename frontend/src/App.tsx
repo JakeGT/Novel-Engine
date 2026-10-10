@@ -1,16 +1,16 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
-import './App.css'
+import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
+import { AssistantPage } from './pages/AssistantPage'
+import { BiblePage } from './pages/BiblePage'
+import { CustomizePage } from './pages/CustomizePage'
+import { EntryPage } from './pages/EntryPage'
+import { HistoryPage } from './pages/HistoryPage'
+import { Home } from './pages/Home'
+import { MediaPage } from './pages/MediaPage'
+import { Overview } from './pages/Overview'
 import { ProjectLayout } from './pages/ProjectLayout'
-import { WorkspaceHome } from './pages/WorkspaceHome'
-import { EntityList } from './pages/EntityList'
-import { EntityDetail } from './pages/EntityDetail'
-import { CharacterView } from './pages/CharacterView'
-import { SchemaPage } from './pages/SchemaPage'
-import { MutationQueue } from './pages/MutationQueue'
-import { MutationDetail } from './pages/MutationDetail'
-import { RevisionsPage } from './pages/RevisionsPage'
-import { AssetsPage } from './pages/AssetsPage'
+import { ReviewDetail } from './pages/ReviewDetail'
+import { ReviewQueue } from './pages/ReviewQueue'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -18,21 +18,34 @@ const queryClient = new QueryClient({
   },
 })
 
+/** Addresses from before the redesign keep working. */
+function Moved({ to }: { to: (params: Record<string, string | undefined>) => string }) {
+  return <Navigate to={to(useParams())} replace />
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<WorkspaceHome />} />
+          <Route path="/" element={<Home />} />
           <Route path="/projects/:projectId" element={<ProjectLayout />}>
-            <Route index element={<EntityList />} />
-            <Route path="entities/:entityId" element={<EntityDetail />} />
-            <Route path="characters/:entityId" element={<CharacterView />} />
-            <Route path="mutations" element={<MutationQueue />} />
-            <Route path="mutations/:mutationId" element={<MutationDetail />} />
-            <Route path="revisions" element={<RevisionsPage />} />
-            <Route path="schema" element={<SchemaPage />} />
-            <Route path="assets" element={<AssetsPage />} />
+            <Route index element={<Overview />} />
+            <Route path="bible" element={<BiblePage />} />
+            <Route path="entries/:entityId" element={<EntryPage />} />
+            <Route path="review" element={<ReviewQueue />} />
+            <Route path="review/:mutationId" element={<ReviewDetail />} />
+            <Route path="history" element={<HistoryPage />} />
+            <Route path="customize" element={<CustomizePage />} />
+            <Route path="media" element={<MediaPage />} />
+            <Route path="assistant" element={<AssistantPage />} />
+            <Route path="entities/:entityId" element={<Moved to={(p) => `../entries/${p.entityId}`} />} />
+            <Route path="characters/:entityId" element={<Moved to={(p) => `../entries/${p.entityId}`} />} />
+            <Route path="mutations" element={<Navigate to="../review" replace />} />
+            <Route path="mutations/:mutationId" element={<Moved to={(p) => `../review/${p.mutationId}`} />} />
+            <Route path="revisions" element={<Navigate to="../history" replace />} />
+            <Route path="schema" element={<Navigate to="../customize" replace />} />
+            <Route path="assets" element={<Navigate to="../media" replace />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
