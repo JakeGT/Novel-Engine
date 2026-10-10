@@ -250,7 +250,8 @@ export function SetupSuggestions({ session }: { session: AssistSession }) {
           <p className="muted">
             You said things your story bible has no way to record yet, so the assistant left them
             out rather than force them into the wrong shape. Adding these lets it record them.
-            Nothing is added unless you choose to.
+            Nothing is added unless you choose to. Decide this first: drafting again afterwards
+            starts a fresh set of changes.
           </p>
         </div>
       </div>
@@ -323,8 +324,9 @@ export function SetupSuggestions({ session }: { session: AssistSession }) {
               {redraft.isPending ? 'Drafting…' : 'Draft again using them'}
             </Button>
             <span className="hint">
-              Makes a new set of suggested changes from the same words. This one stays in your
-              review inbox until you add or discard it.
+              Makes a new set of suggested changes from the same words. Decisions you have made
+              on the changes below are not carried over. This one stays in your review inbox
+              until you add or discard it.
             </span>
           </>
         )}

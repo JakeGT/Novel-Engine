@@ -541,6 +541,10 @@ export function ReviewDetail() {
         <ReadOnlyNotice canWrite={canWrite} />
         <ErrorNotice error={action.error} />
 
+        {/* Before the changes: drafting again with these replaces this draft, so the
+            choice has to come before any time is spent deciding on what is below. */}
+        {session.data && session.data.suggestions.length > 0 && <SetupSuggestions session={session.data} />}
+
         <section aria-labelledby="changes-heading" className="stack">
           <div className="actions" style={{ justifyContent: 'space-between' }}>
             <h2 id="changes-heading">The changes</h2>
@@ -683,8 +687,7 @@ export function ReviewDetail() {
           </section>
         )}
 
-        {/* After the changes: things to act on next, then the record of where it came from. */}
-        {session.data && session.data.suggestions.length > 0 && <SetupSuggestions session={session.data} />}
+        {/* After the changes: the record of where they came from. */}
         <ErrorNotice error={session.error} prefix="Could not load where this came from" />
         {session.data && <ConversationEvidence session={session.data} />}
 

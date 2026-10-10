@@ -43,7 +43,7 @@ from backend.domain.canon.propositions import (
     PropositionObject,
     StringObject,
 )
-from backend.domain.canon.registry import PredicateSpec
+from backend.domain.canon.registry import Cardinality, PredicateSpec
 from backend.domain.canon.revisions import OriginKind
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
@@ -51,6 +51,7 @@ from backend.domain.operations import (
     AssertBeliefOp,
     AssertFactOp,
     CanonOperation,
+    CloseFactOp,
     CreateEntityOp,
     EvidenceRef,
     UpdateEntityOp,
@@ -448,6 +449,9 @@ class CanonCreationWorkflow(CanonCharacterWorkflow):
             answered={answer.question_id for answer in answers},
             project_id=project_id,
         )
+        operations = await self._replace_single_valued(
+            operations, predicates, workspace_id, project_id
+        )
         if not operations:
             raise ValidationError(
                 "Nothing new could be drafted from this description. Everything it mentions "
@@ -494,6 +498,46 @@ class CanonCreationWorkflow(CanonCharacterWorkflow):
                 predicates=set(predicates),
             ),
         )
+
+    async def _replace_single_valued(
+        self,
+        operations: list[CanonOperation],
+        predicates: dict[str, PredicateSpec],
+        workspace_id: str,
+        project_id: str,
+    ) -> list[CanonOperation]:
+        """A kind of fact that holds one value at a time: a new value replaces the old.
+
+        The current fact is ended just before the new one is added, so the reviewer sees
+        the replacement. A value that is already recorded is not added again.
+        """
+        settled: list[CanonOperation] = []
+        for operation in operations:
+            spec = (
+                predicates.get(operation.proposition.predicate)
+                if isinstance(operation, AssertFactOp)
+                else None
+            )
+            if (
+                not isinstance(operation, AssertFactOp)
+                or spec is None
+                or spec.cardinality is not Cardinality.ONE
+                or operation.proposition.subject_id.startswith("tmp:")
+            ):
+                settled.append(operation)
+                continue
+            current = await self._reader.list_facts(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                subject_id=operation.proposition.subject_id,
+                predicate=operation.proposition.predicate,
+                limit=50,
+            )
+            if any(fact.proposition.object == operation.proposition.object for fact in current):
+                continue
+            settled.extend(CloseFactOp(id=fact.id, evidence=operation.evidence) for fact in current)
+            settled.append(operation)
+        return settled
 
     @staticmethod
     def _draft_operations(
@@ -617,6 +661,7 @@ class CanonCreationWorkflow(CanonCharacterWorkflow):
             return Proposition(subject_id=subject[0], predicate=predicate, object=obj), ""
 
         stated: set[str] = set()
+        single: set[tuple[str, str]] = set()
         for index, fact in enumerate(draft.facts[:MAX_PROPOSED_ITEMS]):
             built, reason = proposition(
                 fact.subject_ref, fact.predicate, fact.object_ref, fact.object_value
@@ -628,6 +673,15 @@ class CanonCreationWorkflow(CanonCharacterWorkflow):
             if signature in stated:
                 continue
             stated.add(signature)
+            spec = predicates[built.predicate]
+            if spec.cardinality is Cardinality.ONE:
+                # Two values at once for something that holds one: the first is kept.
+                if (built.subject_id, built.predicate) in single:
+                    discarded.append(
+                        DiscardedItem("fact", f"{built.predicate}: only one at a time")
+                    )
+                    continue
+                single.add((built.subject_id, built.predicate))
             operations.append(
                 AssertFactOp(
                     id=f"tmp:fact-{index}", proposition=built, evidence=evidence(fact.question_id)

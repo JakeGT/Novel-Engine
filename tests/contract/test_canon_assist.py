@@ -340,3 +340,63 @@ def test_the_draft_format_is_accepted_by_strict_structured_output() -> None:
 
     for model in (CreationDraft, CharacterQuestionSheet):
         assert not free_form(to_strict_json_schema(model)), model.__name__
+
+
+def test_a_new_value_for_a_one_at_a_time_fact_replaces_the_old_one(
+    auth_client, fake_container
+) -> None:
+    base, harbor = _setup(auth_client, fake_container)
+    head = 1
+    mara = auth_client.post(
+        f"{base}/entities",
+        json={"type": "Character", "name": "Mara", "expected_revision": head},
+    ).json()["id"]
+    cove = auth_client.post(
+        f"{base}/entities",
+        json={"type": "Location", "name": "Gull Cove", "expected_revision": head + 1},
+    ).json()["id"]
+    placed = auth_client.post(
+        f"{base}/facts",
+        json={
+            "proposition": {
+                "subject_id": mara,
+                "predicate": "LOCATED_AT",
+                "object": {
+                    "kind": "entity_ref",
+                    "entity_id": harbor,
+                    "project_id": _project_id(fake_container),
+                },
+            },
+            "expected_revision": head + 2,
+        },
+    )
+    assert placed.status_code in (200, 201), placed.text
+
+    # Saying where she already is adds nothing; saying she is elsewhere moves her.
+    fake_container.ai.queue(
+        CreationDraft(
+            facts=[
+                DraftFact(subject_ref=mara, predicate="LOCATED_AT", object_ref=cove),
+                DraftFact(subject_ref=mara, predicate="LOCATED_AT", object_ref=harbor),
+            ]
+        )
+    )
+    proposal = auth_client.post(
+        f"{base}/assist/proposals",
+        json={
+            "entity_id": mara,
+            "description": "She lives at Gull Cove.",
+            "expected_revision": head + 3,
+        },
+    )
+    assert proposal.status_code == 201, proposal.text
+    body = proposal.json()
+    assert [item["reason"] for item in body["discarded"]] == ["LOCATED_AT: only one at a time"]
+    mutation = body["mutation_id"]
+    detail = auth_client.get(f"{base}/mutations/{mutation}").json()
+    assert [op["operation_type"] for op in detail["operations"]] == ["close_fact", "assert_fact"]
+    auth_client.post(f"{base}/mutations/{mutation}/approve", json={})
+    committed = auth_client.post(f"{base}/mutations/{mutation}/commit")
+    assert committed.status_code == 200, committed.text
+    now = auth_client.get(f"{base}/facts", params={"subject_id": mara}).json()["items"]
+    assert [fact["object"]["entity_id"] for fact in now] == [cove]
