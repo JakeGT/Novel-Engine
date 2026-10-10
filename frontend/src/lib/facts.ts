@@ -68,3 +68,9 @@ const FORMS = new Set(['create_entity', 'update_entity', 'assert_fact', 'assert_
 export function hasChangeForm(operationType: string): boolean {
   return FORMS.has(operationType)
 }
+
+/** Shown under a value that has to be typed as JSON. */
+export const JSON_HINTS: Record<string, string> = {
+  enum: 'Enter as JSON, for example {"value": "wary", "allowed": ["wary", "open"]}',
+  structured: 'Enter as JSON, for example {"value": {"note": "…"}}',
+}

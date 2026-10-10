@@ -1,10 +1,11 @@
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { api, type Belief, type CanonEntity } from '../api/client'
+import { api, type CanonEntity } from '../api/client'
 import { ActivityPanel } from '../components/ActivityPanel'
 import { ArchiveEntry } from '../components/ArchiveEntry'
 import { EntityForm } from '../components/EntityForm'
+import { BeliefsPanel } from '../components/BeliefsPanel'
 import { FactsPanel } from '../components/FactsPanel'
 import { EntryMarks } from '../components/EntryMarks'
 import { Icon } from '../components/icons'
@@ -21,14 +22,8 @@ import {
 import { NEEDS_DETAIL_KEY, detailsOf, needsDetail } from '../lib/marks'
 import { mainPicture } from '../lib/pictures'
 import { rememberEntry } from '../lib/recent'
-import { objectText, predicateLabel, typeLabel, typePlural, valueText, words, type Tone } from '../lib/words'
-import { scopedKey, useCanonWrite, useEntries, useProject } from '../project'
-
-const AGREEMENT: Record<string, { label: string; tone: Tone }> = {
-  agrees: { label: 'True in canon', tone: 'ok' },
-  disagrees: { label: 'Contradicts canon', tone: 'danger' },
-  unknown: { label: 'Canon doesn’t say', tone: 'neutral' },
-}
+import { typeLabel, typePlural, valueText, words } from '../lib/words'
+import { scopedKey, useCanonWrite, useProject } from '../project'
 
 function Details({ entity, onEdit }: { entity: CanonEntity; onEdit?: () => void }) {
   // Tags and importance are shown with the name, not listed as details.
@@ -81,58 +76,6 @@ function Details({ entity, onEdit }: { entity: CanonEntity; onEdit?: () => void 
           )}
         </dl>
       </details>
-    </section>
-  )
-}
-
-function beliefSentence(belief: Belief, names: Map<string, string>): string {
-  const subject = names.get(belief.subject_id) ?? 'an entry'
-  const object = objectText(belief.object as Record<string, unknown>, names)
-  return `${subject} ${predicateLabel(belief.predicate)} ${object}`
-}
-
-function Beliefs({ entity }: { entity: CanonEntity }) {
-  const { scope } = useProject()
-  const entries = useEntries(scope)
-  const beliefs = useQuery({
-    queryKey: scopedKey(scope, 'beliefs', entity.id),
-    queryFn: () => api.listBeliefs(scope, { holder_entity_id: entity.id, limit: 200 }),
-  })
-  const items = beliefs.data?.items ?? []
-  const agreements = useQueries({
-    queries: items.map((belief) => ({
-      queryKey: scopedKey(scope, 'truth-agreement', belief.id),
-      queryFn: () => api.truthAgreement(scope, belief.id),
-    })),
-  })
-  if (items.length === 0 && !beliefs.isError) return null
-  return (
-    <section className="card" aria-labelledby="beliefs-heading">
-      <div className="card-head">
-        <div>
-          <h2 id="beliefs-heading">What {entity.name} believes</h2>
-          <p className="muted small">
-            Each belief is compared with your current facts every time you look, so this is always
-            up to date.
-          </p>
-        </div>
-      </div>
-      <ErrorNotice error={beliefs.error} prefix="Could not load beliefs" />
-      <ul className="rows">
-        {items.map((belief, index) => {
-          const agreement = agreements[index]?.data?.truth_agreement
-          const view = agreement ? AGREEMENT[agreement] : undefined
-          return (
-            <li className="row" key={belief.id}>
-              <span className="grow sentence">{beliefSentence(belief, entries.names)}</span>
-              {belief.confidence < 1 && (
-                <span className="muted small">{Math.round(belief.confidence * 100)}% sure</span>
-              )}
-              {view ? <Badge tone={view.tone}>{view.label}</Badge> : <span className="muted small">checking…</span>}
-            </li>
-          )
-        })}
-      </ul>
     </section>
   )
 }
@@ -311,7 +254,7 @@ export function EntryPage() {
               {editable && bare && <Assistant entity={entity} bare />}
               <Details entity={entity} onEdit={editable ? () => setEditing(true) : undefined} />
               <FactsPanel entity={entity} />
-              {entity.type === 'Character' && <Beliefs entity={entity} />}
+              {entity.type === 'Character' && <BeliefsPanel entity={entity} />}
               {entity.type === 'Character' && <Events entity={entity} />}
               {editable && !bare && <Assistant entity={entity} bare={false} />}
             </div>

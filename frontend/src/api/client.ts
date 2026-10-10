@@ -487,6 +487,14 @@ export const api = {
       expected_revision: expectedRevision,
     } satisfies Schemas['CloseRequest']),
 
+  assertBelief: (scope: Scope, body: Schemas['BeliefRequest']) =>
+    send<Belief>(scope, 'POST', '/beliefs', body),
+
+  closeBelief: (scope: Scope, beliefId: string, expectedRevision: number) =>
+    send<Belief>(scope, 'POST', `/beliefs/${id(beliefId)}/close`, {
+      expected_revision: expectedRevision,
+    } satisfies Schemas['CloseRequest']),
+
   listBeliefs: (scope: Scope, params: { holder_entity_id?: string; limit?: number } = {}) =>
     get<Items<Belief>>(scope, '/beliefs', params),
 
