@@ -1,0 +1,364 @@
+"""Revise a set of suggested changes by asking, while it is still waiting for review.
+
+The author says what should be different ("make the professor older", "drop the fact
+about the lighthouse") and the model answers with edits to, or skips of, the changes
+already in the set. Each edit is typed and checked here and stored as a new revision
+of that change, so the original and the author's words stay on record; a skip is an
+ordinary recorded decision. Nothing is added to the story, and no change is added to
+the set: something that needs a new change is reported back instead.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+
+from pydantic import BaseModel, Field
+
+from backend.core.logging import log_event
+from backend.domain.canon.marks import (
+    IMPORTANCE_KEY,
+    MARK_KEYS,
+    TAGS_KEY,
+    clean_importance,
+    clean_tags,
+)
+from backend.domain.canon.naming import normalize_name
+from backend.domain.canon.propositions import ObjectKind, Proposition
+from backend.domain.canon.registry import PredicateSpec
+from backend.domain.errors import ValidationError
+from backend.domain.identity import AccessScope
+from backend.domain.operations import (
+    AssertBeliefOp,
+    AssertFactOp,
+    CanonOperation,
+    CreateEntityOp,
+    UpdateEntityOp,
+    parse_operation,
+)
+from backend.domain.review import is_editable
+from backend.domain.tenancy import Permission
+from backend.services.canon_change_workflow import (
+    MAX_INSTRUCTION_LENGTH,
+    CanonChangeWorkflow,
+)
+from backend.services.canon_character_workflow import DiscardedItem, UsageSink
+from backend.services.canon_creation_workflow import (
+    MAX_ALIASES,
+    MAX_ATTRIBUTES,
+    MAX_NAME_LENGTH,
+    DraftAttribute,
+    _typed_object,
+)
+from backend.services.mutation_service import ValidationReport
+
+logger = logging.getLogger(__name__)
+
+REVISE_PROMPT_VERSION = "revise-proposal/1"
+MAX_LISTED_ENTRIES = 200
+
+
+class ChangeEdit(BaseModel):
+    number: int = Field(description="The number of the change, exactly as listed")
+    action: str = Field(description="'edit' to alter the change, 'skip' to leave it out")
+    new_name: str | None = Field(default=None, description="Entries only")
+    add_aliases: list[str] = Field(default_factory=list)
+    remove_aliases: list[str] = Field(default_factory=list)
+    set_attributes: list[DraftAttribute] = Field(default_factory=list)
+    remove_attributes: list[str] = Field(default_factory=list)
+    tags: list[str] | None = Field(
+        default=None, description="Entries only. The full new list of tags, when it changes"
+    )
+    importance: str | None = Field(
+        default=None, description="Entries only: main, supporting, minor or background"
+    )
+    subject_ref: str | None = Field(default=None, description="Facts and beliefs only")
+    predicate: str | None = Field(default=None, description="Facts and beliefs only")
+    object_ref: str | None = Field(default=None, description="The id of the entry pointed to")
+    object_value: str | None = Field(default=None, description="A plain value, as text")
+
+
+class RevisionPlan(BaseModel):
+    """Structured model output. Untrusted: typed and checked before anything is stored."""
+
+    understood: str = Field(description="One sentence restating what will be different")
+    questions: list[str] = Field(default_factory=list)
+    changes: list[ChangeEdit] = Field(default_factory=list)
+    cannot: list[str] = Field(
+        default_factory=list,
+        description="Anything asked for that needs a change that is not in the list",
+    )
+
+
+@dataclass(frozen=True)
+class RevisionResult:
+    understood: str
+    edited: int = 0
+    skipped: int = 0
+    questions: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+    discarded: list[DiscardedItem] = field(default_factory=list)
+    validation: ValidationReport | None = None
+
+
+def _line(number: int, operation: CanonOperation, skipped: bool) -> str:
+    payload = operation.model_dump(mode="json", exclude={"evidence"}, exclude_none=True)
+    return f"{number}. {'(skipped) ' if skipped else ''}{payload}"
+
+
+class CanonReviseWorkflow(CanonChangeWorkflow):
+    async def revise_by_instruction(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        *,
+        mutation_id: str,
+        instruction: str,
+        credential: str | None = None,
+        provider_base_url: str | None = None,
+        usage_sink: UsageSink | None = None,
+    ) -> RevisionResult:
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        instruction = instruction.strip()
+        if not instruction or len(instruction) > MAX_INSTRUCTION_LENGTH:
+            raise ValidationError("Say what should be different (up to 4000 characters).")
+        review_scope = AccessScope(
+            actor_user_id=scope.actor_user_id,
+            auth_mode=scope.auth_mode,
+            correlation_id=scope.correlation_id,
+            workspace_id=workspace_id,
+            project_id=project_id,
+        )
+        review = await self._mutation.review(review_scope, mutation_id)
+        if not is_editable(review.mutation.status):
+            raise ValidationError("These changes are no longer waiting for review.")
+        skipped = {
+            ordinal
+            for ordinal, decision in review.operation_decisions.items()
+            if decision.decision == "rejected"
+        }
+        current = {item.ordinal: parse_operation(item.payload) for item in review.operations}
+
+        predicates, _entity_types = await self._vocabulary(workspace_id, project_id)
+        entities = await self._existing(workspace_id, project_id)
+        # ref → entity type, for the story's entries and the ones this set would add.
+        known = {entity.id: entity.type for entity in entities if entity.is_active}
+        known.update({op.id: op.type for op in current.values() if isinstance(op, CreateEntityOp)})
+        by_id = {entity.id: entity for entity in entities}
+
+        listing = "\n".join(
+            _line(ordinal + 1, operation, ordinal in skipped)
+            for ordinal, operation in sorted(current.items())
+        )
+        entries = "\n".join(
+            f"- {entity.id}: {entity.type} “{entity.name}”"
+            for entity in entities[:MAX_LISTED_ENTRIES]
+            if entity.is_active
+        )
+        predicate_lines = "\n".join(
+            f"- {spec.predicate}: subject is one of {sorted(spec.subject_types)}; object is "
+            f"{spec.object_shape.value}"
+            + (f" of type {sorted(spec.object_types)}" if spec.object_types else "")
+            for spec in predicates.values()
+        )
+        plan: RevisionPlan = await self._generate(
+            system=(
+                "An author is reviewing a numbered list of suggested changes to their story "
+                "bible and asks for some of them to be different. Answer only with edits to, "
+                "or skips of, the changes in the list. Rules:\n"
+                "- refer to a change by its number. Change only what the author asked for.\n"
+                "- action 'skip' leaves a change out; action 'edit' alters it. Do not mention "
+                "changes that stay as they are.\n"
+                "- for an entry, you may set new_name, add or remove aliases, set or remove "
+                "attributes (short key/value text), replace tags, and set importance.\n"
+                "- for a fact or belief, you may change what it is about (subject_ref), the "
+                "kind of fact (predicate) and what it points to (object_ref, an id from the "
+                "lists) or its value (object_value). Use only these kinds of fact:\n"
+                f"{predicate_lines}\n"
+                "- you cannot add a change. If the author asks for something that needs a new "
+                "one, say so in `cannot` in plain words.\n"
+                "- if the request could mean more than one thing, ask in `questions` and "
+                "change nothing.\n"
+                "- never invent an id, and never decide the story for the author.\n"
+                "- `understood` restates the request in one plain sentence."
+            ),
+            user=(
+                f"Suggested changes:\n{listing}\n\nEntries already in the story:\n"
+                f"{entries or '(none)'}\n\nWhat the author wants different:\n{instruction}"
+            ),
+            response_format=RevisionPlan,
+            prompt_version=REVISE_PROMPT_VERSION,
+            credential=credential,
+            provider_base_url=provider_base_url,
+            usage_sink=usage_sink,
+        )
+
+        discarded: list[DiscardedItem] = []
+        revised: dict[int, CanonOperation] = {}
+        to_skip: list[int] = []
+        for edit in plan.changes[: len(current) * 2 + 5]:
+            ordinal = edit.number - 1
+            operation = current.get(ordinal)
+            if operation is None:
+                discarded.append(DiscardedItem("change", f"there is no change {edit.number}"))
+                continue
+            if edit.action.strip().lower() == "skip":
+                if ordinal not in skipped and ordinal not in to_skip:
+                    to_skip.append(ordinal)
+                continue
+            if isinstance(operation, CreateEntityOp | UpdateEntityOp):
+                base = by_id.get(operation.id) if isinstance(operation, UpdateEntityOp) else None
+                changed, reason = _edit_entry(operation, edit, base)
+            elif isinstance(operation, AssertFactOp | AssertBeliefOp):
+                changed, reason = _edit_statement(operation, edit, known, predicates, project_id)
+            else:
+                changed, reason = None, "this kind of change can only be kept or skipped"
+            if changed is None:
+                discarded.append(DiscardedItem("change", f"change {edit.number}: {reason}"))
+            elif changed != operation:
+                revised[ordinal] = changed
+
+        understood = plan.understood.strip()[:500]
+        questions = [q.strip()[:300] for q in plan.questions if q.strip()][:5]
+        notes = [note.strip()[:400] for note in plan.cannot if note.strip()][:8]
+        if not revised and not to_skip:
+            if questions or notes:
+                return RevisionResult(
+                    understood=understood, questions=questions, notes=notes, discarded=discarded
+                )
+            raise ValidationError(
+                "That did not lead to any difference in these changes. Try naming the change "
+                "you mean, or edit it by hand."
+            )
+
+        reason = f"asked: {instruction[:300]}"
+        for ordinal, operation in sorted(revised.items()):
+            await self._mutation.revise_operation(
+                review_scope, mutation_id, ordinal, operation, reason
+            )
+        if to_skip:
+            await self._mutation.decide_operations(
+                review_scope, mutation_id, [(ordinal, "rejected", reason) for ordinal in to_skip]
+            )
+        log_event(
+            logger,
+            "revise.workflow.applied",
+            mutation_id=mutation_id,
+            edited=len(revised),
+            skipped=len(to_skip),
+            discarded=len(discarded),
+            prompt_version=REVISE_PROMPT_VERSION,
+        )
+        return RevisionResult(
+            understood=understood,
+            edited=len(revised),
+            skipped=len(to_skip),
+            questions=questions,
+            notes=notes,
+            discarded=discarded,
+            validation=await self._mutation.validate(review_scope, mutation_id),
+        )
+
+
+def _edit_entry(
+    operation: CreateEntityOp | UpdateEntityOp, edit: ChangeEdit, base: object | None
+) -> tuple[CanonOperation | None, str]:
+    """The entry change with the asked-for differences; an update keeps what it left alone."""
+    stored_aliases = list(getattr(base, "aliases", []) or [])
+    stored_attributes = dict(getattr(base, "attributes", {}) or {})
+    aliases = list(operation.aliases if operation.aliases is not None else stored_aliases)
+    attributes = dict(
+        operation.attributes if operation.attributes is not None else stored_attributes
+    )
+    update: dict[str, object] = {}
+
+    if edit.new_name is not None and edit.new_name.strip():
+        name = edit.new_name.strip()
+        if len(name) > MAX_NAME_LENGTH:
+            return None, "the new name is too long"
+        update["name"] = name
+
+    dropped = {normalize_name(alias) for alias in edit.remove_aliases}
+    kept = [alias for alias in aliases if normalize_name(alias) not in dropped]
+    seen = {normalize_name(alias) for alias in kept}
+    for alias in edit.add_aliases[:MAX_ALIASES]:
+        if alias.strip() and normalize_name(alias) not in seen:
+            seen.add(normalize_name(alias))
+            kept.append(alias.strip())
+    if kept != aliases:
+        update["aliases"] = kept
+
+    changed = dict(attributes)
+    for key in edit.remove_attributes:
+        if key.strip() not in MARK_KEYS:
+            changed.pop(key.strip(), None)
+    for pair in edit.set_attributes[:MAX_ATTRIBUTES]:
+        key, value = pair.key.strip(), pair.value.strip()
+        if key and value and key not in MARK_KEYS:
+            changed[key] = value
+    if edit.tags is not None:
+        tags = clean_tags(edit.tags)
+        if tags:
+            changed[TAGS_KEY] = tags
+        else:
+            changed.pop(TAGS_KEY, None)
+    level = clean_importance(edit.importance)
+    if level:
+        changed[IMPORTANCE_KEY] = level
+    if changed != attributes:
+        update["attributes"] = changed
+
+    if not update:
+        return None, "nothing about it would be different"
+    return operation.model_copy(update=update), ""
+
+
+def _edit_statement(
+    operation: AssertFactOp | AssertBeliefOp,
+    edit: ChangeEdit,
+    known: dict[str, str],
+    predicates: dict[str, PredicateSpec],
+    project_id: str,
+) -> tuple[CanonOperation | None, str]:
+    old = operation.proposition
+    subject_id = (edit.subject_ref or old.subject_id).strip()
+    predicate = (edit.predicate or old.predicate).strip()
+    spec = predicates.get(predicate)
+    if spec is None:
+        return None, f"unsupported kind of fact {predicate!r}"
+    subject_type = known.get(subject_id)
+    if subject_type is None:
+        return None, "what it is about is not a known entry"
+    if subject_type not in spec.subject_types:
+        return None, f"{predicate} cannot be about a {subject_type}"
+    if edit.object_ref is None and edit.object_value is None and predicate == old.predicate:
+        obj = old.object
+    else:
+        target = (edit.object_ref or "").strip() or None
+        if spec.object_shape is ObjectKind.ENTITY_REF:
+            target = target or getattr(old.object, "entity_id", None)
+            target_type = known.get(target or "")
+            if target_type is None:
+                return None, "what it points to is not a known entry"
+            if spec.object_types and target_type not in spec.object_types:
+                return None, f"{predicate} cannot point to a {target_type}"
+            if target == subject_id:
+                return None, "an entry cannot point to itself"
+        built, reason = _typed_object(spec, target, edit.object_value, project_id)
+        if built is None:
+            return None, reason
+        obj = built
+    proposition = Proposition(subject_id=subject_id, predicate=predicate, object=obj)
+    if proposition == old:
+        return None, "nothing about it would be different"
+    return operation.model_copy(update={"proposition": proposition}), ""
+
+
+__all__ = [
+    "REVISE_PROMPT_VERSION",
+    "CanonReviseWorkflow",
+    "ChangeEdit",
+    "RevisionPlan",
+    "RevisionResult",
+]

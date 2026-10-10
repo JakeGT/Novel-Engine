@@ -186,10 +186,10 @@ def _build_fake_container(settings, tmp_path):
         local_mode=not settings.is_hosted,
     )
     from backend.services.assist_session_service import AssistSessionService
-    from backend.services.canon_change_workflow import CanonChangeWorkflow
     from backend.services.canon_equivalence import CanonEquivalenceService
+    from backend.services.canon_revise_workflow import CanonReviseWorkflow
 
-    canon_character_workflow = CanonChangeWorkflow(
+    canon_character_workflow = CanonReviseWorkflow(
         ai=ai,
         mutation=mutation_service,
         reader=canon_repository,

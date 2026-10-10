@@ -822,6 +822,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/assist/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assist Revision
+         * @description Revise a set of suggested changes by asking. It stays waiting for review.
+         */
+        post: operations["assist_revision_api_v1_projects__project_id__assist_revisions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/assist/sessions": {
         parameters: {
             query?: never;
@@ -3837,6 +3857,32 @@ export interface components {
             /** Reason */
             reason?: string | null;
         };
+        /** RevisionModel */
+        RevisionModel: {
+            /** Discarded */
+            discarded: components["schemas"]["DiscardedItemModel"][];
+            /** Edited */
+            edited: number;
+            /** Mutation Id */
+            mutation_id: string;
+            /** Notes */
+            notes: string[];
+            /** Questions */
+            questions: string[];
+            /** Skipped */
+            skipped: number;
+            /** Understood */
+            understood: string;
+            /** Validation Ok */
+            validation_ok: boolean;
+        };
+        /** RevisionRequest */
+        RevisionRequest: {
+            /** Instruction */
+            instruction: string;
+            /** Mutation Id */
+            mutation_id: string;
+        };
         /**
          * Role
          * @enum {string}
@@ -5979,6 +6025,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssistQuestionSheetModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assist_revision_api_v1_projects__project_id__assist_revisions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevisionModel"];
                 };
             };
             /** @description Validation Error */

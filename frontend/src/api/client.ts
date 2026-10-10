@@ -498,6 +498,9 @@ export const api = {
   /** The God Hand: one instruction, every change it implies, as a proposal (or questions). */
   assistChange: (scope: Scope, body: Schemas['ChangeRequest']) =>
     send<ChangeProposal>(scope, 'POST', '/assist/changes', body),
+  /** Revise a set of suggested changes by asking; it stays waiting for review. */
+  assistRevision: (scope: Scope, body: Schemas['RevisionRequest']) =>
+    send<Schemas['RevisionModel']>(scope, 'POST', '/assist/revisions', body),
   // --- conversations with the assistant, kept so they can be resumed and read back ---
   /** The signed-in author's unfinished conversations in this project. */
   openAssistSessions: (scope: Scope) =>

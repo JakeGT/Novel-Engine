@@ -4170,6 +4170,86 @@
         "title": "ReviseOperationRequest",
         "type": "object"
       },
+      "RevisionModel": {
+        "properties": {
+          "discarded": {
+            "items": {
+              "$ref": "#/components/schemas/DiscardedItemModel"
+            },
+            "title": "Discarded",
+            "type": "array"
+          },
+          "edited": {
+            "title": "Edited",
+            "type": "integer"
+          },
+          "mutation_id": {
+            "title": "Mutation Id",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "questions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Questions",
+            "type": "array"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "understood": {
+            "title": "Understood",
+            "type": "string"
+          },
+          "validation_ok": {
+            "title": "Validation Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "mutation_id",
+          "understood",
+          "edited",
+          "skipped",
+          "questions",
+          "notes",
+          "discarded",
+          "validation_ok"
+        ],
+        "title": "RevisionModel",
+        "type": "object"
+      },
+      "RevisionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "instruction": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Instruction",
+            "type": "string"
+          },
+          "mutation_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Mutation Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mutation_id",
+          "instruction"
+        ],
+        "title": "RevisionRequest",
+        "type": "object"
+      },
       "Role": {
         "enum": [
           "owner",
@@ -7563,6 +7643,59 @@
           }
         },
         "summary": "Assist Questions",
+        "tags": [
+          "canon-assist"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/assist/revisions": {
+      "post": {
+        "description": "Revise a set of suggested changes by asking. It stays waiting for review.",
+        "operationId": "assist_revision_api_v1_projects__project_id__assist_revisions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevisionModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assist Revision",
         "tags": [
           "canon-assist"
         ]

@@ -50,6 +50,7 @@ from backend.services.canon_creation_workflow import (
     CanonCreationWorkflow,
     CreationBrief,
 )
+from backend.services.canon_revise_workflow import CanonReviseWorkflow
 from backend.services.credential_service import CredentialService
 from backend.services.schema_service import SchemaService
 from backend.services.schema_suggestions import add_to_definition
@@ -364,6 +365,66 @@ async def assist_change(
             )
             for issue in issues
         ],
+    )
+
+
+class RevisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mutation_id: str = Field(min_length=1, max_length=200)
+    # What should be different about the suggested changes, in the author's words.
+    instruction: str = Field(min_length=1, max_length=MAX_INSTRUCTION_LENGTH)
+
+
+class RevisionModel(BaseModel):
+    mutation_id: str
+    understood: str
+    edited: int
+    skipped: int
+    questions: list[str]
+    # What was asked for that these changes cannot do (it needs a new change).
+    notes: list[str]
+    discarded: list[DiscardedItemModel]
+    validation_ok: bool
+
+
+@router.post("/revisions", response_model=RevisionModel)
+async def assist_revision(
+    project_id: str,
+    body: RevisionRequest,
+    workflow: CanonReviseWorkflow = Depends(get_canon_character_workflow),
+    credentials: CredentialService = Depends(get_credential_service),
+    usage: ProviderUsageService = Depends(get_usage_service),
+    settings: Settings = Depends(get_settings),
+    scope: AccessScope = Depends(require_project_scope),
+) -> RevisionModel:
+    """Revise a set of suggested changes by asking. It stays waiting for review."""
+    credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
+        settings=settings, credentials=credentials, usage=usage, scope=scope
+    )
+    result = await workflow.revise_by_instruction(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        mutation_id=body.mutation_id,
+        instruction=body.instruction,
+        credential=api_key,
+        provider_base_url=provider_base_url,
+        usage_sink=usage_sink,
+    )
+    if credential_id:
+        await credentials.mark_used(scope.workspace_id or "", credential_id)
+    return RevisionModel(
+        mutation_id=body.mutation_id,
+        understood=result.understood,
+        edited=result.edited,
+        skipped=result.skipped,
+        questions=result.questions,
+        notes=result.notes,
+        discarded=[
+            DiscardedItemModel(kind=item.kind, reason=item.reason) for item in result.discarded
+        ],
+        validation_ok=result.validation.ok if result.validation is not None else True,
     )
 
 

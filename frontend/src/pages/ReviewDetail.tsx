@@ -9,6 +9,7 @@ import {
   type MutationOperation,
   type MutationValidation,
 } from '../api/client'
+import { AskForChanges } from '../components/AskForChanges'
 import { ChangeEditor, type Candidate } from '../components/ChangeEditor'
 import { ConversationEvidence, SetupSuggestions } from '../components/Conversations'
 import { Icon } from '../components/icons'
@@ -636,6 +637,15 @@ export function ReviewDetail() {
               </Button>
             )}
           </div>
+          {editable && (
+            <AskForChanges
+              mutationId={mutationId}
+              onRevised={async () => {
+                setValidation(null)
+                await invalidate()
+              }}
+            />
+          )}
           <ErrorNotice error={validate.error} prefix="Could not check" />
           {/* A clean result is only announced when it was asked for. */}
           {findings && (validation || !findings.ok) && (

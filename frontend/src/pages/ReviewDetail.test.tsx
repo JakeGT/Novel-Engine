@@ -523,6 +523,42 @@ describe('ReviewDetail', () => {
     })
   })
 
+  it('revises the changes by asking, and keeps the request when the assistant needs more', async () => {
+    let answer: Record<string, unknown> = {
+      mutation_id: 'mut_1',
+      understood: 'Unclear.',
+      edited: 0,
+      skipped: 0,
+      questions: ['Which Iven do you mean?'],
+      notes: [],
+      discarded: [],
+      validation_ok: true,
+    }
+    const api = mockApi({
+      ...entries,
+      'GET /mutations/mut_1': mutation(),
+      'POST /assist/revisions': () => answer,
+    })
+    const user = userEvent.setup()
+    renderInProject(<ReviewDetail />, at)
+
+    await user.click(await screen.findByRole('button', { name: 'Ask the assistant to change these' }))
+    const form = screen.getByRole('form', { name: 'Ask the assistant to change these' })
+    const box = within(form).getByLabelText('What should be different?')
+    await user.type(box, 'Iven is older')
+    await user.click(within(form).getByRole('button', { name: 'Ask' }))
+
+    expect(await within(form).findByText('Which Iven do you mean?')).toBeInTheDocument()
+    expect(box).toHaveValue('Iven is older')
+    expect(api.find('POST', '/assist/revisions')[0].body).toEqual({ mutation_id: 'mut_1', instruction: 'Iven is older' })
+
+    answer = { ...answer, edited: 1, skipped: 2, questions: [], notes: ['Adding a ship needs a new change.'] }
+    await user.click(within(form).getByRole('button', { name: 'Ask' }))
+    expect(await within(form).findByText(/The assistant edited 1 change and skipped 2 changes\./)).toBeInTheDocument()
+    expect(within(form).getByText('Adding a ship needs a new change.')).toBeInTheDocument()
+    expect(box).toHaveValue('')
+  })
+
   it('keeps an edited change open with the text when the server rejects it', async () => {
     mockApi({
       ...entries,
