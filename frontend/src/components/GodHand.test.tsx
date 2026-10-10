@@ -169,4 +169,50 @@ describe('GodHand', () => {
     await user.click(link)
     expect(onClose).toHaveBeenCalled()
   })
+  it('shows what going back would change, and carries an invitation to the People page', async () => {
+    mockApi({
+      'POST /assist/changes': {
+        ...proposal,
+        mutation_id: null,
+        status: null,
+        operation_count: 0,
+        elsewhere: [
+          { place: 'history', what: 'Go back to version 2.' },
+          { place: 'people', what: 'Invite Sam as an editor.' },
+        ],
+        back_to_version: 2,
+        invite: { role: 'editor', email: 'sam@example.com' },
+      },
+      'POST /reverts/preview': {
+        from_revision: 2,
+        to_revision: 3,
+        head_revision: 3,
+        operations: [{ op: 'retire_entity', id: 'ent_mara' }],
+        changes: [],
+        conflicts: [],
+        summary: 'revert r3',
+      },
+      'GET /entities': { items: [entity()], limit: 200, offset: 0 },
+    })
+    const user = userEvent.setup()
+    renderInProject(<GodHand onClose={vi.fn()} />)
+
+    const dialog = screen.getByRole('dialog', { name: 'The God Hand' })
+    await user.type(within(dialog).getByLabelText('What should change?'), 'Undo the last one and invite Sam.')
+    await user.click(within(dialog).getByRole('button', { name: 'Show me what would change' }))
+
+    expect(await within(dialog).findByRole('link', { name: 'Open People with this filled in' })).toHaveAttribute(
+      'href',
+      '/projects/prj_1/people',
+    )
+    // Nothing is undone by asking: the author is shown the restore first.
+    await user.click(within(dialog).getByRole('button', { name: 'See what going back to version 2 would change' }))
+    const restore = await screen.findByRole('dialog', { name: 'Go back to version 2?' })
+    expect(await within(restore).findByText(/Archive/)).toBeInTheDocument()
+
+    // Changing one's mind returns to the request, as it was.
+    await user.click(within(restore).getByRole('button', { name: /Keep|Cancel|Close/ }))
+    expect(await screen.findByRole('dialog', { name: 'The God Hand' })).toBeInTheDocument()
+    expect(screen.getByLabelText('What should change?')).toHaveValue('Undo the last one and invite Sam.')
+  })
 })

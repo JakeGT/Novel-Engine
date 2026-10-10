@@ -533,6 +533,9 @@ export const api = {
   /** The signed-in author's unfinished conversations in this project. */
   openAssistSessions: (scope: Scope) =>
     get<{ items: AssistSession[] }>(scope, '/assist/sessions'),
+  /** One kept conversation, by its id. */
+  assistSession: (scope: Scope, sessionId: string) =>
+    get<AssistSession>(scope, `/assist/sessions/${id(sessionId)}`),
   /** The conversation a set of suggested changes came from, if one was kept. */
   assistSessionFor: async (scope: Scope, mutationId: string) =>
     (await get<{ items: AssistSession[] }>(scope, '/assist/sessions', { mutation_id: mutationId }))

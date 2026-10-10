@@ -2,7 +2,13 @@
 
 import pytest
 
-from backend.services.canon_change_workflow import ChangePlan, Elsewhere, EntityChange, RecordRef
+from backend.services.canon_change_workflow import (
+    ChangePlan,
+    Elsewhere,
+    EntityChange,
+    Invite,
+    RecordRef,
+)
 from backend.services.canon_creation_workflow import DraftAttribute, DraftEntity, DraftFact
 from tests.contract.test_canon_entities import _project_id, _publish_schema
 
@@ -236,6 +242,52 @@ def test_a_request_that_is_not_a_story_change_is_pointed_to_where_it_is_done(
     assert auth_client.get(f"{w['base']}/assist/sessions").json()["items"] == []
     waiting = auth_client.get(f"{w['base']}/mutations?status=needs_review").json()["items"]
     assert waiting == []
+
+
+def test_asking_to_undo_or_invite_returns_what_to_confirm_and_does_neither(
+    auth_client, fake_container
+) -> None:
+    w = _world(auth_client, fake_container)
+    head = int(w["head"])
+    fake_container.ai.queue(
+        ChangePlan(
+            understood="Undo the last two changes and invite Sam to edit.",
+            back_to_version=head - 2,
+            invite=Invite(role="Editor", email="sam@example.com"),
+        )
+    )
+
+    response = auth_client.post(
+        f"{w['base']}/assist/changes",
+        json={"instruction": "Undo the last two and invite Sam.", "expected_revision": head},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["mutation_id"] is None
+    assert body["back_to_version"] == head - 2
+    assert body["invite"] == {"role": "editor", "email": "sam@example.com"}
+    assert [item["place"] for item in body["elsewhere"]] == ["history", "people"]
+    # The model was shown the recent versions to work it out from.
+    prompt = fake_container.ai.calls[-1]["messages"][1]["content"]
+    assert f"- version {head}: 1 change(s)" in prompt
+    # Nothing was undone.
+    assert auth_client.get(f"{w['base']}/entities/{w['guild']}").json()["lifecycle"] == "active"
+
+    # A version that does not exist, an unknown role and a bad address are not passed on.
+    fake_container.ai.queue(
+        ChangePlan(
+            understood="x",
+            back_to_version=head + 5,
+            invite=Invite(role="administrator", email="not an address"),
+        )
+    )
+    odd = auth_client.post(
+        f"{w['base']}/assist/changes",
+        json={"instruction": "Go forward and make Sam an admin.", "expected_revision": head},
+    ).json()
+    assert odd["back_to_version"] is None
+    assert odd["invite"] == {"role": "viewer", "email": None}
 
 
 def test_the_god_hand_requires_a_session_and_a_provider_safe_format(api_client) -> None:

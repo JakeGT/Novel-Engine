@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
+import { useLocation } from 'react-router-dom'
 import { api, isApiError, type MemberRole } from '../api/client'
 import { Badge, Button, ConfirmDialog, EmptyState, ErrorNotice, Field, Loading } from '../components/ui'
 import { fullDate, timeAgo } from '../lib/time'
@@ -43,8 +44,10 @@ export function PeoplePage() {
       queryClient.invalidateQueries({ queryKey: invitationsKey }),
     ])
 
-  const [email, setEmail] = useState('')
-  const [role, setRole] = useState<MemberRole>('editor')
+  // Arriving from the assistant ("invite Sam as an editor") carries what was asked for.
+  const asked = (useLocation().state as { invite?: { role?: string; email?: string | null } } | null)?.invite
+  const [email, setEmail] = useState(asked?.email ?? '')
+  const [role, setRole] = useState<MemberRole>(asked?.role === 'viewer' ? 'viewer' : 'editor')
   const [created, setCreated] = useState<{ link: string; email: string | null } | null>(null)
   const [copied, setCopied] = useState(false)
   // Fixed when the page opens, so the list of unexpired invitations is stable while it is shown.

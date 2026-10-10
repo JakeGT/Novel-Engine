@@ -17,6 +17,7 @@ questions instead of guessing.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
@@ -74,6 +75,7 @@ MAX_CONTEXT_FACTS = 300
 MAX_CONTEXT_BELIEFS = 200
 MAX_CHANGES = 80
 MAX_QUESTIONS = 5
+_EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,255}\.[^@\s]{2,}$")
 
 
 class EntityChange(BaseModel):
@@ -93,6 +95,11 @@ class RecordRef(BaseModel):
 class Elsewhere(BaseModel):
     place: str = Field(description="One of: history, people, setup, assistant, media")
     what: str = Field(description="One plain sentence saying what the author wants done there")
+
+
+class Invite(BaseModel):
+    role: str = Field(description="editor (may change the story) or reader (may only read)")
+    email: str | None = Field(default=None, description="Only if the author gave one")
 
 
 # Things an author may ask for that are not changes to the story bible, and where
@@ -131,6 +138,16 @@ class ChangePlan(BaseModel):
         default_factory=list,
         description="Requests that are not changes to the story bible, and where they are done",
     )
+    back_to_version: int | None = Field(
+        default=None,
+        description=(
+            "Only when the author asks to undo or go back: the number of the last version to "
+            "keep. Everything after it would be undone."
+        ),
+    )
+    invite: Invite | None = Field(
+        default=None, description="Only when the author asks to invite someone"
+    )
 
 
 @dataclass(frozen=True)
@@ -147,6 +164,11 @@ class ChangeResult:
     suggestions: list[SchemaSuggestion] = field(default_factory=list)
     # (place, what the author wants done there), for requests that are not story changes.
     elsewhere: list[tuple[str, str]] = field(default_factory=list)
+    # The version to go back to, when the author asked to undo. Nothing is undone here:
+    # the author is shown what going back would change and decides.
+    back_to_version: int | None = None
+    # (role, email or None) for an invitation the author asked for. Nothing is sent or made here.
+    invite: tuple[str, str | None] | None = None
 
 
 def _value(fact_object: object, names: dict[str, str]) -> str:
@@ -216,6 +238,7 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
         expected_revision: int,
         focus_entity_id: str | None = None,
         session_id: str | None = None,
+        recent_versions: list[str] | None = None,
         credential: str | None = None,
         provider_base_url: str | None = None,
         usage_sink: UsageSink | None = None,
@@ -266,9 +289,23 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
                 "list each in `elsewhere` with the place it is done: "
                 + "; ".join(f"{place} ({what})" for place, what in ELSEWHERE.items())
                 + ".\n"
+                "- when the author asks to undo something or go back, also set "
+                "`back_to_version` to the last version to keep, worked out from the list of "
+                "recent versions. If you cannot tell which version they mean, ask.\n"
+                "- when the author asks to invite someone, also set `invite` with the role "
+                "they should have (reader unless the author says they may make changes) and "
+                "an email address only if the author gave one.\n"
                 "- `understood` restates the change in one plain sentence.\n" + PROMPT_RULE
             ),
-            user=f"{story}\n\nInstruction:\n{instruction}",
+            user=(
+                f"{story}\n\n"
+                + (
+                    "Recent versions, newest first:\n" + "\n".join(recent_versions) + "\n\n"
+                    if recent_versions
+                    else ""
+                )
+                + f"Instruction:\n{instruction}"
+            ),
             response_format=ChangePlan,
             prompt_version=CHANGE_PROMPT_VERSION,
             credential=credential,
@@ -301,6 +338,20 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
             place = item.place.strip().lower()
             if place in ELSEWHERE and all(place != seen for seen, _ in elsewhere):
                 elsewhere.append((place, item.what.strip()[:300]))
+        back_to = plan.back_to_version
+        if back_to is None or not 0 <= back_to < expected_revision:
+            back_to = None
+        elif all(place != "history" for place, _ in elsewhere):
+            elsewhere.append(("history", f"Go back to version {back_to}."))
+        invite: tuple[str, str | None] | None = None
+        if plan.invite is not None:
+            role = {"editor": "editor", "reader": "viewer", "viewer": "viewer"}.get(
+                plan.invite.role.strip().lower(), "viewer"
+            )
+            email = (plan.invite.email or "").strip()
+            invite = (role, email if _EMAIL.match(email) else None)
+            if all(place != "people" for place, _ in elsewhere):
+                elsewhere.append(("people", "Invite someone to this library."))
         if not operations:
             if questions or elsewhere or suggestions:
                 # Ambiguous, or not a change to the story: ask or point the way.
@@ -313,6 +364,8 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
                     discarded=discarded,
                     suggestions=suggestions,
                     elsewhere=elsewhere,
+                    back_to_version=back_to,
+                    invite=invite,
                 )
             raise ValidationError(
                 "That instruction did not lead to any change. It may already be true, or it "
@@ -358,6 +411,8 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
             discarded=discarded,
             suggestions=suggestions,
             elsewhere=elsewhere,
+            back_to_version=back_to,
+            invite=invite,
         )
 
     def _change_operations(

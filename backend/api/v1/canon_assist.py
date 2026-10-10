@@ -11,6 +11,7 @@ it up again; once it has led to a proposal it is the evidence behind that propos
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,6 +20,7 @@ from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import (
     get_assist_session_service,
     get_canon_character_workflow,
+    get_canon_history_service,
     get_credential_service,
     get_schema_service,
     get_settings,
@@ -258,6 +260,12 @@ class ChangeRequest(BaseModel):
     expected_revision: int = Field(ge=0)
 
 
+class InviteModel(BaseModel):
+    # editor or viewer.
+    role: str
+    email: str | None
+
+
 class ElsewhereModel(BaseModel):
     # history, people, setup, assistant or media.
     place: str
@@ -280,6 +288,11 @@ class ChangeProposalModel(BaseModel):
     suggestions: list[SchemaSuggestionModel] = Field(default_factory=list)
     # Things asked for that are not story changes, and where each is done.
     elsewhere: list[ElsewhereModel] = Field(default_factory=list)
+    # When the author asked to undo: the version to go back to. Nothing has been undone;
+    # the author previews the restore and decides.
+    back_to_version: int | None = None
+    # When the author asked to invite someone. Nothing has been created or sent.
+    invite: InviteModel | None = None
     validation_ok: bool
     validation_issues: list[ProposalIssueModel]
 
@@ -292,6 +305,7 @@ async def assist_change(
     sessions: AssistSessionService = Depends(get_assist_session_service),
     credentials: CredentialService = Depends(get_credential_service),
     usage: ProviderUsageService = Depends(get_usage_service),
+    history: Any = Depends(get_canon_history_service),
     settings: Settings = Depends(get_settings),
     scope: AccessScope = Depends(require_project_scope),
 ) -> ChangeProposalModel:
@@ -310,6 +324,8 @@ async def assist_change(
             description=body.instruction,
             entity_id=body.entity_id,
         )
+    # Enough of the history for "undo that" and "go back to yesterday" to be worked out.
+    versions = await history.list_revisions(scope, scope.workspace_id or "", project_id, limit=20)
     result = await workflow.change_by_instruction(
         scope,
         scope.workspace_id or "",
@@ -318,6 +334,12 @@ async def assist_change(
         focus_entity_id=body.entity_id,
         expected_revision=body.expected_revision,
         session_id=body.session_id,
+        recent_versions=[
+            f"- version {item.revision}: {item.operation_count} change(s), "
+            f"{item.created_at:%Y-%m-%d %H:%M} UTC, from {item.origin or 'an author'}"
+            + (" (itself an undo)" if item.intent == "revert" else "")
+            for item in versions
+        ],
         credential=api_key,
         provider_base_url=provider_base_url,
         usage_sink=usage_sink,
@@ -364,6 +386,12 @@ async def assist_change(
         notes=result.notes,
         suggestions=_suggestions(result.suggestions),
         elsewhere=[ElsewhereModel(place=place, what=what) for place, what in result.elsewhere],
+        back_to_version=result.back_to_version,
+        invite=(
+            InviteModel(role=result.invite[0], email=result.invite[1])
+            if result.invite is not None
+            else None
+        ),
         discarded=[
             DiscardedItemModel(kind=item.kind, reason=item.reason) for item in result.discarded
         ],

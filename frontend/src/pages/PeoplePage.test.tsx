@@ -27,6 +27,18 @@ const invitation = {
 }
 
 describe('PeoplePage', () => {
+  it('arrives from the assistant with the invitation already filled in', async () => {
+    mockApi({ 'GET /members': [jake], 'GET /invitations': [] })
+    renderInProject(<PeoplePage />, {
+      context: { userId: 'usr_1', access: OWNER },
+      state: { invite: { role: 'viewer', email: 'sam@example.com' } },
+    })
+
+    const form = await screen.findByRole('region', { name: 'Invite someone' })
+    expect(within(form).getByLabelText('Their email (optional)')).toHaveValue('sam@example.com')
+    expect(within(form).getByRole('combobox')).toHaveValue('viewer')
+  })
+
   it('lists members by name and lets an owner change roles, but never strand the workspace', async () => {
     const api = mockApi({
       'GET /members': [jake, sam],

@@ -985,6 +985,17 @@
       },
       "ChangeProposalModel": {
         "properties": {
+          "back_to_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Back To Version"
+          },
           "discarded": {
             "items": {
               "$ref": "#/components/schemas/DiscardedItemModel"
@@ -998,6 +1009,16 @@
             },
             "title": "Elsewhere",
             "type": "array"
+          },
+          "invite": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InviteModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "mutation_id": {
             "anyOf": [
@@ -2805,6 +2826,31 @@
           "expires_at"
         ],
         "title": "InvitationModel",
+        "type": "object"
+      },
+      "InviteModel": {
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "email"
+        ],
+        "title": "InviteModel",
         "type": "object"
       },
       "LinkAssetOp": {

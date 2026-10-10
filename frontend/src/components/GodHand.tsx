@@ -1,11 +1,12 @@
 import { AllowanceNote } from './Allowance'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, type AssistSession, type CanonEntity, type ChangeProposal } from '../api/client'
-import { words } from '../lib/words'
 import { scopedKey, useInvalidateProject, useProject } from '../project'
 import { AssistantProblem } from './AssistFlow'
+import { SetupSuggestions } from './Conversations'
+import { RestoreDialog } from './RestoreDialog'
 import { Button, Dialog, Field } from './ui'
 
 // Where the things an author may ask for, that are not story changes, are done.
@@ -54,7 +55,16 @@ export function GodHand({
   const focusId = entity?.id ?? resume?.entity_id ?? null
   const [problem, setProblem] = useState<string | null>(null)
   const [elsewhere, setElsewhere] = useState<NonNullable<ChangeProposal['elsewhere']>>([])
-  const [suggested, setSuggested] = useState<string[]>([])
+  const [backTo, setBackTo] = useState<number | null>(null)
+  const [invite, setInvite] = useState<ChangeProposal['invite']>(null)
+  const [restoring, setRestoring] = useState(false)
+  // Setup suggestions that came with no change are kept with the conversation.
+  const [suggestedIn, setSuggestedIn] = useState<string | null>(null)
+  const suggestions = useQuery({
+    queryKey: scopedKey(scope, 'assist-session', suggestedIn),
+    queryFn: () => api.assistSession(scope, suggestedIn as string),
+    enabled: Boolean(suggestedIn),
+  })
 
   const change = useMutation({
     mutationFn: async () => {
@@ -77,7 +87,9 @@ export function GodHand({
         // Ambiguous: nothing was proposed. Show what the assistant needs to know.
         setQuestions(result.questions)
         setElsewhere(result.elsewhere ?? [])
-        setSuggested((result.suggestions ?? []).map((item) => words(item.name).toLowerCase()))
+        setBackTo(result.back_to_version ?? null)
+        setInvite(result.invite ?? null)
+        setSuggestedIn((result.suggestions ?? []).length > 0 ? result.session_id : null)
         // A conversation that only pointed elsewhere is not kept.
         setSessionId(result.questions.length > 0 || (result.suggestions ?? []).length > 0 ? result.session_id : null)
         return
@@ -102,6 +114,21 @@ export function GodHand({
     change.mutate()
   }
 
+  // One dialog at a time: the preview of going back takes this one's place, and
+  // closing it without going back returns here with everything as it was.
+  if (restoring && backTo !== null) {
+    return (
+      <RestoreDialog
+        revision={backTo}
+        onClose={() => setRestoring(false)}
+        onDone={() => {
+          void invalidate()
+          onClose()
+        }}
+      />
+    )
+  }
+
   return (
     <Dialog title="The God Hand" onClose={onClose} wide>
       <form className="stack" onSubmit={onSubmit} noValidate aria-label="Change anything">
@@ -121,7 +148,9 @@ export function GodHand({
                 setInstruction(event.target.value)
                 setQuestions([])
                 setElsewhere([])
-                setSuggested([])
+                setBackTo(null)
+                setInvite(null)
+                setSuggestedIn(null)
               }}
             />
           )}
@@ -170,33 +199,38 @@ export function GodHand({
               It is done here:
             </p>
             <ul className="rows">
-              {elsewhere.map((item) => (
-                <li className="row" key={item.place}>
-                  <span className="grow">{item.what}</span>
-                  {PLACES[item.place] && (
-                    <Link className="btn sm" to={`/projects/${scope.projectId}/${PLACES[item.place].path}`} onClick={onClose}>
-                      {PLACES[item.place].label}
-                    </Link>
-                  )}
-                </li>
-              ))}
+              {elsewhere.map((item) => {
+                const place = PLACES[item.place]
+                const to = `/projects/${scope.projectId}/${place?.path ?? ''}`
+                return (
+                  <li className="row" key={item.place}>
+                    <span className="grow">{item.what}</span>
+                    {item.place === 'history' && backTo !== null ? (
+                      // The author sees exactly what going back would change before it happens.
+                      <Button size="sm" icon="undo" onClick={() => setRestoring(true)}>
+                        See what going back to version {backTo} would change
+                      </Button>
+                    ) : item.place === 'people' && invite ? (
+                      <Link className="btn sm" to={to} state={{ invite }} onClick={onClose}>
+                        Open People with this filled in
+                      </Link>
+                    ) : (
+                      place && (
+                        <Link className="btn sm" to={to} onClick={onClose}>
+                          {place.label}
+                        </Link>
+                      )
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           </div>
         )}
 
-        {suggested.length > 0 && (
-          <div className="notice plain" role="status">
-            <p>
-              <strong>Your story bible has no way to record this yet.</strong> The assistant
-              suggests adding: {suggested.join(', ')}. An owner can add these under Types and
-              fields; then ask again.
-            </p>
-            <div className="actions">
-              <Link className="btn sm" to={`/projects/${scope.projectId}/customize`} onClick={onClose}>
-                Open Types and fields
-              </Link>
-            </div>
-          </div>
+        {/* What the story bible cannot record yet: an owner adds it here and asks again. */}
+        {suggestions.data && suggestions.data.suggestions.length > 0 && (
+          <SetupSuggestions session={suggestions.data} onLeave={onClose} />
         )}
 
         <AllowanceNote />

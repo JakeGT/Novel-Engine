@@ -2747,10 +2747,13 @@ export interface components {
         };
         /** ChangeProposalModel */
         ChangeProposalModel: {
+            /** Back To Version */
+            back_to_version?: number | null;
             /** Discarded */
             discarded: components["schemas"]["DiscardedItemModel"][];
             /** Elsewhere */
             elsewhere?: components["schemas"]["ElsewhereModel"][];
+            invite?: components["schemas"]["InviteModel"] | null;
             /** Mutation Id */
             mutation_id: string | null;
             /** Notes */
@@ -3446,6 +3449,13 @@ export interface components {
             role: components["schemas"]["Role"];
             /** Workspace Id */
             workspace_id: string;
+        };
+        /** InviteModel */
+        InviteModel: {
+            /** Email */
+            email: string | null;
+            /** Role */
+            role: string;
         };
         /** LinkAssetOp */
         LinkAssetOp: {

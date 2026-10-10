@@ -180,7 +180,14 @@ const suggestionTitle = (item: SchemaSuggestion) =>
  * fact. Nothing is added unless an owner chooses to; after adding, the same
  * description can be drafted again so what was left out can be included.
  */
-export function SetupSuggestions({ session }: { session: AssistSession }) {
+export function SetupSuggestions({
+  session,
+  onLeave,
+}: {
+  session: AssistSession
+  /** Called when drafting again takes the author to the new set of changes. */
+  onLeave?: () => void
+}) {
   const { scope, canWrite, canAdmin, headRevision, refreshHead } = useProject()
   const invalidate = useInvalidateProject(scope)
   const queryClient = useQueryClient()
@@ -234,6 +241,7 @@ export function SetupSuggestions({ session }: { session: AssistSession }) {
     onSuccess: async (result) => {
       await invalidate()
       if (result.mutation_id) {
+        onLeave?.()
         navigate(`/projects/${scope.projectId}/review/${result.mutation_id}`, {
           state: { fromAssistant: true, discarded: result.discarded, redrafted: true },
         })
