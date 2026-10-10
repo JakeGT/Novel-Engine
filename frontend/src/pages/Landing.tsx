@@ -1,5 +1,6 @@
 import { Icon } from '../components/icons'
 import { InkCanvas } from '../components/InkCanvas'
+import { Logo } from '../components/Logo'
 import { ThemeToggle } from '../components/ThemeToggle'
 
 const REMEMBERS: { title: string; text: string }[] = [
@@ -47,9 +48,7 @@ export function Landing() {
       <header className="landing-nav">
         <div className="inner">
           <span className="brand">
-            <span className="brand-mark">
-              <Icon name="feather" size={16} />
-            </span>
+            <Logo />
             Novel Engine
           </span>
           <nav className="links" aria-label="Page sections">
@@ -262,9 +261,7 @@ export function Landing() {
       <footer>
         <div className="inner">
           <span className="brand">
-            <span className="brand-mark">
-              <Icon name="feather" size={16} />
-            </span>
+            <Logo />
             Novel Engine
           </span>
           <span>Set in Newsreader and Instrument Sans. Invitation only.</span>

@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, type Project } from '../api/client'
 import { Icon } from '../components/icons'
+import { Logo } from '../components/Logo'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { Button, Dialog, EmptyState, ErrorNotice, Field, Loading } from '../components/ui'
 import { slugify } from '../lib/identifiers'
@@ -110,9 +111,7 @@ function Library() {
       </a>
       <header className="library-top">
         <span className="brand">
-          <span className="brand-mark">
-            <Icon name="feather" size={17} />
-          </span>
+          <Logo />
           Novel Engine
         </span>
         <div className="actions">

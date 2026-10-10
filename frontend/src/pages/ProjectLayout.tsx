@@ -5,6 +5,7 @@ import { api, isApiError, type CanonEntity, type Scope } from '../api/client'
 import { CommandPalette } from '../components/CommandPalette'
 import { Icon, type IconName } from '../components/icons'
 import { NewEntryDialog } from '../components/NewEntryDialog'
+import { Logo } from '../components/Logo'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { Button, EmptyState, Loading } from '../components/ui'
 import { displayName, useSession, useSignOut } from '../lib/session'
@@ -214,9 +215,7 @@ export function ProjectLayout() {
         }}
       >
         <Link className="brand" to="/" title="All projects">
-          <span className="brand-mark">
-            <Icon name="feather" size={17} />
-          </span>
+          <Logo />
           Novel Engine
         </Link>
 

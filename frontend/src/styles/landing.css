@@ -1,6 +1,17 @@
 /* The front page: a printed thing, with one living element (the ink). */
+/* In-page links glide to their section rather than jumping (the base stylesheet
+   turns this off for people who prefer reduced motion). */
+html:has(.landing) {
+  scroll-behavior: smooth;
+}
+
 .landing {
   overflow-x: clip;
+}
+
+/* Land below the sticky header, not underneath it. */
+.landing section[id] {
+  scroll-margin-top: 4.5rem;
 }
 
 .landing .inner {
