@@ -24,9 +24,9 @@ provider by the implementer. Draft quality is unknown until the owner uses it wi
 | G. Link suggestions (semantic) | AST-EXP-007 | Not started |
 | H. First run and sample project | AST-EXP-008 | Not started; blocked on the provider-key decision |
 | I. Levels and plain-language test | AST-EXP-009 | Not started (vocabulary mapping exists) |
-| J. By-asking paths for existing features; belief editor; members | AST-EXP-010 | Partly covered by C |
+| J. By-asking paths for existing features; belief editor; members | AST-EXP-010 | People page implemented; belief editor and by-asking paths open |
 | K. Session budgets and assistant threat cases | AST-EXP-011 | Not started |
-| L. Pictures on entries | AST-EXP-018 | Not started |
+| L. Pictures on entries | AST-EXP-018 | Implemented for entries; scenes wait for Phase 2.6 |
 | M. Design direction | AST-EXP-016 | Implemented; awaiting more owner feedback |
 
 ## A. Assisted creation and fill-in
@@ -74,11 +74,41 @@ provider by the implementer. Draft quality is unknown until the owner uses it wi
 - [ ] A persistent conversation instead of a dialog; follow-up instructions on the same proposal.
 - [ ] A labelled instruction set with expected operations (workstream D).
 
-## D–L
+## J. People (members and invitations)
+
+- [x] A People page for hosted workspaces: members by name, role changes and removal by an owner,
+      never stranding the workspace without an owner (`PeoplePage.tsx`).
+- [x] Invitation links: an owner creates one (optionally tied to an email), it is shown once, and
+      waiting invitations can be cancelled. Novel Engine sends no email; the owner sends the link.
+- [x] `/invite/<token>` accepts the invitation for a signed-in person; a signed-out person is sent
+      to sign in and returned to the link afterwards (`InvitePage.tsx`).
+- [x] Members are listed with a display name; email addresses are returned only to members who
+      can invite.
+- [ ] Inviting by asking the assistant; a by-hand belief editor; undo and custom types by asking.
+
+## L. Pictures on entries
+
+- [x] Upload an image to an entry (`POST /entities/{id}/pictures`, the image as the request body);
+      PNG, JPEG, and WebP only, decided from the file's own bytes; 8 MB limit; any editor may add.
+- [x] Stored as an immutable media version and linked to the entry through the existing reviewed
+      link operation, as one new revision; removal retires the link and keeps the history.
+- [x] Served only to project members (`GET /assets/{id}/versions/{vid}/content`), sandboxed and
+      privately cacheable.
+- [x] The newest picture is the entry's portrait: shown in the entry header and in the story bible
+      index; all pictures appear on the entry page (`Pictures.tsx`).
+- [x] Works with no AI provider; exercised in the browser end-to-end test with a real upload.
+- [ ] Choosing an existing picture from the media library; picking which picture is the portrait;
+      captions.
+- [ ] Pictures on scenes (needs scene plans, Phase 2.6).
+- [ ] A refused link after a stale head leaves the stored image unlinked in the media list; it is
+      harmless but should be cleaned up or offered for re-linking.
+- [ ] No thumbnails: the full image is fetched wherever a portrait is shown.
+
+## D, E, G, H, I, K
 
 Not started; see the roadmap and backlog for acceptance criteria. Suggested order once the owner
-has tried A–C with a real provider: D (tune what exists), L (pictures), E (conversations), the
-rest of B, then H and I together once the provider-key decision is made.
+has tried A–C with a real provider: D (tune what exists), E (conversations), the rest of B, then H
+and I together once the provider-key decision is made.
 
 ## Open owner decisions that block work here
 

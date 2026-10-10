@@ -395,3 +395,8 @@ one instruction → one proposal of every implied change, or questions when ambi
 review with keep-all/skip-all. All assistant workflows are tested with a scripted model only.
 Pictures on entries (AST-EXP-018) were added to the plan at the owner's request and are not built.
 
+Later the same day: pictures on entries (upload, portrait, removal; `Pictures.tsx`,
+`POST /entities/{id}/pictures`) and a People page with invitation links (`PeoplePage.tsx`,
+`InvitePage.tsx`) were added. The hosted content security policy now allows `blob:` images, because
+pictures are fetched with the workspace header and shown from a local object address.
+

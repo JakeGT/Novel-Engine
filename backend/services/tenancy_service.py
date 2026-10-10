@@ -214,6 +214,33 @@ class TenancyService:
         await self._authorize(scope, workspace_id, Permission.WORKSPACE_READ)
         return await self._store.list_memberships(workspace_id)
 
+    async def list_member_profiles(
+        self, scope: AccessScope, workspace_id: str
+    ) -> list[tuple[Membership, str | None, str | None]]:
+        """Members with the name to show for each, and their email for those who manage access.
+
+        Any member may see who else is in the workspace by name. Email addresses
+        are shown only to members who can invite, because they are how an
+        invitation is addressed.
+        """
+        members = await self.list_members(scope, workspace_id)
+        try:
+            await self._authorize(scope, workspace_id, Permission.MEMBER_INVITE)
+            show_email = True
+        except ForbiddenError:
+            show_email = False
+        profiles: list[tuple[Membership, str | None, str | None]] = []
+        for member in members:
+            user = (
+                await self._identity_store.get_user(member.user_id)
+                if self._identity_store is not None
+                else None
+            )
+            name = user.display_name if user is not None else None
+            email = user.email if user is not None and show_email else None
+            profiles.append((member, name, email))
+        return profiles
+
     async def set_role(
         self, scope: AccessScope, workspace_id: str, user_id: str, role: Role
     ) -> Membership:

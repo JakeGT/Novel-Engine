@@ -301,6 +301,11 @@ export function ProjectLayout() {
                 AI assistant
               </NavItem>
             )}
+            {access.data?.hosted && (
+              <NavItem to={`${base}/people`} icon="user">
+                People
+              </NavItem>
+            )}
           </div>
         </nav>
 

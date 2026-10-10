@@ -676,6 +676,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/assets/{asset_id}/versions/{version_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Version Content
+         * @description The image bytes of one media version, for members of the project.
+         */
+        get: operations["get_version_content_api_v1_projects__project_id__assets__asset_id__versions__version_id__content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/assets/{asset_id}/versions/{version_id}/retire": {
         parameters: {
             query?: never;
@@ -1025,6 +1045,29 @@ export interface paths {
         get: operations["entity_history_api_v1_projects__project_id__entities__entity_id__history_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/entities/{entity_id}/pictures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Entity Picture
+         * @description Add a picture to an entry. The request body is the image itself (PNG, JPEG, or WebP).
+         *
+         *     The image is stored as a new media asset and linked to the entry as a picture
+         *     of it, in one new revision. Its type is taken from its bytes, not the request.
+         */
+        post: operations["add_entity_picture_api_v1_projects__project_id__entities__entity_id__pictures_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3054,6 +3097,10 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Display Name */
+            display_name?: string | null;
+            /** Email */
+            email?: string | null;
             role: components["schemas"]["Role"];
             /**
              * Updated At
@@ -5330,6 +5377,39 @@ export interface operations {
             };
         };
     };
+    get_version_content_api_v1_projects__project_id__assets__asset_id__versions__version_id__content_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                asset_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     retire_version_api_v1_projects__project_id__assets__asset_id__versions__version_id__retire_post: {
         parameters: {
             query?: never;
@@ -6107,6 +6187,43 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_entity_picture_api_v1_projects__project_id__entities__entity_id__pictures_post: {
+        parameters: {
+            query: {
+                expected_revision: number;
+                name?: string | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };

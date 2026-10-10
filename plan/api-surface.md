@@ -1,6 +1,6 @@
 # API surface
 
-- Status: Phase 2. The committed contract is `tests/contract/openapi_snapshot.json` (149
+- Status: Phase 2. The committed contract is `tests/contract/openapi_snapshot.json` (151
   operations), exact-checked by `tests/contract/test_openapi.py`; the frontend client is generated
   from it and `make frontend-api-check` fails on drift. This page is a guide to that contract, not a
   second source of truth.
@@ -28,6 +28,7 @@
 | Guided character workflow | `POST /characters/{entity_id}/questions`, `POST /characters/{entity_id}/proposals` | Spends the workspace's provider budget. Returns a proposal in the review queue; never writes canon. |
 | History and provenance | `GET /revisions`, `GET /revisions/{commit_id}`, `GET /revisions/{from}/diff/{to}`, `GET /{entities\|facts\|beliefs\|events}/{id}/history`, `GET /{...}/{id}/at-revision/{revision}`, `GET /provenance/{record_type}/{record_id}`, `GET/POST /tags`, `DELETE /tags/{name}`, `GET /tags/{name}/history`, `POST /reverts/preview`, `POST /reverts` | Provenance withholds reviewer identities and notes from read-only members and says so. A revert is a new commit and needs `acknowledge_high_impact`. |
 | Media | `GET/POST /assets`, `GET /assets/{id}`, `GET /assets/{id}/lifecycle`, `GET/POST /assets/{id}/versions`, `POST /assets/{id}/retire`, `POST /assets/{id}/versions/{vid}/retire`, `GET/POST /assets/{id}/links`, `GET /links`, `POST /links/{id}/retire` | Identity, immutable versions, and explicit links only. No upload, scanning, or processing exists. |
+| Pictures | `POST /entities/{id}/pictures?expected_revision=N[&name=]`, `GET /assets/{id}/versions/{vid}/content` | The upload body is the image itself (PNG, JPEG, or WebP by its own bytes, 8 MB limit). It is stored as a media version and linked to the entry as `DEPICTS` in one revision. Content is served to project members only. No processing, scanning, or model use. |
 | Projection | `GET /projection` | Graph projection head, applied revision, lag, last error, and the latest archive import. |
 | Archive | `POST /archive/export`, `GET /imports`, `DELETE /imports/{import_id}` | Export and import removal need project administration and are audited. Import itself is an operator CLI (`make archive`), not an HTTP route. |
 
@@ -43,7 +44,8 @@
 ## Tenancy, credentials, and identity
 
 - `/api/v1/workspaces` and `/workspaces/{id}/members|projects|invitations|ownership`,
-  `/api/v1/invitations/accept`: invite-only tenancy (Phase 1).
+  `/api/v1/invitations/accept`: invite-only tenancy (Phase 1). The member list includes a display
+  name for every member and the email address for callers who can invite.
 - `/api/v1/credentials` (+ `/{id}/rotate`, `/{id}/revoke`): envelope-encrypted OpenRouter BYOK;
   plaintext is never returned.
 - `/auth/login`, `/auth/callback`, `/auth/me`, `/auth/logout`: OIDC (hosted) or local session.

@@ -102,6 +102,22 @@ test('author, review, archive, and export a project end to end', async ({ page }
   await expect(facts.getByRole('listitem').first()).toContainText('Mara Venn is located at Saltkeep')
   await expect(page.getByText('Version 4 · saved')).toBeVisible()
 
+  // --- a picture: uploaded, stored, linked, and shown --------------------------------
+  // A real 1x1 PNG, so the server's check of the file's own bytes passes.
+  const pixel = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+    'base64',
+  )
+  const pictures = page.getByRole('region', { name: 'Pictures' })
+  await pictures
+    .getByLabel('Choose a picture of Mara Venn')
+    .setInputFiles({ name: 'mara.png', mimeType: 'image/png', buffer: pixel })
+  await expect(pictures.getByRole('img', { name: 'Picture 1 of Mara Venn' })).toBeVisible()
+  // It becomes the entry's portrait in the header as well.
+  await expect(page.getByRole('img', { name: 'Picture of Mara Venn' })).toBeVisible()
+  await expect(page.getByText('Version 5 · saved')).toBeVisible()
+  await expectAccessible(page)
+
   // --- activity explains every change -----------------------------------------------
   const activity = page.getByRole('region', { name: 'Activity' })
   await expect(activity.getByText('Edited')).toBeVisible()
@@ -115,7 +131,7 @@ test('author, review, archive, and export a project end to end', async ({ page }
       { op: 'create_entity', id: 'tmp:harbor', type: 'Location', name: 'Lantern Harbor' },
       { op: 'create_entity', id: 'tmp:extra', type: 'Character', name: 'Unwanted Extra' },
     ],
-    expected_revision: 4,
+    expected_revision: 5,
     origin: 'model',
   })
   expect(proposed.status()).toBe(201)
@@ -139,7 +155,7 @@ test('author, review, archive, and export a project end to end', async ({ page }
   await page.getByRole('button', { name: 'Check for problems' }).click()
   await expect(page.getByText('No problems found.')).toBeVisible()
   await page.getByRole('button', { name: 'Approve and add to canon' }).click()
-  await expect(page.getByText('Added to canon as version 5.')).toBeVisible()
+  await expect(page.getByText('Added to canon as version 6.')).toBeVisible()
 
   // --- only the accepted change became canon ----------------------------------------
   await page.getByRole('navigation', { name: 'Project' }).getByRole('link', { name: /Story bible/ }).click()
@@ -155,14 +171,14 @@ test('author, review, archive, and export a project end to end', async ({ page }
   await page.getByLabel('I understand this is a significant change').check()
   await page.getByRole('button', { name: 'Archive entry' }).click()
   await expect(page.getByText('This entry is archived.')).toBeVisible()
-  await expect(page.getByText('Version 6 · saved')).toBeVisible()
+  await expect(page.getByText('Version 7 · saved')).toBeVisible()
 
   // --- history explains every version, newest first -----------------------------------
   await page.getByRole('navigation', { name: 'Project' }).getByRole('link', { name: 'History' }).click()
   const versions = page.getByRole('main').getByRole('listitem')
-  await expect(versions).toHaveCount(6)
-  await expect(versions.first()).toContainText('Version 6')
-  await expect(versions.filter({ hasText: 'Version 5' })).toContainText('the AI assistant')
+  await expect(versions).toHaveCount(7)
+  await expect(versions.first()).toContainText('Version 7')
+  await expect(versions.filter({ hasText: 'Version 6' })).toContainText('the AI assistant')
   await expectAccessible(page)
 
   // --- types and fields, in dark mode too -----------------------------------------------
@@ -182,14 +198,14 @@ test('author, review, archive, and export a project end to end', async ({ page }
   const archive = await exported.json()
   expect(archive.format).toBe('novel-engine/canon-archive')
   expect(archive.commits.map((commit: { revision: number }) => commit.revision)).toEqual([
-    1, 2, 3, 4, 5, 6,
+    1, 2, 3, 4, 5, 6, 7,
   ])
-  expect(archive.project.head_revision).toBe(6)
+  expect(archive.project.head_revision).toBe(7)
   const names = archive.canon.entities.map((entity: { name: string }) => entity.name).sort()
   expect(names).toEqual(['Lantern Harbor', 'Mara Venn', 'Saltkeep'])
   expect(JSON.stringify(archive)).not.toContain('Unwanted Extra')
   const origins = archive.commits.map((commit: { origin: string }) => commit.origin)
-  expect(origins).toEqual(['author', 'author', 'author', 'author', 'model', 'author'])
+  expect(origins).toEqual(['author', 'author', 'author', 'author', 'author', 'model', 'author'])
 })
 
 // Keyboard-only: every step below uses Tab/Shift+Tab, typing, Enter, and Space.

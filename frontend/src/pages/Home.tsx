@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { api, type Project } from '../api/client'
 import { Icon } from '../components/icons'
 import { Logo } from '../components/Logo'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { Button, Dialog, EmptyState, ErrorNotice, Field, Loading } from '../components/ui'
 import { slugify } from '../lib/identifiers'
+import { pendingInvite } from '../lib/invite'
 import { displayName, firstName, useSession, useSignOut } from '../lib/session'
 import { initial } from '../lib/words'
 import { getActiveWorkspaceId, setActiveWorkspaceId } from '../scope'
@@ -23,6 +24,9 @@ export function Home() {
     )
   }
   if (session.isError) return <Landing />
+  // Signed in after opening an invitation link while signed out: go back to it.
+  const invite = pendingInvite()
+  if (invite) return <Navigate to={`/invite/${encodeURIComponent(invite)}`} replace />
   return <Library />
 }
 
@@ -103,6 +107,7 @@ function Library() {
   })
   const [creating, setCreating] = useState(false)
   const name = firstName(session.data)
+  const joined = Boolean((useLocation().state as { joined?: boolean } | null)?.joined)
 
   return (
     <div className="library" id="top">
@@ -133,6 +138,12 @@ function Library() {
             <p className="lede">Pick a project to open its story bible.</p>
           </div>
         </div>
+
+        {joined && (
+          <p className="notice ok" role="status">
+            You’ve joined the workspace. Its projects are below.
+          </p>
+        )}
 
         {local && localProjectId && (
           <div className="project-grid">

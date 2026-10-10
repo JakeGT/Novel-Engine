@@ -34,6 +34,9 @@ export type AssistBrief = Schemas['AssistBriefRequest']
 export type AssistQuestionSheet = Schemas['AssistQuestionSheetModel']
 export type AssistProposalRequest = Schemas['AssistProposalRequest']
 export type ChangeProposal = Schemas['ChangeProposalModel']
+export type Member = Schemas['MembershipModel']
+export type Invitation = Schemas['InvitationModel']
+export type MemberRole = Member['role']
 
 export interface Scope {
   workspaceId: string | null
@@ -324,6 +327,36 @@ export const api = {
       json: body,
     }),
 
+  // --- people: members and invitations (hosted mode) ---------------------------
+  listMembers: (workspaceId: string) =>
+    request<Member[]>(`/api/v1/workspaces/${id(workspaceId)}/members`, { workspaceId }),
+  setMemberRole: (workspaceId: string, userId: string, role: MemberRole) =>
+    request<Member>(`/api/v1/workspaces/${id(workspaceId)}/members/${id(userId)}`, {
+      method: 'PATCH',
+      workspaceId,
+      json: { role },
+    }),
+  removeMember: (workspaceId: string, userId: string) =>
+    request<void>(`/api/v1/workspaces/${id(workspaceId)}/members/${id(userId)}`, {
+      method: 'DELETE',
+      workspaceId,
+    }),
+  listInvitations: (workspaceId: string) =>
+    request<Invitation[]>(`/api/v1/workspaces/${id(workspaceId)}/invitations`, { workspaceId }),
+  /** The token in the answer is shown once and cannot be fetched again. */
+  createInvitation: (workspaceId: string, body: { role: MemberRole; email: string | null }) =>
+    request<{ invitation: Invitation; token: string }>(
+      `/api/v1/workspaces/${id(workspaceId)}/invitations`,
+      { method: 'POST', workspaceId, json: body },
+    ),
+  revokeInvitation: (workspaceId: string, invitationId: string) =>
+    request<{ revoked: boolean }>(
+      `/api/v1/workspaces/${id(workspaceId)}/invitations/${id(invitationId)}/revoke`,
+      { method: 'POST', workspaceId },
+    ),
+  acceptInvitation: (token: string) =>
+    request<Member>('/api/v1/invitations/accept', { method: 'POST', json: { token } }),
+
   // --- AI provider keys (workspace owners; hosted mode) -------------------------
   listCredentials: (workspaceId: string) =>
     request<Credential[]>('/api/v1/credentials', { workspaceId }),
@@ -525,4 +558,38 @@ export const api = {
     get<Items<AssetLink>>(scope, '/links', params),
   listAssetLinks: (scope: Scope, assetId: string) =>
     get<Items<AssetLink>>(scope, `/assets/${id(assetId)}/links`, { include_retired: true }),
+
+  // --- pictures on entries ----------------------------------------------------
+  /** Upload an image (the file itself is the request body) and link it to an entry. */
+  addPicture: (scope: Scope, entityId: string, file: Blob, expectedRevision: number, name?: string) =>
+    request<{ link: AssetLink; version: AssetVersion }>(
+      `${project(scope)}/entities/${id(entityId)}/pictures${query({
+        expected_revision: expectedRevision,
+        name,
+      })}`,
+      {
+        method: 'POST',
+        workspaceId: scope.workspaceId,
+        body: file,
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      },
+    ),
+  retireLink: (scope: Scope, linkId: string, expectedRevision: number) =>
+    send<unknown>(scope, 'POST', `/links/${id(linkId)}/retire`, {
+      expected_revision: expectedRevision,
+    }),
+  /**
+   * A picture as a local object address. An <img> cannot send the workspace header
+   * the server needs, so the bytes are fetched here and handed to the image.
+   */
+  pictureUrl: async (scope: Scope, assetId: string, versionId: string): Promise<string> => {
+    const headers = new Headers()
+    if (scope.workspaceId) headers.set('X-Workspace-Id', scope.workspaceId)
+    const response = await fetch(
+      `${project(scope)}/assets/${id(assetId)}/versions/${id(versionId)}/content`,
+      { credentials: 'include', headers },
+    )
+    if (!response.ok) throw new ApiError(response.status, 'The picture could not be loaded.')
+    return URL.createObjectURL(await response.blob())
+  },
 }

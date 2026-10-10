@@ -2438,6 +2438,28 @@
             "title": "Created At",
             "type": "string"
           },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
           "role": {
             "$ref": "#/components/schemas/Role"
           },
@@ -6606,6 +6628,65 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/assets/{asset_id}/versions/{version_id}/content": {
+      "get": {
+        "description": "The image bytes of one media version, for members of the project.",
+        "operationId": "get_version_content_api_v1_projects__project_id__assets__asset_id__versions__version_id__content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Version Content",
+        "tags": [
+          "media"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/assets/{asset_id}/versions/{version_id}/retire": {
       "post": {
         "operationId": "retire_version_api_v1_projects__project_id__assets__asset_id__versions__version_id__retire_post",
@@ -7994,6 +8075,87 @@
         "summary": "Entity History",
         "tags": [
           "canon-history"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/entities/{entity_id}/pictures": {
+      "post": {
+        "description": "Add a picture to an entry. The request body is the image itself (PNG, JPEG, or WebP).\n\nThe image is stored as a new media asset and linked to the entry as a picture\nof it, in one new revision. Its type is taken from its bytes, not the request.",
+        "operationId": "add_entity_picture_api_v1_projects__project_id__entities__entity_id__pictures_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "entity_id",
+            "required": true,
+            "schema": {
+              "title": "Entity Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expected_revision",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Expected Revision",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Add Entity Picture Api V1 Projects  Project Id  Entities  Entity Id  Pictures Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Entity Picture",
+        "tags": [
+          "media"
         ]
       }
     },

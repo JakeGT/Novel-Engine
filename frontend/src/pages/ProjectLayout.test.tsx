@@ -38,6 +38,7 @@ const pages = {
     offset: 0,
   },
   'GET /entities/name-collisions': { items: [], limit: 0, offset: 0 },
+  'GET /links': { items: [] },
   'GET /mutations': { items: [mutation(), mutation({ id: 'mut_2', status: 'committed' })], limit: 100, offset: 0 },
   'GET /projection': projection({ head_revision: 7 }),
   'GET /access': OWNER,

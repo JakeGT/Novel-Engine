@@ -43,6 +43,10 @@ class MembershipModel(BaseModel):
     role: Role
     created_at: datetime
     updated_at: datetime
+    # Filled in when listing members: the name to show, and (for members who can
+    # invite) the address the person signs in with.
+    display_name: str | None = None
+    email: str | None = None
 
 
 class ProjectModel(BaseModel):
@@ -145,8 +149,13 @@ async def list_members(
     scope: AccessScope = Depends(get_access_scope),
     service: TenancyService = Depends(get_tenancy_service),
 ) -> list[MembershipModel]:
-    members = await service.list_members(scope, workspace_id)
-    return [MembershipModel.model_validate(member) for member in members]
+    profiles = await service.list_member_profiles(scope, workspace_id)
+    return [
+        MembershipModel.model_validate(member).model_copy(
+            update={"display_name": name, "email": email}
+        )
+        for member, name, email in profiles
+    ]
 
 
 @router.patch("/workspaces/{workspace_id}/members/{user_id}", response_model=MembershipModel)

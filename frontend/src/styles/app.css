@@ -1833,3 +1833,68 @@ details.more[open] > summary {
     padding-inline: 0.6rem;
   }
 }
+
+/* ------------------------------------------------------------ pictures --- */
+.avatar.portrait {
+  overflow: hidden;
+  background: var(--surface-3);
+}
+
+.avatar.portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.avatar.portrait.lg {
+  width: 6.5rem;
+  height: 6.5rem;
+}
+
+.pictures {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+}
+
+.pictures:empty {
+  display: none;
+}
+
+.pictures li {
+  position: relative;
+}
+
+.pictures .picture {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-3);
+}
+
+.pictures .picture.missing {
+  display: grid;
+  place-items: center;
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  color: var(--ink-3);
+}
+
+.pictures .badge {
+  position: absolute;
+  left: 0.35rem;
+  top: 0.35rem;
+}
+
+.picture-remove {
+  position: absolute;
+  right: 0.3rem;
+  top: 0.3rem;
+  width: 1.8rem;
+  min-height: 1.8rem;
+  background: var(--surface);
+  border-color: var(--line-strong);
+}

@@ -5,9 +5,11 @@ import { BiblePage } from './pages/BiblePage'
 import { CustomizePage } from './pages/CustomizePage'
 import { EntryPage } from './pages/EntryPage'
 import { HistoryPage } from './pages/HistoryPage'
+import { InvitePage } from './pages/InvitePage'
 import { Home } from './pages/Home'
 import { MediaPage } from './pages/MediaPage'
 import { Overview } from './pages/Overview'
+import { PeoplePage } from './pages/PeoplePage'
 import { ProjectLayout } from './pages/ProjectLayout'
 import { ReviewDetail } from './pages/ReviewDetail'
 import { ReviewQueue } from './pages/ReviewQueue'
@@ -29,6 +31,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/invite/:token" element={<InvitePage />} />
           <Route path="/projects/:projectId" element={<ProjectLayout />}>
             <Route index element={<Overview />} />
             <Route path="bible" element={<BiblePage />} />
@@ -39,6 +42,7 @@ export default function App() {
             <Route path="customize" element={<CustomizePage />} />
             <Route path="media" element={<MediaPage />} />
             <Route path="assistant" element={<AssistantPage />} />
+            <Route path="people" element={<PeoplePage />} />
             <Route path="entities/:entityId" element={<Moved to={(p) => `../entries/${p.entityId}`} />} />
             <Route path="characters/:entityId" element={<Moved to={(p) => `../entries/${p.entityId}`} />} />
             <Route path="mutations" element={<Navigate to="../review" replace />} />

@@ -64,7 +64,8 @@ export function mockApi(routes: Record<string, Handler | Reply | unknown>): Mock
         method,
         path: url.pathname,
         search: url.searchParams,
-        body: init?.body ? JSON.parse(String(init.body)) : undefined,
+        // JSON bodies are parsed for assertions; anything else (an uploaded file) is kept as sent.
+        body: typeof init?.body === 'string' ? JSON.parse(init.body) : (init?.body ?? undefined),
       }
       calls.push(call)
       const match = entries.find(([key]) => {

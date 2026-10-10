@@ -15,7 +15,7 @@ const items = [
 
 describe('BiblePage', () => {
   it('lists active entries, filters by type, and hides archived ones until asked', async () => {
-    mockApi({ 'GET /entities': { items, limit: 200, offset: 0 } })
+    mockApi({ 'GET /entities': { items, limit: 200, offset: 0 }, 'GET /links': { items: [] } })
     const user = userEvent.setup()
     const { container } = renderInProject(<BiblePage />, { path: 'bible', at: 'bible' })
 
@@ -41,6 +41,7 @@ describe('BiblePage', () => {
   it('searches on the server so nicknames and unloaded entries are found', async () => {
     const api = mockApi({
       'GET /entities': { items, limit: 200, offset: 0 },
+      'GET /links': { items: [] },
       'GET /entities/search': { items: [items[0]], limit: 100, offset: 0 },
     })
     const user = userEvent.setup()
@@ -52,7 +53,7 @@ describe('BiblePage', () => {
   })
 
   it('invites the first entry on an empty project, and offers nothing to a reader', async () => {
-    mockApi({ 'GET /entities': { items: [], limit: 200, offset: 0 } })
+    mockApi({ 'GET /entities': { items: [], limit: 200, offset: 0 }, 'GET /links': { items: [] } })
     const newEntry = vi.fn()
     const user = userEvent.setup()
     const first = renderInProject(<BiblePage />, { path: 'bible', at: 'bible', context: { newEntry } })

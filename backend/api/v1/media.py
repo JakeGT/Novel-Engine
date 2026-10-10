@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 
 from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import get_media_service
+from backend.domain.errors import ValidationError
 from backend.domain.identity import AccessScope
-from backend.services.media_service import MediaService
+from backend.services.media_service import MAX_PICTURE_BYTES, MediaService
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["media"])
 
@@ -251,3 +252,67 @@ async def retire_link(
         expected_revision=int(payload.get("expected_revision", 0)),
     )
     return {"link_id": link_id, "revision": result.revision}
+
+
+@router.post("/entities/{entity_id}/pictures", status_code=201)
+async def add_entity_picture(
+    project_id: str,
+    entity_id: str,
+    request: Request,
+    response: Response,
+    expected_revision: int = Query(ge=0),
+    name: str | None = Query(default=None, max_length=200),
+    scope: AccessScope = Depends(require_project_scope),
+    media: MediaService = Depends(get_media_service),
+) -> dict[str, Any]:
+    """Add a picture to an entry. The request body is the image itself (PNG, JPEG, or WebP).
+
+    The image is stored as a new media asset and linked to the entry as a picture
+    of it, in one new revision. Its type is taken from its bytes, not the request.
+    """
+    declared = request.headers.get("content-length")
+    if declared is not None and declared.isdigit() and int(declared) > MAX_PICTURE_BYTES:
+        raise ValidationError("The picture is too large.")
+    data = bytearray()
+    async for chunk in request.stream():
+        data.extend(chunk)
+        if len(data) > MAX_PICTURE_BYTES:
+            # Stop reading: never buffer an unbounded upload.
+            raise ValidationError("The picture is too large.")
+    result, link, version = await media.add_picture(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        entity_id=entity_id,
+        data=bytes(data),
+        name=name,
+        expected_revision=expected_revision,
+    )
+    response.headers["ETag"] = f'"{result.revision}"'
+    return {"link": _link(link), "version": _version(version)}
+
+
+@router.get("/assets/{asset_id}/versions/{version_id}/content")
+async def get_version_content(
+    project_id: str,
+    asset_id: str,
+    version_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    media: MediaService = Depends(get_media_service),
+) -> Response:
+    """The image bytes of one media version, for members of the project."""
+    data, content_type = await media.open_content(
+        scope, scope.workspace_id or "", project_id, asset_id, version_id
+    )
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={
+            # A version never changes, so the reader's own browser may keep it; nothing shared may.
+            "Cache-Control": "private, max-age=31536000, immutable",
+            "Content-Disposition": "inline",
+            "X-Content-Type-Options": "nosniff",
+            # If opened directly, the file can do nothing but be displayed.
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+        },
+    )

@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { api, type CanonEntity } from '../api/client'
+import { api, type AssetLink, type CanonEntity } from '../api/client'
 import { Icon } from '../components/icons'
-import { Badge, Button, EmptyState, ErrorNotice, Loading, ReadOnlyNotice, TypeAvatar } from '../components/ui'
+import { Portrait } from '../components/Pictures'
+import { Badge, Button, EmptyState, ErrorNotice, Loading, ReadOnlyNotice } from '../components/ui'
+import { isPicture } from '../lib/pictures'
 import { plural, typeLabel, typePlural, valueText } from '../lib/words'
 import { ENTRY_LIMIT, entryPath, scopedKey, useEntries, useProject } from '../project'
 
@@ -36,6 +38,19 @@ export function BiblePage() {
       }),
     enabled: term.length > 0,
   })
+
+  // One request for every picture link in the project; the newest per entry is its portrait.
+  const links = useQuery({
+    queryKey: scopedKey(scope, 'links', 'all'),
+    queryFn: () => api.listLinks(scope, { include_retired: false }),
+  })
+  const portraits = new Map<string, AssetLink>()
+  for (const link of links.data?.items ?? []) {
+    const current = portraits.get(link.target_record_id)
+    if (isPicture(link) && (!current || link.created_revision > current.created_revision)) {
+      portraits.set(link.target_record_id, link)
+    }
+  }
 
   const visible = entries.items.filter((item) => showArchived || item.lifecycle === 'active')
   const counts = new Map<string, number>()
@@ -158,7 +173,7 @@ export function BiblePage() {
                 className={`entry-card ${entity.lifecycle === 'active' ? '' : 'archived'}`}
                 to={entryPath(scope, entity.id)}
               >
-                <TypeAvatar type={entity.type} name={entity.name} />
+                <Portrait entity={entity} link={portraits.get(entity.id)} />
                 <span className="entry-text">
                   <span className="entry-name">{entity.name}</span>
                   <span className="entry-sub">

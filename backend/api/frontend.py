@@ -44,7 +44,9 @@ def content_security_policy(settings: Settings) -> str:
             "script-src 'self'",
             # React sets inline style attributes; no inline scripts are allowed.
             "style-src 'self' 'unsafe-inline'",
-            "img-src 'self' data:",
+            # blob: lets the app show pictures it fetched with the workspace header,
+            # which an <img> address alone cannot send.
+            "img-src 'self' data: blob:",
             "font-src 'self'",
             f"connect-src {' '.join(connect)}",
             "object-src 'none'",

@@ -13,6 +13,7 @@ from backend.adapters.system import uuid7
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.media import (
+    AssetLifecycle,
     AssetLink,
     LinkRole,
     MediaAsset,
@@ -24,6 +25,20 @@ from backend.domain.operations import CanonOperation, LinkAssetOp, RetireAssetLi
 from backend.domain.tenancy import Permission
 from backend.ports import CanonRepositoryPort, MediaStorePort, ObjectStorePort
 from backend.services.mutation_service import CommitResult, MutationService
+
+MAX_PICTURE_BYTES = 8 * 1024 * 1024
+PICTURE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp"})
+
+
+def sniff_image_type(data: bytes) -> str | None:
+    """The image type shown by the file's own leading bytes, or ``None``."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
 
 
 class MediaService:
@@ -195,6 +210,115 @@ class MediaService:
         if retired is None:
             raise NotFoundError("Asset version not found.")
         return retired
+
+    # ---------------------------------------------------------------- pictures
+    async def add_picture(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        *,
+        entity_id: str,
+        data: bytes,
+        name: str | None,
+        expected_revision: int,
+    ) -> tuple[CommitResult, AssetLink, MediaAssetVersion]:
+        """Store an image and link it to an entry as a picture of it.
+
+        Any member who can write may do this. The type is decided from the bytes,
+        never from what the upload claims, and only still images are accepted.
+        Nothing is decoded, resized, or sent to a model.
+        """
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        if not data:
+            raise ValidationError("The picture is empty.")
+        if len(data) > MAX_PICTURE_BYTES:
+            raise ValidationError(
+                f"The picture is too large (the limit is {MAX_PICTURE_BYTES // (1024 * 1024)} MB)."
+            )
+        content_type = sniff_image_type(data)
+        if content_type is None:
+            raise ValidationError("Only PNG, JPEG, and WebP pictures can be added.")
+        entity = await self._reader.get_entity(
+            workspace_id=workspace_id, project_id=project_id, entity_id=entity_id
+        )
+        if entity is None or not entity.is_active:
+            raise NotFoundError("Entry not found.")
+
+        stat = self._objects.put(
+            data, workspace_id=workspace_id, project_id=project_id, content_type=content_type
+        )
+        label = " ".join((name or "").split())[:120] or f"Picture of {entity.name}"
+        asset = await self._media.create_asset(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            name=label,
+            actor_user_id=scope.actor_user_id,
+        )
+        version = await self._media.create_version(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            asset_id=asset.id,
+            object_key=stat.key,
+            content_type=stat.content_type,
+            byte_length=stat.byte_length,
+            checksum=stat.checksum,
+            authority="author_reference",
+            created_revision=await self._retired_revision(workspace_id, project_id) or 0,
+            actor_user_id=scope.actor_user_id,
+        )
+        link_id = format_asset_link_id()
+        result = await self._commit(
+            scope,
+            workspace_id,
+            project_id,
+            LinkAssetOp(
+                id=link_id,
+                asset_id=asset.id,
+                asset_version_id=version.id,
+                target_record_type="entity",
+                target_id=entity.id,
+                role=LinkRole.DEPICTS.value,
+            ),
+            expected_revision,
+            "",
+        )
+        link = await self._reader.get_link(
+            workspace_id=workspace_id, project_id=project_id, link_id=link_id
+        )
+        assert link is not None
+        return result, link, version
+
+    async def open_content(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        asset_id: str,
+        version_id: str,
+    ) -> tuple[bytes, str]:
+        """The stored bytes of one media version, for members of the project only."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        version = await self._media.get_version(
+            workspace_id=workspace_id, project_id=project_id, version_id=version_id
+        )
+        if version is None or version.asset_id != asset_id or version.retired_revision is not None:
+            raise NotFoundError("Media not found.")
+        asset = await self._media.get_asset(
+            workspace_id=workspace_id, project_id=project_id, asset_id=asset_id
+        )
+        if asset is None or asset.lifecycle is not AssetLifecycle.ACTIVE:
+            raise NotFoundError("Media not found.")
+        # Only types this application stored itself are served, and only as images.
+        if version.content_type not in PICTURE_TYPES:
+            raise NotFoundError("Media not found.")
+        try:
+            data = self._objects.open(
+                version.object_key, workspace_id=workspace_id, project_id=project_id
+            )
+        except Exception as error:  # noqa: BLE001 - a missing object is a missing picture
+            raise NotFoundError("Media not found.") from error
+        return data, version.content_type
 
     # ------------------------------------------------------------------- links
     async def list_links(

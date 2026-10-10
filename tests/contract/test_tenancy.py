@@ -39,6 +39,9 @@ def test_workspace_project_and_invitation_flow(api_client) -> None:
 
     members = api_client.get(f"/api/v1/workspaces/{workspace['id']}/members").json()
     assert [m["role"] for m in members] == [Role.OWNER.value]
+    # Members are listed with a name to show; an owner also sees the sign-in address.
+    assert "display_name" in members[0] and "email" in members[0]
+    assert members[0]["display_name"]
 
     project = api_client.post(
         f"/api/v1/workspaces/{workspace['id']}/projects",

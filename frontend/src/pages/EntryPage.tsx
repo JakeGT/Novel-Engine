@@ -7,7 +7,7 @@ import { ArchiveEntry } from '../components/ArchiveEntry'
 import { EntityForm } from '../components/EntityForm'
 import { FactsPanel } from '../components/FactsPanel'
 import { Icon } from '../components/icons'
-import { MediaLinksPanel } from '../components/MediaLinksPanel'
+import { PicturesPanel, Portrait } from '../components/Pictures'
 import {
   Badge,
   Button,
@@ -15,8 +15,8 @@ import {
   ErrorNotice,
   Loading,
   ReadOnlyNotice,
-  TypeAvatar,
 } from '../components/ui'
+import { mainPicture } from '../lib/pictures'
 import { objectText, predicateLabel, typeLabel, typePlural, valueText, words, type Tone } from '../lib/words'
 import { scopedKey, useEntries, useProject } from '../project'
 
@@ -214,6 +214,11 @@ export function EntryPage() {
     queryKey: scopedKey(scope, 'facts', 'subject', entityId),
     queryFn: () => api.listFacts(scope, { subject_id: entityId, limit: 200 }),
   })
+  // The same query the pictures panel uses, so the header shows the entry's picture.
+  const links = useQuery({
+    queryKey: scopedKey(scope, 'links', entityId),
+    queryFn: () => api.listLinks(scope, { target_id: entityId, include_retired: false }),
+  })
   const bare =
     Boolean(entity) &&
     Object.keys(entity?.attributes ?? {}).length === 0 &&
@@ -233,7 +238,7 @@ export function EntryPage() {
       {entity && (
         <>
           <header className="entry-head">
-            <TypeAvatar type={entity.type} name={entity.name} size="lg" />
+            <Portrait entity={entity} link={mainPicture(links.data?.items ?? [])} size="lg" />
             <div className="titles">
               <h1>{entity.name}</h1>
               <div className="actions" style={{ marginTop: '0.4rem' }}>
@@ -273,7 +278,7 @@ export function EntryPage() {
               {editable && !bare && <Assistant entity={entity} bare={false} />}
             </div>
             <div className="section-gap">
-              <MediaLinksPanel targetId={entity.id} />
+              <PicturesPanel entity={entity} />
               <ActivityPanel recordType="entity" recordId={entity.id} />
             </div>
           </div>
