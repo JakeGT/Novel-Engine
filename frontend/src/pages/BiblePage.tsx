@@ -1,3 +1,4 @@
+import { useRelations } from '../lib/relations'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
@@ -27,11 +28,14 @@ function EntryList({
   items,
   scope,
   portraits,
+  relations,
   showType,
 }: {
   items: CanonEntity[]
   scope: Scope
   portraits: Map<string, AssetLink>
+  /** How each entry is connected to the story's main entries, from the facts. */
+  relations: Map<string, string>
   showType: boolean
 }) {
   return (
@@ -46,7 +50,9 @@ function EntryList({
             <span className="entry-text">
               <span className="entry-name">{entity.name}</span>
               <span className="entry-sub">
-                {[showType ? typeLabel(entity.type) : '', subtitle(entity)].filter(Boolean).join(' · ')}
+                {[showType ? typeLabel(entity.type) : '', relations.get(entity.id), subtitle(entity)]
+                  .filter(Boolean)
+                  .join(' · ')}
               </span>
             </span>
             <EntryMarks entity={entity} />
@@ -87,6 +93,7 @@ export function BiblePage() {
     enabled: term.length > 0,
   })
   const portraits = usePortraits(scope)
+  const relations = useRelations(scope, entries.items)
 
   const visible = entries.items
     .filter((item) => showArchived || item.lifecycle === 'active')
@@ -206,7 +213,7 @@ export function BiblePage() {
                 Try a different name, or clear the search.
               </EmptyState>
             ) : (
-              <EntryList items={found.data?.items ?? []} scope={scope} portraits={portraits} showType={!type} />
+              <EntryList items={found.data?.items ?? []} scope={scope} portraits={portraits} relations={relations} showType={!type} />
             )}
           </section>
         )}
@@ -273,7 +280,7 @@ export function BiblePage() {
                   <Link to={`${base}?type=${encodeURIComponent(item)}`}>{typePlural(item)}</Link>
                   <span className="count">{inType.length}</span>
                 </h2>
-                <EntryList items={inType.slice(0, count)} scope={scope} portraits={portraits} showType={false} />
+                <EntryList items={inType.slice(0, count)} scope={scope} portraits={portraits} relations={relations} showType={false} />
                 {rest > 0 && (
                   <div>
                     <Button size="sm" onClick={() => setShown({ ...shown, [item]: count + MORE })}>
@@ -292,7 +299,7 @@ export function BiblePage() {
               <Link to={base}>Back to the index</Link>
             </EmptyState>
           ) : (
-            <EntryList items={byType.get(type) ?? []} scope={scope} portraits={portraits} showType={false} />
+            <EntryList items={byType.get(type) ?? []} scope={scope} portraits={portraits} relations={relations} showType={false} />
           ))}
       </div>
     </>
