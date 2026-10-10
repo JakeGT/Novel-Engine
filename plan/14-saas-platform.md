@@ -216,3 +216,26 @@ admin rights (a configured list of user ids is used instead), and the platform's
 inside an owner-only directory, and nothing prevents local single-user mode being configured with
 `APP_ENV=production` on a self-hosted install.
 
+## Revision 2026-10-10 (third): more providers, and a model chosen per workspace
+
+Bring-your-own-key is no longer OpenRouter only. A workspace may connect one key each for
+OpenRouter, Anthropic, OpenAI, Google, xAI, Mistral, and DeepSeek, and an owner chooses which
+provider and which model the assistant uses (`workspace_ai_settings`, `/api/v1/ai/*`, the Assistant
+page). Previously the model was one site-wide setting.
+
+- Every provider is reached through its OpenAI-compatible endpoint, so there is one adapter
+  (`backend/domain/providers.py` is the catalogue). Where a provider enforces a JSON schema it is
+  asked to; where it does not (Anthropic's and DeepSeek's compatible endpoints), or refuses for
+  the chosen model, the required shape is described in the prompt and the answer is validated by
+  the server before use.
+- Model names are not hard-coded as a list. The Assistant page reads the models the workspace's
+  key can use from the provider, and a name can also be typed. Three providers carry a suggested
+  model; for the others (OpenAI, Google, xAI) the owner must pick one before the assistant works.
+- With no explicit choice, the newest connected key is used with its suggested model. Removing
+  the chosen key falls back the same way.
+- A self-hosted copy is unchanged: the operator sets `AI_PROVIDER`, `AI_MODEL`, `AI_BASE_URL`.
+- **Not verified:** no provider, including OpenRouter, has been called for real from this
+  codebase. Addresses and suggested model names are from the providers' public documentation as
+  known when written. Anthropic describes its compatible endpoint as intended for evaluation; a
+  native adapter would be the sturdier choice if Anthropic direct becomes the main route.
+

@@ -13,7 +13,7 @@ The project combines:
 - structured model workflows for authoring and extraction
 - explicit provenance, temporal validity, and branch-aware state
 - a review boundary between AI proposals and accepted canon
-- user-controlled AI autonomy, local models or user-supplied OpenRouter access, and tiered consistency checking
+- user-controlled AI autonomy, local models or the user's own key for a major AI provider, and tiered consistency checking
 
 This repository is a stabilized prototype, not a production application. Phase 0 is complete;
 Phase 1 identity, invitation-only tenancy, scoped persistence, encrypted OpenRouter BYOK, and

@@ -37,8 +37,8 @@ x-app: &app
     # short: removal takes effect within this many seconds (12 hours).
     SESSION_TTL_SECONDS: "43200"
     PLATFORM_ADMIN_USER_IDS: ${PLATFORM_ADMIN_USER_IDS:-}
-    # The model the assistant uses, as an OpenRouter id (hosted inference runs on the
-    # workspace's own OpenRouter key). It must support structured output.
+    # The model suggested to a workspace that connects an OpenRouter key and has not
+    # chosen one. Each workspace picks its own provider and model on the Assistant page.
     AI_MODEL: ${AI_MODEL:-anthropic/claude-sonnet-5.5}
     # Caddy (the platform-proxy subnet) is the only trusted forwarder.
     FORWARDED_ALLOW_IPS: 172.23.0.0/16

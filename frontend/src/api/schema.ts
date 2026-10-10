@@ -21,6 +21,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ai/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Models
+         * @description The models the workspace's key for this provider can use, read from the provider.
+         */
+        get: operations["list_models_api_v1_ai_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Providers */
+        get: operations["list_providers_api_v1_ai_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Ai Settings */
+        get: operations["get_ai_settings_api_v1_ai_settings_get"];
+        /** Choose Ai */
+        put: operations["choose_ai_api_v1_ai_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/characters/generate-questions": {
         parameters: {
             query?: never;
@@ -2249,6 +2304,15 @@ export interface components {
             /** Token */
             token: string;
         };
+        /** AiChoiceModel */
+        AiChoiceModel: {
+            /** Chosen */
+            chosen: boolean;
+            /** Model */
+            model: string | null;
+            /** Provider */
+            provider: string | null;
+        };
         /** AmendEventOp */
         AmendEventOp: {
             /** Evidence */
@@ -2622,6 +2686,13 @@ export interface components {
              */
             use_cache: boolean;
         };
+        /** ChooseAiRequest */
+        ChooseAiRequest: {
+            /** Model */
+            model: string;
+            /** Provider */
+            provider: string;
+        };
         /** CloseBeliefOp */
         CloseBeliefOp: {
             /** Evidence */
@@ -2835,7 +2906,7 @@ export interface components {
          * CredentialProvider
          * @enum {string}
          */
-        CredentialProvider: "openrouter";
+        CredentialProvider: "openrouter" | "anthropic" | "openai" | "google" | "xai" | "mistral" | "deepseek";
         /** DecimalObject */
         DecimalObject: {
             /**
@@ -3240,6 +3311,13 @@ export interface components {
             /** Workspace Id */
             workspace_id: string;
         };
+        /** ModelListModel */
+        ModelListModel: {
+            /** Listed */
+            listed: boolean;
+            /** Models */
+            models: string[];
+        };
         /** MutationCommitModel */
         MutationCommitModel: {
             /** Checksum */
@@ -3506,6 +3584,19 @@ export interface components {
             predicate: string;
             /** Subject Id */
             subject_id: string;
+        };
+        /** ProviderModel */
+        ProviderModel: {
+            /** Default Model */
+            default_model: string | null;
+            /** Id */
+            id: string;
+            /** Key Url */
+            key_url: string;
+            /** Label */
+            label: string;
+            /** Note */
+            note: string;
         };
         /** QuantityObject */
         QuantityObject: {
@@ -3901,6 +3992,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_models_api_v1_ai_models_get: {
+        parameters: {
+            query: {
+                provider: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelListModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_providers_api_v1_ai_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderModel"][];
+                };
+            };
+        };
+    };
+    get_ai_settings_api_v1_ai_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiChoiceModel"];
+                };
+            };
+        };
+    };
+    choose_ai_api_v1_ai_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChooseAiRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiChoiceModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

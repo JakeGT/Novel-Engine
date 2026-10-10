@@ -119,3 +119,23 @@ async def test_conversations_are_deleted_with_their_project_or_workspace(store) 
     assert await store.get(workspace_id="ws1", project_id="p1", session_id="brf_1") is None
     assert await store.delete_workspace("ws1") == 1
     assert await store.get(workspace_id="ws2", project_id="p1", session_id="brf_3") is not None
+
+
+@pytest.mark.asyncio
+async def test_a_workspaces_model_choice_is_kept_replaced_and_removed(disposable_database) -> None:
+    from backend.adapters.ai_settings_store import PostgresAiSettingsStore
+
+    engine = create_engine(disposable_database.settings())
+    try:
+        settings = PostgresAiSettingsStore(create_session_factory(engine))
+        assert await settings.get("ws1") is None
+        await settings.set(workspace_id="ws1", provider="openai", model="m-1", actor_user_id="u1")
+        await settings.set(workspace_id="ws1", provider="xai", model="m-2", actor_user_id=None)
+        await settings.set(workspace_id="ws2", provider="google", model="m-3", actor_user_id="u2")
+
+        assert await settings.get("ws1") == ("xai", "m-2")
+        assert await settings.delete_workspace("ws1") == 1
+        assert await settings.get("ws1") is None
+        assert await settings.get("ws2") == ("google", "m-3")
+    finally:
+        await engine.dispose()

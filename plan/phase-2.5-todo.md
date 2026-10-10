@@ -29,6 +29,7 @@ provider by the implementer. Draft quality is unknown until the owner uses it wi
 | L. Pictures on entries | AST-EXP-018 | Implemented for entries; scenes wait for Phase 2.6 |
 | M. Design direction | AST-EXP-016 | Implemented; awaiting more owner feedback |
 | N. Intuitive design rules and review | — | Rules adopted (document 21); first review applied; not yet tested with people |
+| O. Providers and model choice | — | Implemented: seven providers, model chosen per workspace; no provider verified with a real call |
 
 ## A. Assisted creation and fill-in
 

@@ -72,6 +72,7 @@ class Container:
     canon_character_workflow: Any = None
     assist_sessions: Any = None
     assist_session_service: Any = None
+    ai_settings: Any = None
     graph_upgrade_service: Any = None
 
     async def aclose(self) -> None:
@@ -181,6 +182,10 @@ def build_container(settings: Settings | None = None) -> Container:
 
     container.assist_sessions = PostgresAssistSessionStore(database.session_factory)
 
+    from backend.adapters.ai_settings_store import PostgresAiSettingsStore
+
+    container.ai_settings = PostgresAiSettingsStore(database.session_factory)
+
     from backend.adapters.purge import StoreWorkspacePurge
 
     purger = StoreWorkspacePurge(
@@ -191,6 +196,7 @@ def build_container(settings: Settings | None = None) -> Container:
         objects=container.objects,
         artifacts=container.artifacts,
         assist=container.assist_sessions,
+        ai_settings=container.ai_settings,
     )
     container.tenancy_service = TenancyService(
         container.tenancy,
@@ -201,7 +207,12 @@ def build_container(settings: Settings | None = None) -> Container:
         purger=purger,
     )
     container.credential_service = CredentialService(
-        container.credentials, tenancy=container.tenancy_service
+        container.credentials,
+        tenancy=container.tenancy_service,
+        ai_settings=container.ai_settings,
+        ai=container.ai,
+        # AI_MODEL has always been the hosted OpenRouter model; it stays its suggestion.
+        default_models={"openrouter": resolved.AI_MODEL} if resolved.is_hosted else {},
     )
     container.usage_service = ProviderUsageService(
         container.usage,

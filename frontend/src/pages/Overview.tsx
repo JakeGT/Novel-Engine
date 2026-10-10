@@ -112,7 +112,7 @@ export function Overview() {
                 <h2 id="key-heading">Connect the assistant</h2>
                 <p className="muted">
                   The assistant drafts entries and links from what you tell it, and it runs on your
-                  own OpenRouter key so you control the cost. It takes a minute to connect. Until
+                  own key from the AI provider you choose, so you control the cost. It takes a minute to connect. Until
                   then, everything can be filled in by hand.
                 </p>
               </div>

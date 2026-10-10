@@ -35,6 +35,8 @@ export type AssistQuestionSheet = Schemas['AssistQuestionSheetModel']
 export type AssistProposalRequest = Schemas['AssistProposalRequest']
 export type ChangeProposal = Schemas['ChangeProposalModel']
 export type AssistSession = Schemas['AssistSessionModel']
+export type AiProvider = Schemas['ProviderModel']
+export type AiChoice = Schemas['AiChoiceModel']
 export type Member = Schemas['MembershipModel']
 export type Invitation = Schemas['InvitationModel']
 export type MemberRole = Member['role']
@@ -368,8 +370,19 @@ export const api = {
   // --- AI provider keys (workspace owners; hosted mode) -------------------------
   listCredentials: (workspaceId: string) =>
     request<Credential[]>('/api/v1/credentials', { workspaceId }),
-  createCredential: (workspaceId: string, body: { label: string; key: string }) =>
+  createCredential: (workspaceId: string, body: { provider: string; label: string; key: string }) =>
     request<Credential>('/api/v1/credentials', { method: 'POST', workspaceId, json: body }),
+  // --- which AI provider and model the assistant uses ---------------------------
+  aiProviders: () => request<AiProvider[]>('/api/v1/ai/providers'),
+  aiSettings: (workspaceId: string) => request<AiChoice>('/api/v1/ai/settings', { workspaceId }),
+  chooseAi: (workspaceId: string, body: { provider: string; model: string }) =>
+    request<AiChoice>('/api/v1/ai/settings', { method: 'PUT', workspaceId, json: body }),
+  /** The models the workspace's key can use, read live from the provider. */
+  aiModels: (workspaceId: string, provider: string) =>
+    request<Schemas['ModelListModel']>(
+      `/api/v1/ai/models?provider=${encodeURIComponent(provider)}`,
+      { workspaceId },
+    ),
   revokeCredential: (workspaceId: string, credentialId: string) =>
     request<Credential>(`/api/v1/credentials/${id(credentialId)}/revoke`, {
       method: 'POST',

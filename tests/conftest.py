@@ -64,6 +64,7 @@ def _build_fake_container(settings, tmp_path):
         FakeEmbeddingProvider,
         FakeIdentityProvider,
         FakeMigrationVerifier,
+        InMemoryAiSettingsStore,
         InMemoryAssistSessionStore,
         InMemoryCanonJournal,
         InMemoryCanonRepository,
@@ -115,6 +116,7 @@ def _build_fake_container(settings, tmp_path):
 
     objects = InMemoryObjectStore()
     assist_sessions = InMemoryAssistSessionStore()
+    ai_settings = InMemoryAiSettingsStore()
     purger = StoreWorkspacePurge(
         graph=graph,
         vectors=vectors,
@@ -123,6 +125,7 @@ def _build_fake_container(settings, tmp_path):
         objects=objects,
         artifacts=artifacts,
         assist=assist_sessions,
+        ai_settings=ai_settings,
     )
     tenancy_service = TenancyService(
         tenancy,
@@ -132,7 +135,9 @@ def _build_fake_container(settings, tmp_path):
         settings=settings,
         purger=purger,
     )
-    credential_service = CredentialService(vault, tenancy=tenancy_service)
+    credential_service = CredentialService(
+        vault, tenancy=tenancy_service, ai_settings=ai_settings, ai=ai
+    )
     usage_service = ProviderUsageService(
         usage_store,
         limit=UsageLimit(per_job_token_limit=200_000, period_token_limit=2_000_000),
@@ -270,6 +275,7 @@ def _build_fake_container(settings, tmp_path):
         canon_character_workflow=canon_character_workflow,
         equivalence_service=equivalence_service,
         assist_sessions=assist_sessions,
+        ai_settings=ai_settings,
         assist_session_service=AssistSessionService(
             assist_sessions, tenancy=tenancy_service, local_mode=not settings.is_hosted
         ),

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import logging
 import time
 from typing import Any
 
 from backend.core.logging import log_event
+from backend.domain.providers import StructuredMode, request_model, spec_for_base_url
 from backend.ports import (
     AIInvalidOutputError,
     AIProviderError,
@@ -15,6 +17,8 @@ from backend.ports import (
 
 logger = logging.getLogger(__name__)
 
+MAX_LISTED_MODELS = 1000
+
 
 class OpenAIGateway:
     """AsyncOpenAI-compatible adapter.
@@ -23,7 +27,11 @@ class OpenAIGateway:
     ``AI_BASE_URL``, ``AI_PROVIDER``) for local/self-hosted or platform-funded
     use. A per-call ``api_key``/``base_url`` overrides it for BYOK workloads, so a
     hosted deployment never needs a platform key to run user-funded inference, and
-    OpenRouter/Ollama-compatible endpoints are selected by base URL.
+    the provider is selected by base URL (``backend.domain.providers``).
+
+    The answer must have a required shape. Where the provider enforces a schema it
+    is asked to; where it does not, or refuses for the chosen model, the shape is
+    described in the prompt and the answer is validated here.
     """
 
     def __init__(
@@ -87,7 +95,10 @@ class OpenAIGateway:
     ) -> StructuredResponse:
         from openai import OpenAIError
 
-        resolved_model = model or self._default_model
+        # A workspace's own choice of model wins over the configured default.
+        resolved_model = request_model() or model or self._default_model
+        spec = spec_for_base_url(base_url or self._base_url)
+        prompted = spec is not None and spec.structured is StructuredMode.PROMPTED
         start = time.perf_counter()
         per_call_client: Any = None
         if api_key or base_url:
@@ -97,11 +108,32 @@ class OpenAIGateway:
         else:
             client = self.client
         try:
-            response = await client.beta.chat.completions.parse(
-                model=resolved_model,
-                messages=messages,
-                response_format=response_format,
-            )
+            if prompted:
+                parsed, response = await self._prompted(
+                    client, resolved_model, messages, response_format
+                )
+            else:
+                from openai import BadRequestError
+
+                try:
+                    response = await client.beta.chat.completions.parse(
+                        model=resolved_model,
+                        messages=messages,
+                        response_format=response_format,
+                    )
+                    parsed = response.choices[0].message.parsed
+                except BadRequestError:
+                    # Refused as asked: commonly a model that cannot enforce a schema.
+                    # A wrong model name fails again below and is reported as usual.
+                    log_event(
+                        logger,
+                        "ai.generate.schema_refused",
+                        level=logging.WARNING,
+                        model=resolved_model,
+                    )
+                    parsed, response = await self._prompted(
+                        client, resolved_model, messages, response_format
+                    )
         except OpenAIError as error:
             log_event(
                 logger,
@@ -118,7 +150,6 @@ class OpenAIGateway:
             if per_call_client is not None:
                 await per_call_client.close()
 
-        parsed = response.choices[0].message.parsed
         if parsed is None:
             raise AIInvalidOutputError("provider returned no structured output")
 
@@ -140,3 +171,50 @@ class OpenAIGateway:
             model=resolved_model,
             usage=usage_model,
         )
+
+    @staticmethod
+    async def _prompted(
+        client: Any, model: str, messages: list[dict[str, str]], response_format: type
+    ) -> tuple[Any, Any]:
+        """Ask for JSON of the required shape in words, then validate what comes back."""
+        schema = json.dumps(response_format.model_json_schema())  # type: ignore[attr-defined]
+        instruction = (
+            "\n\nReply with one JSON object and nothing else: no explanation and no code "
+            f"fence. It must be valid against this JSON Schema:\n{schema}"
+        )
+        shaped = [dict(message) for message in messages]
+        if shaped and shaped[0].get("role") == "system":
+            shaped[0]["content"] = f"{shaped[0]['content']}{instruction}"
+        else:
+            shaped.insert(0, {"role": "system", "content": instruction.strip()})
+        response = await client.chat.completions.create(model=model, messages=shaped)
+        text = (response.choices[0].message.content or "").strip()
+        start, end = text.find("{"), text.rfind("}")
+        if start < 0 or end <= start:
+            raise AIInvalidOutputError("provider did not return a JSON object")
+        try:
+            parsed = response_format.model_validate_json(text[start : end + 1])  # type: ignore[attr-defined]
+        except ValueError as error:
+            # The text is the model's writing about the author's story: not logged, not surfaced.
+            raise AIInvalidOutputError("provider returned JSON of the wrong shape") from error
+        return parsed, response
+
+    async def list_models(self, *, api_key: str, base_url: str) -> list[str]:
+        """The model names this key can use, as the provider reports them."""
+        from openai import OpenAIError
+
+        client = self._build_client(api_key, base_url)
+        try:
+            page = await client.models.list()
+            names = sorted({str(item.id) for item in page.data if getattr(item, "id", None)})
+        except OpenAIError as error:
+            log_event(
+                logger,
+                "ai.models.error",
+                level=logging.WARNING,
+                error_type=type(error).__name__,
+            )
+            raise AIProviderError("model provider request failed") from error
+        finally:
+            await client.close()
+        return names[:MAX_LISTED_MODELS]

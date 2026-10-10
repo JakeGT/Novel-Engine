@@ -15,6 +15,43 @@
         "title": "AcceptInvitationRequest",
         "type": "object"
       },
+      "AiChoiceModel": {
+        "properties": {
+          "chosen": {
+            "title": "Chosen",
+            "type": "boolean"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "chosen"
+        ],
+        "title": "AiChoiceModel",
+        "type": "object"
+      },
       "AmendEventOp": {
         "additionalProperties": false,
         "properties": {
@@ -1127,6 +1164,29 @@
         "title": "CharacterQuestionsRequest",
         "type": "object"
       },
+      "ChooseAiRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "model"
+        ],
+        "title": "ChooseAiRequest",
+        "type": "object"
+      },
       "CloseBeliefOp": {
         "additionalProperties": false,
         "properties": {
@@ -1677,7 +1737,13 @@
       },
       "CredentialProvider": {
         "enum": [
-          "openrouter"
+          "openrouter",
+          "anthropic",
+          "openai",
+          "google",
+          "xai",
+          "mistral",
+          "deepseek"
         ],
         "title": "CredentialProvider",
         "type": "string"
@@ -2654,6 +2720,27 @@
         "title": "MembershipModel",
         "type": "object"
       },
+      "ModelListModel": {
+        "properties": {
+          "listed": {
+            "title": "Listed",
+            "type": "boolean"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "array"
+          }
+        },
+        "required": [
+          "models",
+          "listed"
+        ],
+        "title": "ModelListModel",
+        "type": "object"
+      },
       "MutationCommitModel": {
         "properties": {
           "checksum": {
@@ -3438,6 +3525,46 @@
           "object"
         ],
         "title": "PropositionRequest",
+        "type": "object"
+      },
+      "ProviderModel": {
+        "properties": {
+          "default_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key_url": {
+            "title": "Key Url",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "key_url",
+          "default_model",
+          "note"
+        ],
+        "title": "ProviderModel",
         "type": "object"
       },
       "QuantityObject": {
@@ -4511,6 +4638,136 @@
           }
         },
         "summary": "Read Root"
+      }
+    },
+    "/api/v1/ai/models": {
+      "get": {
+        "description": "The models the workspace's key for this provider can use, read from the provider.",
+        "operationId": "list_models_api_v1_ai_models_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "maxLength": 40,
+              "minLength": 1,
+              "title": "Provider",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelListModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Models",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/v1/ai/providers": {
+      "get": {
+        "operationId": "list_providers_api_v1_ai_providers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderModel"
+                  },
+                  "title": "Response List Providers Api V1 Ai Providers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Providers",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/v1/ai/settings": {
+      "get": {
+        "operationId": "get_ai_settings_api_v1_ai_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiChoiceModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Ai Settings",
+        "tags": [
+          "ai"
+        ]
+      },
+      "put": {
+        "operationId": "choose_ai_api_v1_ai_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChooseAiRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiChoiceModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Choose Ai",
+        "tags": [
+          "ai"
+        ]
       }
     },
     "/api/v1/characters/generate-questions": {

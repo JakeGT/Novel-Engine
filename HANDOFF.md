@@ -429,3 +429,13 @@ workflows only accept the session id. Frontend: `components/Conversations.tsx`
 (`OpenConversations`, `ConversationEvidence`), `resume` in the project context. The text is the
 author's own writing: it is never logged, and it is not yet part of a project export.
 
+## Providers and model choice (2026-10-10)
+
+`backend/domain/providers.py` lists the providers (all through OpenAI-compatible endpoints) and
+holds the per-request model (a context variable set in `_provider_context`, read by
+`OpenAIGateway`, so workflow signatures did not change). `CredentialService` resolves the route
+(`resolve_route_for_use`), stores the choice (`choose_ai`), and lists models. The gateway asks for
+a schema where the provider enforces one and otherwise describes the shape in the prompt and
+validates the answer (`_prompted`), falling back to that when a schema is refused. Migration
+`0025`. Nothing here has been run against a real provider.
+

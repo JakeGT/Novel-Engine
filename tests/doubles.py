@@ -86,6 +86,7 @@ from backend.domain.operations import (
     resolve_temporary_ids,
 )
 from backend.domain.projection import EvidenceRecord, RecordVersion
+from backend.domain.providers import request_model
 from backend.domain.review import (
     MutationIntent,
     effective_operations,
@@ -506,6 +507,8 @@ class ScriptedAIGateway:
         self._available = available
         self.calls: list[dict[str, Any]] = []
         self.closed = False
+        self.models: Any = ["model-a", "model-b"]
+        self.model_list_calls: list[dict[str, Any]] = []
 
     def is_available(self) -> bool:
         return self._available
@@ -535,6 +538,8 @@ class ScriptedAIGateway:
                 "model": model,
                 "api_key": api_key,
                 "base_url": base_url,
+                # What the real gateway would use: the workspace's choice, when there is one.
+                "route_model": request_model(),
             }
         )
         if self._index >= len(self._responses):
@@ -544,6 +549,12 @@ class ScriptedAIGateway:
         if isinstance(item, BaseException):
             raise item
         return StructuredResponse(parsed=item, model=model or "fake")
+
+    async def list_models(self, *, api_key: str, base_url: str) -> list[str]:
+        self.model_list_calls.append({"api_key": api_key, "base_url": base_url})
+        if isinstance(self.models, BaseException):
+            raise self.models
+        return list(self.models)
 
     @property
     def remaining(self) -> int:
@@ -3750,3 +3761,19 @@ class InMemoryAssistSessionStore:
         for key in doomed:
             del self.sessions[key]
         return len(doomed)
+
+
+class InMemoryAiSettingsStore:
+    def __init__(self) -> None:
+        self.rows: dict[str, tuple[str, str]] = {}
+
+    async def get(self, workspace_id: str) -> tuple[str, str] | None:
+        return self.rows.get(workspace_id)
+
+    async def set(
+        self, *, workspace_id: str, provider: str, model: str, actor_user_id: str | None
+    ) -> None:
+        self.rows[workspace_id] = (provider, model)
+
+    async def delete_workspace(self, workspace_id: str) -> int:
+        return 1 if self.rows.pop(workspace_id, None) is not None else 0

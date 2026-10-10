@@ -34,6 +34,7 @@ from backend.domain.errors import (
     ValidationError,
 )
 from backend.domain.identity import AccessScope
+from backend.domain.providers import set_request_model
 from backend.domain.usage import UsageOutcome, UsageRecord
 from backend.graph.policies import get_policy
 from backend.graph.resolver import extract_entity_ids
@@ -44,8 +45,6 @@ from backend.services.auth_service import AuthenticatedSession
 from backend.services.character_service import CharacterService
 from backend.services.credential_service import CredentialService
 from backend.services.usage_service import ProviderUsageService
-
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 project_router = APIRouter()
 
@@ -78,14 +77,16 @@ async def _provider_context(
     provider_base_url: str | None = None
     provider = settings.AI_PROVIDER
     if settings.is_hosted:
-        resolved = await credentials.resolve_active_for_use(scope, workspace_id)
-        if resolved is None:
+        route = await credentials.resolve_route_for_use(scope, workspace_id)
+        if route is None:
             raise CapabilityUnavailableError(
                 "No provider credential is configured for this workspace."
             )
-        credential_id, api_key = resolved
-        provider_base_url = OPENROUTER_BASE_URL
-        provider = "openrouter"
+        credential_id, api_key = route.credential_id, route.api_key
+        provider_base_url = route.provider.base_url
+        provider = route.provider.id
+        # The workspace's own choice of model, read by the gateway for this request.
+        set_request_model(route.model)
 
     await usage.ensure_within_limits(workspace_id=workspace_id, actor_user_id=scope.actor_user_id)
 
