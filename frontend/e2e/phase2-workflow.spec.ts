@@ -118,6 +118,15 @@ test('author, review, archive, and export a project end to end', async ({ page }
   await expect(page.getByText('Version 5 · saved')).toBeVisible()
   await expectAccessible(page)
 
+  // The picture follows the entry everywhere it is listed: the project home and the story bible.
+  await page.getByRole('navigation', { name: 'Project' }).getByRole('link', { name: 'Home' }).click()
+  const recent = page.getByRole('region', { name: 'Recently added' })
+  await expect(recent.getByRole('img', { name: 'Picture of Mara Venn' })).toBeVisible()
+  await page.getByRole('navigation', { name: 'Project' }).getByRole('link', { name: /Story bible/ }).click()
+  await expect(page.getByRole('img', { name: 'Picture of Mara Venn' })).toBeVisible()
+  await page.getByRole('link', { name: /Mara Venn/ }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Mara Venn' })).toBeVisible()
+
   // --- activity explains every change -----------------------------------------------
   const activity = page.getByRole('region', { name: 'Activity' })
   await expect(activity.getByText('Edited')).toBeVisible()

@@ -2,7 +2,9 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import { Icon } from '../components/icons'
+import { Portrait } from '../components/Pictures'
 import { Button, ErrorNotice, Loading, TypeAvatar } from '../components/ui'
+import { usePortraits } from '../lib/pictures'
 import { firstName, useSession } from '../lib/session'
 import { timeAgo } from '../lib/time'
 import { isOpenChange, originLabel, plural, typeLabel, typeLook, typePlural } from '../lib/words'
@@ -23,6 +25,7 @@ export function Overview() {
   const { scope, canWrite, newEntry, fillIn, headRevision, userId } = useProject()
   const session = useSession()
   const entries = useEntries(scope)
+  const portraits = usePortraits(scope)
   const base = `/projects/${scope.projectId}`
 
   const waiting = useQuery({
@@ -170,7 +173,7 @@ export function Overview() {
           <ul className="rows">
             {(todo.data?.items ?? []).slice(0, 8).map((item) => (
               <li className="row" key={item.id}>
-                <TypeAvatar type={item.type} name={item.name} size="sm" />
+                <Portrait entity={item} link={portraits.get(item.id)} size="sm" />
                 <Link className="grow" to={entryPath(scope, item.id)}>
                   {item.name}
                 </Link>
@@ -214,7 +217,7 @@ export function Overview() {
           <ul className="rows">
             {newest.map((item) => (
               <li className="row" key={item.id}>
-                <TypeAvatar type={item.type} name={item.name} size="sm" />
+                <Portrait entity={item} link={portraits.get(item.id)} size="sm" />
                 <Link className="grow" to={entryPath(scope, item.id)}>
                   {item.name}
                 </Link>

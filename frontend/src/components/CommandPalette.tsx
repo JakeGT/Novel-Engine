@@ -2,10 +2,12 @@ import { useQuery } from '@tanstack/react-query'
 import { useState, type KeyboardEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, type Scope } from '../api/client'
+import { usePortraits } from '../lib/pictures'
 import { typeLabel } from '../lib/words'
 import { entryPath, scopedKey, useEntries } from '../project'
 import { Icon, type IconName } from './icons'
-import { Dialog, TypeAvatar } from './ui'
+import { Portrait } from './Pictures'
+import { Dialog } from './ui'
 
 interface Command {
   key: string
@@ -13,6 +15,8 @@ interface Command {
   meta?: string
   icon?: IconName
   type?: string
+  /** The entry this command opens, so its picture can be shown. */
+  entryId?: string
   run: () => void
 }
 
@@ -31,6 +35,7 @@ export function CommandPalette({ scope, canWrite, onClose, onNewEntry, onGodHand
   const [index, setIndex] = useState(0)
   const term = text.trim()
   const entries = useEntries(scope)
+  const portraits = usePortraits(scope)
   // The server also matches aliases and short names, and is not capped by what is loaded.
   const search = useQuery({
     queryKey: scopedKey(scope, 'entity-search', term),
@@ -82,6 +87,7 @@ export function CommandPalette({ scope, canWrite, onClose, onNewEntry, onGodHand
       label: item.name,
       meta: typeLabel(item.type) + (item.lifecycle === 'active' ? '' : ' · archived'),
       type: item.type,
+      entryId: item.id,
       run: go(entryPath(scope, item.id)),
     }))
   const pageCommands = pages.filter((page) => !lower || page.label.toLowerCase().includes(lower))
@@ -114,7 +120,11 @@ export function CommandPalette({ scope, canWrite, onClose, onNewEntry, onGodHand
         onClick={command.run}
       >
         {command.type ? (
-          <TypeAvatar type={command.type} name={command.label} size="sm" />
+          <Portrait
+            entity={{ type: command.type, name: command.label }}
+            link={command.entryId ? portraits.get(command.entryId) : undefined}
+            size="sm"
+          />
         ) : (
           <Icon name={command.icon ?? 'arrowRight'} />
         )}
