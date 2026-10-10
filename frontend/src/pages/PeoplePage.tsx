@@ -91,9 +91,16 @@ export function PeoplePage() {
 
   if (!workspaceId) {
     return (
-      <EmptyState icon="user" title="Just you">
-        This is a single-user copy of Novel Engine, so there is nobody to invite.
-      </EmptyState>
+      <>
+        <div className="page-head">
+          <div>
+            <h1>People</h1>
+          </div>
+        </div>
+        <EmptyState icon="user" title="Just you">
+          This is a single-user copy of Novel Engine, so there is nobody to invite.
+        </EmptyState>
+      </>
     )
   }
 

@@ -14,7 +14,7 @@ describe('MediaPage', () => {
     mockApi({ 'GET /assets': { items: [] }, 'GET /entities': { items: [], limit: 200, offset: 0 } })
     renderInProject(<MediaPage />)
     expect(await screen.findByText('No media yet')).toBeInTheDocument()
-    expect(screen.getByText(/uploading files from here is not available yet/)).toBeInTheDocument()
+    expect(screen.getByText(/adding files from this page is not\s+available yet/)).toBeInTheDocument()
   })
 
   it('opens an item to show its versions and what it is linked to by name', async () => {

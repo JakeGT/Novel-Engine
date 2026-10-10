@@ -68,7 +68,7 @@ function RestoreDialog({ revision, onClose }: { revision: number; onClose: () =>
             )}
             {operations.length > 0 && (
               <div>
-                <p className="label">What would be undone</p>
+                <p className="label">What going back would do</p>
                 <ul className="rows" style={{ marginTop: '0.5rem' }}>
                   {operations.map((operation, index) => (
                     <li className="row" key={index}>
@@ -118,8 +118,9 @@ function RestoreDialog({ revision, onClose }: { revision: number; onClose: () =>
         )}
 
         <div className="actions end">
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
+          {canWrite && possible && !acknowledged && <span className="hint">Tick the box to go back.</span>}
+          <Button data-autofocus variant="ghost" onClick={onClose}>
+            Stay on this version
           </Button>
           {canWrite && possible && (
             <Button

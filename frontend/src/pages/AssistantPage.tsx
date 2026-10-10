@@ -47,10 +47,17 @@ export function AssistantPage() {
 
   if (!workspaceId) {
     return (
-      <EmptyState icon="spark" title="Set up on this computer">
-        On a self-hosted copy, the AI assistant is configured by whoever runs the server, not from
-        this page.
-      </EmptyState>
+      <>
+        <div className="page-head">
+          <div>
+            <h1>Assistant</h1>
+          </div>
+        </div>
+        <EmptyState icon="spark" title="Set up on this computer">
+          On a self-hosted copy, the AI assistant is configured by whoever runs the server, not
+          from this page.
+        </EmptyState>
+      </>
     )
   }
 

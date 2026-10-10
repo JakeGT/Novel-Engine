@@ -191,6 +191,10 @@ browser at desktop and phone widths. Findings, and what was done:
 | C4, C5 | Discarding suggested changes (irreversible), removing a member, removing an AI key, and publishing a definition (irreversible) had no confirmation | Specific confirmations added, safe choice first and focused |
 | C8 | Clicking outside a dialog closed it and lost what was typed | Dialogs close only by their own controls or Escape |
 | S2 | Changing someone's role gave no acknowledgement | Announced in words |
+| L1 | Media page spoke of files "registered with this project" | Plain wording, and it says where pictures are added |
+| R7 | The go-back preview listed what it would do under the heading "What would be undone" | Heading says what going back would do; the safe button reads "Stay on this version" |
+| K1 | The Assistant and People pages had no page title on a self-hosted copy | Titles added |
+| W2 | On a phone the library header broke the product name across two lines | Name stays whole; controls drop below it |
 | K1 | The entry page had two buttons both labelled "Edit" that did the same thing | One, labelled "Edit entry" |
 | W2, D6 | On a narrow screen the top bar ran off the side and the search prompt lost its words | Top bar wraps to two rows; every control keeps its label |
 | — | Found while looking: a hidden file input made the entry page scroll sideways | Fixed |
@@ -206,8 +210,8 @@ Known and not yet done:
 - **L1:** The by-hand entry form's "Short name for links" can still produce an error that says
   "slug".
 - **D6:** On a narrow screen the closed menu's links can still be reached with the Tab key.
-- The landing page, library, History, Media and People screens were reviewed in code but not
-  re-examined in the browser in this pass.
+- The People and Assistant screens as an invited member or owner sees them on the hosted site
+  were reviewed in code and by test, not in a browser: the local test copy has no workspaces.
 - **A4:** Small buttons are 33px tall: above the WCAG 2.2 minimum, below the 44px comfortable for
   thumbs.
 - None of this has been tested with people. The rules come from published guidance; whether the

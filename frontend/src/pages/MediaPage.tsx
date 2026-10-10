@@ -104,8 +104,8 @@ export function MediaPage() {
         <div>
           <h1>Media</h1>
           <p className="lede">
-            Images and documents registered with this project, and the entries they are linked to.
-            This page shows what exists and where it came from; uploading files from here is not
+            The pictures and documents in this project, and the entries they belong to. To add a
+            picture, open an entry and choose “Add picture”; adding files from this page is not
             available yet.
           </p>
         </div>
@@ -115,7 +115,7 @@ export function MediaPage() {
         {assets.isPending && <Loading>Loading media…</Loading>}
         {assets.isSuccess && items.length === 0 && (
           <EmptyState icon="image" title="No media yet">
-            Nothing has been registered with this project.
+            Nothing has been added to this project. Open an entry and choose “Add picture”.
           </EmptyState>
         )}
         <ul className="stack">

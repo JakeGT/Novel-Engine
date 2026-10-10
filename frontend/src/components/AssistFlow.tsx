@@ -243,7 +243,7 @@ export function AssistFlow({ entity, initialType, types, onClose, onManual }: Pr
           </Button>
         )}
         <Button
-          disabled={busy || !description.trim()}
+          disabled={busy}
           onClick={() => {
             if (ready()) draft.mutate()
           }}

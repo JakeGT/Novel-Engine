@@ -74,7 +74,10 @@ describe('AssistFlow', () => {
     renderInProject(<AssistFlow types={TYPES} onClose={vi.fn()} />)
 
     expect(screen.getByRole('radio', { name: 'Let the assistant decide' })).toBeChecked()
-    expect(screen.getByRole('button', { name: 'Skip questions and draft it' })).toBeDisabled()
+    // With nothing written, the button answers with the reason rather than sitting disabled.
+    await user.click(screen.getByRole('button', { name: 'Skip questions and draft it' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Write a sentence or two about it first.')
+    expect(api.find('POST', '/assist/proposals')).toHaveLength(0)
     await user.type(
       screen.getByLabelText('Describe it in your own words'),
       'Mara is a pilot in the Salt Guild.',
