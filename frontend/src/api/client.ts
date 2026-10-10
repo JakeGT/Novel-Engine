@@ -521,6 +521,8 @@ export const api = {
   /** The God Hand: one instruction, every change it implies, as a proposal (or questions). */
   assistChange: (scope: Scope, body: Schemas['ChangeRequest']) =>
     send<ChangeProposal>(scope, 'POST', '/assist/changes', body),
+  /** Roughly what the assistant will read, to show before a request is sent. */
+  assistEstimate: (scope: Scope) => get<Schemas['EstimateModel']>(scope, '/assist/estimate'),
   /** Connections the entries describe but no fact records, as changes to review. */
   assistLinks: (scope: Scope, expectedRevision: number) =>
     send<ChangeProposal>(scope, 'POST', '/assist/links', {

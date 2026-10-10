@@ -94,3 +94,18 @@ def test_link_suggestions_use_a_provider_safe_format() -> None:
         return isinstance(node, list) and any(free_form(value) for value in node)
 
     assert not free_form(to_strict_json_schema(LinkPlan))
+
+
+def test_what_a_request_will_read_is_estimated_without_calling_a_model(
+    auth_client, fake_container
+) -> None:
+    w = _world(auth_client, fake_container)
+    calls = len(fake_container.ai.calls)
+
+    estimate = auth_client.get(f"{w['base']}/assist/estimate")
+
+    assert estimate.status_code == 200, estimate.text
+    sizes = estimate.json()
+    # Reading the whole story costs more than reading the names in it.
+    assert sizes["story_tokens"] > sizes["entry_tokens"] > 900
+    assert len(fake_container.ai.calls) == calls

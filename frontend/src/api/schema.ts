@@ -812,6 +812,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/assist/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Assist Estimate
+         * @description Roughly what the assistant will read, so it can be shown before anything is spent.
+         */
+        get: operations["assist_estimate_api_v1_projects__project_id__assist_estimate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/assist/links": {
         parameters: {
             query?: never;
@@ -3294,6 +3314,13 @@ export interface components {
             kind: "enum";
             /** Value */
             value: string;
+        };
+        /** EstimateModel */
+        EstimateModel: {
+            /** Entry Tokens */
+            entry_tokens: number;
+            /** Story Tokens */
+            story_tokens: number;
         };
         /** EventModel */
         EventModel: {
@@ -6126,6 +6153,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChangeProposalModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assist_estimate_api_v1_projects__project_id__assist_estimate_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EstimateModel"];
                 };
             };
             /** @description Validation Error */

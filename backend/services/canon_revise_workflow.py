@@ -439,6 +439,30 @@ class CanonLinkWorkflow(CanonReviseWorkflow):
         )
 
 
+# Rough sizes, for telling an author what a request will read before it is sent. A token
+# is about four characters of English; the instructions and format add a fixed part.
+CHARS_PER_TOKEN = 4
+INSTRUCTION_TOKENS = 900
+
+
+async def estimate_reading(
+    workflow: CanonChangeWorkflow, scope: AccessScope, workspace_id: str, project_id: str
+) -> dict[str, int]:
+    """About how many tokens each kind of request reads before it writes anything.
+
+    ``story`` is a request that reads the whole story bible (change anything, missing
+    connections); ``entry`` is one that reads only the names of what exists (adding or
+    filling in). An estimate from the text's length, not a count by the provider.
+    """
+    await workflow._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+    story, entities, _facts, _beliefs = await workflow._story(workspace_id, project_id, None)
+    names = sum(len(entity.name) + len(entity.id) + 20 for entity in entities)
+    return {
+        "story": INSTRUCTION_TOKENS + len(story) // CHARS_PER_TOKEN,
+        "entry": INSTRUCTION_TOKENS + names // CHARS_PER_TOKEN,
+    }
+
+
 def _edit_entry(
     operation: CreateEntityOp | UpdateEntityOp, edit: ChangeEdit, base: object | None
 ) -> tuple[CanonOperation | None, str]:
@@ -536,6 +560,7 @@ def _edit_statement(
 __all__ = [
     "REVISE_PROMPT_VERSION",
     "CanonLinkWorkflow",
+    "estimate_reading",
     "CanonReviseWorkflow",
     "LinkPlan",
     "SuggestedLink",

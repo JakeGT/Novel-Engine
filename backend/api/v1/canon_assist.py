@@ -52,7 +52,11 @@ from backend.services.canon_creation_workflow import (
     CanonCreationWorkflow,
     CreationBrief,
 )
-from backend.services.canon_revise_workflow import CanonLinkWorkflow, CanonReviseWorkflow
+from backend.services.canon_revise_workflow import (
+    CanonLinkWorkflow,
+    CanonReviseWorkflow,
+    estimate_reading,
+)
 from backend.services.credential_service import CredentialService
 from backend.services.schema_service import SchemaService
 from backend.services.schema_suggestions import add_to_definition
@@ -406,6 +410,24 @@ async def assist_change(
             for issue in issues
         ],
     )
+
+
+class EstimateModel(BaseModel):
+    # About how many tokens a request that reads the whole story bible takes in.
+    story_tokens: int
+    # About how many a request that reads only what exists by name takes in.
+    entry_tokens: int
+
+
+@router.get("/estimate", response_model=EstimateModel)
+async def assist_estimate(
+    project_id: str,
+    workflow: CanonLinkWorkflow = Depends(get_canon_character_workflow),
+    scope: AccessScope = Depends(get_project_scope),
+) -> EstimateModel:
+    """Roughly what the assistant will read, so it can be shown before anything is spent."""
+    sizes = await estimate_reading(workflow, scope, scope.workspace_id or "", project_id)
+    return EstimateModel(story_tokens=sizes["story"], entry_tokens=sizes["entry"])
 
 
 class LinkRequest(BaseModel):

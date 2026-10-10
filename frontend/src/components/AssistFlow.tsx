@@ -202,7 +202,7 @@ export function AssistFlow({ entity, initialType, types, onClose, onManual, resu
               ? 'Answers kept. You can close this and pick it up later from the project’s home page.'
               : 'Your answers are kept as you go, so you can close this and pick it up later.'}
         </p>
-        <AllowanceNote />
+        <AllowanceNote reads="entry" />
         <AssistantProblem error={draft.error} onManual={manual} />
         <div className="actions end">
           <Button
@@ -310,7 +310,7 @@ export function AssistFlow({ entity, initialType, types, onClose, onManual, resu
         )}
       </Field>
 
-      <AllowanceNote />
+      <AllowanceNote reads="entry" />
 
       <AssistantProblem error={questions.error ?? draft.error} onManual={manual} />
       <div className="actions end">

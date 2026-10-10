@@ -233,7 +233,7 @@ export function GodHand({
           <SetupSuggestions session={suggestions.data} onLeave={onClose} />
         )}
 
-        <AllowanceNote />
+        <AllowanceNote reads="story" />
 
         <AssistantProblem error={change.error} />
         <div className="actions end">

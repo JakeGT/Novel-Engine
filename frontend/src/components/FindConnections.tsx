@@ -45,7 +45,7 @@ export function FindConnections() {
           </p>
         </div>
       </div>
-      <AllowanceNote />
+      <AllowanceNote reads="story" />
       <AssistantProblem error={find.error} />
       <div>
         <Button icon="link" disabled={find.isPending} onClick={() => find.mutate()}>

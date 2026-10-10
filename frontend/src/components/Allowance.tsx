@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { api } from '../api/client'
-import { useProject } from '../project'
+import { scopedKey, useProject } from '../project'
 import { Button, ErrorNotice, Field } from './ui'
 
 const number = (value: number) => value.toLocaleString('en-GB')
@@ -15,19 +15,41 @@ function useAllowance(workspaceId: string | null | undefined) {
   })
 }
 
-/** Said before more is spent, and only once most of the allowance has gone. */
-export function AllowanceNote() {
+/**
+ * Said before anything is spent: about how much this request will read, and what is
+ * left of the allowance. A warning once most of the allowance has gone.
+ */
+export function AllowanceNote({ reads }: { reads?: 'story' | 'entry' }) {
   const { scope } = useProject()
   const usage = useAllowance(scope.workspaceId)
+  const estimate = useQuery({
+    queryKey: scopedKey(scope, 'assist-estimate'),
+    queryFn: () => api.assistEstimate(scope),
+    enabled: Boolean(reads),
+    staleTime: 60_000,
+  })
   const found = usage.data
-  if (!found || !found.limit_tokens) return null
-  const share = found.used_tokens / found.limit_tokens
-  if (share < 0.8) return null
+  const share = found?.limit_tokens ? found.used_tokens / found.limit_tokens : 0
+  const tokens = reads && estimate.data ? estimate.data[`${reads}_tokens`] : null
+  const left = found?.limit_tokens ? Math.max(found.limit_tokens - found.used_tokens, 0) : null
+
+  if (share >= 1) {
+    return (
+      <p className="notice plain" role="note">
+        Your assistant allowance is used up for now. It frees up again over the next day.
+      </p>
+    )
+  }
+  if (tokens === null && share < 0.8) return null
   return (
-    <p className="notice plain" role="note">
-      {share >= 1
-        ? 'Your assistant allowance is used up for now. It frees up again over the next day.'
-        : `You have used ${Math.floor(share * 100)}% of your assistant allowance for ${period(found.period_hours)}.`}
+    <p className={share >= 0.8 ? 'notice plain' : 'hint'} role="note">
+      {tokens !== null &&
+        `This will read about ${number(tokens)} tokens${reads === 'story' ? ' (your whole story bible)' : ''}, plus the reply. `}
+      {found && left !== null
+        ? share >= 0.8
+          ? `You have used ${Math.floor(share * 100)}% of your allowance for ${period(found.period_hours)}: ${number(left)} tokens are left.`
+          : `${number(left)} tokens of your allowance are left for ${period(found.period_hours)}.`
+        : ''}
     </p>
   )
 }

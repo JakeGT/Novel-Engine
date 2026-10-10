@@ -69,7 +69,7 @@ export function AskForChanges({
           />
         )}
       </Field>
-      <AllowanceNote />
+      <AllowanceNote reads="entry" />
       <AssistantProblem error={ask.error} />
       {result && !ask.isPending && (
         <div className="notice plain" role="status">

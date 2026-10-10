@@ -2399,6 +2399,24 @@
         "title": "EnumObject",
         "type": "object"
       },
+      "EstimateModel": {
+        "properties": {
+          "entry_tokens": {
+            "title": "Entry Tokens",
+            "type": "integer"
+          },
+          "story_tokens": {
+            "title": "Story Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "story_tokens",
+          "entry_tokens"
+        ],
+        "title": "EstimateModel",
+        "type": "object"
+      },
       "EventModel": {
         "properties": {
           "cause_ids": {
@@ -7794,6 +7812,49 @@
           }
         },
         "summary": "Assist Change",
+        "tags": [
+          "canon-assist"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/assist/estimate": {
+      "get": {
+        "description": "Roughly what the assistant will read, so it can be shown before anything is spent.",
+        "operationId": "assist_estimate_api_v1_projects__project_id__assist_estimate_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimateModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assist Estimate",
         "tags": [
           "canon-assist"
         ]
