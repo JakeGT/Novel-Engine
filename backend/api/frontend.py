@@ -119,7 +119,11 @@ def mount_frontend(app: FastAPI, directory: Path) -> None:
         # resolved path must stay inside the build directory.
         candidate = (directory / path).resolve()
         if candidate.is_file() and directory in candidate.parents:
-            return FileResponse(candidate)
+            # Unhashed names: a cache must check back, or a replaced file is never seen.
+            return FileResponse(candidate, headers={"Cache-Control": "no-cache"})
+        if "." in path.rsplit("/", 1)[-1]:
+            # A missing file (favicon.ico, a stale asset) is a 404, not the app shell.
+            return Response(status_code=404)
         return shell()
 
 

@@ -1,6 +1,6 @@
 /**
  * The Novel Engine seal: a drop of ink that is also a quotation mark, with the
- * rings ink makes when it meets water. Keep in step with `public/favicon.svg`.
+ * rings ink makes when it meets water. Keep in step with `src/assets/favicon.svg`.
  */
 export function Logo({ size = 30 }: { size?: number }) {
   return (

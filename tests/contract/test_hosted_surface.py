@@ -72,7 +72,11 @@ def test_app_shell_is_served_for_ui_routes_only(settings_factory, tmp_path, buil
             assert page.status_code == 200 and "id=root" in page.text, path
             assert page.headers["Cache-Control"] == "no-cache"
         assert client.get("/assets/index-abc123.js").text == "console.log('app')"
-        assert client.get("/favicon.svg").text == "<svg/>"
+        icon = client.get("/favicon.svg")
+        assert icon.text == "<svg/>" and icon.headers["Cache-Control"] == "no-cache"
+        # A missing file is a 404, never the app shell served under a file name.
+        for missing in ("/favicon.ico", "/robots.txt", "/old/logo.png"):
+            assert client.get(missing).status_code == 404, missing
         assert client.get("/assets/inter.woff2").headers["content-type"] == "font/woff2"
 
         # API routes still answer as the API, and API misses are problems, not HTML.
