@@ -1,6 +1,7 @@
 # Phase 2.5 implementation todo: assistant-led creation
 
-- Status: In progress (started 2026-10-10).
+- Status: Built (2026-10-10). What remains is listed under "Left for later phases" at the end,
+  and the two exit criteria that only real use can meet.
 - Scope: `09-delivery-roadmap.md` Phase 2.5; backlog `AST-EXP-001`–`AST-EXP-018`.
 - Governing documents: [`19-assistant-first-experience.md`](19-assistant-first-experience.md)
   (interaction loop, levels, definition of done), ADR-017, [`20-design-direction.md`](20-design-direction.md).
@@ -23,11 +24,11 @@ Each item says "scripted model only" where no real run has confirmed it.
 | D. Real-provider verification and evaluation set | AST-EXP-003 | Closed by owner decision (2026-10-10): verified by the owner's manual runs over time; no evaluation set or gate was built |
 | E. Stored, resumable conversations | AST-EXP-004 | Implemented (scripted model only) |
 | F. Start from a premise | AST-EXP-005 | Covered by A in practice; no dedicated first-run |
-| G. Link suggestions | AST-EXP-007 | Implemented by asking the model (scripted model only); no embeddings; precision not measured |
+| G. Link suggestions | AST-EXP-007 | Implemented by asking the model (scripted model only); no embeddings; precision not measured. Lists also show each entry's connection to the main entries, derived from facts |
 | H. First run and sample project | AST-EXP-008 | Onboarding and sample story implemented; time to first entry not measured |
 | I. Levels and plain-language test | AST-EXP-009 | Levels 1–2 in the menu; plain-language check on every tested screen; need-based suggestions not built |
-| J. By-asking paths for existing features; belief editor; members | AST-EXP-010 | People page and belief editor implemented; asking for undo, invitations or setup is pointed to the right page, not carried out |
-| K. Session budgets and assistant threat cases | AST-EXP-011 | Daily per-person allowance, shown before it is spent; threat cases are tests. No per-conversation budget |
+| J. By-asking paths for existing features; belief editor; members | AST-EXP-010 | Implemented: asking leads to a previewed restore, a pre-filled invitation, or setup suggestions to add; the author confirms each (scripted model only) |
+| K. Session budgets and assistant threat cases | AST-EXP-011 | Daily per-person allowance; what a request will read and what is left are shown before it is sent; threat cases are tests |
 | L. Pictures on entries | AST-EXP-018 | Implemented for entries; scenes wait for Phase 2.6 |
 | M. Design direction | AST-EXP-016 | Implemented; awaiting more owner feedback |
 | N. Intuitive design rules and review | — | Rules adopted (document 21); first review applied; not yet tested with people |
@@ -106,7 +107,13 @@ Each item says "scripted model only" where no real run has confirmed it.
       whom; a belief can be ended, with Undo (`BeliefsPanel.tsx`).
 - [x] Asked for something that is not a story change (undo, invitations, setup, the AI key), the
       God Hand says where it is done and links there. **Scripted model only.**
-- [ ] It does not carry those out itself: no restore, invitation or type is made by asking.
+- [x] Asked to undo or go back, it works out the version from the recent history (counts,
+      times and origins of the last 20 versions) and the author is shown exactly what going back
+      would change, in the usual restore preview, before deciding. Asked to invite someone, the
+      People page opens with the role and address filled in. Setup suggestions that come with no
+      change can be added from the dialog. **Scripted model only.**
+- [ ] The history the model sees does not say *what* each version changed, so "before the guild
+      changes" can only be answered by asking which version is meant.
 
 ## L. Pictures on entries
 
@@ -119,8 +126,9 @@ Each item says "scripted model only" where no real run has confirmed it.
 - [x] The newest picture is the entry's portrait: shown in the entry header and in the story bible
       index; all pictures appear on the entry page (`Pictures.tsx`).
 - [x] Works with no AI provider; exercised in the browser end-to-end test with a real upload.
-- [ ] Choosing an existing picture from the media library; picking which picture is the portrait;
-      captions.
+- [x] Choosing which picture is the main one; reusing a picture already on another entry.
+- [ ] A picture that is in the media library but linked to nothing cannot be chosen from an
+      entry; captions.
 - [ ] Pictures on scenes (needs scene plans, Phase 2.6).
 - [ ] A refused link after a stale head leaves the stored image unlinked in the media list; it is
       harmless but should be cleaned up or offered for re-linking.
@@ -140,10 +148,10 @@ Each item says "scripted model only" where no real run has confirmed it.
       anyone who can read the project.
 - [x] An unfinished conversation is visible only to its author; putting one away erases it;
       conversations are deleted with their project or workspace. Evidence cannot be edited.
-- [ ] Follow-up instructions on the same proposal ("revise this change"), which needs one
-      continuing conversation rather than one per proposal.
-- [ ] Conversations are not yet included in a project export, and there is no time limit on
-      unfinished ones.
+- [x] Follow-up instructions on the same proposal: revise by asking (see B). The request is kept
+      as the reason on each revision, not as a turn in the stored conversation.
+- [x] An unfinished conversation left untouched for 30 days is erased.
+- [ ] Conversations are not included in a project export.
 
 ## P. Setup suggestions and the first real run (2026-10-10)
 
@@ -170,8 +178,11 @@ What it showed, and what was done:
       open; a refused request waits for sign-in in another tab and is then sent again).
 - [x] Suggestions that come with no change are named in the "Change anything" dialog, with a
       link to Types and fields.
-- [ ] Suggested fields on a type; adding a suggestion from inside that dialog; decimal and
-      choice-list kinds of fact.
+- [x] Suggestions can be added from inside that dialog.
+- [ ] Deliberately not built: suggested *fields* on a type. A type with fixed fields accepts only
+      those details, so the assistant's own free-form details for it would be refused. Fields stay
+      a by-hand decision under Types and fields. Decimal and choice-list kinds of fact are not
+      suggested either, because drafting cannot fill them in yet.
 
 ## Q. Finding and ranking entries; review page layout (2026-10-10)
 
@@ -192,8 +203,9 @@ Done at the owner's request, following `~/Projects/Common/rules.md`:
       author's description and answers in a closed, labelled disclosure; left-out ideas
       collapsed; details one per row; before/after readable at phone width.
 - [x] Search results and the home page's lists rank by importance and show tags.
-- [ ] Relations between entries ("family of the protagonist") are tags the assistant writes, not
-      derived from facts, so they do not update by themselves when facts change.
+- [x] Story bible lists say how each entry is connected to the story's main entries ("related
+      to Ines Varga", "where Ines Varga is"), read from the facts each time (`lib/relations.ts`),
+      so it changes when the facts do. Tags the assistant writes are still free text.
 
 ## H. First run
 
@@ -221,8 +233,10 @@ Done at the owner's request, following `~/Projects/Common/rules.md`:
       author's turn; a model that obeys it still yields a bounded, typed, project-confined
       proposal that cannot approve itself; an author's words are not logged; a failing provider
       changes nothing and its message is not passed on.
-- [ ] No budget per conversation, and no estimate of what one request will cost before it is
-      sent: only what has been used so far.
+- [x] Before a request is sent, the dialog says about how many tokens it will read and how many
+      are left (`GET /assist/estimate`; from the text's length, not a provider's count).
+- [ ] The reply's size is not estimated, nothing is priced in money, and there is no separate
+      budget per conversation: the daily allowance is the only limit.
 
 ## G. Link suggestions (2026-10-10)
 
@@ -242,6 +256,27 @@ Done at the owner's request, following `~/Projects/Common/rules.md`:
       own terms and ids (`expectPlainLanguage`), outside blocks marked as technical detail.
 - [ ] Levels 3–5 have nothing to show yet (plans, scenes, timelines are later phases).
       Suggestions offered by need ("want to track where people are over time?") are not built.
+
+## Exit criteria (roadmap, Phase 2.5)
+
+| Criterion | State |
+| --- | --- |
+| First-entry and premise measures met on new accounts with a real provider | Not measured. Nothing in the product records it; it needs a new person and a stopwatch |
+| Every Level 1–2 capability has tested assistant and by-hand paths | Met with the scripted model; see the dashboard for which have had a real run |
+| A plain instruction that changes canon gives one reviewable proposal with its consequences; nothing applied without approval | Met, and covered by the threat tests |
+| Fully usable with no provider | Met: the browser test runs with none |
+| Drafted-change precision, recall, duplicate rate, kept-rate against a baseline | Not built. Closed by owner decision in favour of manual runs |
+| No Level 1–2 screen shows an internal term outside technical details | Met for every screen the component tests cover |
+
+## Left for later phases
+
+- God Hand: merge as its own operation, events, plan records, and projects larger than the
+  listing limits (retrieval) — with plan records in 2.6 and retrieval in Phase 4.
+- Meaning-level contradiction checks — with consistency findings in Phase 5.
+- Embedding-based link suggestions — when the vector index is used for retrieval in Phase 4.
+- Conversations in exports — with exports in Phases 3 and 7.
+- Pictures on scenes — when scenes exist in 2.6.
+- Need-based suggestions of Level 3–5 features — when those features exist.
 
 ## Open owner decisions that block work here
 

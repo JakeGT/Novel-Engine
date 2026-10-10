@@ -490,3 +490,15 @@ an invitation or a setup change; no per-conversation budget or cost estimate; li
 use the chat model, not embeddings, and their precision is unmeasured; contradictions in meaning
 are not detected; time to first entry is not measured. Revise-by-asking, link suggestions and
 the pointing-elsewhere behaviour have only ever run against the scripted model.
+
+## Phase 2.5 closed out (2026-10-10)
+
+Added after the section above: asking the assistant to undo, invite or extend the setup now ends
+in the real thing ready to confirm (restore preview, pre-filled invitation, suggestions to add);
+an estimate of what a request reads is shown before it is sent; a picture can be made the main
+one or reused from another entry; unfinished conversations expire after 30 days; lists say how an
+entry is connected to the main entries, from the facts. `plan/phase-2.5-todo.md` now ends with
+the roadmap's exit criteria and their state, and what was left for later phases and why. Two
+criteria are not met and cannot be by building: timing a new person's first entry, and the
+evaluation baseline the owner chose to replace with manual runs.
+
