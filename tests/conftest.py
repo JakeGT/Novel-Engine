@@ -191,9 +191,9 @@ def _build_fake_container(settings, tmp_path):
     )
     from backend.services.assist_session_service import AssistSessionService
     from backend.services.canon_equivalence import CanonEquivalenceService
-    from backend.services.canon_revise_workflow import CanonReviseWorkflow
+    from backend.services.canon_revise_workflow import CanonLinkWorkflow
 
-    canon_character_workflow = CanonReviseWorkflow(
+    canon_character_workflow = CanonLinkWorkflow(
         ai=ai,
         mutation=mutation_service,
         reader=canon_repository,

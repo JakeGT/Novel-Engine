@@ -50,7 +50,7 @@ from backend.services.canon_creation_workflow import (
     CanonCreationWorkflow,
     CreationBrief,
 )
-from backend.services.canon_revise_workflow import CanonReviseWorkflow
+from backend.services.canon_revise_workflow import CanonLinkWorkflow, CanonReviseWorkflow
 from backend.services.credential_service import CredentialService
 from backend.services.schema_service import SchemaService
 from backend.services.schema_suggestions import add_to_definition
@@ -376,6 +376,62 @@ async def assist_change(
                 severity=issue.severity,
             )
             for issue in issues
+        ],
+    )
+
+
+class LinkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int = Field(ge=0)
+
+
+@router.post("/links", response_model=ChangeProposalModel)
+async def assist_links(
+    project_id: str,
+    body: LinkRequest,
+    workflow: CanonLinkWorkflow = Depends(get_canon_character_workflow),
+    credentials: CredentialService = Depends(get_credential_service),
+    usage: ProviderUsageService = Depends(get_usage_service),
+    settings: Settings = Depends(get_settings),
+    scope: AccessScope = Depends(require_project_scope),
+) -> ChangeProposalModel:
+    """Connections the entries already describe but no fact records, as a proposal for review."""
+    credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
+        settings=settings, credentials=credentials, usage=usage, scope=scope
+    )
+    result = await workflow.suggest_links(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        expected_revision=body.expected_revision,
+        credential=api_key,
+        provider_base_url=provider_base_url,
+        usage_sink=usage_sink,
+    )
+    if credential_id:
+        await credentials.mark_used(scope.workspace_id or "", credential_id)
+    assert result.mutation is not None and result.validation is not None
+    return ChangeProposalModel(
+        mutation_id=result.mutation.id,
+        status=result.mutation.status.value,
+        operation_count=result.operation_count,
+        session_id=result.session_id,
+        understood=result.understood,
+        questions=[],
+        notes=result.notes,
+        discarded=[
+            DiscardedItemModel(kind=item.kind, reason=item.reason) for item in result.discarded
+        ],
+        validation_ok=result.validation.ok,
+        validation_issues=[
+            ProposalIssueModel(
+                ordinal=issue.ordinal,
+                code=issue.code,
+                message=issue.message,
+                severity=issue.severity,
+            )
+            for issue in result.validation.issues
         ],
     )
 

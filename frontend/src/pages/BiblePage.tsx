@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api, type AssetLink, type CanonEntity, type Scope } from '../api/client'
 import { EntryMarks } from '../components/EntryMarks'
+import { FindConnections } from '../components/FindConnections'
 import { Icon } from '../components/icons'
 import { Portrait } from '../components/Pictures'
 import { Badge, Button, EmptyState, ErrorNotice, Loading, ReadOnlyNotice, TypeAvatar } from '../components/ui'
@@ -212,6 +213,7 @@ export function BiblePage() {
 
         {/* --- the index: a way in to each part --- */}
         {!term && !loading && !empty && !type && !everything && (
+          <>
           <ul className="index">
             {types.map((item) => {
               const inType = byType.get(item) ?? []
@@ -255,6 +257,8 @@ export function BiblePage() {
               </Link>
             </li>
           </ul>
+          {canWrite && visible.filter((item) => item.lifecycle === 'active').length >= 2 && <FindConnections />}
+          </>
         )}
 
         {/* --- everything: each type under its own heading, a few at a time --- */}

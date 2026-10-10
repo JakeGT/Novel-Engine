@@ -521,6 +521,11 @@ export const api = {
   /** The God Hand: one instruction, every change it implies, as a proposal (or questions). */
   assistChange: (scope: Scope, body: Schemas['ChangeRequest']) =>
     send<ChangeProposal>(scope, 'POST', '/assist/changes', body),
+  /** Connections the entries describe but no fact records, as changes to review. */
+  assistLinks: (scope: Scope, expectedRevision: number) =>
+    send<ChangeProposal>(scope, 'POST', '/assist/links', {
+      expected_revision: expectedRevision,
+    } satisfies Schemas['LinkRequest']),
   /** Revise a set of suggested changes by asking; it stays waiting for review. */
   assistRevision: (scope: Scope, body: Schemas['RevisionRequest']) =>
     send<Schemas['RevisionModel']>(scope, 'POST', '/assist/revisions', body),

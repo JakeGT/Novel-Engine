@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
 
+from backend.adapters.system import uuid7
 from backend.core.logging import log_event
 from backend.domain.canon.marks import (
     IMPORTANCE_KEY,
@@ -24,8 +25,9 @@ from backend.domain.canon.marks import (
     clean_tags,
 )
 from backend.domain.canon.naming import normalize_name
-from backend.domain.canon.propositions import ObjectKind, Proposition
-from backend.domain.canon.registry import PredicateSpec
+from backend.domain.canon.propositions import EntityRefObject, ObjectKind, Proposition
+from backend.domain.canon.registry import Cardinality, PredicateSpec
+from backend.domain.canon.revisions import OriginKind
 from backend.domain.errors import ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.operations import (
@@ -33,6 +35,7 @@ from backend.domain.operations import (
     AssertFactOp,
     CanonOperation,
     CreateEntityOp,
+    EvidenceRef,
     UpdateEntityOp,
     parse_operation,
 )
@@ -41,6 +44,7 @@ from backend.domain.tenancy import Permission
 from backend.services.canon_change_workflow import (
     MAX_INSTRUCTION_LENGTH,
     CanonChangeWorkflow,
+    ChangeResult,
 )
 from backend.services.canon_character_workflow import DiscardedItem, UsageSink
 from backend.services.canon_creation_workflow import (
@@ -55,6 +59,8 @@ from backend.services.mutation_service import ValidationReport
 logger = logging.getLogger(__name__)
 
 REVISE_PROMPT_VERSION = "revise-proposal/1"
+LINKS_PROMPT_VERSION = "suggest-links/1"
+MAX_LINKS = 30
 MAX_LISTED_ENTRIES = 200
 
 
@@ -261,6 +267,178 @@ class CanonReviseWorkflow(CanonChangeWorkflow):
         )
 
 
+class SuggestedLink(BaseModel):
+    subject_ref: str = Field(description="The id of the entry the fact is about")
+    predicate: str
+    object_ref: str = Field(description="The id of the entry it points to")
+    why: str = Field(description="The author's own words that imply this, in one sentence")
+
+
+class LinkPlan(BaseModel):
+    """Structured model output. Untrusted: typed and checked before it becomes a proposal."""
+
+    links: list[SuggestedLink] = Field(default_factory=list)
+
+
+class CanonLinkWorkflow(CanonReviseWorkflow):
+    async def suggest_links(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        *,
+        expected_revision: int,
+        credential: str | None = None,
+        provider_base_url: str | None = None,
+        usage_sink: UsageSink | None = None,
+    ) -> ChangeResult:
+        """Connections between existing entries that their details imply but no fact records.
+
+        The result is a set of suggested facts to review; entries are never merged or
+        changed, and a fact that is already recorded is not suggested again.
+        """
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        predicates, _entity_types = await self._vocabulary(workspace_id, project_id)
+        linking = {
+            name: spec
+            for name, spec in predicates.items()
+            if spec.object_shape is ObjectKind.ENTITY_REF
+        }
+        story, entities, facts, _beliefs = await self._story(workspace_id, project_id, None)
+        active = {entity.id: entity for entity in entities if entity.is_active}
+        if len(active) < 2 or not linking:
+            raise ValidationError("There need to be at least two entries to connect.")
+        predicate_lines = "\n".join(
+            f"- {spec.predicate}: subject is one of {sorted(spec.subject_types)}; points to "
+            f"{sorted(spec.object_types) or 'any entry'}"
+            + ("; only one at a time" if spec.cardinality is Cardinality.ONE else "")
+            for spec in linking.values()
+        )
+        plan: LinkPlan = await self._generate(
+            system=(
+                "You are reading an author's story bible for connections between entries "
+                "that the author has written down in an entry's details or names but that "
+                "are not yet recorded as facts. Rules:\n"
+                "- suggest a connection only when the author's own words state or clearly "
+                "imply it. Never guess, and never invent a relationship that would be "
+                "interesting.\n"
+                "- use only the exact ids listed, and only these kinds of fact:\n"
+                f"{predicate_lines}\n"
+                "- do not repeat a fact that is already listed.\n"
+                "- in `why`, quote or paraphrase the words that imply it.\n"
+                "- if nothing is missing, return an empty list."
+            ),
+            user=story,
+            response_format=LinkPlan,
+            prompt_version=LINKS_PROMPT_VERSION,
+            credential=credential,
+            provider_base_url=provider_base_url,
+            usage_sink=usage_sink,
+        )
+
+        session_id = f"lnk_{uuid7()}"
+        evidence = [EvidenceRef(source_artefact_id=session_id)]
+        recorded = {
+            (
+                f.proposition.subject_id,
+                f.proposition.predicate,
+                getattr(f.proposition.object, "entity_id", None),
+            )
+            for f in facts
+        }
+        taken = {(f.proposition.subject_id, f.proposition.predicate) for f in facts}
+        operations: list[CanonOperation] = []
+        discarded: list[DiscardedItem] = []
+        notes: list[str] = []
+        for index, link in enumerate(plan.links[:MAX_LINKS]):
+            spec = linking.get(link.predicate)
+            subject, target = active.get(link.subject_ref), active.get(link.object_ref)
+            if spec is None:
+                discarded.append(
+                    DiscardedItem("fact", f"unsupported kind of fact {link.predicate!r}")
+                )
+            elif subject is None or target is None or subject.id == target.id:
+                discarded.append(DiscardedItem("fact", f"{link.predicate}: not two known entries"))
+            elif subject.type not in spec.subject_types or (
+                spec.object_types and target.type not in spec.object_types
+            ):
+                discarded.append(
+                    DiscardedItem(
+                        "fact",
+                        f"{link.predicate}: cannot connect a {subject.type} to a {target.type}",
+                    )
+                )
+            elif (subject.id, spec.predicate, target.id) in recorded:
+                continue
+            elif spec.cardinality is Cardinality.ONE and (subject.id, spec.predicate) in taken:
+                # A missing connection, not a correction: what is recorded stands.
+                discarded.append(
+                    DiscardedItem(
+                        "fact",
+                        f"{subject.name} already has a “{spec.predicate.replace('_', ' ').lower()}”",
+                    )
+                )
+            else:
+                recorded.add((subject.id, spec.predicate, target.id))
+                taken.add((subject.id, spec.predicate))
+                operations.append(
+                    AssertFactOp(
+                        id=f"tmp:link-{index}",
+                        proposition=Proposition(
+                            subject_id=subject.id,
+                            predicate=spec.predicate,
+                            object=EntityRefObject(entity_id=target.id, project_id=project_id),
+                        ),
+                        evidence=evidence,
+                    )
+                )
+                if link.why.strip():
+                    notes.append(f"{subject.name} and {target.name}: {link.why.strip()[:300]}")
+        if not operations:
+            raise ValidationError(
+                "No missing connections were found. Everything your entries say about each "
+                "other is already recorded."
+            )
+
+        mutation = await self._mutation.propose(
+            scope,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            operations=operations,
+            expected_head=expected_revision,
+            origin=OriginKind.MODEL.value,
+        )
+        review_scope = AccessScope(
+            actor_user_id=scope.actor_user_id,
+            auth_mode=scope.auth_mode,
+            correlation_id=scope.correlation_id,
+            workspace_id=workspace_id,
+            project_id=project_id,
+        )
+        mutation = await self._mutation.submit(
+            review_scope, mutation.id, "suggested connections awaiting review"
+        )
+        log_event(
+            logger,
+            "links.workflow.proposed",
+            mutation_id=mutation.id,
+            operations=len(operations),
+            discarded=len(discarded),
+            prompt_version=LINKS_PROMPT_VERSION,
+        )
+        return ChangeResult(
+            session_id=session_id,
+            understood=(
+                "Connections your entries already describe but that were not recorded as facts."
+            ),
+            mutation=mutation,
+            operation_count=len(operations),
+            validation=await self._mutation.validate(review_scope, mutation.id),
+            notes=notes[:12],
+            discarded=discarded,
+        )
+
+
 def _edit_entry(
     operation: CreateEntityOp | UpdateEntityOp, edit: ChangeEdit, base: object | None
 ) -> tuple[CanonOperation | None, str]:
@@ -357,7 +535,10 @@ def _edit_statement(
 
 __all__ = [
     "REVISE_PROMPT_VERSION",
+    "CanonLinkWorkflow",
     "CanonReviseWorkflow",
+    "LinkPlan",
+    "SuggestedLink",
     "ChangeEdit",
     "RevisionPlan",
     "RevisionResult",

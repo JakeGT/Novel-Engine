@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { entity } from '../test/fixtures'
@@ -42,6 +42,35 @@ describe('BiblePage', () => {
     expect(screen.queryByRole('link', { name: /Old Captain/ })).not.toBeInTheDocument()
     await user.click(screen.getByLabelText('Show archived'))
     expect(screen.getByRole('link', { name: /Old Captain/ })).toHaveTextContent('Archived')
+  })
+
+  it('asks the assistant for missing connections and takes the author to review them', async () => {
+    const api = mockApi({
+      'GET /entities': { items, limit: 200, offset: 0 },
+      'GET /links': { items: [] },
+      'POST /assist/links': {
+        mutation_id: 'mut_7',
+        status: 'needs_review',
+        operation_count: 1,
+        session_id: 'lnk_1',
+        understood: 'Connections your entries already describe.',
+        questions: [],
+        notes: [],
+        discarded: [],
+        validation_ok: true,
+        validation_issues: [],
+      },
+    })
+    const user = userEvent.setup()
+    renderInProject(<BiblePage />, { path: 'bible', at: 'bible' })
+
+    await user.click(await screen.findByRole('button', { name: 'Find missing connections' }))
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId('location').at(-1)).toHaveTextContent('/projects/prj_1/review/mut_7'),
+    )
+    // Aimed at the latest version, which is re-read first.
+    expect(api.find('POST', '/assist/links')[0].body).toEqual({ expected_revision: 5 })
   })
 
   it('shows everything by type, the most important first, a few at a time', async () => {

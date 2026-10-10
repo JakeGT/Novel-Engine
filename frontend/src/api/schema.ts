@@ -812,6 +812,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/assist/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assist Links
+         * @description Connections the entries already describe but no fact records, as a proposal for review.
+         */
+        post: operations["assist_links_api_v1_projects__project_id__assist_links_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/assist/proposals": {
         parameters: {
             query?: never;
@@ -3455,6 +3475,11 @@ export interface components {
              */
             target_record_type: string;
         };
+        /** LinkRequest */
+        LinkRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+        };
         /** LoadSampleRequest */
         LoadSampleRequest: {
             /** Expected Revision */
@@ -6081,6 +6106,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeProposalModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assist_links_api_v1_projects__project_id__assist_links_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkRequest"];
             };
         };
         responses: {

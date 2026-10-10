@@ -2866,6 +2866,21 @@
         "title": "LinkAssetOp",
         "type": "object"
       },
+      "LinkRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "title": "LinkRequest",
+        "type": "object"
+      },
       "LoadSampleRequest": {
         "additionalProperties": false,
         "properties": {
@@ -7733,6 +7748,59 @@
           }
         },
         "summary": "Assist Change",
+        "tags": [
+          "canon-assist"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/assist/links": {
+      "post": {
+        "description": "Connections the entries already describe but no fact records, as a proposal for review.",
+        "operationId": "assist_links_api_v1_projects__project_id__assist_links_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeProposalModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assist Links",
         "tags": [
           "canon-assist"
         ]
