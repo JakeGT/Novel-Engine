@@ -99,6 +99,20 @@ async def canon_list_entities(
     )
 
 
+@router.get("/needs-detail", response_model=CanonEntityListResponse)
+async def canon_entities_needing_detail(
+    project_id: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    scope: AccessScope = Depends(get_project_scope),
+    service: CanonEntityService = Depends(get_canon_entity_service),
+) -> CanonEntityListResponse:
+    """Entries that are only a name so far, as a to-do list for filling in."""
+    entities = await service.needs_detail(scope, scope.workspace_id or "", project_id, limit=limit)
+    return CanonEntityListResponse(
+        items=[_model(entity) for entity in entities], limit=limit, offset=0
+    )
+
+
 @router.get("/search", response_model=CanonEntityListResponse)
 async def canon_search_entities(
     project_id: str,

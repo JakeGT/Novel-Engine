@@ -177,10 +177,10 @@ def _build_fake_container(settings, tmp_path):
         tenancy=tenancy_service,
         local_mode=not settings.is_hosted,
     )
-    from backend.services.canon_character_workflow import CanonCharacterWorkflow
+    from backend.services.canon_creation_workflow import CanonCreationWorkflow
     from backend.services.canon_equivalence import CanonEquivalenceService
 
-    canon_character_workflow = CanonCharacterWorkflow(
+    canon_character_workflow = CanonCreationWorkflow(
         ai=ai,
         mutation=mutation_service,
         reader=canon_repository,

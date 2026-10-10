@@ -21,6 +21,8 @@ async function post(page: Page, path: string, data: unknown) {
 }
 
 async function expectAccessible(page: Page) {
+  // Dialogs fade in; measure contrast on the settled page, not mid-animation.
+  await page.waitForTimeout(350)
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze()
@@ -53,7 +55,11 @@ test('author, review, archive, and export a project end to end', async ({ page }
   await expectAccessible(page)
 
   // --- add an entry ---------------------------------------------------------------
+  // The assistant leads the dialog; this run has no AI provider, so fill it in by hand.
   await page.getByRole('button', { name: /Add a character/ }).click()
+  await expect(page.getByRole('form', { name: 'Describe it' }).getByRole('radio', { name: 'Character' })).toBeChecked()
+  await expectAccessible(page)
+  await page.getByRole('button', { name: 'Fill it in by hand' }).click()
   const create = page.getByRole('form', { name: 'New entry' })
   await expect(create.getByRole('radio', { name: 'Character' })).toBeChecked()
   await create.getByLabel('Name', { exact: true }).fill('Mara Ven')
@@ -232,8 +238,12 @@ test('the core authoring path works with the keyboard alone', async ({ page }) =
   await page.keyboard.press('Enter')
   await expect(page.getByText(/Version \d+ · saved/)).toBeVisible()
 
-  // Open the new-entry dialog; focus lands on the name, and Tab stays inside the dialog.
+  // Open the new-entry dialog; focus lands in it, and Tab stays inside the dialog.
   await tabTo('New entry')
+  await page.keyboard.press('Enter')
+  await expect(page.getByLabel('Describe it in your own words')).toBeFocused()
+  await expectVisibleFocus()
+  await tabTo('Fill it in by hand')
   await page.keyboard.press('Enter')
   const form = page.getByRole('form', { name: 'New entry' })
   const name = form.getByLabel('Name', { exact: true })

@@ -355,3 +355,19 @@ schema), both by the API and, for older projects, by the app on first open. `GET
 pages back from the newest revision (it previously returned the oldest page). See
 `frontend/README.md`.
 
+## Assisted creation (2026-10-10)
+
+The owner asked for creation to be AI-led, as in the original design. "New entry" now opens the
+assistant: describe one thing or a whole idea, optionally answer generated questions, and the
+assistant drafts entries, details, and linking facts as one proposal for review
+(`backend/services/canon_creation_workflow.py`, `/assist/*`, `frontend/src/components/AssistFlow.tsx`).
+Things that are only mentioned become bare entries; `GET /entities/needs-detail` derives a to-do
+list of them, shown on the project home, and the same assistant fills in any existing entry.
+Typing an entry in by hand is still one click away. Duplicate avoidance is by normalized name and
+alias within a type, not semantic search. **Not verified against a real model**: tests use a
+scripted model, plus a check that the output format converts to a strict JSON schema. The hosted
+stack sets `AI_MODEL` (default `anthropic/claude-sonnet-5.5`, an OpenRouter id); the previous
+default `gpt-4o` is not a valid OpenRouter id, so hosted AI calls could not have worked before.
+The older character-only endpoints remain but the UI no longer uses them; their output model
+still contains a free-form object that strict structured output rejects.
+

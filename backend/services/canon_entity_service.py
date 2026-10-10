@@ -85,6 +85,37 @@ class CanonEntityService:
             offset=offset,
         )
 
+    async def needs_detail(
+        self, scope: AccessScope, workspace_id: str, project_id: str, *, limit: int = 50
+    ) -> list[CanonEntity]:
+        """Active entries that are only a name so far: no details and nothing stated about them.
+
+        These are typically entries created because something else mentioned
+        them. The list is derived on every call, so an entry leaves it as soon
+        as it gains a detail or a fact of its own; nothing is stored.
+        """
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        bare: list[CanonEntity] = []
+        offset = 0
+        while len(bare) < limit:
+            page = await self._reader.list_entities(
+                workspace_id=workspace_id, project_id=project_id, limit=200, offset=offset
+            )
+            for entity in page:
+                if entity.attributes:
+                    continue
+                stated = await self._reader.list_facts(
+                    workspace_id=workspace_id, project_id=project_id, subject_id=entity.id, limit=1
+                )
+                if not stated:
+                    bare.append(entity)
+                    if len(bare) >= limit:
+                        break
+            if len(page) < 200:
+                break
+            offset += 200
+        return bare
+
     async def search(
         self,
         scope: AccessScope,

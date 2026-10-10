@@ -32,6 +32,9 @@ x-app: &app
     # from the command line (README.md). Platform admins are Novel Engine user ids (usr_...).
     ALLOW_WORKSPACE_SELF_CREATION: "false"
     PLATFORM_ADMIN_USER_IDS: ${PLATFORM_ADMIN_USER_IDS:-}
+    # The model the assistant uses, as an OpenRouter id (hosted inference runs on the
+    # workspace's own OpenRouter key). It must support structured output.
+    AI_MODEL: ${AI_MODEL:-anthropic/claude-sonnet-5.5}
     # Caddy (the platform-proxy subnet) is the only trusted forwarder.
     FORWARDED_ALLOW_IPS: 172.23.0.0/16
   secrets:

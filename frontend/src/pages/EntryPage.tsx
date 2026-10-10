@@ -1,13 +1,7 @@
-import { useMutation, useQueries, useQuery } from '@tanstack/react-query'
-import { useState, type FormEvent } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import {
-  api,
-  isApiError,
-  type Belief,
-  type CanonEntity,
-  type CharacterQuestionSheet,
-} from '../api/client'
+import { useQueries, useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
+import { api, type Belief, type CanonEntity } from '../api/client'
 import { ActivityPanel } from '../components/ActivityPanel'
 import { ArchiveEntry } from '../components/ArchiveEntry'
 import { EntityForm } from '../components/EntityForm'
@@ -24,7 +18,7 @@ import {
   TypeAvatar,
 } from '../components/ui'
 import { objectText, predicateLabel, typeLabel, typePlural, valueText, words, type Tone } from '../lib/words'
-import { scopedKey, useEntries, useInvalidateProject, useProject } from '../project'
+import { scopedKey, useEntries, useProject } from '../project'
 
 const AGREEMENT: Record<string, { label: string; tone: Tone }> = {
   agrees: { label: 'True in canon', tone: 'ok' },
@@ -170,109 +164,27 @@ function Events({ entity }: { entity: CanonEntity }) {
   )
 }
 
-function ProviderProblem({ error }: { error: unknown }) {
-  const { scope, access } = useProject()
-  if (!error) return null
-  if (isApiError(error, 'capability_unavailable') || isApiError(error, 'provider_failure')) {
-    return (
-      <div className="notice warn" role="alert">
-        <p>
-          <strong>The interview needs an AI provider, and none is connected right now.</strong>{' '}
-          Nothing was changed. You can still add details and facts by hand.
-        </p>
-        {access?.hosted && (
-          <Link className="btn" to={`/projects/${scope.projectId}/assistant`}>
-            Connect an AI key
-          </Link>
-        )}
-      </div>
-    )
-  }
-  return <ErrorNotice error={error} />
-}
-
-function Interview({ entity }: { entity: CanonEntity }) {
-  const { scope, headRevision, refreshHead } = useProject()
-  const invalidate = useInvalidateProject(scope)
-  const navigate = useNavigate()
-  const [sheet, setSheet] = useState<CharacterQuestionSheet | null>(null)
-  const [answers, setAnswers] = useState<Record<string, string>>({})
-
-  const questions = useMutation({
-    mutationFn: () => api.characterQuestions(scope, entity.id),
-    onSuccess: (data) => setSheet(data),
-  })
-  const proposal = useMutation({
-    mutationFn: async () => {
-      const answered = (sheet?.questions ?? [])
-        .filter((question) => (answers[question.id] ?? '').trim())
-        .map((question) => ({
-          question_id: question.id,
-          question: question.question,
-          answer: answers[question.id].trim(),
-        }))
-      // A suggestion is not a canon write: aim it at whatever the latest version is right now.
-      const head = await refreshHead().catch(() => headRevision)
-      return api.characterProposal(scope, entity.id, { answers: answered, expected_revision: head })
-    },
-    onSuccess: async (result) => {
-      await invalidate()
-      navigate(`/projects/${scope.projectId}/review/${result.mutation_id}`, {
-        state: { fromInterview: true, discarded: result.discarded },
-      })
-    },
-  })
-  const anyAnswer = Object.values(answers).some((answer) => answer.trim())
-
-  const onSubmit = (event: FormEvent) => {
-    event.preventDefault()
-    proposal.mutate()
-  }
-
+function Assistant({ entity, bare }: { entity: CanonEntity; bare: boolean }) {
+  const { fillIn } = useProject()
   return (
-    <section className="card" aria-labelledby="interview-heading">
+    <section className={`card ${bare ? '' : 'quiet'}`} aria-labelledby="assistant-heading">
       <div className="card-head">
         <div>
-          <h2 id="interview-heading">Interview {entity.name}</h2>
+          <h2 id="assistant-heading">
+            {bare ? `${entity.name} is just a name so far` : `Tell the assistant more about ${entity.name}`}
+          </h2>
           <p className="muted small">
-            The AI assistant asks a few questions and turns your answers into suggested changes.
-            Nothing is added to your story until you review them.
+            The assistant asks a few questions, then drafts the details and the links to the rest
+            of your story. Nothing is added until you review it.
           </p>
         </div>
         <span className="avatar sm tint-violet" aria-hidden="true">
           <Icon name="chat" size={15} />
         </span>
       </div>
-      {!sheet && (
-        <Button icon="spark" onClick={() => questions.mutate()} disabled={questions.isPending}>
-          {questions.isPending ? 'Thinking of questions…' : 'Start the interview'}
-        </Button>
-      )}
-      <div style={{ marginTop: questions.error ? '0.9rem' : 0 }}>
-        <ProviderProblem error={questions.error} />
-      </div>
-      {sheet && (
-        <form className="stack" onSubmit={onSubmit} aria-label="Interview answers">
-          {sheet.questions.map((question) => (
-            <div className="field" key={question.id}>
-              <label htmlFor={`q-${question.id}`}>{question.question}</label>
-              <textarea
-                id={`q-${question.id}`}
-                rows={2}
-                value={answers[question.id] ?? ''}
-                onChange={(event) => setAnswers({ ...answers, [question.id]: event.target.value })}
-              />
-            </div>
-          ))}
-          <p className="hint small muted">Answer as many or as few as you like.</p>
-          <div className="actions">
-            <Button variant="primary" type="submit" disabled={!anyAnswer || proposal.isPending}>
-              {proposal.isPending ? 'Writing suggestions…' : 'Turn answers into suggestions'}
-            </Button>
-          </div>
-          <ProviderProblem error={proposal.error} />
-        </form>
-      )}
+      <Button variant={bare ? 'primary' : 'default'} icon="spark" onClick={() => fillIn?.(entity)}>
+        {bare ? 'Fill it in with the assistant' : 'Ask me about it'}
+      </Button>
     </section>
   )
 }
@@ -290,6 +202,16 @@ export function EntryPage() {
   const entity = query.data
   const active = entity?.lifecycle === 'active'
   const editable = canWrite && Boolean(active)
+  // Outgoing facts decide whether the entry is still only a name; the facts panel shares this query.
+  const stated = useQuery({
+    queryKey: scopedKey(scope, 'facts', 'subject', entityId),
+    queryFn: () => api.listFacts(scope, { subject_id: entityId, limit: 200 }),
+  })
+  const bare =
+    Boolean(entity) &&
+    Object.keys(entity?.attributes ?? {}).length === 0 &&
+    stated.isSuccess &&
+    stated.data.items.length === 0
 
   return (
     <>
@@ -336,11 +258,12 @@ export function EntryPage() {
 
           <div className="two-col">
             <div className="section-gap">
+              {editable && bare && <Assistant entity={entity} bare />}
               <Details entity={entity} onEdit={editable ? () => setEditing(true) : undefined} />
               <FactsPanel entity={entity} />
               {entity.type === 'Character' && <Beliefs entity={entity} />}
               {entity.type === 'Character' && <Events entity={entity} />}
-              {entity.type === 'Character' && editable && <Interview entity={entity} />}
+              {editable && !bare && <Assistant entity={entity} bare={false} />}
             </div>
             <div className="section-gap">
               <MediaLinksPanel targetId={entity.id} />

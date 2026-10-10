@@ -9,14 +9,18 @@ import { isOpenChange, originLabel, plural, typeLabel, typeLook, typePlural } fr
 import { actorLabel, entryPath, scopedKey, useEntries, useProject } from '../project'
 
 const STARTERS = [
+  {
+    type: undefined,
+    title: 'Describe your story',
+    text: 'Write a paragraph. The assistant drafts the people, places and links for you to review.',
+  },
   { type: 'Character', title: 'Add a character', text: 'Who is this story about?' },
   { type: 'Location', title: 'Add a place', text: 'Where does it happen?' },
-  { type: undefined, title: 'Add something else', text: 'A faction, an object, an idea…' },
 ] as const
 
 /** The project's front door: what is in the bible, what needs attention, what to do next. */
 export function Overview() {
-  const { scope, canWrite, newEntry, headRevision, userId } = useProject()
+  const { scope, canWrite, newEntry, fillIn, headRevision, userId } = useProject()
   const session = useSession()
   const entries = useEntries(scope)
   const base = `/projects/${scope.projectId}`
@@ -28,6 +32,10 @@ export function Overview() {
   const revisions = useQuery({
     queryKey: scopedKey(scope, 'revisions', 'recent'),
     queryFn: () => api.listRevisions(scope, { limit: 5 }),
+  })
+  const todo = useQuery({
+    queryKey: scopedKey(scope, 'entities', 'needs-detail'),
+    queryFn: () => api.needsDetail(scope),
   })
   const anyFact = useQuery({
     queryKey: scopedKey(scope, 'facts', 'any'),
@@ -53,7 +61,8 @@ export function Overview() {
           <h1>{name ? `Let’s build your story bible, ${name}.` : 'Let’s build your story bible.'}</h1>
           <p className="lede">
             The story bible is where your world lives: who everyone is, how they are connected, and
-            what is true. Start with a single name — you can add the rest whenever you know it.
+            what is true. Describe it in your own words and the assistant does the filing: it
+            drafts the entries, links them together, and shows you everything before it is saved.
           </p>
           {canWrite ? (
             <div className="tiles" style={{ marginTop: '1.5rem' }}>
@@ -68,7 +77,7 @@ export function Overview() {
                     onClick={() => newEntry?.(starter.type)}
                   >
                     <span className={`avatar tint-${look.tint}`} aria-hidden="true">
-                      <Icon name={starter.type ? look.icon : 'plus'} />
+                      <Icon name={starter.type ? look.icon : 'spark'} />
                     </span>
                     <strong>{starter.title}</strong>
                     <span className="muted small">{starter.text}</span>
@@ -87,16 +96,16 @@ export function Overview() {
           <h2 id="how-heading">How it works</h2>
           <ol className="steps">
             <li className="step">
-              <strong>Add entries</strong>
-              <span className="muted">Characters, places, factions, objects — anything your story needs to remember.</span>
+              <strong>Describe it</strong>
+              <span className="muted">Write about a character, a place, or the whole idea, the way you would tell a friend.</span>
             </li>
             <li className="step">
-              <strong>Connect them with facts</strong>
-              <span className="muted">Build simple sentences like “Mara is a member of the Harbor Guild”.</span>
+              <strong>Answer a few questions</strong>
+              <span className="muted">The assistant asks what it needs, then drafts the entries and how they connect.</span>
             </li>
             <li className="step">
-              <strong>Stay in control</strong>
-              <span className="muted">Bigger changes wait for your review, and every save is a version you can return to.</span>
+              <strong>Review and keep what’s right</strong>
+              <span className="muted">Nothing is saved until you approve it, and every save is a version you can return to.</span>
             </li>
           </ol>
         </section>
@@ -145,6 +154,37 @@ export function Overview() {
           </Link>
         ))}
       </section>
+
+      {(todo.data?.items.length ?? 0) > 0 && (
+        <section className="card" aria-labelledby="todo-heading">
+          <div className="card-head">
+            <div>
+              <h2 id="todo-heading">To fill in</h2>
+              <p className="muted">
+                These are just names so far — usually because something else mentioned them. Let
+                the assistant ask you about each one.
+              </p>
+            </div>
+            <span className="badge accent">{todo.data?.items.length}</span>
+          </div>
+          <ul className="rows">
+            {(todo.data?.items ?? []).slice(0, 8).map((item) => (
+              <li className="row" key={item.id}>
+                <TypeAvatar type={item.type} name={item.name} size="sm" />
+                <Link className="grow" to={entryPath(scope, item.id)}>
+                  {item.name}
+                </Link>
+                <span className="muted small">{typeLabel(item.type)}</span>
+                {canWrite && (
+                  <Button size="sm" icon="chat" aria-label={`Fill in ${item.name}`} onClick={() => fillIn?.(item)}>
+                    Fill in
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {!hasFacts && anyFact.isSuccess && canWrite && (
         <section className="card quiet" aria-labelledby="next-heading">

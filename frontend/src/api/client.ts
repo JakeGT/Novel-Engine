@@ -30,6 +30,9 @@ export type CharacterQuestionSheet = Schemas['CharacterQuestionSheetModel']
 export type CharacterProposal = Schemas['CharacterProposalModel']
 export type CharacterProposalRequest = Schemas['CharacterProposalRequest']
 export type EntityListResponse = Schemas['CanonEntityListResponse']
+export type AssistBrief = Schemas['AssistBriefRequest']
+export type AssistQuestionSheet = Schemas['AssistQuestionSheetModel']
+export type AssistProposalRequest = Schemas['AssistProposalRequest']
 
 export interface Scope {
   workspaceId: string | null
@@ -414,6 +417,14 @@ export const api = {
 
   listEvents: (scope: Scope, params: { entity_id?: string; limit?: number } = {}) =>
     get<Items<CanonEvent>>(scope, '/events', params),
+
+  // --- assisted creation: describe, answer a few questions, review the draft -----
+  assistQuestions: (scope: Scope, body: AssistBrief) =>
+    send<AssistQuestionSheet>(scope, 'POST', '/assist/questions', body),
+  assistProposal: (scope: Scope, body: AssistProposalRequest) =>
+    send<CharacterProposal>(scope, 'POST', '/assist/proposals', body),
+  /** Entries that are only a name so far: the to-do list for filling in. */
+  needsDetail: (scope: Scope) => get<EntityListResponse>(scope, '/entities/needs-detail', { limit: 50 }),
 
   // --- guided character workflow ----------------------------------------------
   characterQuestions: (scope: Scope, entityId: string) =>

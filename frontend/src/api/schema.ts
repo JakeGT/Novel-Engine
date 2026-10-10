@@ -693,6 +693,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/assist/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Assist Proposal */
+        post: operations["assist_proposal_api_v1_projects__project_id__assist_proposals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/assist/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Assist Questions */
+        post: operations["assist_questions_api_v1_projects__project_id__assist_questions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/beliefs": {
         parameters: {
             query?: never;
@@ -880,6 +914,26 @@ export interface paths {
          *     this as a warning before creating a possible duplicate.
          */
         get: operations["canon_entity_name_collisions_api_v1_projects__project_id__entities_name_collisions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/entities/needs-detail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Canon Entities Needing Detail
+         * @description Entries that are only a name so far, as a to-do list for filling in.
+         */
+        get: operations["canon_entities_needing_detail_api_v1_projects__project_id__entities_needs_detail_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2137,6 +2191,43 @@ export interface components {
             valid_from?: string | null;
             /** Valid Until */
             valid_until?: string | null;
+        };
+        /** AssistBriefRequest */
+        AssistBriefRequest: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Entity Id */
+            entity_id?: string | null;
+            /** Entity Type */
+            entity_type?: string | null;
+            /** Name */
+            name?: string | null;
+        };
+        /** AssistProposalRequest */
+        AssistProposalRequest: {
+            /** Answers */
+            answers?: components["schemas"]["CharacterAnswerModel"][];
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Entity Id */
+            entity_id?: string | null;
+            /** Entity Type */
+            entity_type?: string | null;
+            /** Expected Revision */
+            expected_revision: number;
+            /** Name */
+            name?: string | null;
+        };
+        /** AssistQuestionSheetModel */
+        AssistQuestionSheetModel: {
+            /** Questions */
+            questions: components["schemas"]["CharacterQuestionModel"][];
         };
         /** BeliefModel */
         BeliefModel: {
@@ -5222,6 +5313,76 @@ export interface operations {
             };
         };
     };
+    assist_proposal_api_v1_projects__project_id__assist_proposals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistProposalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CharacterProposalModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assist_questions_api_v1_projects__project_id__assist_questions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistBriefRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistQuestionSheetModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_beliefs_api_v1_projects__project_id__beliefs_get: {
         parameters: {
             query?: {
@@ -5644,6 +5805,39 @@ export interface operations {
             query: {
                 entity_type: string;
                 name: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanonEntityListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    canon_entities_needing_detail_api_v1_projects__project_id__entities_needs_detail_get: {
+        parameters: {
+            query?: {
+                limit?: number;
             };
             header?: never;
             path: {

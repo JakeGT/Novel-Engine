@@ -17,6 +17,8 @@ export interface ProjectContext {
   userId?: string | null
   /** Open the "new entry" dialog, optionally with a type already chosen. */
   newEntry?: (type?: string) => void
+  /** Open the assistant to fill in an entry that already exists. */
+  fillIn?: (entity: CanonEntity) => void
 }
 
 const ProjectReactContext = createContext<ProjectContext | null>(null)

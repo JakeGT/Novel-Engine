@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { api, isApiError, type Scope } from '../api/client'
+import { api, isApiError, type CanonEntity, type Scope } from '../api/client'
 import { CommandPalette } from '../components/CommandPalette'
 import { Icon, type IconName } from '../components/icons'
 import { NewEntryDialog } from '../components/NewEntryDialog'
@@ -113,8 +113,9 @@ export function ProjectLayout() {
 
   const [menuOpen, setMenuOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
-  const [newEntry, setNewEntry] = useState<{ type?: string } | null>(null)
+  const [newEntry, setNewEntry] = useState<{ type?: string; entity?: CanonEntity } | null>(null)
   const openNewEntry = useCallback((type?: string) => setNewEntry({ type }), [])
+  const openFillIn = useCallback((entity: CanonEntity) => setNewEntry({ entity }), [])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -168,6 +169,7 @@ export function ProjectLayout() {
     canAdmin,
     userId: session.data?.user.id ?? null,
     newEntry: openNewEntry,
+    fillIn: openFillIn,
   }
   const local = !workspaceId
   const projectName =
@@ -415,7 +417,15 @@ export function ProjectLayout() {
         />
       )}
     </div>
-      {newEntry && <NewEntryDialog type={newEntry.type} onClose={() => setNewEntry(null)} />}
+      {newEntry && (
+        <NewEntryDialog
+          // A fresh dialog for each thing, so nothing typed for one leaks into the next.
+          key={newEntry.entity?.id ?? 'new'}
+          type={newEntry.type}
+          entity={newEntry.entity}
+          onClose={() => setNewEntry(null)}
+        />
+      )}
     </ProjectProvider>
   )
 }

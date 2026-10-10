@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { entity, VOCABULARY } from '../test/fixtures'
-import { expectAccessible, mockApi, problem, renderInProject, VIEWER } from '../test/harness'
+import { expectAccessible, mockApi, renderInProject, VIEWER } from '../test/harness'
 import { EntryPage } from './EntryPage'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -82,60 +82,22 @@ describe('EntryPage', () => {
     expect(await within(beliefs).findByText('Contradicts canon')).toBeInTheDocument()
   })
 
-  it('turns interview answers into suggestions for review, never straight into canon', async () => {
-    const api = mockApi({
-      ...base,
-      'POST /characters/ent_mara/questions': {
-        session_id: 's1',
-        entity_id: 'ent_mara',
-        questions: [
-          { id: 'q1', question: 'Where did Mara grow up?', category: 'history' },
-          { id: 'q2', question: 'Who does she trust?', category: 'relationships' },
-        ],
-      },
-      'POST /characters/ent_mara/proposals': {
-        session_id: 's1',
-        mutation_id: 'mut_5',
-        status: 'needs_review',
-        operation_count: 1,
-        discarded: [],
-        validation_ok: true,
-        validation_issues: [],
-      },
-    })
+  it('offers the assistant on a bare entry first, and more quietly once it has details', async () => {
+    const fillIn = vi.fn()
+    const bareEntity = entity({ attributes: {} })
+    mockApi({ ...base, 'GET /entities/ent_mara': bareEntity })
     const user = userEvent.setup()
-    renderInProject(<EntryPage />, at)
+    const first = renderInProject(<EntryPage />, { ...at, context: { fillIn } })
 
-    await user.click(await screen.findByRole('button', { name: 'Start the interview' }))
-    await user.type(await screen.findByLabelText('Where did Mara grow up?'), 'Saltmere')
-    await user.click(screen.getByRole('button', { name: 'Turn answers into suggestions' }))
+    expect(await screen.findByRole('heading', { name: 'Mara Venn is just a name so far' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Fill it in with the assistant' }))
+    expect(fillIn).toHaveBeenCalledWith(bareEntity)
+    first.unmount()
 
-    await waitFor(() =>
-      expect(screen.getAllByTestId('location').at(-1)).toHaveTextContent('/projects/prj_1/review/mut_5'),
-    )
-    // Only answered questions are sent, against the freshly read head.
-    expect(api.find('POST', '/proposals')[0].body).toEqual({
-      answers: [{ question_id: 'q1', question: 'Where did Mara grow up?', answer: 'Saltmere' }],
-      expected_revision: 5,
-    })
-  })
-
-  it('explains a missing AI provider and points to where a key is connected', async () => {
-    mockApi({
-      ...base,
-      'POST /characters/ent_mara/questions': problem(503, 'capability_unavailable', 'No provider.'),
-    })
-    const user = userEvent.setup()
-    renderInProject(<EntryPage />, at)
-
-    await user.click(await screen.findByRole('button', { name: 'Start the interview' }))
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('none is connected right now')
-    expect(alert).toHaveTextContent('Nothing was changed')
-    expect(within(alert).getByRole('link', { name: 'Connect an AI key' })).toHaveAttribute(
-      'href',
-      '/projects/prj_1/assistant',
-    )
+    mockApi(base)
+    renderInProject(<EntryPage />, { ...at, context: { fillIn } })
+    expect(await screen.findByRole('button', { name: 'Ask me about it' })).toBeInTheDocument()
+    expect(screen.queryByText(/just a name so far/)).not.toBeInTheDocument()
   })
 
   it('is read-only for a viewer and for an archived entry', async () => {
@@ -144,7 +106,7 @@ describe('EntryPage', () => {
     await screen.findByRole('heading', { level: 1, name: 'Mara Venn' })
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Start the interview' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /assistant|Ask me/ })).not.toBeInTheDocument()
     first.unmount()
 
     mockApi({ ...base, 'GET /entities/ent_mara': entity({ lifecycle: 'retired', retired_revision: 4 }) })

@@ -21,6 +21,8 @@ interface Props {
   entity?: CanonEntity
   /** The type preselected when creating. */
   initialType?: string
+  /** A name already typed elsewhere, carried into a new entry. */
+  initialName?: string
   onSaved?: (entity: CanonEntity) => void
   onCancel?: () => void
 }
@@ -34,7 +36,7 @@ function same(a: unknown, b: unknown): boolean {
  * project's own vocabulary, never from a hardcoded list. Whatever the author
  * typed survives a failed save, including a clash with someone else's change.
  */
-export function EntityForm({ entity, initialType, onSaved, onCancel }: Props) {
+export function EntityForm({ entity, initialType, initialName, onSaved, onCancel }: Props) {
   const { scope, canWrite } = useProject()
   const vocabulary = useQuery({
     queryKey: scopedKey(scope, 'vocabulary'),
@@ -43,7 +45,7 @@ export function EntityForm({ entity, initialType, onSaved, onCancel }: Props) {
   const types = vocabulary.data?.entity_types ?? []
 
   const [type, setType] = useState(entity?.type ?? initialType ?? 'Character')
-  const [name, setName] = useState(entity?.name ?? '')
+  const [name, setName] = useState(entity?.name ?? initialName ?? '')
   const [slug, setSlug] = useState(entity?.slug ?? '')
   const [aliases, setAliases] = useState((entity?.aliases ?? []).join(', '))
   const [rows, setRows] = useState<AttributeRow[]>(toRows(entity?.attributes))

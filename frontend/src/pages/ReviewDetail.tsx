@@ -255,7 +255,7 @@ export function ReviewDetail() {
   const invalidate = useInvalidateProject(scope)
   const entries = useEntries(scope)
   const arrival = (location.state ?? {}) as {
-    fromInterview?: boolean
+    fromAssistant?: boolean
     discarded?: { kind: string; reason: string }[]
   }
 
@@ -339,11 +339,11 @@ export function ReviewDetail() {
       </div>
 
       <div className="section-gap">
-        {arrival.fromInterview && open && (
+        {arrival.fromAssistant && open && (
           <div className="notice" role="status">
             <p>
-              <strong>Nothing has been added to your story yet.</strong> The interview produced the
-              suggestions below. Keep the ones you want, skip the rest, then add them to canon.
+              <strong>Nothing has been added to your story yet.</strong> The assistant drafted the
+              changes below. Keep the ones you want, skip the rest, then add them to canon.
             </p>
             {(arrival.discarded ?? []).length > 0 && (
               <>
@@ -368,6 +368,9 @@ export function ReviewDetail() {
               </strong>{' '}
               These changes are now part of your story.
             </span>
+            <Link className="btn" to={`/projects/${scope.projectId}`}>
+              See what to fill in next
+            </Link>
           </p>
         ) : change.status === 'rejected' ? (
           <p className="notice danger" role="status">

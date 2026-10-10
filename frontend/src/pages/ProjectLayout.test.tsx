@@ -61,15 +61,20 @@ describe('ProjectLayout', () => {
     await expectAccessible(container)
   })
 
-  it('adds an entry from anywhere and lands on it', async () => {
+  it('adds an entry by hand from anywhere and lands on it', async () => {
     const api = mockApi({ ...pages, 'POST /entities': reply(201, entity({ id: 'ent_new', name: 'Tobin' })) })
     const user = userEvent.setup()
     renderShell()
 
     await user.click((await screen.findAllByRole('button', { name: 'New entry' }))[0])
-    const dialog = screen.getByRole('dialog', { name: 'Add to your story bible' })
-    await user.type(within(dialog).getByLabelText('Name'), 'Tobin')
-    await user.click(within(dialog).getByRole('button', { name: 'Add to story bible' }))
+    // The assistant leads; typing it in by hand is one click away.
+    const dialog = screen.getByRole('dialog', { name: 'What would you like to add?' })
+    await user.click(within(dialog).getByRole('button', { name: 'Fill it in by hand' }))
+    const form = await screen.findByRole('dialog', { name: 'Add to your story bible' })
+    // Focus moves to the first field of the by-hand form.
+    expect(within(form).getByLabelText('Name')).toHaveFocus()
+    await user.type(within(form).getByLabelText('Name'), 'Tobin')
+    await user.click(within(form).getByRole('button', { name: 'Add to story bible' }))
 
     expect(await screen.findByText('entry page')).toBeInTheDocument()
     expect(api.find('POST', '/entities')[0].body).toMatchObject({ type: 'Character', name: 'Tobin', expected_revision: 7 })

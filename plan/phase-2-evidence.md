@@ -54,7 +54,7 @@ in place from `0018` to `0022` with existing data and stayed usable.
 
 ## Contract and seed
 
-- OpenAPI snapshot: `tests/contract/openapi_snapshot.json`, 145 operations, exact-checked by
+- OpenAPI snapshot: `tests/contract/openapi_snapshot.json`, 145 operations at Phase 2 acceptance (148 after the assisted-creation work of 2026-10-10), exact-checked by
   `tests/contract/test_openapi.py`. SHA-256
   `792ec7de3b53f9fa3c8cb5b8dfb174e853467b0402f155aa7c75339c5f6f433b`. `make frontend-api-check`
   confirms the committed client types match it.

@@ -254,7 +254,11 @@ export function Dialog({
       if (items.length === 0) return
       const start = items[0]
       const end = items[items.length - 1]
-      if (event.shiftKey && document.activeElement === start) {
+      if (!node.contains(document.activeElement)) {
+        // Focus was lost (the focused control went away): bring it back inside.
+        event.preventDefault()
+        ;(event.shiftKey ? end : start).focus()
+      } else if (event.shiftKey && document.activeElement === start) {
         event.preventDefault()
         end.focus()
       } else if (!event.shiftKey && document.activeElement === end) {
