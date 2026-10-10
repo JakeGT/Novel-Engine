@@ -183,6 +183,32 @@ async def canon_get_entity(
     return _model(entity)
 
 
+class LoadSampleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int = Field(ge=0)
+
+
+class SampleLoadedModel(BaseModel):
+    revision: int
+
+
+@router.post("/sample", response_model=SampleLoadedModel, status_code=201)
+async def load_sample_story(
+    project_id: str,
+    body: LoadSampleRequest,
+    response: Response,
+    scope: AccessScope = Depends(require_project_scope),
+    service: CanonEntityService = Depends(get_canon_entity_service),
+) -> SampleLoadedModel:
+    """Fill an empty project with a short sample story to look around in."""
+    result = await service.load_sample(
+        scope, scope.workspace_id or "", project_id, expected_revision=body.expected_revision
+    )
+    response.headers["ETag"] = f'"{result.revision}"'
+    return SampleLoadedModel(revision=result.revision)
+
+
 @router.post("", response_model=CanonEntityModel, status_code=201)
 async def canon_create_entity(
     project_id: str,

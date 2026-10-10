@@ -13,12 +13,13 @@ from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.ids import format_canon_id
 from backend.domain.canon.marks import details, needs_detail
 from backend.domain.canon.naming import MAX_SLUG_LENGTH, slugify
-from backend.domain.errors import NotFoundError, ValidationError
+from backend.domain.errors import ConflictError, NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.operations import CreateEntityOp, RetireEntityOp, UpdateEntityOp
 from backend.domain.tenancy import Permission
 from backend.ports import CanonRepositoryPort, SchemaVersionStorePort
 from backend.services.mutation_service import CommitResult, MutationService
+from backend.services.sample_story import sample_operations
 
 
 class CanonEntityService:
@@ -314,6 +315,31 @@ class CanonEntityService:
         )
         if existing is None:
             raise NotFoundError("Entity not found.")
+
+    async def load_sample(
+        self, scope: AccessScope, workspace_id: str, project_id: str, *, expected_revision: int
+    ) -> CommitResult:
+        """Fill an empty project with the sample story, as one version by the person asking."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        existing = await self._reader.list_entities(
+            workspace_id=workspace_id, project_id=project_id, include_retired=True, limit=1
+        )
+        if existing:
+            raise ConflictError(
+                "This project already has entries, so the sample story was not added. "
+                "Start a new project to look at the sample."
+            )
+        return await self._commit(
+            scope,
+            workspace_id,
+            project_id,
+            sample_operations(project_id),
+            expected_revision,
+            f"sample-story:{project_id}",
+            await self._published_schema_id(workspace_id, project_id),
+            # Asking for the sample is the acknowledgement that many entries arrive at once.
+            acknowledge_high_impact=True,
+        )
 
     async def _commit(
         self,

@@ -449,6 +449,12 @@ export const api = {
   createEntity: (scope: Scope, body: CreateEntityRequest) =>
     send<CanonEntity>(scope, 'POST', '/entities', body),
 
+  /** Fill an empty project with the short sample story, as one version. */
+  loadSample: (scope: Scope, expectedRevision: number) =>
+    send<Schemas['SampleLoadedModel']>(scope, 'POST', '/entities/sample', {
+      expected_revision: expectedRevision,
+    } satisfies Schemas['LoadSampleRequest']),
+
   updateEntity: (scope: Scope, entityId: string, body: UpdateEntityRequest) =>
     send<CanonEntity>(scope, 'PATCH', `/entities/${id(entityId)}`, body),
 

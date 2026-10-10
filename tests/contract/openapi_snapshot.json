@@ -2866,6 +2866,21 @@
         "title": "LinkAssetOp",
         "type": "object"
       },
+      "LoadSampleRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "title": "LoadSampleRequest",
+        "type": "object"
+      },
       "MembershipModel": {
         "properties": {
           "created_at": {
@@ -4355,6 +4370,19 @@
           "key"
         ],
         "title": "RotateCredentialRequest",
+        "type": "object"
+      },
+      "SampleLoadedModel": {
+        "properties": {
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision"
+        ],
+        "title": "SampleLoadedModel",
         "type": "object"
       },
       "SaveAnswersRequest": {
@@ -9006,6 +9034,59 @@
           }
         },
         "summary": "Canon Entities Needing Detail",
+        "tags": [
+          "canon-entities"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/entities/sample": {
+      "post": {
+        "description": "Fill an empty project with a short sample story to look around in.",
+        "operationId": "load_sample_story_api_v1_projects__project_id__entities_sample_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoadSampleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SampleLoadedModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Load Sample Story",
         "tags": [
           "canon-entities"
         ]

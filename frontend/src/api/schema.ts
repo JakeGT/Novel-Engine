@@ -1182,6 +1182,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/entities/sample": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Load Sample Story
+         * @description Fill an empty project with a short sample story to look around in.
+         */
+        post: operations["load_sample_story_api_v1_projects__project_id__entities_sample_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/entities/search": {
         parameters: {
             query?: never;
@@ -3435,6 +3455,11 @@ export interface components {
              */
             target_record_type: string;
         };
+        /** LoadSampleRequest */
+        LoadSampleRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+        };
         /** MembershipModel */
         MembershipModel: {
             /**
@@ -3940,6 +3965,11 @@ export interface components {
         RotateCredentialRequest: {
             /** Key */
             key: string;
+        };
+        /** SampleLoadedModel */
+        SampleLoadedModel: {
+            /** Revision */
+            revision: number;
         };
         /** SaveAnswersRequest */
         SaveAnswersRequest: {
@@ -6819,6 +6849,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CanonEntityListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    load_sample_story_api_v1_projects__project_id__entities_sample_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoadSampleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SampleLoadedModel"];
                 };
             };
             /** @description Validation Error */

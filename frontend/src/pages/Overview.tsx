@@ -5,6 +5,7 @@ import { OpenConversations } from '../components/Conversations'
 import { EntryMarks } from '../components/EntryMarks'
 import { Icon } from '../components/icons'
 import { Portrait } from '../components/Pictures'
+import { SampleStory } from '../components/SampleStory'
 import { Button, ErrorNotice, Loading, TypeAvatar } from '../components/ui'
 import { byPriority } from '../lib/marks'
 import { usePortraits } from '../lib/pictures'
@@ -124,6 +125,8 @@ export function Overview() {
             </Link>
           </section>
         )}
+
+        {canWrite && <SampleStory />}
 
         <section aria-labelledby="how-heading" className="stack">
           <h2 id="how-heading">How it works</h2>
