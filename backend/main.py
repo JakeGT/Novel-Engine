@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from backend.api.auth import project_access
+from backend.api.auth import RotatedSessionCookieMiddleware, project_access
 from backend.api.auth import router as auth_router
 from backend.api.frontend import SecurityHeadersMiddleware, frontend_directory, mount_frontend
 from backend.api.health import router as health_router
@@ -120,6 +120,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     )
     if resolved_settings.is_hosted or resolved_settings.is_production:
         app.add_middleware(SecurityHeadersMiddleware, settings=resolved_settings)
+    app.add_middleware(RotatedSessionCookieMiddleware, settings=resolved_settings)
     app.add_middleware(CorrelationIdMiddleware)
     register_exception_handlers(app)
 

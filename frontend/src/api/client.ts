@@ -1,3 +1,4 @@
+import { noteSignedIn, shouldHoldFor401, waitForSignIn } from '../lib/reauth'
 import type { components } from './schema'
 
 type Schemas = components['schemas']
@@ -237,6 +238,8 @@ export function errorMessage(error: unknown, fallback = 'Request failed'): strin
 }
 
 const CSRF_COOKIE = 'novel_csrf'
+// Requests whose "not signed in" answer is the answer, not an interruption.
+const UNHELD = new Set(['/auth/me', '/auth/logout'])
 
 function readCookie(name: string): string {
   const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'))
@@ -251,19 +254,32 @@ interface RequestOptions extends RequestInit {
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { workspaceId, json, ...rest } = options
   const method = (rest.method ?? 'GET').toUpperCase()
-  const headers = new Headers(rest.headers)
-  headers.set('Accept', 'application/json')
-  if (workspaceId) headers.set('X-Workspace-Id', workspaceId)
-  if (json !== undefined) headers.set('Content-Type', 'application/json')
-  if (method !== 'GET' && method !== 'HEAD') headers.set('X-CSRF-Token', readCookie(CSRF_COOKIE))
 
-  const response = await fetch(path, {
-    credentials: 'include',
-    ...rest,
-    method,
-    headers,
-    body: json !== undefined ? JSON.stringify(json) : rest.body,
-  })
+  const send = () => {
+    const headers = new Headers(rest.headers)
+    headers.set('Accept', 'application/json')
+    if (workspaceId) headers.set('X-Workspace-Id', workspaceId)
+    if (json !== undefined) headers.set('Content-Type', 'application/json')
+    // Read at the moment of sending: after signing in again the token is a new one.
+    if (method !== 'GET' && method !== 'HEAD') headers.set('X-CSRF-Token', readCookie(CSRF_COOKIE))
+    return fetch(path, {
+      credentials: 'include',
+      ...rest,
+      method,
+      headers,
+      body: json !== undefined ? JSON.stringify(json) : rest.body,
+    })
+  }
+
+  let response = await send()
+  // Signed out in the middle of work: hold the request, keep the page as it is,
+  // and send it again once the author has signed back in. Asking "am I signed in?"
+  // and signing out are answered as they are.
+  while (response.status === 401 && shouldHoldFor401() && !UNHELD.has(path)) {
+    await waitForSignIn()
+    response = await send()
+  }
+  if (response.ok) noteSignedIn()
 
   if (!response.ok) {
     let detail = response.statusText

@@ -143,6 +143,13 @@ What it showed, and what was done:
       assistant is now told to describe what the setup is missing instead; suggestions are cleaned,
       kept with the conversation, shown on the review screen, added by an owner through the normal
       additive setup path, and the same words can then be drafted again.
+- [x] The owner was signed out in the middle of an interview and lost the page. Cause: after
+      an hour the session id is replaced on the next request; the replacement changed the write
+      token, so when that request was a save it was refused, the new cookies were dropped with the
+      error, and the old session had already been revoked. Fixed at the source (the write token
+      carries over; the old id works for 60 more seconds; new cookies are delivered on errors
+      too) and made harmless in general (rule C9 in document 21: keep-alive while the site is
+      open; a refused request waits for sign-in in another tab and is then sent again).
 - [ ] Suggested fields on a type; suggestions shown inside the "Change anything" dialog when it
       asks a question; decimal and choice-list kinds of fact.
 

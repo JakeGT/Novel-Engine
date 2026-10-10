@@ -802,6 +802,20 @@ class InMemorySessionStore:
             return None
         return session
 
+    async def has_successor(self, session_id: str) -> bool:
+        from backend.core.security import hash_token
+
+        wanted = hash_token(session_id)
+        return any(session.rotated_from == wanted for session in self.sessions.values())
+
+    async def expire_within(self, session_id: str, seconds: int) -> None:
+        from datetime import timedelta
+
+        session = self.sessions.get(session_id)
+        deadline = utcnow() + timedelta(seconds=seconds)
+        if session is not None and session.expires_at > deadline:
+            self.sessions[session_id] = session.model_copy(update={"expires_at": deadline})
+
     async def revoke(self, session_id: str) -> bool:
         return self.sessions.pop(session_id, None) is not None
 

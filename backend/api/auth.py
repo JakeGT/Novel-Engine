@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from backend.api.dependencies import get_auth_service, get_settings, get_tenancy_service
 from backend.core.config import Settings
@@ -58,9 +59,29 @@ async def require_session(
     if resolved is None:
         raise UnauthorizedError("A valid session is required.")
     if resolved.rotated_session is not None:
-        # TTL-boundary rotation: re-issue the cookie for the new session id.
+        # The session id was replaced: re-issue the cookies. Also recorded on the
+        # request, because cookies set here are dropped when the request then fails
+        # (a validation error, say), and the browser must get the new id regardless.
         _set_session_cookies(response, settings, resolved.rotated_session)
+        request.state.rotated_session = resolved.rotated_session
     return resolved
+
+
+class RotatedSessionCookieMiddleware(BaseHTTPMiddleware):
+    """Deliver a replaced session's cookies on every outcome, including errors."""
+
+    def __init__(self, app: Any, *, settings: Settings) -> None:
+        super().__init__(app)
+        self._settings = settings
+
+    async def dispatch(self, request: Request, call_next: Any) -> Response:
+        response: Response = await call_next(request)
+        rotated = getattr(request.state, "rotated_session", None)
+        cookie = f"{self._settings.SESSION_COOKIE_NAME}="
+        already = any(value.startswith(cookie) for value in response.headers.getlist("set-cookie"))
+        if rotated is not None and not already:
+            _set_session_cookies(response, self._settings, rotated)
+        return response
 
 
 async def require_csrf(
@@ -363,12 +384,15 @@ async def me(
 
 @router.post("/logout")
 async def logout(
+    request: Request,
     auth_session: AuthenticatedSession = Depends(require_csrf),
     auth: AuthService = Depends(get_auth_service),
     settings: Settings = Depends(get_settings),
 ) -> JSONResponse:
     id_token = auth_session.session.id_token
     await auth.logout(auth_session.session.id)
+    # If signing out is what replaced the session, end the one it replaced as well.
+    await auth.logout(request.cookies.get(settings.SESSION_COOKIE_NAME))
     body: dict[str, object] = {"status": "logged_out"}
     if settings.is_hosted:
         body["logout_url"] = await auth.hosted_logout_url(id_token)
@@ -387,7 +411,8 @@ async def logout_redirect(
     current = await auth.resolve(raw_session)
     id_token = current.session.id_token if current is not None else None
     # Resolving may have rotated the session; end whichever one is current.
-    await auth.logout(current.session.id if current is not None else raw_session)
+    await auth.logout(current.session.id if current is not None else None)
+    await auth.logout(raw_session)
     target = await auth.hosted_logout_url(id_token) if settings.is_hosted else "/"
     response = RedirectResponse(target, status_code=302)
     _clear_session_cookies(response, settings)

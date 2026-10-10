@@ -2030,3 +2030,14 @@ details.more[open] > summary {
   margin: 0.1rem 0 0;
   white-space: pre-wrap;
 }
+
+/* Above every other dialog: the page beneath is being kept, not replaced. */
+.backdrop.signed-out {
+  z-index: 200;
+  place-items: center;
+}
+
+.backdrop.signed-out .dialog-body {
+  padding: 1.6rem;
+}
+

@@ -118,6 +118,10 @@ reading, so the layout has to protect them when the words do not.
   This is reserved for archiving and for returning the whole story to an earlier version, so that
   it stays meaningful.
 - **C8. Typed work is not lost by a stray click.** Clicking outside a dialog does not close it.
+- **C9. Being signed out never costs work.** A session is kept alive while the site is open.
+  If it ends anyway, the page is kept exactly as it is, the request that was refused waits, the
+  author signs in again in another tab, and the request is then sent by itself. A screen is never
+  replaced by a "signed out" page while it holds anything typed.
 
 ## 6. Always say what is happening
 

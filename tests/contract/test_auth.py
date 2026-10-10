@@ -117,3 +117,65 @@ def test_hosted_logout_by_link_also_returns_home_and_survives_rotation(
     assert response.status_code == 302
     assert response.headers["location"].endswith("&id_token_hint=id-token-for-code-123")
     assert store.sessions == {}
+
+
+def _age_sessions(container, hours: int = 2) -> None:
+    from datetime import timedelta
+
+    store = container.auth_service._session_store
+    for key, session in list(store.sessions.items()):
+        store.sessions[key] = session.model_copy(
+            update={"created_at": session.created_at - timedelta(hours=hours)}
+        )
+
+
+def test_a_save_made_after_an_hour_signed_in_works_and_keeps_the_person_signed_in(
+    auth_client, fake_container
+) -> None:
+    """After an hour the session id is replaced on the next request. When that request
+    was a save, it used to be refused and the browser left with no session at all."""
+    from tests.contract.test_canon_entities import _project_id, _publish_schema
+
+    project_id = _project_id(fake_container)
+    _publish_schema(auth_client, project_id)
+    before = auth_client.cookies.get(fake_container.settings.SESSION_COOKIE_NAME)
+    _age_sessions(fake_container)
+
+    saved = auth_client.post(
+        f"/api/v1/projects/{project_id}/entities",
+        json={"type": "Character", "name": "Mara", "expected_revision": 0},
+    )
+
+    assert saved.status_code == 201, saved.text
+    after = auth_client.cookies.get(fake_container.settings.SESSION_COOKIE_NAME)
+    assert after and after != before
+    # Still signed in, reading and writing, with the same write token.
+    assert auth_client.get("/auth/me").status_code == 200
+    again = auth_client.post(
+        f"/api/v1/projects/{project_id}/entities",
+        json={"type": "Character", "name": "Tobin", "expected_revision": 1},
+    )
+    assert again.status_code == 201, again.text
+
+
+def test_the_replacement_session_reaches_the_browser_even_when_the_request_fails(
+    auth_client, fake_container
+) -> None:
+    from tests.contract.test_canon_entities import _project_id, _publish_schema
+
+    project_id = _project_id(fake_container)
+    _publish_schema(auth_client, project_id)
+    before = auth_client.cookies.get(fake_container.settings.SESSION_COOKIE_NAME)
+    _age_sessions(fake_container)
+
+    refused = auth_client.post(
+        f"/api/v1/projects/{project_id}/entities",
+        json={"type": "Nonesuch", "name": "Mara", "expected_revision": 0},
+    )
+
+    assert refused.status_code >= 400
+    # The failure is about the content. The person is not signed out by it.
+    after = auth_client.cookies.get(fake_container.settings.SESSION_COOKIE_NAME)
+    assert after and after != before
+    fake_container.auth_service._session_store.sessions.pop(before, None)
+    assert auth_client.get("/auth/me").status_code == 200

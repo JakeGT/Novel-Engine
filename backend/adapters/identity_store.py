@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Text, delete, select
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Text, delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -226,6 +226,27 @@ class PostgresSessionStore:
                 expires_at=row.expires_at,
                 rotated_from=row.rotated_from,
                 id_token=row.id_token,
+            )
+
+    async def has_successor(self, session_id: str) -> bool:
+        async with session_scope(self._session_factory) as session:
+            found = (
+                await session.execute(
+                    select(SessionRow.id_hash)
+                    .where(SessionRow.rotated_from == hash_token(session_id))
+                    .limit(1)
+                )
+            ).first()
+            return found is not None
+
+    async def expire_within(self, session_id: str, seconds: int) -> None:
+        deadline = utcnow() + timedelta(seconds=seconds)
+        async with session_scope(self._session_factory) as session:
+            await session.execute(
+                update(SessionRow)
+                .where(SessionRow.id_hash == hash_token(session_id))
+                .where(SessionRow.expires_at > deadline)
+                .values(expires_at=deadline)
             )
 
     async def revoke(self, session_id: str) -> bool:

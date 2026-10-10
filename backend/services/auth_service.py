@@ -11,7 +11,12 @@ from dataclasses import dataclass
 from datetime import UTC
 
 from backend.core.config import Settings
-from backend.core.security import constant_time_equals, generate_pkce_pair, generate_token
+from backend.core.security import (
+    constant_time_equals,
+    generate_pkce_pair,
+    generate_token,
+    hash_token,
+)
 from backend.domain.identity import (
     IdentityClaims,
     IdentityProviderUnavailable,
@@ -28,6 +33,10 @@ from backend.ports import (
 )
 
 LOGIN_ATTEMPT_TTL_SECONDS = 600
+
+
+# How long a replaced session id keeps working, for requests already in flight.
+ROTATION_GRACE_SECONDS = 60
 
 
 @dataclass
@@ -75,14 +84,24 @@ class AuthService:
         if created_at.tzinfo is None:
             created_at = created_at.replace(tzinfo=UTC)
         if (utcnow() - created_at).total_seconds() >= self._session_rotation_seconds:
+            if await self._session_store.has_successor(session.id):
+                # Already replaced: this is a request that was in flight, or one sent
+                # before the browser stored the new cookie. Serve it; do not replace again.
+                return AuthenticatedSession(user=user, session=session)
             rotated = await self._session_store.create(
                 user_id=session.user_id,
                 ttl_seconds=self._settings.SESSION_TTL_SECONDS,
-                csrf_token=generate_token(24),
-                rotated_from=session.id,
+                # The write token stays the same across the replacement. The request
+                # that triggers it carries the old one, and a changed token would
+                # refuse that request and strand the browser without a session.
+                csrf_token=session.csrf_token,
+                # Stored hashed, like the id itself, so it is not a usable credential.
+                rotated_from=hash_token(session.id),
                 id_token=session.id_token,
             )
-            await self._session_store.revoke(session.id)
+            # Not revoked at once: requests already on their way with the old id must
+            # still work. It lapses on its own shortly.
+            await self._session_store.expire_within(session.id, ROTATION_GRACE_SECONDS)
             return AuthenticatedSession(user=user, session=rotated, rotated_session=rotated)
 
         return AuthenticatedSession(user=user, session=session)

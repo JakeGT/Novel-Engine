@@ -447,3 +447,15 @@ prompt rule, the cleaning of the model's suggestions, and `add_to_definition`. N
 `auth_client` sends the CSRF header on every request, so a GET route wrongly guarded by
 `require_project_scope` passes tests and fails in a browser; read routes use `get_project_scope`.
 
+## Sessions and losing work (2026-10-10)
+
+Session replacement (`AuthService.resolve`) keeps the CSRF token, leaves the old id valid for
+`ROTATION_GRACE_SECONDS`, and stores `rotated_from` hashed. `RotatedSessionCookieMiddleware`
+delivers replacement cookies on every response, including errors. In the frontend,
+`lib/reauth.ts` holds any request answered 401 (once the page has been signed in) until
+`/auth/me` succeeds again, `SignedOutOverlay` explains and links to sign-in in a new tab, and
+`lib/keepalive.tsx` touches the session every four minutes while the tab is visible. Consequence
+to know: while someone keeps the site open, their session keeps renewing, so removing their access
+in Authentik takes effect when they next have to sign in (closing the tab, or twelve hours idle),
+not sooner.
+

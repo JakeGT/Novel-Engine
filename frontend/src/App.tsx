@@ -1,5 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
+import { SignedOutOverlay } from './components/SignedOutOverlay'
+import { KeepSignedIn } from './lib/keepalive'
 import { AssistantPage } from './pages/AssistantPage'
 import { BiblePage } from './pages/BiblePage'
 import { CustomizePage } from './pages/CustomizePage'
@@ -28,6 +30,8 @@ function Moved({ to }: { to: (params: Record<string, string | undefined>) => str
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <KeepSignedIn />
+      <SignedOutOverlay />
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Home />} />
