@@ -36,6 +36,23 @@ class AssistAnswer(BaseModel):
     answer: str
 
 
+class SchemaSuggestion(BaseModel):
+    """Something the assistant thinks the project's setup is missing. Changes nothing
+    by itself: an owner decides whether to add it."""
+
+    # "type" (a type of entry) or "fact_kind" (a kind of fact).
+    kind: str
+    name: str
+    description: str = ""
+    # What the author said that the setup could not express.
+    reason: str = ""
+    # For a kind of fact: what it is said about, and what it points to.
+    subject_types: list[str] = Field(default_factory=list)
+    points_to: str = "entry"
+    object_types: list[str] = Field(default_factory=list)
+    one_at_a_time: bool = False
+
+
 class AssistSession(BaseModel):
     id: str
     workspace_id: str
@@ -54,6 +71,7 @@ class AssistSession(BaseModel):
     # A change conversation: the assistant's restatement and what else it noticed.
     understood: str = ""
     notes: list[str] = Field(default_factory=list)
+    suggestions: list[SchemaSuggestion] = Field(default_factory=list)
     mutation_id: str | None = None
     created_at: datetime
     updated_at: datetime

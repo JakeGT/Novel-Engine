@@ -24,6 +24,7 @@ function session(overrides: Partial<AssistSession> = {}): AssistSession {
     answers: [{ question_id: 'q1', question: 'Where does she live?', answer: 'Saltmere.' }],
     understood: '',
     notes: [],
+    suggestions: [],
     mutation_id: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),

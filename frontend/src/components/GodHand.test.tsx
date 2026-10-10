@@ -105,6 +105,7 @@ describe('GodHand', () => {
           answers: [],
           understood: 'Unclear.',
           notes: [],
+          suggestions: [],
           mutation_id: null,
           created_at: '2026-10-09T10:00:00Z',
           updated_at: '2026-10-09T10:00:00Z',

@@ -130,6 +130,7 @@ describe('AssistFlow', () => {
           answers: [{ question_id: 'q2', question: 'Who does she trust?', answer: 'Nobody.' }],
           understood: '',
           notes: [],
+          suggestions: [],
           mutation_id: null,
           created_at: '2026-10-09T10:00:00Z',
           updated_at: '2026-10-09T10:00:00Z',

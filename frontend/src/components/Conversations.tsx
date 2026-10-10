@@ -1,8 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { api, type AssistSession } from '../api/client'
+import { useNavigate } from 'react-router-dom'
+import { api, type AssistSession, type SchemaSuggestion } from '../api/client'
+import { predicateLabel, typeLabel } from '../lib/words'
 import { timeAgo } from '../lib/time'
-import { scopedKey, useProject } from '../project'
+import { scopedKey, useInvalidateProject, useProject } from '../project'
+import { AssistantProblem } from './AssistFlow'
 import { Button, ConfirmDialog, ErrorNotice } from './ui'
 
 const KIND: Record<string, string> = {
@@ -130,6 +133,8 @@ export function ConversationEvidence({
   if (!session) return null
 
   return (
+    <>
+    {session.suggestions.length > 0 && <SetupSuggestions session={session} />}
     <section className="card quiet" aria-labelledby="evidence-heading">
       <div className="card-head">
         <div>
@@ -175,6 +180,187 @@ export function ConversationEvidence({
               ))}
             </ul>
           </div>
+        )}
+      </div>
+    </section>
+    </>
+  )
+}
+
+const POINTS_TO: Record<string, string> = {
+  text: 'a piece of text',
+  whole_number: 'a whole number',
+  yes_no: 'yes or no',
+}
+
+const list = (types: string[]) => types.map((type) => typeLabel(type)).join(' or ')
+
+/** "Connects a Character to a piece of text." */
+function meaning(item: SchemaSuggestion): string {
+  if (item.kind === 'type') return item.description || 'A new type of entry.'
+  const target = item.points_to === 'entry' ? `a ${list(item.object_types)}` : POINTS_TO[item.points_to]
+  return `Connects a ${list(item.subject_types)} to ${target}${item.one_at_a_time ? ', one at a time' : ''}.${
+    item.description ? ` ${item.description}` : ''
+  }`
+}
+
+const suggestionTitle = (item: SchemaSuggestion) =>
+  item.kind === 'type'
+    ? `A type of entry: ${typeLabel(item.name)}`
+    : `A kind of fact: “${predicateLabel(item.name)}”`
+
+/**
+ * What the assistant could not express with the project's types and kinds of
+ * fact. Nothing is added unless an owner chooses to; after adding, the same
+ * description can be drafted again so what was left out can be included.
+ */
+function SetupSuggestions({ session }: { session: AssistSession }) {
+  const { scope, canWrite, canAdmin, headRevision, refreshHead } = useProject()
+  const invalidate = useInvalidateProject(scope)
+  const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const vocabulary = useQuery({
+    queryKey: scopedKey(scope, 'vocabulary'),
+    queryFn: () => api.vocabulary(scope),
+  })
+  const have = new Set([
+    ...(vocabulary.data?.entity_types ?? []).map((item) => item.name),
+    ...(vocabulary.data?.predicates ?? []).map((item) => item.predicate),
+  ])
+  const missing = session.suggestions.filter((item) => !have.has(item.name))
+  const [skipped, setSkipped] = useState<Set<string>>(new Set())
+  const chosen = missing.filter((item) => !skipped.has(item.name))
+  // A kind of fact cannot be added without a suggested type it connects.
+  const needed = new Set(
+    chosen.flatMap((item) => [...item.subject_types, ...item.object_types]).filter((type) => !have.has(type)),
+  )
+  const orphaned = [...needed].filter((type) => !chosen.some((item) => item.name === type))
+
+  const add = useMutation({
+    mutationFn: () => api.applySuggestions(scope, session.id, chosen.map((item) => item.name)),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: scopedKey(scope, 'vocabulary') })
+      await invalidate()
+    },
+  })
+  const redraft = useMutation({
+    mutationFn: async () => {
+      // Aim the new draft at whatever the latest version is right now.
+      const head = await refreshHead().catch(() => headRevision)
+      if (session.kind === 'change') {
+        return api.assistChange(scope, {
+          instruction: session.description,
+          entity_id: session.entity_id,
+          session_id: null,
+          expected_revision: head,
+        })
+      }
+      return api.assistProposal(scope, {
+        description: session.description,
+        entity_type: session.entity_id ? null : session.entity_type,
+        name: session.entity_id ? null : session.name,
+        entity_id: session.entity_id,
+        session_id: null,
+        answers: session.answers,
+        expected_revision: head,
+      })
+    },
+    onSuccess: async (result) => {
+      await invalidate()
+      if (result.mutation_id) {
+        navigate(`/projects/${scope.projectId}/review/${result.mutation_id}`, {
+          state: { fromAssistant: true, discarded: result.discarded, redrafted: true },
+        })
+      }
+    },
+  })
+  const anyAdded = session.suggestions.some((item) => have.has(item.name))
+
+  return (
+    <section className="card" aria-labelledby="setup-heading">
+      <div className="card-head">
+        <div>
+          <h2 id="setup-heading">Suggested additions to your setup</h2>
+          <p className="muted">
+            You said things your story bible has no way to record yet, so the assistant left them
+            out rather than force them into the wrong shape. Adding these lets it record them.
+            Nothing is added unless you choose to.
+          </p>
+        </div>
+      </div>
+      <ul className="rows">
+        {session.suggestions.map((item) => {
+          const added = have.has(item.name)
+          const id = `suggestion-${item.name}`
+          return (
+            <li className="row" key={item.name} style={{ alignItems: 'flex-start' }}>
+              {canAdmin && !added && (
+                <input
+                  id={id}
+                  type="checkbox"
+                  checked={!skipped.has(item.name)}
+                  onChange={(event) => {
+                    const next = new Set(skipped)
+                    if (event.target.checked) next.delete(item.name)
+                    else next.add(item.name)
+                    setSkipped(next)
+                  }}
+                />
+              )}
+              <span className="grow">
+                <label htmlFor={canAdmin && !added ? id : undefined}>
+                  <strong>{suggestionTitle(item)}</strong>
+                </label>
+                <span style={{ display: 'block' }}>{meaning(item)}</span>
+                {item.reason && (
+                  <span className="muted small" style={{ display: 'block' }}>
+                    Why: {item.reason}
+                  </span>
+                )}
+              </span>
+              {added && <span className="badge ok">In your setup</span>}
+            </li>
+          )
+        })}
+      </ul>
+      {!canAdmin && missing.length > 0 && (
+        <p className="notice plain" role="note">
+          Only a project owner can add to the setup. Ask one to open this page.
+        </p>
+      )}
+      {orphaned.length > 0 && (
+        <p className="hint">
+          Keep {list(orphaned)} ticked as well: a kind of fact you have ticked connects to it.
+        </p>
+      )}
+      <ErrorNotice error={add.error} prefix="Nothing was added to your setup" />
+      <AssistantProblem error={redraft.error} />
+      {redraft.isSuccess && !redraft.data.mutation_id && (
+        <p className="notice plain" role="status">
+          The assistant asked a question instead of drafting. Use “Change anything” to answer it.
+        </p>
+      )}
+      <div className="actions">
+        {canAdmin && missing.length > 0 && (
+          <Button
+            variant="primary"
+            icon="plus"
+            disabled={add.isPending || chosen.length === 0 || orphaned.length > 0}
+            onClick={() => add.mutate()}
+          >
+            {add.isPending ? 'Adding…' : `Add ${chosen.length === 1 ? 'this' : `these ${chosen.length}`} to my setup`}
+          </Button>
+        )}
+        {anyAdded && canWrite && (
+          <>
+            <Button icon="spark" disabled={redraft.isPending} onClick={() => redraft.mutate()}>
+              {redraft.isPending ? 'Drafting…' : 'Draft again using them'}
+            </Button>
+            <span className="hint">
+              Makes a new set of suggested changes from the same words. This one stays in your
+              review inbox until you add or discard it.
+            </span>
+          </>
         )}
       </div>
     </section>

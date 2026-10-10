@@ -15,11 +15,12 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.api.auth import require_project_scope
+from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import (
     get_assist_session_service,
     get_canon_character_workflow,
     get_credential_service,
+    get_schema_service,
     get_settings,
     get_usage_service,
 )
@@ -32,7 +33,14 @@ from backend.api.v1.canon_characters import (
 )
 from backend.api.v1.router import _provider_context
 from backend.core.config import Settings
-from backend.domain.assist import AssistAnswer, AssistKind, AssistQuestion, AssistSession
+from backend.domain.assist import (
+    AssistAnswer,
+    AssistKind,
+    AssistQuestion,
+    AssistSession,
+    SchemaSuggestion,
+)
+from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.services.assist_session_service import AssistSessionService
 from backend.services.canon_change_workflow import MAX_INSTRUCTION_LENGTH, CanonChangeWorkflow
@@ -43,6 +51,8 @@ from backend.services.canon_creation_workflow import (
     CreationBrief,
 )
 from backend.services.credential_service import CredentialService
+from backend.services.schema_service import SchemaService
+from backend.services.schema_suggestions import add_to_definition
 from backend.services.usage_service import ProviderUsageService
 
 router = APIRouter(prefix="/projects/{project_id}/assist", tags=["canon-assist"])
@@ -65,6 +75,31 @@ class AssistBriefRequest(BaseModel):
             name=self.name,
             entity_id=self.entity_id,
         )
+
+
+class SchemaSuggestionModel(BaseModel):
+    """Something the assistant thinks the project's setup is missing. Adding it is an
+    owner's decision (``/assist/sessions/{id}/suggestions/apply``)."""
+
+    # "type" (a type of entry) or "fact_kind" (a kind of fact).
+    kind: str
+    name: str
+    description: str
+    # What the author said that the setup could not express.
+    reason: str
+    subject_types: list[str]
+    # entry, text, whole_number, or yes_no.
+    points_to: str
+    object_types: list[str]
+    one_at_a_time: bool
+
+
+def _suggestions(items: list[SchemaSuggestion]) -> list[SchemaSuggestionModel]:
+    return [SchemaSuggestionModel(**item.model_dump()) for item in items]
+
+
+class AssistProposalModel(CharacterProposalModel):
+    suggestions: list[SchemaSuggestionModel] = Field(default_factory=list)
 
 
 class AssistQuestionSheetModel(BaseModel):
@@ -129,7 +164,7 @@ async def assist_questions(
     )
 
 
-@router.post("/proposals", response_model=CharacterProposalModel, status_code=201)
+@router.post("/proposals", response_model=AssistProposalModel, status_code=201)
 async def assist_proposal(
     project_id: str,
     body: AssistProposalRequest,
@@ -139,7 +174,7 @@ async def assist_proposal(
     usage: ProviderUsageService = Depends(get_usage_service),
     settings: Settings = Depends(get_settings),
     scope: AccessScope = Depends(require_project_scope),
-) -> CharacterProposalModel:
+) -> AssistProposalModel:
     credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
         settings=settings, credentials=credentials, usage=usage, scope=scope
     )
@@ -181,9 +216,15 @@ async def assist_proposal(
     if credential_id:
         await credentials.mark_used(scope.workspace_id or "", credential_id)
     await sessions.proposed(
-        scope, scope.workspace_id or "", project_id, session.id, mutation_id=result.mutation.id
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        session.id,
+        mutation_id=result.mutation.id,
+        suggestions=result.suggestions,
     )
-    return CharacterProposalModel(
+    return AssistProposalModel(
+        suggestions=_suggestions(result.suggestions),
         mutation_id=result.mutation.id,
         status=result.mutation.status.value,
         operation_count=result.operation_count,
@@ -229,6 +270,7 @@ class ChangeProposalModel(BaseModel):
     # Other things in the story this affects, for the author to consider.
     notes: list[str]
     discarded: list[DiscardedItemModel]
+    suggestions: list[SchemaSuggestionModel] = Field(default_factory=list)
     validation_ok: bool
     validation_issues: list[ProposalIssueModel]
 
@@ -289,6 +331,7 @@ async def assist_change(
         ],
         understood=result.understood,
         notes=result.notes,
+        suggestions=result.suggestions,
     )
     if result.mutation is not None:
         await sessions.proposed(
@@ -307,6 +350,7 @@ async def assist_change(
         understood=result.understood,
         questions=result.questions,
         notes=result.notes,
+        suggestions=_suggestions(result.suggestions),
         discarded=[
             DiscardedItemModel(kind=item.kind, reason=item.reason) for item in result.discarded
         ],
@@ -341,6 +385,7 @@ class AssistSessionModel(BaseModel):
     answers: list[CharacterAnswerModel]
     understood: str
     notes: list[str]
+    suggestions: list[SchemaSuggestionModel]
     mutation_id: str | None
     created_at: datetime
     updated_at: datetime
@@ -378,6 +423,7 @@ def _session(session: AssistSession) -> AssistSessionModel:
         ],
         understood=session.understood,
         notes=session.notes,
+        suggestions=_suggestions(session.suggestions),
         mutation_id=session.mutation_id,
         created_at=session.created_at,
         updated_at=session.updated_at,
@@ -389,7 +435,7 @@ async def list_assist_sessions(
     project_id: str,
     mutation_id: str | None = Query(default=None, max_length=200),
     sessions: AssistSessionService = Depends(get_assist_session_service),
-    scope: AccessScope = Depends(require_project_scope),
+    scope: AccessScope = Depends(get_project_scope),
 ) -> AssistSessionListModel:
     """The caller's unfinished conversations; or, with ``mutation_id``, the
     conversation that set of suggested changes came from."""
@@ -407,7 +453,7 @@ async def get_assist_session(
     project_id: str,
     session_id: str,
     sessions: AssistSessionService = Depends(get_assist_session_service),
-    scope: AccessScope = Depends(require_project_scope),
+    scope: AccessScope = Depends(get_project_scope),
 ) -> AssistSessionModel:
     return _session(await sessions.get(scope, scope.workspace_id or "", project_id, session_id))
 
@@ -446,3 +492,47 @@ async def close_assist_session(
 ) -> AssistSessionModel:
     """Put an unfinished conversation away."""
     return _session(await sessions.close(scope, scope.workspace_id or "", project_id, session_id))
+
+
+class ApplySuggestionsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Which of the conversation's suggestions to add, by name.
+    names: list[str] = Field(min_length=1, max_length=20)
+
+
+class AppliedSuggestionsModel(BaseModel):
+    # Names that were added now. Ones the project already had are left alone.
+    added: list[str]
+    schema_version: int | None
+
+
+@router.post("/sessions/{session_id}/suggestions/apply", response_model=AppliedSuggestionsModel)
+async def apply_schema_suggestions(
+    project_id: str,
+    session_id: str,
+    body: ApplySuggestionsRequest,
+    sessions: AssistSessionService = Depends(get_assist_session_service),
+    schemas: SchemaService = Depends(get_schema_service),
+    scope: AccessScope = Depends(require_project_scope),
+) -> AppliedSuggestionsModel:
+    """Add types and kinds of fact the assistant suggested to the project's setup.
+
+    Only ever adds, through the same checked path as adding one by hand, and needs
+    the same authority (a project owner). Calls no model and changes no canon.
+    """
+    session = await sessions.get(scope, scope.workspace_id or "", project_id, session_id)
+    wanted = [item for item in session.suggestions if item.name in set(body.names)]
+    if not wanted:
+        raise ValidationError("None of those are suggestions from this conversation.")
+    published = next(
+        (v for v in await schemas.list_versions(scope) if v.status == "published"), None
+    )
+    if published is None:
+        raise NotFoundError("This project has no published setup to add to.")
+    definition, added = add_to_definition(published.parsed_definition(), wanted)
+    if not added:
+        return AppliedSuggestionsModel(added=[], schema_version=published.version)
+    draft, _ = await schemas.create_draft(scope, definition)
+    result = await schemas.publish(scope, draft.id)
+    return AppliedSuggestionsModel(added=added, schema_version=result.version)

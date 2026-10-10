@@ -11,6 +11,7 @@ from backend.domain.assist import (
     AssistQuestion,
     AssistSession,
     AssistStatus,
+    SchemaSuggestion,
 )
 
 pytestmark = pytest.mark.integration
@@ -46,6 +47,9 @@ def _session(session_id: str, **overrides) -> AssistSession:
 async def test_a_conversation_round_trips_and_updates_in_place(store) -> None:
     question = AssistQuestion(id="q1", question="Where does she live?", category="place")
     answer = AssistAnswer(question_id="q1", question="Where does she live?", answer="The harbor.")
+    suggestion = SchemaSuggestion(
+        kind="fact_kind", name="PLAYS", subject_types=["Character"], object_types=["Instrument"]
+    )
     await store.save(_session("brf_1", entity_type="Character", name="Mara", questions=[question]))
 
     await store.save(
@@ -54,6 +58,7 @@ async def test_a_conversation_round_trips_and_updates_in_place(store) -> None:
             questions=[question],
             answers=[answer],
             notes=["One note"],
+            suggestions=[suggestion],
             understood="Understood.",
             status=AssistStatus.PROPOSED,
             mutation_id="mut_1",
@@ -66,6 +71,7 @@ async def test_a_conversation_round_trips_and_updates_in_place(store) -> None:
     assert kept.description == "Mara is a pilot — “the Fox”."
     assert kept.questions == [question] and kept.answers == [answer]
     assert kept.notes == ["One note"] and kept.understood == "Understood."
+    assert kept.suggestions == [suggestion]
     assert kept.status is AssistStatus.PROPOSED and kept.mutation_id == "mut_1"
     assert kept.created_at == NOW and kept.updated_at == NOW + timedelta(minutes=5)
     found = await store.for_mutation(workspace_id="ws1", project_id="p1", mutation_id="mut_1")

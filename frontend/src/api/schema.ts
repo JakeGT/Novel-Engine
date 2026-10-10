@@ -900,6 +900,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/assist/sessions/{session_id}/suggestions/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Schema Suggestions
+         * @description Add types and kinds of fact the assistant suggested to the project's setup.
+         *
+         *     Only ever adds, through the same checked path as adding one by hand, and needs
+         *     the same authority (a project owner). Calls no model and changes no canon.
+         */
+        post: operations["apply_schema_suggestions_api_v1_projects__project_id__assist_sessions__session_id__suggestions_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/beliefs": {
         parameters: {
             query?: never;
@@ -2338,6 +2361,18 @@ export interface components {
             /** World Position */
             world_position?: string | null;
         };
+        /** AppliedSuggestionsModel */
+        AppliedSuggestionsModel: {
+            /** Added */
+            added: string[];
+            /** Schema Version */
+            schema_version: number | null;
+        };
+        /** ApplySuggestionsRequest */
+        ApplySuggestionsRequest: {
+            /** Names */
+            names: string[];
+        };
         /** AssertBeliefOp */
         AssertBeliefOp: {
             /**
@@ -2411,6 +2446,25 @@ export interface components {
             /** Name */
             name?: string | null;
         };
+        /** AssistProposalModel */
+        AssistProposalModel: {
+            /** Discarded */
+            discarded: components["schemas"]["DiscardedItemModel"][];
+            /** Mutation Id */
+            mutation_id: string;
+            /** Operation Count */
+            operation_count: number;
+            /** Session Id */
+            session_id: string;
+            /** Status */
+            status: string;
+            /** Suggestions */
+            suggestions?: components["schemas"]["SchemaSuggestionModel"][];
+            /** Validation Issues */
+            validation_issues: components["schemas"]["ProposalIssueModel"][];
+            /** Validation Ok */
+            validation_ok: boolean;
+        };
         /** AssistProposalRequest */
         AssistProposalRequest: {
             /** Answers */
@@ -2474,6 +2528,8 @@ export interface components {
             questions: components["schemas"]["CharacterQuestionModel"][];
             /** Status */
             status: string;
+            /** Suggestions */
+            suggestions: components["schemas"]["SchemaSuggestionModel"][];
             /** Understood */
             understood: string;
             /**
@@ -2586,6 +2642,8 @@ export interface components {
             session_id: string;
             /** Status */
             status: string | null;
+            /** Suggestions */
+            suggestions?: components["schemas"]["SchemaSuggestionModel"][];
             /** Understood */
             understood: string;
             /** Validation Issues */
@@ -3775,6 +3833,29 @@ export interface components {
             /** Migration Plan */
             migration_plan: string[];
             version: components["schemas"]["SchemaVersionModel"];
+        };
+        /**
+         * SchemaSuggestionModel
+         * @description Something the assistant thinks the project's setup is missing. Adding it is an
+         *     owner's decision (``/assist/sessions/{id}/suggestions/apply``).
+         */
+        SchemaSuggestionModel: {
+            /** Description */
+            description: string;
+            /** Kind */
+            kind: string;
+            /** Name */
+            name: string;
+            /** Object Types */
+            object_types: string[];
+            /** One At A Time */
+            one_at_a_time: boolean;
+            /** Points To */
+            points_to: string;
+            /** Reason */
+            reason: string;
+            /** Subject Types */
+            subject_types: string[];
         };
         /** SchemaTypeRequest */
         SchemaTypeRequest: {
@@ -5829,7 +5910,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CharacterProposalModel"];
+                    "application/json": components["schemas"]["AssistProposalModel"];
                 };
             };
             /** @description Validation Error */
@@ -5998,6 +6079,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssistSessionModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_schema_suggestions_api_v1_projects__project_id__assist_sessions__session_id__suggestions_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplySuggestionsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppliedSuggestionsModel"];
                 };
             };
             /** @description Validation Error */

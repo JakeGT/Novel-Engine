@@ -131,6 +131,8 @@ class CharacterProposalResult:
     operation_count: int
     validation: ValidationReport
     discarded: list[DiscardedItem] = field(default_factory=list)
+    # What the assistant thought the project's setup was missing (cleaned; changes nothing).
+    suggestions: list[Any] = field(default_factory=list)
 
 
 class CanonCharacterWorkflow:

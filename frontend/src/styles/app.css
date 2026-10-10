@@ -1645,6 +1645,8 @@ button.tile strong {
 }
 
 .diff-table thead th {
+  /* A narrow column must not break its heading into one letter per line. */
+  white-space: nowrap;
   border-top: 0;
   color: var(--ink-3);
   font-size: 0.78rem;

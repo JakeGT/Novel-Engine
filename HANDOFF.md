@@ -439,3 +439,11 @@ a schema where the provider enforces one and otherwise describes the shape in th
 validates the answer (`_prompted`), falling back to that when a schema is refused. Migration
 `0025`. Nothing here has been run against a real provider.
 
+## First real model run, and setup suggestions (2026-10-10)
+
+The owner ran assisted fill-in on the live site with a real model; see section P of
+`plan/phase-2.5-todo.md` for what it showed. `backend/services/schema_suggestions.py` holds the
+prompt rule, the cleaning of the model's suggestions, and `add_to_definition`. Note for tests:
+`auth_client` sends the CSRF header on every request, so a GET route wrongly guarded by
+`require_project_scope` passes tests and fails in a browser; read routes use `get_project_scope`.
+

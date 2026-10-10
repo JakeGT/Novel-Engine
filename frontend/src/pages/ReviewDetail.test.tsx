@@ -151,6 +151,7 @@ describe('ReviewDetail', () => {
             answers: [{ question_id: 'q1', question: 'Where does he live?', answer: 'Saltmere.' }],
             understood: 'Add Iven.',
             notes: ['Mara has no family recorded.'],
+            suggestions: [],
             mutation_id: 'mut_1',
             created_at: '2026-10-09T10:00:00Z',
             updated_at: '2026-10-09T10:00:00Z',
@@ -169,6 +170,121 @@ describe('ReviewDetail', () => {
     // Asked for by the change it produced, not by an id the author has to know.
     expect(api.find('GET', '/assist/sessions')[0].search.get('mutation_id')).toBe('mut_1')
     await expectAccessible(container)
+  })
+
+  it('offers what the assistant found missing from the setup, adds it, and drafts again', async () => {
+    let added = false
+    const session = {
+      id: 'brf_1',
+      kind: 'fill_in',
+      status: 'proposed',
+      actor_user_id: 'usr_1',
+      description: 'He experiences the world through sound.',
+      entity_type: 'Character',
+      name: 'John Williams',
+      entity_id: 'ent_mara',
+      questions: [],
+      answers: [],
+      understood: '',
+      notes: [],
+      suggestions: [
+        {
+          kind: 'fact_kind',
+          name: 'EXPERIENCES_WORLD_THROUGH',
+          description: '',
+          reason: 'He experiences the world through sound.',
+          subject_types: ['Character'],
+          points_to: 'text',
+          object_types: [],
+          one_at_a_time: false,
+        },
+      ],
+      mutation_id: 'mut_1',
+      created_at: '2026-10-09T10:00:00Z',
+      updated_at: '2026-10-09T10:00:00Z',
+    }
+    const api = mockApi({
+      ...entries,
+      'GET /mutations/mut_1': mutation(),
+      'GET /assist/sessions': { items: [session] },
+      'GET /schemas/vocabulary': () => ({
+        schema_version_id: 'scv_1',
+        schema_version: 1,
+        entity_types: [{ name: 'Character', core: true, attributes_schema: null }],
+        predicates: added
+          ? [{ predicate: 'EXPERIENCES_WORLD_THROUGH', core: false, subject_types: ['Character'], object_shape: 'string', object_types: [], cardinality: 'many', temporal_allowed: false }]
+          : [],
+      }),
+      'POST /assist/sessions/brf_1/suggestions/apply': () => {
+        added = true
+        return { added: ['EXPERIENCES_WORLD_THROUGH'], schema_version: 2 }
+      },
+      'POST /assist/proposals': {
+        mutation_id: 'mut_2',
+        status: 'needs_review',
+        operation_count: 2,
+        session_id: 'brf_2',
+        discarded: [],
+        suggestions: [],
+        validation_ok: true,
+        validation_issues: [],
+      },
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<ReviewDetail />, at)
+
+    const section = await screen.findByRole('region', { name: 'Suggested additions to your setup' })
+    expect(section).toHaveTextContent('A kind of fact: “experiences world through”')
+    expect(section).toHaveTextContent('Connects a Character to a piece of text.')
+    expect(section).toHaveTextContent('Why: He experiences the world through sound.')
+    // The stored name is not shown, and nothing is offered to redraft with yet.
+    expect(section).not.toHaveTextContent('EXPERIENCES_WORLD_THROUGH')
+    expect(within(section).queryByRole('button', { name: /Draft again/ })).not.toBeInTheDocument()
+    await expectAccessible(container)
+
+    await user.click(within(section).getByRole('button', { name: 'Add this to my setup' }))
+    await waitFor(() => expect(api.find('POST', '/suggestions/apply')).toHaveLength(1))
+    expect(api.find('POST', '/suggestions/apply')[0].body).toEqual({ names: ['EXPERIENCES_WORLD_THROUGH'] })
+    expect(await within(section).findByText('In your setup')).toBeInTheDocument()
+    expect(within(section).queryByRole('button', { name: /to my setup/ })).not.toBeInTheDocument()
+
+    await user.click(within(section).getByRole('button', { name: 'Draft again using them' }))
+    await waitFor(() =>
+      expect(screen.getAllByTestId('location').at(-1)).toHaveTextContent('/projects/prj_1/review/mut_2'),
+    )
+    // The same words, as a new conversation: the first one stays as it was.
+    expect(api.find('POST', '/assist/proposals')[0].body).toEqual({
+      description: 'He experiences the world through sound.',
+      entity_type: null,
+      name: null,
+      entity_id: 'ent_mara',
+      session_id: null,
+      answers: [],
+      expected_revision: 5,
+    })
+  })
+
+  it('shows changed details one per row, not as one run-on line', async () => {
+    mockApi({
+      ...entries,
+      'GET /mutations/mut_1': mutation({
+        operations: [
+          operation({
+            ordinal: 0,
+            operation_type: 'update_entity',
+            payload: { op: 'update_entity', id: 'ent_mara', attributes: { role: 'composer', eyes: 'blue', build: 'average' } },
+            target_before: { name: 'Mara Venn', attributes: { eyes: 'blue', role: 'pilot' } },
+          }),
+        ],
+      }),
+    })
+    renderInProject(<ReviewDetail />, at)
+
+    const table = await screen.findByRole('table')
+    expect(within(table).getByRole('row', { name: /Role/ })).toHaveTextContent('Rolepilotcomposer')
+    expect(within(table).getByRole('row', { name: /Build/ })).toHaveTextContent('Build—average')
+    // What did not change is not listed as a change.
+    expect(within(table).queryByRole('row', { name: /Eyes/ })).not.toBeInTheDocument()
   })
 
   it('asks before discarding, says it cannot be brought back, and keeps reviewing by default', async () => {

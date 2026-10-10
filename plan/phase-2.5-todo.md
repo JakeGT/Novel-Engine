@@ -30,6 +30,7 @@ provider by the implementer. Draft quality is unknown until the owner uses it wi
 | M. Design direction | AST-EXP-016 | Implemented; awaiting more owner feedback |
 | N. Intuitive design rules and review | — | Rules adopted (document 21); first review applied; not yet tested with people |
 | O. Providers and model choice | — | Implemented: seven providers, model chosen per workspace; no provider verified with a real call |
+| P. Setup suggestions from the assistant | AST-EXP-010 (part) | Implemented: types and kinds of fact; an owner adds them; not yet verified with a real model |
 
 ## A. Assisted creation and fill-in
 
@@ -125,6 +126,25 @@ provider by the implementer. Draft quality is unknown until the owner uses it wi
       continuing conversation rather than one per proposal.
 - [ ] Conversations are not yet included in a project export, and there is no time limit on
       unfinished ones.
+
+## P. Setup suggestions and the first real run (2026-10-10)
+
+The owner ran assisted fill-in against a real model for the first time. It worked end to end.
+What it showed, and what was done:
+
+- [x] Reading a kept conversation failed on the live site ("CSRF token missing"): the read
+      endpoints wrongly required the write token, and the test client sends it with every request
+      so no test noticed. Fixed, with a test that reads without the token.
+- [x] The before/after table's "Now" heading broke into one letter per line, and changed details
+      arrived as one run-on line. Fixed: one row per detail.
+- [x] A person mentioned only by description ("a professor") was not given an entry. The prompt
+      now asks for an entry named by the description. **Unverified until the next real run.**
+- [x] The model invented a kind of fact (`EXPERIENCES_WORLD_THROUGH`), which was discarded. The
+      assistant is now told to describe what the setup is missing instead; suggestions are cleaned,
+      kept with the conversation, shown on the review screen, added by an owner through the normal
+      additive setup path, and the same words can then be drafted again.
+- [ ] Suggested fields on a type; suggestions shown inside the "Change anything" dialog when it
+      asks a question; decimal and choice-list kinds of fact.
 
 ## H. First run
 

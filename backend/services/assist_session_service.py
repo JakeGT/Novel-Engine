@@ -19,6 +19,7 @@ from backend.domain.assist import (
     AssistQuestion,
     AssistSession,
     AssistStatus,
+    SchemaSuggestion,
 )
 from backend.domain.errors import ConflictError, NotFoundError
 from backend.domain.identity import AccessScope
@@ -78,6 +79,7 @@ class AssistSessionService:
         answers: list[AssistAnswer] | None = None,
         understood: str = "",
         notes: list[str] | None = None,
+        suggestions: list[SchemaSuggestion] | None = None,
     ) -> AssistSession:
         """Open a conversation, or carry an open one of the author's forward."""
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
@@ -94,6 +96,7 @@ class AssistSessionService:
                     "answers": current.answers if answers is None else answers,
                     "understood": understood,
                     "notes": notes or [],
+                    "suggestions": current.suggestions if suggestions is None else suggestions,
                     "updated_at": now,
                 }
             )
@@ -112,6 +115,7 @@ class AssistSessionService:
                 answers=answers or [],
                 understood=understood,
                 notes=notes or [],
+                suggestions=suggestions or [],
                 created_at=now,
                 updated_at=now,
             )
@@ -140,6 +144,7 @@ class AssistSessionService:
         session_id: str,
         *,
         mutation_id: str,
+        suggestions: list[SchemaSuggestion] | None = None,
     ) -> AssistSession:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         session = await self._own_open(scope, workspace_id, project_id, session_id)
@@ -148,6 +153,7 @@ class AssistSessionService:
                 update={
                     "status": AssistStatus.PROPOSED,
                     "mutation_id": mutation_id,
+                    "suggestions": session.suggestions if suggestions is None else suggestions,
                     "updated_at": self._now(),
                 }
             )

@@ -35,6 +35,7 @@ export type AssistQuestionSheet = Schemas['AssistQuestionSheetModel']
 export type AssistProposalRequest = Schemas['AssistProposalRequest']
 export type ChangeProposal = Schemas['ChangeProposalModel']
 export type AssistSession = Schemas['AssistSessionModel']
+export type SchemaSuggestion = Schemas['SchemaSuggestionModel']
 export type AiProvider = Schemas['ProviderModel']
 export type AiChoice = Schemas['AiChoiceModel']
 export type Member = Schemas['MembershipModel']
@@ -491,6 +492,14 @@ export const api = {
       .items[0] ?? null,
   saveAssistAnswers: (scope: Scope, sessionId: string, answers: AssistSession['answers']) =>
     send<AssistSession>(scope, 'PUT', `/assist/sessions/${id(sessionId)}/answers`, { answers }),
+  /** Add types and kinds of fact the assistant suggested to the project's setup. */
+  applySuggestions: (scope: Scope, sessionId: string, names: string[]) =>
+    send<Schemas['AppliedSuggestionsModel']>(
+      scope,
+      'POST',
+      `/assist/sessions/${id(sessionId)}/suggestions/apply`,
+      { names },
+    ),
   closeAssistSession: (scope: Scope, sessionId: string) =>
     send<AssistSession>(scope, 'POST', `/assist/sessions/${id(sessionId)}/close`),
   /** Entries that are only a name so far: the to-do list for filling in. */

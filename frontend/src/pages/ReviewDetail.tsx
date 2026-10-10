@@ -68,14 +68,34 @@ function groupOperations(operations: MutationOperation[]): { label: string; item
 }
 
 /** Field-by-field rows for a change: what it sets, and what was there before when it edits. */
-function fieldRows(operation: MutationOperation): { key: string; before?: unknown; after: unknown }[] {
+type Row = { key: string; label: string; before?: unknown; after: unknown }
+
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+const isFlat = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+function fieldRows(operation: MutationOperation): Row[] {
   const before = operation.target_before ?? null
   return Object.entries(operation.payload)
     .filter(([key, value]) => !HIDDEN_KEYS.has(key) && value !== null && value !== undefined)
     .filter(([, value]) => !(Array.isArray(value) && value.length === 0))
-    .filter(([, value]) => !(typeof value === 'object' && !Array.isArray(value) && Object.keys(value as object).length === 0))
-    .filter(([key, value]) => !before || !(key in before) || JSON.stringify(before[key]) !== JSON.stringify(value))
-    .map(([key, value]) => ({ key, before: before && key in before ? before[key] : undefined, after: value }))
+    .filter(([, value]) => !(isFlat(value) && Object.keys(value).length === 0))
+    .filter(([key, value]) => !before || !(key in before) || !same(before[key], value))
+    .flatMap(([key, value]): Row[] => {
+      // Details get a row each: one long run-on line cannot be compared or checked.
+      if (key === 'attributes' && isFlat(value)) {
+        const was = before && isFlat(before[key]) ? before[key] : null
+        return Object.entries(value)
+          .filter(([name, item]) => !was || !same(was[name], item))
+          .map(([name, item]) => ({
+            key: `attributes.${name}`,
+            label: words(name),
+            before: was ? was[name] : undefined,
+            after: item,
+          }))
+      }
+      return [{ key, label: words(key), before: before && key in before ? before[key] : undefined, after: value }]
+    })
 }
 
 function ChangeCard({
@@ -193,7 +213,7 @@ function ChangeCard({
             <tbody>
               {rows.map((row) => (
                 <tr key={row.key}>
-                  <th scope="row">{words(row.key)}</th>
+                  <th scope="row">{row.label}</th>
                   {isEdit && <td className="was">{valueText(row.before)}</td>}
                   <td className="now">{valueText(row.after)}</td>
                 </tr>

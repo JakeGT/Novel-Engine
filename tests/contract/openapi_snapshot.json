@@ -138,6 +138,53 @@
         "title": "AmendEventRequest",
         "type": "object"
       },
+      "AppliedSuggestionsModel": {
+        "properties": {
+          "added": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Added",
+            "type": "array"
+          },
+          "schema_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Version"
+          }
+        },
+        "required": [
+          "added",
+          "schema_version"
+        ],
+        "title": "AppliedSuggestionsModel",
+        "type": "object"
+      },
+      "ApplySuggestionsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "names": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Names",
+            "type": "array"
+          }
+        },
+        "required": [
+          "names"
+        ],
+        "title": "ApplySuggestionsRequest",
+        "type": "object"
+      },
       "AssertBeliefOp": {
         "additionalProperties": false,
         "properties": {
@@ -348,6 +395,62 @@
         "title": "AssistBriefRequest",
         "type": "object"
       },
+      "AssistProposalModel": {
+        "properties": {
+          "discarded": {
+            "items": {
+              "$ref": "#/components/schemas/DiscardedItemModel"
+            },
+            "title": "Discarded",
+            "type": "array"
+          },
+          "mutation_id": {
+            "title": "Mutation Id",
+            "type": "string"
+          },
+          "operation_count": {
+            "title": "Operation Count",
+            "type": "integer"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/SchemaSuggestionModel"
+            },
+            "title": "Suggestions",
+            "type": "array"
+          },
+          "validation_issues": {
+            "items": {
+              "$ref": "#/components/schemas/ProposalIssueModel"
+            },
+            "title": "Validation Issues",
+            "type": "array"
+          },
+          "validation_ok": {
+            "title": "Validation Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "mutation_id",
+          "status",
+          "operation_count",
+          "session_id",
+          "discarded",
+          "validation_ok",
+          "validation_issues"
+        ],
+        "title": "AssistProposalModel",
+        "type": "object"
+      },
       "AssistProposalRequest": {
         "additionalProperties": false,
         "properties": {
@@ -554,6 +657,13 @@
             "title": "Status",
             "type": "string"
           },
+          "suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/SchemaSuggestionModel"
+            },
+            "title": "Suggestions",
+            "type": "array"
+          },
           "understood": {
             "title": "Understood",
             "type": "string"
@@ -577,6 +687,7 @@
           "answers",
           "understood",
           "notes",
+          "suggestions",
           "mutation_id",
           "created_at",
           "updated_at"
@@ -865,6 +976,13 @@
               }
             ],
             "title": "Status"
+          },
+          "suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/SchemaSuggestionModel"
+            },
+            "title": "Suggestions",
+            "type": "array"
           },
           "understood": {
             "title": "Understood",
@@ -4079,6 +4197,61 @@
         "title": "SchemaDraftResponse",
         "type": "object"
       },
+      "SchemaSuggestionModel": {
+        "description": "Something the assistant thinks the project's setup is missing. Adding it is an\nowner's decision (``/assist/sessions/{id}/suggestions/apply``).",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "object_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Object Types",
+            "type": "array"
+          },
+          "one_at_a_time": {
+            "title": "One At A Time",
+            "type": "boolean"
+          },
+          "points_to": {
+            "title": "Points To",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "subject_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Subject Types",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "description",
+          "reason",
+          "subject_types",
+          "points_to",
+          "object_types",
+          "one_at_a_time"
+        ],
+        "title": "SchemaSuggestionModel",
+        "type": "object"
+      },
       "SchemaTypeRequest": {
         "properties": {
           "type": {
@@ -7270,7 +7443,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CharacterProposalModel"
+                  "$ref": "#/components/schemas/AssistProposalModel"
                 }
               }
             },
@@ -7565,6 +7738,68 @@
           }
         },
         "summary": "Close Assist Session",
+        "tags": [
+          "canon-assist"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/assist/sessions/{session_id}/suggestions/apply": {
+      "post": {
+        "description": "Add types and kinds of fact the assistant suggested to the project's setup.\n\nOnly ever adds, through the same checked path as adding one by hand, and needs\nthe same authority (a project owner). Calls no model and changes no canon.",
+        "operationId": "apply_schema_suggestions_api_v1_projects__project_id__assist_sessions__session_id__suggestions_apply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplySuggestionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppliedSuggestionsModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Schema Suggestions",
         "tags": [
           "canon-assist"
         ]

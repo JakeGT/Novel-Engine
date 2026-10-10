@@ -14,11 +14,13 @@ from backend.domain.assist import (
     AssistQuestion,
     AssistSession,
     AssistStatus,
+    SchemaSuggestion,
 )
 
 _COLUMNS = (
     "id, workspace_id, project_id, actor_user_id, kind, status, description, entity_type, "
-    "name, entity_id, questions, answers, understood, notes, mutation_id, created_at, updated_at"
+    "name, entity_id, questions, answers, understood, notes, mutation_id, created_at, updated_at, "
+    "suggestions"
 )
 
 
@@ -41,6 +43,7 @@ def _from_row(row: Any) -> AssistSession:
         mutation_id=row[14],
         created_at=row[15],
         updated_at=row[16],
+        suggestions=[SchemaSuggestion.model_validate(item) for item in (row[17] or [])],
     )
 
 
@@ -63,6 +66,7 @@ def _params(session: AssistSession) -> dict[str, Any]:
         "mutation_id": session.mutation_id,
         "created_at": session.created_at,
         "updated_at": session.updated_at,
+        "suggestions": json.dumps([item.model_dump() for item in session.suggestions]),
     }
 
 
@@ -80,7 +84,8 @@ class PostgresAssistSessionStore:
                         :id, :workspace_id, :project_id, :actor_user_id, :kind, :status,
                         :description, :entity_type, :name, :entity_id,
                         CAST(:questions AS JSONB), CAST(:answers AS JSONB), :understood,
-                        CAST(:notes AS JSONB), :mutation_id, :created_at, :updated_at
+                        CAST(:notes AS JSONB), :mutation_id, :created_at, :updated_at,
+                        CAST(:suggestions AS JSONB)
                     )
                     ON CONFLICT (id) DO UPDATE SET
                         status = EXCLUDED.status,
@@ -93,6 +98,7 @@ class PostgresAssistSessionStore:
                         understood = EXCLUDED.understood,
                         notes = EXCLUDED.notes,
                         mutation_id = EXCLUDED.mutation_id,
+                        suggestions = EXCLUDED.suggestions,
                         updated_at = EXCLUDED.updated_at
                     WHERE assist_sessions.workspace_id = EXCLUDED.workspace_id
                       AND assist_sessions.project_id = EXCLUDED.project_id

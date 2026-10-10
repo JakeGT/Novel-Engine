@@ -183,5 +183,23 @@ def test_a_change_that_needed_questions_stays_open_then_becomes_evidence(
     assert auth_client.get(f"{w['base']}/assist/sessions").json()["items"] == []
 
 
+def test_reading_conversations_needs_no_write_token(auth_client, fake_container) -> None:
+    """Reads are plain GETs. The browser sends the write token only with changes, so a
+    read that demanded one failed on the live site while every test here passed."""
+    base, _ = _setup(auth_client, fake_container)
+    session_id = _ask(auth_client, fake_container, base)
+    token = auth_client.headers.pop("X-CSRF-Token")
+    try:
+        assert auth_client.get(f"{base}/assist/sessions").status_code == 200
+        assert auth_client.get(f"{base}/assist/sessions/{session_id}").status_code == 200
+        found = auth_client.get(f"{base}/assist/sessions", params={"mutation_id": "mut_x"})
+        assert found.status_code == 200
+        # Changes still need it.
+        refused = auth_client.post(f"{base}/assist/sessions/{session_id}/close")
+        assert refused.status_code == 403
+    finally:
+        auth_client.headers["X-CSRF-Token"] = token
+
+
 def test_conversations_require_a_session(api_client) -> None:
     assert api_client.get("/api/v1/projects/any/assist/sessions").status_code == 401

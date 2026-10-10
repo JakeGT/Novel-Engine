@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 
 from backend.adapters.system import uuid7
 from backend.core.logging import log_event
+from backend.domain.assist import SchemaSuggestion
 from backend.domain.canon.assertions import Belief, Fact
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.naming import normalize_name
@@ -57,6 +58,12 @@ from backend.services.canon_creation_workflow import (
     DraftFact,
 )
 from backend.services.mutation_service import ValidationReport
+from backend.services.schema_suggestions import (
+    PROMPT_RULE,
+    SuggestedFactKind,
+    SuggestedType,
+    clean_suggestions,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +105,8 @@ class ChangePlan(BaseModel):
     add_beliefs: list[DraftBelief] = Field(default_factory=list)
     end_beliefs: list[RecordRef] = Field(default_factory=list)
     archive_entities: list[RecordRef] = Field(default_factory=list)
+    suggested_types: list[SuggestedType] = Field(default_factory=list)
+    suggested_fact_kinds: list[SuggestedFactKind] = Field(default_factory=list)
     notes: list[str] = Field(
         default_factory=list,
         description="Anything else in the story this affects that the author should know",
@@ -115,6 +124,7 @@ class ChangeResult:
     questions: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     discarded: list[DiscardedItem] = field(default_factory=list)
+    suggestions: list[SchemaSuggestion] = field(default_factory=list)
 
 
 def _value(fact_object: object, names: dict[str, str]) -> str:
@@ -230,7 +240,7 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
                 "- in `notes`, tell the author about anything else this affects that they did "
                 "not mention: facts that now look wrong, characters whose beliefs no longer "
                 "match. Do not change those things yourself.\n"
-                "- `understood` restates the change in one plain sentence."
+                "- `understood` restates the change in one plain sentence.\n" + PROMPT_RULE
             ),
             user=f"{story}\n\nInstruction:\n{instruction}",
             response_format=ChangePlan,
@@ -254,6 +264,12 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
             project_id=project_id,
         )
         notes = [*notes, *(note.strip()[:400] for note in plan.notes if note.strip())][:12]
+        suggestions = clean_suggestions(
+            plan.suggested_types,
+            plan.suggested_fact_kinds,
+            entity_types=entity_types,
+            predicates=set(predicates),
+        )
         if not operations:
             if questions:
                 # Ambiguous: ask rather than guess. Nothing is proposed.
@@ -263,6 +279,7 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
                     questions=questions,
                     notes=notes,
                     discarded=discarded,
+                    suggestions=suggestions,
                 )
             raise ValidationError(
                 "That instruction did not lead to any change. It may already be true, or it "
@@ -306,6 +323,7 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
             questions=questions,
             notes=notes,
             discarded=discarded,
+            suggestions=suggestions,
         )
 
     def _change_operations(

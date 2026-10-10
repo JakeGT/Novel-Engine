@@ -57,6 +57,12 @@ from backend.services.canon_character_workflow import (
     DiscardedItem,
     UsageSink,
 )
+from backend.services.schema_suggestions import (
+    PROMPT_RULE,
+    SuggestedFactKind,
+    SuggestedType,
+    clean_suggestions,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +134,8 @@ class CreationDraft(BaseModel):
     entities: list[DraftEntity] = Field(default_factory=list)
     facts: list[DraftFact] = Field(default_factory=list)
     beliefs: list[DraftBelief] = Field(default_factory=list)
+    suggested_types: list[SuggestedType] = Field(default_factory=list)
+    suggested_fact_kinds: list[SuggestedFactKind] = Field(default_factory=list)
 
 
 def _typed_object(
@@ -357,8 +365,11 @@ class CanonCreationWorkflow(CanonCharacterWorkflow):
                 "Turn an author's description (and their answers, if any) into structured "
                 "story-bible entries and the connections between them. Only state what the "
                 "author actually wrote; never invent names, events or relationships. Rules:\n"
-                "- create an entity for each distinct named thing that does not already exist. "
-                "Give each a short unique ref.\n"
+                "- create an entity for each distinct person, place, group or thing the author "
+                "mentions that does not already exist, including one referred to only by a "
+                "description (“her professor”, “the old lighthouse”). Name such an entry by "
+                "that description (“Mara’s professor”) so the author can name it properly "
+                "later, and connect it with a fact. Give each a short unique ref.\n"
                 "- when the author refers to an entry that already exists, do not create it: "
                 "use its id directly as the ref in facts.\n"
                 "- when the author is filling in an existing entry, include it once in entities "
@@ -373,7 +384,8 @@ class CanonCreationWorkflow(CanonCharacterWorkflow):
                 f"{predicate_lines}\n"
                 "- facts are objective truths. A belief is what a character thinks, which may "
                 "be false; never mark a belief as true or false.\n"
-                "- set question_id to the id of the answer an item came from, when it did."
+                "- set question_id to the id of the answer an item came from, when it did.\n"
+                + PROMPT_RULE
             ),
             user=await self._brief_text(brief, existing, subject, workspace_id, project_id)
             + (f"\n\nAnswers:\n{interview}" if interview else ""),
@@ -436,6 +448,12 @@ class CanonCreationWorkflow(CanonCharacterWorkflow):
             operation_count=len(operations),
             validation=validation,
             discarded=discarded,
+            suggestions=clean_suggestions(
+                draft.suggested_types,
+                draft.suggested_fact_kinds,
+                entity_types=entity_types,
+                predicates=set(predicates),
+            ),
         )
 
     @staticmethod
