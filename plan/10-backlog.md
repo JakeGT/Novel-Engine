@@ -49,6 +49,7 @@ Added 2026-10-10 (ADR-017, `19-assistant-first-experience.md`). These are releas
 - **AST-EXP-013 · P1 — Planning interview and "what happens next":** top-down, stoppable at any depth, grounded in the bible, gaps left open. Acceptance: document 19's first-plan measure; groundedness and invention rate recorded.
 - **AST-EXP-014 · P1 — Outline editor and readiness in plain words:** the by-hand path for plans.
 - **AST-EXP-015 · P2 — "Keep the safe ones for me":** opt-in delegation of additive, reversible changes of kinds the author has approved before; everything listed and reversible.
+- **AST-EXP-018 · P1 — Pictures on entries and scenes:** an author uploads an image and links it to an entry or a scene, with a role (portrait, reference); it appears on the entry page and as the entry's picture in lists. Images only for now; bounded size and verified type; no processing, captioning, or model use (Phase 4). Acceptance: upload → link → visible on the entry; removal retires the link and keeps history; cross-tenant access is refused; works with no AI provider.
 - **AST-EXP-016 · P1 — Design direction:** the interface reads as a creative tool, not a dashboard (`20-design-direction.md`).
 
 ## Open-source distribution

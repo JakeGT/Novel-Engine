@@ -1,7 +1,9 @@
 # ADR-017: Assistant-first interaction and progressive disclosure
 
-- Status: Proposed. The principles are the owner's direction of 2026-10-10; the mechanisms below
-  await the owner's acceptance.
+- Status: Accepted in effect. The principles are the owner's direction of 2026-10-10, and on the
+  same day the owner directed work to "continue with the implementation plan" as revised. No
+  explicit sign-off of this record's wording has been given; amend it if any mechanism below is
+  not what was meant.
 - Date: 2026-10-10
 - Owners: project owner, implementer
 - Related: ADR-012, ADR-013, ADR-014; `19-assistant-first-experience.md`; `audit-2026-10-10.md`;

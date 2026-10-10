@@ -132,6 +132,11 @@ Work:
 - by-asking paths for capabilities that exist only by hand: undo ("take it back to before…"),
   custom types and kinds of fact, inviting collaborators (with a members page)
 - a by-hand editor for beliefs
+- pictures on entries: upload an image and link it to an entry (a character's portrait, a place,
+  an object) or, once scenes exist, to a scene; shown on the entry page and in the story bible;
+  images only, size- and type-checked, stored as immutable media versions and linked through the
+  existing reviewed link operation (added 2026-10-10 at the owner's request; the rest of media
+  ingestion stays in Phase 4)
 - session budgets and cost shown before model calls; assistant-specific threat cases
 
 Exit criteria:

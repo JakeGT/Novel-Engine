@@ -175,7 +175,8 @@ Review loop applied to that capability. A capability without both paths is not d
 | Points of view and secrets | "Tobin doesn't know this" → visibility proposal | Knowledge editor | 5 | 3 |
 | What-ifs (branches) | "What if Mara refused?" → a what-if with its consequences proposed; compare and keep | Branch tools | 5 | 3 |
 | What the assistant will use (context) | Explains its sources in a sentence each; "don't use that" | Pin and exclude controls | 4 | 4 |
-| Media references | "This is Mara's portrait" → link and scope proposed | Media library | 4 | 4 |
+| Pictures on entries and scenes | Drop a picture on an entry or a scene; the assistant asks what it shows only if unclear | "Add picture" on the entry or scene; choose from the media library | 2 | 2.5 (images); other media 4 |
+| Media references in drafting | "This is Mara's portrait" → link and scope proposed | Media library | 4 | 4 |
 | Draft a scene | From the scene plan, with the context shown first | Write it yourself | 4 | 5 |
 | Consistency findings | Margin notes with evidence; "fix it" proposes a prose or canon change | Findings list | 4 | 5 |
 | Canon changes from a draft | Extracted, grouped, reviewed like any proposal | Mark by hand | 4 | 6 |

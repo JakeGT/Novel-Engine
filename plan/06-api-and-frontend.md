@@ -150,7 +150,7 @@ today; the rest are scheduled in the roadmap.
 ### Level 2 — Shape
 
 - entry pages: details, facts as sentences, what a character believes compared with canon, events
-  (*built*); belief editor (Phase 2.5)
+  (*built*); belief editor and pictures on entries (Phase 2.5)
 - history as versions, with "go back to this" (*built*)
 - members and invitations (Phase 2.5)
 

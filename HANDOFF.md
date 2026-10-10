@@ -387,3 +387,11 @@ that the interface stop looking like a generated dashboard.
 - **Open owner decisions** are listed at the end of the audit; the first (how a new author gets a
   working assistant without their own key) blocks the first-run design.
 
+## Phase 2.5 in progress (2026-10-10)
+
+`plan/phase-2.5-todo.md` is the live checklist. Built so far: assisted creation and fill-in, a
+first version of the God Hand (`canon_change_workflow.py`, `POST /assist/changes`, `GodHand.tsx`:
+one instruction → one proposal of every implied change, or questions when ambiguous), and grouped
+review with keep-all/skip-all. All assistant workflows are tested with a scripted model only.
+Pictures on entries (AST-EXP-018) were added to the plan at the owner's request and are not built.
+
