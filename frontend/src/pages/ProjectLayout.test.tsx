@@ -120,7 +120,7 @@ describe('ProjectLayout', () => {
     const api = mockApi({ ...pages, 'GET /access': VIEWER, 'GET /schemas': [] })
     renderShell()
 
-    expect(await screen.findByText('Read-only access')).toBeInTheDocument()
+    expect(await screen.findByText('Reader: you can look, not change')).toBeInTheDocument()
     expect(await screen.findByText(/still being set up by its owner/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'New entry' })).not.toBeInTheDocument()
     expect(api.find('POST', '/schemas/drafts')).toHaveLength(0)

@@ -10,6 +10,7 @@ import {
 import { schemaFields } from '../attributes'
 import { Icon } from '../components/icons'
 import {
+  ConfirmDialog,
   Badge,
   Button,
   Dialog,
@@ -276,31 +277,40 @@ function TypeDialog({
           {rows.map((row, index) => (
             <div key={index} className="card quiet stack tight" style={{ padding: '0.8rem' }}>
               <div className="grid-2">
-                <input
-                  aria-label={`Field ${index + 1} name`}
-                  placeholder="Home port"
-                  value={row.label}
-                  onChange={(event) => setRow(index, { label: event.target.value })}
-                />
-                <select
-                  aria-label={`Field ${index + 1} kind`}
-                  value={row.kind}
-                  onChange={(event) => setRow(index, { kind: event.target.value })}
-                >
-                  {FIELD_KINDS.map((kind) => (
-                    <option key={kind.value} value={kind.value}>
-                      {kind.label}
-                    </option>
-                  ))}
-                </select>
+                <label className="mini">
+                  <span>Name</span>
+                  <input
+                    aria-label={`Field ${index + 1} name`}
+                    placeholder="Home port"
+                    value={row.label}
+                    onChange={(event) => setRow(index, { label: event.target.value })}
+                  />
+                </label>
+                <label className="mini">
+                  <span>Kind</span>
+                  <select
+                    aria-label={`Field ${index + 1} kind`}
+                    value={row.kind}
+                    onChange={(event) => setRow(index, { kind: event.target.value })}
+                  >
+                    {FIELD_KINDS.map((kind) => (
+                      <option key={kind.value} value={kind.value}>
+                        {kind.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
               {row.kind === 'enum' && (
-                <input
-                  aria-label={`Field ${index + 1} choices`}
-                  placeholder="sloop, brig, galleon"
-                  value={row.values}
-                  onChange={(event) => setRow(index, { values: event.target.value })}
-                />
+                <label className="mini">
+                  <span>Choices, separated by commas</span>
+                  <input
+                    aria-label={`Field ${index + 1} choices, separated by commas`}
+                    placeholder="sloop, brig, galleon"
+                    value={row.values}
+                    onChange={(event) => setRow(index, { values: event.target.value })}
+                  />
+                </label>
               )}
               <div className="actions" style={{ justifyContent: 'space-between' }}>
                 <label className="check">
@@ -532,6 +542,7 @@ function Advanced({ versions, published }: { versions: SchemaVersion[]; publishe
     mutationFn: (definition: Definition) => api.createSchemaDraft(scope, definition),
     onSuccess: () => invalidate(),
   })
+  const [publishing, setPublishing] = useState<SchemaVersion | null>(null)
   const publish = useMutation({
     mutationFn: (version: SchemaVersion) => api.publishSchema(scope, version.id),
     onSuccess: () => invalidate(),
@@ -565,7 +576,7 @@ function Advanced({ versions, published }: { versions: SchemaVersion[]; publishe
               </Button>
             )}
             {version.status !== 'published' && canAdmin && (
-              <Button size="sm" variant="primary" disabled={publish.isPending} onClick={() => publish.mutate(version)}>
+              <Button size="sm" variant="primary" onClick={() => setPublishing(version)}>
                 Publish version {version.version}
               </Button>
             )}
@@ -575,7 +586,28 @@ function Advanced({ versions, published }: { versions: SchemaVersion[]; publishe
       {!canAdmin && versions.some((version) => version.status !== 'published') && (
         <p className="muted small">Only a project owner can publish a draft.</p>
       )}
-      <PublishProblem error={publish.error} />
+      {publishing ? (
+        <ConfirmDialog
+          title={`Publish version ${publishing.version}?`}
+          confirmLabel={`Publish version ${publishing.version}`}
+          keepLabel="Not yet"
+          danger={false}
+          busy={publish.isPending}
+          onCancel={() => {
+            publish.reset()
+            setPublishing(null)
+          }}
+          onConfirm={() => publish.mutate(publishing, { onSuccess: () => setPublishing(null) })}
+        >
+          <p>
+            New entries and facts will follow this version from now on. A published version can
+            never be edited or unpublished; to change it later you publish another.
+          </p>
+          <PublishProblem error={publish.error} />
+        </ConfirmDialog>
+      ) : (
+        <PublishProblem error={publish.error} />
+      )}
 
       <Field
         label="Definition (JSON)"
@@ -604,11 +636,11 @@ function Advanced({ versions, published }: { versions: SchemaVersion[]; publishe
           </Button>
           <Button
             disabled={createDraft.isPending || !report?.valid}
-            title={report?.valid ? undefined : 'Check the definition first'}
             onClick={() => withDefinition((d) => createDraft.mutate(d))}
           >
             Save as draft
           </Button>
+          {!report?.valid && <span className="hint">Check the definition before saving it.</span>}
         </div>
       )}
       {report && <ReportView report={report} />}

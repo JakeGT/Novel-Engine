@@ -77,7 +77,7 @@ describe('CustomizePage', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Add type' }))
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('List the choices for “Power Level”')
 
-    await user.type(within(dialog).getByLabelText('Field 1 choices'), 'low, high')
+    await user.type(within(dialog).getByLabelText('Field 1 choices, separated by commas'), 'low, high')
     await user.click(within(dialog).getByRole('button', { name: 'Add type' }))
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
@@ -169,7 +169,12 @@ describe('CustomizePage', () => {
     expect(screen.getByText(/label is required/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save as draft' })).toBeDisabled()
 
+    // Publishing cannot be taken back, so it asks first and says so.
     await user.click(screen.getByRole('button', { name: 'Publish version 2' }))
+    const dialog = screen.getByRole('dialog', { name: 'Publish version 2?' })
+    expect(dialog).toHaveTextContent('can never be edited or unpublished')
+    expect(within(dialog).getByRole('button', { name: 'Not yet' })).toHaveFocus()
+    await user.click(within(dialog).getByRole('button', { name: 'Publish version 2' }))
     const alert = await screen.findByText(/This version cannot be published/)
     expect(alert.closest('[role="alert"]')).toHaveTextContent('Your story was not changed')
   })

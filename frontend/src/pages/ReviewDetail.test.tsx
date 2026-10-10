@@ -129,6 +129,29 @@ describe('ReviewDetail', () => {
     expect(within(ended).queryByRole('button', { name: /all/ })).not.toBeInTheDocument()
   })
 
+  it('asks before discarding, says it cannot be brought back, and keeps reviewing by default', async () => {
+    const api = mockApi({
+      ...entries,
+      'GET /mutations/mut_1': mutation(),
+      'POST /mutations/mut_1/reject': mutation({ status: 'rejected' }),
+    })
+    const user = userEvent.setup()
+    renderInProject(<ReviewDetail />, at)
+
+    await user.click(await screen.findByRole('button', { name: 'Discard these changes' }))
+    const dialog = screen.getByRole('dialog', { name: 'Discard 2 suggested changes?' })
+    expect(dialog).toHaveTextContent('cannot be brought back')
+    expect(within(dialog).getByRole('button', { name: 'Keep reviewing' })).toHaveFocus()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Keep reviewing' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(api.find('POST', '/reject')).toHaveLength(0)
+
+    await user.click(screen.getByRole('button', { name: 'Discard these changes' }))
+    await user.click(screen.getByRole('button', { name: 'Discard changes' }))
+    await waitFor(() => expect(api.find('POST', '/reject')).toHaveLength(1))
+  })
+
   it('does not claim success when the commit fails because the story moved on', async () => {
     mockApi({
       ...entries,
@@ -211,6 +234,6 @@ describe('ReviewDetail', () => {
     renderInProject(<ReviewDetail />, { ...at, context: { access: VIEWER } })
     expect(await screen.findByText(/You can read this project but not change it/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Skip' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Discard all' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Discard these changes' })).not.toBeInTheDocument()
   })
 })

@@ -410,3 +410,12 @@ returns to the front page, which required keeping the ID token on the session (m
 left by the owner's decision and are listed in `plan/14-saas-platform.md`. Resend is available for
 product email (sender `novel-engine@notify.jaketalling.com`); nothing sends email yet.
 
+## Intuitive design rules (2026-10-10)
+
+`plan/21-intuitive-design-rules.md` is binding for every screen: visible text labels on every
+control, one word per thing (the vocabulary table there), recognition over recall, nothing
+essential on hover, consequential actions kept apart from routine ones, undo before confirmation,
+specific confirmations with the safe choice first. Shared pieces: `ConfirmDialog` and `UndoNotice`
+in `components/ui.tsx`, `.danger-zone` and `.mini` in `app.css`, `roleLabel` in `lib/words.ts`,
+`lib/recent.ts`. The document ends with what the first review changed and what is still open.
+

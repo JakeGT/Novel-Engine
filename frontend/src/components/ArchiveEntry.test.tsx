@@ -13,7 +13,7 @@ describe('ArchiveEntry', () => {
     const user = userEvent.setup()
     const { container } = renderInProject(<ArchiveEntry entity={entity()} />)
 
-    await user.click(screen.getByRole('button', { name: 'Archive' }))
+    await user.click(screen.getByRole('button', { name: 'Archive this entry' }))
     const dialog = screen.getByRole('dialog', { name: 'Archive “Mara Venn”?' })
     expect(dialog).toBeInTheDocument()
     const confirm = screen.getByRole('button', { name: 'Archive entry' })
@@ -41,7 +41,7 @@ describe('ArchiveEntry', () => {
     const user = userEvent.setup()
     renderInProject(<ArchiveEntry entity={entity()} />)
 
-    await user.click(screen.getByRole('button', { name: 'Archive' }))
+    await user.click(screen.getByRole('button', { name: 'Archive this entry' }))
     await user.click(screen.getByRole('button', { name: 'Send for review instead' }))
 
     const alert = await screen.findByRole('alert')
@@ -59,7 +59,7 @@ describe('ArchiveEntry', () => {
     const user = userEvent.setup()
     renderInProject(<ArchiveEntry entity={entity()} />)
 
-    const opener = screen.getByRole('button', { name: 'Archive' })
+    const opener = screen.getByRole('button', { name: 'Archive this entry' })
     await user.click(opener)
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     await user.keyboard('{Escape}')

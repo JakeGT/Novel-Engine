@@ -100,6 +100,29 @@ describe('FactsPanel', () => {
     expect(api.find('POST', '/facts/fct_1/close')[0].body).toEqual({ expected_revision: 3 })
   })
 
+  it('ends a fact at once and offers to undo it by stating it again', async () => {
+    const api = mockApi({
+      'GET /schemas/vocabulary': VOCABULARY,
+      'GET /entities': everyone,
+      'GET /facts': facts([fact()]),
+      'POST /facts/fct_1/close': fact(),
+      'POST /facts': reply(201, fact({ id: 'fct_2' })),
+    })
+    const user = userEvent.setup()
+    renderInProject(<FactsPanel entity={mara} />)
+
+    await user.click(await screen.findByRole('button', { name: 'End fact: is located at Lantern Harbor' }))
+    const notice = await screen.findByText(/No longer true: “Mara Venn is located at Lantern Harbor”/)
+    await user.click(within(notice.closest('[role="status"]') as HTMLElement).getByRole('button', { name: 'Undo' }))
+
+    await waitFor(() => expect(api.find('POST', '/facts').filter((call) => !call.path.includes('/close'))).toHaveLength(1))
+    const restated = api.find('POST', '/facts').filter((call) => !call.path.includes('/close'))[0]
+    expect(restated.body).toMatchObject({
+      proposition: { subject_id: 'ent_mara', predicate: fact().predicate, object: fact().object },
+    })
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument())
+  })
+
   it('offers no editing to a read-only member', async () => {
     mockApi({
       'GET /schemas/vocabulary': VOCABULARY,

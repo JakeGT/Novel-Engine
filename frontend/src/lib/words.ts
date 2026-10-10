@@ -246,6 +246,13 @@ export function namesFromOperations(operations: OperationLike[]): Map<string, st
   return names
 }
 
+const ROLE_LABELS: Record<string, string> = { owner: 'Owner', editor: 'Editor', viewer: 'Reader' }
+
+/** A member's role, named the same on every screen. */
+export function roleLabel(role: string | undefined): string {
+  return role ? (ROLE_LABELS[role] ?? role) : ''
+}
+
 export function initial(name: string): string {
   const trimmed = name.trim()
   return trimmed ? Array.from(trimmed)[0].toUpperCase() : '?'

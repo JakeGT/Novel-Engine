@@ -244,7 +244,6 @@ export function AssistFlow({ entity, initialType, types, onClose, onManual }: Pr
         )}
         <Button
           disabled={busy || !description.trim()}
-          title={description.trim() ? undefined : 'Write a description first'}
           onClick={() => {
             if (ready()) draft.mutate()
           }}

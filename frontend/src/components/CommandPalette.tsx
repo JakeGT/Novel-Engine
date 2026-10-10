@@ -3,6 +3,7 @@ import { useState, type KeyboardEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, type Scope } from '../api/client'
 import { usePortraits } from '../lib/pictures'
+import { recentEntries } from '../lib/recent'
 import { typeLabel } from '../lib/words'
 import { entryPath, scopedKey, useEntries } from '../project'
 import { Icon, type IconName } from './icons'
@@ -68,7 +69,7 @@ export function CommandPalette({ scope, canWrite, onClose, onNewEntry, onGodHand
         },
         {
           key: 'god-hand',
-          label: 'Change anything (God Hand)',
+          label: 'Change anything in the story',
           icon: 'hand' as const,
           run: () => {
             onClose()
@@ -79,7 +80,12 @@ export function CommandPalette({ scope, canWrite, onClose, onNewEntry, onGodHand
     : []
 
   const lower = term.toLowerCase()
-  const found = term.length >= 2 ? (search.data?.items ?? []) : entries.items.slice(0, 6)
+  // With nothing typed, offer what the author opened last, then anything else.
+  const opened = recentEntries(scope.projectId)
+    .map((entryId) => entries.byId.get(entryId))
+    .filter((item): item is NonNullable<typeof item> => Boolean(item))
+  const suggested = [...opened, ...entries.items.filter((item) => !opened.includes(item))].slice(0, 6)
+  const found = term.length >= 2 ? (search.data?.items ?? []) : suggested
   const entryCommands: Command[] = found
     .filter((item) => item.lifecycle === 'active' || term.length >= 2)
     .map((item) => ({
@@ -161,7 +167,7 @@ export function CommandPalette({ scope, canWrite, onClose, onNewEntry, onGodHand
       <ul className="palette-list" id="palette-list" role="listbox" aria-label="Results">
         {entryCommands.length > 0 && (
           <li className="palette-label eyebrow" role="presentation">
-            {term.length >= 2 ? 'Entries' : 'Jump to an entry'}
+            {term.length >= 2 ? 'Entries' : opened.length > 0 ? 'Entries, most recently opened first' : 'Jump to an entry'}
           </li>
         )}
         {entryCommands.map((command, position) => option(command, position))}

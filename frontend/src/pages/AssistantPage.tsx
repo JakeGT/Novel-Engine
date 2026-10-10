@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { api, isApiError } from '../api/client'
-import { Badge, Button, EmptyState, ErrorNotice, Field, Loading } from '../components/ui'
+import { Badge, Button, ConfirmDialog, EmptyState, ErrorNotice, Field, Loading } from '../components/ui'
 import { timeAgo } from '../lib/time'
 import { useProject } from '../project'
 
@@ -31,6 +31,7 @@ export function AssistantPage() {
       await queryClient.invalidateQueries({ queryKey: key })
     },
   })
+  const [removing, setRemoving] = useState<{ id: string; label: string } | null>(null)
   const revoke = useMutation({
     mutationFn: (credentialId: string) => api.revokeCredential(workspaceId as string, credentialId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: key }),
@@ -109,9 +110,8 @@ export function AssistantPage() {
                       <Button
                         size="sm"
                         variant="danger-quiet"
-                        disabled={revoke.isPending}
                         aria-label={`Remove key ${item.label}`}
-                        onClick={() => revoke.mutate(item.id)}
+                        onClick={() => setRemoving({ id: item.id, label: item.label })}
                       >
                         Remove
                       </Button>
@@ -119,7 +119,26 @@ export function AssistantPage() {
                   ))}
                 </ul>
               )}
-              <ErrorNotice error={revoke.error} prefix="The key was not removed" />
+              {removing && (
+                <ConfirmDialog
+                  title={`Remove the key “${removing.label}”?`}
+                  confirmLabel="Remove key"
+                  keepLabel="Keep key"
+                  busy={revoke.isPending}
+                  error={revoke.error}
+                  onCancel={() => {
+                    revoke.reset()
+                    setRemoving(null)
+                  }}
+                  onConfirm={() => revoke.mutate(removing.id, { onSuccess: () => setRemoving(null) })}
+                >
+                  <p>
+                    The assistant stops working in this workspace until a key is connected again.
+                    The key itself is erased here and cannot be recovered; you would paste it in
+                    again.
+                  </p>
+                </ConfirmDialog>
+              )}
             </section>
 
             <section className="card" aria-labelledby="add-key-heading">

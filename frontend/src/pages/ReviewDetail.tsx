@@ -11,6 +11,7 @@ import {
 } from '../api/client'
 import { Icon } from '../components/icons'
 import {
+  ConfirmDialog,
   Badge,
   Button,
   ChangeStateBadge,
@@ -295,6 +296,7 @@ export function ReviewDetail() {
   const [committed, setCommitted] = useState<{ revision: number } | null>(null)
 
   // Every review action returns the fresh change set; reload everything that depends on it.
+  const [discarding, setDiscarding] = useState(false)
   const action = useMutation({
     mutationFn: (run: () => Promise<Detail>) => run(),
     onSuccess: async () => {
@@ -586,32 +588,59 @@ export function ReviewDetail() {
               </details>
             </div>
             <div className="actions">
-              <Button
-                variant="danger-quiet"
-                disabled={busy}
-                onClick={() =>
-                  action.mutate(() => api.rejectMutation(scope, mutationId, note.trim() || null))
-                }
-              >
-                Discard all
-              </Button>
+              {!canCommit && (
+                <span className="hint">
+                  {change.is_stale
+                    ? 'Update to the latest version first.'
+                    : 'Every change is skipped, so there is nothing to add.'}
+                </span>
+              )}
               <Button
                 variant="primary"
                 icon="check"
                 disabled={busy || !canCommit}
-                title={
-                  canCommit
-                    ? undefined
-                    : change.is_stale
-                      ? 'Update to the latest version first'
-                      : 'Every change is skipped, so there is nothing to add'
-                }
                 onClick={() => commit.mutate(needsApproval)}
               >
                 {commit.isPending ? 'Adding…' : needsApproval ? 'Approve and add to canon' : 'Add to canon'}
               </Button>
             </div>
           </section>
+        )}
+
+        {/* Kept apart from the main action: discarding cannot be taken back. */}
+        {editable && (
+          <section className="danger-zone" aria-labelledby="discard-heading">
+            <div>
+              <h2 id="discard-heading">Don’t want any of this?</h2>
+              <p className="muted small">
+                Discarding throws these suggested changes away. Your story stays as it is.
+              </p>
+            </div>
+            <Button variant="danger-quiet" disabled={busy} onClick={() => setDiscarding(true)}>
+              Discard these changes
+            </Button>
+          </section>
+        )}
+
+        {discarding && (
+          <ConfirmDialog
+            title={`Discard ${plural(change.operations.length, 'suggested change')}?`}
+            confirmLabel="Discard changes"
+            keepLabel="Keep reviewing"
+            busy={busy}
+            error={action.error}
+            onCancel={() => setDiscarding(false)}
+            onConfirm={() =>
+              action.mutate(() => api.rejectMutation(scope, mutationId, note.trim() || null), {
+                onSuccess: () => setDiscarding(false),
+              })
+            }
+          >
+            <p>
+              None of them will be added to your story, and they cannot be brought back. Nothing
+              already in your story changes.
+            </p>
+          </ConfirmDialog>
         )}
 
         <details className="more">

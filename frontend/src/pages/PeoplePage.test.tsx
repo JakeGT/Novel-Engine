@@ -48,9 +48,32 @@ describe('PeoplePage', () => {
     await user.selectOptions(within(rows[1]).getByLabelText('Role of Sam Reed'), 'Reader')
     await waitFor(() => expect(api.find('PATCH', '/members/usr_2')).toHaveLength(1))
     expect(api.find('PATCH', '/members/usr_2')[0].body).toEqual({ role: 'viewer' })
+    // The change is said in words, not left to a menu that quietly changed.
+    expect(await screen.findByText('Sam Reed is now a Reader.')).toBeInTheDocument()
   })
 
-  it('creates an invitation link that is shown once, and cancels a waiting one', async () => {
+  it('asks before removing someone, names them, and keeps them by default', async () => {
+    const api = mockApi({
+      'GET /members': [jake, sam],
+      'GET /invitations': [],
+      'DELETE /members/usr_2': {},
+    })
+    const user = userEvent.setup()
+    renderInProject(<PeoplePage />, { context: { userId: 'usr_1', access: OWNER } })
+
+    await user.click(await screen.findByRole('button', { name: 'Remove Sam Reed' }))
+    const dialog = screen.getByRole('dialog', { name: 'Remove Sam Reed?' })
+    expect(dialog).toHaveTextContent('lose access to every project in this workspace')
+    expect(within(dialog).getByRole('button', { name: 'Keep them' })).toHaveFocus()
+    expect(api.find('DELETE', '/members/usr_2')).toHaveLength(0)
+
+    await user.click(within(dialog).getByRole('button', { name: 'Remove Sam Reed' }))
+    await waitFor(() => expect(api.find('DELETE', '/members/usr_2')).toHaveLength(1))
+    expect(await screen.findByText('Sam Reed no longer has access.')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('creates an invitation link that is shown once, and withdraws a waiting one', async () => {
     const api = mockApi({
       'GET /members': [jake],
       'GET /invitations': [invitation],
@@ -70,7 +93,7 @@ describe('PeoplePage', () => {
     expect(screen.getByText(/shown only now and cannot be shown again/)).toBeInTheDocument()
     expect(api.find('POST', '/invitations')[0].body).toEqual({ role: 'viewer', email: 'ana@example.com' })
 
-    await user.click(screen.getByRole('button', { name: 'Cancel invitation for ana@example.com' }))
+    await user.click(screen.getByRole('button', { name: 'Withdraw invitation for ana@example.com' }))
     await waitFor(() => expect(api.find('POST', '/revoke')).toHaveLength(1))
   })
 

@@ -1,10 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { api, isApiError, type MemberRole } from '../api/client'
-import { Badge, Button, EmptyState, ErrorNotice, Field, Loading } from '../components/ui'
+import { Badge, Button, ConfirmDialog, EmptyState, ErrorNotice, Field, Loading } from '../components/ui'
 import { fullDate, timeAgo } from '../lib/time'
-import { initial } from '../lib/words'
+import { initial, roleLabel } from '../lib/words'
 import { useProject } from '../project'
+
+/** "an Owner", "a Reader". */
+function article(word: string): string {
+  return `${/^[aeiou]/i.test(word) ? 'an' : 'a'} ${word}`
+}
 
 const ROLES: { value: MemberRole; label: string; can: string }[] = [
   { value: 'editor', label: 'Editor', can: 'Can add to and change the story' },
@@ -12,9 +17,6 @@ const ROLES: { value: MemberRole; label: string; can: string }[] = [
   { value: 'owner', label: 'Owner', can: 'Can also manage people, keys, and projects' },
 ]
 
-function roleLabel(role: string): string {
-  return ROLES.find((item) => item.value === role)?.label ?? role
-}
 
 /** Who can see and change this workspace's stories, and a way to invite more people. */
 export function PeoplePage() {
@@ -66,14 +68,25 @@ export function PeoplePage() {
     mutationFn: (invitationId: string) => api.revokeInvitation(workspaceId as string, invitationId),
     onSuccess: refresh,
   })
+  // What was just changed, said in words: a changed menu alone is easy to miss.
+  const [said, setSaid] = useState<string | null>(null)
+  const [removing, setRemoving] = useState<{ userId: string; name: string } | null>(null)
   const setMemberRole = useMutation({
-    mutationFn: (change: { userId: string; role: MemberRole }) =>
+    mutationFn: (change: { userId: string; role: MemberRole; name: string }) =>
       api.setMemberRole(workspaceId as string, change.userId, change.role),
-    onSuccess: refresh,
+    onSuccess: async (_result, change) => {
+      setSaid(`${change.name} is now ${article(roleLabel(change.role))}.`)
+      await refresh()
+    },
   })
   const remove = useMutation({
-    mutationFn: (memberId: string) => api.removeMember(workspaceId as string, memberId),
-    onSuccess: refresh,
+    mutationFn: (member: { userId: string; name: string }) =>
+      api.removeMember(workspaceId as string, member.userId),
+    onSuccess: async (_result, member) => {
+      setSaid(`${member.name} no longer has access.`)
+      setRemoving(null)
+      await refresh()
+    },
   })
 
   if (!workspaceId) {
@@ -148,7 +161,11 @@ export function PeoplePage() {
                       value={member.role}
                       disabled={setMemberRole.isPending}
                       onChange={(event) =>
-                        setMemberRole.mutate({ userId: member.user_id, role: event.target.value as MemberRole })
+                        setMemberRole.mutate({
+                          userId: member.user_id,
+                          role: event.target.value as MemberRole,
+                          name,
+                        })
                       }
                     >
                       {ROLES.map((item) => (
@@ -164,9 +181,8 @@ export function PeoplePage() {
                     <Button
                       size="sm"
                       variant="danger-quiet"
-                      disabled={remove.isPending}
                       aria-label={`Remove ${name}`}
-                      onClick={() => remove.mutate(member.user_id)}
+                      onClick={() => setRemoving({ userId: member.user_id, name })}
                     >
                       Remove
                     </Button>
@@ -175,7 +191,31 @@ export function PeoplePage() {
               )
             })}
           </ul>
-          <ErrorNotice error={setMemberRole.error ?? remove.error} prefix="Not changed" />
+          {said && (
+            <p className="notice ok" role="status" style={{ marginTop: '0.75rem' }}>
+              {said}
+            </p>
+          )}
+          <ErrorNotice error={setMemberRole.error} prefix="Not changed" />
+          {removing && (
+            <ConfirmDialog
+              title={`Remove ${removing.name}?`}
+              confirmLabel={`Remove ${removing.name}`}
+              keepLabel="Keep them"
+              busy={remove.isPending}
+              error={remove.error}
+              onCancel={() => {
+                remove.reset()
+                setRemoving(null)
+              }}
+              onConfirm={() => remove.mutate(removing)}
+            >
+              <p>
+                They lose access to every project in this workspace straight away. Nothing they
+                wrote is removed, and you can invite them again later.
+              </p>
+            </ConfirmDialog>
+          )}
           {manage && lastOwner && (
             <p className="hint" style={{ marginTop: '0.75rem' }}>
               A workspace always keeps at least one owner, so the only owner cannot be changed or
@@ -284,15 +324,15 @@ export function PeoplePage() {
                     size="sm"
                     variant="danger-quiet"
                     disabled={revoke.isPending}
-                    aria-label={`Cancel invitation for ${item.email ?? 'anyone with the link'}`}
+                    aria-label={`Withdraw invitation for ${item.email ?? 'anyone with the link'}`}
                     onClick={() => revoke.mutate(item.id)}
                   >
-                    Cancel
+                    Withdraw invitation
                   </Button>
                 </li>
               ))}
             </ul>
-            <ErrorNotice error={revoke.error} prefix="Not cancelled" />
+            <ErrorNotice error={revoke.error} prefix="Not withdrawn" />
           </section>
         )}
       </div>

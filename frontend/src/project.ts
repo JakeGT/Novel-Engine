@@ -112,7 +112,7 @@ export interface CanonWrite<T, A = void> {
  */
 export function useCanonWrite<T, A = void>(
   write: (expectedRevision: number, argument: A) => Promise<T>,
-  onSuccess?: (result: T) => void,
+  onSuccess?: (result: T, argument: A) => void,
 ): CanonWrite<T, A> {
   const { scope, headRevision, refreshHead } = useProject()
   const invalidate = useInvalidateProject(scope)
@@ -127,7 +127,7 @@ export function useCanonWrite<T, A = void>(
     try {
       const result = await write(await resolveHead(), argument)
       await invalidate()
-      onSuccess?.(result)
+      onSuccess?.(result, argument)
       return result
     } catch (failure) {
       setError(failure)

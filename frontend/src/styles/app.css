@@ -129,10 +129,14 @@ ol {
   font-size: 0.82rem;
 }
 
+/* The sizes are forced: a form control's own width rule is more specific than
+   this class, and a full-width hidden input makes the page scroll sideways. */
 .sr-only {
   position: absolute;
-  width: 1px;
-  height: 1px;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  border: 0 !important;
   margin: -1px;
   overflow: hidden;
   clip-path: inset(50%);
@@ -404,7 +408,7 @@ legend {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
   gap: 0.5rem;
-  align-items: center;
+  align-items: end;
 }
 
 .pair .field-error {
@@ -1001,7 +1005,8 @@ h2.eyebrow {
   border-bottom: 1px solid var(--line);
 }
 
-.menu-btn {
+.menu-btn,
+.menu-close {
   display: none;
 }
 
@@ -1093,6 +1098,28 @@ h2.eyebrow {
 
   .search-trigger kbd {
     display: none;
+  }
+
+  /* Two rows on a narrow screen, so every control keeps its words. */
+  .topbar {
+    flex-wrap: wrap;
+  }
+
+  .topbar .spacer {
+    display: none;
+  }
+
+  .search-trigger {
+    max-width: none;
+  }
+
+  .topbar > .btn:not(.menu-btn) {
+    flex: 1 1 9rem;
+  }
+
+  .menu-close {
+    display: inline-flex;
+    align-self: flex-start;
   }
 }
 
@@ -1815,22 +1842,16 @@ details.more[open] > summary {
   color: var(--ink);
 }
 
-/* On a phone the top bar keeps its actions and shortens the search prompt. */
+/* On a phone the search prompt keeps its words; it sits on the first row with the menu. */
 @media (max-width: 640px) {
   .topbar {
-    gap: 0.4rem;
-  }
-
-  .topbar .search-trigger {
-    flex: 0 1 auto;
+    gap: 0.5rem;
   }
 
   .topbar .search-trigger span {
-    display: none;
-  }
-
-  .topbar .btn {
-    padding-inline: 0.6rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
@@ -1889,14 +1910,14 @@ details.more[open] > summary {
   top: 0.35rem;
 }
 
+.pictures li {
+  display: grid;
+  gap: 0.3rem;
+  justify-items: start;
+}
+
 .picture-remove {
-  position: absolute;
-  right: 0.3rem;
-  top: 0.3rem;
-  width: 1.8rem;
-  min-height: 1.8rem;
-  background: var(--surface);
-  border-color: var(--line-strong);
+  color: var(--danger);
 }
 
 /* ---------------------------------------------------------- onboarding --- */
@@ -1923,3 +1944,54 @@ details.more[open] > summary {
 .onboarding .steps {
   margin-top: 1.5rem;
 }
+
+/* ------------------------------------------- consequences and undo --- */
+/* Set apart from routine actions by distance, a rule, and its own colour. */
+.danger-zone {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+  margin-top: 3rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line-strong);
+}
+
+.danger-zone > div {
+  flex: 1 1 18rem;
+}
+
+/* Only its own heading: a dialog opened from here keeps the dialog's title style. */
+.danger-zone > div > h2 {
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.notice.undo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+/* A small caption that stays above a field in a repeated row; a placeholder
+   vanishes at the moment it is needed. */
+.mini {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.mini > span {
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}
+

@@ -28,6 +28,7 @@ provider by the implementer. Draft quality is unknown until the owner uses it wi
 | K. Session budgets and assistant threat cases | AST-EXP-011 | Not started |
 | L. Pictures on entries | AST-EXP-018 | Implemented for entries; scenes wait for Phase 2.6 |
 | M. Design direction | AST-EXP-016 | Implemented; awaiting more owner feedback |
+| N. Intuitive design rules and review | — | Rules adopted (document 21); first review applied; not yet tested with people |
 
 ## A. Assisted creation and fill-in
 

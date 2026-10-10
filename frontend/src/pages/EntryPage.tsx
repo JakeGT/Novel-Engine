@@ -1,5 +1,5 @@
 import { useQueries, useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, type Belief, type CanonEntity } from '../api/client'
 import { ActivityPanel } from '../components/ActivityPanel'
@@ -17,6 +17,7 @@ import {
   ReadOnlyNotice,
 } from '../components/ui'
 import { mainPicture } from '../lib/pictures'
+import { rememberEntry } from '../lib/recent'
 import { objectText, predicateLabel, typeLabel, typePlural, valueText, words, type Tone } from '../lib/words'
 import { scopedKey, useEntries, useProject } from '../project'
 
@@ -32,16 +33,21 @@ function Details({ entity, onEdit }: { entity: CanonEntity; onEdit?: () => void 
     <section className="card" aria-labelledby="details-heading">
       <div className="card-head">
         <h2 id="details-heading">Details</h2>
-        {onEdit && (
-          <Button size="sm" icon="edit" onClick={onEdit}>
-            Edit
-          </Button>
-        )}
       </div>
       {attributes.length === 0 ? (
-        <p className="muted">
-          No details yet.{onEdit ? ' Use Edit to add lasting traits like a role, an age or a look.' : ''}
-        </p>
+        <div className="stack tight">
+          <p className="muted">
+            No details yet.{onEdit ? ' Lasting traits go here, like a role, an age or a look.' : ''}
+          </p>
+          {/* The way to add them sits where they are missing. */}
+          {onEdit && (
+            <div>
+              <Button size="sm" icon="plus" onClick={onEdit}>
+                Add details
+              </Button>
+            </div>
+          )}
+        </div>
       ) : (
         <dl className="props">
           {attributes.map(([key, value]) => (
@@ -219,6 +225,10 @@ export function EntryPage() {
     queryKey: scopedKey(scope, 'links', entityId),
     queryFn: () => api.listLinks(scope, { target_id: entityId, include_retired: false }),
   })
+  useEffect(() => {
+    // Remembered so it can be offered again wherever an entry is being chosen.
+    if (entity) rememberEntry(scope.projectId, entity.id)
+  }, [entity, scope.projectId])
   const bare =
     Boolean(entity) &&
     Object.keys(entity?.attributes ?? {}).length === 0 &&
@@ -252,9 +262,8 @@ export function EntryPage() {
             {editable && (
               <div className="actions">
                 <Button icon="edit" onClick={() => setEditing(true)}>
-                  Edit
+                  Edit entry
                 </Button>
-                <ArchiveEntry entity={entity} />
               </div>
             )}
           </header>
@@ -282,6 +291,20 @@ export function EntryPage() {
               <ActivityPanel recordType="entity" recordId={entity.id} />
             </div>
           </div>
+
+          {/* Kept well away from Edit: an entry is archived deliberately, not by a slip. */}
+          {editable && (
+            <section className="danger-zone" aria-labelledby="archive-heading">
+              <div>
+                <h2 id="archive-heading">Archive</h2>
+                <p className="muted small">
+                  Takes {entity.name} out of your active story. Its history stays, and you can find
+                  it again by showing archived entries.
+                </p>
+              </div>
+              <ArchiveEntry entity={entity} />
+            </section>
+          )}
 
           {editing && (
             <Dialog title={`Edit ${entity.name}`} onClose={() => setEditing(false)} wide>

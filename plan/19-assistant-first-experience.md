@@ -223,6 +223,8 @@ From Phase 2.5 onward, a feature is not complete until:
 7. **Honesty:** cost is shown before model calls; what could not be done is reported; nothing is
    presented as checked or complete when it was not.
 8. **Accessibility and keyboard:** as today.
+9. **Intuitive design:** it has been read against
+   [`21-intuitive-design-rules.md`](21-intuitive-design-rules.md) and looked at in a browser.
 
 ## Autonomy
 

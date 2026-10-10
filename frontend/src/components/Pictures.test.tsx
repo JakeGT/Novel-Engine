@@ -92,6 +92,7 @@ describe('PicturesPanel', () => {
       'GET /links': { items: [link()] },
       'GET /content': new Blob(['x']),
       'POST /links/lnk_1/retire': {},
+      [`POST /assets/${link().asset_id}/links`]: reply(201, link({ id: 'lnk_2' })),
     })
     const user = userEvent.setup()
     renderInProject(<PicturesPanel entity={entity()} />)
@@ -99,6 +100,15 @@ describe('PicturesPanel', () => {
     await user.click(await screen.findByRole('button', { name: 'Remove picture 1 of Mara Venn' }))
     await waitFor(() => expect(api.find('POST', '/retire')).toHaveLength(1))
     expect(api.find('POST', '/retire')[0].body).toEqual({ expected_revision: 3 })
+
+    // Removal is not confirmed beforehand; it is put right afterwards.
+    await user.click(await screen.findByRole('button', { name: 'Undo' }))
+    await waitFor(() => expect(api.find('POST', `/assets/${link().asset_id}/links`)).toHaveLength(1))
+    expect(api.find('POST', `/assets/${link().asset_id}/links`)[0].body).toMatchObject({
+      target_id: link().target_record_id,
+      asset_version_id: link().asset_version_id,
+      role: link().role,
+    })
   })
 
   it('shows pictures to a reader without any way to change them, and nothing when there are none', async () => {

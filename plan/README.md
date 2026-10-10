@@ -29,6 +29,7 @@ Read in this order:
 21. [Phase 1 todo](phase-1-todo.md) — execution-ready identity, tenancy, distribution, provider-credential, and isolation checklist.
 23. [Assistant-first experience and the learning curve](19-assistant-first-experience.md) — the interaction loop, levels, capability map, story planning by conversation, and the definition of done for every feature (ADR-017). **Read this after 01.**
 24. [Design direction](20-design-direction.md) — the visual and interaction character of the product, with the research behind it.
+25. [Intuitive design rules](21-intuitive-design-rules.md) — the rules every screen is held to so it can be used without being taught, the sources behind them, and the review of the product against them.
 25. [Plan audit, 2026-10-10](audit-2026-10-10.md) — findings by document, what was changed, and decisions needed from the owner.
 26. [Phase 2.5 todo](phase-2.5-todo.md) — assistant-led creation: what is built, what is partial, and what is next.
 22. [Phase 2 todo](phase-2-todo.md) — execution plan and completion dashboard for governed schema, revisioned canon, mutation review and commits, evidence assets, authoring UI, and archive recovery. Evidence: [phase-2-evidence.md](phase-2-evidence.md).

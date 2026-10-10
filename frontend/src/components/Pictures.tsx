@@ -3,8 +3,7 @@ import { useRef, useState, type ChangeEvent } from 'react'
 import { api, type AssetLink, type CanonEntity, type Scope } from '../api/client'
 import { isPicture } from '../lib/pictures'
 import { scopedKey, useCanonWrite, useProject } from '../project'
-import { Icon } from './icons'
-import { Badge, Button, ErrorNotice, TypeAvatar, WriteProblem } from './ui'
+import { Badge, Button, ErrorNotice, TypeAvatar, UndoNotice, WriteProblem } from './ui'
 
 const MAX_BYTES = 8 * 1024 * 1024
 const ACCEPT = 'image/png,image/jpeg,image/webp'
@@ -64,8 +63,15 @@ export function PicturesPanel({ entity }: { entity: CanonEntity }) {
   const add = useCanonWrite<unknown, File>((expectedRevision, file) =>
     api.addPicture(scope, entity.id, file, expectedRevision, file.name.replace(/\.[^.]+$/, '')),
   )
-  const remove = useCanonWrite<unknown, string>((expectedRevision, linkId) =>
-    api.retireLink(scope, linkId, expectedRevision),
+  const [removed, setRemoved] = useState<AssetLink | null>(null)
+  const remove = useCanonWrite<unknown, AssetLink>(
+    (expectedRevision, link) => api.retireLink(scope, link.id, expectedRevision),
+    (_result, link) => setRemoved(link),
+  )
+  // The stored picture is untouched by a removal, so it can simply be linked again.
+  const restore = useCanonWrite<unknown, AssetLink>(
+    (expectedRevision, link) => api.relinkPicture(scope, link, expectedRevision),
+    () => setRemoved(null),
   )
 
   const [problem, setProblem] = useState<string | null>(null)
@@ -117,6 +123,12 @@ export function PicturesPanel({ entity }: { entity: CanonEntity }) {
           {problem}
         </p>
       )}
+      {removed && (
+        <UndoNotice busy={restore.pending} onUndo={() => void restore.submit(removed)}>
+          Picture removed from {entity.name}. It stays in the history.
+        </UndoNotice>
+      )}
+      <WriteProblem write={restore} scope={scope} />
       <ul className="pictures">
         {pictures.map((link, index) => (
           <li key={link.id}>
@@ -125,13 +137,12 @@ export function PicturesPanel({ entity }: { entity: CanonEntity }) {
             {canWrite && active && (
               <button
                 type="button"
-                className="btn ghost icon picture-remove"
+                className="btn ghost sm picture-remove"
                 aria-label={`Remove picture ${index + 1} of ${entity.name}`}
-                title="Remove this picture. It stays in the history."
                 disabled={remove.pending}
-                onClick={() => void remove.submit(link.id)}
+                onClick={() => void remove.submit(link)}
               >
-                <Icon name="x" size={15} />
+                Remove
               </button>
             )}
           </li>

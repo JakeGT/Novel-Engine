@@ -277,12 +277,8 @@ export function Dialog({
   }, [])
 
   return (
-    <div
-      className="backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose()
-      }}
-    >
+    // Clicking outside does not close a dialog: a stray click must never cost typed work.
+    <div className="backdrop">
       <div
         ref={ref}
         className={className ?? `dialog ${wide ? 'wide' : ''}`}
@@ -294,13 +290,78 @@ export function Dialog({
         {title && (
           <div className="dialog-head">
             <h2 id={titleId}>{title}</h2>
-            <button type="button" className="btn ghost icon" aria-label="Close" onClick={onClose}>
-              <Icon name="x" />
+            <button type="button" className="btn ghost sm" onClick={onClose}>
+              <Icon name="x" size={15} />
+              Close
             </button>
           </div>
         )}
         {title ? <div className="dialog-body">{children}</div> : children}
       </div>
+    </div>
+  )
+}
+
+/**
+ * A confirmation for something that cannot be undone or reaches widely. The title
+ * is a question naming the action; the buttons name the outcomes; the safe choice
+ * comes first and holds focus.
+ */
+export function ConfirmDialog({
+  title,
+  children,
+  confirmLabel,
+  keepLabel,
+  danger = true,
+  busy = false,
+  error,
+  onConfirm,
+  onCancel,
+}: {
+  title: string
+  children: ReactNode
+  confirmLabel: string
+  keepLabel: string
+  danger?: boolean
+  busy?: boolean
+  error?: unknown
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  return (
+    <Dialog title={title} onClose={onCancel}>
+      <div className="stack">
+        <div className="stack tight">{children}</div>
+        <ErrorNotice error={error} />
+        <div className="actions end">
+          <Button data-autofocus onClick={onCancel}>
+            {keepLabel}
+          </Button>
+          <Button variant={danger ? 'danger' : 'primary'} disabled={busy} onClick={onConfirm}>
+            {confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
+/** What just happened, with a way straight back. Preferred to asking beforehand. */
+export function UndoNotice({
+  children,
+  onUndo,
+  busy = false,
+}: {
+  children: ReactNode
+  onUndo: () => void
+  busy?: boolean
+}) {
+  return (
+    <div className="notice plain undo" role="status">
+      <span>{children}</span>
+      <Button size="sm" icon="undo" disabled={busy} onClick={onUndo}>
+        Undo
+      </Button>
     </div>
   )
 }

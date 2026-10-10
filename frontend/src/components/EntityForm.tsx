@@ -265,26 +265,32 @@ export function EntityForm({ entity, initialType, initialName, onSaved, onCancel
           </p>
           {rows.map((row, index) => (
             <div className="pair" key={index}>
-              <input
-                aria-label={`Detail ${index + 1} name`}
-                placeholder="role"
-                value={row.key}
-                onChange={(event) => setRow(index, { key: event.target.value })}
-              />
-              <input
-                aria-label={`Detail ${index + 1} value`}
-                aria-invalid={problems[`row-${index}`] ? true : undefined}
-                placeholder="harbor pilot"
-                value={row.value}
-                onChange={(event) => setRow(index, { value: event.target.value })}
-              />
+              <label className="mini">
+                <span>Detail</span>
+                <input
+                  aria-label={`Detail ${index + 1} name`}
+                  placeholder="role"
+                  value={row.key}
+                  onChange={(event) => setRow(index, { key: event.target.value })}
+                />
+              </label>
+              <label className="mini">
+                <span>Value</span>
+                <input
+                  aria-label={`Detail ${index + 1} value`}
+                  aria-invalid={problems[`row-${index}`] ? true : undefined}
+                  placeholder="harbor pilot"
+                  value={row.value}
+                  onChange={(event) => setRow(index, { value: event.target.value })}
+                />
+              </label>
               <button
                 type="button"
-                className="btn ghost icon"
+                className="btn ghost sm"
                 aria-label={`Remove detail ${index + 1}`}
                 onClick={() => setRows((current) => current.filter((_, i) => i !== index))}
               >
-                <Icon name="x" />
+                Remove
               </button>
               {problems[`row-${index}`] && (
                 <span className="field-error" role="alert">

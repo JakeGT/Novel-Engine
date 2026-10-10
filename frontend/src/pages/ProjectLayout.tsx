@@ -10,7 +10,7 @@ import { Logo } from '../components/Logo'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { Button, EmptyState, Loading } from '../components/ui'
 import { displayName, useSession, useSignOut } from '../lib/session'
-import { initial, isOpenChange, typePlural } from '../lib/words'
+import { initial, isOpenChange, roleLabel, typePlural } from '../lib/words'
 import {
   ProjectProvider,
   scopedKey,
@@ -205,8 +205,8 @@ export function ProjectLayout() {
       <button
         type="button"
         className={`scrim ${menuOpen ? 'open' : ''}`}
-        aria-label="Close menu"
-        tabIndex={menuOpen ? 0 : -1}
+        aria-hidden="true"
+        tabIndex={-1}
         onClick={() => setMenuOpen(false)}
       />
 
@@ -222,6 +222,11 @@ export function ProjectLayout() {
           <Logo />
           <span className="wordmark">Novel Engine</span>
         </Link>
+        {/* Shown only when the menu is a drawer: a visible way to put it away. */}
+        <button type="button" className="btn ghost sm menu-close" onClick={() => setMenuOpen(false)}>
+          <Icon name="x" size={15} />
+          Close menu
+        </button>
 
         <div className="project-switch">
           <span className="eyebrow">Project</span>
@@ -240,6 +245,10 @@ export function ProjectLayout() {
           ) : (
             <span className="project-name">{projectName}</span>
           )}
+          {/* A visible way back to the library; the logo is not the only door. */}
+          <Link className="small" to="/">
+            All projects
+          </Link>
         </div>
 
         <nav aria-label="Project" className="stack">
@@ -325,24 +334,26 @@ export function ProjectLayout() {
               </>
             )}
           </div>
-          {access.data && !canWrite && <span className="badge warn">Read-only access</span>}
+          {access.data && !canWrite && <span className="badge warn">Reader: you can look, not change</span>}
           <div className="user-row">
             <span className="avatar sm round tint-violet" aria-hidden="true">
               {initial(displayName(session.data))}
             </span>
             <span className="who small">
               <strong>{displayName(session.data)}</strong>
-              {access.data && <span className="muted">{access.data.role}</span>}
+              {access.data && <span className="muted">{roleLabel(access.data.role)}</span>}
             </span>
+          </div>
+          <div className="actions" style={{ justifyContent: 'space-between', padding: '0 0.3rem' }}>
+            <ThemeToggle />
             <button
               type="button"
-              className="btn ghost icon"
-              aria-label="Sign out"
-              title="Sign out"
+              className="btn ghost sm"
               disabled={signingOut}
               onClick={() => void signOut()}
             >
-              <Icon name="logout" />
+              <Icon name="logout" size={15} />
+              Sign out
             </button>
           </div>
         </div>
@@ -352,13 +363,13 @@ export function ProjectLayout() {
         <header className="topbar">
           <button
             type="button"
-            className="btn ghost icon menu-btn"
-            aria-label="Open menu"
+            className="btn ghost sm menu-btn"
             aria-expanded={menuOpen}
             aria-controls="sidebar"
             onClick={() => setMenuOpen(true)}
           >
-            <Icon name="menu" />
+            <Icon name="menu" size={15} />
+            Menu
           </button>
           <button type="button" className="search-trigger" onClick={() => setPaletteOpen(true)}>
             <Icon name="search" />
@@ -366,10 +377,9 @@ export function ProjectLayout() {
             <kbd>Ctrl K</kbd>
           </button>
           <span className="spacer" />
-          <ThemeToggle />
           {canWrite && (
-            <Button icon="hand" onClick={() => openGodHand()} title="Change anything in the story by saying so">
-              God Hand
+            <Button icon="hand" onClick={() => openGodHand()}>
+              Change anything
             </Button>
           )}
           {canWrite && (

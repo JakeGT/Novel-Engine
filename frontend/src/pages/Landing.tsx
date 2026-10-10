@@ -80,7 +80,7 @@ export function Landing() {
             </p>
             <div className="cta">
               <a className="btn primary lg" href="/auth/login">
-                Open your library <Icon name="arrowRight" />
+                Sign in <Icon name="arrowRight" />
               </a>
               <a className="text-link" href="#how">
                 See how it works
@@ -252,7 +252,7 @@ export function Landing() {
               Begin with <em>a sentence.</em>
             </h2>
             <a className="btn lg" href="/auth/login">
-              Open your library <Icon name="arrowRight" />
+              Sign in <Icon name="arrowRight" />
             </a>
           </div>
         </section>

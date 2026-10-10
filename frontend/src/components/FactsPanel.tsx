@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { api, type CanonEntity, type Fact, type VocabularyPredicate } from '../api/client'
 import { objectText, predicateLabel, typeLabel, typePlural } from '../lib/words'
 import { entryPath, scopedKey, useCanonWrite, useEntries, useProject } from '../project'
-import { Button, ErrorNotice, Loading, WriteProblem } from './ui'
+import { Button, ErrorNotice, Loading, UndoNotice, WriteProblem } from './ui'
 
 interface Entered {
   value: string
@@ -105,8 +105,20 @@ export function FactsPanel({ entity }: { entity: CanonEntity }) {
     },
     () => setEntered({ value: '', unit: '' }),
   )
-  const end = useCanonWrite<Fact, string>((expectedRevision, factId) =>
-    api.closeFact(scope, factId, expectedRevision),
+  const [ended, setEnded] = useState<{ fact: Fact; sentence: string } | null>(null)
+  const end = useCanonWrite<Fact, { fact: Fact; sentence: string }>(
+    (expectedRevision, target) => api.closeFact(scope, target.fact.id, expectedRevision),
+    (_result, target) => setEnded(target),
+  )
+  // Ending a fact is put right by stating it again, so it is offered as Undo rather than confirmed.
+  const restore = useCanonWrite<Fact, Fact>(
+    (expectedRevision, fact) =>
+      api.assertFact(scope, {
+        proposition: { subject_id: fact.subject_id, predicate: fact.predicate, object: fact.object },
+        confidence: fact.confidence,
+        expected_revision: expectedRevision,
+      }),
+    () => setEnded(null),
   )
 
   const onSubmit = (event: FormEvent) => {
@@ -146,8 +158,15 @@ export function FactsPanel({ entity }: { entity: CanonEntity }) {
             variant="ghost"
             disabled={end.pending}
             aria-label={`End fact: ${predicateLabel(fact.predicate)} ${text}`}
-            title="Mark this as no longer true. It stays in the history."
-            onClick={() => void end.submit(fact.id)}
+            onClick={() =>
+              void end.submit({
+                fact,
+                sentence:
+                  direction === 'out'
+                    ? `${entity.name} ${predicateLabel(fact.predicate)} ${text}`
+                    : `${entries.names.get(fact.subject_id) ?? 'An entry'} ${predicateLabel(fact.predicate)} ${entity.name}`,
+              })
+            }
           >
             No longer true
           </Button>
@@ -186,21 +205,27 @@ export function FactsPanel({ entity }: { entity: CanonEntity }) {
     if (predicate.object_shape === 'quantity') {
       return (
         <>
-          <input
-            aria-label="Amount"
-            disabled={disabled}
-            inputMode="decimal"
-            placeholder="12.5"
-            value={entered.value}
-            onChange={(event) => change(event.target.value)}
-          />
-          <input
-            aria-label="Unit"
-            disabled={disabled}
-            placeholder="km"
-            value={entered.unit}
-            onChange={(event) => setEntered({ ...entered, unit: event.target.value })}
-          />
+          <label className="mini">
+            <span>Amount</span>
+            <input
+              aria-label="Amount"
+              disabled={disabled}
+              inputMode="decimal"
+              placeholder="12.5"
+              value={entered.value}
+              onChange={(event) => change(event.target.value)}
+            />
+          </label>
+          <label className="mini">
+            <span>Unit</span>
+            <input
+              aria-label="Unit"
+              disabled={disabled}
+              placeholder="km"
+              value={entered.unit}
+              onChange={(event) => setEntered({ ...entered, unit: event.target.value })}
+            />
+          </label>
         </>
       )
     }
@@ -234,7 +259,13 @@ export function FactsPanel({ entity }: { entity: CanonEntity }) {
         {outgoing.map((fact) => row(fact, 'out'))}
         {incoming.map((fact) => row(fact, 'in'))}
       </ul>
+      {ended && (
+        <UndoNotice busy={restore.pending} onUndo={() => void restore.submit(ended.fact)}>
+          No longer true: “{ended.sentence}”. It stays in the history.
+        </UndoNotice>
+      )}
       <WriteProblem write={end} scope={scope} />
+      <WriteProblem write={restore} scope={scope} />
 
       {canWrite && active && predicates.length > 0 && (
         <form className="stack tight" onSubmit={onSubmit} noValidate aria-label="Add a fact" style={{ marginTop: '1.1rem' }}>

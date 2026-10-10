@@ -22,7 +22,7 @@ export function ArchiveEntry({ entity }: { entity: CanonEntity }) {
   return (
     <>
       <Button variant="danger-quiet" icon="archive" onClick={() => setOpen(true)}>
-        Archive
+        Archive this entry
       </Button>
       {open && (
         <Dialog title={`Archive “${entity.name}”?`} onClose={() => setOpen(false)}>
@@ -41,16 +41,16 @@ export function ArchiveEntry({ entity }: { entity: CanonEntity }) {
               />
               <label htmlFor={checkboxId}>I understand this is a significant change</label>
             </p>
+            <p className="hint">
+              Tick the box to archive now. Not sure? “Send for review instead” puts the archive in your review inbox to decide
+              later, and changes nothing now.
+            </p>
             <WriteProblem write={archive} scope={scope} />
             <div className="actions end">
-              <Button variant="ghost" onClick={() => setOpen(false)}>
-                Cancel
+              <Button data-autofocus variant="ghost" onClick={() => setOpen(false)}>
+                Keep entry
               </Button>
-              <Button
-                disabled={archive.pending}
-                onClick={() => void archive.submit(false)}
-                title="Adds the archive to the review inbox instead of applying it now"
-              >
+              <Button disabled={archive.pending} onClick={() => void archive.submit(false)}>
                 Send for review instead
               </Button>
               <Button

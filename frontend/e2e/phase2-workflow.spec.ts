@@ -40,7 +40,7 @@ test('author, review, archive, and export a project end to end', async ({ page }
   await page.goto('/')
   await expect(page.getByRole('heading', { level: 1 })).toContainText('needs a memory')
   await expectAccessible(page)
-  await page.getByRole('link', { name: 'Sign in' }).click()
+  await page.getByRole('link', { name: 'Sign in' }).first().click()
   await page.getByRole('link', { name: /Your project/ }).click()
 
   // --- a new project is ready to use without any setup step ----------------------
@@ -75,7 +75,7 @@ test('author, review, archive, and export a project end to end', async ({ page }
   await expectAccessible(page)
 
   // --- edit it, recovering from a clash without losing the entered data -----------
-  await page.getByRole('button', { name: 'Edit' }).first().click()
+  await page.getByRole('button', { name: 'Edit entry' }).click()
   const edit = page.getByRole('form', { name: 'Edit Mara Ven' })
   await edit.getByLabel('Name', { exact: true }).fill('Mara Venn')
 
@@ -174,7 +174,7 @@ test('author, review, archive, and export a project end to end', async ({ page }
 
   // --- archive with an explicit acknowledgement --------------------------------------
   await page.getByRole('link', { name: /Lantern Harbor/ }).click()
-  await page.getByRole('button', { name: 'Archive' }).click()
+  await page.getByRole('button', { name: 'Archive this entry' }).click()
   await expect(page.getByRole('button', { name: 'Archive entry' })).toBeDisabled()
   await expectAccessible(page)
   await page.getByLabel('I understand this is a significant change').check()
@@ -290,7 +290,7 @@ test('the core authoring path works with the keyboard alone', async ({ page }) =
   await expect(page.getByRole('dialog')).toHaveCount(0)
 
   // Archive it: checkbox by Space, confirmation by Enter.
-  await tabTo('Archive')
+  await tabTo('Archive this entry')
   await page.keyboard.press('Enter')
   await tabTo(/I understand this is a significant change/)
   await page.keyboard.press('Space')

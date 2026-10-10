@@ -170,7 +170,10 @@ describe('EntityForm', () => {
     await user.type(screen.getByLabelText('Short name for links'), 'taken')
     await user.click(screen.getByRole('button', { name: 'Add to story bible' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('slug is used by another entity')
+    // The sentence reaches the author; the server's bracketed code does not.
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Slug is used by another entity')
+    expect(alert).not.toHaveTextContent('slug_conflict')
     expect(screen.getByLabelText('Name')).toHaveValue('Mara Venn')
     expect(screen.getByLabelText('Short name for links')).toHaveValue('taken')
   })

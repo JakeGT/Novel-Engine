@@ -226,7 +226,10 @@ export function isStaleHead(error: unknown): boolean {
 }
 
 export function errorMessage(error: unknown, fallback = 'Request failed'): string {
-  return error instanceof Error && error.message ? error.message : fallback
+  if (!(error instanceof Error) || !error.message) return fallback
+  // Server validation text can carry bracketed finding codes; an author gets the sentence.
+  const text = error.message.replace(/\[[a-z0-9_.:-]+\]\s*/gi, '').trim()
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : fallback
 }
 
 const CSRF_COOKIE = 'novel_csrf'
@@ -578,6 +581,15 @@ export const api = {
         headers: { 'Content-Type': file.type || 'application/octet-stream' },
       },
     ),
+  /** Link an existing stored picture to an entry again (used to undo a removal). */
+  relinkPicture: (scope: Scope, link: AssetLink, expectedRevision: number) =>
+    send<AssetLink>(scope, 'POST', `/assets/${id(link.asset_id)}/links`, {
+      target_id: link.target_record_id,
+      target_record_type: link.target_record_type,
+      asset_version_id: link.asset_version_id,
+      role: link.role,
+      expected_revision: expectedRevision,
+    }),
   retireLink: (scope: Scope, linkId: string, expectedRevision: number) =>
     send<unknown>(scope, 'POST', `/links/${id(linkId)}/retire`, {
       expected_revision: expectedRevision,
