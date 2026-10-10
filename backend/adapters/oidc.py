@@ -199,9 +199,16 @@ class OIDCIdentityProvider:
         endpoint = discovery.get("end_session_endpoint")
         if not endpoint:
             return post_logout_redirect_uri
-        params: dict[str, str] = {"post_logout_redirect_uri": post_logout_redirect_uri}
-        if id_token_hint:
-            params["id_token_hint"] = id_token_hint
+        if not id_token_hint:
+            # A return address is only honoured alongside the ID token that proves
+            # whose session is ending; Authentik answers 400 to one sent on its own
+            # (with or without a client id). No ID token is kept after sign-in, so
+            # the provider ends the session and shows its own signed-out page.
+            return str(endpoint)
+        params: dict[str, str] = {
+            "post_logout_redirect_uri": post_logout_redirect_uri,
+            "id_token_hint": id_token_hint,
+        }
         if state:
             params["state"] = state
         return f"{endpoint}?{urlencode(params)}"

@@ -169,3 +169,24 @@ async def test_discovery_issuer_mismatch_is_rejected() -> None:
             )
     finally:
         await provider.aclose()
+
+
+@pytest.mark.asyncio
+async def test_logout_url_sends_a_return_address_only_with_an_id_token() -> None:
+    from urllib.parse import parse_qs, urlparse
+
+    _, jwks = _key_and_jwks()
+    provider = _make_provider("unused", jwks)
+    try:
+        bare = await provider.logout_url(post_logout_redirect_uri="https://app.test/")
+        hinted = await provider.logout_url(
+            post_logout_redirect_uri="https://app.test/", id_token_hint="token-1"
+        )
+    finally:
+        await provider.aclose()
+    # A return address without the ID token is refused by the provider as malformed.
+    assert bare == ISSUER + "end-session/"
+    assert parse_qs(urlparse(hinted).query) == {
+        "post_logout_redirect_uri": ["https://app.test/"],
+        "id_token_hint": ["token-1"],
+    }
