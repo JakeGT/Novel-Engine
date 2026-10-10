@@ -90,6 +90,22 @@ class RecordRef(BaseModel):
     reason: str = ""
 
 
+class Elsewhere(BaseModel):
+    place: str = Field(description="One of: history, people, setup, assistant, media")
+    what: str = Field(description="One plain sentence saying what the author wants done there")
+
+
+# Things an author may ask for that are not changes to the story bible, and where
+# each is done. The assistant points the way; it never does these itself.
+ELSEWHERE = {
+    "history": "undoing changes or going back to an earlier version",
+    "people": "inviting people, changing what they may do, or removing them",
+    "setup": "adding or changing types of entry and kinds of fact",
+    "assistant": "the AI key, the model in use, or the daily allowance",
+    "media": "pictures and other files",
+}
+
+
 class ChangePlan(BaseModel):
     """Structured model output. Untrusted: resolved and typed before it becomes operations."""
 
@@ -111,6 +127,10 @@ class ChangePlan(BaseModel):
         default_factory=list,
         description="Anything else in the story this affects that the author should know",
     )
+    elsewhere: list[Elsewhere] = Field(
+        default_factory=list,
+        description="Requests that are not changes to the story bible, and where they are done",
+    )
 
 
 @dataclass(frozen=True)
@@ -125,6 +145,8 @@ class ChangeResult:
     notes: list[str] = field(default_factory=list)
     discarded: list[DiscardedItem] = field(default_factory=list)
     suggestions: list[SchemaSuggestion] = field(default_factory=list)
+    # (place, what the author wants done there), for requests that are not story changes.
+    elsewhere: list[tuple[str, str]] = field(default_factory=list)
 
 
 def _value(fact_object: object, names: dict[str, str]) -> str:
@@ -240,6 +262,10 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
                 "- in `notes`, tell the author about anything else this affects that they did "
                 "not mention: facts that now look wrong, characters whose beliefs no longer "
                 "match. Do not change those things yourself.\n"
+                "- some requests are not changes to the story bible. Do not attempt them; "
+                "list each in `elsewhere` with the place it is done: "
+                + "; ".join(f"{place} ({what})" for place, what in ELSEWHERE.items())
+                + ".\n"
                 "- `understood` restates the change in one plain sentence.\n" + PROMPT_RULE
             ),
             user=f"{story}\n\nInstruction:\n{instruction}",
@@ -270,9 +296,15 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
             entity_types=entity_types,
             predicates=set(predicates),
         )
+        elsewhere: list[tuple[str, str]] = []
+        for item in plan.elsewhere[:4]:
+            place = item.place.strip().lower()
+            if place in ELSEWHERE and all(place != seen for seen, _ in elsewhere):
+                elsewhere.append((place, item.what.strip()[:300]))
         if not operations:
-            if questions:
-                # Ambiguous: ask rather than guess. Nothing is proposed.
+            if questions or elsewhere or suggestions:
+                # Ambiguous, or not a change to the story: ask or point the way.
+                # Nothing is proposed.
                 return ChangeResult(
                     session_id=session_id,
                     understood=understood,
@@ -280,6 +312,7 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
                     notes=notes,
                     discarded=discarded,
                     suggestions=suggestions,
+                    elsewhere=elsewhere,
                 )
             raise ValidationError(
                 "That instruction did not lead to any change. It may already be true, or it "
@@ -324,6 +357,7 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
             notes=notes,
             discarded=discarded,
             suggestions=suggestions,
+            elsewhere=elsewhere,
         )
 
     def _change_operations(

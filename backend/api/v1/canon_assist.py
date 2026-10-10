@@ -258,6 +258,12 @@ class ChangeRequest(BaseModel):
     expected_revision: int = Field(ge=0)
 
 
+class ElsewhereModel(BaseModel):
+    # history, people, setup, assistant or media.
+    place: str
+    what: str
+
+
 class ChangeProposalModel(BaseModel):
     # Null when the assistant asked questions instead of proposing; nothing was created.
     mutation_id: str | None
@@ -272,6 +278,8 @@ class ChangeProposalModel(BaseModel):
     notes: list[str]
     discarded: list[DiscardedItemModel]
     suggestions: list[SchemaSuggestionModel] = Field(default_factory=list)
+    # Things asked for that are not story changes, and where each is done.
+    elsewhere: list[ElsewhereModel] = Field(default_factory=list)
     validation_ok: bool
     validation_issues: list[ProposalIssueModel]
 
@@ -342,6 +350,9 @@ async def assist_change(
             session.id,
             mutation_id=result.mutation.id,
         )
+    elif not result.questions and not result.suggestions:
+        # Only pointed somewhere else: there is nothing here to pick up again.
+        await sessions.close(scope, scope.workspace_id or "", project_id, session.id)
     issues = result.validation.issues if result.validation is not None else []
     return ChangeProposalModel(
         mutation_id=result.mutation.id if result.mutation is not None else None,
@@ -352,6 +363,7 @@ async def assist_change(
         questions=result.questions,
         notes=result.notes,
         suggestions=_suggestions(result.suggestions),
+        elsewhere=[ElsewhereModel(place=place, what=what) for place, what in result.elsewhere],
         discarded=[
             DiscardedItemModel(kind=item.kind, reason=item.reason) for item in result.discarded
         ],

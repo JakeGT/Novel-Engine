@@ -2709,6 +2709,8 @@ export interface components {
         ChangeProposalModel: {
             /** Discarded */
             discarded: components["schemas"]["DiscardedItemModel"][];
+            /** Elsewhere */
+            elsewhere?: components["schemas"]["ElsewhereModel"][];
             /** Mutation Id */
             mutation_id: string | null;
             /** Notes */
@@ -3123,6 +3125,13 @@ export interface components {
             target: string;
             /** Type */
             type: string;
+        };
+        /** ElsewhereModel */
+        ElsewhereModel: {
+            /** Place */
+            place: string;
+            /** What */
+            what: string;
         };
         /** Entity */
         Entity: {

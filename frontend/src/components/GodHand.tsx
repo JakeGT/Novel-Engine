@@ -1,11 +1,21 @@
 import { AllowanceNote } from './Allowance'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { api, type AssistSession, type CanonEntity } from '../api/client'
+import { Link, useNavigate } from 'react-router-dom'
+import { api, type AssistSession, type CanonEntity, type ChangeProposal } from '../api/client'
+import { words } from '../lib/words'
 import { scopedKey, useInvalidateProject, useProject } from '../project'
 import { AssistantProblem } from './AssistFlow'
 import { Button, Dialog, Field } from './ui'
+
+// Where the things an author may ask for, that are not story changes, are done.
+const PLACES: Record<string, { path: string; label: string }> = {
+  history: { path: 'history', label: 'Open History' },
+  people: { path: 'people', label: 'Open People' },
+  setup: { path: 'customize', label: 'Open Types and fields' },
+  assistant: { path: 'assistant', label: 'Open the assistant’s settings' },
+  media: { path: 'media', label: 'Open Media' },
+}
 
 const EXAMPLES = [
   'Mara is Tobin’s sister, not his rival.',
@@ -43,6 +53,8 @@ export function GodHand({
   const [sessionId, setSessionId] = useState<string | null>(resume?.id ?? null)
   const focusId = entity?.id ?? resume?.entity_id ?? null
   const [problem, setProblem] = useState<string | null>(null)
+  const [elsewhere, setElsewhere] = useState<NonNullable<ChangeProposal['elsewhere']>>([])
+  const [suggested, setSuggested] = useState<string[]>([])
 
   const change = useMutation({
     mutationFn: async () => {
@@ -64,7 +76,10 @@ export function GodHand({
       if (!result.mutation_id) {
         // Ambiguous: nothing was proposed. Show what the assistant needs to know.
         setQuestions(result.questions)
-        setSessionId(result.session_id)
+        setElsewhere(result.elsewhere ?? [])
+        setSuggested((result.suggestions ?? []).map((item) => words(item.name).toLowerCase()))
+        // A conversation that only pointed elsewhere is not kept.
+        setSessionId(result.questions.length > 0 || (result.suggestions ?? []).length > 0 ? result.session_id : null)
         return
       }
       await invalidate()
@@ -105,6 +120,8 @@ export function GodHand({
               onChange={(event) => {
                 setInstruction(event.target.value)
                 setQuestions([])
+                setElsewhere([])
+                setSuggested([])
               }}
             />
           )}
@@ -143,6 +160,42 @@ export function GodHand({
                 />
               )}
             </Field>
+          </div>
+        )}
+
+        {elsewhere.length > 0 && (
+          <div className="notice plain" role="status">
+            <p>
+              <strong>That is not a change to your story bible,</strong> so nothing was changed.
+              It is done here:
+            </p>
+            <ul className="rows">
+              {elsewhere.map((item) => (
+                <li className="row" key={item.place}>
+                  <span className="grow">{item.what}</span>
+                  {PLACES[item.place] && (
+                    <Link className="btn sm" to={`/projects/${scope.projectId}/${PLACES[item.place].path}`} onClick={onClose}>
+                      {PLACES[item.place].label}
+                    </Link>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {suggested.length > 0 && (
+          <div className="notice plain" role="status">
+            <p>
+              <strong>Your story bible has no way to record this yet.</strong> The assistant
+              suggests adding: {suggested.join(', ')}. An owner can add these under Types and
+              fields; then ask again.
+            </p>
+            <div className="actions">
+              <Link className="btn sm" to={`/projects/${scope.projectId}/customize`} onClick={onClose}>
+                Open Types and fields
+              </Link>
+            </div>
           </div>
         )}
 

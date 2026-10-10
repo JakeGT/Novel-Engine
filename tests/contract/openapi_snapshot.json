@@ -992,6 +992,13 @@
             "title": "Discarded",
             "type": "array"
           },
+          "elsewhere": {
+            "items": {
+              "$ref": "#/components/schemas/ElsewhereModel"
+            },
+            "title": "Elsewhere",
+            "type": "array"
+          },
           "mutation_id": {
             "anyOf": [
               {
@@ -2094,6 +2101,24 @@
           "properties"
         ],
         "title": "EdgeUpdateItem",
+        "type": "object"
+      },
+      "ElsewhereModel": {
+        "properties": {
+          "place": {
+            "title": "Place",
+            "type": "string"
+          },
+          "what": {
+            "title": "What",
+            "type": "string"
+          }
+        },
+        "required": [
+          "place",
+          "what"
+        ],
+        "title": "ElsewhereModel",
         "type": "object"
       },
       "Entity": {

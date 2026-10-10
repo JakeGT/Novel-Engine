@@ -144,4 +144,29 @@ describe('GodHand', () => {
     await user.click(screen.getByRole('button', { name: 'Show me what would change' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('did not lead to any change')
   })
+  it('points to where a request is done when it is not a change to the story', async () => {
+    mockApi({
+      'POST /assist/changes': {
+        ...proposal,
+        mutation_id: null,
+        status: null,
+        operation_count: 0,
+        elsewhere: [{ place: 'history', what: 'Go back to the version from yesterday.' }],
+      },
+    })
+    const onClose = vi.fn()
+    const user = userEvent.setup()
+    renderInProject(<GodHand onClose={onClose} />)
+
+    const dialog = screen.getByRole('dialog', { name: 'The God Hand' })
+    await user.type(within(dialog).getByLabelText('What should change?'), 'Undo yesterday.')
+    await user.click(within(dialog).getByRole('button', { name: 'Show me what would change' }))
+
+    expect(await within(dialog).findByText(/That is not a change to your story bible/)).toBeInTheDocument()
+    expect(within(dialog).getByText('Go back to the version from yesterday.')).toBeInTheDocument()
+    const link = within(dialog).getByRole('link', { name: 'Open History' })
+    expect(link).toHaveAttribute('href', '/projects/prj_1/history')
+    await user.click(link)
+    expect(onClose).toHaveBeenCalled()
+  })
 })

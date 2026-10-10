@@ -2,7 +2,7 @@
 
 import pytest
 
-from backend.services.canon_change_workflow import ChangePlan, EntityChange, RecordRef
+from backend.services.canon_change_workflow import ChangePlan, Elsewhere, EntityChange, RecordRef
 from backend.services.canon_creation_workflow import DraftAttribute, DraftEntity, DraftFact
 from tests.contract.test_canon_entities import _project_id, _publish_schema
 
@@ -201,6 +201,41 @@ def test_an_instruction_that_changes_nothing_is_reported_plainly(
         f"{w['base']}/assist/changes", json={"instruction": "   ", "expected_revision": 0}
     )
     assert blank.status_code == 400
+
+
+def test_a_request_that_is_not_a_story_change_is_pointed_to_where_it_is_done(
+    auth_client, fake_container
+) -> None:
+    w = _world(auth_client, fake_container)
+    fake_container.ai.queue(
+        ChangePlan(
+            understood="Go back to yesterday and invite Sam.",
+            elsewhere=[
+                Elsewhere(place="History", what="Go back to the version from yesterday."),
+                Elsewhere(place="people", what="Invite Sam as an editor."),
+                Elsewhere(place="history", what="A second mention of the same place."),
+                Elsewhere(place="the admin console", what="Not a place that exists."),
+            ],
+        )
+    )
+
+    response = auth_client.post(
+        f"{w['base']}/assist/changes",
+        json={"instruction": "Undo yesterday and invite Sam.", "expected_revision": int(w["head"])},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["mutation_id"] is None and body["questions"] == []
+    assert body["elsewhere"] == [
+        {"place": "history", "what": "Go back to the version from yesterday."},
+        {"place": "people", "what": "Invite Sam as an editor."},
+    ]
+    # The assistant is told the places, and nothing is left behind to pick up.
+    assert "history (undoing changes" in fake_container.ai.calls[-1]["messages"][0]["content"]
+    assert auth_client.get(f"{w['base']}/assist/sessions").json()["items"] == []
+    waiting = auth_client.get(f"{w['base']}/mutations?status=needs_review").json()["items"]
+    assert waiting == []
 
 
 def test_the_god_hand_requires_a_session_and_a_provider_safe_format(api_client) -> None:
