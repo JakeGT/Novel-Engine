@@ -3764,6 +3764,16 @@ class InMemoryAssistSessionStore:
         found.sort(key=lambda session: (session.updated_at, session.id), reverse=True)
         return found[:limit]
 
+    async def delete_stale_open(self, *, workspace_id: str, project_id: str, before: Any) -> int:
+        stale = [
+            session.id
+            for session in self._scoped(workspace_id, project_id)
+            if session.status.value == "open" and session.updated_at < before
+        ]
+        for session_id in stale:
+            del self.sessions[session_id]
+        return len(stale)
+
     async def for_mutation(self, *, workspace_id: str, project_id: str, mutation_id: str) -> Any:
         found = [
             session

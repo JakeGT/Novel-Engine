@@ -9,7 +9,7 @@ anyone who can read the project. Nothing here calls a model.
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from backend.adapters.system import uuid7
@@ -26,6 +26,8 @@ from backend.domain.identity import AccessScope
 from backend.domain.tenancy import Permission
 
 MAX_OPEN_LISTED = 20
+# An unfinished conversation left untouched this long is erased.
+OPEN_KEPT_DAYS = 30
 _PREFIX = {AssistKind.CREATE: "brf", AssistKind.FILL_IN: "brf", AssistKind.CHANGE: "chg"}
 
 
@@ -176,6 +178,12 @@ class AssistSessionService:
     ) -> list[AssistSession]:
         """The author's own unfinished conversations, most recent first."""
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        # An unfinished conversation is an author's private notes; it is not kept forever.
+        await self._store.delete_stale_open(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            before=self._now() - timedelta(days=OPEN_KEPT_DAYS),
+        )
         return await self._store.list_open(
             workspace_id=workspace_id,
             project_id=project_id,

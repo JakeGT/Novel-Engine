@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
@@ -143,6 +144,20 @@ class PostgresAssistSessionStore:
                 )
             ).all()
         return [_from_row(row) for row in rows]
+
+    async def delete_stale_open(
+        self, *, workspace_id: str, project_id: str, before: datetime
+    ) -> int:
+        """Erase unfinished conversations nobody has touched since ``before``."""
+        async with session_scope(self._session_factory) as db:
+            result = await db.execute(
+                text(
+                    "DELETE FROM assist_sessions WHERE workspace_id = :ws AND project_id = :project "
+                    "AND status = 'open' AND updated_at < :before"
+                ),
+                {"ws": workspace_id, "project": project_id, "before": before},
+            )
+            return result.rowcount or 0  # type: ignore[attr-defined]
 
     async def for_mutation(
         self, *, workspace_id: str, project_id: str, mutation_id: str

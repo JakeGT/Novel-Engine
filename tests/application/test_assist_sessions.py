@@ -126,3 +126,31 @@ async def test_deleting_a_project_or_workspace_removes_its_conversations() -> No
     assert {s.project_id for s in store.sessions.values()} == {"prj_2", "prj_3"}
     assert (await purge.purge_workspace(WS))["assist_sessions"] == 1
     assert {s.workspace_id for s in store.sessions.values()} == {"ws_2"}
+
+
+@pytest.mark.asyncio
+async def test_an_unfinished_conversation_left_untouched_for_a_month_is_erased() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    store = InMemoryAssistSessionStore()
+    clock = [datetime(2026, 10, 1, tzinfo=UTC)]
+    service = AssistSessionService(
+        store,
+        tenancy=_Tenancy(writers={"ana"}, readers={"ana"}),
+        now=lambda: clock[0],
+    )
+    old = await service.begin(
+        _scope("ana"), WS, PROJECT, kind=AssistKind.CREATE, description="An old idea."
+    )
+    # One that led to changes is evidence, and is kept however old it gets.
+    used = await service.begin(
+        _scope("ana"), WS, PROJECT, kind=AssistKind.CREATE, description="A used idea."
+    )
+    await service.proposed(_scope("ana"), WS, PROJECT, used.id, mutation_id="mut_1")
+
+    clock[0] += timedelta(days=29)
+    assert [s.id for s in await service.list_open(_scope("ana"), WS, PROJECT)] == [old.id]
+
+    clock[0] += timedelta(days=2)
+    assert await service.list_open(_scope("ana"), WS, PROJECT) == []
+    assert old.id not in store.sessions and used.id in store.sessions

@@ -128,6 +128,33 @@ async def test_conversations_are_deleted_with_their_project_or_workspace(store) 
 
 
 @pytest.mark.asyncio
+async def test_only_stale_unfinished_conversations_are_erased(store) -> None:
+    from datetime import timedelta
+
+    await store.save(_session("brf_old", updated_at=NOW - timedelta(days=40)))
+    await store.save(_session("brf_new"))
+    await store.save(
+        _session(
+            "brf_used",
+            status=AssistStatus.PROPOSED,
+            mutation_id="mut_1",
+            updated_at=NOW - timedelta(days=400),
+        )
+    )
+    await store.save(_session("brf_other", project_id="p2", updated_at=NOW - timedelta(days=40)))
+
+    erased = await store.delete_stale_open(
+        workspace_id="ws1", project_id="p1", before=NOW - timedelta(days=30)
+    )
+
+    assert erased == 1
+    assert await store.get(workspace_id="ws1", project_id="p1", session_id="brf_old") is None
+    for kept, project in (("brf_new", "p1"), ("brf_used", "p1"), ("brf_other", "p2")):
+        found = await store.get(workspace_id="ws1", project_id=project, session_id=kept)
+        assert found is not None
+
+
+@pytest.mark.asyncio
 async def test_a_workspaces_model_choice_is_kept_replaced_and_removed(disposable_database) -> None:
     from backend.adapters.ai_settings_store import PostgresAiSettingsStore
 

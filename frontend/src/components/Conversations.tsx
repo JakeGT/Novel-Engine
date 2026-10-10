@@ -56,7 +56,7 @@ export function OpenConversations() {
           <h2 id="unfinished-heading">Pick up where you left off</h2>
           <p className="muted">
             Conversations with the assistant you started and did not finish. Only you can see
-            these.
+            these, and one left untouched for 30 days is erased.
           </p>
         </div>
       </div>
