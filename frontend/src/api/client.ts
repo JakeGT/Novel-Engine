@@ -34,6 +34,7 @@ export type AssistBrief = Schemas['AssistBriefRequest']
 export type AssistQuestionSheet = Schemas['AssistQuestionSheetModel']
 export type AssistProposalRequest = Schemas['AssistProposalRequest']
 export type ChangeProposal = Schemas['ChangeProposalModel']
+export type AssistSession = Schemas['AssistSessionModel']
 export type Member = Schemas['MembershipModel']
 export type Invitation = Schemas['InvitationModel']
 export type MemberRole = Member['role']
@@ -467,6 +468,18 @@ export const api = {
   /** The God Hand: one instruction, every change it implies, as a proposal (or questions). */
   assistChange: (scope: Scope, body: Schemas['ChangeRequest']) =>
     send<ChangeProposal>(scope, 'POST', '/assist/changes', body),
+  // --- conversations with the assistant, kept so they can be resumed and read back ---
+  /** The signed-in author's unfinished conversations in this project. */
+  openAssistSessions: (scope: Scope) =>
+    get<{ items: AssistSession[] }>(scope, '/assist/sessions'),
+  /** The conversation a set of suggested changes came from, if one was kept. */
+  assistSessionFor: async (scope: Scope, mutationId: string) =>
+    (await get<{ items: AssistSession[] }>(scope, '/assist/sessions', { mutation_id: mutationId }))
+      .items[0] ?? null,
+  saveAssistAnswers: (scope: Scope, sessionId: string, answers: AssistSession['answers']) =>
+    send<AssistSession>(scope, 'PUT', `/assist/sessions/${id(sessionId)}/answers`, { answers }),
+  closeAssistSession: (scope: Scope, sessionId: string) =>
+    send<AssistSession>(scope, 'POST', `/assist/sessions/${id(sessionId)}/close`),
   /** Entries that are only a name so far: the to-do list for filling in. */
   needsDetail: (scope: Scope) => get<EntityListResponse>(scope, '/entities/needs-detail', { limit: 50 }),
 

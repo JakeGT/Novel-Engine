@@ -9,6 +9,7 @@ import {
   type MutationOperation,
   type MutationValidation,
 } from '../api/client'
+import { ConversationEvidence } from '../components/Conversations'
 import { Icon } from '../components/icons'
 import {
   ConfirmDialog,
@@ -414,6 +415,10 @@ export function ReviewDetail() {
               </>
             )}
           </div>
+        )}
+
+        {change.origin === 'model' && (
+          <ConversationEvidence mutationId={mutationId} wordsOnly={Boolean(arrival.fromAssistant && open)} />
         )}
 
         {done ? (

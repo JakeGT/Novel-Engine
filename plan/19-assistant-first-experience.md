@@ -72,8 +72,9 @@ Describe  ->  Interview (optional)  ->  Draft  ->  Review  ->  Canon
 - **Cost is visible before it is spent.** Any step that calls a model says so, shows which key or
   local model pays for it, and respects the author's limits. Deterministic steps never call one.
 - **Conversations are kept.** The description, questions, answers, and resulting proposal are
-  stored together as the evidence for what was accepted, and can be resumed. (Today the session
-  is evidence-referenced but not resumable; persistence is Phase 2.5 work.)
+  stored together as the evidence for what was accepted, and can be resumed. (Implemented
+  2026-10-10: an unfinished conversation is private to its author and erased when put away; a
+  finished one is readable from the changes it produced.)
 - **Review must scale.** A proposal with forty changes is reviewed by group ("12 new entries, 20
   links, 8 details"), with safe bulk actions, not forty separate clicks. (Phase 2.5.)
 

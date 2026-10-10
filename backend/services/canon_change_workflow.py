@@ -183,6 +183,7 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
         instruction: str,
         expected_revision: int,
         focus_entity_id: str | None = None,
+        session_id: str | None = None,
         credential: str | None = None,
         provider_base_url: str | None = None,
         usage_sink: UsageSink | None = None,
@@ -239,7 +240,7 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
             usage_sink=usage_sink,
         )
 
-        session_id = f"chg_{uuid7()}"
+        session_id = session_id or f"chg_{uuid7()}"
         understood = plan.understood.strip()[:500]
         questions = [q.strip()[:300] for q in plan.questions if q.strip()][:MAX_QUESTIONS]
         operations, discarded, notes = self._change_operations(

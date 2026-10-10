@@ -767,6 +767,84 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/assist/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Assist Sessions
+         * @description The caller's unfinished conversations; or, with ``mutation_id``, the
+         *     conversation that set of suggested changes came from.
+         */
+        get: operations["list_assist_sessions_api_v1_projects__project_id__assist_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/assist/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Assist Session */
+        get: operations["get_assist_session_api_v1_projects__project_id__assist_sessions__session_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/assist/sessions/{session_id}/answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Assist Answers
+         * @description Keep the answers typed so far. Calls no model and changes nothing in the story.
+         */
+        put: operations["save_assist_answers_api_v1_projects__project_id__assist_sessions__session_id__answers_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/assist/sessions/{session_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close Assist Session
+         * @description Put an unfinished conversation away.
+         */
+        post: operations["close_assist_session_api_v1_projects__project_id__assist_sessions__session_id__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/beliefs": {
         parameters: {
             query?: never;
@@ -2286,11 +2364,59 @@ export interface components {
             expected_revision: number;
             /** Name */
             name?: string | null;
+            /** Session Id */
+            session_id?: string | null;
         };
         /** AssistQuestionSheetModel */
         AssistQuestionSheetModel: {
             /** Questions */
             questions: components["schemas"]["CharacterQuestionModel"][];
+            /** Session Id */
+            session_id: string;
+        };
+        /** AssistSessionListModel */
+        AssistSessionListModel: {
+            /** Items */
+            items: components["schemas"]["AssistSessionModel"][];
+        };
+        /** AssistSessionModel */
+        AssistSessionModel: {
+            /** Actor User Id */
+            actor_user_id: string;
+            /** Answers */
+            answers: components["schemas"]["CharacterAnswerModel"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description: string;
+            /** Entity Id */
+            entity_id: string | null;
+            /** Entity Type */
+            entity_type: string | null;
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Mutation Id */
+            mutation_id: string | null;
+            /** Name */
+            name: string | null;
+            /** Notes */
+            notes: string[];
+            /** Questions */
+            questions: components["schemas"]["CharacterQuestionModel"][];
+            /** Status */
+            status: string;
+            /** Understood */
+            understood: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** BeliefModel */
         BeliefModel: {
@@ -2411,6 +2537,8 @@ export interface components {
             expected_revision: number;
             /** Instruction */
             instruction: string;
+            /** Session Id */
+            session_id?: string | null;
         };
         /** CharacterAnswerModel */
         CharacterAnswerModel: {
@@ -3536,6 +3664,11 @@ export interface components {
         RotateCredentialRequest: {
             /** Key */
             key: string;
+        };
+        /** SaveAnswersRequest */
+        SaveAnswersRequest: {
+            /** Answers */
+            answers?: components["schemas"]["CharacterAnswerModel"][];
         };
         /** SchemaDefinitionRequest */
         SchemaDefinitionRequest: {
@@ -5537,6 +5670,139 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssistQuestionSheetModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_assist_sessions_api_v1_projects__project_id__assist_sessions_get: {
+        parameters: {
+            query?: {
+                mutation_id?: string | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistSessionListModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_assist_session_api_v1_projects__project_id__assist_sessions__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistSessionModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_assist_answers_api_v1_projects__project_id__assist_sessions__session_id__answers_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveAnswersRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistSessionModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    close_assist_session_api_v1_projects__project_id__assist_sessions__session_id__close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistSessionModel"];
                 };
             };
             /** @description Validation Error */

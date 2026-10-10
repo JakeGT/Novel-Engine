@@ -1,15 +1,16 @@
-import { useMutation } from '@tanstack/react-query'
-import { useState, type FormEvent } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   api,
   isApiError,
   type AssistBrief,
   type AssistQuestionSheet,
+  type AssistSession,
   type CanonEntity,
 } from '../api/client'
 import { COMMON_TYPES, typeLabel, typeLook } from '../lib/words'
-import { useInvalidateProject, useProject } from '../project'
+import { scopedKey, useInvalidateProject, useProject } from '../project'
 import { Icon } from './icons'
 import { Button, ErrorNotice, Field } from './ui'
 
@@ -22,6 +23,8 @@ interface Props {
   onClose: () => void
   /** Switch to typing everything in by hand, keeping what was entered so far. */
   onManual?: (draft: { type?: string; name: string }) => void
+  /** An unfinished conversation to carry on with, at the questions it had reached. */
+  resume?: AssistSession
 }
 
 const EXAMPLE =
@@ -56,17 +59,52 @@ export function AssistantProblem({ error, onManual }: { error: unknown; onManual
  * drafts the entries and the links between them. The draft goes to review, so
  * nothing is added to the story until the author has looked at it.
  */
-export function AssistFlow({ entity, initialType, types, onClose, onManual }: Props) {
+export function AssistFlow({ entity, initialType, types, onClose, onManual, resume }: Props) {
   const { scope, headRevision, refreshHead } = useProject()
   const invalidate = useInvalidateProject(scope)
   const navigate = useNavigate()
 
-  const [type, setType] = useState(initialType ?? '')
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
+  const queryClient = useQueryClient()
+  const [type, setType] = useState(resume?.entity_type ?? initialType ?? '')
+  const [name, setName] = useState(resume?.name ?? '')
+  const [description, setDescription] = useState(resume?.description ?? '')
   const [problem, setProblem] = useState<string | null>(null)
-  const [sheet, setSheet] = useState<AssistQuestionSheet | null>(null)
-  const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [sheet, setSheet] = useState<AssistQuestionSheet | null>(
+    resume && resume.questions.length > 0
+      ? { session_id: resume.id, questions: resume.questions }
+      : null,
+  )
+  const [answers, setAnswers] = useState<Record<string, string>>(() =>
+    Object.fromEntries((resume?.answers ?? []).map((item) => [item.question_id, item.answer])),
+  )
+  const [kept, setKept] = useState<'saving' | 'saved' | 'failed' | null>(null)
+  const refreshWaiting = () =>
+    queryClient.invalidateQueries({ queryKey: scopedKey(scope, 'assist-sessions') })
+  const answered = () =>
+    (sheet?.questions ?? [])
+      .filter((question) => (answers[question.id] ?? '').trim())
+      .map((question) => ({
+        question_id: question.id,
+        question: question.question,
+        answer: answers[question.id].trim(),
+      }))
+  // Answers are kept each time the author leaves a box, so closing loses nothing.
+  const lastKept = useRef(JSON.stringify(resume?.answers ?? []))
+  const keepAnswers = async () => {
+    if (!sheet) return
+    const current = answered()
+    // Focus moving about is not a change; only send what is actually different.
+    if (JSON.stringify(current) === lastKept.current) return
+    setKept('saving')
+    try {
+      await api.saveAssistAnswers(scope, sheet.session_id, current)
+      lastKept.current = JSON.stringify(current)
+      setKept('saved')
+      void refreshWaiting()
+    } catch {
+      setKept('failed')
+    }
+  }
   const [showAllTypes, setShowAllTypes] = useState(false)
 
   const brief = (): AssistBrief =>
@@ -76,23 +114,27 @@ export function AssistFlow({ entity, initialType, types, onClose, onManual }: Pr
 
   const questions = useMutation({
     mutationFn: () => api.assistQuestions(scope, brief()),
-    onSuccess: (data) => setSheet(data),
+    onSuccess: (data) => {
+      setSheet(data)
+      setKept(null)
+      lastKept.current = '[]'
+      void refreshWaiting()
+    },
   })
   const draft = useMutation({
     mutationFn: async () => {
-      const answered = (sheet?.questions ?? [])
-        .filter((question) => (answers[question.id] ?? '').trim())
-        .map((question) => ({
-          question_id: question.id,
-          question: question.question,
-          answer: answers[question.id].trim(),
-        }))
       // A draft is not a canon write: aim it at whatever the latest version is right now.
       const head = await refreshHead().catch(() => headRevision)
-      return api.assistProposal(scope, { ...brief(), answers: answered, expected_revision: head })
+      return api.assistProposal(scope, {
+        ...brief(),
+        session_id: sheet?.session_id ?? null,
+        answers: answered(),
+        expected_revision: head,
+      })
     },
     onSuccess: async (result) => {
       await invalidate()
+      void refreshWaiting()
       onClose()
       navigate(`/projects/${scope.projectId}/review/${result.mutation_id}`, {
         state: { fromAssistant: true, discarded: result.discarded },
@@ -133,13 +175,29 @@ export function AssistFlow({ entity, initialType, types, onClose, onManual }: Pr
               data-autofocus={index === 0 ? true : undefined}
               value={answers[question.id] ?? ''}
               onChange={(event) => setAnswers({ ...answers, [question.id]: event.target.value })}
+              onBlur={() => void keepAnswers()}
             />
           </div>
         ))}
+        <p className="hint" role="status">
+          {kept === 'failed'
+            ? 'Your answers could not be kept just now. They are still here; finish in this sitting.'
+            : kept === 'saved'
+              ? 'Answers kept. You can close this and pick it up later from the project’s home page.'
+              : 'Your answers are kept as you go, so you can close this and pick it up later.'}
+        </p>
         <AssistantProblem error={draft.error} onManual={manual} />
         <div className="actions end">
-          <Button variant="ghost" onClick={() => setSheet(null)} disabled={busy}>
-            Back
+          <Button
+            variant="ghost"
+            onClick={() => {
+              // Going back to rewrite the description starts a new conversation.
+              void api.closeAssistSession(scope, sheet.session_id).then(refreshWaiting, () => undefined)
+              setSheet(null)
+            }}
+            disabled={busy}
+          >
+            Change the description
           </Button>
           <Button
             variant="primary"

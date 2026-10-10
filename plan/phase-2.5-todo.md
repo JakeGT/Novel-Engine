@@ -19,7 +19,7 @@ provider by the implementer. Draft quality is unknown until the owner uses it wi
 | B. Grouped review | AST-EXP-006 | Partly implemented |
 | C. The God Hand | AST-EXP-017 | Implemented, first version (scripted model only) |
 | D. Real-provider verification and evaluation set | AST-EXP-003 | Not started; needs a provider key |
-| E. Stored, resumable conversations | AST-EXP-004 | Not started |
+| E. Stored, resumable conversations | AST-EXP-004 | Implemented (scripted model only) |
 | F. Start from a premise | AST-EXP-005 | Covered by A in practice; no dedicated first-run |
 | G. Link suggestions (semantic) | AST-EXP-007 | Not started |
 | H. First run and sample project | AST-EXP-008 | Onboarding implemented; sample project not started |
@@ -104,6 +104,25 @@ provider by the implementer. Draft quality is unknown until the owner uses it wi
 - [ ] A refused link after a stale head leaves the stored image unlinked in the media list; it is
       harmless but should be cleaned up or offered for re-linking.
 - [ ] No thumbnails: the full image is fetched wherever a portrait is shown.
+
+## E. Stored, resumable conversations
+
+- [x] Each conversation is kept (`assist_sessions`, migration 0024): the description or
+      instruction, the questions asked, the answers, and the proposal it led to. The id is the
+      session id the proposal's operations already cite as evidence.
+- [x] Answers are saved as the author leaves each box, and before the model is asked to draft, so
+      a failed draft or a closed dialog loses nothing.
+- [x] "Pick up where you left off" on the project home lists the author's own unfinished
+      conversations; Continue reopens one at its questions without calling the model again.
+- [x] A God Hand instruction that was answered with a question stays open and resumable.
+- [x] "Where this came from" on a set of suggested changes shows the conversation behind it, to
+      anyone who can read the project.
+- [x] An unfinished conversation is visible only to its author; putting one away erases it;
+      conversations are deleted with their project or workspace. Evidence cannot be edited.
+- [ ] Follow-up instructions on the same proposal ("revise this change"), which needs one
+      continuing conversation rather than one per proposal.
+- [ ] Conversations are not yet included in a project export, and there is no time limit on
+      unfinished ones.
 
 ## H. First run
 

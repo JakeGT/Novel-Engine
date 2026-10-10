@@ -1,7 +1,14 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createContext, useCallback, useContext, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { api, isStaleHead, type CanonEntity, type ProjectAccess, type Scope } from './api/client'
+import {
+  api,
+  isStaleHead,
+  type AssistSession,
+  type CanonEntity,
+  type ProjectAccess,
+  type Scope,
+} from './api/client'
 
 /** Everything a project page needs; provided by ProjectLayout through the router outlet. */
 export interface ProjectContext {
@@ -21,6 +28,8 @@ export interface ProjectContext {
   fillIn?: (entity: CanonEntity) => void
   /** Open the God Hand, optionally focused on the entry being looked at. */
   godHand?: (entity?: CanonEntity) => void
+  /** Reopen an unfinished conversation with the assistant where it was left. */
+  resume?: (session: AssistSession) => void
 }
 
 const ProjectReactContext = createContext<ProjectContext | null>(null)

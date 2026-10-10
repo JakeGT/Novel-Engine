@@ -1,8 +1,8 @@
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api, type CanonEntity } from '../api/client'
-import { useInvalidateProject, useProject } from '../project'
+import { api, type AssistSession, type CanonEntity } from '../api/client'
+import { scopedKey, useInvalidateProject, useProject } from '../project'
 import { AssistantProblem } from './AssistFlow'
 import { Button, Dialog, Field } from './ui'
 
@@ -19,13 +19,28 @@ const EXAMPLES = [
  * result is a set of suggested changes to review, or a question when the
  * instruction could mean more than one thing.
  */
-export function GodHand({ entity, onClose }: { entity?: CanonEntity; onClose: () => void }) {
+export function GodHand({
+  entity,
+  resume,
+  onClose,
+}: {
+  entity?: CanonEntity
+  /** An unfinished conversation: the instruction and what the assistant asked about it. */
+  resume?: AssistSession
+  onClose: () => void
+}) {
   const { scope, headRevision, refreshHead } = useProject()
   const invalidate = useInvalidateProject(scope)
   const navigate = useNavigate()
-  const [instruction, setInstruction] = useState('')
+  const queryClient = useQueryClient()
+  const [instruction, setInstruction] = useState(resume?.description ?? '')
   const [clarification, setClarification] = useState('')
-  const [questions, setQuestions] = useState<string[]>([])
+  const [questions, setQuestions] = useState<string[]>(
+    (resume?.questions ?? []).map((item) => item.question),
+  )
+  // Once the assistant has asked something, the conversation is kept under this id.
+  const [sessionId, setSessionId] = useState<string | null>(resume?.id ?? null)
+  const focusId = entity?.id ?? resume?.entity_id ?? null
   const [problem, setProblem] = useState<string | null>(null)
 
   const change = useMutation({
@@ -38,14 +53,17 @@ export function GodHand({ entity, onClose }: { entity?: CanonEntity; onClose: ()
       const head = await refreshHead().catch(() => headRevision)
       return api.assistChange(scope, {
         instruction: full,
-        entity_id: entity?.id ?? null,
+        entity_id: focusId,
+        session_id: sessionId,
         expected_revision: head,
       })
     },
     onSuccess: async (result) => {
+      void queryClient.invalidateQueries({ queryKey: scopedKey(scope, 'assist-sessions') })
       if (!result.mutation_id) {
         // Ambiguous: nothing was proposed. Show what the assistant needs to know.
         setQuestions(result.questions)
+        setSessionId(result.session_id)
         return
       }
       await invalidate()
@@ -111,6 +129,9 @@ export function GodHand({ entity, onClose }: { entity?: CanonEntity; onClose: ()
                 <li key={index}>• {question}</li>
               ))}
             </ul>
+            <p className="hint">
+              This is kept. You can close it and pick it up later from the project’s home page.
+            </p>
             <Field label="Your answer">
               {(props) => (
                 <textarea

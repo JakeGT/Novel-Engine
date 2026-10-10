@@ -2001,3 +2001,30 @@ details.more[open] > summary {
   flex: none;
   white-space: nowrap;
 }
+
+
+/* ------------------------------------------ conversations as evidence --- */
+.quoted {
+  margin: 0.3rem 0 0;
+  padding: 0.2rem 0 0.2rem 1rem;
+  border-left: 2px solid var(--line-strong);
+  font-size: 1.05rem;
+  white-space: pre-wrap;
+}
+
+.qa {
+  display: grid;
+  gap: 0.7rem;
+  margin: 0.4rem 0 0;
+}
+
+.qa dt {
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  color: var(--ink-3);
+}
+
+.qa dd {
+  margin: 0.1rem 0 0;
+  white-space: pre-wrap;
+}

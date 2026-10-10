@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
+import { OpenConversations } from '../components/Conversations'
 import { Icon } from '../components/icons'
 import { Portrait } from '../components/Pictures'
 import { Button, ErrorNotice, Loading, TypeAvatar } from '../components/ui'
@@ -102,6 +103,8 @@ export function Overview() {
           )}
         </section>
 
+        <OpenConversations />
+
         {noKey && (
           <section className="card quiet" aria-labelledby="key-heading">
             <div className="card-head">
@@ -182,6 +185,8 @@ export function Overview() {
           </Link>
         ))}
       </section>
+
+      <OpenConversations />
 
       {(todo.data?.items.length ?? 0) > 0 && (
         <section className="card" aria-labelledby="todo-heading">

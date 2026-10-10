@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api, type CanonEntity } from '../api/client'
+import { api, type AssistSession, type CanonEntity } from '../api/client'
 import { entryPath, scopedKey, useProject } from '../project'
 import { AssistFlow } from './AssistFlow'
 import { EntityForm } from './EntityForm'
@@ -11,6 +11,8 @@ interface Props {
   type?: string
   /** Fill in this existing entry with the assistant instead of adding a new one. */
   entity?: CanonEntity
+  /** An unfinished conversation to carry on with. */
+  resume?: AssistSession
   onClose: () => void
 }
 
@@ -18,7 +20,7 @@ interface Props {
  * Add to the story bible from anywhere. The assistant leads: describe it, answer
  * a few questions, review the draft. Typing everything in by hand is one click away.
  */
-export function NewEntryDialog({ type, entity, onClose }: Props) {
+export function NewEntryDialog({ type, entity, resume, onClose }: Props) {
   const { scope } = useProject()
   const navigate = useNavigate()
   const vocabulary = useQuery({
@@ -32,7 +34,9 @@ export function NewEntryDialog({ type, entity, onClose }: Props) {
     ? `Tell me about ${entity.name}`
     : manual
       ? 'Add to your story bible'
-      : 'What would you like to add?'
+      : resume
+        ? 'Carry on where you left off'
+        : 'What would you like to add?'
 
   return (
     // Remounted when switching to the by-hand form, so focus moves to its first field.
@@ -52,6 +56,7 @@ export function NewEntryDialog({ type, entity, onClose }: Props) {
           entity={entity}
           initialType={type}
           types={types}
+          resume={resume}
           onClose={onClose}
           onManual={entity ? undefined : setManual}
         />

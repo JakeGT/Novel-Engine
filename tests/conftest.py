@@ -64,6 +64,7 @@ def _build_fake_container(settings, tmp_path):
         FakeEmbeddingProvider,
         FakeIdentityProvider,
         FakeMigrationVerifier,
+        InMemoryAssistSessionStore,
         InMemoryCanonJournal,
         InMemoryCanonRepository,
         InMemoryCanonWriter,
@@ -113,6 +114,7 @@ def _build_fake_container(settings, tmp_path):
     from backend.adapters.purge import StoreWorkspacePurge
 
     objects = InMemoryObjectStore()
+    assist_sessions = InMemoryAssistSessionStore()
     purger = StoreWorkspacePurge(
         graph=graph,
         vectors=vectors,
@@ -120,6 +122,7 @@ def _build_fake_container(settings, tmp_path):
         usage=usage_store,
         objects=objects,
         artifacts=artifacts,
+        assist=assist_sessions,
     )
     tenancy_service = TenancyService(
         tenancy,
@@ -177,6 +180,7 @@ def _build_fake_container(settings, tmp_path):
         tenancy=tenancy_service,
         local_mode=not settings.is_hosted,
     )
+    from backend.services.assist_session_service import AssistSessionService
     from backend.services.canon_change_workflow import CanonChangeWorkflow
     from backend.services.canon_equivalence import CanonEquivalenceService
 
@@ -265,6 +269,10 @@ def _build_fake_container(settings, tmp_path):
         canon_history_service=canon_history_service,
         canon_character_workflow=canon_character_workflow,
         equivalence_service=equivalence_service,
+        assist_sessions=assist_sessions,
+        assist_session_service=AssistSessionService(
+            assist_sessions, tenancy=tenancy_service, local_mode=not settings.is_hosted
+        ),
     )
 
 

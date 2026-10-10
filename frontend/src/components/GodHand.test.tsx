@@ -47,6 +47,7 @@ describe('GodHand', () => {
     expect(api.find('POST', '/assist/changes')[0].body).toEqual({
       instruction: 'She lives in Saltmere now.',
       entity_id: 'ent_mara',
+      session_id: null,
       expected_revision: 5,
     })
     expect(onClose).toHaveBeenCalled()
@@ -80,6 +81,48 @@ describe('GodHand', () => {
     expect(api.find('POST', '/assist/changes')[1].body).toMatchObject({
       instruction: 'Burn the harbor down.\n\nTo be clear: Lantern Harbor.',
       entity_id: null,
+      // The answer continues the conversation the question was asked in.
+      session_id: 'chg_1',
+    })
+  })
+
+  it('carries on a conversation where the assistant had asked something', async () => {
+    const api = mockApi({ 'POST /assist/changes': proposal })
+    const user = userEvent.setup()
+    renderInProject(
+      <GodHand
+        onClose={vi.fn()}
+        resume={{
+          id: 'chg_7',
+          kind: 'change',
+          status: 'open',
+          actor_user_id: 'usr_1',
+          description: 'Burn the harbor down.',
+          entity_type: null,
+          name: null,
+          entity_id: 'ent_mara',
+          questions: [{ id: 'q1', question: 'Which harbor do you mean?', category: '' }],
+          answers: [],
+          understood: 'Unclear.',
+          notes: [],
+          mutation_id: null,
+          created_at: '2026-10-09T10:00:00Z',
+          updated_at: '2026-10-09T10:00:00Z',
+        }}
+      />,
+    )
+
+    expect(screen.getByLabelText('What should change?')).toHaveValue('Burn the harbor down.')
+    expect(screen.getByText(/Which harbor do you mean\?/)).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Your answer'), 'Lantern Harbor.')
+    await user.click(screen.getByRole('button', { name: 'Show me what would change' }))
+
+    await waitFor(() => expect(api.find('POST', '/assist/changes')).toHaveLength(1))
+    expect(api.find('POST', '/assist/changes')[0].body).toEqual({
+      instruction: 'Burn the harbor down.\n\nTo be clear: Lantern Harbor.',
+      entity_id: 'ent_mara',
+      session_id: 'chg_7',
+      expected_revision: 5,
     })
   })
 

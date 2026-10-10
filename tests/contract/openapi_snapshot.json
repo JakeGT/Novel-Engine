@@ -368,6 +368,18 @@
               }
             ],
             "title": "Name"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
           }
         },
         "required": [
@@ -384,12 +396,155 @@
             },
             "title": "Questions",
             "type": "array"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
           }
         },
         "required": [
+          "session_id",
           "questions"
         ],
         "title": "AssistQuestionSheetModel",
+        "type": "object"
+      },
+      "AssistSessionListModel": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AssistSessionModel"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AssistSessionListModel",
+        "type": "object"
+      },
+      "AssistSessionModel": {
+        "properties": {
+          "actor_user_id": {
+            "title": "Actor User Id",
+            "type": "string"
+          },
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/CharacterAnswerModel"
+            },
+            "title": "Answers",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          },
+          "entity_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Type"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "mutation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mutation Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/CharacterQuestionModel"
+            },
+            "title": "Questions",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "understood": {
+            "title": "Understood",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "actor_user_id",
+          "description",
+          "entity_type",
+          "name",
+          "entity_id",
+          "questions",
+          "answers",
+          "understood",
+          "notes",
+          "mutation_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AssistSessionModel",
         "type": "object"
       },
       "BeliefModel": {
@@ -730,6 +885,18 @@
             "minLength": 1,
             "title": "Instruction",
             "type": "string"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
           }
         },
         "required": [
@@ -3729,6 +3896,21 @@
           "key"
         ],
         "title": "RotateCredentialRequest",
+        "type": "object"
+      },
+      "SaveAnswersRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/CharacterAnswerModel"
+            },
+            "maxItems": 40,
+            "title": "Answers",
+            "type": "array"
+          }
+        },
+        "title": "SaveAnswersRequest",
         "type": "object"
       },
       "SchemaDefinitionRequest": {
@@ -6901,6 +7083,231 @@
           }
         },
         "summary": "Assist Questions",
+        "tags": [
+          "canon-assist"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/assist/sessions": {
+      "get": {
+        "description": "The caller's unfinished conversations; or, with ``mutation_id``, the\nconversation that set of suggested changes came from.",
+        "operationId": "list_assist_sessions_api_v1_projects__project_id__assist_sessions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mutation_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mutation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistSessionListModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Assist Sessions",
+        "tags": [
+          "canon-assist"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/assist/sessions/{session_id}": {
+      "get": {
+        "operationId": "get_assist_session_api_v1_projects__project_id__assist_sessions__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistSessionModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Assist Session",
+        "tags": [
+          "canon-assist"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/assist/sessions/{session_id}/answers": {
+      "put": {
+        "description": "Keep the answers typed so far. Calls no model and changes nothing in the story.",
+        "operationId": "save_assist_answers_api_v1_projects__project_id__assist_sessions__session_id__answers_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveAnswersRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistSessionModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Assist Answers",
+        "tags": [
+          "canon-assist"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/assist/sessions/{session_id}/close": {
+      "post": {
+        "description": "Put an unfinished conversation away.",
+        "operationId": "close_assist_session_api_v1_projects__project_id__assist_sessions__session_id__close_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistSessionModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Close Assist Session",
         "tags": [
           "canon-assist"
         ]

@@ -322,6 +322,7 @@ class CanonCreationWorkflow(CanonCharacterWorkflow):
         *,
         answers: list[CharacterAnswer],
         expected_revision: int,
+        session_id: str | None = None,
         credential: str | None = None,
         provider_base_url: str | None = None,
         usage_sink: UsageSink | None = None,
@@ -383,7 +384,8 @@ class CanonCreationWorkflow(CanonCharacterWorkflow):
             usage_sink=usage_sink,
         )
 
-        session_id = f"brf_{uuid7()}"
+        # An open conversation keeps its id, so the evidence points at the whole of it.
+        session_id = session_id or f"brf_{uuid7()}"
         operations, discarded = self._draft_operations(
             draft,
             brief=brief,

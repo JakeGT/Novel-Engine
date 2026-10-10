@@ -2,7 +2,7 @@
 
 Deleting a workspace or project must remove its canon (journal, normalized
 records, schema versions, media identity), the graph projection, derived vectors,
-credentials, usage records, object storage, and debug artifacts — not only the
+credentials, usage records, assistant conversations, object storage, and debug artifacts — not only the
 tenancy rows. This adapter coordinates those stores behind a single port.
 """
 
@@ -23,6 +23,7 @@ class StoreWorkspacePurge:
         artifacts: Any,
         canon: Any = None,
         canon_writer: Any = None,
+        assist: Any = None,
     ) -> None:
         self._canon = canon
         self._canon_writer = canon_writer
@@ -32,6 +33,7 @@ class StoreWorkspacePurge:
         self._usage = usage
         self._objects = objects
         self._artifacts = artifacts
+        self._assist = assist
 
     def attach_canon(self, *, canon: Any, canon_writer: Any = None) -> None:
         """Late-bind canon stores, which are constructed after the tenancy service."""
@@ -46,6 +48,8 @@ class StoreWorkspacePurge:
             canon["canon_projection_nodes"] = await self._canon_writer.purge(
                 workspace_id=workspace_id
             )
+        if self._assist is not None:
+            canon["assist_sessions"] = await self._assist.delete_workspace(workspace_id)
         return {
             **canon,
             "graph_nodes": self._graph.delete_workspace_nodes(workspace_id),
@@ -66,6 +70,8 @@ class StoreWorkspacePurge:
             canon["canon_projection_nodes"] = await self._canon_writer.purge(
                 workspace_id=workspace_id, project_id=project_id
             )
+        if self._assist is not None:
+            canon["assist_sessions"] = await self._assist.delete_project(workspace_id, project_id)
         return {
             **canon,
             "graph_nodes": self._graph.delete_project_nodes(workspace_id, project_id),

@@ -15,7 +15,10 @@ import { ReviewDetail } from './ReviewDetail'
 afterEach(() => vi.unstubAllGlobals())
 
 const at = { path: 'review/:mutationId', at: 'review/mut_1' }
-const entries = { 'GET /entities': { items: [entity()], limit: 200, offset: 0 } }
+const entries = {
+  'GET /entities': { items: [entity()], limit: 200, offset: 0 },
+  'GET /assist/sessions': { items: [] },
+}
 
 describe('ReviewDetail', () => {
   it('reads each change as a sentence with a before and after', async () => {
@@ -127,6 +130,45 @@ describe('ReviewDetail', () => {
     // A single-item group has nothing to decide in bulk.
     const ended = screen.getByRole('region', { name: 'Facts ended' })
     expect(within(ended).queryByRole('button', { name: /all/ })).not.toBeInTheDocument()
+  })
+
+  it('shows what the assistant was told, in the author’s own words', async () => {
+    const api = mockApi({
+      ...entries,
+      'GET /mutations/mut_1': mutation(),
+      'GET /assist/sessions': {
+        items: [
+          {
+            id: 'brf_1',
+            kind: 'create',
+            status: 'proposed',
+            actor_user_id: 'usr_1',
+            description: 'Iven is Mara’s brother.',
+            entity_type: null,
+            name: null,
+            entity_id: null,
+            questions: [{ id: 'q1', question: 'Where does he live?', category: 'place' }],
+            answers: [{ question_id: 'q1', question: 'Where does he live?', answer: 'Saltmere.' }],
+            understood: 'Add Iven.',
+            notes: ['Mara has no family recorded.'],
+            mutation_id: 'mut_1',
+            created_at: '2026-10-09T10:00:00Z',
+            updated_at: '2026-10-09T10:00:00Z',
+          },
+        ],
+      },
+    })
+    const { container } = renderInProject(<ReviewDetail />, at)
+
+    const evidence = await screen.findByRole('region', { name: 'Where this came from' })
+    expect(within(evidence).getByText('Iven is Mara’s brother.')).toBeInTheDocument()
+    expect(within(evidence).getByText('Where does he live?')).toBeInTheDocument()
+    expect(within(evidence).getByText('Saltmere.')).toBeInTheDocument()
+    expect(within(evidence).getByText('Add Iven.')).toBeInTheDocument()
+    expect(evidence).toHaveTextContent('Mara has no family recorded.')
+    // Asked for by the change it produced, not by an id the author has to know.
+    expect(api.find('GET', '/assist/sessions')[0].search.get('mutation_id')).toBe('mut_1')
+    await expectAccessible(container)
   })
 
   it('asks before discarding, says it cannot be brought back, and keeps reviewing by default', async () => {

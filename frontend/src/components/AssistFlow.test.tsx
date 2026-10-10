@@ -18,6 +18,7 @@ const proposal = {
   validation_issues: [],
 }
 const sheet = {
+  session_id: 'brf_1',
   questions: [
     { id: 'q1', question: 'Where does she live?', category: 'place' },
     { id: 'q2', question: 'Who does she trust?', category: 'relationships' },
@@ -28,6 +29,7 @@ describe('AssistFlow', () => {
   it('goes from a description, through questions, to a draft held for review', async () => {
     const api = mockApi({
       'POST /assist/questions': sheet,
+      'PUT /assist/sessions/brf_1/answers': {},
       'POST /assist/proposals': reply(201, proposal),
     })
     const onClose = vi.fn()
@@ -51,7 +53,15 @@ describe('AssistFlow', () => {
       entity_type: 'Character',
       name: 'Mara Venn',
     })
+    expect(within(questions).getByRole('status')).toHaveTextContent('kept as you go')
     await user.type(within(questions).getByLabelText('Where does she live?'), 'Saltmere')
+    // Leaving a box keeps what was typed, so closing the dialog loses nothing.
+    await user.tab()
+    await waitFor(() => expect(api.find('PUT', '/assist/sessions/brf_1/answers')).toHaveLength(1))
+    expect(api.find('PUT', '/answers')[0].body).toEqual({
+      answers: [{ question_id: 'q1', question: 'Where does she live?', answer: 'Saltmere' }],
+    })
+    expect(await within(questions).findByText(/Answers kept/)).toBeInTheDocument()
     await user.click(within(questions).getByRole('button', { name: 'Draft it for me to review' }))
 
     await waitFor(() =>
@@ -62,6 +72,8 @@ describe('AssistFlow', () => {
       description: 'A harbor pilot.',
       entity_type: 'Character',
       name: 'Mara Venn',
+      // The same conversation throughout, so the draft's evidence is the whole of it.
+      session_id: 'brf_1',
       answers: [{ question_id: 'q1', question: 'Where does she live?', answer: 'Saltmere' }],
       expected_revision: 5,
     })
@@ -89,7 +101,56 @@ describe('AssistFlow', () => {
       description: 'Mara is a pilot in the Salt Guild.',
       entity_type: null,
       name: null,
+      session_id: null,
       answers: [],
+      expected_revision: 5,
+    })
+  })
+
+  it('carries on an unfinished conversation at its questions, with the answers already given', async () => {
+    const api = mockApi({
+      'POST /assist/proposals': reply(201, proposal),
+      'POST /assist/sessions/brf_9/close': {},
+    })
+    const user = userEvent.setup()
+    renderInProject(
+      <AssistFlow
+        types={TYPES}
+        onClose={vi.fn()}
+        resume={{
+          id: 'brf_9',
+          kind: 'create',
+          status: 'open',
+          actor_user_id: 'usr_1',
+          description: 'A harbor pilot.',
+          entity_type: 'Character',
+          name: 'Mara Venn',
+          entity_id: null,
+          questions: sheet.questions,
+          answers: [{ question_id: 'q2', question: 'Who does she trust?', answer: 'Nobody.' }],
+          understood: '',
+          notes: [],
+          mutation_id: null,
+          created_at: '2026-10-09T10:00:00Z',
+          updated_at: '2026-10-09T10:00:00Z',
+        }}
+      />,
+    )
+
+    // Nothing is asked again: no model call is needed to carry on.
+    const questions = screen.getByRole('form', { name: 'A few questions' })
+    expect(within(questions).getByLabelText('Who does she trust?')).toHaveValue('Nobody.')
+    expect(within(questions).getByLabelText('Where does she live?')).toHaveValue('')
+    expect(api.find('POST', '/assist/questions')).toHaveLength(0)
+
+    await user.click(within(questions).getByRole('button', { name: 'Draft it for me to review' }))
+    await waitFor(() => expect(api.find('POST', '/assist/proposals')).toHaveLength(1))
+    expect(api.find('POST', '/assist/proposals')[0].body).toEqual({
+      description: 'A harbor pilot.',
+      entity_type: 'Character',
+      name: 'Mara Venn',
+      session_id: 'brf_9',
+      answers: [{ question_id: 'q2', question: 'Who does she trust?', answer: 'Nobody.' }],
       expected_revision: 5,
     })
   })

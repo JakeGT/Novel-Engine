@@ -101,6 +101,10 @@ def get_canon_character_workflow(container: Container = Depends(get_container)) 
     return container.canon_character_workflow
 
 
+def get_assist_session_service(container: Container = Depends(get_container)) -> Any:
+    return container.assist_session_service
+
+
 def get_archive_service(container: Container = Depends(get_container)) -> Any:
     return container.archive_service
 

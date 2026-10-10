@@ -419,3 +419,13 @@ specific confirmations with the safe choice first. Shared pieces: `ConfirmDialog
 in `components/ui.tsx`, `.danger-zone` and `.mini` in `app.css`, `roleLabel` in `lib/words.ts`,
 `lib/recent.ts`. The document ends with what the first review changed and what is still open.
 
+## Stored conversations (2026-10-10)
+
+`assist_sessions` (migration `0024`) keeps each conversation with the assistant.
+`AssistSessionService` owns the rules: open ones belong to their author alone, proposed ones are
+read-only evidence for every project reader, putting one away deletes the row. The API layer
+(`backend/api/v1/canon_assist.py`) opens and closes sessions around the workflow calls; the
+workflows only accept the session id. Frontend: `components/Conversations.tsx`
+(`OpenConversations`, `ConversationEvidence`), `resume` in the project context. The text is the
+author's own writing: it is never logged, and it is not yet part of a project export.
+

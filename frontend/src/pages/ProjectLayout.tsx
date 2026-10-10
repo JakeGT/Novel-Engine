@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { api, isApiError, type CanonEntity, type Scope } from '../api/client'
+import { api, isApiError, type AssistSession, type CanonEntity, type Scope } from '../api/client'
 import { CommandPalette } from '../components/CommandPalette'
 import { GodHand } from '../components/GodHand'
 import { Icon, type IconName } from '../components/icons'
@@ -115,11 +115,27 @@ export function ProjectLayout() {
 
   const [menuOpen, setMenuOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
-  const [newEntry, setNewEntry] = useState<{ type?: string; entity?: CanonEntity } | null>(null)
+  const [newEntry, setNewEntry] = useState<{
+    type?: string
+    entity?: CanonEntity
+    resume?: AssistSession
+  } | null>(null)
   const openNewEntry = useCallback((type?: string) => setNewEntry({ type }), [])
   const openFillIn = useCallback((entity: CanonEntity) => setNewEntry({ entity }), [])
-  const [godHand, setGodHand] = useState<{ entity?: CanonEntity } | null>(null)
+  const [godHand, setGodHand] = useState<{ entity?: CanonEntity; resume?: AssistSession } | null>(null)
   const openGodHand = useCallback((entity?: CanonEntity) => setGodHand({ entity }), [])
+  const resumeConversation = useCallback(
+    (session: AssistSession) => {
+      if (session.kind === 'change') return setGodHand({ resume: session })
+      if (session.kind !== 'fill_in' || !session.entity_id) return setNewEntry({ resume: session })
+      // Filling in needs the entry itself; if it has gone, there is nothing to carry on with.
+      void api.getEntity({ workspaceId, projectId }, session.entity_id).then(
+        (entity) => setNewEntry({ entity, resume: session }),
+        () => setNewEntry({ resume: { ...session, kind: 'create', entity_id: null } }),
+      )
+    },
+    [workspaceId, projectId],
+  )
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -175,6 +191,7 @@ export function ProjectLayout() {
     newEntry: openNewEntry,
     fillIn: openFillIn,
     godHand: openGodHand,
+    resume: resumeConversation,
   }
   const local = !workspaceId
   const projectName =
@@ -443,17 +460,19 @@ export function ProjectLayout() {
     </div>
       {godHand && (
         <GodHand
-          key={godHand.entity?.id ?? 'any'}
+          key={godHand.resume?.id ?? godHand.entity?.id ?? 'any'}
           entity={godHand.entity}
+          resume={godHand.resume}
           onClose={() => setGodHand(null)}
         />
       )}
       {newEntry && (
         <NewEntryDialog
           // A fresh dialog for each thing, so nothing typed for one leaks into the next.
-          key={newEntry.entity?.id ?? 'new'}
+          key={newEntry.resume?.id ?? newEntry.entity?.id ?? 'new'}
           type={newEntry.type}
           entity={newEntry.entity}
+          resume={newEntry.resume}
           onClose={() => setNewEntry(null)}
         />
       )}

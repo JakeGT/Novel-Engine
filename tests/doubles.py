@@ -3678,3 +3678,75 @@ class InMemoryObjectStore:
         for k in keys:
             del self._objects[k]
         return len(keys)
+
+
+class InMemoryAssistSessionStore:
+    def __init__(self) -> None:
+        self.sessions: dict[str, Any] = {}
+
+    async def save(self, session: Any) -> Any:
+        current = self.sessions.get(session.id)
+        if current is not None and (
+            current.workspace_id != session.workspace_id or current.project_id != session.project_id
+        ):
+            return session
+        self.sessions[session.id] = session
+        return session
+
+    async def get(self, *, workspace_id: str, project_id: str, session_id: str) -> Any:
+        session = self.sessions.get(session_id)
+        if (
+            session is None
+            or session.workspace_id != workspace_id
+            or session.project_id != project_id
+        ):
+            return None
+        return session
+
+    def _scoped(self, workspace_id: str, project_id: str) -> list[Any]:
+        return [
+            session
+            for session in self.sessions.values()
+            if session.workspace_id == workspace_id and session.project_id == project_id
+        ]
+
+    async def list_open(
+        self, *, workspace_id: str, project_id: str, actor_user_id: str, limit: int
+    ) -> list[Any]:
+        found = [
+            session
+            for session in self._scoped(workspace_id, project_id)
+            if session.actor_user_id == actor_user_id and session.status.value == "open"
+        ]
+        found.sort(key=lambda session: (session.updated_at, session.id), reverse=True)
+        return found[:limit]
+
+    async def for_mutation(self, *, workspace_id: str, project_id: str, mutation_id: str) -> Any:
+        found = [
+            session
+            for session in self._scoped(workspace_id, project_id)
+            if session.mutation_id == mutation_id
+        ]
+        found.sort(key=lambda session: session.updated_at, reverse=True)
+        return found[0] if found else None
+
+    async def delete(self, *, workspace_id: str, project_id: str, session_id: str) -> int:
+        found = await self.get(
+            workspace_id=workspace_id, project_id=project_id, session_id=session_id
+        )
+        if found is None:
+            return 0
+        del self.sessions[session_id]
+        return 1
+
+    async def delete_workspace(self, workspace_id: str) -> int:
+        doomed = [key for key, s in self.sessions.items() if s.workspace_id == workspace_id]
+        for key in doomed:
+            del self.sessions[key]
+        return len(doomed)
+
+    async def delete_project(self, workspace_id: str, project_id: str) -> int:
+        doomed = [session.id for session in self._scoped(workspace_id, project_id)]
+        for key in doomed:
+            del self.sessions[key]
+        return len(doomed)

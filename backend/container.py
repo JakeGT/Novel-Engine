@@ -70,6 +70,8 @@ class Container:
     media_service: Any = None
     equivalence_service: Any = None
     canon_character_workflow: Any = None
+    assist_sessions: Any = None
+    assist_session_service: Any = None
     graph_upgrade_service: Any = None
 
     async def aclose(self) -> None:
@@ -175,6 +177,10 @@ def build_container(settings: Settings | None = None) -> Container:
     )
     container.usage = PostgresProviderUsageStore(database.session_factory)
 
+    from backend.adapters.assist_store import PostgresAssistSessionStore
+
+    container.assist_sessions = PostgresAssistSessionStore(database.session_factory)
+
     from backend.adapters.purge import StoreWorkspacePurge
 
     purger = StoreWorkspacePurge(
@@ -184,6 +190,7 @@ def build_container(settings: Settings | None = None) -> Container:
         usage=container.usage,
         objects=container.objects,
         artifacts=container.artifacts,
+        assist=container.assist_sessions,
     )
     container.tenancy_service = TenancyService(
         container.tenancy,
@@ -298,6 +305,13 @@ def build_container(settings: Settings | None = None) -> Container:
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
         model=resolved.AI_MODEL,
+    )
+    from backend.services.assist_session_service import AssistSessionService
+
+    container.assist_session_service = AssistSessionService(
+        container.assist_sessions,
+        tenancy=container.tenancy_service,
+        local_mode=not resolved.is_hosted,
     )
     from backend.services.graph_archive_upgrade import GraphArchiveUpgradeService
 
