@@ -74,7 +74,10 @@ describe('ReviewDetail', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(screen.getByText('Added to canon as version 4.')).toBeInTheDocument()
     // Approval is still its own recorded step, sent before the commit.
-    expect(api.calls.filter((call) => call.method === 'POST').map((call) => call.path.split('/').pop())).toEqual([
+    const writes = api.calls
+      .filter((call) => call.method === 'POST' && !call.path.endsWith('/validate'))
+      .map((call) => call.path.split('/').pop())
+    expect(writes).toEqual([
       'decision',
       'approve',
       'commit',
@@ -368,16 +371,20 @@ describe('ReviewDetail', () => {
       'POST /mutations/mut_1/validate': {
         ok: false,
         head_revision: 3,
-        issues: [{ ordinal: 0, code: 'slug_conflict', severity: 'blocking', message: 'That short name is taken.' }],
+        issues: [
+          { ordinal: 0, code: 'slug_conflict', severity: 'blocking', message: 'That short name is taken.' },
+          { ordinal: 1, code: 'possible_duplicate', severity: 'advisory', message: 'You already have a location called “Mara Venn-Marsh”.' },
+        ],
       },
     })
-    const user = userEvent.setup()
     renderInProject(<ReviewDetail />, at)
 
-    await user.click(await screen.findByRole('button', { name: 'Check for problems' }))
+    // Checked on opening: nobody has to ask.
     expect(await screen.findByText(/problems that would stop these being added/)).toBeInTheDocument()
     const first = screen.getByText('Add character “Iven”').closest('li') as HTMLElement
     expect(within(first).getByRole('alert')).toHaveTextContent('This must be fixed first: That short name is taken.')
+    const second = screen.getByText('Update “Mara Venn”').closest('li') as HTMLElement
+    expect(within(second).getByRole('note')).toHaveTextContent('Worth a look: You already have a location')
   })
 
   it('undoes a set of changes that was just added, in one step from where it was added', async () => {

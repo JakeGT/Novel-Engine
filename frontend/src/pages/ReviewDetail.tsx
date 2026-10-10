@@ -348,6 +348,23 @@ export function ReviewDetail() {
   })
   const [note, setNote] = useState('')
   const [validation, setValidation] = useState<MutationValidation | null>(null)
+  // Checked against the story as soon as the page opens, and again whenever a change is
+  // decided or edited, so problems show on the changes without being asked for.
+  const pending = detail.data
+  const checked = useQuery({
+    queryKey: scopedKey(
+      scope,
+      'mutation-check',
+      mutationId,
+      (pending?.operations ?? [])
+        .map((item) => `${item.ordinal}.${item.revision}.${item.decision?.decision ?? ''}`)
+        .join('|'),
+      pending?.head_revision,
+    ),
+    queryFn: () => api.validateMutation(scope, mutationId),
+    enabled: Boolean(pending) && OPEN.has(pending?.status ?? '') && canWrite,
+    retry: false,
+  })
   const [committed, setCommitted] = useState<{ revision: number } | null>(null)
 
   // Every review action returns the fresh change set; reload everything that depends on it.
@@ -403,8 +420,9 @@ export function ReviewDetail() {
   const open = OPEN.has(change.status)
   const editable = open && canWrite
   const included = change.operations.filter((operation) => operation.decision?.decision !== 'rejected')
+  const findings = validation ?? checked.data ?? null
   const issuesFor = (ordinal: number) =>
-    (validation?.issues ?? []).filter((issue) => issue.ordinal === ordinal)
+    (findings?.issues ?? []).filter((issue) => issue.ordinal === ordinal)
   const general = issuesFor(-1)
   const busy = action.isPending || commit.isPending
   const needsApproval = change.status !== 'approved' && (change.requires_review || change.status !== 'draft')
@@ -619,11 +637,12 @@ export function ReviewDetail() {
             )}
           </div>
           <ErrorNotice error={validate.error} prefix="Could not check" />
-          {validation && (
-            <div className={`notice ${validation.ok ? 'ok' : 'danger'}`} role="status">
+          {/* A clean result is only announced when it was asked for. */}
+          {findings && (validation || !findings.ok) && (
+            <div className={`notice ${findings.ok ? 'ok' : 'danger'}`} role="status">
               <p>
                 <strong>
-                  {validation.ok
+                  {findings.ok
                     ? 'No problems found.'
                     : 'There are problems that would stop these being added.'}
                 </strong>{' '}

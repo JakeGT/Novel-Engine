@@ -94,7 +94,9 @@ async def test_duplicate_names_are_allowed_and_only_advised() -> None:
     report = await service.validate(SCOPE, draft.id)
     assert report.ok
     assert [(i.ordinal, i.code, i.severity) for i in report.issues] == [
-        (0, "name_collision", "advisory")
+        (0, "name_collision", "advisory"),
+        # The same name on a different kind of entry is worth a look too.
+        (1, "possible_duplicate", "advisory"),
     ]
     await service.commit(SCOPE, draft.id)
     assert len(repository.entities) == 3

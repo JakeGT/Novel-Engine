@@ -72,6 +72,11 @@ from backend.ports import (
     MediaStorePort,
     SchemaVersionStorePort,
 )
+from backend.services.canon_consistency import (
+    consistency_findings,
+    plain_message,
+    proposed_names,
+)
 from backend.services.schema_compiler import compile_definition
 
 logger = logging.getLogger(__name__)
@@ -602,15 +607,43 @@ class MutationService:
                 predicate_specs=compiled.predicate_specs if compiled else {},
             ),
         )
+        # Worded for an author where we can: names, not ids.
+        names = proposed_names(operations)
+        for operation in operations:
+            subject = getattr(getattr(operation, "proposition", None), "subject_id", None)
+            if subject and subject not in names:
+                entity = await reader.get_entity(subject)
+                if entity is not None:
+                    names[subject] = entity.name
+        issues = [
+            ValidationIssue(i.ordinal, i.code, plain_message(i.code, None, names) or i.message)
+            for i in issues
+        ]
         issues.extend(
             ValidationIssue(
                 ordinals[f.operation_ordinal] if f.operation_ordinal is not None else -1,
                 f.code,
-                f.message,
+                plain_message(
+                    f.code,
+                    operations[f.operation_ordinal] if f.operation_ordinal is not None else None,
+                    names,
+                )
+                or f.message,
                 "advisory" if f.severity is ValidationSeverity.ADVISORY else "blocking",
             )
             for f in report.findings
         )
+        # What an author would want to know before deciding; never stops a commit.
+        if mutation.status is not MutationStatus.COMMITTED:
+            issues.extend(
+                ValidationIssue(ordinals[index], code, message, "advisory")
+                for index, code, message in await consistency_findings(
+                    operations,
+                    repository=self._repository,
+                    workspace_id=mutation.workspace_id,
+                    project_id=mutation.project_id,
+                )
+            )
         return ValidationReport(issues=tuple(issues))
 
     async def submit(

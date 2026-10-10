@@ -196,3 +196,70 @@ def test_several_changes_are_decided_in_one_request_or_not_at_all(
 
     empty = auth_client.post(f"{base}/{mutation_id}/operations/decisions", json={"decisions": []})
     assert empty.status_code == 422
+
+
+def test_a_proposal_is_checked_against_the_story_in_an_authors_words(
+    auth_client, fake_container
+) -> None:
+    project_id = _project_id(fake_container)
+    _publish_schema(auth_client, project_id)
+    entities = f"/api/v1/projects/{project_id}/entities"
+    harbor = auth_client.post(
+        entities, json={"type": "Location", "name": "Lantern Harbor", "expected_revision": 0}
+    ).json()["id"]
+    mara = auth_client.post(
+        entities, json={"type": "Character", "name": "Mara", "expected_revision": 1}
+    ).json()["id"]
+    placed = {
+        "subject_id": mara,
+        "predicate": "LOCATED_AT",
+        "object": {"kind": "entity_ref", "entity_id": harbor, "project_id": project_id},
+    }
+    known = {
+        "subject_id": mara,
+        "predicate": "KNOWS",
+        "object": {"kind": "entity_ref", "entity_id": "tmp:b", "project_id": project_id},
+    }
+    assert (
+        auth_client.post(
+            f"/api/v1/projects/{project_id}/facts",
+            json={"proposition": placed, "expected_revision": 2},
+        ).status_code
+        == 201
+    )
+
+    base = _base(fake_container)
+    mutation_id = auth_client.post(
+        base,
+        json={
+            "operations": [
+                # The same name on a different kind of entry.
+                {"op": "create_entity", "id": "tmp:a", "type": "Faction", "name": "lantern harbor"},
+                {"op": "create_entity", "id": "tmp:b", "type": "Character", "name": "Bo"},
+                # Already true, and single-valued: the structural check refuses it.
+                {"op": "assert_fact", "id": "tmp:f", "proposition": placed},
+                {"op": "assert_fact", "id": "tmp:g", "proposition": known},
+            ],
+            "expected_revision": 3,
+            "origin": "model",
+        },
+    ).json()["id"]
+
+    report = auth_client.post(f"{base}/{mutation_id}/validate").json()
+    found = {(i["ordinal"], i["code"]): i for i in report["issues"]}
+    assert set(found) == {
+        (0, "possible_duplicate"),
+        (2, "cardinality_conflict"),
+        (2, "already_recorded"),
+    }
+    assert report["ok"] is False
+    assert found[(0, "possible_duplicate")]["severity"] == "advisory"
+    assert (
+        "You already have a location called “Lantern Harbor”"
+        in (found[(0, "possible_duplicate")]["message"])
+    )
+    # Names, never ids.
+    assert found[(2, "cardinality_conflict")]["message"].startswith(
+        "Mara can be “located at” only one thing at a time"
+    )
+    assert all("ent_" not in issue["message"] for issue in report["issues"])
