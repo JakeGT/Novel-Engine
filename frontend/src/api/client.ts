@@ -40,6 +40,12 @@ export type PlanRef = Schemas['PlanRefModel']
 export type Outline = Schemas['OutlineModel']
 export type PlanKind = Schemas['AddPlanItemRequest']['kind']
 export type AssistSession = Schemas['AssistSessionModel']
+export type SourceText = Schemas['TextModel']
+export type SourceTextDetail = Schemas['TextDetailModel']
+export type TextMention = Schemas['MentionModel']
+export type NameQuestion = Schemas['NameQuestionModel']
+export type Passage = Schemas['PassageModel']
+export type PassageRead = Schemas['ReadPassageModel']
 export type SchemaSuggestion = Schemas['SchemaSuggestionModel']
 export type AiProvider = Schemas['ProviderModel']
 export type AiChoice = Schemas['AiChoiceModel']
@@ -478,6 +484,30 @@ export const api = {
       draft,
       expected_revision: expectedRevision,
     }),
+
+  // --- the author's own writing: kept as given; evidence, never canon by itself -----
+  texts: (scope: Scope) => get<Schemas['TextListModel']>(scope, '/texts'),
+  text: (scope: Scope, sourceId: string, versionId?: string) =>
+    get<SourceTextDetail>(scope, `/texts/${id(sourceId)}`, versionId ? { version_id: versionId } : {}),
+  addText: (scope: Scope, body: Schemas['AddTextRequest']) =>
+    send<SourceText>(scope, 'POST', '/texts', body),
+  reviseText: (scope: Scope, sourceId: string, body: Schemas['ReviseTextRequest']) =>
+    send<SourceText>(scope, 'PATCH', `/texts/${id(sourceId)}`, body),
+  removeText: (scope: Scope, sourceId: string) =>
+    send<void>(scope, 'DELETE', `/texts/${id(sourceId)}`),
+  /** The words a change points back to. */
+  passage: (scope: Scope, versionId: string, location?: string | null) =>
+    get<Passage>(scope, '/texts/passage', { version_id: versionId, ...(location ? { location } : {}) }),
+  addEntryFromText: (scope: Scope, sourceId: string, body: Schemas['AddEntryFromTextRequest']) =>
+    send<Schemas['AddedEntryModel']>(scope, 'POST', `/texts/${id(sourceId)}/entries`, body),
+  nameMemory: (scope: Scope) => get<Schemas['NameMemoryModel']>(scope, '/names'),
+  decideName: (scope: Scope, body: Schemas['NameDecisionRequest']) =>
+    send<Schemas['NameDecisionModel']>(scope, 'POST', '/names', body),
+  forgetName: (scope: Scope, bindingId: string) =>
+    send<void>(scope, 'DELETE', `/names/${id(bindingId)}`),
+  /** The assistant reads a passage into suggested changes. Nothing is added by reading. */
+  readPassage: (scope: Scope, sourceId: string, body: Schemas['ReadPassageRequest']) =>
+    send<PassageRead>(scope, 'POST', `/assist/texts/${id(sourceId)}/read`, body),
 
   /** Fill an empty project with the short sample story, as one version. */
   loadSample: (scope: Scope, expectedRevision: number) =>

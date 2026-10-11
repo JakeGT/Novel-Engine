@@ -10,6 +10,7 @@ import {
   type MutationValidation,
 } from '../api/client'
 import { AskForChanges } from '../components/AskForChanges'
+import { FromText } from '../components/FromText'
 import { ChangeEditor, type Candidate } from '../components/ChangeEditor'
 import { ConversationEvidence, SetupSuggestions } from '../components/Conversations'
 import { Icon } from '../components/icons'
@@ -272,6 +273,8 @@ function ChangeCard({
           </span>
         </p>
       ))}
+
+      <FromText evidence={(operation.payload as { evidence?: { source_artefact_id: string; location?: string | null }[] }).evidence} />
 
       {form && (
         <ChangeEditor

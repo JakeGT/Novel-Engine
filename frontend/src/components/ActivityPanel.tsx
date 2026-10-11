@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
+import { isTextEvidence } from '../lib/texts'
 import { fullDate, timeAgo } from '../lib/time'
 import { originLabel } from '../lib/words'
 import { actorLabel, scopedKey, useProject } from '../project'
+import { FromText } from './FromText'
 import { ErrorNotice } from './ui'
 
 const VERBS: Record<string, string> = {
@@ -71,12 +73,15 @@ export function ActivityPanel({ recordType, recordId }: { recordType: string; re
                       }`}
                 </div>
               ))}
-              {entry.evidence.map((item, index) => (
-                <div className="small muted" key={`e${index}`}>
-                  Source: <code>{item.source_artefact_id}</code>
-                  {item.location ? ` at ${item.location}` : ''}
-                </div>
-              ))}
+              <FromText evidence={entry.evidence} />
+              {entry.evidence
+                .filter((item) => !isTextEvidence(item.source_artefact_id))
+                .map((item, index) => (
+                  <div className="small muted" key={`e${index}`}>
+                    Source: <code>{item.source_artefact_id}</code>
+                    {item.location ? ` at ${item.location}` : ''}
+                  </div>
+                ))}
             </li>
           )
         })}

@@ -143,10 +143,12 @@ export function renderInProject(ui: ReactElement, options: RenderOptions = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const context = projectContext(options.context)
   const base = '/projects/prj_1'
-  const [path, search] = (options.at ?? '').split('?')
+  const [before, hash] = (options.at ?? '').split('#')
+  const [path, search] = before.split('?')
   const entry = {
     pathname: path ? `${base}/${path}` : base,
     search: search ? `?${search}` : '',
+    hash: hash ? `#${hash}` : '',
     state: options.state,
   }
   const result = render(

@@ -2435,3 +2435,108 @@ ul.chips {
   margin: 0;
   padding-left: 1.1rem;
 }
+
+/* The author's own text: read like a page, with the names in it picked out quietly. */
+.text-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 21rem);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.text-side {
+  position: sticky;
+  top: 1rem;
+}
+
+.text-part + .text-part {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.text-part-tools {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.25rem;
+}
+
+.text-words {
+  font-family: var(--font-text);
+  font-size: 1.05rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 68ch;
+}
+
+.mention.known {
+  text-decoration-style: solid;
+}
+
+.mention.unclear,
+.mention.unknown {
+  border-bottom: 2px dotted var(--warn);
+  cursor: help;
+}
+
+.mention.unknown {
+  border-bottom-style: dashed;
+  border-bottom-color: var(--ink-3);
+}
+
+mark {
+  background: var(--warn-soft);
+  color: var(--ink);
+  border-radius: 2px;
+  padding: 0 0.1em;
+}
+
+.named-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.name-question blockquote,
+.from-text blockquote {
+  margin: 0;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--line-strong);
+  font-family: var(--font-text);
+}
+
+.name-question select {
+  min-width: 0;
+  flex: 1 1 10rem;
+}
+
+.from-text {
+  margin: 0.5rem 0 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.read-result {
+  align-items: flex-start;
+}
+
+.text-paste {
+  font-family: var(--font-text);
+  line-height: 1.6;
+  width: 100%;
+}
+
+@media (max-width: 1040px) {
+  .text-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* On a narrow screen the questions come before the long text, not after it. */
+  .text-side {
+    position: static;
+    order: -1;
+  }
+}
