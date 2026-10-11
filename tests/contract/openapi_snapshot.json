@@ -1565,6 +1565,25 @@
         "title": "ChooseAiRequest",
         "type": "object"
       },
+      "ChooseDirectionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "draft": {
+            "$ref": "#/components/schemas/PlanDraft"
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "draft",
+          "expected_revision"
+        ],
+        "title": "ChooseDirectionRequest",
+        "type": "object"
+      },
       "CloseBeliefOp": {
         "additionalProperties": false,
         "properties": {
@@ -2241,6 +2260,76 @@
         "title": "DecimalObject",
         "type": "object"
       },
+      "DirectionModel": {
+        "properties": {
+          "adds": {
+            "title": "Adds",
+            "type": "integer"
+          },
+          "draft": {
+            "$ref": "#/components/schemas/PlanDraft"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "what_happens": {
+            "title": "What Happens",
+            "type": "string"
+          },
+          "what_it_changes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "What It Changes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "title",
+          "what_happens",
+          "what_it_changes",
+          "adds",
+          "draft"
+        ],
+        "title": "DirectionModel",
+        "type": "object"
+      },
+      "DirectionsModel": {
+        "properties": {
+          "directions": {
+            "items": {
+              "$ref": "#/components/schemas/DirectionModel"
+            },
+            "title": "Directions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "directions"
+        ],
+        "title": "DirectionsModel",
+        "type": "object"
+      },
+      "DirectionsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "about_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "About Id"
+          }
+        },
+        "title": "DirectionsRequest",
+        "type": "object"
+      },
       "DiscardedItemModel": {
         "properties": {
           "kind": {
@@ -2257,6 +2346,116 @@
           "reason"
         ],
         "title": "DiscardedItemModel",
+        "type": "object"
+      },
+      "DraftPlanEntry": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "ref": {
+            "title": "Ref",
+            "type": "string"
+          },
+          "type": {
+            "description": "One of the allowed entry types",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "type",
+          "name"
+        ],
+        "title": "DraftPlanEntry",
+        "type": "object"
+      },
+      "DraftPlanItem": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/DraftPlanRef"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "kind": {
+            "description": "One of: story, arc, beat, scene, thread",
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The id of an existing plan item, or the ref of a drafted one",
+            "title": "Parent Ref"
+          },
+          "pays_off": {
+            "description": "Threads this resolves",
+            "items": {
+              "type": "string"
+            },
+            "title": "Pays Off",
+            "type": "array"
+          },
+          "ref": {
+            "description": "A short local handle for this item",
+            "title": "Ref",
+            "type": "string"
+          },
+          "sets_up": {
+            "description": "Threads this opens",
+            "items": {
+              "type": "string"
+            },
+            "title": "Sets Up",
+            "type": "array"
+          },
+          "summary": {
+            "default": "",
+            "description": "What is meant to happen, in a sentence or two",
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "kind",
+          "title"
+        ],
+        "title": "DraftPlanItem",
+        "type": "object"
+      },
+      "DraftPlanRef": {
+        "properties": {
+          "ref": {
+            "description": "The id of an existing entry, or the ref of a new one",
+            "title": "Ref",
+            "type": "string"
+          },
+          "role": {
+            "description": "One of: point_of_view, place, participant, about",
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "role"
+        ],
+        "title": "DraftPlanRef",
         "type": "object"
       },
       "EdgeCreate": {
@@ -3924,6 +4123,73 @@
         "title": "OutlineModel",
         "type": "object"
       },
+      "PlanBriefRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "about_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "About Id"
+          },
+          "depth": {
+            "default": "arcs",
+            "maxLength": 20,
+            "title": "Depth",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 6000,
+            "title": "Description",
+            "type": "string"
+          }
+        },
+        "title": "PlanBriefRequest",
+        "type": "object"
+      },
+      "PlanDraft": {
+        "description": "Structured model output. Untrusted: typed and checked before it becomes operations.",
+        "properties": {
+          "gaps": {
+            "description": "What the author has not decided, left open rather than made up",
+            "items": {
+              "type": "string"
+            },
+            "title": "Gaps",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DraftPlanItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "new_entries": {
+            "description": "People, places or things the plan needs that are not in the story bible",
+            "items": {
+              "$ref": "#/components/schemas/DraftPlanEntry"
+            },
+            "title": "New Entries",
+            "type": "array"
+          },
+          "understood": {
+            "default": "",
+            "description": "One sentence restating what is planned",
+            "title": "Understood",
+            "type": "string"
+          }
+        },
+        "title": "PlanDraft",
+        "type": "object"
+      },
       "PlanItemModel": {
         "properties": {
           "created_revision": {
@@ -4016,6 +4282,114 @@
         ],
         "title": "PlanKind",
         "type": "string"
+      },
+      "PlanProposalModel": {
+        "properties": {
+          "discarded": {
+            "items": {
+              "$ref": "#/components/schemas/DiscardedItemModel"
+            },
+            "title": "Discarded",
+            "type": "array"
+          },
+          "mutation_id": {
+            "title": "Mutation Id",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "operation_count": {
+            "title": "Operation Count",
+            "type": "integer"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "understood": {
+            "title": "Understood",
+            "type": "string"
+          },
+          "validation_ok": {
+            "title": "Validation Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "mutation_id",
+          "operation_count",
+          "session_id",
+          "understood",
+          "notes",
+          "discarded",
+          "validation_ok"
+        ],
+        "title": "PlanProposalModel",
+        "type": "object"
+      },
+      "PlanProposalRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "about_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "About Id"
+          },
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/CharacterAnswerModel"
+            },
+            "maxItems": 40,
+            "title": "Answers",
+            "type": "array"
+          },
+          "depth": {
+            "default": "arcs",
+            "maxLength": 20,
+            "title": "Depth",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 6000,
+            "title": "Description",
+            "type": "string"
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "title": "PlanProposalRequest",
+        "type": "object"
       },
       "PlanRef": {
         "additionalProperties": false,
@@ -8610,6 +8984,217 @@
         "summary": "Assist Links",
         "tags": [
           "canon-assist"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/assist/plan/directions": {
+      "post": {
+        "description": "What could happen next: two or three options. Nothing is proposed or changed.",
+        "operationId": "plan_directions_api_v1_projects__project_id__assist_plan_directions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectionsModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Plan Directions",
+        "tags": [
+          "plan-assist"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/assist/plan/directions/choose": {
+      "post": {
+        "description": "The direction the author picked, checked again, as plan items to review. No model call.",
+        "operationId": "choose_direction_api_v1_projects__project_id__assist_plan_directions_choose_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChooseDirectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanProposalModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Choose Direction",
+        "tags": [
+          "plan-assist"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/assist/plan/proposals": {
+      "post": {
+        "description": "One round of planning, as plan items to review. The plan itself is not changed.",
+        "operationId": "plan_proposal_api_v1_projects__project_id__assist_plan_proposals_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanProposalModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Plan Proposal",
+        "tags": [
+          "plan-assist"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/assist/plan/questions": {
+      "post": {
+        "operationId": "plan_questions_api_v1_projects__project_id__assist_plan_questions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanBriefRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistQuestionSheetModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Plan Questions",
+        "tags": [
+          "plan-assist"
         ]
       }
     },

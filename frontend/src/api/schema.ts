@@ -852,6 +852,83 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/assist/plan/directions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Plan Directions
+         * @description What could happen next: two or three options. Nothing is proposed or changed.
+         */
+        post: operations["plan_directions_api_v1_projects__project_id__assist_plan_directions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/assist/plan/directions/choose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Choose Direction
+         * @description The direction the author picked, checked again, as plan items to review. No model call.
+         */
+        post: operations["choose_direction_api_v1_projects__project_id__assist_plan_directions_choose_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/assist/plan/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Plan Proposal
+         * @description One round of planning, as plan items to review. The plan itself is not changed.
+         */
+        post: operations["plan_proposal_api_v1_projects__project_id__assist_plan_proposals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/assist/plan/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Plan Questions */
+        post: operations["plan_questions_api_v1_projects__project_id__assist_plan_questions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/assist/proposals": {
         parameters: {
             query?: never;
@@ -3008,6 +3085,12 @@ export interface components {
             /** Provider */
             provider: string;
         };
+        /** ChooseDirectionRequest */
+        ChooseDirectionRequest: {
+            draft: components["schemas"]["PlanDraft"];
+            /** Expected Revision */
+            expected_revision: number;
+        };
         /** CloseBeliefOp */
         CloseBeliefOp: {
             /** Evidence */
@@ -3272,12 +3355,97 @@ export interface components {
             /** Value */
             value: number | string;
         };
+        /** DirectionModel */
+        DirectionModel: {
+            /** Adds */
+            adds: number;
+            draft: components["schemas"]["PlanDraft"];
+            /** Title */
+            title: string;
+            /** What Happens */
+            what_happens: string;
+            /** What It Changes */
+            what_it_changes: string[];
+        };
+        /** DirectionsModel */
+        DirectionsModel: {
+            /** Directions */
+            directions: components["schemas"]["DirectionModel"][];
+        };
+        /** DirectionsRequest */
+        DirectionsRequest: {
+            /** About Id */
+            about_id?: string | null;
+        };
         /** DiscardedItemModel */
         DiscardedItemModel: {
             /** Kind */
             kind: string;
             /** Reason */
             reason: string;
+        };
+        /** DraftPlanEntry */
+        DraftPlanEntry: {
+            /** Name */
+            name: string;
+            /** Ref */
+            ref: string;
+            /**
+             * Type
+             * @description One of the allowed entry types
+             */
+            type: string;
+        };
+        /** DraftPlanItem */
+        DraftPlanItem: {
+            /** Entries */
+            entries?: components["schemas"]["DraftPlanRef"][];
+            /**
+             * Kind
+             * @description One of: story, arc, beat, scene, thread
+             */
+            kind: string;
+            /**
+             * Parent Ref
+             * @description The id of an existing plan item, or the ref of a drafted one
+             */
+            parent_ref?: string | null;
+            /**
+             * Pays Off
+             * @description Threads this resolves
+             */
+            pays_off?: string[];
+            /**
+             * Ref
+             * @description A short local handle for this item
+             */
+            ref: string;
+            /**
+             * Sets Up
+             * @description Threads this opens
+             */
+            sets_up?: string[];
+            /**
+             * Summary
+             * @description What is meant to happen, in a sentence or two
+             * @default
+             */
+            summary: string;
+            /** Title */
+            title: string;
+        };
+        /** DraftPlanRef */
+        DraftPlanRef: {
+            /**
+             * Ref
+             * @description The id of an existing entry, or the ref of a new one
+             */
+            ref: string;
+            /**
+             * Role
+             * @description One of: point_of_view, place, participant, about
+             */
+            role: string;
         };
         /**
          * EdgeCreate
@@ -3920,6 +4088,45 @@ export interface components {
             /** Open */
             open: components["schemas"]["OpenItemModel"][];
         };
+        /** PlanBriefRequest */
+        PlanBriefRequest: {
+            /** About Id */
+            about_id?: string | null;
+            /**
+             * Depth
+             * @default arcs
+             */
+            depth: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+        };
+        /**
+         * PlanDraft
+         * @description Structured model output. Untrusted: typed and checked before it becomes operations.
+         */
+        PlanDraft: {
+            /**
+             * Gaps
+             * @description What the author has not decided, left open rather than made up
+             */
+            gaps?: string[];
+            /** Items */
+            items?: components["schemas"]["DraftPlanItem"][];
+            /**
+             * New Entries
+             * @description People, places or things the plan needs that are not in the story bible
+             */
+            new_entries?: components["schemas"]["DraftPlanEntry"][];
+            /**
+             * Understood
+             * @description One sentence restating what is planned
+             * @default
+             */
+            understood: string;
+        };
         /** PlanItemModel */
         PlanItemModel: {
             /** Created Revision */
@@ -3952,6 +4159,44 @@ export interface components {
          * @enum {string}
          */
         PlanKind: "story" | "arc" | "beat" | "scene" | "thread";
+        /** PlanProposalModel */
+        PlanProposalModel: {
+            /** Discarded */
+            discarded: components["schemas"]["DiscardedItemModel"][];
+            /** Mutation Id */
+            mutation_id: string;
+            /** Notes */
+            notes: string[];
+            /** Operation Count */
+            operation_count: number;
+            /** Session Id */
+            session_id: string;
+            /** Understood */
+            understood: string;
+            /** Validation Ok */
+            validation_ok: boolean;
+        };
+        /** PlanProposalRequest */
+        PlanProposalRequest: {
+            /** About Id */
+            about_id?: string | null;
+            /** Answers */
+            answers?: components["schemas"]["CharacterAnswerModel"][];
+            /**
+             * Depth
+             * @default arcs
+             */
+            depth: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Expected Revision */
+            expected_revision: number;
+            /** Session Id */
+            session_id?: string | null;
+        };
         /**
          * PlanRef
          * @description An entry a plan item involves, and how.
@@ -6505,6 +6750,146 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChangeProposalModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    plan_directions_api_v1_projects__project_id__assist_plan_directions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectionsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectionsModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    choose_direction_api_v1_projects__project_id__assist_plan_directions_choose_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChooseDirectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanProposalModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    plan_proposal_api_v1_projects__project_id__assist_plan_proposals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanProposalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanProposalModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    plan_questions_api_v1_projects__project_id__assist_plan_questions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanBriefRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistQuestionSheetModel"];
                 };
             };
             /** @description Validation Error */

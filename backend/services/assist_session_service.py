@@ -28,7 +28,12 @@ from backend.domain.tenancy import Permission
 MAX_OPEN_LISTED = 20
 # An unfinished conversation left untouched this long is erased.
 OPEN_KEPT_DAYS = 30
-_PREFIX = {AssistKind.CREATE: "brf", AssistKind.FILL_IN: "brf", AssistKind.CHANGE: "chg"}
+_PREFIX = {
+    AssistKind.CREATE: "brf",
+    AssistKind.FILL_IN: "brf",
+    AssistKind.CHANGE: "chg",
+    AssistKind.PLAN: "pnv",
+}
 
 
 class AssistSessionService:

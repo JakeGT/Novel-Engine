@@ -12,6 +12,8 @@ class AssistKind(StrEnum):
     CREATE = "create"
     FILL_IN = "fill_in"
     CHANGE = "change"
+    # Planning the story: what is meant to happen, not what is true.
+    PLAN = "plan"
 
 
 class AssistStatus(StrEnum):
