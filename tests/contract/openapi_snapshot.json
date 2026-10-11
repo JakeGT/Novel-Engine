@@ -15,6 +15,35 @@
         "title": "AcceptInvitationRequest",
         "type": "object"
       },
+      "AddEntryFromTextRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "entity_type": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Entity Type",
+            "type": "string"
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "phrase": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Phrase",
+            "type": "string"
+          }
+        },
+        "required": [
+          "phrase",
+          "entity_type",
+          "expected_revision"
+        ],
+        "title": "AddEntryFromTextRequest",
+        "type": "object"
+      },
       "AddPlanItemRequest": {
         "additionalProperties": false,
         "properties": {
@@ -88,6 +117,61 @@
           "expected_revision"
         ],
         "title": "AddPlanItemRequest",
+        "type": "object"
+      },
+      "AddTextRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "maxLength": 410000,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SourceKind",
+            "default": "paste"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "content"
+        ],
+        "title": "AddTextRequest",
+        "type": "object"
+      },
+      "AddedEntryModel": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "type",
+          "revision"
+        ],
+        "title": "AddedEntryModel",
         "type": "object"
       },
       "AiChoiceModel": {
@@ -3475,6 +3559,65 @@
         "title": "MembershipModel",
         "type": "object"
       },
+      "MentionModel": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "integer"
+          },
+          "entity_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Entity Ids",
+            "type": "array"
+          },
+          "marked": {
+            "title": "Marked",
+            "type": "boolean"
+          },
+          "phrase": {
+            "title": "Phrase",
+            "type": "string"
+          },
+          "start": {
+            "title": "Start",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "phrase",
+          "marked",
+          "status",
+          "entity_ids"
+        ],
+        "title": "MentionModel",
+        "type": "object"
+      },
+      "MissingModel": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "reason"
+        ],
+        "title": "MissingModel",
+        "type": "object"
+      },
       "ModelListModel": {
         "properties": {
           "listed": {
@@ -3923,6 +4066,168 @@
         "title": "MutationValidationModel",
         "type": "object"
       },
+      "NameDecisionModel": {
+        "properties": {
+          "decided_at": {
+            "format": "date-time",
+            "title": "Decided At",
+            "type": "string"
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "phrase": {
+            "title": "Phrase",
+            "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "phrase",
+          "verdict",
+          "entity_id",
+          "source_id",
+          "decided_at"
+        ],
+        "title": "NameDecisionModel",
+        "type": "object"
+      },
+      "NameDecisionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "entity_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          },
+          "phrase": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Phrase",
+            "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/Verdict"
+          }
+        },
+        "required": [
+          "phrase",
+          "verdict"
+        ],
+        "title": "NameDecisionRequest",
+        "type": "object"
+      },
+      "NameMemoryModel": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NameDecisionModel"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "names": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Names",
+            "type": "object"
+          }
+        },
+        "required": [
+          "items",
+          "names"
+        ],
+        "title": "NameMemoryModel",
+        "type": "object"
+      },
+      "NameQuestionModel": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "first_end": {
+            "title": "First End",
+            "type": "integer"
+          },
+          "first_start": {
+            "title": "First Start",
+            "type": "integer"
+          },
+          "guessed": {
+            "title": "Guessed",
+            "type": "boolean"
+          },
+          "phrase": {
+            "title": "Phrase",
+            "type": "string"
+          }
+        },
+        "required": [
+          "phrase",
+          "count",
+          "first_start",
+          "first_end",
+          "candidates",
+          "guessed"
+        ],
+        "title": "NameQuestionModel",
+        "type": "object"
+      },
       "NodeUpdateItem": {
         "properties": {
           "id": {
@@ -4121,6 +4426,51 @@
           "open"
         ],
         "title": "OutlineModel",
+        "type": "object"
+      },
+      "PassageModel": {
+        "properties": {
+          "after": {
+            "title": "After",
+            "type": "string"
+          },
+          "before": {
+            "title": "Before",
+            "type": "string"
+          },
+          "quote": {
+            "title": "Quote",
+            "type": "string"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Number"
+          }
+        },
+        "required": [
+          "source_id",
+          "title",
+          "version_number",
+          "before",
+          "quote",
+          "after"
+        ],
+        "title": "PassageModel",
         "type": "object"
       },
       "PlanBriefRequest": {
@@ -4881,6 +5231,127 @@
         "title": "QuestionSheet",
         "type": "object"
       },
+      "ReadPassageModel": {
+        "properties": {
+          "discarded": {
+            "items": {
+              "$ref": "#/components/schemas/DiscardedItemModel"
+            },
+            "title": "Discarded",
+            "type": "array"
+          },
+          "end": {
+            "title": "End",
+            "type": "integer"
+          },
+          "guesses": {
+            "title": "Guesses",
+            "type": "integer"
+          },
+          "implied": {
+            "title": "Implied",
+            "type": "integer"
+          },
+          "limit": {
+            "default": 24000,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "missing": {
+            "items": {
+              "$ref": "#/components/schemas/MissingModel"
+            },
+            "title": "Missing",
+            "type": "array"
+          },
+          "more": {
+            "title": "More",
+            "type": "boolean"
+          },
+          "mutation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mutation Id"
+          },
+          "operation_count": {
+            "title": "Operation Count",
+            "type": "integer"
+          },
+          "start": {
+            "title": "Start",
+            "type": "integer"
+          },
+          "validation_ok": {
+            "title": "Validation Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "mutation_id",
+          "operation_count",
+          "validation_ok",
+          "start",
+          "end",
+          "more",
+          "implied",
+          "guesses",
+          "discarded",
+          "missing"
+        ],
+        "title": "ReadPassageModel",
+        "type": "object"
+      },
+      "ReadPassageRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "start": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Start",
+            "type": "integer"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "title": "ReadPassageRequest",
+        "type": "object"
+      },
       "RemovePlanItemRequest": {
         "additionalProperties": false,
         "properties": {
@@ -5289,6 +5760,37 @@
         "title": "ReviseOperationRequest",
         "type": "object"
       },
+      "ReviseTextRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "maxLength": 410000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "ReviseTextRequest",
+        "type": "object"
+      },
       "RevisionModel": {
         "properties": {
           "discarded": {
@@ -5610,6 +6112,34 @@
         "title": "SchemaVersionModel",
         "type": "object"
       },
+      "SectionModel": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "integer"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "start": {
+            "title": "Start",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "title",
+          "start",
+          "end"
+        ],
+        "title": "SectionModel",
+        "type": "object"
+      },
       "SetAllowanceRequest": {
         "additionalProperties": false,
         "properties": {
@@ -5641,6 +6171,14 @@
         ],
         "title": "SetRoleRequest",
         "type": "object"
+      },
+      "SourceKind": {
+        "enum": [
+          "paste",
+          "markdown"
+        ],
+        "title": "SourceKind",
+        "type": "string"
       },
       "StringObject": {
         "additionalProperties": false,
@@ -5681,6 +6219,134 @@
           "value"
         ],
         "title": "StructuredObject",
+        "type": "object"
+      },
+      "TextDetailModel": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "mentions": {
+            "items": {
+              "$ref": "#/components/schemas/MentionModel"
+            },
+            "title": "Mentions",
+            "type": "array"
+          },
+          "names": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Names",
+            "type": "object"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/NameQuestionModel"
+            },
+            "title": "Questions",
+            "type": "array"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/SectionModel"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "text": {
+            "$ref": "#/components/schemas/TextModel"
+          },
+          "version": {
+            "$ref": "#/components/schemas/VersionModel"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/VersionModel"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "text",
+          "version",
+          "versions",
+          "content",
+          "sections",
+          "mentions",
+          "questions",
+          "names"
+        ],
+        "title": "TextDetailModel",
+        "type": "object"
+      },
+      "TextListModel": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TextModel"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "TextListModel",
+        "type": "object"
+      },
+      "TextModel": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "latest_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Version Id"
+          },
+          "length": {
+            "title": "Length",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "versions": {
+            "title": "Versions",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "kind",
+          "created_at",
+          "versions",
+          "latest_version_id",
+          "length"
+        ],
+        "title": "TextModel",
         "type": "object"
       },
       "TransferOwnershipRequest": {
@@ -6117,6 +6783,45 @@
           "predicates"
         ],
         "title": "ValidationReportModel",
+        "type": "object"
+      },
+      "Verdict": {
+        "enum": [
+          "is",
+          "is_not",
+          "ignore",
+          "suggested"
+        ],
+        "title": "Verdict",
+        "type": "string"
+      },
+      "VersionModel": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "length": {
+            "title": "Length",
+            "type": "integer"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "created_at",
+          "length"
+        ],
+        "title": "VersionModel",
         "type": "object"
       },
       "VocabularyModel": {
@@ -9642,6 +10347,67 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/assist/texts/{source_id}/read": {
+      "post": {
+        "operationId": "read_passage_with_assistant_api_v1_projects__project_id__assist_texts__source_id__read_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReadPassageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadPassageModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Passage With Assistant",
+        "tags": [
+          "texts-assist"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/beliefs": {
       "get": {
         "operationId": "list_beliefs_api_v1_projects__project_id__beliefs_get",
@@ -12802,6 +13568,142 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/names": {
+      "get": {
+        "operationId": "list_name_memory_api_v1_projects__project_id__names_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NameMemoryModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Name Memory",
+        "tags": [
+          "texts"
+        ]
+      },
+      "post": {
+        "operationId": "decide_name_api_v1_projects__project_id__names_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NameDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NameDecisionModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide Name",
+        "tags": [
+          "texts"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/names/{binding_id}": {
+      "delete": {
+        "operationId": "forget_name_api_v1_projects__project_id__names__binding_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "binding_id",
+            "required": true,
+            "schema": {
+              "title": "Binding Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Forget Name",
+        "tags": [
+          "texts"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/plan": {
       "get": {
         "operationId": "get_outline_api_v1_projects__project_id__plan_get",
@@ -13876,6 +14778,400 @@
         "summary": "Tag History",
         "tags": [
           "canon-history"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/texts": {
+      "get": {
+        "operationId": "list_texts_api_v1_projects__project_id__texts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextListModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Texts",
+        "tags": [
+          "texts"
+        ]
+      },
+      "post": {
+        "operationId": "add_text_api_v1_projects__project_id__texts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddTextRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Text",
+        "tags": [
+          "texts"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/texts/passage": {
+      "get": {
+        "description": "The words a kept change points back to.",
+        "operationId": "read_passage_api_v1_projects__project_id__texts_passage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "location",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Location"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PassageModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Passage",
+        "tags": [
+          "texts"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/texts/{source_id}": {
+      "delete": {
+        "operationId": "remove_text_api_v1_projects__project_id__texts__source_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Text",
+        "tags": [
+          "texts"
+        ]
+      },
+      "get": {
+        "operationId": "read_text_api_v1_projects__project_id__texts__source_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextDetailModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Text",
+        "tags": [
+          "texts"
+        ]
+      },
+      "patch": {
+        "operationId": "revise_text_api_v1_projects__project_id__texts__source_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviseTextRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revise Text",
+        "tags": [
+          "texts"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/texts/{source_id}/entries": {
+      "post": {
+        "description": "Add a name the text uses as a new entry, pointing back at where it first appears.",
+        "operationId": "add_entry_from_text_api_v1_projects__project_id__texts__source_id__entries_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddEntryFromTextRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AddedEntryModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Entry From Text",
+        "tags": [
+          "texts"
         ]
       }
     },

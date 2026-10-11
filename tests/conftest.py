@@ -80,6 +80,7 @@ def _build_fake_container(settings, tmp_path):
         InMemoryRateLimiter,
         InMemorySchemaVersionStore,
         InMemorySessionStore,
+        InMemorySourceStore,
         InMemoryTenancyStore,
         InMemoryVectorStore,
         OrderedIdGenerator,
@@ -119,6 +120,7 @@ def _build_fake_container(settings, tmp_path):
     assist_sessions = InMemoryAssistSessionStore()
     ai_settings = InMemoryAiSettingsStore()
     allowances = InMemoryAllowanceStore()
+    sources = InMemorySourceStore()
     purger = StoreWorkspacePurge(
         graph=graph,
         vectors=vectors,
@@ -129,6 +131,7 @@ def _build_fake_container(settings, tmp_path):
         assist=assist_sessions,
         ai_settings=ai_settings,
         allowances=allowances,
+        sources=sources,
     )
     tenancy_service = TenancyService(
         tenancy,
@@ -189,6 +192,15 @@ def _build_fake_container(settings, tmp_path):
         tenancy=tenancy_service,
         local_mode=not settings.is_hosted,
     )
+    from backend.services.source_service import SourceService
+
+    source_service = SourceService(
+        sources,
+        reader=canon_repository,
+        entities=canon_entity_service,
+        tenancy=tenancy_service,
+        local_mode=not settings.is_hosted,
+    )
     from backend.services.canon_assertion_service import CanonAssertionService
 
     canon_assertion_service = CanonAssertionService(
@@ -200,9 +212,9 @@ def _build_fake_container(settings, tmp_path):
     )
     from backend.services.assist_session_service import AssistSessionService
     from backend.services.canon_equivalence import CanonEquivalenceService
-    from backend.services.plan_workflow import PlanWorkflow
+    from backend.services.intake_workflow import IntakeWorkflow
 
-    canon_character_workflow = PlanWorkflow(
+    canon_character_workflow = IntakeWorkflow(
         ai=ai,
         mutation=mutation_service,
         reader=canon_repository,
@@ -284,6 +296,8 @@ def _build_fake_container(settings, tmp_path):
         mutation_service=mutation_service,
         canon_entity_service=canon_entity_service,
         plan_service=plan_service,
+        sources=sources,
+        source_service=source_service,
         canon_assertion_service=canon_assertion_service,
         canon_history_service=canon_history_service,
         canon_character_workflow=canon_character_workflow,

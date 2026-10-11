@@ -64,6 +64,8 @@ class Container:
     outbox_consumer: Any = None
     canon_entity_service: Any = None
     plan_service: Any = None
+    sources: Any = None
+    source_service: Any = None
     canon_assertion_service: Any = None
     canon_history_service: Any = None
     media_store: Any = None
@@ -191,6 +193,10 @@ def build_container(settings: Settings | None = None) -> Container:
 
     container.allowances = PostgresAllowanceStore(database.session_factory)
 
+    from backend.adapters.source_store import PostgresSourceStore
+
+    container.sources = PostgresSourceStore(database.session_factory)
+
     from backend.adapters.purge import StoreWorkspacePurge
 
     purger = StoreWorkspacePurge(
@@ -203,6 +209,7 @@ def build_container(settings: Settings | None = None) -> Container:
         assist=container.assist_sessions,
         ai_settings=container.ai_settings,
         allowances=container.allowances,
+        sources=container.sources,
     )
     container.tenancy_service = TenancyService(
         container.tenancy,
@@ -283,6 +290,15 @@ def build_container(settings: Settings | None = None) -> Container:
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
     )
+    from backend.services.source_service import SourceService
+
+    container.source_service = SourceService(
+        container.sources,
+        reader=container.canon_repository,
+        entities=container.canon_entity_service,
+        tenancy=container.tenancy_service,
+        local_mode=not resolved.is_hosted,
+    )
     from backend.services.canon_assertion_service import CanonAssertionService
 
     container.canon_assertion_service = CanonAssertionService(
@@ -322,9 +338,9 @@ def build_container(settings: Settings | None = None) -> Container:
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
     )
-    from backend.services.plan_workflow import PlanWorkflow
+    from backend.services.intake_workflow import IntakeWorkflow
 
-    container.canon_character_workflow = PlanWorkflow(
+    container.canon_character_workflow = IntakeWorkflow(
         ai=container.ai,
         mutation=container.mutation_service,
         reader=container.canon_repository,

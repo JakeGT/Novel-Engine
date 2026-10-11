@@ -203,7 +203,6 @@ def test_reserved_id_prefixes_are_distinct_and_unimplemented() -> None:
         "scene_contract",
         "narrated_assertion",
         "disclosure",
-        "alias_binding",
         "finding_suppression",
         "dependency_edge",
         "read_model_watermark",

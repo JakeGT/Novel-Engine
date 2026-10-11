@@ -2,7 +2,7 @@
 
 Deleting a workspace or project must remove its canon (journal, normalized
 records, schema versions, media identity), the graph projection, derived vectors,
-credentials, usage records, assistant conversations, object storage, and debug artifacts — not only the
+credentials, usage records, assistant conversations, source texts, object storage, and debug artifacts — not only the
 tenancy rows. This adapter coordinates those stores behind a single port.
 """
 
@@ -26,6 +26,7 @@ class StoreWorkspacePurge:
         assist: Any = None,
         ai_settings: Any = None,
         allowances: Any = None,
+        sources: Any = None,
     ) -> None:
         self._canon = canon
         self._canon_writer = canon_writer
@@ -38,6 +39,7 @@ class StoreWorkspacePurge:
         self._assist = assist
         self._ai_settings = ai_settings
         self._allowances = allowances
+        self._sources = sources
 
     def attach_canon(self, *, canon: Any, canon_writer: Any = None) -> None:
         """Late-bind canon stores, which are constructed after the tenancy service."""
@@ -58,6 +60,8 @@ class StoreWorkspacePurge:
             canon["ai_settings"] = await self._ai_settings.delete_workspace(workspace_id)
         if self._allowances is not None:
             canon["usage_allowance"] = await self._allowances.delete_workspace(workspace_id)
+        if self._sources is not None:
+            canon["source_texts"] = await self._sources.delete_workspace(workspace_id)
         return {
             **canon,
             "graph_nodes": self._graph.delete_workspace_nodes(workspace_id),
@@ -80,6 +84,8 @@ class StoreWorkspacePurge:
             )
         if self._assist is not None:
             canon["assist_sessions"] = await self._assist.delete_project(workspace_id, project_id)
+        if self._sources is not None:
+            canon["source_texts"] = await self._sources.delete_project(workspace_id, project_id)
         return {
             **canon,
             "graph_nodes": self._graph.delete_project_nodes(workspace_id, project_id),

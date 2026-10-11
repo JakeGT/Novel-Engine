@@ -85,6 +85,10 @@ def get_plan_service(container: Container = Depends(get_container)) -> Any:
     return container.plan_service
 
 
+def get_source_service(container: Container = Depends(get_container)) -> Any:
+    return container.source_service
+
+
 def get_canon_entity_service(
     container: Container = Depends(get_container),
 ) -> CanonEntityService:

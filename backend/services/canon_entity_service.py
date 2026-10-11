@@ -15,7 +15,12 @@ from backend.domain.canon.marks import details, needs_detail
 from backend.domain.canon.naming import MAX_SLUG_LENGTH, slugify
 from backend.domain.errors import ConflictError, NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
-from backend.domain.operations import CreateEntityOp, RetireEntityOp, UpdateEntityOp
+from backend.domain.operations import (
+    CreateEntityOp,
+    EvidenceRef,
+    RetireEntityOp,
+    UpdateEntityOp,
+)
 from backend.domain.tenancy import Permission
 from backend.ports import CanonRepositoryPort, SchemaVersionStorePort
 from backend.services.mutation_service import CommitResult, MutationService
@@ -159,6 +164,7 @@ class CanonEntityService:
         slug: str | None = None,
         aliases: list[str] | None = None,
         external_ids: dict[str, str] | None = None,
+        evidence: list[EvidenceRef] | None = None,
     ) -> tuple[CommitResult, CanonEntity]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         schema_version_id = await self._published_schema_id(workspace_id, project_id)
@@ -173,6 +179,7 @@ class CanonEntityService:
             attributes=attributes or {},
             aliases=aliases or [],
             external_ids=external_ids or {},
+            evidence=evidence or [],
         )
         result = await self._commit(
             scope,

@@ -28,6 +28,11 @@ ID_PREFIXES: dict[str, str] = {
     "workspace": "wsp",
     # A story plan record (story, arc, beat, scene, thread): intent, never fact.
     "plan_item": "pln",
+    # Prose an author brought in, and one unchanging version of it. Evidence, not canon.
+    "source_text": "src",
+    "source_version": "srv",
+    # What an author decided a phrase means ("the Fox" is Mara), or does not mean.
+    "alias_binding": "alb",
     # Reserved for records later phases introduce. No tables exist for these yet;
     # reserving the prefixes keeps today's ids from colliding with them.
     "story_invariant": "inv",
@@ -35,7 +40,6 @@ ID_PREFIXES: dict[str, str] = {
     "narrated_assertion": "nar",
     "speech_act": "spa",
     "disclosure": "dsc",
-    "alias_binding": "alb",
     "resolution_example": "rex",
     "canon_tag": "tag",
     "finding_suppression": "sup",
@@ -51,7 +55,6 @@ RESERVED_ID_KINDS: frozenset[str] = frozenset(
         "narrated_assertion",
         "speech_act",
         "disclosure",
-        "alias_binding",
         "resolution_example",
         "finding_suppression",
         "dependency_edge",

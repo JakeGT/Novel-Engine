@@ -3896,3 +3896,210 @@ class InMemoryAllowanceStore:
 
     async def delete_workspace(self, workspace_id: str) -> int:
         return 1 if self.rows.pop(workspace_id, None) is not None else 0
+
+
+class InMemorySourceStore:
+    """Source texts, versions and name memory, with the same rules as PostgreSQL."""
+
+    def __init__(self) -> None:
+        self.sources: dict[str, Any] = {}
+        self.versions: dict[str, Any] = {}
+        self.bindings: dict[str, Any] = {}
+
+    def _summary(self, source: Any) -> Any:
+        from dataclasses import replace
+
+        versions = sorted(
+            (item for item in self.versions.values() if item.source_id == source.id),
+            key=lambda item: item.number,
+        )
+        return replace(
+            source,
+            versions=len(versions),
+            latest_version_id=versions[-1].id if versions else None,
+            length=len(versions[-1].content) if versions else 0,
+        )
+
+    async def add_source(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        source_id: str,
+        title: str,
+        kind: Any,
+        actor_user_id: str | None,
+    ) -> None:
+        from backend.domain.sources import SourceText
+
+        self.sources[source_id] = SourceText(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            id=source_id,
+            title=title,
+            kind=kind,
+            created_by=actor_user_id,
+            created_at=datetime.now(UTC),
+        )
+
+    async def add_version(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        version_id: str,
+        source_id: str,
+        content: str,
+        content_hash: str,
+        actor_user_id: str | None,
+    ) -> Any:
+        from backend.domain.sources import SourceVersion
+
+        number = 1 + max(
+            (item.number for item in self.versions.values() if item.source_id == source_id),
+            default=0,
+        )
+        version = SourceVersion(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            id=version_id,
+            source_id=source_id,
+            number=number,
+            content=content,
+            content_hash=content_hash,
+            created_by=actor_user_id,
+            created_at=datetime.now(UTC),
+        )
+        self.versions[version_id] = version
+        return version
+
+    async def rename(
+        self, *, workspace_id: str, project_id: str, source_id: str, title: str
+    ) -> None:
+        from dataclasses import replace
+
+        source = self.sources.get(source_id)
+        if source is not None and (source.workspace_id, source.project_id) == (
+            workspace_id,
+            project_id,
+        ):
+            self.sources[source_id] = replace(source, title=title)
+
+    async def list_sources(self, *, workspace_id: str, project_id: str) -> list[Any]:
+        found = [
+            self._summary(item)
+            for item in self.sources.values()
+            if (item.workspace_id, item.project_id) == (workspace_id, project_id)
+            and item.removed_at is None
+        ]
+        return sorted(found, key=lambda item: (item.created_at, item.id), reverse=True)
+
+    async def get_source(self, *, workspace_id: str, project_id: str, source_id: str) -> Any:
+        source = self.sources.get(source_id)
+        if source is None or (source.workspace_id, source.project_id) != (
+            workspace_id,
+            project_id,
+        ):
+            return None
+        return self._summary(source)
+
+    async def list_versions(
+        self, *, workspace_id: str, project_id: str, source_id: str
+    ) -> list[Any]:
+        return sorted(
+            (
+                item
+                for item in self.versions.values()
+                if (item.workspace_id, item.project_id, item.source_id)
+                == (workspace_id, project_id, source_id)
+            ),
+            key=lambda item: item.number,
+        )
+
+    async def get_version(self, *, workspace_id: str, project_id: str, version_id: str) -> Any:
+        version = self.versions.get(version_id)
+        if version is None or (version.workspace_id, version.project_id) != (
+            workspace_id,
+            project_id,
+        ):
+            return None
+        return version
+
+    async def remove_source(self, *, workspace_id: str, project_id: str, source_id: str) -> None:
+        from dataclasses import replace
+
+        source = self.sources.get(source_id)
+        if source is None or (source.workspace_id, source.project_id) != (
+            workspace_id,
+            project_id,
+        ):
+            return
+        self.versions = {
+            key: item for key, item in self.versions.items() if item.source_id != source_id
+        }
+        self.bindings = {
+            key: item for key, item in self.bindings.items() if item.source_id != source_id
+        }
+        self.sources[source_id] = replace(source, removed_at=datetime.now(UTC))
+
+    async def list_bindings(self, *, workspace_id: str, project_id: str) -> list[Any]:
+        return [
+            item
+            for item in self.bindings.values()
+            if (item.workspace_id, item.project_id) == (workspace_id, project_id)
+        ]
+
+    async def put_binding(self, binding: Any) -> None:
+        verdict = binding.verdict.value
+
+        def replaced(item: Any) -> bool:
+            if (item.workspace_id, item.project_id, item.normalized, item.source_id) != (
+                binding.workspace_id,
+                binding.project_id,
+                binding.normalized,
+                binding.source_id,
+            ):
+                return False
+            return (
+                item.entity_id == binding.entity_id
+                or item.verdict.value == "ignore"
+                or verdict == "ignore"
+                or (verdict == "is" and item.verdict.value in ("is", "suggested"))
+            )
+
+        self.bindings = {key: item for key, item in self.bindings.items() if not replaced(item)}
+        self.bindings[binding.id] = binding
+
+    async def delete_binding(self, *, workspace_id: str, project_id: str, binding_id: str) -> bool:
+        binding = self.bindings.get(binding_id)
+        if binding is None or (binding.workspace_id, binding.project_id) != (
+            workspace_id,
+            project_id,
+        ):
+            return False
+        del self.bindings[binding_id]
+        return True
+
+    async def delete_project(self, workspace_id: str, project_id: str) -> int:
+        doomed = [
+            key
+            for key, item in self.sources.items()
+            if (item.workspace_id, item.project_id) == (workspace_id, project_id)
+        ]
+        for key in doomed:
+            del self.sources[key]
+        self.versions = {k: v for k, v in self.versions.items() if v.source_id not in doomed}
+        self.bindings = {
+            k: v
+            for k, v in self.bindings.items()
+            if (v.workspace_id, v.project_id) != (workspace_id, project_id)
+        }
+        return len(doomed)
+
+    async def delete_workspace(self, workspace_id: str) -> int:
+        doomed = [key for key, item in self.sources.items() if item.workspace_id == workspace_id]
+        for key in doomed:
+            del self.sources[key]
+        self.versions = {k: v for k, v in self.versions.items() if v.source_id not in doomed}
+        self.bindings = {k: v for k, v in self.bindings.items() if v.workspace_id != workspace_id}
+        return len(doomed)
