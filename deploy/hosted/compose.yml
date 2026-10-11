@@ -139,11 +139,15 @@ services:
         aliases: [neo4j]
     volumes:
       - neo4j-data:/data
+    # A plain HTTP request, not cypher-shell: cypher-shell starts a JVM on
+    # every check, which cost about a third of a core per container at rest.
     healthcheck:
-      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"$$(cat /run/secrets/neo4j_password)\" 'RETURN 1' || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 18
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:7474/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
+      start_interval: 5s
     security_opt: ["no-new-privileges:true"]
     mem_limit: 1500m
     logging:
