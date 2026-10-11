@@ -24,6 +24,13 @@ from backend.domain.canon.entities import CanonEntity, EntityLifecycle
 from backend.domain.canon.events import Event, EventParticipant
 from backend.domain.canon.ids import format_canon_id
 from backend.domain.canon.naming import normalize_name
+from backend.domain.canon.plans import (
+    PlanItem,
+    PlanKind,
+    PlanRef,
+    apply_plan_update,
+    plan_item_from_create,
+)
 from backend.domain.canon.propositions import Proposition
 from backend.domain.canon.registry import CORE_ENTITY_TYPES
 from backend.domain.canon.revisions import CanonRevision, OriginKind, Provenance
@@ -46,11 +53,14 @@ from backend.domain.operations import (
     CloseFactOp,
     CreateEntityOp,
     CreateEventOp,
+    CreatePlanItemOp,
     LinkAssetOp,
     RetireAssetLinkOp,
     RetireEntityOp,
     RetireEventOp,
+    RetirePlanItemOp,
     UpdateEntityOp,
+    UpdatePlanItemOp,
     canonicalize_operations,
     operations_checksum,
     parse_operation,
@@ -143,6 +153,9 @@ _RECORD_TYPE = {
     "retire_event": "event",
     "link_asset": "asset_link",
     "retire_asset_link": "asset_link",
+    "create_plan_item": "plan_item",
+    "update_plan_item": "plan_item",
+    "retire_plan_item": "plan_item",
 }
 
 
@@ -363,6 +376,42 @@ def _event(row: Any) -> Event:
     )
 
 
+def _plan_item(row: Any) -> PlanItem:
+    return PlanItem(
+        id=row.id,
+        workspace_id=row.workspace_id,
+        project_id=row.project_id,
+        branch_id=row.branch_id,
+        kind=PlanKind(row.kind),
+        title=row.title,
+        summary=row.summary or "",
+        parent_id=row.parent_id,
+        position=row.position,
+        refs=[PlanRef.model_validate(ref) for ref in (_load(row.refs) or [])],
+        sets_up=list(_load(row.sets_up) or []),
+        pays_off=list(_load(row.pays_off) or []),
+        details=dict(_load(row.details) or {}),
+        provenance_id=row.provenance_id,
+        created_revision=row.created_revision,
+        retired_revision=row.retired_revision,
+    )
+
+
+def _plan_params(item: PlanItem) -> dict[str, Any]:
+    return {
+        "id": item.id,
+        "kind": item.kind.value,
+        "title": item.title,
+        "summary": item.summary,
+        "parent": item.parent_id,
+        "position": item.position,
+        "refs": json.dumps([ref.model_dump(mode="json") for ref in item.refs]),
+        "sets_up": json.dumps(item.sets_up),
+        "pays_off": json.dumps(item.pays_off),
+        "details": json.dumps(item.details),
+    }
+
+
 class _TxCanonReader:
     """Canonical reads bound to the commit transaction (for in-tx validation)."""
 
@@ -459,6 +508,40 @@ class _TxCanonReader:
             )
         ).first()
         return _event(row) if row else None
+
+    async def get_plan_item(self, plan_id: str) -> PlanItem | None:
+        row = (
+            await self._session.execute(
+                text(
+                    "SELECT * FROM plan_items "
+                    "WHERE workspace_id = :w AND project_id = :p AND branch_id = :b AND id = :id"
+                ),
+                {
+                    "w": self._workspace_id,
+                    "p": self._project_id,
+                    "b": self._branch_id,
+                    "id": plan_id,
+                },
+            )
+        ).first()
+        return _plan_item(row) if row else None
+
+    async def plan_child_ids(self, plan_id: str) -> list[str]:
+        rows = (
+            await self._session.execute(
+                text(
+                    "SELECT id FROM plan_items WHERE workspace_id = :w AND project_id = :p "
+                    "AND branch_id = :b AND parent_id = :id AND retired_revision IS NULL"
+                ),
+                {
+                    "w": self._workspace_id,
+                    "p": self._project_id,
+                    "b": self._branch_id,
+                    "id": plan_id,
+                },
+            )
+        ).all()
+        return [row.id for row in rows]
 
     async def get_link(self, link_id: str) -> AssetLink | None:
         row = (
@@ -1196,6 +1279,63 @@ class PostgresCanonRepository:
                 {**scope, "id": operation.id, "rev": revision},
                 operation.id,
             )
+        elif isinstance(operation, CreatePlanItemOp):
+            created = plan_item_from_create(
+                operation,
+                workspace_id=envelope.workspace_id,
+                project_id=envelope.project_id,
+                branch_id=envelope.branch_id,
+                provenance_id=provenance_id,
+                revision=revision,
+            )
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO plan_items (
+                        workspace_id, project_id, branch_id, id, kind, title, summary,
+                        parent_id, position, refs, sets_up, pays_off, details,
+                        provenance_id, created_revision
+                    )
+                    VALUES (:w, :p, :b, :id, :kind, :title, :summary, :parent, :position,
+                            CAST(:refs AS JSONB), CAST(:sets_up AS JSONB),
+                            CAST(:pays_off AS JSONB), CAST(:details AS JSONB), :prov, :rev)
+                    """
+                ),
+                {**scope, **_plan_params(created), "prov": provenance_id, "rev": revision},
+            )
+        elif isinstance(operation, UpdatePlanItemOp):
+            row = (
+                await session.execute(
+                    text(
+                        "SELECT * FROM plan_items WHERE workspace_id = :w AND project_id = :p "
+                        "AND branch_id = :b AND id = :id FOR UPDATE"
+                    ),
+                    {**scope, "id": operation.id},
+                )
+            ).first()
+            if row is None:
+                raise HeadConflict(f"canonical record {operation.id!r} not found for update")
+            # One definition of an update, shared with history replay and validation.
+            params = _plan_params(apply_plan_update(_plan_item(row), operation))
+            params.pop("kind")
+            await self._update(
+                session,
+                "UPDATE plan_items SET title = :title, summary = :summary, parent_id = :parent, "
+                "position = :position, refs = CAST(:refs AS JSONB), "
+                "sets_up = CAST(:sets_up AS JSONB), pays_off = CAST(:pays_off AS JSONB), "
+                "details = CAST(:details AS JSONB) "
+                "WHERE workspace_id = :w AND project_id = :p AND branch_id = :b AND id = :id",
+                {**scope, **params},
+                operation.id,
+            )
+        elif isinstance(operation, RetirePlanItemOp):
+            await self._update(
+                session,
+                "UPDATE plan_items SET retired_revision = :rev "
+                "WHERE workspace_id = :w AND project_id = :p AND branch_id = :b AND id = :id",
+                {**scope, "id": operation.id, "rev": revision},
+                operation.id,
+            )
         elif isinstance(operation, LinkAssetOp):
             await session.execute(
                 text(
@@ -1808,6 +1948,46 @@ class PostgresCanonRepository:
                 )
             ).all()
         return [_event(row) for row in rows]
+
+    async def get_plan_item(
+        self, *, workspace_id: str, project_id: str, plan_id: str
+    ) -> PlanItem | None:
+        async with session_scope(self._session_factory) as session:
+            row = (
+                await session.execute(
+                    text(
+                        "SELECT * FROM plan_items "
+                        "WHERE workspace_id = :w AND project_id = :p AND id = :id"
+                    ),
+                    {"w": workspace_id, "p": project_id, "id": plan_id},
+                )
+            ).first()
+        return _plan_item(row) if row else None
+
+    async def list_plan_items(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        include_retired: bool = False,
+        limit: int = 2000,
+    ) -> list[PlanItem]:
+        """The whole plan, in outline order within each parent. Intent only: no
+        entry, fact, belief or event query ever returns these."""
+        clauses = ["workspace_id = :w", "project_id = :p"]
+        if not include_retired:
+            clauses.append("retired_revision IS NULL")
+        async with session_scope(self._session_factory) as session:
+            rows = (
+                await session.execute(
+                    text(
+                        f"SELECT * FROM plan_items WHERE {' AND '.join(clauses)} "
+                        "ORDER BY position, created_revision, id LIMIT :limit"
+                    ),
+                    {"w": workspace_id, "p": project_id, "limit": limit},
+                )
+            ).all()
+        return [_plan_item(row) for row in rows]
 
     async def get_provenance(
         self, *, workspace_id: str, project_id: str, branch_id: str, provenance_id: str

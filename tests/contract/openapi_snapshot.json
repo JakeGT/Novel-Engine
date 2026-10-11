@@ -15,6 +15,81 @@
         "title": "AcceptInvitationRequest",
         "type": "object"
       },
+      "AddPlanItemRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "details": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Details",
+            "type": "object"
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/PlanKind"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "pays_off": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Pays Off",
+            "type": "array"
+          },
+          "refs": {
+            "items": {
+              "$ref": "#/components/schemas/PlanRefModel"
+            },
+            "maxItems": 40,
+            "title": "Refs",
+            "type": "array"
+          },
+          "sets_up": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Sets Up",
+            "type": "array"
+          },
+          "summary": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title",
+          "expected_revision"
+        ],
+        "title": "AddPlanItemRequest",
+        "type": "object"
+      },
       "AiChoiceModel": {
         "properties": {
           "chosen": {
@@ -983,6 +1058,104 @@
         "title": "CanonEntityModel",
         "type": "object"
       },
+      "ChangePlanItemRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "pays_off": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pays Off"
+          },
+          "refs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PlanRefModel"
+                },
+                "maxItems": 40,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refs"
+          },
+          "sets_up": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sets Up"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "title": "ChangePlanItemRequest",
+        "type": "object"
+      },
       "ChangeProposalModel": {
         "properties": {
           "back_to_version": {
@@ -1800,6 +1973,93 @@
           }
         },
         "title": "CreateInvitationRequest",
+        "type": "object"
+      },
+      "CreatePlanItemOp": {
+        "additionalProperties": false,
+        "description": "Add a story, arc, beat, scene or thread to the plan. Intent, never fact.",
+        "properties": {
+          "details": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Details",
+            "type": "object"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRef"
+            },
+            "maxItems": 10,
+            "title": "Evidence",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/PlanKind"
+          },
+          "op": {
+            "const": "create_plan_item",
+            "default": "create_plan_item",
+            "title": "Op",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "pays_off": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pays Off",
+            "type": "array"
+          },
+          "position": {
+            "default": 0,
+            "title": "Position",
+            "type": "integer"
+          },
+          "refs": {
+            "items": {
+              "$ref": "#/components/schemas/PlanRef"
+            },
+            "title": "Refs",
+            "type": "array"
+          },
+          "sets_up": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sets Up",
+            "type": "array"
+          },
+          "summary": {
+            "default": "",
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title"
+        ],
+        "title": "CreatePlanItemOp",
         "type": "object"
       },
       "CreateProjectRequest": {
@@ -3037,6 +3297,45 @@
         "title": "ModelListModel",
         "type": "object"
       },
+      "MovePlanItemRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "before_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Id"
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "title": "MovePlanItemRequest",
+        "type": "object"
+      },
       "MutationCommitModel": {
         "properties": {
           "checksum": {
@@ -3449,6 +3748,29 @@
         "title": "NodeUpdateItem",
         "type": "object"
       },
+      "OpenItemModel": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_id",
+          "code",
+          "message"
+        ],
+        "title": "OpenItemModel",
+        "type": "object"
+      },
       "OperationDecisionItem": {
         "additionalProperties": false,
         "properties": {
@@ -3576,6 +3898,166 @@
           "decisions"
         ],
         "title": "OperationDecisionsRequest",
+        "type": "object"
+      },
+      "OutlineModel": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlanItemModel"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "open": {
+            "items": {
+              "$ref": "#/components/schemas/OpenItemModel"
+            },
+            "title": "Open",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "open"
+        ],
+        "title": "OutlineModel",
+        "type": "object"
+      },
+      "PlanItemModel": {
+        "properties": {
+          "created_revision": {
+            "title": "Created Revision",
+            "type": "integer"
+          },
+          "details": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Details",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "pays_off": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pays Off",
+            "type": "array"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "refs": {
+            "items": {
+              "$ref": "#/components/schemas/PlanRefModel"
+            },
+            "title": "Refs",
+            "type": "array"
+          },
+          "sets_up": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sets Up",
+            "type": "array"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "summary",
+          "parent_id",
+          "position",
+          "refs",
+          "sets_up",
+          "pays_off",
+          "details",
+          "created_revision"
+        ],
+        "title": "PlanItemModel",
+        "type": "object"
+      },
+      "PlanKind": {
+        "enum": [
+          "story",
+          "arc",
+          "beat",
+          "scene",
+          "thread"
+        ],
+        "title": "PlanKind",
+        "type": "string"
+      },
+      "PlanRef": {
+        "additionalProperties": false,
+        "description": "An entry a plan item involves, and how.",
+        "properties": {
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_id",
+          "role"
+        ],
+        "title": "PlanRef",
+        "type": "object"
+      },
+      "PlanRefModel": {
+        "additionalProperties": false,
+        "properties": {
+          "entity_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "role": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_id",
+          "role"
+        ],
+        "title": "PlanRefModel",
         "type": "object"
       },
       "PredicateModel": {
@@ -3720,11 +4202,14 @@
                   "close_fact": "#/components/schemas/CloseFactOp",
                   "create_entity": "#/components/schemas/CreateEntityOp",
                   "create_event": "#/components/schemas/CreateEventOp",
+                  "create_plan_item": "#/components/schemas/CreatePlanItemOp",
                   "link_asset": "#/components/schemas/LinkAssetOp",
                   "retire_asset_link": "#/components/schemas/RetireAssetLinkOp",
                   "retire_entity": "#/components/schemas/RetireEntityOp",
                   "retire_event": "#/components/schemas/RetireEventOp",
-                  "update_entity": "#/components/schemas/UpdateEntityOp"
+                  "retire_plan_item": "#/components/schemas/RetirePlanItemOp",
+                  "update_entity": "#/components/schemas/UpdateEntityOp",
+                  "update_plan_item": "#/components/schemas/UpdatePlanItemOp"
                 },
                 "propertyName": "op"
               },
@@ -3764,6 +4249,15 @@
                 },
                 {
                   "$ref": "#/components/schemas/RetireAssetLinkOp"
+                },
+                {
+                  "$ref": "#/components/schemas/CreatePlanItemOp"
+                },
+                {
+                  "$ref": "#/components/schemas/UpdatePlanItemOp"
+                },
+                {
+                  "$ref": "#/components/schemas/RetirePlanItemOp"
                 }
               ]
             },
@@ -4013,6 +4507,39 @@
         "title": "QuestionSheet",
         "type": "object"
       },
+      "RemovePlanItemRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "title": "RemovePlanItemRequest",
+        "type": "object"
+      },
+      "RemovedModel": {
+        "properties": {
+          "removed": {
+            "title": "Removed",
+            "type": "integer"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision",
+          "removed"
+        ],
+        "title": "RemovedModel",
+        "type": "object"
+      },
       "RetargetRequest": {
         "additionalProperties": false,
         "properties": {
@@ -4129,6 +4656,34 @@
           "id"
         ],
         "title": "RetireEventOp",
+        "type": "object"
+      },
+      "RetirePlanItemOp": {
+        "additionalProperties": false,
+        "properties": {
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRef"
+            },
+            "maxItems": 10,
+            "title": "Evidence",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "op": {
+            "const": "retire_plan_item",
+            "default": "retire_plan_item",
+            "title": "Op",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "RetirePlanItemOp",
         "type": "object"
       },
       "RetireRequest": {
@@ -4281,11 +4836,14 @@
                 "close_fact": "#/components/schemas/CloseFactOp",
                 "create_entity": "#/components/schemas/CreateEntityOp",
                 "create_event": "#/components/schemas/CreateEventOp",
+                "create_plan_item": "#/components/schemas/CreatePlanItemOp",
                 "link_asset": "#/components/schemas/LinkAssetOp",
                 "retire_asset_link": "#/components/schemas/RetireAssetLinkOp",
                 "retire_entity": "#/components/schemas/RetireEntityOp",
                 "retire_event": "#/components/schemas/RetireEventOp",
-                "update_entity": "#/components/schemas/UpdateEntityOp"
+                "retire_plan_item": "#/components/schemas/RetirePlanItemOp",
+                "update_entity": "#/components/schemas/UpdateEntityOp",
+                "update_plan_item": "#/components/schemas/UpdatePlanItemOp"
               },
               "propertyName": "op"
             },
@@ -4325,6 +4883,15 @@
               },
               {
                 "$ref": "#/components/schemas/RetireAssetLinkOp"
+              },
+              {
+                "$ref": "#/components/schemas/CreatePlanItemOp"
+              },
+              {
+                "$ref": "#/components/schemas/UpdatePlanItemOp"
+              },
+              {
+                "$ref": "#/components/schemas/RetirePlanItemOp"
               }
             ],
             "title": "Operation"
@@ -4920,6 +5487,139 @@
           "expected_revision"
         ],
         "title": "UpdateEntityRequest",
+        "type": "object"
+      },
+      "UpdatePlanItemOp": {
+        "additionalProperties": false,
+        "properties": {
+          "detach": {
+            "default": false,
+            "title": "Detach",
+            "type": "boolean"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRef"
+            },
+            "maxItems": 10,
+            "title": "Evidence",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "op": {
+            "const": "update_plan_item",
+            "default": "update_plan_item",
+            "title": "Op",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "pays_off": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pays Off"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "refs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PlanRef"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refs"
+          },
+          "sets_up": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sets Up"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "UpdatePlanItemOp",
         "type": "object"
       },
       "ValidationError": {
@@ -11514,6 +12214,281 @@
         "summary": "Validate Mutation",
         "tags": [
           "canon-mutations"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan": {
+      "get": {
+        "operationId": "get_outline_api_v1_projects__project_id__plan_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutlineModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Outline",
+        "tags": [
+          "plan"
+        ]
+      },
+      "post": {
+        "operationId": "add_plan_item_api_v1_projects__project_id__plan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddPlanItemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanItemModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Plan Item",
+        "tags": [
+          "plan"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}": {
+      "patch": {
+        "operationId": "change_plan_item_api_v1_projects__project_id__plan__plan_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePlanItemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanItemModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Plan Item",
+        "tags": [
+          "plan"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/move": {
+      "post": {
+        "operationId": "move_plan_item_api_v1_projects__project_id__plan__plan_id__move_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MovePlanItemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanItemModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Move Plan Item",
+        "tags": [
+          "plan"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/remove": {
+      "post": {
+        "operationId": "remove_plan_item_api_v1_projects__project_id__plan__plan_id__remove_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemovePlanItemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemovedModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Plan Item",
+        "tags": [
+          "plan"
         ]
       }
     },

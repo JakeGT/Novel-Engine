@@ -26,6 +26,8 @@ ID_PREFIXES: dict[str, str] = {
     "asset_link": "alk",
     "project": "prj",
     "workspace": "wsp",
+    # A story plan record (story, arc, beat, scene, thread): intent, never fact.
+    "plan_item": "pln",
     # Reserved for records later phases introduce. No tables exist for these yet;
     # reserving the prefixes keeps today's ids from colliding with them.
     "story_invariant": "inv",

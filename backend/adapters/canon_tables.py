@@ -20,6 +20,7 @@ CANON_PROJECT_TABLES: tuple[str, ...] = (
     "projection_watermarks",
     "canon_record_versions",
     "canon_provenance",
+    "plan_items",
     "canon_events",
     "canon_beliefs",
     "canon_facts",

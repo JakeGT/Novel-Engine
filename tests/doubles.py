@@ -19,6 +19,7 @@ from backend.domain.canon.entities import CanonEntity, EntityLifecycle
 from backend.domain.canon.events import Event
 from backend.domain.canon.ids import format_canon_id
 from backend.domain.canon.naming import normalize_name
+from backend.domain.canon.plans import apply_plan_update, plan_item_from_create
 from backend.domain.canon.registry import CORE_ENTITY_TYPES
 from backend.domain.canon.revisions import CanonRevision, OriginKind, Provenance
 from backend.domain.credentials import (
@@ -75,11 +76,14 @@ from backend.domain.operations import (
     CloseFactOp,
     CreateEntityOp,
     CreateEventOp,
+    CreatePlanItemOp,
     LinkAssetOp,
     RetireAssetLinkOp,
     RetireEntityOp,
     RetireEventOp,
+    RetirePlanItemOp,
     UpdateEntityOp,
+    UpdatePlanItemOp,
     canonicalize_operations,
     operations_checksum,
     parse_operation,
@@ -2371,6 +2375,9 @@ _CANON_RECORD_TYPE = {
     "retire_event": "event",
     "link_asset": "asset_link",
     "retire_asset_link": "asset_link",
+    "create_plan_item": "plan_item",
+    "update_plan_item": "plan_item",
+    "retire_plan_item": "plan_item",
 }
 
 
@@ -2408,6 +2415,19 @@ class _MemoryCanonReader:
 
     async def get_event(self, event_id: str) -> Any:
         return self._repository.events.get((self._workspace_id, self._project_id, event_id))
+
+    async def get_plan_item(self, plan_id: str) -> Any:
+        return self._repository.plan_items.get((self._workspace_id, self._project_id, plan_id))
+
+    async def plan_child_ids(self, plan_id: str) -> list[str]:
+        return [
+            item.id
+            for (w, p, _), item in self._repository.plan_items.items()
+            if w == self._workspace_id
+            and p == self._project_id
+            and item.parent_id == plan_id
+            and item.retired_revision is None
+        ]
 
     async def get_link(self, link_id: str) -> Any:
         return self._repository.asset_links.get((self._workspace_id, self._project_id, link_id))
@@ -2473,6 +2493,7 @@ class InMemoryCanonRepository:
         self.facts: dict[tuple[str, str, str], Any] = {}
         self.beliefs: dict[tuple[str, str, str], Any] = {}
         self.events: dict[tuple[str, str, str], Any] = {}
+        self.plan_items: dict[tuple[str, str, str], Any] = {}
         self.provenance: dict[str, Any] = {}
         self.record_versions: list[Any] = []
         self.watermarks: dict[tuple[str, str, str, str], Any] = {}
@@ -2642,6 +2663,7 @@ class InMemoryCanonRepository:
             self.facts,
             self.beliefs,
             self.events,
+            self.plan_items,
             self.asset_links,
             self.watermarks,
             self.tags,
@@ -3012,6 +3034,21 @@ class InMemoryCanonRepository:
             )
         elif isinstance(operation, RetireEventOp) and key in self.events:
             self.events[key] = self.events[key].model_copy(update={"retired_revision": revision})
+        elif isinstance(operation, CreatePlanItemOp):
+            self.plan_items[key] = plan_item_from_create(
+                operation,
+                workspace_id=ws,
+                project_id=pr,
+                branch_id=br,
+                provenance_id=provenance_id,
+                revision=revision,
+            )
+        elif isinstance(operation, UpdatePlanItemOp) and key in self.plan_items:
+            self.plan_items[key] = apply_plan_update(self.plan_items[key], operation)
+        elif isinstance(operation, RetirePlanItemOp) and key in self.plan_items:
+            self.plan_items[key] = self.plan_items[key].model_copy(
+                update={"retired_revision": revision}
+            )
         elif isinstance(operation, LinkAssetOp):
             self.asset_links[key] = AssetLink(
                 id=operation.id,
@@ -3269,6 +3306,27 @@ class InMemoryCanonRepository:
 
     async def get_event(self, *, workspace_id: str, project_id: str, event_id: str):
         return self.events.get((workspace_id, project_id, event_id))
+
+    async def get_plan_item(self, *, workspace_id: str, project_id: str, plan_id: str):
+        return self.plan_items.get((workspace_id, project_id, plan_id))
+
+    async def list_plan_items(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        include_retired: bool = False,
+        limit: int = 2000,
+    ):
+        items = [
+            item
+            for (w, p, _), item in self.plan_items.items()
+            if w == workspace_id
+            and p == project_id
+            and (include_retired or item.retired_revision is None)
+        ]
+        items.sort(key=lambda item: (item.position, item.created_revision, item.id))
+        return items[:limit]
 
     async def list_events(
         self,

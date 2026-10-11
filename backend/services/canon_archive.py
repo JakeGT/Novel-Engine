@@ -401,6 +401,12 @@ class CanonArchiveService:
         tags = await self._canon.list_tags(
             workspace_id=workspace_id, project_id=project_id, branch_id=branch_id
         )
+        plan_items = await self._canon.list_plan_items(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            include_retired=True,
+            limit=MAX_ENTRIES,
+        )
 
         assets = await self._media.list_assets(
             workspace_id=workspace_id, project_id=project_id, limit=MAX_ENTRIES
@@ -452,6 +458,12 @@ class CanonArchiveService:
                 "facts": [fact.model_dump(mode="json") for fact in facts],
                 "beliefs": [belief.model_dump(mode="json") for belief in beliefs],
                 "events": [event.model_dump(mode="json") for event in events],
+            },
+            # What the author intends, kept out of ``canon`` on purpose: a reader of an
+            # archive must never take a planned scene for something that happened.
+            "plan": {
+                "intent": True,
+                "items": [item.model_dump(mode="json") for item in plan_items],
             },
             "tags": [
                 {
@@ -916,6 +928,7 @@ class CanonArchiveService:
                 len(canon.get(key, []) or []) for key in ("entities", "facts", "beliefs", "events")
             )
             + sum(len(media.get(key, []) or []) for key in ("assets", "versions"))
+            + len((archive.get("plan") or {}).get("items", []) or [])
         )
         if total > MAX_ENTRIES:
             raise ArchiveError("archive exceeds entry limit")
@@ -949,6 +962,9 @@ class CanonArchiveService:
         for raw in canon.get("events", []):
             claim(raw["id"], kind="event")
             check_refs([p["entity_id"] for p in raw.get("participants", [])], "event")
+        for raw in (archive.get("plan") or {}).get("items", []):
+            claim(raw["id"], kind="plan item")
+            check_refs([ref["entity_id"] for ref in raw.get("refs", [])], "plan item")
 
         for raw in archive.get("schemas", []):
             claim(raw["id"], kind="schema")

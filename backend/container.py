@@ -63,6 +63,7 @@ class Container:
     projection_service: Any = None
     outbox_consumer: Any = None
     canon_entity_service: Any = None
+    plan_service: Any = None
     canon_assertion_service: Any = None
     canon_history_service: Any = None
     media_store: Any = None
@@ -267,6 +268,15 @@ def build_container(settings: Settings | None = None) -> Container:
     from backend.services.canon_entity_service import CanonEntityService
 
     container.canon_entity_service = CanonEntityService(
+        mutation=container.mutation_service,
+        reader=container.canon_repository,
+        schema_store=container.schema_versions,
+        tenancy=container.tenancy_service,
+        local_mode=not resolved.is_hosted,
+    )
+    from backend.services.plan_service import PlanService
+
+    container.plan_service = PlanService(
         mutation=container.mutation_service,
         reader=container.canon_repository,
         schema_store=container.schema_versions,

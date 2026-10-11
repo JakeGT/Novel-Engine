@@ -29,6 +29,21 @@ from backend.domain.canon.naming import (
     normalize_name,
     slug_problem,
 )
+from backend.domain.canon.plans import (
+    ALLOWED_PARENTS,
+    MAX_DETAIL_LENGTH,
+    MAX_DETAILS,
+    MAX_REFS,
+    MAX_SUMMARY_LENGTH,
+    MAX_THREAD_LINKS,
+    MAX_TITLE_LENGTH,
+    PLAN_ROLES,
+    SINGLE_ROLES,
+    PlanItem,
+    PlanKind,
+    apply_plan_update,
+    plan_item_from_create,
+)
 from backend.domain.canon.propositions import EntityRefObject
 from backend.domain.canon.registry import (
     CORE_ENTITY_TYPES,
@@ -46,11 +61,14 @@ from backend.domain.operations import (
     CloseFactOp,
     CreateEntityOp,
     CreateEventOp,
+    CreatePlanItemOp,
     LinkAssetOp,
     RetireAssetLinkOp,
     RetireEntityOp,
     RetireEventOp,
+    RetirePlanItemOp,
     UpdateEntityOp,
+    UpdatePlanItemOp,
 )
 
 
@@ -158,6 +176,12 @@ class CanonTxReader(Protocol):
     async def get_belief(self, belief_id: str) -> Belief | None: ...
 
     async def get_event(self, event_id: str) -> Event | None: ...
+
+    async def get_plan_item(self, plan_id: str) -> PlanItem | None: ...
+
+    async def plan_child_ids(self, plan_id: str) -> list[str]:
+        """Ids of the active plan items directly under this one."""
+        ...
 
     async def get_link(self, link_id: str) -> AssetLink | None: ...
 
@@ -268,6 +292,13 @@ class AuthoritativeValidator:
             if event_id not in events:
                 events[event_id] = await context.reader.get_event(event_id)
             return events[event_id]
+
+        plans: dict[str, PlanItem | None] = {}
+
+        async def plan(plan_id: str) -> PlanItem | None:
+            if plan_id not in plans:
+                plans[plan_id] = await context.reader.get_plan_item(plan_id)
+            return plans[plan_id]
 
         async def link(link_id: str) -> AssetLink | None:
             if link_id not in links:
@@ -386,6 +417,84 @@ class AuthoritativeValidator:
                 blocking(index, "retired_reference", f"{role} {entity_id!r} is retired")
                 return None
             return target
+
+        async def validate_plan_item(index: int, item: PlanItem) -> None:
+            """A plan item as it would stand: its text, its place in the outline, what it names."""
+            if not item.title.strip() or len(item.title) > MAX_TITLE_LENGTH:
+                blocking(
+                    index, "invalid_plan_title", "a plan item needs a title of sensible length"
+                )
+            if len(item.summary) > MAX_SUMMARY_LENGTH:
+                blocking(index, "invalid_plan_summary", "the plan item's summary is too long")
+            if item.position < 0:
+                blocking(index, "invalid_plan_position", "a position cannot be negative")
+            if len(item.details) > MAX_DETAILS or any(
+                not key.strip() or len(str(value)) > MAX_DETAIL_LENGTH
+                for key, value in item.details.items()
+            ):
+                blocking(index, "invalid_plan_details", "the plan item's details are malformed")
+
+            if item.parent_id is not None:
+                allowed = ALLOWED_PARENTS[item.kind]
+                seen = {item.id}
+                ancestor_id: str | None = item.parent_id
+                first = True
+                while ancestor_id is not None:
+                    if ancestor_id in seen:
+                        blocking(index, "plan_cycle", "a plan item cannot sit under itself")
+                        break
+                    seen.add(ancestor_id)
+                    ancestor = await plan(ancestor_id)
+                    if ancestor is None or not ancestor.is_active:
+                        if first:
+                            blocking(
+                                index,
+                                "unknown_plan_parent",
+                                f"plan item {item.parent_id!r} does not exist or is removed",
+                            )
+                        break
+                    if first and ancestor.kind not in allowed:
+                        blocking(
+                            index,
+                            "invalid_plan_parent",
+                            f"a {item.kind.value} cannot sit under a {ancestor.kind.value}",
+                        )
+                    first = False
+                    ancestor_id = ancestor.parent_id
+
+            if len(item.refs) > MAX_REFS:
+                blocking(index, "invalid_plan_refs", "a plan item names too many entries")
+            filled: dict[str, int] = {}
+            for ref in item.refs:
+                if ref.role not in PLAN_ROLES:
+                    blocking(index, "invalid_plan_role", f"unknown plan role {ref.role!r}")
+                    continue
+                target = await require_active_entity(index, ref.entity_id, f"plan {ref.role}")
+                filled[ref.role] = filled.get(ref.role, 0) + 1
+                if ref.role in SINGLE_ROLES:
+                    wanted = SINGLE_ROLES[ref.role]
+                    if filled[ref.role] > 1:
+                        blocking(index, "plan_role_taken", f"only one {ref.role} can be named")
+                    elif target is not None and wanted is not None and target.type != wanted:
+                        blocking(
+                            index,
+                            "invalid_plan_ref_type",
+                            f"a {ref.role} must be a {wanted}, not a {target.type}",
+                        )
+
+            links = [*item.sets_up, *item.pays_off]
+            if links and item.kind is PlanKind.THREAD:
+                blocking(
+                    index, "invalid_plan_thread_link", "a thread cannot open or resolve a thread"
+                )
+            if len(links) > MAX_THREAD_LINKS:
+                blocking(index, "invalid_plan_thread_link", "a plan item names too many threads")
+            for thread_id in links:
+                thread = await plan(thread_id)
+                if thread is None or not thread.is_active or thread.kind is not PlanKind.THREAD:
+                    blocking(
+                        index, "unknown_plan_thread", f"{thread_id!r} is not a thread in the plan"
+                    )
 
         async def validate_proposition(index: int, proposition: Any) -> None:
             subject = await require_active_entity(index, proposition.subject_id, "subject")
@@ -713,6 +822,67 @@ class AuthoritativeValidator:
                     blocking(index, "retired_event", f"event {operation.id!r} is already retired")
                 else:
                     events[operation.id] = event_current.model_copy(
+                        update={"retired_revision": context.head_revision + 1}
+                    )
+            elif isinstance(operation, CreatePlanItemOp):
+                if operation.id in created_record_ids or await plan(operation.id) is not None:
+                    blocking(index, "duplicate_id", f"record id {operation.id!r} already exists")
+                    continue
+                created_record_ids.add(operation.id)
+                drafted = plan_item_from_create(
+                    operation,
+                    workspace_id=context.workspace_id,
+                    project_id=context.project_id,
+                    branch_id=context.branch_id,
+                    provenance_id="pending",
+                    revision=context.head_revision + 1,
+                )
+                await validate_plan_item(index, drafted)
+                plans[operation.id] = drafted
+            elif isinstance(operation, UpdatePlanItemOp):
+                plan_current = await plan(operation.id)
+                if plan_current is None:
+                    blocking(
+                        index, "unknown_plan_item", f"plan item {operation.id!r} does not exist"
+                    )
+                elif not plan_current.is_active:
+                    blocking(index, "retired_plan_item", f"plan item {operation.id!r} is removed")
+                else:
+                    changed = apply_plan_update(plan_current, operation)
+                    await validate_plan_item(index, changed)
+                    plans[operation.id] = changed
+            elif isinstance(operation, RetirePlanItemOp):
+                plan_current = await plan(operation.id)
+                if plan_current is None:
+                    blocking(
+                        index, "unknown_plan_item", f"plan item {operation.id!r} does not exist"
+                    )
+                elif not plan_current.is_active:
+                    blocking(
+                        index, "retired_plan_item", f"plan item {operation.id!r} is already removed"
+                    )
+                else:
+                    # Stored children, as this set of changes leaves them, plus any it adds.
+                    child_ids = set(await context.reader.plan_child_ids(operation.id))
+                    child_ids.update(
+                        key
+                        for key, value in plans.items()
+                        if value is not None and value.parent_id == operation.id
+                    )
+                    remaining = [
+                        key
+                        for key in sorted(child_ids)
+                        if (child := await plan(key)) is not None
+                        and child.is_active
+                        and child.parent_id == operation.id
+                    ]
+                    if remaining:
+                        blocking(
+                            index,
+                            "plan_item_has_parts",
+                            f"plan item {operation.id!r} still has {len(remaining)} part(s) under it",
+                        )
+                    plans[operation.id] = plan_current.model_copy(
                         update={"retired_revision": context.head_revision + 1}
                     )
             elif isinstance(operation, LinkAssetOp):

@@ -15,6 +15,7 @@ from backend.domain.archive import ArchiveImport, ImportStatus
 from backend.domain.canon.assertions import Belief, Fact
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.events import Event
+from backend.domain.canon.plans import PlanItem
 from backend.domain.canon.revisions import CanonRevision, Provenance
 from backend.domain.commit import ApplyOutcome, CommitMarker
 from backend.domain.credentials import Credential, CredentialProvider
@@ -1009,6 +1010,19 @@ class CanonRepositoryPort(Protocol):
     async def get_event(
         self, *, workspace_id: str, project_id: str, event_id: str
     ) -> Event | None: ...
+
+    async def get_plan_item(
+        self, *, workspace_id: str, project_id: str, plan_id: str
+    ) -> PlanItem | None: ...
+
+    async def list_plan_items(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        include_retired: bool = False,
+        limit: int = 2000,
+    ) -> list[PlanItem]: ...
 
     async def list_events(
         self,

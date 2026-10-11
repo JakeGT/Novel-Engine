@@ -312,3 +312,79 @@ async def test_bulk_decisions_are_recorded_together_or_not_at_all(stack) -> None
         (0, "rejected", "usr_reviewer", "twin"),
         (1, "accepted", "usr_reviewer", None),
     ]
+
+
+@pytest.mark.asyncio
+async def test_plan_items_are_stored_apart_from_fact_with_history_and_rules(stack) -> None:
+    from backend.domain.canon.plans import PlanKind, PlanRef
+    from backend.domain.operations import CreatePlanItemOp, RetirePlanItemOp, UpdatePlanItemOp
+
+    service, _journal, repository, factory = stack
+    first = await _draft(
+        service,
+        [
+            CreateEntityOp(id="tmp:ines", type="Character", name="Ines"),
+            CreatePlanItemOp(id="tmp:arc", kind=PlanKind.ARC, title="An arc"),
+            CreatePlanItemOp(id="tmp:thread", kind=PlanKind.THREAD, title="A promise"),
+            # Temporary ids resolve across kinds: a parent, an entry and a thread.
+            CreatePlanItemOp(
+                id="tmp:beat",
+                kind=PlanKind.BEAT,
+                title="A beat",
+                summary="Ines drowns.",
+                parent_id="tmp:arc",
+                refs=[PlanRef(entity_id="tmp:ines", role="about")],
+                sets_up=["tmp:thread"],
+                details={"stakes": "everything"},
+            ),
+        ],
+    )
+    assert (await service.commit(_scope(), first.id)).revision == 1
+
+    items = {
+        item.title: item
+        for item in await repository.list_plan_items(workspace_id=WS, project_id=PR)
+    }
+    beat, arc, thread = items["A beat"], items["An arc"], items["A promise"]
+    entities = await repository.list_entities(workspace_id=WS, project_id=PR)
+    assert beat.parent_id == arc.id and beat.sets_up == [thread.id]
+    assert beat.refs == [PlanRef(entity_id=entities[0].id, role="about")]
+    assert beat.id.startswith("pln_") and beat.details == {"stakes": "everything"}
+
+    # Intent is in its own table: nothing that reads the story's records returns it.
+    assert [entity.name for entity in entities] == ["Ines"]
+    assert await repository.list_facts(workspace_id=WS, project_id=PR) == []
+    assert await repository.list_events(workspace_id=WS, project_id=PR) == []
+    async with session_scope(factory) as session:
+        for table in ("canon_entities", "canon_facts", "canon_beliefs", "canon_events"):
+            rows = (await session.execute(text(f"SELECT * FROM {table}"))).all()
+            assert "drown" not in str(rows)
+
+    # An update changes only what it names, and the earlier words can still be read back.
+    second = await _draft(
+        service,
+        [UpdatePlanItemOp(id=beat.id, summary="Ines nearly drowns.", position=3)],
+        expected_head=1,
+    )
+    await service.commit(_scope(), second.id)
+    stored = await repository.get_plan_item(workspace_id=WS, project_id=PR, plan_id=beat.id)
+    assert (stored.summary, stored.position, stored.title) == ("Ines nearly drowns.", 3, "A beat")
+    assert stored.sets_up == [thread.id] and stored.details == {"stakes": "everything"}
+    versions = await repository.list_record_versions(
+        workspace_id=WS, project_id=PR, record_type="plan_item", record_id=beat.id
+    )
+    assert [v.operation_type for v in sorted(versions, key=lambda v: v.revision)] == [
+        "create_plan_item",
+        "update_plan_item",
+    ]
+
+    # Something with parts under it cannot be removed on its own; with them, it can.
+    alone = await _draft(service, [RetirePlanItemOp(id=arc.id)], expected_head=2)
+    with pytest.raises(CanonValidationError, match="plan_item_has_parts"):
+        await service.commit(_scope(), alone.id)
+    together = await _draft(
+        service, [RetirePlanItemOp(id=beat.id), RetirePlanItemOp(id=arc.id)], expected_head=2
+    )
+    await service.commit(_scope(), together.id)
+    left = await repository.list_plan_items(workspace_id=WS, project_id=PR)
+    assert [item.title for item in left] == ["A promise"]

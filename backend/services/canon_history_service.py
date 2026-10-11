@@ -11,6 +11,7 @@ import json
 from backend.domain.canon.assertions import Belief, Fact, FactStatus
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
 from backend.domain.canon.events import Event, EventParticipant
+from backend.domain.canon.plans import PlanItem, apply_plan_update, plan_item_from_create
 from backend.domain.canon.propositions import Proposition
 from backend.domain.canon.revisions import CanonRevision
 from backend.domain.errors import ForbiddenError, NotFoundError, ValidationError
@@ -35,7 +36,7 @@ from backend.domain.tenancy import Permission
 from backend.ports import CanonJournalPort, CanonRepositoryPort, TenancyStorePort
 from backend.services.mutation_service import CommitResult, MutationService
 
-_READ_RECORD_TYPES = {"entity", "fact", "belief", "event", "asset_link"}
+_READ_RECORD_TYPES = {"entity", "fact", "belief", "event", "asset_link", "plan_item"}
 _MAX_HISTORY = 10_000
 
 # Operations that bring a record into existence, with the operation that removes it.
@@ -45,11 +46,13 @@ _CREATION_INVERSE = {
     "assert_belief": "close_belief",
     "create_event": "retire_event",
     "link_asset": "retire_asset_link",
+    "create_plan_item": "retire_plan_item",
 }
 # Retirement has no "un-retire" operation: identity records must be restored by hand.
 _NO_INVERSE_REASON = {
     "retire_entity": "a retired entity cannot be reactivated automatically",
     "retire_event": "a retired event cannot be reactivated automatically",
+    "retire_plan_item": "a removed plan item cannot be put back automatically",
 }
 
 
@@ -454,6 +457,30 @@ class CanonHistoryService:
             raise NotFoundError("Belief did not exist at that revision.")
         return belief
 
+    async def plan_item_at_revision(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        revision: int,
+    ) -> PlanItem:
+        await self._authorize(scope, workspace_id, project_id)
+        versions = await self._canon.list_record_versions(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            record_type="plan_item",
+            record_id=plan_id,
+            max_revision=revision,
+            limit=_MAX_HISTORY,
+        )
+        item: PlanItem | None = None
+        for version in sorted(versions, key=lambda v: (v.revision, v.ordinal)):
+            item = _replay_plan_item(version, item)
+        if item is None:
+            raise NotFoundError("That part of the plan did not exist at that version.")
+        return item
+
     async def event_at_revision(
         self,
         scope: AccessScope,
@@ -595,6 +622,15 @@ class CanonHistoryService:
                     scope, workspace_id, project_id, version.record_id, version.revision - 1
                 )
                 inverse, blocker = _inverse_amend(version, previous)
+                if blocker is not None:
+                    manual(version, blocker)
+                else:
+                    compensate(version, inverse)
+            elif version.operation_type == "update_plan_item":
+                earlier = await self.plan_item_at_revision(
+                    scope, workspace_id, project_id, version.record_id, version.revision - 1
+                )
+                inverse, blocker = _inverse_plan_update(version, earlier)
                 if blocker is not None:
                     manual(version, blocker)
                 else:
@@ -844,6 +880,46 @@ def _inverse_amend(version: RecordVersion, before: Event) -> tuple[dict, str | N
     if len(inverse) == 2:
         return inverse, "the amendment changed nothing"
     return inverse, None
+
+
+def _inverse_plan_update(version: RecordVersion, before: PlanItem) -> tuple[dict, str | None]:
+    """An ``update_plan_item`` that restores exactly what ``version`` changed."""
+    change = version.change
+    inverse: dict = {"op": "update_plan_item", "id": version.record_id}
+    for key in ("title", "summary", "position", "sets_up", "pays_off", "details"):
+        if change.get(key) is not None:
+            inverse[key] = getattr(before, key)
+    if change.get("refs") is not None:
+        inverse["refs"] = [ref.model_dump(mode="json") for ref in before.refs]
+    if change.get("detach") or change.get("parent_id"):
+        if before.parent_id is None:
+            inverse["detach"] = True
+        else:
+            inverse["parent_id"] = before.parent_id
+    if len(inverse) == 2:
+        return inverse, "the edit changed nothing"
+    return inverse, None
+
+
+def _replay_plan_item(version: RecordVersion, current: PlanItem | None) -> PlanItem | None:
+    change = version.change
+    op = change.get("op")
+    if op == "create_plan_item":
+        return plan_item_from_create(
+            change,
+            workspace_id=version.workspace_id,
+            project_id=version.project_id,
+            branch_id=version.branch_id,
+            provenance_id=f"prov_{version.commit_id}",
+            revision=version.revision,
+        )
+    if current is None:
+        return None
+    if op == "update_plan_item":
+        return apply_plan_update(current, change)
+    if op == "retire_plan_item":
+        return current.model_copy(update={"retired_revision": version.revision})
+    return current
 
 
 def _replay_entity(version: RecordVersion, current: CanonEntity | None) -> CanonEntity | None:

@@ -19,6 +19,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from backend.domain.canon.events import EventParticipant
+from backend.domain.canon.plans import PlanKind, PlanRef
 from backend.domain.canon.propositions import EntityRefObject, Proposition
 from backend.domain.canon.revisions import OriginKind
 
@@ -144,6 +145,40 @@ class RetireAssetLinkOp(_Operation):
     op: Literal["retire_asset_link"] = "retire_asset_link"
 
 
+class CreatePlanItemOp(_Operation):
+    """Add a story, arc, beat, scene or thread to the plan. Intent, never fact."""
+
+    op: Literal["create_plan_item"] = "create_plan_item"
+    kind: PlanKind
+    title: str
+    summary: str = ""
+    parent_id: str | None = None
+    position: int = 0
+    refs: list[PlanRef] = Field(default_factory=list)
+    sets_up: list[str] = Field(default_factory=list)
+    pays_off: list[str] = Field(default_factory=list)
+    details: dict[str, str] = Field(default_factory=dict)
+
+
+class UpdatePlanItemOp(_Operation):
+    op: Literal["update_plan_item"] = "update_plan_item"
+    title: str | None = None
+    summary: str | None = None
+    # ``None`` leaves the parent as it is; ``detach`` removes it.
+    parent_id: str | None = None
+    detach: bool = False
+    position: int | None = None
+    # ``None`` leaves the current value; a list or mapping replaces it wholesale.
+    refs: list[PlanRef] | None = None
+    sets_up: list[str] | None = None
+    pays_off: list[str] | None = None
+    details: dict[str, str] | None = None
+
+
+class RetirePlanItemOp(_Operation):
+    op: Literal["retire_plan_item"] = "retire_plan_item"
+
+
 CanonOperation = Annotated[
     CreateEntityOp
     | UpdateEntityOp
@@ -156,7 +191,10 @@ CanonOperation = Annotated[
     | AmendEventOp
     | RetireEventOp
     | LinkAssetOp
-    | RetireAssetLinkOp,
+    | RetireAssetLinkOp
+    | CreatePlanItemOp
+    | UpdatePlanItemOp
+    | RetirePlanItemOp,
     Field(discriminator="op"),
 ]
 
@@ -169,6 +207,7 @@ _TEMP_KIND: dict[str, str] = {
     "assert_belief": "belief",
     "create_event": "event",
     "link_asset": "asset_link",
+    "create_plan_item": "plan_item",
 }
 
 
@@ -198,6 +237,13 @@ def operation_reference_ids(operation: CanonOperation) -> list[str]:
         if operation.asset_version_id is not None:
             refs.append(operation.asset_version_id)
         return refs
+    if isinstance(operation, CreatePlanItemOp | UpdatePlanItemOp):
+        return [
+            *([operation.parent_id] if operation.parent_id else []),
+            *(ref.entity_id for ref in operation.refs or []),
+            *(operation.sets_up or []),
+            *(operation.pays_off or []),
+        ]
     return []
 
 
@@ -251,6 +297,20 @@ def _rewrite(operation: CanonOperation, mapping: dict[str, str]) -> CanonOperati
                 "target_id": resolve(operation.target_id),
             }
         )
+    if isinstance(operation, CreatePlanItemOp | UpdatePlanItemOp):
+        update: dict[str, Any] = {"id": resolve(operation.id)}
+        if operation.parent_id:
+            update["parent_id"] = resolve(operation.parent_id)
+        if operation.refs is not None:
+            update["refs"] = [
+                ref.model_copy(update={"entity_id": resolve(ref.entity_id)})
+                for ref in operation.refs
+            ]
+        if operation.sets_up is not None:
+            update["sets_up"] = [resolve(x) for x in operation.sets_up]
+        if operation.pays_off is not None:
+            update["pays_off"] = [resolve(x) for x in operation.pays_off]
+        return operation.model_copy(update=update)
     return operation.model_copy(update={"id": resolve(operation.id)})
 
 
@@ -334,6 +394,7 @@ __all__ = [
     "CloseFactOp",
     "CreateEntityOp",
     "CreateEventOp",
+    "CreatePlanItemOp",
     "EvidenceRef",
     "LinkAssetOp",
     "OperationValidationError",
@@ -341,9 +402,11 @@ __all__ = [
     "RetireAssetLinkOp",
     "RetireEntityOp",
     "RetireEventOp",
+    "RetirePlanItemOp",
     "TEMP_ID_PREFIX",
     "UnresolvedReferenceError",
     "UpdateEntityOp",
+    "UpdatePlanItemOp",
     "canonical_operation",
     "canonicalize_operations",
     "is_temporary_id",

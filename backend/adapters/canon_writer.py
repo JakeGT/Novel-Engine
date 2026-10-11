@@ -33,11 +33,14 @@ from backend.domain.operations import (
     CloseFactOp,
     CreateEntityOp,
     CreateEventOp,
+    CreatePlanItemOp,
     LinkAssetOp,
     RetireAssetLinkOp,
     RetireEntityOp,
     RetireEventOp,
+    RetirePlanItemOp,
     UpdateEntityOp,
+    UpdatePlanItemOp,
 )
 from backend.graph.manager import GraphManager
 
@@ -367,6 +370,10 @@ class Neo4jCanonWriter:
                 id=operation.id,
                 **ctx,
             )
+        elif isinstance(operation, CreatePlanItemOp | UpdatePlanItemOp | RetirePlanItemOp):
+            # A plan is what the author intends, not what is true in the story. It is
+            # never written to the graph, so nothing that reads the graph can find it.
+            return
         else:  # pragma: no cover - exhaustive union
             raise CanonWriteError(f"unsupported operation {operation!r}")
 

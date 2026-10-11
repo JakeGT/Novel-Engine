@@ -1795,6 +1795,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Outline */
+        get: operations["get_outline_api_v1_projects__project_id__plan_get"];
+        put?: never;
+        /** Add Plan Item */
+        post: operations["add_plan_item_api_v1_projects__project_id__plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Change Plan Item */
+        patch: operations["change_plan_item_api_v1_projects__project_id__plan__plan_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move Plan Item */
+        post: operations["move_plan_item_api_v1_projects__project_id__plan__plan_id__move_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Remove Plan Item */
+        post: operations["remove_plan_item_api_v1_projects__project_id__plan__plan_id__remove_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/projection": {
         parameters: {
             query?: never;
@@ -2451,6 +2520,31 @@ export interface components {
             /** Token */
             token: string;
         };
+        /** AddPlanItemRequest */
+        AddPlanItemRequest: {
+            /** Details */
+            details?: {
+                [key: string]: string;
+            };
+            /** Expected Revision */
+            expected_revision: number;
+            kind: components["schemas"]["PlanKind"];
+            /** Parent Id */
+            parent_id?: string | null;
+            /** Pays Off */
+            pays_off?: string[];
+            /** Refs */
+            refs?: components["schemas"]["PlanRefModel"][];
+            /** Sets Up */
+            sets_up?: string[];
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /** Title */
+            title: string;
+        };
         /** AiChoiceModel */
         AiChoiceModel: {
             /** Chosen */
@@ -2765,6 +2859,25 @@ export interface components {
             /** Type */
             type: string;
         };
+        /** ChangePlanItemRequest */
+        ChangePlanItemRequest: {
+            /** Details */
+            details?: {
+                [key: string]: string;
+            } | null;
+            /** Expected Revision */
+            expected_revision: number;
+            /** Pays Off */
+            pays_off?: string[] | null;
+            /** Refs */
+            refs?: components["schemas"]["PlanRefModel"][] | null;
+            /** Sets Up */
+            sets_up?: string[] | null;
+            /** Summary */
+            summary?: string | null;
+            /** Title */
+            title?: string | null;
+        };
         /** ChangeProposalModel */
         ChangeProposalModel: {
             /** Back To Version */
@@ -3053,6 +3166,46 @@ export interface components {
             email?: string | null;
             /** @default editor */
             role: components["schemas"]["Role"];
+        };
+        /**
+         * CreatePlanItemOp
+         * @description Add a story, arc, beat, scene or thread to the plan. Intent, never fact.
+         */
+        CreatePlanItemOp: {
+            /** Details */
+            details?: {
+                [key: string]: string;
+            };
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceRef"][];
+            /** Id */
+            id: string;
+            kind: components["schemas"]["PlanKind"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "create_plan_item";
+            /** Parent Id */
+            parent_id?: string | null;
+            /** Pays Off */
+            pays_off?: string[];
+            /**
+             * Position
+             * @default 0
+             */
+            position: number;
+            /** Refs */
+            refs?: components["schemas"]["PlanRef"][];
+            /** Sets Up */
+            sets_up?: string[];
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /** Title */
+            title: string;
         };
         /** CreateProjectRequest */
         CreateProjectRequest: {
@@ -3551,6 +3704,15 @@ export interface components {
             /** Models */
             models: string[];
         };
+        /** MovePlanItemRequest */
+        MovePlanItemRequest: {
+            /** Before Id */
+            before_id?: string | null;
+            /** Expected Revision */
+            expected_revision: number;
+            /** Parent Id */
+            parent_id?: string | null;
+        };
         /** MutationCommitModel */
         MutationCommitModel: {
             /** Checksum */
@@ -3702,6 +3864,15 @@ export interface components {
             /** Type */
             type: string;
         };
+        /** OpenItemModel */
+        OpenItemModel: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Plan Id */
+            plan_id: string;
+        };
         /** OperationDecisionItem */
         OperationDecisionItem: {
             decision: components["schemas"]["OperationDecisionKind"];
@@ -3741,6 +3912,62 @@ export interface components {
         OperationDecisionsRequest: {
             /** Decisions */
             decisions: components["schemas"]["OperationDecisionItem"][];
+        };
+        /** OutlineModel */
+        OutlineModel: {
+            /** Items */
+            items: components["schemas"]["PlanItemModel"][];
+            /** Open */
+            open: components["schemas"]["OpenItemModel"][];
+        };
+        /** PlanItemModel */
+        PlanItemModel: {
+            /** Created Revision */
+            created_revision: number;
+            /** Details */
+            details: {
+                [key: string]: string;
+            };
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Parent Id */
+            parent_id: string | null;
+            /** Pays Off */
+            pays_off: string[];
+            /** Position */
+            position: number;
+            /** Refs */
+            refs: components["schemas"]["PlanRefModel"][];
+            /** Sets Up */
+            sets_up: string[];
+            /** Summary */
+            summary: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * PlanKind
+         * @enum {string}
+         */
+        PlanKind: "story" | "arc" | "beat" | "scene" | "thread";
+        /**
+         * PlanRef
+         * @description An entry a plan item involves, and how.
+         */
+        PlanRef: {
+            /** Entity Id */
+            entity_id: string;
+            /** Role */
+            role: string;
+        };
+        /** PlanRefModel */
+        PlanRefModel: {
+            /** Entity Id */
+            entity_id: string;
+            /** Role */
+            role: string;
         };
         /** PredicateModel */
         PredicateModel: {
@@ -3801,7 +4028,7 @@ export interface components {
              */
             idempotency_key: string;
             /** Operations */
-            operations: (components["schemas"]["CreateEntityOp"] | components["schemas"]["UpdateEntityOp"] | components["schemas"]["RetireEntityOp"] | components["schemas"]["AssertFactOp"] | components["schemas"]["CloseFactOp"] | components["schemas"]["AssertBeliefOp"] | components["schemas"]["CloseBeliefOp"] | components["schemas"]["CreateEventOp"] | components["schemas"]["AmendEventOp"] | components["schemas"]["RetireEventOp"] | components["schemas"]["LinkAssetOp"] | components["schemas"]["RetireAssetLinkOp"])[];
+            operations: (components["schemas"]["CreateEntityOp"] | components["schemas"]["UpdateEntityOp"] | components["schemas"]["RetireEntityOp"] | components["schemas"]["AssertFactOp"] | components["schemas"]["CloseFactOp"] | components["schemas"]["AssertBeliefOp"] | components["schemas"]["CloseBeliefOp"] | components["schemas"]["CreateEventOp"] | components["schemas"]["AmendEventOp"] | components["schemas"]["RetireEventOp"] | components["schemas"]["LinkAssetOp"] | components["schemas"]["RetireAssetLinkOp"] | components["schemas"]["CreatePlanItemOp"] | components["schemas"]["UpdatePlanItemOp"] | components["schemas"]["RetirePlanItemOp"])[];
             /**
              * Origin
              * @default author
@@ -3884,6 +4111,18 @@ export interface components {
             /** Questions */
             questions: components["schemas"]["QuestionItem"][];
         };
+        /** RemovePlanItemRequest */
+        RemovePlanItemRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** RemovedModel */
+        RemovedModel: {
+            /** Removed */
+            removed: number;
+            /** Revision */
+            revision: number;
+        };
         /** RetargetRequest */
         RetargetRequest: {
             /** Expected Revision */
@@ -3934,6 +4173,18 @@ export interface components {
              * @enum {string}
              */
             op: "retire_event";
+        };
+        /** RetirePlanItemOp */
+        RetirePlanItemOp: {
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceRef"][];
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "retire_plan_item";
         };
         /** RetireRequest */
         RetireRequest: {
@@ -3988,7 +4239,7 @@ export interface components {
         /** ReviseOperationRequest */
         ReviseOperationRequest: {
             /** Operation */
-            operation: components["schemas"]["CreateEntityOp"] | components["schemas"]["UpdateEntityOp"] | components["schemas"]["RetireEntityOp"] | components["schemas"]["AssertFactOp"] | components["schemas"]["CloseFactOp"] | components["schemas"]["AssertBeliefOp"] | components["schemas"]["CloseBeliefOp"] | components["schemas"]["CreateEventOp"] | components["schemas"]["AmendEventOp"] | components["schemas"]["RetireEventOp"] | components["schemas"]["LinkAssetOp"] | components["schemas"]["RetireAssetLinkOp"];
+            operation: components["schemas"]["CreateEntityOp"] | components["schemas"]["UpdateEntityOp"] | components["schemas"]["RetireEntityOp"] | components["schemas"]["AssertFactOp"] | components["schemas"]["CloseFactOp"] | components["schemas"]["AssertBeliefOp"] | components["schemas"]["CloseBeliefOp"] | components["schemas"]["CreateEventOp"] | components["schemas"]["AmendEventOp"] | components["schemas"]["RetireEventOp"] | components["schemas"]["LinkAssetOp"] | components["schemas"]["RetireAssetLinkOp"] | components["schemas"]["CreatePlanItemOp"] | components["schemas"]["UpdatePlanItemOp"] | components["schemas"]["RetirePlanItemOp"];
             /** Reason */
             reason?: string | null;
         };
@@ -4197,6 +4448,41 @@ export interface components {
             name?: string | null;
             /** Slug */
             slug?: string | null;
+        };
+        /** UpdatePlanItemOp */
+        UpdatePlanItemOp: {
+            /**
+             * Detach
+             * @default false
+             */
+            detach: boolean;
+            /** Details */
+            details?: {
+                [key: string]: string;
+            } | null;
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceRef"][];
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "update_plan_item";
+            /** Parent Id */
+            parent_id?: string | null;
+            /** Pays Off */
+            pays_off?: string[] | null;
+            /** Position */
+            position?: number | null;
+            /** Refs */
+            refs?: components["schemas"]["PlanRef"][] | null;
+            /** Sets Up */
+            sets_up?: string[] | null;
+            /** Summary */
+            summary?: string | null;
+            /** Title */
+            title?: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -8279,6 +8565,180 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MutationValidationModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_outline_api_v1_projects__project_id__plan_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutlineModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_plan_item_api_v1_projects__project_id__plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddPlanItemRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanItemModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_plan_item_api_v1_projects__project_id__plan__plan_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePlanItemRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanItemModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_plan_item_api_v1_projects__project_id__plan__plan_id__move_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MovePlanItemRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanItemModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_plan_item_api_v1_projects__project_id__plan__plan_id__remove_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RemovePlanItemRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemovedModel"];
                 };
             };
             /** @description Validation Error */

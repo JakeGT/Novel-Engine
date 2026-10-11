@@ -22,6 +22,7 @@ from backend.domain.canon.assertions import Belief, Fact
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.events import Event
 from backend.domain.canon.ids import format_canon_id
+from backend.domain.canon.plans import PlanItem
 from backend.domain.canon.registry import CORE_ENTITY_TYPES
 from backend.domain.canon.revisions import OriginKind
 from backend.domain.errors import ValidationError as DomainValidationError
@@ -160,6 +161,8 @@ _TARGET_RECORD = {
     "amend_event": "event",
     "retire_event": "event",
     "retire_asset_link": "asset_link",
+    "update_plan_item": "plan_item",
+    "retire_plan_item": "plan_item",
 }
 
 
@@ -251,6 +254,17 @@ class _RepositoryReader:
             limit=1,
         )
         return len(facts)
+
+    async def get_plan_item(self, plan_id: str) -> PlanItem | None:
+        return await self._repository.get_plan_item(
+            workspace_id=self._workspace_id, project_id=self._project_id, plan_id=plan_id
+        )
+
+    async def plan_child_ids(self, plan_id: str) -> list[str]:
+        items = await self._repository.list_plan_items(
+            workspace_id=self._workspace_id, project_id=self._project_id
+        )
+        return [item.id for item in items if item.parent_id == plan_id]
 
     async def get_fact(self, fact_id: str) -> Fact | None:
         return await self._repository.get_fact(
@@ -497,6 +511,8 @@ class MutationService:
             record = await self._repository.get_belief(**scope, belief_id=target_id)
         elif record_type == "event":
             record = await self._repository.get_event(**scope, event_id=target_id)
+        elif record_type == "plan_item":
+            record = await self._repository.get_plan_item(**scope, plan_id=target_id)
         else:
             record = await self._repository.get_link(**scope, link_id=target_id)
         if record is None:
