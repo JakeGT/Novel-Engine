@@ -142,6 +142,30 @@ export function valueText(value: unknown): string {
     : JSON.stringify(value)
 }
 
+// The story plan: what each part is called, and how an entry takes part in one.
+const PLAN_KINDS: Record<string, { one: string; many: string }> = {
+  story: { one: 'Story', many: 'Stories' },
+  arc: { one: 'Arc', many: 'Arcs' },
+  beat: { one: 'Beat', many: 'Beats' },
+  scene: { one: 'Scene', many: 'Scenes' },
+  thread: { one: 'Thread', many: 'Threads' },
+}
+
+export function planKindLabel(kind: string): string {
+  return PLAN_KINDS[kind]?.one ?? words(kind)
+}
+
+export function planKindPlural(kind: string): string {
+  return PLAN_KINDS[kind]?.many ?? `${words(kind)}s`
+}
+
+export const PLAN_ROLES: Record<string, string> = {
+  point_of_view: 'point of view',
+  place: 'place',
+  participant: 'in it',
+  about: 'about',
+}
+
 export const ORIGINS: Record<string, string> = {
   author: 'an author',
   model: 'the AI assistant',
@@ -198,6 +222,11 @@ function sentence(payload: Record<string, unknown>, names: Names): string {
   return `${subject} ${predicateLabel(String(p.predicate ?? ''))} ${object}`.trim()
 }
 
+function planTarget(operation: OperationLike, names: Names): string {
+  const before = operation.target_before ?? {}
+  return String(before.title ?? '') || nameOf(names, String(operation.payload.id ?? ''))
+}
+
 /** One line describing what a proposed change does, in the author's terms. */
 export function describeOperation(operation: OperationLike, names: Names): string {
   const { payload } = operation
@@ -225,6 +254,12 @@ export function describeOperation(operation: OperationLike, names: Names): strin
       return `Update event “${target()}”`
     case 'retire_event':
       return `Archive event “${target()}”`
+    case 'create_plan_item':
+      return `Plan ${planKindLabel(String(payload.kind ?? '')).toLowerCase()} “${String(payload.title ?? '')}”`
+    case 'update_plan_item':
+      return `Change the plan: “${planTarget(operation, names)}”`
+    case 'retire_plan_item':
+      return `Remove from the plan: “${planTarget(operation, names)}”`
     default:
       return words(operation.operation_type)
   }
@@ -237,6 +272,10 @@ export function namesFromOperations(operations: OperationLike[]): Map<string, st
     const { payload } = operation
     if (typeof payload.id === 'string' && typeof payload.name === 'string') {
       names.set(payload.id, payload.name)
+    }
+    // A part of the story plan is known by its title.
+    if (typeof payload.id === 'string' && typeof payload.title === 'string') {
+      names.set(payload.id, payload.title)
     }
     const before = operation.target_before
     if (before && typeof payload.id === 'string' && typeof before.name === 'string') {

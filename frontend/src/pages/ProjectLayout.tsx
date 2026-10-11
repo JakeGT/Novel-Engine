@@ -60,6 +60,7 @@ function NavItem({
 
 // Pages a brand-new project does not need in its menu yet (see lib/levels.ts).
 const LATER_PAGES: { id: PageId; label: string; icon: IconName }[] = [
+  { id: 'plan', label: 'Story plan', icon: 'layers' },
   { id: 'history', label: 'History', icon: 'clock' },
   { id: 'customize', label: 'Types and fields', icon: 'sliders' },
   { id: 'media', label: 'Media', icon: 'image' },
@@ -99,18 +100,25 @@ export function ProjectLayout() {
     queryFn: () => api.listSchemaVersions(scope),
   })
   const entries = useEntries(scope)
+  // Only to know whether there is a plan, so it can sit in the menu once there is one.
+  const plan = useQuery({
+    queryKey: scopedKey(scope, 'plan'),
+    queryFn: () => api.outline(scope),
+  })
 
   // A page the author has opened once stays in their menu.
   useEffect(() => {
     const page = location.pathname.split('/')[3]
-    if (page === 'history' || page === 'customize' || page === 'media') rememberVisit(projectId, page)
+    if (page === 'plan' || page === 'history' || page === 'customize' || page === 'media') {
+      rememberVisit(projectId, page)
+    }
   }, [location.pathname, projectId])
 
   // More than the starter setup means the author has made types or kinds of fact of their own.
   const menu = useMenu(
     projectId,
     entries.items.filter((item) => item.lifecycle === 'active').length,
-    (schemas.data?.length ?? 0) > 1,
+    { customize: (schemas.data?.length ?? 0) > 1, plan: (plan.data?.items.length ?? 0) > 0 },
   )
 
   const canWrite = access.data?.can_write ?? false
@@ -332,6 +340,11 @@ export function ProjectLayout() {
             >
               Review
             </NavItem>
+            {menu.shown('plan') && (
+              <NavItem to={`${base}/plan`} icon="layers">
+                Story plan
+              </NavItem>
+            )}
             {menu.shown('history') && (
               <NavItem to={`${base}/history`} icon="clock">
                 History

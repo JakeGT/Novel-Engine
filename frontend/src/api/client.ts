@@ -35,6 +35,10 @@ export type AssistBrief = Schemas['AssistBriefRequest']
 export type AssistQuestionSheet = Schemas['AssistQuestionSheetModel']
 export type AssistProposalRequest = Schemas['AssistProposalRequest']
 export type ChangeProposal = Schemas['ChangeProposalModel']
+export type PlanItem = Schemas['PlanItemModel']
+export type PlanRef = Schemas['PlanRefModel']
+export type Outline = Schemas['OutlineModel']
+export type PlanKind = Schemas['AddPlanItemRequest']['kind']
 export type AssistSession = Schemas['AssistSessionModel']
 export type SchemaSuggestion = Schemas['SchemaSuggestionModel']
 export type AiProvider = Schemas['ProviderModel']
@@ -448,6 +452,19 @@ export const api = {
 
   createEntity: (scope: Scope, body: CreateEntityRequest) =>
     send<CanonEntity>(scope, 'POST', '/entities', body),
+
+  // --- the story plan: what the author means to happen; never read as fact -------
+  outline: (scope: Scope) => get<Outline>(scope, '/plan'),
+  addPlanItem: (scope: Scope, body: Schemas['AddPlanItemRequest']) =>
+    send<PlanItem>(scope, 'POST', '/plan', body),
+  changePlanItem: (scope: Scope, planId: string, body: Schemas['ChangePlanItemRequest']) =>
+    send<PlanItem>(scope, 'PATCH', `/plan/${id(planId)}`, body),
+  movePlanItem: (scope: Scope, planId: string, body: Schemas['MovePlanItemRequest']) =>
+    send<PlanItem>(scope, 'POST', `/plan/${id(planId)}/move`, body),
+  removePlanItem: (scope: Scope, planId: string, expectedRevision: number) =>
+    send<Schemas['RemovedModel']>(scope, 'POST', `/plan/${id(planId)}/remove`, {
+      expected_revision: expectedRevision,
+    } satisfies Schemas['RemovePlanItemRequest']),
 
   /** Fill an empty project with the short sample story, as one version. */
   loadSample: (scope: Scope, expectedRevision: number) =>

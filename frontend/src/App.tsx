@@ -12,6 +12,7 @@ import { Home } from './pages/Home'
 import { MediaPage } from './pages/MediaPage'
 import { Overview } from './pages/Overview'
 import { PeoplePage } from './pages/PeoplePage'
+import { PlanPage } from './pages/PlanPage'
 import { ProjectLayout } from './pages/ProjectLayout'
 import { ReviewDetail } from './pages/ReviewDetail'
 import { ReviewQueue } from './pages/ReviewQueue'
@@ -42,6 +43,7 @@ export default function App() {
             <Route path="entries/:entityId" element={<EntryPage />} />
             <Route path="review" element={<ReviewQueue />} />
             <Route path="review/:mutationId" element={<ReviewDetail />} />
+            <Route path="plan" element={<PlanPage />} />
             <Route path="history" element={<HistoryPage />} />
             <Route path="customize" element={<CustomizePage />} />
             <Route path="media" element={<MediaPage />} />

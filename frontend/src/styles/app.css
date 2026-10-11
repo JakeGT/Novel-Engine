@@ -2290,3 +2290,123 @@ details.more[open] > summary {
 .crash h1 {
   font-size: 2rem;
 }
+
+/* --- the story plan: an outline, read top to bottom ------------------------- */
+.plan-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 1.4rem;
+  border-left: 1px solid var(--line);
+}
+
+.plan-list.top {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.plan-item {
+  padding: 0.9rem 0 0.2rem;
+  border-top: 1px solid var(--line);
+}
+
+.plan-list.top > .plan-item:first-child {
+  border-top: 1px solid var(--line-strong);
+}
+
+.plan-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.5rem 1rem;
+  padding-bottom: 0.7rem;
+}
+
+.plan-text {
+  flex: 1 1 22rem;
+  min-width: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.plan-title {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 450;
+  line-height: 1.25;
+}
+
+.kind-story > .plan-head .plan-title {
+  font-size: 1.6rem;
+}
+
+.kind-arc > .plan-head .plan-title {
+  font-size: 1.35rem;
+}
+
+.plan-summary {
+  color: var(--ink-2);
+  max-width: 62ch;
+}
+
+.plan-about {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 1rem;
+  font-family: var(--font-ui);
+  font-size: 0.86rem;
+  color: var(--ink-3);
+}
+
+.plan-open {
+  list-style: none;
+  margin: 0.2rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.5rem;
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+}
+
+.plan-open li {
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-pill);
+  color: var(--warn);
+}
+
+.plan-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.plan-more {
+  position: relative;
+  font-family: var(--font-ui);
+  font-size: 0.86rem;
+}
+
+.plan-more > summary {
+  padding: 0.3rem 0.5rem;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.chip-remove {
+  border: 0;
+  background: none;
+  padding: 0 0.1rem;
+  font: inherit;
+  font-size: 1.05rem;
+  line-height: 1;
+  color: inherit;
+  cursor: pointer;
+}
+
+ul.chips {
+  list-style: none;
+  margin: 0 0 0.4rem;
+  padding: 0;
+}
