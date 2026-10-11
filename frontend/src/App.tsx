@@ -13,6 +13,7 @@ import { MediaPage } from './pages/MediaPage'
 import { Overview } from './pages/Overview'
 import { PeoplePage } from './pages/PeoplePage'
 import { PlanPage } from './pages/PlanPage'
+import { RulesPage } from './pages/RulesPage'
 import { TextPage } from './pages/TextPage'
 import { TextsPage } from './pages/TextsPage'
 import { ProjectLayout } from './pages/ProjectLayout'
@@ -46,6 +47,7 @@ export default function App() {
             <Route path="review" element={<ReviewQueue />} />
             <Route path="review/:mutationId" element={<ReviewDetail />} />
             <Route path="plan" element={<PlanPage />} />
+            <Route path="rules" element={<RulesPage />} />
             <Route path="texts" element={<TextsPage />} />
             <Route path="texts/:sourceId" element={<TextPage />} />
             <Route path="history" element={<HistoryPage />} />

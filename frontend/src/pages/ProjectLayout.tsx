@@ -62,6 +62,7 @@ function NavItem({
 const LATER_PAGES: { id: PageId; label: string; icon: IconName }[] = [
   { id: 'plan', label: 'Story plan', icon: 'layers' },
   { id: 'texts', label: 'Your writing', icon: 'feather' },
+  { id: 'rules', label: 'Story rules', icon: 'shield' },
   { id: 'history', label: 'History', icon: 'clock' },
   { id: 'customize', label: 'Types and fields', icon: 'sliders' },
   { id: 'media', label: 'Media', icon: 'image' },
@@ -108,11 +109,12 @@ export function ProjectLayout() {
   })
 
   const texts = useQuery({ queryKey: scopedKey(scope, 'texts'), queryFn: () => api.texts(scope) })
+  const rules = useQuery({ queryKey: scopedKey(scope, 'rules'), queryFn: () => api.rules(scope) })
 
   // A page the author has opened once stays in their menu.
   useEffect(() => {
     const page = location.pathname.split('/')[3]
-    if (page === 'plan' || page === 'texts' || page === 'history' || page === 'customize' || page === 'media') {
+    if (page === 'plan' || page === 'texts' || page === 'rules' || page === 'history' || page === 'customize' || page === 'media') {
       rememberVisit(projectId, page)
     }
   }, [location.pathname, projectId])
@@ -123,6 +125,7 @@ export function ProjectLayout() {
     entries.items.filter((item) => item.lifecycle === 'active').length,
     { customize: (schemas.data?.length ?? 0) > 1, plan: (plan.data?.items.length ?? 0) > 0,
       texts: (texts.data?.items.length ?? 0) > 0,
+      rules: (rules.data?.items.length ?? 0) > 0,
     },
   )
 
@@ -355,6 +358,11 @@ export function ProjectLayout() {
             {menu.shown('texts') && (
               <NavItem to={`${base}/texts`} icon="feather">
                 Your writing
+              </NavItem>
+            )}
+            {menu.shown('rules') && (
+              <NavItem to={`${base}/rules`} icon="shield">
+                Story rules
               </NavItem>
             )}
             {menu.shown('history') && (

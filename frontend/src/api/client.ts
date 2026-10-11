@@ -41,6 +41,12 @@ export type Outline = Schemas['OutlineModel']
 export type PlanKind = Schemas['AddPlanItemRequest']['kind']
 export type AssistSession = Schemas['AssistSessionModel']
 export type SourceText = Schemas['TextModel']
+export type StoryRule = Schemas['RuleModel']
+export type RuleBody = Schemas['RuleBody']
+export type RulePattern = Schemas['Pattern']
+export type RuleCheck = Schemas['RuleCheckModel']
+export type RuleDraft = Schemas['RuleDraftModel']
+export type RuleExample = Schemas['RuleExample']
 export type SourceTextDetail = Schemas['TextDetailModel']
 export type TextMention = Schemas['MentionModel']
 export type NameQuestion = Schemas['NameQuestionModel']
@@ -508,6 +514,18 @@ export const api = {
   /** The assistant reads a passage into suggested changes. Nothing is added by reading. */
   readPassage: (scope: Scope, sourceId: string, body: Schemas['ReadPassageRequest']) =>
     send<PassageRead>(scope, 'POST', `/assist/texts/${id(sourceId)}/read`, body),
+
+  // --- story rules: the author's own continuity rules; they warn, never stop -------
+  rules: (scope: Scope) => get<Schemas['RuleListModel']>(scope, '/rules'),
+  checkRule: (scope: Scope, body: Schemas['RuleCheckRequest']) =>
+    send<RuleCheck>(scope, 'POST', '/rules/check', body),
+  addRule: (scope: Scope, body: Schemas['AddRuleRequest']) =>
+    send<StoryRule>(scope, 'POST', '/rules', body),
+  changeRule: (scope: Scope, ruleId: string, body: Schemas['ChangeRuleRequest']) =>
+    send<StoryRule>(scope, 'PATCH', `/rules/${id(ruleId)}`, body),
+  removeRule: (scope: Scope, ruleId: string) => send<void>(scope, 'DELETE', `/rules/${id(ruleId)}`),
+  draftRule: (scope: Scope, sentence: string) =>
+    send<RuleDraft>(scope, 'POST', '/assist/rules/draft', { sentence }),
 
   /** Fill an empty project with the short sample story, as one version. */
   loadSample: (scope: Scope, expectedRevision: number) =>

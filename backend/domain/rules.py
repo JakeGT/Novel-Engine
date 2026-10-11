@@ -366,8 +366,27 @@ def run_examples(body: RuleBody, examples: Sequence[RuleExample]) -> list[Exampl
 
 
 # ------------------------------------------------------------------- reading
+# The built-in kinds of fact as the verb of a sentence. Others read as their own words.
+_VERBS = {
+    "LOCATED_AT": "is located at",
+    "OWNS": "owns",
+    "MEMBER_OF": "is a member of",
+    "PARTICIPATED_IN": "took part in",
+    "KNOWS": "knows",
+    "RELATED_TO": "is related to",
+    "CAUSED": "caused",
+    "HAS_NAME": "is named",
+    "HAS_STATUS": "has the status",
+    "HAS_DETAIL": "has the detail",
+}
+
+
 def _words(identifier: str) -> str:
     return identifier.replace("_", " ").strip().lower()
+
+
+def _verb(predicate: str) -> str:
+    return _VERBS.get(predicate, _words(predicate))
 
 
 def _other(pattern: Pattern, names: dict[str, str]) -> str:
@@ -383,8 +402,8 @@ def _other(pattern: Pattern, names: dict[str, str]) -> str:
 def _phrase(pattern: Pattern, names: dict[str, str]) -> str:
     other = _other(pattern, names)
     if pattern.direction == "out":
-        return f"{_words(pattern.predicate)} {other}"
-    return f"{other} {_words(pattern.predicate)} it"
+        return f"it {_verb(pattern.predicate)} {other}"
+    return f"{other} {_verb(pattern.predicate)} it"
 
 
 def read_rule(body: RuleBody, names: dict[str, str]) -> str:
@@ -397,18 +416,18 @@ def read_rule(body: RuleBody, names: dict[str, str]) -> str:
         if selector.tag:
             about += f" tagged “{selector.tag}”"
     if selector.having:
-        about += " where " + " and ".join(_phrase(item, names) for item in selector.having)
+        about += " where " + " and ".join(_phrase(item, names) for item in selector.having) + ","
     parts: list[str] = []
     for check in body.checks:
         phrase = _phrase(check.pattern, names)
         if check.kind == "has":
-            parts.append(f"must have: {phrase}")
+            parts.append(f"must have this: {phrase}")
         elif check.kind == "lacks":
-            parts.append(f"must not have: {phrase}")
+            parts.append(f"must not have this: {phrase}")
         elif check.kind == "at_most":
-            parts.append(f"can have at most {check.count} of: {phrase}")
+            parts.append(f"can have at most {check.count} of this: {phrase}")
         else:
-            parts.append(f"needs at least {check.count} of: {phrase}")
+            parts.append(f"needs at least {check.count} of this: {phrase}")
     joiner = "; and " if body.mode == "all" else "; or "
     return f"{about} {joiner.join(parts)}."
 
@@ -433,7 +452,7 @@ def body_problems(
         problems.append("The entry this rule is about is not in the story bible.")
     for pattern in [*selector.having, *(check.pattern for check in body.checks)]:
         if pattern.predicate not in predicates:
-            problems.append(f"There is no kind of fact called {_words(pattern.predicate)}.")
+            problems.append(f"There is no kind of fact called “{_words(pattern.predicate)}”.")
         if pattern.other_type is not None and pattern.other_type not in entity_types:
             problems.append(f"There is no type of entry called {pattern.other_type}.")
         if pattern.other_id is not None and pattern.other_id not in entity_ids:

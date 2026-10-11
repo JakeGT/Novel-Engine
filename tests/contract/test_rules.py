@@ -68,7 +68,7 @@ def test_a_rule_is_kept_read_back_in_words_and_checked_against_the_story(
     made = _add(auth_client, w, sentence="Every guild needs at least one member.")
     assert made.status_code == 201, made.text
     rule = made.json()
-    assert rule["reading"] == "Every faction needs at least 1 of: something member of it."
+    assert rule["reading"] == "Every faction needs at least 1 of this: something is a member of it."
     assert rule["status"] == "on" and rule["version"] == 1
     assert [r["agrees"] for r in rule["example_results"]] == [True, True]
     # Mara is in the Harbor Guild, so it holds for the story as it stands.
@@ -102,7 +102,7 @@ def test_a_rule_must_use_the_storys_own_types_and_kinds_of_fact(auth_client, fak
     assert checked["problems"] == [
         "There is no type of entry called Starship.",
         "The entry this rule is about is not in the story bible.",
-        "There is no kind of fact called orbits.",
+        "There is no kind of fact called “orbits”.",
         "An entry this rule names is not in the story bible.",
     ]
     assert (
@@ -201,7 +201,8 @@ def test_a_rule_about_one_entry_and_what_it_must_not_have(auth_client, fake_cont
     made = auth_client.post(f"{w['base']}/rules", json={"title": "Guild stays home", "body": body})
     assert made.status_code == 201, made.text
     assert made.json()["reading"] == (
-        "Every character where member of Harbor Guild must not have: located at Saltmere."
+        "Every character where it is a member of Harbor Guild, must not have this: "
+        "it is located at Saltmere."
     )
     proposed = auth_client.post(
         f"{w['base']}/mutations",
@@ -267,7 +268,10 @@ def test_the_assistant_drafts_a_rule_from_a_sentence_and_keeps_nothing(auth_clie
     assert drafted.status_code == 200, drafted.text
     body = drafted.json()
     assert body["title"] == "Guilds have members" and body["cannot_express"] == ""
-    assert body["check"]["reading"] == "Every faction needs at least 1 of: something member of it."
+    assert (
+        body["check"]["reading"]
+        == "Every faction needs at least 1 of this: something is a member of it."
+    )
     assert [r["agrees"] for r in body["check"]["example_results"]] == [True, False]
     assert _rules(auth_client, w) == []
     system, user = fake_container.ai.calls[-1]["messages"]
