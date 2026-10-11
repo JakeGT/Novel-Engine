@@ -273,6 +273,8 @@ def _build_fake_container(settings, tmp_path):
         audit=tenancy,
         canon_writer=canon_writer,
         local_mode=not settings.is_hosted,
+        sources=sources,
+        rules=rules,
     )
     return Container(
         settings=settings,

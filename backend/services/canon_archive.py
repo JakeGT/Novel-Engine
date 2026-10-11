@@ -52,6 +52,7 @@ from backend.domain.operations import (
     parse_operation,
 )
 from backend.domain.review import MutationIntent, classify_review
+from backend.domain.rules import RuleBody
 from backend.domain.tenancy import Permission
 from backend.ports import (
     CanonJournalPort,
@@ -133,6 +134,8 @@ class CanonArchiveService:
         audit: object | None = None,
         canon_writer: object | None = None,
         local_mode: bool = False,
+        sources: object | None = None,
+        rules: object | None = None,
     ) -> None:
         self._canon = canon
         self._journal = journal
@@ -145,6 +148,8 @@ class CanonArchiveService:
         self._audit = audit
         self._canon_writer = canon_writer
         self._local_mode = local_mode
+        self._sources = sources
+        self._rules = rules
 
     # ----------------------------------------------- authorized entry points
     async def _require_owner(self, scope: AccessScope, workspace_id: str, project_id: str) -> None:
@@ -482,6 +487,14 @@ class CanonArchiveService:
             "derived": {},
             "sections": {},
         }
+        # The author's own writing and rules: theirs to take away, and never canon.
+        # Left out entirely when there are none, so an archive without them is unchanged.
+        writing = await self._export_writing(workspace_id, project_id)
+        if writing:
+            body["writing"] = writing
+        story_rules = await self._export_rules(workspace_id, project_id)
+        if story_rules:
+            body["story_rules"] = story_rules
         body["checksum"] = _checksum(body)
         metrics.increment(
             "archive_operations_total",
@@ -498,6 +511,191 @@ class CanonArchiveService:
             objects=len(objects),
         )
         return body
+
+    async def _export_writing(self, workspace_id: str, project_id: str) -> dict[str, Any]:
+        if self._sources is None:
+            return {}
+        texts: list[dict[str, Any]] = []
+        for source in await self._sources.list_sources(  # type: ignore[attr-defined]
+            workspace_id=workspace_id, project_id=project_id
+        ):
+            versions = await self._sources.list_versions(  # type: ignore[attr-defined]
+                workspace_id=workspace_id, project_id=project_id, source_id=source.id
+            )
+            texts.append(
+                {
+                    "id": source.id,
+                    "title": source.title,
+                    "kind": source.kind.value,
+                    "versions": [
+                        {
+                            "id": version.id,
+                            "number": version.number,
+                            "content": version.content,
+                            "content_hash": version.content_hash,
+                        }
+                        for version in versions
+                    ],
+                }
+            )
+        names = [
+            {
+                "id": binding.id,
+                "phrase": binding.phrase,
+                "verdict": binding.verdict.value,
+                "entity_id": binding.entity_id,
+                "source_id": binding.source_id,
+            }
+            for binding in await self._sources.list_bindings(  # type: ignore[attr-defined]
+                workspace_id=workspace_id, project_id=project_id
+            )
+            # A model's unanswered guess is not the author's and is not carried.
+            if binding.verdict.value != "suggested"
+        ]
+        return {"texts": texts, "names": names} if texts or names else {}
+
+    async def _export_rules(self, workspace_id: str, project_id: str) -> list[dict[str, Any]]:
+        if self._rules is None:
+            return []
+        found: list[dict[str, Any]] = []
+        for rule in await self._rules.list_rules(  # type: ignore[attr-defined]
+            workspace_id=workspace_id, project_id=project_id
+        ):
+            versions = await self._rules.list_versions(  # type: ignore[attr-defined]
+                workspace_id=workspace_id, project_id=project_id, rule_id=rule.id
+            )
+            found.append(
+                {
+                    "id": rule.id,
+                    "title": rule.title,
+                    "sentence": rule.sentence,
+                    "status": rule.status.value,
+                    "versions": [
+                        {
+                            "number": number,
+                            "body": body.model_dump(mode="json"),
+                            "examples": [item.model_dump(mode="json") for item in examples],
+                        }
+                        for number, body, examples in versions
+                    ],
+                }
+            )
+        return found
+
+    async def _restore_writing(
+        self,
+        workspace_id: str,
+        project_id: str,
+        archive: dict[str, Any],
+        *,
+        actor_user_id: str | None,
+    ) -> dict[str, int]:
+        """Bring back the author's texts, name answers and rules, after canon is restored.
+
+        Safe to run again: whatever is already there is left as it is, so an import
+        interrupted here completes on the next attempt.
+        """
+        from datetime import UTC, datetime
+
+        from backend.domain.canon.naming import normalize_name
+        from backend.domain.rules import RuleBody, RuleExample, RuleStatus
+        from backend.domain.sources import AliasBinding, SourceKind, Verdict, content_hash
+
+        restored = {"texts": 0, "names": 0, "rules": 0}
+        writing = archive.get("writing") or {}
+        if self._sources is not None:
+            for text in writing.get("texts", []):
+                existing = await self._sources.get_source(  # type: ignore[attr-defined]
+                    workspace_id=workspace_id, project_id=project_id, source_id=text["id"]
+                )
+                if existing is not None:
+                    continue
+                await self._sources.add_source(  # type: ignore[attr-defined]
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    source_id=text["id"],
+                    title=text["title"],
+                    kind=SourceKind(text["kind"]),
+                    actor_user_id=actor_user_id,
+                )
+                for version in sorted(text["versions"], key=lambda item: item["number"]):
+                    await self._sources.add_version(  # type: ignore[attr-defined]
+                        workspace_id=workspace_id,
+                        project_id=project_id,
+                        version_id=version["id"],
+                        source_id=text["id"],
+                        content=version["content"],
+                        content_hash=content_hash(version["content"]),
+                        actor_user_id=actor_user_id,
+                    )
+                restored["texts"] += 1
+            known = {
+                binding.id
+                for binding in await self._sources.list_bindings(  # type: ignore[attr-defined]
+                    workspace_id=workspace_id, project_id=project_id
+                )
+            }
+            for name in writing.get("names", []):
+                if name["id"] in known:
+                    continue
+                await self._sources.put_binding(  # type: ignore[attr-defined]
+                    AliasBinding(
+                        workspace_id=workspace_id,
+                        project_id=project_id,
+                        id=name["id"],
+                        phrase=name["phrase"],
+                        normalized=normalize_name(name["phrase"]),
+                        verdict=Verdict(name["verdict"]),
+                        entity_id=name.get("entity_id"),
+                        source_id=name.get("source_id"),
+                        decided_by=actor_user_id,
+                        decided_at=datetime.now(UTC),
+                    )
+                )
+                restored["names"] += 1
+        if self._rules is not None:
+            for rule in archive.get("story_rules", []):
+                existing = await self._rules.get_rule(  # type: ignore[attr-defined]
+                    workspace_id=workspace_id, project_id=project_id, rule_id=rule["id"]
+                )
+                if existing is not None:
+                    continue
+                versions = sorted(rule["versions"], key=lambda item: item["number"])
+                wordings = [
+                    (
+                        RuleBody.model_validate(version["body"]),
+                        [RuleExample.model_validate(item) for item in version.get("examples", [])],
+                    )
+                    for version in versions
+                ]
+                await self._rules.add_rule(  # type: ignore[attr-defined]
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    rule_id=rule["id"],
+                    title=rule["title"],
+                    sentence=rule.get("sentence", ""),
+                    body=wordings[0][0],
+                    examples=wordings[0][1],
+                    actor_user_id=actor_user_id,
+                )
+                for body, examples in wordings[1:]:
+                    await self._rules.change_rule(  # type: ignore[attr-defined]
+                        workspace_id=workspace_id,
+                        project_id=project_id,
+                        rule_id=rule["id"],
+                        body=body,
+                        examples=examples,
+                        actor_user_id=actor_user_id,
+                    )
+                if rule.get("status") == RuleStatus.PAUSED.value:
+                    await self._rules.change_rule(  # type: ignore[attr-defined]
+                        workspace_id=workspace_id,
+                        project_id=project_id,
+                        rule_id=rule["id"],
+                        status=RuleStatus.PAUSED,
+                    )
+                restored["rules"] += 1
+        return restored
 
     # ---------------------------------------------------------------- import
     async def import_project(
@@ -527,6 +725,13 @@ class CanonArchiveService:
             result = await self._restore(
                 target_workspace_id, target_project_id, archive, import_id=import_id
             )
+            # Only once the story itself is back: its texts, name answers and rules.
+            result = {
+                **result,
+                "writing": await self._restore_writing(
+                    target_workspace_id, target_project_id, archive, actor_user_id=actor_user_id
+                ),
+            }
         except Exception as error:
             # The error class is recorded; archive content never is.
             await self._canon.finish_import(
@@ -965,6 +1170,44 @@ class CanonArchiveService:
         for raw in (archive.get("plan") or {}).get("items", []):
             claim(raw["id"], kind="plan item")
             check_refs([ref["entity_id"] for ref in raw.get("refs", [])], "plan item")
+
+        writing = archive.get("writing") or {}
+        texts = writing.get("texts", []) if isinstance(writing, dict) else None
+        names = writing.get("names", []) if isinstance(writing, dict) else None
+        story_rules = archive.get("story_rules", [])
+        if not all(isinstance(part, list) for part in (texts, names, story_rules)):
+            raise ArchiveError("archive writing section is malformed")
+        if len(texts or []) + len(names or []) + len(story_rules) > MAX_ENTRIES:
+            raise ArchiveError("archive exceeds entry limit")
+        text_ids: set[str] = set()
+        for raw in texts or []:
+            claim(raw["id"], kind="text")
+            text_ids.add(raw["id"])
+            numbers = [version["number"] for version in raw.get("versions", [])]
+            if not numbers or sorted(numbers) != list(range(1, len(numbers) + 1)):
+                raise ArchiveError("a text's versions are not contiguous")
+            for version in raw["versions"]:
+                claim(version["id"], kind="text version")
+                digest = hashlib.sha256(version["content"].encode("utf-8")).hexdigest()
+                if digest != version.get("content_hash"):
+                    raise ArchiveError("a text's content does not match its checksum")
+        for raw in names or []:
+            claim(raw["id"], kind="name answer")
+            if raw.get("verdict") not in ("is", "is_not", "ignore"):
+                raise ArchiveError("unknown name answer")
+            if raw.get("entity_id") is not None:
+                check_refs([raw["entity_id"]], "name answer")
+            if raw.get("source_id") is not None and raw["source_id"] not in text_ids:
+                raise ArchiveError("a name answer points at a text outside the archive")
+        for raw in story_rules:
+            claim(raw["id"], kind="story rule")
+            if not raw.get("versions"):
+                raise ArchiveError("a story rule has no wording")
+            for version in raw["versions"]:
+                try:
+                    RuleBody.model_validate(version["body"])
+                except ValueError as error:
+                    raise ArchiveError("a story rule is malformed") from error
 
         for raw in archive.get("schemas", []):
             claim(raw["id"], kind="schema")

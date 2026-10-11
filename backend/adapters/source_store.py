@@ -9,13 +9,13 @@ from sqlalchemy import text
 from backend.core.database import session_scope
 from backend.domain.sources import AliasBinding, SourceKind, SourceText, SourceVersion, Verdict
 
-_SOURCE = """
+_OWN = "v.workspace_id = s.workspace_id AND v.project_id = s.project_id AND v.source_id = s.id"
+_SOURCE = f"""
     SELECT s.workspace_id, s.project_id, s.id, s.title, s.kind, s.created_by, s.created_at,
            s.removed_at,
-           (SELECT count(*) FROM source_versions v WHERE v.source_id = s.id),
-           (SELECT v.id FROM source_versions v WHERE v.source_id = s.id
-             ORDER BY v.number DESC LIMIT 1),
-           (SELECT length(v.content) FROM source_versions v WHERE v.source_id = s.id
+           (SELECT count(*) FROM source_versions v WHERE {_OWN}),
+           (SELECT v.id FROM source_versions v WHERE {_OWN} ORDER BY v.number DESC LIMIT 1),
+           (SELECT length(v.content) FROM source_versions v WHERE {_OWN}
              ORDER BY v.number DESC LIMIT 1)
     FROM source_texts s
 """
@@ -126,7 +126,8 @@ class PostgresSourceStore:
                              content_hash, created_by)
                         SELECT :ws, :pj, :id, :source, coalesce(max(number), 0) + 1, :content,
                                :hash, :actor
-                        FROM source_versions WHERE source_id = :source
+                        FROM source_versions
+                        WHERE workspace_id = :ws AND project_id = :pj AND source_id = :source
                         RETURNING workspace_id, project_id, id, source_id, number, content,
                                   content_hash, created_by, created_at
                         """
@@ -312,6 +313,10 @@ class PostgresSourceStore:
                 text("DELETE FROM alias_bindings WHERE workspace_id = :ws AND project_id = :pj"),
                 params,
             )
+            await db.execute(
+                text("DELETE FROM source_versions WHERE workspace_id = :ws AND project_id = :pj"),
+                params,
+            )
             result = await db.execute(
                 text("DELETE FROM source_texts WHERE workspace_id = :ws AND project_id = :pj"),
                 params,
@@ -322,6 +327,9 @@ class PostgresSourceStore:
         async with session_scope(self._session_factory) as db:
             await db.execute(
                 text("DELETE FROM alias_bindings WHERE workspace_id = :ws"), {"ws": workspace_id}
+            )
+            await db.execute(
+                text("DELETE FROM source_versions WHERE workspace_id = :ws"), {"ws": workspace_id}
             )
             result = await db.execute(
                 text("DELETE FROM source_texts WHERE workspace_id = :ws"), {"ws": workspace_id}

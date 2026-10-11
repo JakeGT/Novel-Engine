@@ -180,7 +180,7 @@ def test_a_paused_rule_says_nothing_and_rewording_makes_a_new_version(auth_clien
     assert refused.status_code == 400
     reworded = auth_client.patch(base, json={"body": stricter, "examples": [EXAMPLES[0]]}).json()
     assert reworded["version"] == 2 and "at least 2" in reworded["reading"]
-    assert len(fake_container.rules.versions[rule["id"]]) == 2
+    assert [len(v) for v in fake_container.rules.versions.values()] == [2]
 
     assert auth_client.delete(base).status_code == 204
     assert _rules(auth_client, w) == []

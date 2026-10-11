@@ -3902,15 +3902,21 @@ class InMemorySourceStore:
     """Source texts, versions and name memory, with the same rules as PostgreSQL."""
 
     def __init__(self) -> None:
-        self.sources: dict[str, Any] = {}
-        self.versions: dict[str, Any] = {}
-        self.bindings: dict[str, Any] = {}
+        # Keyed by (workspace, project, id), as the tables are.
+        self.sources: dict[tuple[str, str, str], Any] = {}
+        self.versions: dict[tuple[str, str, str], Any] = {}
+        self.bindings: dict[tuple[str, str, str], Any] = {}
 
     def _summary(self, source: Any) -> Any:
         from dataclasses import replace
 
         versions = sorted(
-            (item for item in self.versions.values() if item.source_id == source.id),
+            (
+                item
+                for item in self.versions.values()
+                if (item.workspace_id, item.project_id, item.source_id)
+                == (source.workspace_id, source.project_id, source.id)
+            ),
             key=lambda item: item.number,
         )
         return replace(
@@ -3932,7 +3938,7 @@ class InMemorySourceStore:
     ) -> None:
         from backend.domain.sources import SourceText
 
-        self.sources[source_id] = SourceText(
+        self.sources[(workspace_id, project_id, source_id)] = SourceText(
             workspace_id=workspace_id,
             project_id=project_id,
             id=source_id,
@@ -3956,7 +3962,12 @@ class InMemorySourceStore:
         from backend.domain.sources import SourceVersion
 
         number = 1 + max(
-            (item.number for item in self.versions.values() if item.source_id == source_id),
+            (
+                item.number
+                for item in self.versions.values()
+                if (item.workspace_id, item.project_id, item.source_id)
+                == (workspace_id, project_id, source_id)
+            ),
             default=0,
         )
         version = SourceVersion(
@@ -3970,7 +3981,7 @@ class InMemorySourceStore:
             created_by=actor_user_id,
             created_at=datetime.now(UTC),
         )
-        self.versions[version_id] = version
+        self.versions[(workspace_id, project_id, version_id)] = version
         return version
 
     async def rename(
@@ -3978,12 +3989,9 @@ class InMemorySourceStore:
     ) -> None:
         from dataclasses import replace
 
-        source = self.sources.get(source_id)
-        if source is not None and (source.workspace_id, source.project_id) == (
-            workspace_id,
-            project_id,
-        ):
-            self.sources[source_id] = replace(source, title=title)
+        key = (workspace_id, project_id, source_id)
+        if key in self.sources:
+            self.sources[key] = replace(self.sources[key], title=title)
 
     async def list_sources(self, *, workspace_id: str, project_id: str) -> list[Any]:
         found = [
@@ -3995,13 +4003,8 @@ class InMemorySourceStore:
         return sorted(found, key=lambda item: (item.created_at, item.id), reverse=True)
 
     async def get_source(self, *, workspace_id: str, project_id: str, source_id: str) -> Any:
-        source = self.sources.get(source_id)
-        if source is None or (source.workspace_id, source.project_id) != (
-            workspace_id,
-            project_id,
-        ):
-            return None
-        return self._summary(source)
+        source = self.sources.get((workspace_id, project_id, source_id))
+        return self._summary(source) if source is not None else None
 
     async def list_versions(
         self, *, workspace_id: str, project_id: str, source_id: str
@@ -4017,30 +4020,22 @@ class InMemorySourceStore:
         )
 
     async def get_version(self, *, workspace_id: str, project_id: str, version_id: str) -> Any:
-        version = self.versions.get(version_id)
-        if version is None or (version.workspace_id, version.project_id) != (
-            workspace_id,
-            project_id,
-        ):
-            return None
-        return version
+        return self.versions.get((workspace_id, project_id, version_id))
 
     async def remove_source(self, *, workspace_id: str, project_id: str, source_id: str) -> None:
         from dataclasses import replace
 
-        source = self.sources.get(source_id)
-        if source is None or (source.workspace_id, source.project_id) != (
-            workspace_id,
-            project_id,
-        ):
+        key = (workspace_id, project_id, source_id)
+        source = self.sources.get(key)
+        if source is None:
             return
-        self.versions = {
-            key: item for key, item in self.versions.items() if item.source_id != source_id
-        }
-        self.bindings = {
-            key: item for key, item in self.bindings.items() if item.source_id != source_id
-        }
-        self.sources[source_id] = replace(source, removed_at=datetime.now(UTC))
+
+        def own(item: Any) -> bool:
+            return (item.workspace_id, item.project_id, item.source_id) == key
+
+        self.versions = {k: item for k, item in self.versions.items() if not own(item)}
+        self.bindings = {k: item for k, item in self.bindings.items() if not own(item)}
+        self.sources[key] = replace(source, removed_at=datetime.now(UTC))
 
     async def list_bindings(self, *, workspace_id: str, project_id: str) -> list[Any]:
         return [
@@ -4068,40 +4063,24 @@ class InMemorySourceStore:
             )
 
         self.bindings = {key: item for key, item in self.bindings.items() if not replaced(item)}
-        self.bindings[binding.id] = binding
+        self.bindings[(binding.workspace_id, binding.project_id, binding.id)] = binding
 
     async def delete_binding(self, *, workspace_id: str, project_id: str, binding_id: str) -> bool:
-        binding = self.bindings.get(binding_id)
-        if binding is None or (binding.workspace_id, binding.project_id) != (
-            workspace_id,
-            project_id,
-        ):
-            return False
-        del self.bindings[binding_id]
-        return True
+        return self.bindings.pop((workspace_id, project_id, binding_id), None) is not None
 
     async def delete_project(self, workspace_id: str, project_id: str) -> int:
-        doomed = [
-            key
-            for key, item in self.sources.items()
-            if (item.workspace_id, item.project_id) == (workspace_id, project_id)
-        ]
-        for key in doomed:
-            del self.sources[key]
-        self.versions = {k: v for k, v in self.versions.items() if v.source_id not in doomed}
-        self.bindings = {
-            k: v
-            for k, v in self.bindings.items()
-            if (v.workspace_id, v.project_id) != (workspace_id, project_id)
-        }
+        scope = (workspace_id, project_id)
+        doomed = [key for key in self.sources if key[:2] == scope]
+        for store in (self.sources, self.versions, self.bindings):
+            for key in [key for key in store if key[:2] == scope]:
+                del store[key]
         return len(doomed)
 
     async def delete_workspace(self, workspace_id: str) -> int:
-        doomed = [key for key, item in self.sources.items() if item.workspace_id == workspace_id]
-        for key in doomed:
-            del self.sources[key]
-        self.versions = {k: v for k, v in self.versions.items() if v.source_id not in doomed}
-        self.bindings = {k: v for k, v in self.bindings.items() if v.workspace_id != workspace_id}
+        doomed = [key for key in self.sources if key[0] == workspace_id]
+        for store in (self.sources, self.versions, self.bindings):
+            for key in [key for key in store if key[0] == workspace_id]:
+                del store[key]
         return len(doomed)
 
 
@@ -4109,22 +4088,22 @@ class InMemoryRuleStore:
     """Story rules with versions, as PostgreSQL keeps them."""
 
     def __init__(self) -> None:
-        self.rules: dict[str, Any] = {}
-        # rule id → every version's (body, examples), oldest first
-        self.versions: dict[str, list[tuple[Any, list[Any]]]] = {}
+        # Keyed by (workspace, project, id), as the tables are.
+        self.rules: dict[tuple[str, str, str], Any] = {}
+        # → every version's (body, examples), oldest first
+        self.versions: dict[tuple[str, str, str], list[tuple[Any, list[Any]]]] = {}
 
     async def list_rules(self, *, workspace_id: str, project_id: str) -> list[Any]:
-        return [
-            rule
-            for rule in self.rules.values()
-            if (rule.workspace_id, rule.project_id) == (workspace_id, project_id)
-        ]
+        return [rule for key, rule in self.rules.items() if key[:2] == (workspace_id, project_id)]
 
     async def get_rule(self, *, workspace_id: str, project_id: str, rule_id: str) -> Any:
-        rule = self.rules.get(rule_id)
-        if rule is None or (rule.workspace_id, rule.project_id) != (workspace_id, project_id):
-            return None
-        return rule
+        return self.rules.get((workspace_id, project_id, rule_id))
+
+    async def list_versions(
+        self, *, workspace_id: str, project_id: str, rule_id: str
+    ) -> list[tuple[int, Any, list[Any]]]:
+        found = self.versions.get((workspace_id, project_id, rule_id), [])
+        return [(number + 1, body, examples) for number, (body, examples) in enumerate(found)]
 
     async def add_rule(
         self,
@@ -4141,8 +4120,9 @@ class InMemoryRuleStore:
         from backend.domain.rules import RuleStatus, StoryRule
 
         now = datetime.now(UTC)
-        self.versions[rule_id] = [(body, list(examples))]
-        self.rules[rule_id] = StoryRule(
+        key = (workspace_id, project_id, rule_id)
+        self.versions[key] = [(body, list(examples))]
+        self.rules[key] = StoryRule(
             workspace_id=workspace_id,
             project_id=project_id,
             id=rule_id,
@@ -4172,9 +4152,8 @@ class InMemoryRuleStore:
     ) -> None:
         from dataclasses import replace
 
-        rule = await self.get_rule(
-            workspace_id=workspace_id, project_id=project_id, rule_id=rule_id
-        )
+        key = (workspace_id, project_id, rule_id)
+        rule = self.rules.get(key)
         if rule is None:
             return
         changes: dict[str, Any] = {"updated_at": datetime.now(UTC)}
@@ -4185,35 +4164,26 @@ class InMemoryRuleStore:
         if status is not None:
             changes["status"] = status
         if body is not None:
-            self.versions[rule_id].append((body, list(examples or [])))
+            self.versions[key].append((body, list(examples or [])))
             changes.update(
-                body=body, examples=list(examples or []), version=len(self.versions[rule_id])
+                body=body, examples=list(examples or []), version=len(self.versions[key])
             )
-        self.rules[rule_id] = replace(rule, **changes)
+        self.rules[key] = replace(rule, **changes)
 
     async def remove_rule(self, *, workspace_id: str, project_id: str, rule_id: str) -> bool:
-        rule = await self.get_rule(
-            workspace_id=workspace_id, project_id=project_id, rule_id=rule_id
-        )
-        if rule is None:
-            return False
-        del self.rules[rule_id]
-        self.versions.pop(rule_id, None)
-        return True
+        key = (workspace_id, project_id, rule_id)
+        self.versions.pop(key, None)
+        return self.rules.pop(key, None) is not None
 
     async def delete_project(self, workspace_id: str, project_id: str) -> int:
-        doomed = [
-            key
-            for key, rule in self.rules.items()
-            if (rule.workspace_id, rule.project_id) == (workspace_id, project_id)
-        ]
+        doomed = [key for key in self.rules if key[:2] == (workspace_id, project_id)]
         for key in doomed:
             del self.rules[key]
             self.versions.pop(key, None)
         return len(doomed)
 
     async def delete_workspace(self, workspace_id: str) -> int:
-        doomed = [key for key, rule in self.rules.items() if rule.workspace_id == workspace_id]
+        doomed = [key for key in self.rules if key[0] == workspace_id]
         for key in doomed:
             del self.rules[key]
             self.versions.pop(key, None)

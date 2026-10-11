@@ -14,8 +14,12 @@ _SELECT = """
     SELECT r.workspace_id, r.project_id, r.id, r.title, r.sentence, r.status, v.number, v.body,
            v.examples, r.created_by, r.created_at, r.updated_at
     FROM story_rules r
-    JOIN story_rule_versions v ON v.rule_id = r.id
-     AND v.number = (SELECT max(number) FROM story_rule_versions WHERE rule_id = r.id)
+    JOIN story_rule_versions v ON v.workspace_id = r.workspace_id
+     AND v.project_id = r.project_id AND v.rule_id = r.id
+     AND v.number = (
+        SELECT max(number) FROM story_rule_versions
+        WHERE workspace_id = r.workspace_id AND project_id = r.project_id AND rule_id = r.id
+     )
 """
 
 
@@ -68,6 +72,30 @@ class PostgresRuleStore:
             ).first()
         return _rule(row) if row is not None else None
 
+    async def list_versions(
+        self, *, workspace_id: str, project_id: str, rule_id: str
+    ) -> list[tuple[int, RuleBody, list[RuleExample]]]:
+        """Every wording the rule has had, oldest first."""
+        async with session_scope(self._session_factory) as db:
+            rows = (
+                await db.execute(
+                    text(
+                        "SELECT number, body, examples FROM story_rule_versions "
+                        "WHERE workspace_id = :ws AND project_id = :pj AND rule_id = :id "
+                        "ORDER BY number"
+                    ),
+                    {"ws": workspace_id, "pj": project_id, "id": rule_id},
+                )
+            ).all()
+        return [
+            (
+                row[0],
+                RuleBody.model_validate(row[1]),
+                [RuleExample.model_validate(item) for item in (row[2] or [])],
+            )
+            for row in rows
+        ]
+
     async def add_rule(
         self,
         *,
@@ -95,11 +123,15 @@ class PostgresRuleStore:
                     "actor": actor_user_id,
                 },
             )
-            await self._version(db, rule_id, body, examples, actor_user_id)
+            await self._version(
+                db, workspace_id, project_id, rule_id, body, examples, actor_user_id
+            )
 
     @staticmethod
     async def _version(
         db: Any,
+        workspace_id: str,
+        project_id: str,
         rule_id: str,
         body: RuleBody,
         examples: list[RuleExample],
@@ -108,13 +140,17 @@ class PostgresRuleStore:
         await db.execute(
             text(
                 """
-                INSERT INTO story_rule_versions (rule_id, number, body, examples, created_by)
-                SELECT :id, coalesce(max(number), 0) + 1, CAST(:body AS jsonb),
+                INSERT INTO story_rule_versions
+                    (workspace_id, project_id, rule_id, number, body, examples, created_by)
+                SELECT :ws, :pj, :id, coalesce(max(number), 0) + 1, CAST(:body AS jsonb),
                        CAST(:examples AS jsonb), :actor
-                FROM story_rule_versions WHERE rule_id = :id
+                FROM story_rule_versions
+                WHERE workspace_id = :ws AND project_id = :pj AND rule_id = :id
                 """
             ),
             {
+                "ws": workspace_id,
+                "pj": project_id,
                 "id": rule_id,
                 "body": body.model_dump_json(),
                 "examples": json.dumps([item.model_dump() for item in examples]),
@@ -157,7 +193,9 @@ class PostgresRuleStore:
                 },
             )
             if body is not None:
-                await self._version(db, rule_id, body, examples or [], actor_user_id)
+                await self._version(
+                    db, workspace_id, project_id, rule_id, body, examples or [], actor_user_id
+                )
 
     async def remove_rule(self, *, workspace_id: str, project_id: str, rule_id: str) -> bool:
         async with session_scope(self._session_factory) as db:

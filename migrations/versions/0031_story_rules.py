@@ -25,13 +25,14 @@ def upgrade() -> None:
         CREATE TABLE IF NOT EXISTS story_rules (
             workspace_id TEXT NOT NULL,
             project_id TEXT NOT NULL,
-            id TEXT PRIMARY KEY,
+            id TEXT NOT NULL,
             title TEXT NOT NULL,
             sentence TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'on' CHECK (status IN ('on', 'paused')),
             created_by TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (workspace_id, project_id, id)
         )
         """
     )
@@ -42,13 +43,17 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS story_rule_versions (
-            rule_id TEXT NOT NULL REFERENCES story_rules (id) ON DELETE CASCADE,
+            workspace_id TEXT NOT NULL,
+            project_id TEXT NOT NULL,
+            rule_id TEXT NOT NULL,
             number INTEGER NOT NULL,
             body JSONB NOT NULL,
             examples JSONB NOT NULL DEFAULT '[]'::jsonb,
             created_by TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            PRIMARY KEY (rule_id, number)
+            PRIMARY KEY (workspace_id, project_id, rule_id, number),
+            FOREIGN KEY (workspace_id, project_id, rule_id)
+                REFERENCES story_rules (workspace_id, project_id, id) ON DELETE CASCADE
         )
         """
     )

@@ -8,6 +8,9 @@ Prose an author brings in. A source text is not canon: it is the evidence a kept
 change can point back to. Each version's words never change, so a pointer at
 characters 120-180 of a version always means the same passage. Name memory holds
 what the author decided a phrase means ("the Fox" is Mara) or does not mean.
+
+Every key includes the project, so a story restored from an archive beside the
+original keeps the same ids without clashing.
 """
 
 from collections.abc import Sequence
@@ -26,12 +29,13 @@ def upgrade() -> None:
         CREATE TABLE IF NOT EXISTS source_texts (
             workspace_id TEXT NOT NULL,
             project_id TEXT NOT NULL,
-            id TEXT PRIMARY KEY,
+            id TEXT NOT NULL,
             title TEXT NOT NULL,
             kind TEXT NOT NULL CHECK (kind IN ('paste', 'markdown')),
             created_by TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            removed_at TIMESTAMPTZ
+            removed_at TIMESTAMPTZ,
+            PRIMARY KEY (workspace_id, project_id, id)
         )
         """
     )
@@ -44,14 +48,17 @@ def upgrade() -> None:
         CREATE TABLE IF NOT EXISTS source_versions (
             workspace_id TEXT NOT NULL,
             project_id TEXT NOT NULL,
-            id TEXT PRIMARY KEY,
-            source_id TEXT NOT NULL REFERENCES source_texts (id) ON DELETE CASCADE,
+            id TEXT NOT NULL,
+            source_id TEXT NOT NULL,
             number INTEGER NOT NULL,
             content TEXT NOT NULL,
             content_hash TEXT NOT NULL,
             created_by TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            UNIQUE (source_id, number)
+            PRIMARY KEY (workspace_id, project_id, id),
+            UNIQUE (workspace_id, project_id, source_id, number),
+            FOREIGN KEY (workspace_id, project_id, source_id)
+                REFERENCES source_texts (workspace_id, project_id, id) ON DELETE CASCADE
         )
         """
     )
@@ -73,14 +80,17 @@ def upgrade() -> None:
         CREATE TABLE IF NOT EXISTS alias_bindings (
             workspace_id TEXT NOT NULL,
             project_id TEXT NOT NULL,
-            id TEXT PRIMARY KEY,
+            id TEXT NOT NULL,
             phrase TEXT NOT NULL,
             normalized TEXT NOT NULL,
             verdict TEXT NOT NULL CHECK (verdict IN ('is', 'is_not', 'ignore', 'suggested')),
             entity_id TEXT,
-            source_id TEXT REFERENCES source_texts (id) ON DELETE CASCADE,
+            source_id TEXT,
             decided_by TEXT,
-            decided_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            decided_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (workspace_id, project_id, id),
+            FOREIGN KEY (workspace_id, project_id, source_id)
+                REFERENCES source_texts (workspace_id, project_id, id) ON DELETE CASCADE
         )
         """
     )

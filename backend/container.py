@@ -402,5 +402,7 @@ def build_container(settings: Settings | None = None) -> Container:
         audit=container.tenancy,
         canon_writer=container.canon_writer,
         local_mode=not resolved.is_hosted,
+        sources=container.sources,
+        rules=container.rules,
     )
     return container
