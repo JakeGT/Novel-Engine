@@ -69,6 +69,11 @@ export interface Items<T> {
   items: T[]
 }
 
+export interface VersionName {
+  name: string
+  revision: number
+}
+
 export interface HistoryEntry {
   record_type: string
   record_id: string
@@ -549,6 +554,15 @@ export const api = {
 
   entityHistory: (scope: Scope, entityId: string) =>
     get<Items<HistoryEntry>>(scope, `/entities/${id(entityId)}/history`),
+
+  /** Names an author has given to versions ("First draft done"). */
+  versionNames: (scope: Scope) => get<Items<VersionName>>(scope, '/tags'),
+  nameVersion: (scope: Scope, name: string, revision: number) =>
+    send<VersionName>(scope, 'POST', '/tags', { name, revision }),
+  removeVersionName: (scope: Scope, name: string) => send<void>(scope, 'DELETE', `/tags/${id(name)}`),
+  /** Every change saved after one version, up to and including another. */
+  changesBetween: (scope: Scope, after: number, upTo: number) =>
+    get<Items<HistoryEntry>>(scope, `/revisions/${after + 1}/diff/${upTo}`),
 
   provenance: (scope: Scope, recordType: string, recordId: string) =>
     get<Items<ProvenanceEntry>>(scope, `/provenance/${id(recordType)}/${id(recordId)}`),

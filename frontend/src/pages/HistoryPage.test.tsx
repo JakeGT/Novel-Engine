@@ -38,6 +38,7 @@ const revisions = {
 const base = {
   'GET /revisions': revisions,
   'GET /entities': { items: [entity()], limit: 200, offset: 0 },
+  'GET /tags': { items: [{ name: 'First draft done', revision: 2 }] },
 }
 const preview = {
   from_revision: 1,
@@ -64,8 +65,37 @@ describe('HistoryPage', () => {
       '/projects/prj_1/review/mut_3',
     )
     // There is nothing to go back to from the current version.
-    expect(within(rows[0]).queryByRole('button')).not.toBeInTheDocument()
+    expect(within(rows[0]).queryByRole('button', { name: /Go back/ })).not.toBeInTheDocument()
+    expect(within(rows[0]).queryByRole('button', { name: /What changed since/ })).not.toBeInTheDocument()
+    // A version an author has named carries its name.
+    expect(rows[1]).toHaveTextContent('First draft done')
     await expectAccessible(container)
+  })
+
+  it('names a version and shows what has changed since one, in words', async () => {
+    const api = mockApi({
+      ...base,
+      'POST /tags': { name: 'Before the rewrite', revision: 2 },
+      'GET /revisions/3/diff/3': {
+        items: [
+          { record_type: 'entity', record_id: 'ent_new', revision: 3, operation_type: 'create_entity', commit_id: 'cmt_3', change: { type: 'Character', name: 'Tobin' }, created_at: '2026-10-09T10:00:00Z' },
+        ],
+      },
+    })
+    const user = userEvent.setup()
+    renderInProject(<HistoryPage />, { context: { userId: 'usr_me' } })
+
+    await user.click(await screen.findByRole('button', { name: 'Name version 2' }))
+    const naming = screen.getByRole('dialog', { name: 'Name version 2' })
+    expect(naming).toHaveTextContent('First draft done')
+    await user.type(within(naming).getByLabelText('A name to find it by'), 'Before the rewrite')
+    await user.click(within(naming).getByRole('button', { name: 'Name it' }))
+    await waitFor(() => expect(api.find('POST', '/tags')[0].body).toEqual({ name: 'Before the rewrite', revision: 2 }))
+
+    await user.click(screen.getByRole('button', { name: 'What changed since version 2' }))
+    const since = await screen.findByRole('dialog', { name: 'What changed since version 2' })
+    expect(await within(since).findByText('Add character “Tobin”')).toBeInTheDocument()
+    expect(since).toHaveTextContent('1 change between version 2 and version 3')
   })
 
   it('previews going back, needs an acknowledgement, and restores as a new version', async () => {
