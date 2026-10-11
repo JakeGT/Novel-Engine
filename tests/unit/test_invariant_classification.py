@@ -199,7 +199,6 @@ def test_reserved_id_prefixes_are_distinct_and_unimplemented() -> None:
     assert len(set(ID_PREFIXES.values())) == len(ID_PREFIXES)
     assert RESERVED_ID_KINDS <= set(ID_PREFIXES)
     for kind in (
-        "story_invariant",
         "scene_contract",
         "narrated_assertion",
         "disclosure",

@@ -983,6 +983,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/assist/rules/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Draft Rule
+         * @description Draft a rule from a sentence. Keeps nothing: the author decides whether to add it.
+         */
+        post: operations["draft_rule_api_v1_projects__project_id__assist_rules_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/assist/sessions": {
         parameters: {
             query?: never;
@@ -2118,6 +2138,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Rules */
+        get: operations["list_rules_api_v1_projects__project_id__rules_get"];
+        put?: never;
+        /** Add Rule */
+        post: operations["add_rule_api_v1_projects__project_id__rules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/rules/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check Rule
+         * @description What a rule would do, before it is kept: its reading, its examples, who breaks it now.
+         */
+        post: operations["check_rule_api_v1_projects__project_id__rules_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/rules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Rule */
+        delete: operations["remove_rule_api_v1_projects__project_id__rules__rule_id__delete"];
+        options?: never;
+        head?: never;
+        /** Change Rule */
+        patch: operations["change_rule_api_v1_projects__project_id__rules__rule_id__patch"];
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/schemas": {
         parameters: {
             query?: never;
@@ -2760,6 +2836,19 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** AddRuleRequest */
+        AddRuleRequest: {
+            body: components["schemas"]["RuleBody"];
+            /** Examples */
+            examples?: components["schemas"]["RuleExample"][];
+            /**
+             * Sentence
+             * @default
+             */
+            sentence: string;
+            /** Title */
+            title: string;
+        };
         /** AddTextRequest */
         AddTextRequest: {
             /** Content */
@@ -3056,6 +3145,13 @@ export interface components {
             /** Value */
             value: boolean;
         };
+        /** BrokenByModel */
+        BrokenByModel: {
+            /** Entity Id */
+            entity_id: string;
+            /** Name */
+            name: string;
+        };
         /** CanonEntityListResponse */
         CanonEntityListResponse: {
             /** Items */
@@ -3154,6 +3250,17 @@ export interface components {
             /** Session Id */
             session_id?: string | null;
         };
+        /** ChangeRuleRequest */
+        ChangeRuleRequest: {
+            body?: components["schemas"]["RuleBody"] | null;
+            /** Examples */
+            examples?: components["schemas"]["RuleExample"][] | null;
+            /** Sentence */
+            sentence?: string | null;
+            status?: components["schemas"]["RuleStatus"] | null;
+            /** Title */
+            title?: string | null;
+        };
         /** CharacterAnswerModel */
         CharacterAnswerModel: {
             /** Answer */
@@ -3235,6 +3342,21 @@ export interface components {
              * @default false
              */
             use_cache: boolean;
+        };
+        /** Check */
+        Check: {
+            /**
+             * Count
+             * @description For at_most and at_least
+             * @default 1
+             */
+            count: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "has" | "lacks" | "at_most" | "at_least";
+            pattern: components["schemas"]["Pattern"];
         };
         /** ChooseAiRequest */
         ChooseAiRequest: {
@@ -3605,6 +3727,11 @@ export interface components {
              */
             role: string;
         };
+        /** DraftRuleRequest */
+        DraftRuleRequest: {
+            /** Sentence */
+            sentence: string;
+        };
         /**
          * EdgeCreate
          * @example {
@@ -3871,6 +3998,39 @@ export interface components {
             location?: string | null;
             /** Source Artefact Id */
             source_artefact_id: string;
+        };
+        /** ExampleEntry */
+        ExampleEntry: {
+            /** Name */
+            name: string;
+            /** Ref */
+            ref: string;
+            /** Tags */
+            tags?: string[];
+            /** Type */
+            type: string;
+        };
+        /** ExampleFact */
+        ExampleFact: {
+            /** Object Ref */
+            object_ref?: string | null;
+            /** Predicate */
+            predicate: string;
+            /** Subject Ref */
+            subject_ref: string;
+            /** Value */
+            value?: string | null;
+        };
+        /** ExampleResultModel */
+        ExampleResultModel: {
+            /** Agrees */
+            agrees: boolean;
+            /** Description */
+            description: string;
+            /** Expect */
+            expect: string;
+            /** Outcome */
+            outcome: string;
         };
         /** FactModel */
         FactModel: {
@@ -4334,6 +4494,39 @@ export interface components {
             title: string;
             /** Version Number */
             version_number: number | null;
+        };
+        /**
+         * Pattern
+         * @description A kind of fact about the entry being checked.
+         */
+        Pattern: {
+            /**
+             * Direction
+             * @description out: the entry is what the fact is about. in: the fact points at the entry
+             * @default out
+             * @enum {string}
+             */
+            direction: "out" | "in";
+            /**
+             * Other Id
+             * @description One specific entry at the other end
+             */
+            other_id?: string | null;
+            /**
+             * Other Type
+             * @description Type of the entry at the other end, if it matters
+             */
+            other_type?: string | null;
+            /**
+             * Predicate
+             * @description An allowed kind of fact
+             */
+            predicate: string;
+            /**
+             * Value
+             * @description For a fact that holds a value: that value
+             */
+            value?: string | null;
         };
         /** PlanBriefRequest */
         PlanBriefRequest: {
@@ -4820,6 +5013,97 @@ export interface components {
             /** Key */
             key: string;
         };
+        /** RuleBody */
+        RuleBody: {
+            applies_to?: components["schemas"]["Selector"];
+            /** Checks */
+            checks: components["schemas"]["Check"][];
+            /**
+             * Mode
+             * @default all
+             * @enum {string}
+             */
+            mode: "all" | "any";
+        };
+        /** RuleCheckModel */
+        RuleCheckModel: {
+            /** Broken By */
+            broken_by: components["schemas"]["BrokenByModel"][];
+            /** Example Results */
+            example_results: components["schemas"]["ExampleResultModel"][];
+            /** Problems */
+            problems: string[];
+            /** Reading */
+            reading: string;
+        };
+        /** RuleCheckRequest */
+        RuleCheckRequest: {
+            body: components["schemas"]["RuleBody"];
+            /** Examples */
+            examples?: components["schemas"]["RuleExample"][];
+        };
+        /** RuleDraftModel */
+        RuleDraftModel: {
+            body: components["schemas"]["RuleBody"] | null;
+            /** Cannot Express */
+            cannot_express: string;
+            check: components["schemas"]["RuleCheckModel"] | null;
+            /** Examples */
+            examples: components["schemas"]["RuleExample"][];
+            /** Title */
+            title: string;
+            /** Understood */
+            understood: string;
+        };
+        /**
+         * RuleExample
+         * @description A tiny made-up story, and whether the rule should catch it.
+         */
+        RuleExample: {
+            /** Description */
+            description: string;
+            /** Entries */
+            entries?: components["schemas"]["ExampleEntry"][];
+            /**
+             * Expect
+             * @enum {string}
+             */
+            expect: "caught" | "allowed";
+            /** Facts */
+            facts?: components["schemas"]["ExampleFact"][];
+        };
+        /** RuleListModel */
+        RuleListModel: {
+            /** Items */
+            items: components["schemas"]["RuleModel"][];
+        };
+        /** RuleModel */
+        RuleModel: {
+            body: components["schemas"]["RuleBody"];
+            /** Broken By */
+            broken_by: components["schemas"]["BrokenByModel"][];
+            /** Example Results */
+            example_results: components["schemas"]["ExampleResultModel"][];
+            /** Examples */
+            examples: components["schemas"]["RuleExample"][];
+            /** Id */
+            id: string;
+            /** Reading */
+            reading: string;
+            /** Sentence */
+            sentence: string;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * RuleStatus
+         * @enum {string}
+         */
+        RuleStatus: "on" | "paused";
         /** SampleLoadedModel */
         SampleLoadedModel: {
             /** Revision */
@@ -4919,6 +5203,20 @@ export interface components {
             start: number;
             /** Title */
             title: string;
+        };
+        /**
+         * Selector
+         * @description Which entries a rule is about. Every part given must match.
+         */
+        Selector: {
+            /** Entity Id */
+            entity_id?: string | null;
+            /** Having */
+            having?: components["schemas"]["Pattern"][];
+            /** Tag */
+            tag?: string | null;
+            /** Type */
+            type?: string | null;
         };
         /** SetAllowanceRequest */
         SetAllowanceRequest: {
@@ -7370,6 +7668,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RevisionModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    draft_rule_api_v1_projects__project_id__assist_rules_draft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftRuleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleDraftModel"];
                 };
             };
             /** @description Validation Error */
@@ -9878,6 +10211,173 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_rules_api_v1_projects__project_id__rules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleListModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_rule_api_v1_projects__project_id__rules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddRuleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_rule_api_v1_projects__project_id__rules_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuleCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleCheckModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_rule_api_v1_projects__project_id__rules__rule_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_rule_api_v1_projects__project_id__rules__rule_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeRuleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleModel"];
                 };
             };
             /** @description Validation Error */

@@ -66,6 +66,8 @@ class Container:
     plan_service: Any = None
     sources: Any = None
     source_service: Any = None
+    rules: Any = None
+    rule_service: Any = None
     canon_assertion_service: Any = None
     canon_history_service: Any = None
     media_store: Any = None
@@ -196,6 +198,9 @@ def build_container(settings: Settings | None = None) -> Container:
     from backend.adapters.source_store import PostgresSourceStore
 
     container.sources = PostgresSourceStore(database.session_factory)
+    from backend.adapters.rule_store import PostgresRuleStore
+
+    container.rules = PostgresRuleStore(database.session_factory)
 
     from backend.adapters.purge import StoreWorkspacePurge
 
@@ -210,6 +215,7 @@ def build_container(settings: Settings | None = None) -> Container:
         ai_settings=container.ai_settings,
         allowances=container.allowances,
         sources=container.sources,
+        rules=container.rules,
     )
     container.tenancy_service = TenancyService(
         container.tenancy,
@@ -264,6 +270,16 @@ def build_container(settings: Settings | None = None) -> Container:
     # Project/workspace deletion must also erase canon and its projection.
     purger.attach_canon(canon=container.canon_repository, canon_writer=container.canon_writer)
     container.media_store = PostgresMediaStore(database.session_factory)
+    from backend.domain.validation import AuthoritativeValidator
+    from backend.services.rule_service import RuleService
+
+    container.rule_service = RuleService(
+        container.rules,
+        reader=container.canon_repository,
+        schema_store=container.schema_versions,
+        tenancy=container.tenancy_service,
+        local_mode=not resolved.is_hosted,
+    )
     container.mutation_service = MutationService(
         container.journal,
         container.canon_repository,
@@ -271,6 +287,8 @@ def build_container(settings: Settings | None = None) -> Container:
         local_mode=not resolved.is_hosted,
         schema_store=container.schema_versions,
         media=container.media_store,
+        # The author's own story rules: they can warn about a change, never stop it.
+        validator=AuthoritativeValidator(evaluators=[container.rule_service]),
     )
     from backend.services.canon_entity_service import CanonEntityService
 
@@ -338,9 +356,9 @@ def build_container(settings: Settings | None = None) -> Container:
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
     )
-    from backend.services.intake_workflow import IntakeWorkflow
+    from backend.services.rule_workflow import RuleWorkflow
 
-    container.canon_character_workflow = IntakeWorkflow(
+    container.canon_character_workflow = RuleWorkflow(
         ai=container.ai,
         mutation=container.mutation_service,
         reader=container.canon_repository,

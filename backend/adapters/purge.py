@@ -27,6 +27,7 @@ class StoreWorkspacePurge:
         ai_settings: Any = None,
         allowances: Any = None,
         sources: Any = None,
+        rules: Any = None,
     ) -> None:
         self._canon = canon
         self._canon_writer = canon_writer
@@ -40,6 +41,7 @@ class StoreWorkspacePurge:
         self._ai_settings = ai_settings
         self._allowances = allowances
         self._sources = sources
+        self._rules = rules
 
     def attach_canon(self, *, canon: Any, canon_writer: Any = None) -> None:
         """Late-bind canon stores, which are constructed after the tenancy service."""
@@ -62,6 +64,8 @@ class StoreWorkspacePurge:
             canon["usage_allowance"] = await self._allowances.delete_workspace(workspace_id)
         if self._sources is not None:
             canon["source_texts"] = await self._sources.delete_workspace(workspace_id)
+        if self._rules is not None:
+            canon["story_rules"] = await self._rules.delete_workspace(workspace_id)
         return {
             **canon,
             "graph_nodes": self._graph.delete_workspace_nodes(workspace_id),
@@ -86,6 +90,8 @@ class StoreWorkspacePurge:
             canon["assist_sessions"] = await self._assist.delete_project(workspace_id, project_id)
         if self._sources is not None:
             canon["source_texts"] = await self._sources.delete_project(workspace_id, project_id)
+        if self._rules is not None:
+            canon["story_rules"] = await self._rules.delete_project(workspace_id, project_id)
         return {
             **canon,
             "graph_nodes": self._graph.delete_project_nodes(workspace_id, project_id),

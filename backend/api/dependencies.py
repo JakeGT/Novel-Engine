@@ -89,6 +89,10 @@ def get_source_service(container: Container = Depends(get_container)) -> Any:
     return container.source_service
 
 
+def get_rule_service(container: Container = Depends(get_container)) -> Any:
+    return container.rule_service
+
+
 def get_canon_entity_service(
     container: Container = Depends(get_container),
 ) -> CanonEntityService:

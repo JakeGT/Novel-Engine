@@ -25,6 +25,7 @@ from backend.api.v1.plan import router as plan_router
 from backend.api.v1.plan_assist import router as plan_assist_router
 from backend.api.v1.projection import router as projection_router
 from backend.api.v1.router import router as v1_router
+from backend.api.v1.rules import router as rules_router
 from backend.api.v1.schema_versions import router as schema_versions_router
 from backend.api.v1.sources import router as sources_router
 from backend.api.v1.sources_assist import router as sources_assist_router
@@ -144,6 +145,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.include_router(plan_assist_router, prefix="/api/v1")
     app.include_router(sources_router, prefix="/api/v1")
     app.include_router(sources_assist_router, prefix="/api/v1")
+    app.include_router(rules_router, prefix="/api/v1")
     app.include_router(canon_archive_router, prefix="/api/v1")
     app.add_api_route(
         "/api/v1/projects/{project_id}/access",

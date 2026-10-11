@@ -78,6 +78,7 @@ def _build_fake_container(settings, tmp_path):
         InMemoryObjectStore,
         InMemoryProviderUsageStore,
         InMemoryRateLimiter,
+        InMemoryRuleStore,
         InMemorySchemaVersionStore,
         InMemorySessionStore,
         InMemorySourceStore,
@@ -121,6 +122,7 @@ def _build_fake_container(settings, tmp_path):
     ai_settings = InMemoryAiSettingsStore()
     allowances = InMemoryAllowanceStore()
     sources = InMemorySourceStore()
+    rules = InMemoryRuleStore()
     purger = StoreWorkspacePurge(
         graph=graph,
         vectors=vectors,
@@ -132,6 +134,7 @@ def _build_fake_container(settings, tmp_path):
         ai_settings=ai_settings,
         allowances=allowances,
         sources=sources,
+        rules=rules,
     )
     tenancy_service = TenancyService(
         tenancy,
@@ -162,12 +165,23 @@ def _build_fake_container(settings, tmp_path):
         journal=journal, media=media_store, schemas=schema_versions
     )
     purger.attach_canon(canon=canon_repository, canon_writer=canon_writer)
+    from backend.domain.validation import AuthoritativeValidator
+    from backend.services.rule_service import RuleService
+
+    rule_service = RuleService(
+        rules,
+        reader=canon_repository,
+        schema_store=schema_versions,
+        tenancy=tenancy_service,
+        local_mode=not settings.is_hosted,
+    )
     mutation_service = MutationService(
         journal,
         canon_repository,
         local_mode=not settings.is_hosted,
         schema_store=schema_versions,
         media=media_store,
+        validator=AuthoritativeValidator(evaluators=[rule_service]),
     )
     from backend.services.outbox_consumer import OutboxConsumer
     from backend.services.projection_service import GraphProjectionService
@@ -212,9 +226,9 @@ def _build_fake_container(settings, tmp_path):
     )
     from backend.services.assist_session_service import AssistSessionService
     from backend.services.canon_equivalence import CanonEquivalenceService
-    from backend.services.intake_workflow import IntakeWorkflow
+    from backend.services.rule_workflow import RuleWorkflow
 
-    canon_character_workflow = IntakeWorkflow(
+    canon_character_workflow = RuleWorkflow(
         ai=ai,
         mutation=mutation_service,
         reader=canon_repository,
@@ -298,6 +312,8 @@ def _build_fake_container(settings, tmp_path):
         plan_service=plan_service,
         sources=sources,
         source_service=source_service,
+        rules=rules,
+        rule_service=rule_service,
         canon_assertion_service=canon_assertion_service,
         canon_history_service=canon_history_service,
         canon_character_workflow=canon_character_workflow,

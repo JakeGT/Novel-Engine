@@ -33,9 +33,10 @@ ID_PREFIXES: dict[str, str] = {
     "source_version": "srv",
     # What an author decided a phrase means ("the Fox" is Mara), or does not mean.
     "alias_binding": "alb",
+    # An author's own continuity rule (ADR-013).
+    "story_invariant": "inv",
     # Reserved for records later phases introduce. No tables exist for these yet;
     # reserving the prefixes keeps today's ids from colliding with them.
-    "story_invariant": "inv",
     "scene_contract": "sct",
     "narrated_assertion": "nar",
     "speech_act": "spa",
@@ -50,7 +51,6 @@ ID_PREFIXES: dict[str, str] = {
 # Kinds whose prefix is reserved but which have no implementation in this phase.
 RESERVED_ID_KINDS: frozenset[str] = frozenset(
     {
-        "story_invariant",
         "scene_contract",
         "narrated_assertion",
         "speech_act",

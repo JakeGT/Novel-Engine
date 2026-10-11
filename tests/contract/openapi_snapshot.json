@@ -119,6 +119,40 @@
         "title": "AddPlanItemRequest",
         "type": "object"
       },
+      "AddRuleRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "$ref": "#/components/schemas/RuleBody"
+          },
+          "examples": {
+            "items": {
+              "$ref": "#/components/schemas/RuleExample"
+            },
+            "maxItems": 8,
+            "title": "Examples",
+            "type": "array"
+          },
+          "sentence": {
+            "default": "",
+            "maxLength": 600,
+            "title": "Sentence",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "title"
+        ],
+        "title": "AddRuleRequest",
+        "type": "object"
+      },
       "AddTextRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1037,6 +1071,24 @@
         "title": "BooleanObject",
         "type": "object"
       },
+      "BrokenByModel": {
+        "properties": {
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_id",
+          "name"
+        ],
+        "title": "BrokenByModel",
+        "type": "object"
+      },
       "CanonEntityListResponse": {
         "properties": {
           "items": {
@@ -1405,6 +1457,72 @@
         "title": "ChangeRequest",
         "type": "object"
       },
+      "ChangeRuleRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuleBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "examples": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RuleExample"
+                },
+                "maxItems": 8,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Examples"
+          },
+          "sentence": {
+            "anyOf": [
+              {
+                "maxLength": 600,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentence"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuleStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "ChangeRuleRequest",
+        "type": "object"
+      },
       "CharacterAnswerModel": {
         "additionalProperties": false,
         "properties": {
@@ -1624,6 +1742,38 @@
           "id"
         ],
         "title": "CharacterQuestionsRequest",
+        "type": "object"
+      },
+      "Check": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "default": 1,
+            "description": "For at_most and at_least",
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "has",
+              "lacks",
+              "at_most",
+              "at_least"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "pattern": {
+            "$ref": "#/components/schemas/Pattern"
+          }
+        },
+        "required": [
+          "kind",
+          "pattern"
+        ],
+        "title": "Check",
         "type": "object"
       },
       "ChooseAiRequest": {
@@ -2542,6 +2692,22 @@
         "title": "DraftPlanRef",
         "type": "object"
       },
+      "DraftRuleRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "sentence": {
+            "maxLength": 600,
+            "minLength": 1,
+            "title": "Sentence",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sentence"
+        ],
+        "title": "DraftRuleRequest",
+        "type": "object"
+      },
       "EdgeCreate": {
         "example": {
           "properties": {
@@ -3148,6 +3314,119 @@
           "source_artefact_id"
         ],
         "title": "EvidenceRef",
+        "type": "object"
+      },
+      "ExampleEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "ref": {
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Ref",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 6,
+            "title": "Tags",
+            "type": "array"
+          },
+          "type": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "type",
+          "name"
+        ],
+        "title": "ExampleEntry",
+        "type": "object"
+      },
+      "ExampleFact": {
+        "additionalProperties": false,
+        "properties": {
+          "object_ref": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Ref"
+          },
+          "predicate": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Predicate",
+            "type": "string"
+          },
+          "subject_ref": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Subject Ref",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "subject_ref",
+          "predicate"
+        ],
+        "title": "ExampleFact",
+        "type": "object"
+      },
+      "ExampleResultModel": {
+        "properties": {
+          "agrees": {
+            "title": "Agrees",
+            "type": "boolean"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "expect": {
+            "title": "Expect",
+            "type": "string"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "description",
+          "expect",
+          "outcome",
+          "agrees"
+        ],
+        "title": "ExampleResultModel",
         "type": "object"
       },
       "FactModel": {
@@ -4471,6 +4750,73 @@
           "after"
         ],
         "title": "PassageModel",
+        "type": "object"
+      },
+      "Pattern": {
+        "additionalProperties": false,
+        "description": "A kind of fact about the entry being checked.",
+        "properties": {
+          "direction": {
+            "default": "out",
+            "description": "out: the entry is what the fact is about. in: the fact points at the entry",
+            "enum": [
+              "out",
+              "in"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "other_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "One specific entry at the other end",
+            "title": "Other Id"
+          },
+          "other_type": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Type of the entry at the other end, if it matters",
+            "title": "Other Type"
+          },
+          "predicate": {
+            "description": "An allowed kind of fact",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Predicate",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a fact that holds a value: that value",
+            "title": "Value"
+          }
+        },
+        "required": [
+          "predicate"
+        ],
+        "title": "Pattern",
         "type": "object"
       },
       "PlanBriefRequest": {
@@ -5894,6 +6240,280 @@
         "title": "RotateCredentialRequest",
         "type": "object"
       },
+      "RuleBody": {
+        "additionalProperties": false,
+        "properties": {
+          "applies_to": {
+            "$ref": "#/components/schemas/Selector"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/Check"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Checks",
+            "type": "array"
+          },
+          "mode": {
+            "default": "all",
+            "enum": [
+              "all",
+              "any"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checks"
+        ],
+        "title": "RuleBody",
+        "type": "object"
+      },
+      "RuleCheckModel": {
+        "properties": {
+          "broken_by": {
+            "items": {
+              "$ref": "#/components/schemas/BrokenByModel"
+            },
+            "title": "Broken By",
+            "type": "array"
+          },
+          "example_results": {
+            "items": {
+              "$ref": "#/components/schemas/ExampleResultModel"
+            },
+            "title": "Example Results",
+            "type": "array"
+          },
+          "problems": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Problems",
+            "type": "array"
+          },
+          "reading": {
+            "title": "Reading",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reading",
+          "problems",
+          "example_results",
+          "broken_by"
+        ],
+        "title": "RuleCheckModel",
+        "type": "object"
+      },
+      "RuleCheckRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "$ref": "#/components/schemas/RuleBody"
+          },
+          "examples": {
+            "items": {
+              "$ref": "#/components/schemas/RuleExample"
+            },
+            "maxItems": 8,
+            "title": "Examples",
+            "type": "array"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "title": "RuleCheckRequest",
+        "type": "object"
+      },
+      "RuleDraftModel": {
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuleBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cannot_express": {
+            "title": "Cannot Express",
+            "type": "string"
+          },
+          "check": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuleCheckModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "examples": {
+            "items": {
+              "$ref": "#/components/schemas/RuleExample"
+            },
+            "title": "Examples",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "understood": {
+            "title": "Understood",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "understood",
+          "body",
+          "examples",
+          "check",
+          "cannot_express"
+        ],
+        "title": "RuleDraftModel",
+        "type": "object"
+      },
+      "RuleExample": {
+        "additionalProperties": false,
+        "description": "A tiny made-up story, and whether the rule should catch it.",
+        "properties": {
+          "description": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ExampleEntry"
+            },
+            "maxItems": 12,
+            "title": "Entries",
+            "type": "array"
+          },
+          "expect": {
+            "enum": [
+              "caught",
+              "allowed"
+            ],
+            "title": "Expect",
+            "type": "string"
+          },
+          "facts": {
+            "items": {
+              "$ref": "#/components/schemas/ExampleFact"
+            },
+            "maxItems": 24,
+            "title": "Facts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "description",
+          "expect"
+        ],
+        "title": "RuleExample",
+        "type": "object"
+      },
+      "RuleListModel": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RuleModel"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "RuleListModel",
+        "type": "object"
+      },
+      "RuleModel": {
+        "properties": {
+          "body": {
+            "$ref": "#/components/schemas/RuleBody"
+          },
+          "broken_by": {
+            "items": {
+              "$ref": "#/components/schemas/BrokenByModel"
+            },
+            "title": "Broken By",
+            "type": "array"
+          },
+          "example_results": {
+            "items": {
+              "$ref": "#/components/schemas/ExampleResultModel"
+            },
+            "title": "Example Results",
+            "type": "array"
+          },
+          "examples": {
+            "items": {
+              "$ref": "#/components/schemas/RuleExample"
+            },
+            "title": "Examples",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "reading": {
+            "title": "Reading",
+            "type": "string"
+          },
+          "sentence": {
+            "title": "Sentence",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "sentence",
+          "reading",
+          "status",
+          "version",
+          "body",
+          "examples",
+          "example_results",
+          "broken_by"
+        ],
+        "title": "RuleModel",
+        "type": "object"
+      },
+      "RuleStatus": {
+        "enum": [
+          "on",
+          "paused"
+        ],
+        "title": "RuleStatus",
+        "type": "string"
+      },
       "SampleLoadedModel": {
         "properties": {
           "revision": {
@@ -6138,6 +6758,58 @@
           "end"
         ],
         "title": "SectionModel",
+        "type": "object"
+      },
+      "Selector": {
+        "additionalProperties": false,
+        "description": "Which entries a rule is about. Every part given must match.",
+        "properties": {
+          "entity_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          },
+          "having": {
+            "items": {
+              "$ref": "#/components/schemas/Pattern"
+            },
+            "maxItems": 4,
+            "title": "Having",
+            "type": "array"
+          },
+          "tag": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          }
+        },
+        "title": "Selector",
         "type": "object"
       },
       "SetAllowanceRequest": {
@@ -10057,6 +10729,59 @@
         "summary": "Assist Revision",
         "tags": [
           "canon-assist"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/assist/rules/draft": {
+      "post": {
+        "description": "Draft a rule from a sentence. Keeps nothing: the author decides whether to add it.",
+        "operationId": "draft_rule_api_v1_projects__project_id__assist_rules_draft_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftRuleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleDraftModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Draft Rule",
+        "tags": [
+          "rules"
         ]
       }
     },
@@ -14370,6 +15095,254 @@
         "summary": "Revision Diff",
         "tags": [
           "canon-history"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/rules": {
+      "get": {
+        "operationId": "list_rules_api_v1_projects__project_id__rules_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleListModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Rules",
+        "tags": [
+          "rules"
+        ]
+      },
+      "post": {
+        "operationId": "add_rule_api_v1_projects__project_id__rules_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddRuleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Rule",
+        "tags": [
+          "rules"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/rules/check": {
+      "post": {
+        "description": "What a rule would do, before it is kept: its reading, its examples, who breaks it now.",
+        "operationId": "check_rule_api_v1_projects__project_id__rules_check_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleCheckModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Check Rule",
+        "tags": [
+          "rules"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/rules/{rule_id}": {
+      "delete": {
+        "operationId": "remove_rule_api_v1_projects__project_id__rules__rule_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "title": "Rule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Rule",
+        "tags": [
+          "rules"
+        ]
+      },
+      "patch": {
+        "operationId": "change_rule_api_v1_projects__project_id__rules__rule_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "title": "Rule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeRuleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Rule",
+        "tags": [
+          "rules"
         ]
       }
     },

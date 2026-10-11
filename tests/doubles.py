@@ -4103,3 +4103,118 @@ class InMemorySourceStore:
         self.versions = {k: v for k, v in self.versions.items() if v.source_id not in doomed}
         self.bindings = {k: v for k, v in self.bindings.items() if v.workspace_id != workspace_id}
         return len(doomed)
+
+
+class InMemoryRuleStore:
+    """Story rules with versions, as PostgreSQL keeps them."""
+
+    def __init__(self) -> None:
+        self.rules: dict[str, Any] = {}
+        # rule id → every version's (body, examples), oldest first
+        self.versions: dict[str, list[tuple[Any, list[Any]]]] = {}
+
+    async def list_rules(self, *, workspace_id: str, project_id: str) -> list[Any]:
+        return [
+            rule
+            for rule in self.rules.values()
+            if (rule.workspace_id, rule.project_id) == (workspace_id, project_id)
+        ]
+
+    async def get_rule(self, *, workspace_id: str, project_id: str, rule_id: str) -> Any:
+        rule = self.rules.get(rule_id)
+        if rule is None or (rule.workspace_id, rule.project_id) != (workspace_id, project_id):
+            return None
+        return rule
+
+    async def add_rule(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        rule_id: str,
+        title: str,
+        sentence: str,
+        body: Any,
+        examples: list[Any],
+        actor_user_id: str | None,
+    ) -> None:
+        from backend.domain.rules import RuleStatus, StoryRule
+
+        now = datetime.now(UTC)
+        self.versions[rule_id] = [(body, list(examples))]
+        self.rules[rule_id] = StoryRule(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            id=rule_id,
+            title=title,
+            sentence=sentence,
+            status=RuleStatus.ON,
+            version=1,
+            body=body,
+            examples=list(examples),
+            created_by=actor_user_id,
+            created_at=now,
+            updated_at=now,
+        )
+
+    async def change_rule(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        rule_id: str,
+        title: str | None = None,
+        sentence: str | None = None,
+        status: Any = None,
+        body: Any = None,
+        examples: list[Any] | None = None,
+        actor_user_id: str | None = None,
+    ) -> None:
+        from dataclasses import replace
+
+        rule = await self.get_rule(
+            workspace_id=workspace_id, project_id=project_id, rule_id=rule_id
+        )
+        if rule is None:
+            return
+        changes: dict[str, Any] = {"updated_at": datetime.now(UTC)}
+        if title is not None:
+            changes["title"] = title
+        if sentence is not None:
+            changes["sentence"] = sentence
+        if status is not None:
+            changes["status"] = status
+        if body is not None:
+            self.versions[rule_id].append((body, list(examples or [])))
+            changes.update(
+                body=body, examples=list(examples or []), version=len(self.versions[rule_id])
+            )
+        self.rules[rule_id] = replace(rule, **changes)
+
+    async def remove_rule(self, *, workspace_id: str, project_id: str, rule_id: str) -> bool:
+        rule = await self.get_rule(
+            workspace_id=workspace_id, project_id=project_id, rule_id=rule_id
+        )
+        if rule is None:
+            return False
+        del self.rules[rule_id]
+        self.versions.pop(rule_id, None)
+        return True
+
+    async def delete_project(self, workspace_id: str, project_id: str) -> int:
+        doomed = [
+            key
+            for key, rule in self.rules.items()
+            if (rule.workspace_id, rule.project_id) == (workspace_id, project_id)
+        ]
+        for key in doomed:
+            del self.rules[key]
+            self.versions.pop(key, None)
+        return len(doomed)
+
+    async def delete_workspace(self, workspace_id: str) -> int:
+        doomed = [key for key, rule in self.rules.items() if rule.workspace_id == workspace_id]
+        for key in doomed:
+            del self.rules[key]
+            self.versions.pop(key, None)
+        return len(doomed)
