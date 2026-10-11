@@ -1888,6 +1888,41 @@
         "title": "CloseRequest",
         "type": "object"
       },
+      "ConditionStateModel": {
+        "properties": {
+          "holds": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holds"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "reading": {
+            "title": "Reading",
+            "type": "string"
+          },
+          "when": {
+            "title": "When",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_id",
+          "when",
+          "reading",
+          "holds"
+        ],
+        "title": "ConditionStateModel",
+        "type": "object"
+      },
       "ContextNode": {
         "properties": {
           "created_at": {
@@ -4685,6 +4720,13 @@
       },
       "OutlineModel": {
         "properties": {
+          "conditions": {
+            "items": {
+              "$ref": "#/components/schemas/ConditionStateModel"
+            },
+            "title": "Conditions",
+            "type": "array"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/PlanItemModel"
@@ -4702,7 +4744,8 @@
         },
         "required": [
           "items",
-          "open"
+          "open",
+          "conditions"
         ],
         "title": "OutlineModel",
         "type": "object"
@@ -4888,6 +4931,13 @@
       },
       "PlanItemModel": {
         "properties": {
+          "conditions": {
+            "items": {
+              "$ref": "#/components/schemas/SceneCondition"
+            },
+            "title": "Conditions",
+            "type": "array"
+          },
           "created_revision": {
             "title": "Created Revision",
             "type": "integer"
@@ -4963,6 +5013,7 @@
           "sets_up",
           "pays_off",
           "details",
+          "conditions",
           "created_revision"
         ],
         "title": "PlanItemModel",
@@ -6542,6 +6593,35 @@
         "title": "SaveAnswersRequest",
         "type": "object"
       },
+      "SceneCondition": {
+        "additionalProperties": false,
+        "properties": {
+          "check": {
+            "$ref": "#/components/schemas/Check"
+          },
+          "entity_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "when": {
+            "enum": [
+              "before",
+              "after"
+            ],
+            "title": "When",
+            "type": "string"
+          }
+        },
+        "required": [
+          "when",
+          "entity_id",
+          "check"
+        ],
+        "title": "SceneCondition",
+        "type": "object"
+      },
       "SchemaDefinitionRequest": {
         "properties": {
           "definition": {
@@ -6830,6 +6910,30 @@
           }
         },
         "title": "SetAllowanceRequest",
+        "type": "object"
+      },
+      "SetConditionsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "conditions": {
+            "items": {
+              "$ref": "#/components/schemas/SceneCondition"
+            },
+            "maxItems": 6,
+            "title": "Conditions",
+            "type": "array"
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "conditions",
+          "expected_revision"
+        ],
+        "title": "SetConditionsRequest",
         "type": "object"
       },
       "SetRoleRequest": {
@@ -14577,6 +14681,68 @@
           }
         },
         "summary": "Change Plan Item",
+        "tags": [
+          "plan"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/conditions": {
+      "put": {
+        "description": "Say what must be true before a scene and what it should leave true after it.",
+        "operationId": "set_scene_conditions_api_v1_projects__project_id__plan__plan_id__conditions_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetConditionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanItemModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Scene Conditions",
         "tags": [
           "plan"
         ]

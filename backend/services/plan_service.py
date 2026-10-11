@@ -25,11 +25,25 @@ from backend.domain.operations import (
     RetirePlanItemOp,
     UpdatePlanItemOp,
 )
+from backend.domain.rules import body_problems, world_from_canon
+from backend.domain.scene_conditions import (
+    CONDITIONS_KEY,
+    MAX_CONDITIONS,
+    ConditionState,
+    SceneCondition,
+    condition_body,
+    condition_state,
+    plain_details,
+    scene_conditions,
+    with_conditions,
+)
 from backend.domain.tenancy import Permission
 from backend.ports import CanonRepositoryPort, SchemaVersionStorePort
 from backend.services.mutation_service import CommitResult, MutationService
 
 MAX_PLAN_ITEMS = 2000
+MAX_WORLD_ENTITIES = 2000
+MAX_WORLD_FACTS = 10_000
 
 
 @dataclass(frozen=True)
@@ -193,6 +207,88 @@ class PlanService:
             raise NotFoundError("That part of the plan was not found.")
         return item
 
+    async def conditions(
+        self, scope: AccessScope, workspace_id: str, project_id: str
+    ) -> list[ConditionState]:
+        """Every scene's conditions, and whether each holds in the story as it stands."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        scenes = [
+            (item, scene_conditions(item.details))
+            for item in await self._items(workspace_id, project_id)
+            if item.is_active and item.kind is PlanKind.SCENE
+        ]
+        if not any(found for _, found in scenes):
+            return []
+        world = world_from_canon(
+            await self._reader.list_entities(
+                workspace_id=workspace_id, project_id=project_id, limit=MAX_WORLD_ENTITIES
+            ),
+            await self._reader.list_facts(
+                workspace_id=workspace_id, project_id=project_id, limit=MAX_WORLD_FACTS
+            ),
+        )
+        return [
+            condition_state(item.id, condition, world)
+            for item, found in scenes
+            for condition in found
+        ]
+
+    async def set_conditions(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        *,
+        conditions: list[SceneCondition],
+        expected_revision: int,
+    ) -> tuple[CommitResult, PlanItem]:
+        """Replace what must be true before and after a scene. Saved as a change to the plan."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        current = await self.get(scope, workspace_id, project_id, plan_id)
+        if current.kind is not PlanKind.SCENE:
+            raise ValidationError("Only a scene can say what must be true before and after it.")
+        if len(conditions) > MAX_CONDITIONS:
+            raise ValidationError(f"A scene can have at most {MAX_CONDITIONS} of these.")
+        predicates, entity_types = await self._vocabulary(workspace_id, project_id)
+        entities = await self._reader.list_entities(
+            workspace_id=workspace_id, project_id=project_id, limit=MAX_WORLD_ENTITIES
+        )
+        entity_ids = {entity.id for entity in entities if entity.is_active}
+        for condition in conditions:
+            problems = body_problems(
+                condition_body(condition),
+                predicates=predicates,
+                entity_types=entity_types,
+                entity_ids=entity_ids,
+            )
+            if problems:
+                raise ValidationError(" ".join(problems))
+        details = with_conditions(current.details, conditions)
+        if details == current.details:
+            raise ValidationError("Nothing has changed, so there is nothing to save.")
+        operation = UpdatePlanItemOp(id=plan_id, details=details)
+        result = await self._commit(scope, workspace_id, project_id, [operation], expected_revision)
+        return result, await self.get(scope, workspace_id, project_id, plan_id)
+
+    async def _vocabulary(self, workspace_id: str, project_id: str) -> tuple[set[str], set[str]]:
+        from backend.domain.canon.registry import CORE_ENTITY_TYPES, CORE_PREDICATES
+        from backend.services.schema_compiler import compile_definition
+
+        predicates = set(CORE_PREDICATES)
+        entity_types = set(CORE_ENTITY_TYPES)
+        if self._schema_store is not None:
+            published = await self._schema_store.get_published(
+                workspace_id=workspace_id, project_id=project_id
+            )
+            if published is not None:
+                compiled = compile_definition(
+                    published.definition, workspace_id=workspace_id, project_id=project_id
+                )
+                predicates.update(compiled.predicate_specs)
+                entity_types.update(compiled.entity_types)
+        return predicates, entity_types
+
     # ----------------------------------------------------------------- write
     async def add(
         self,
@@ -230,7 +326,7 @@ class PlanService:
             refs=refs or [],
             sets_up=sets_up or [],
             pays_off=pays_off or [],
-            details=details or {},
+            details=plain_details(details or {}),
         )
         result = await self._commit(scope, workspace_id, project_id, [operation], expected_revision)
         return result, await self.get(scope, workspace_id, project_id, plan_id)
@@ -254,6 +350,11 @@ class PlanService:
         current = await self.get(scope, workspace_id, project_id, plan_id)
         if title is not None and not title.strip():
             raise ValidationError("Give it a title.")
+        if details is not None:
+            # A scene's conditions are changed in their own right, never by editing its notes.
+            details = plain_details(details)
+            if CONDITIONS_KEY in current.details:
+                details[CONDITIONS_KEY] = current.details[CONDITIONS_KEY]
         # Only what differs is sent, so an unrelated edit never rewrites other fields.
         operation = UpdatePlanItemOp(
             id=plan_id,

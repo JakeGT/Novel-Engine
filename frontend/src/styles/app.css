@@ -2600,3 +2600,13 @@ mark {
 .rule-count {
   width: 5rem;
 }
+
+/* What must be true around a planned scene, each with whether it holds now. */
+.plan-conditions {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.92rem;
+}

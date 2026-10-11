@@ -37,6 +37,7 @@ export type AssistProposalRequest = Schemas['AssistProposalRequest']
 export type ChangeProposal = Schemas['ChangeProposalModel']
 export type PlanItem = Schemas['PlanItemModel']
 export type PlanRef = Schemas['PlanRefModel']
+export type SceneCondition = Schemas['SceneCondition']
 export type Outline = Schemas['OutlineModel']
 export type PlanKind = Schemas['AddPlanItemRequest']['kind']
 export type AssistSession = Schemas['AssistSessionModel']
@@ -478,6 +479,8 @@ export const api = {
     send<PlanItem>(scope, 'PATCH', `/plan/${id(planId)}`, body),
   movePlanItem: (scope: Scope, planId: string, body: Schemas['MovePlanItemRequest']) =>
     send<PlanItem>(scope, 'POST', `/plan/${id(planId)}/move`, body),
+  setSceneConditions: (scope: Scope, planId: string, body: Schemas['SetConditionsRequest']) =>
+    send<PlanItem>(scope, 'PUT', `/plan/${id(planId)}/conditions`, body),
   removePlanItem: (scope: Scope, planId: string, expectedRevision: number) =>
     send<Schemas['RemovedModel']>(scope, 'POST', `/plan/${id(planId)}/remove`, {
       expected_revision: expectedRevision,

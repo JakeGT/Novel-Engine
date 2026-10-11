@@ -126,6 +126,18 @@ describe('RulesPage', () => {
     })
     await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Keep this rule' })).toBeEnabled())
 
+    // Choosing one particular entry keeps the whole of what identifies it.
+    await user.selectOptions(within(dialog).getByLabelText('What must hold: the other entry'), 'one:ent_guild')
+    await waitFor(() => {
+      const last = api.find('POST', '/rules/check').at(-1)?.body as { body: RuleBody }
+      expect(last.body.checks[0].pattern.other_id).toBe('ent_guild')
+    })
+    await user.selectOptions(within(dialog).getByLabelText('Which entries the rule is about'), 'one:ent_mara')
+    await waitFor(() => {
+      const last = api.find('POST', '/rules/check').at(-1)?.body as { body: RuleBody }
+      expect(last.body.applies_to?.entity_id).toBe('ent_mara')
+    })
+
     await user.selectOptions(within(dialog).getByLabelText('What must hold: kind of fact'), 'HAS_NAME')
     expect(await within(dialog).findByText('There is no kind of fact called “has name”.')).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Keep this rule' })).toBeDisabled()

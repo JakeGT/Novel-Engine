@@ -1979,6 +1979,26 @@ export interface paths {
         patch: operations["change_plan_item_api_v1_projects__project_id__plan__plan_id__patch"];
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/conditions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Scene Conditions
+         * @description Say what must be true before a scene and what it should leave true after it.
+         */
+        put: operations["set_scene_conditions_api_v1_projects__project_id__plan__plan_id__conditions_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/plan/{plan_id}/move": {
         parameters: {
             query?: never;
@@ -3400,6 +3420,17 @@ export interface components {
             /** Expected Revision */
             expected_revision: number;
         };
+        /** ConditionStateModel */
+        ConditionStateModel: {
+            /** Holds */
+            holds: boolean | null;
+            /** Plan Id */
+            plan_id: string;
+            /** Reading */
+            reading: string;
+            /** When */
+            when: string;
+        };
         /** ContextNode */
         ContextNode: {
             /** Created At */
@@ -4475,6 +4506,8 @@ export interface components {
         };
         /** OutlineModel */
         OutlineModel: {
+            /** Conditions */
+            conditions: components["schemas"]["ConditionStateModel"][];
             /** Items */
             items: components["schemas"]["PlanItemModel"][];
             /** Open */
@@ -4569,6 +4602,8 @@ export interface components {
         };
         /** PlanItemModel */
         PlanItemModel: {
+            /** Conditions */
+            conditions: components["schemas"]["SceneCondition"][];
             /** Created Revision */
             created_revision: number;
             /** Details */
@@ -5114,6 +5149,17 @@ export interface components {
             /** Answers */
             answers?: components["schemas"]["CharacterAnswerModel"][];
         };
+        /** SceneCondition */
+        SceneCondition: {
+            check: components["schemas"]["Check"];
+            /** Entity Id */
+            entity_id: string;
+            /**
+             * When
+             * @enum {string}
+             */
+            when: "before" | "after";
+        };
         /** SchemaDefinitionRequest */
         SchemaDefinitionRequest: {
             /** Definition */
@@ -5222,6 +5268,13 @@ export interface components {
         SetAllowanceRequest: {
             /** Daily Tokens */
             daily_tokens?: number | null;
+        };
+        /** SetConditionsRequest */
+        SetConditionsRequest: {
+            /** Conditions */
+            conditions: components["schemas"]["SceneCondition"][];
+            /** Expected Revision */
+            expected_revision: number;
         };
         /** SetRoleRequest */
         SetRoleRequest: {
@@ -9882,6 +9935,42 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ChangePlanItemRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanItemModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_scene_conditions_api_v1_projects__project_id__plan__plan_id__conditions_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetConditionsRequest"];
             };
         };
         responses: {

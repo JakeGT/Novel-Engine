@@ -317,3 +317,132 @@ def test_an_archive_carries_the_plan_in_its_own_section_marked_as_intent(
     assert [item["title"] for item in archive["plan"]["items"]] == ["The drowning"]
     # Nothing of it is among the story's own records.
     assert "drown" not in str(archive["canon"])
+
+
+def _located_at(plan: Plan, place: str) -> dict:
+    return {
+        "kind": "has",
+        "pattern": {"predicate": "LOCATED_AT", "direction": "out", "other_id": place},
+    }
+
+
+def test_a_scene_says_what_must_be_true_before_and_after_it(auth_client, fake_container) -> None:
+    plan = Plan(auth_client, fake_container)
+    ines = plan.entry("Character", "Ines Varga")
+    point = plan.entry("Location", "Kestrel Point")
+    shoals = plan.entry("Location", "The Shoals")
+    scene = plan.add("scene", "She rows out", details={"mood": "cold"})
+    assert scene["conditions"] == [] and plan.outline()["conditions"] == []
+
+    conditions = [
+        {"when": "before", "entity_id": ines, "check": _located_at(plan, point)},
+        {"when": "after", "entity_id": ines, "check": _located_at(plan, shoals)},
+    ]
+    saved = plan.client.put(
+        f"{plan.base}/plan/{scene['id']}/conditions",
+        json={"conditions": conditions, "expected_revision": plan.head},
+    )
+    assert saved.status_code == 200, saved.text
+    plan.head += 1
+    body = saved.json()
+    # Her notes are untouched, and the conditions are not shown as a note.
+    assert body["details"] == {"mood": "cold"}
+    assert [(c["when"], c["entity_id"]) for c in body["conditions"]] == [
+        ("before", ines),
+        ("after", ines),
+    ]
+
+    # She is nowhere yet: the scene is not ready, and what it should change has not happened.
+    states = plan.outline()["conditions"]
+    assert [(s["when"], s["holds"]) for s in states] == [("before", False), ("after", False)]
+    assert states[0]["reading"] == "Ines Varga must have this: it is located at Kestrel Point."
+    assert states[0]["plan_id"] == scene["id"]
+
+    def place(target: str) -> None:
+        made = plan.client.post(
+            f"{plan.base}/facts",
+            json={
+                "proposition": {
+                    "subject_id": ines,
+                    "predicate": "LOCATED_AT",
+                    "object": {
+                        "kind": "entity_ref",
+                        "entity_id": target,
+                        "project_id": plan.project_id,
+                    },
+                },
+                "expected_revision": plan.head,
+            },
+        )
+        assert made.status_code == 201, made.text
+        plan.head += 1
+
+    place(point)
+    assert [s["holds"] for s in plan.outline()["conditions"]] == [True, False]
+
+    # Editing the scene's notes by hand keeps its conditions.
+    edited = plan.client.patch(
+        f"{plan.base}/plan/{scene['id']}",
+        json={"details": {"mood": "colder"}, "expected_revision": plan.head},
+    )
+    assert edited.status_code == 200, edited.text
+    plan.head += 1
+    assert edited.json()["details"] == {"mood": "colder"}
+    assert len(edited.json()["conditions"]) == 2
+
+    # An archived entry cannot be judged either way.
+    gone = plan.client.post(
+        f"{plan.base}/entities/{shoals}/retire",
+        json={"expected_revision": plan.head, "acknowledge_high_impact": True},
+    )
+    assert gone.status_code == 200, gone.text
+    plan.head += 1
+    assert [s["holds"] for s in plan.outline()["conditions"]] == [True, False]
+    assert "an entry that is no longer there" in plan.outline()["conditions"][1]["reading"]
+
+
+def test_conditions_belong_to_scenes_and_use_the_storys_own_facts(
+    auth_client, fake_container
+) -> None:
+    plan = Plan(auth_client, fake_container)
+    ines = plan.entry("Character", "Ines Varga")
+    beat = plan.add("beat", "A beat")
+    scene = plan.add("scene", "A scene")
+    check = {"kind": "has", "pattern": {"predicate": "LOCATED_AT", "direction": "out"}}
+
+    on_beat = plan.client.put(
+        f"{plan.base}/plan/{beat['id']}/conditions",
+        json={
+            "conditions": [{"when": "before", "entity_id": ines, "check": check}],
+            "expected_revision": plan.head,
+        },
+    )
+    assert on_beat.status_code == 400
+    unknown = plan.client.put(
+        f"{plan.base}/plan/{scene['id']}/conditions",
+        json={
+            "conditions": [
+                {"when": "before", "entity_id": "ent_missing", "check": check},
+            ],
+            "expected_revision": plan.head,
+        },
+    )
+    assert unknown.status_code == 400
+    assert "not in the story bible" in unknown.json()["detail"]
+    made_up = plan.client.put(
+        f"{plan.base}/plan/{scene['id']}/conditions",
+        json={
+            "conditions": [
+                {
+                    "when": "after",
+                    "entity_id": ines,
+                    "check": {"kind": "has", "pattern": {"predicate": "ORBITS"}},
+                }
+            ],
+            "expected_revision": plan.head,
+        },
+    )
+    assert made_up.status_code == 400
+    # A note cannot smuggle conditions in under the reserved name.
+    sneaky = plan.add("scene", "Another", details={"_conditions": "[]", "mood": "calm"})
+    assert sneaky["details"] == {"mood": "calm"} and sneaky["conditions"] == []

@@ -395,7 +395,8 @@ def _other(pattern: Pattern, names: dict[str, str]) -> str:
     if pattern.value is not None:
         return f"“{pattern.value}”"
     if pattern.other_type is not None:
-        return f"a {_words(pattern.other_type)}"
+        kind = _words(pattern.other_type)
+        return f"{'an' if kind[:1] in 'aeiou' else 'a'} {kind}"
     return "something"
 
 

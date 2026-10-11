@@ -9,20 +9,10 @@ import {
   type RulePattern,
   type StoryRule,
 } from '../api/client'
+import { emptyPattern, KINDS, splitChoice, type CheckKind } from '../lib/rules'
 import { predicateLabel, typeLabel } from '../lib/words'
 import { scopedKey, useProject } from '../project'
 import { Button, Dialog, ErrorNotice, Field, Loading } from './ui'
-
-type CheckKind = RuleBody['checks'][number]['kind']
-
-const KINDS: { value: CheckKind; label: string }[] = [
-  { value: 'has', label: 'must have' },
-  { value: 'lacks', label: 'must not have' },
-  { value: 'at_least', label: 'needs at least' },
-  { value: 'at_most', label: 'can have at most' },
-]
-
-const emptyPattern = (predicate: string): RulePattern => ({ predicate, direction: 'out' })
 
 function startBody(predicate: string): RuleBody {
   return { applies_to: {}, mode: 'all', checks: [{ kind: 'has', count: 1, pattern: emptyPattern(predicate) }] }
@@ -244,8 +234,8 @@ function RuleBuilder({
           id="rule-about"
           value={about.entity_id ? `one:${about.entity_id}` : `type:${about.type ?? ''}`}
           onChange={(event) => {
-            const [kind, value] = [event.target.value.slice(0, 4), event.target.value.slice(5)]
-            setAbout(kind === 'one:' ? { entity_id: value, type: null } : { entity_id: null, type: value || null })
+            const [kind, value] = splitChoice(event.target.value)
+            setAbout(kind === 'one' ? { entity_id: value, type: null } : { entity_id: null, type: value || null })
           }}
         >
           <option value="type:">every entry</option>
@@ -332,7 +322,7 @@ function RuleBuilder({
   )
 }
 
-function PatternFields({
+export function PatternFields({
   label,
   pattern,
   types,
@@ -377,10 +367,10 @@ function PatternFields({
         aria-label={`${label}: the other entry`}
         value={other}
         onChange={(event) => {
-          const [kind, value] = [event.target.value.slice(0, 4), event.target.value.slice(5)]
+          const [kind, value] = splitChoice(event.target.value)
           onChange({
             ...pattern,
-            other_id: kind === 'one:' ? value : null,
+            other_id: kind === 'one' ? value : null,
             other_type: kind === 'type' && value ? value : null,
           })
         }}

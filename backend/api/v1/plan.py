@@ -17,6 +17,12 @@ from backend.domain.canon.plans import (
     PlanRef,
 )
 from backend.domain.identity import AccessScope
+from backend.domain.scene_conditions import (
+    MAX_CONDITIONS,
+    SceneCondition,
+    plain_details,
+    scene_conditions,
+)
 from backend.services.plan_service import PlanService
 
 router = APIRouter(prefix="/projects/{project_id}/plan", tags=["plan"])
@@ -43,6 +49,8 @@ class PlanItemModel(BaseModel):
     sets_up: list[str]
     pays_off: list[str]
     details: dict[str, str]
+    # For a scene: what must be true before it, and what it should leave true after it.
+    conditions: list[SceneCondition]
     created_revision: int
 
 
@@ -53,10 +61,29 @@ class OpenItemModel(BaseModel):
     message: str
 
 
+class ConditionStateModel(BaseModel):
+    plan_id: str
+    # before or after.
+    when: str
+    # In ordinary words: "Mara must have this: it is located at Lantern Harbor."
+    reading: str
+    # Whether it is true in the story as it stands. Null when its entry is gone.
+    holds: bool | None
+
+
 class OutlineModel(BaseModel):
     items: list[PlanItemModel]
     # What the plan still needs. Derived; a plan with gaps is still a valid plan.
     open: list[OpenItemModel]
+    # Each scene's conditions checked against the story now. Derived; never blocks.
+    conditions: list[ConditionStateModel]
+
+
+class SetConditionsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    conditions: list[SceneCondition] = Field(max_length=MAX_CONDITIONS)
+    expected_revision: int = Field(ge=0)
 
 
 class AddPlanItemRequest(BaseModel):
@@ -119,7 +146,8 @@ def _model(item: PlanItem) -> PlanItemModel:
         refs=[PlanRefModel(entity_id=ref.entity_id, role=ref.role) for ref in item.refs],
         sets_up=item.sets_up,
         pays_off=item.pays_off,
-        details=item.details,
+        details=plain_details(item.details),
+        conditions=scene_conditions(item.details),
         created_revision=item.created_revision,
     )
 
@@ -137,13 +165,42 @@ async def get_outline(
     service: PlanService = Depends(get_plan_service),
 ) -> OutlineModel:
     items, still_open = await service.outline(scope, scope.workspace_id or "", project_id)
+    states = await service.conditions(scope, scope.workspace_id or "", project_id)
     return OutlineModel(
         items=[_model(item) for item in items],
         open=[
             OpenItemModel(plan_id=item.plan_id, code=item.code, message=item.message)
             for item in still_open
         ],
+        conditions=[
+            ConditionStateModel(
+                plan_id=state.plan_id, when=state.when, reading=state.reading, holds=state.holds
+            )
+            for state in states
+        ],
     )
+
+
+@router.put("/{plan_id}/conditions", response_model=PlanItemModel)
+async def set_scene_conditions(
+    project_id: str,
+    plan_id: str,
+    body: SetConditionsRequest,
+    response: Response,
+    scope: AccessScope = Depends(require_project_scope),
+    service: PlanService = Depends(get_plan_service),
+) -> PlanItemModel:
+    """Say what must be true before a scene and what it should leave true after it."""
+    result, item = await service.set_conditions(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        plan_id,
+        conditions=body.conditions,
+        expected_revision=body.expected_revision,
+    )
+    response.headers["ETag"] = f'"{result.revision}"'
+    return _model(item)
 
 
 @router.post("", response_model=PlanItemModel, status_code=201)

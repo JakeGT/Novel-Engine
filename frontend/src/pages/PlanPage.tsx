@@ -4,7 +4,9 @@ import { Link, useLocation } from 'react-router-dom'
 import { api, type AssistSession, type PlanItem, type PlanKind } from '../api/client'
 import { NextDirections, PlanAssist } from '../components/PlanAssist'
 import { PlanItemForm } from '../components/PlanItemForm'
+import { SceneConditionsDialog } from '../components/SceneConditions'
 import {
+  Badge,
   Button,
   ConfirmDialog,
   Dialog,
@@ -43,9 +45,12 @@ export function PlanPage() {
     arrived ? { resume: arrived } : null,
   )
   const [next, setNext] = useState<{ about?: PlanItem } | null>(null)
+  const [conditioning, setConditioning] = useState<PlanItem | null>(null)
 
   const items = outline.data?.items ?? []
   const stillOpen = outline.data?.open ?? []
+  const conditionsFor = (planId: string) =>
+    (outline.data?.conditions ?? []).filter((entry) => entry.plan_id === planId)
   const tree = outlineTree(items)
   const threads = threadsOf(items)
   const byId = new Map(items.map((item) => [item.id, item]))
@@ -145,6 +150,11 @@ export function PlanPage() {
             <Button size="sm" variant="ghost" icon="spark" onClick={() => setNext({ about: item })}>
               What could happen from here?
             </Button>
+            {item.kind === 'scene' && (
+              <Button size="sm" variant="ghost" onClick={() => setConditioning(item)}>
+                Before and after
+              </Button>
+            )}
             <Button size="sm" variant="ghost" onClick={() => setRemoving(item)}>
               Remove
             </Button>
@@ -170,6 +180,24 @@ export function PlanPage() {
                 </span>
               ))}
             </p>
+          )}
+          {conditionsFor(item.id).length > 0 && (
+            <ul className="plan-conditions" aria-label={`Before and after ${item.title}`}>
+              {conditionsFor(item.id).map((entry, index) => (
+                <li key={index}>
+                  <span className="eyebrow">{entry.when === 'before' ? 'Before' : 'After'}</span> {entry.reading}{' '}
+                  <Badge tone={entry.holds ? 'ok' : entry.holds === false && entry.when === 'before' ? 'warn' : 'neutral'}>
+                    {entry.holds === null || entry.holds === undefined
+                      ? 'Cannot tell'
+                      : entry.holds
+                        ? 'True now'
+                        : entry.when === 'before'
+                          ? 'Not true yet'
+                          : 'Not yet'}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
           )}
           {openFor(item.id).length > 0 && (
             <ul className="plan-open" aria-label={`Still to do for ${item.title}`}>
@@ -353,6 +381,14 @@ export function PlanPage() {
         />
       )}
       {next && <NextDirections about={next.about} onClose={() => setNext(null)} />}
+      {conditioning && (
+        <SceneConditionsDialog
+          key={conditioning.id}
+          scene={conditioning}
+          entries={entries.items}
+          onClose={() => setConditioning(null)}
+        />
+      )}
 
       {removing && (
         <ConfirmDialog

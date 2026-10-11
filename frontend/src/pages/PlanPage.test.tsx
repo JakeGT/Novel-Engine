@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PlanItem } from '../api/client'
-import { entity } from '../test/fixtures'
+import { entity, VOCABULARY } from '../test/fixtures'
 import { expectAccessible, mockApi, renderInProject, reply, VIEWER } from '../test/harness'
 import { PlanPage } from './PlanPage'
 
@@ -20,6 +20,7 @@ function part(overrides: Partial<PlanItem>): PlanItem {
     sets_up: [],
     pays_off: [],
     details: {},
+    conditions: [],
     created_revision: 1,
     ...overrides,
   }
@@ -45,6 +46,7 @@ const scene = part({
   sets_up: ['pln_t'],
 })
 const outline = {
+  conditions: [] as { plan_id: string; when: string; reading: string; holds: boolean | null }[],
   items: [story, arc, beatOne, beatTwo, scene, thread],
   open: [
     { plan_id: 'pln_s', code: 'needs_place', message: 'This scene needs a place.' },
@@ -159,4 +161,52 @@ describe('PlanPage', () => {
     await screen.findByRole('heading', { name: 'Outline' })
     expect(screen.queryByRole('button', { name: /Edit|Add|Remove|Thread/ })).not.toBeInTheDocument()
   })
+
+  it('shows what must be true around a scene, and lets the author set it by hand', async () => {
+    const withConditions = {
+      ...outline,
+      conditions: [
+        { plan_id: 'pln_s', when: 'before', reading: 'Ines Varga must have this: it is located at Kestrel Point.', holds: false },
+        { plan_id: 'pln_s', when: 'after', reading: 'Ines Varga must have this: it is named “the Mapmaker”.', holds: true },
+      ],
+    }
+    const api = mockApi({
+      ...everyone,
+      'GET /plan': withConditions,
+      'GET /vocabulary': VOCABULARY,
+      'PUT /plan/pln_s/conditions': scene,
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<PlanPage />, at)
+
+    const list = await screen.findByRole('list', { name: 'Before and after The lamp room at night' })
+    const [before, after] = within(list).getAllByRole('listitem')
+    expect(before).toHaveTextContent('Before Ines Varga must have this: it is located at Kestrel Point. Not true yet')
+    expect(after).toHaveTextContent('True now')
+    await expectAccessible(container)
+
+    await user.click(screen.getByText('More', { selector: 'summary[aria-label="More for The lamp room at night"]' }))
+    await user.click(screen.getByRole('button', { name: 'Before and after' }))
+    const dialog = screen.getByRole('dialog', { name: 'Before and after “The lamp room at night”' })
+    expect(within(dialog).getByRole('button', { name: 'Save' })).toBeDisabled()
+    await user.click(within(dialog).getByRole('button', { name: 'Add something that must be true first' }))
+    await user.selectOptions(within(dialog).getByLabelText('What must be true: the other entry'), 'one:ent_point')
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(api.find('PUT', '/conditions')).toHaveLength(1))
+    expect(api.find('PUT', '/conditions')[0].body).toEqual({
+      conditions: [
+        {
+          when: 'before',
+          entity_id: 'ent_ines',
+          check: {
+            kind: 'has',
+            count: 1,
+            pattern: { predicate: 'LOCATED_AT', direction: 'out', other_id: 'ent_point', other_type: null },
+          },
+        },
+      ],
+      expected_revision: 3,
+    })
+  }, 20_000)
 })
