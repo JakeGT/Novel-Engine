@@ -129,6 +129,12 @@ Every delegated action records the policy version and why approval was or was no
 
 - Telemetry is off by default and opt-in when implemented.
 - Error monitoring (Sentry) is opt-in via a configured DSN; when enabled it sends scrubbed, content-free events (no request bodies, cookies, sensitive headers, user PII, or breadcrumbs), and the web client uses a separate `VITE_` variable.
+  Revised 2026-10-11: the hosted site takes both DSNs from secret files; the server hands the
+  browser its DSN and release in the page it serves, so nothing is built into the image; events
+  carry the deployed commit as their release and the internal ids of the person, workspace and
+  project; the browser side switches off every data-collection category of its SDK and drops
+  breadcrumbs, and is covered by a browser test against a stand-in. Source maps are built but
+  kept out of the site, with an upload script that has not been run against a real project.
 - Logs are metadata-first and omit manuscript/prompt content by default.
 - Imports and exports remain local unless the author selects an external integration.
 - The context preview identifies what will be sent to a configured remote model.

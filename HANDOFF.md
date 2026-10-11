@@ -502,3 +502,18 @@ the roadmap's exit criteria and their state, and what was left for later phases 
 criteria are not met and cannot be by building: timing a new person's first entry, and the
 evaluation baseline the owner chose to replace with manual runs.
 
+## Error reporting (2026-10-11)
+
+Sentry was wired but off on the hosted site, and one thing was wrong: `frontend/.env` reached
+the image build (`.dockerignore` only excluded the root `.env`), so the browser DSN was baked
+into the deployed bundle. The site's content security policy blocked it from sending, so nothing
+left, but the browser SDK (v11) collects user details, cookies, headers and bodies by default
+and had no scrubbing. Now: no env file enters the build; both DSNs are secret files under
+`deploy/hosted/secrets/`; the server gives the page its DSN and release at run time; the release
+is the deployed commit; both sides scrub, and each was checked by sending real SDK events to a
+local stand-in (`tests/unit/test_observability.py`, `frontend/e2e/error-reporting.spec.ts`). A
+screen that fails to draw now shows a message and a way back instead of a blank page.
+
+Not verified: any event reaching the real Sentry projects, and `upload-sourcemaps.sh`. An
+exception's message is sent as it is, so code must not put an author's words in one.
+

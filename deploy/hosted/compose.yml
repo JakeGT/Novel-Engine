@@ -42,11 +42,18 @@ x-app: &app
     AI_MODEL: ${AI_MODEL:-anthropic/claude-sonnet-5.5}
     # Caddy (the platform-proxy subnet) is the only trusted forwarder.
     FORWARDED_ALLOW_IPS: 172.23.0.0/16
+    # Errors are reported under the commit that is running, so one can be traced to a deploy.
+    APP_RELEASE: ${NOVEL_ENGINE_VERSION}
+    # Errors only; raise to sample performance traces (0.0 to 1.0).
+    SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.0}
   secrets:
     - postgres_password
     - neo4j_password
     - oidc_client_secret
     - credential_kek
+    # Error reporting (Sentry). An empty file switches that side off.
+    - sentry_dsn_backend
+    - sentry_dsn_web
   read_only: true
   tmpfs:
     - /tmp:size=64m,mode=1777
@@ -162,3 +169,5 @@ secrets:
   neo4j_auth: { file: "${SECRETS_DIR:-./secrets}/neo4j_auth" }
   oidc_client_secret: { file: "${SECRETS_DIR:-./secrets}/oidc_client_secret" }
   credential_kek: { file: "${SECRETS_DIR:-./secrets}/credential_kek" }
+  sentry_dsn_backend: { file: "${SECRETS_DIR:-./secrets}/sentry_dsn_backend" }
+  sentry_dsn_web: { file: "${SECRETS_DIR:-./secrets}/sentry_dsn_web" }

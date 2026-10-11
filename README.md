@@ -112,7 +112,7 @@ make e2e
 
 Logs are emitted as single-line JSON with a correlation ID and are redacted by default: API keys, bearer tokens, DSN passwords, and secret-named fields are masked, and adapters log only timings, counts, and error types rather than manuscript or prompt content. Set `LOG_LEVEL=DEBUG` in `.env` for development diagnostics; debug logs may include synthetic entity IDs but still never include secrets or manuscript text.
 
-Error monitoring is opt-in and disabled when `SENTRY_DSN_BACKEND` is empty. When enabled, Sentry events are scrubbed of request bodies, cookies, sensitive headers, and user PII before leaving the process. The web client reads `VITE_SENTRY_DSN_WEB` from `frontend/.env` (Vite only exposes `VITE_`-prefixed variables).
+Error monitoring is opt-in. The server reports to `SENTRY_DSN_BACKEND` and hands `SENTRY_DSN_WEB` to the page it serves, so the browser needs no build-time setting; an empty value switches that side off. Events are scrubbed on both sides before they leave: no request bodies, query strings, cookies, headers that identify, user details, breadcrumbs or local variables. What remains is the stack, the route, the release, and internal ids. An exception's own message is sent, so code must never put an author's words in one. `python -m backend.core.observability` sends a test event.
 
 For coding-agent conventions and project boundaries, read [AGENTS.md](AGENTS.md). For architecture, scope, roadmap, and open decisions, start with [plan/README.md](plan/README.md).
 

@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     SENTRY_DSN_BACKEND: str = ""
     SENTRY_DSN_WEB: str = ""
     SENTRY_TRACES_SAMPLE_RATE: float = 0.0
+    # What is running, so an error can be traced to a deploy: the image tag (a commit)
+    # on a hosted site. Empty falls back to PROJECT_VERSION.
+    APP_RELEASE: str = ""
     # Operational metrics (Prometheus text format at /health/metrics). Off by
     # default. A token is required outside local development; without one the
     # endpoint refuses to serve in production.

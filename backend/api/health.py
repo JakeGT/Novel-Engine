@@ -8,7 +8,7 @@ from fastapi.responses import PlainTextResponse
 from backend.api.dependencies import get_container
 from backend.container import Container
 from backend.core.metrics import metrics
-from backend.core.observability import sentry_enabled
+from backend.core.observability import client_config, release_name, sentry_enabled
 
 router = APIRouter(tags=["health"])
 
@@ -129,6 +129,9 @@ def capabilities(container: Container = Depends(get_container)) -> dict[str, obj
             },
             "telemetry": {
                 "sentry_backend": sentry_ok,
+                # The page reports its own errors only when it is given a DSN of its own.
+                "sentry_web": client_config(container.settings) is not None,
+                "release": release_name(container.settings),
                 "optional": True,
                 "reason": None if sentry_ok else "SENTRY_DSN_BACKEND is not configured",
             },

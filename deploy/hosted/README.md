@@ -33,6 +33,27 @@ sed -i 's/^NOVEL_ENGINE_VERSION=.*/NOVEL_ENGINE_VERSION=<commit>/' .env
 `secrets/credential_kek` encrypts every stored provider key. **Keep a copy in the password
 manager**; without it stored keys cannot be decrypted and must be entered again.
 
+### Error reporting (Sentry), optional
+
+`init-secrets.sh` creates `secrets/sentry_dsn_backend` and `secrets/sentry_dsn_web`, filled from
+the checkout's `.env` when it has them and empty otherwise. An empty file switches that side off.
+To set or change one later, replace the file's contents (mode 0400) and recreate the server:
+`docker compose up -d --wait`. Use two Sentry projects, one for the server and one for the
+browser, so their errors and their source maps stay apart.
+
+- The server reports under the release `novel-engine@<NOVEL_ENGINE_VERSION>`; the page is handed
+  the browser's DSN and the same release when it is served. Nothing is baked into the image.
+- Check it: `docker compose exec server python -m backend.core.observability` sends one test
+  event and says whether Sentry accepted it. `/health/capabilities` (private network only) shows
+  `sentry_backend`, `sentry_web` and the release.
+- Events are scrubbed before they leave on both sides. In each Sentry project also turn on
+  **Settings → Security & Privacy → Prevent Storing of IP Addresses**: an address is recorded by
+  Sentry on receipt, which no scrubbing here can prevent.
+- Source maps, so browser errors show real code: put an auth token in `secrets/sentry_auth_token`,
+  add `SENTRY_ORG` and `SENTRY_PROJECT_WEB` to `.env`, then `./upload-sourcemaps.sh <commit>`
+  after building. The maps are never served by the site. This script has not yet been run against
+  a real Sentry project.
+
 ## 3. Start
 
 ```sh

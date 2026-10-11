@@ -11,6 +11,9 @@ export default defineConfig({
     // The hosted site's content security policy allows fonts and images from its own
     // origin only, so nothing is inlined as a data: URI.
     assetsInlineLimit: 0,
+    // Source maps are made for error reporting and never served: the image build moves
+    // them out of the site (see the Dockerfile), and 'hidden' leaves no pointer to them.
+    sourcemap: 'hidden',
   },
   server: {
     proxy: {

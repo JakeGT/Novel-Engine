@@ -1,7 +1,8 @@
 # Keep secrets, local state, and everything the image does not need out of the build context.
-.env
-.env.*
-!.env.example
+# At any depth: frontend/.env once reached the build this way and its values were baked in.
+**/.env
+**/.env.*
+!**/.env.example
 .git
 .github
 .venv

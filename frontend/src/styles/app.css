@@ -2277,3 +2277,16 @@ details.more[open] > summary {
   }
 }
 
+
+/* Shown only when a screen fails to draw at all. */
+.crash {
+  max-width: 34rem;
+  margin: 18vh auto 0;
+  padding: 0 1.5rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.crash h1 {
+  font-size: 2rem;
+}

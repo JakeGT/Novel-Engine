@@ -7,6 +7,8 @@ unless ``FRONTEND_DIST_DIR`` points at a real build.
 
 from __future__ import annotations
 
+import html
+import json
 import mimetypes
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -19,6 +21,7 @@ from starlette.types import ASGIApp
 
 from backend.api.problems import PROBLEM_MEDIA_TYPE, problem_body
 from backend.core.config import Settings
+from backend.core.observability import client_config
 
 # Slim base images have no system MIME table entry for web fonts.
 mimetypes.add_type("font/woff2", ".woff2")
@@ -88,19 +91,36 @@ def frontend_directory(settings: Settings) -> Path | None:
     return directory if (directory / "index.html").is_file() else None
 
 
-def mount_frontend(app: FastAPI, directory: Path) -> None:
+CLIENT_CONFIG_META = "novel-engine-client"
+
+
+def shell_html(index_html: str, settings: Settings) -> str:
+    """The app shell with what the page needs to report its own errors, if that is on.
+
+    A ``<meta>`` tag, because the page's own policy forbids inline scripts. The value
+    is escaped as an attribute, so nothing in a setting can break out of it.
+    """
+    config = client_config(settings)
+    if config is None:
+        return index_html
+    tag = f'<meta name="{CLIENT_CONFIG_META}" content="{html.escape(json.dumps(config), quote=True)}" />'
+    return index_html.replace("</head>", f"  {tag}\n  </head>", 1)
+
+
+def mount_frontend(app: FastAPI, directory: Path, settings: Settings) -> None:
     """Serve hashed assets as immutable files and the app shell for every UI route."""
-    index = directory / "index.html"
     assets = directory / "assets"
     if assets.is_dir():
         app.mount("/assets", StaticFiles(directory=assets), name="frontend-assets")
+    # Read once: the build is part of the image and does not change while it runs.
+    page = shell_html((directory / "index.html").read_text(encoding="utf-8"), settings)
 
-    def shell() -> FileResponse:
+    def shell() -> Response:
         # The shell names the current hashed assets, so it must always be revalidated.
-        return FileResponse(index, media_type="text/html", headers={"Cache-Control": "no-cache"})
+        return Response(page, media_type="text/html", headers={"Cache-Control": "no-cache"})
 
     @app.get("/", include_in_schema=False)
-    def frontend_root() -> FileResponse:
+    def frontend_root() -> Response:
         return shell()
 
     @app.get("/{path:path}", include_in_schema=False)
@@ -131,7 +151,9 @@ def mount_frontend(app: FastAPI, directory: Path) -> None:
 
 __all__ = [
     "SecurityHeadersMiddleware",
+    "CLIENT_CONFIG_META",
     "content_security_policy",
     "frontend_directory",
     "mount_frontend",
+    "shell_html",
 ]

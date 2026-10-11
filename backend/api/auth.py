@@ -16,6 +16,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from backend.api.dependencies import get_auth_service, get_settings, get_tenancy_service
 from backend.core.config import Settings
 from backend.core.logging import log_event
+from backend.core.observability import identify_request
 from backend.domain.errors import (
     ForbiddenError,
     NotFoundError,
@@ -64,6 +65,10 @@ async def require_session(
         # (a validation error, say), and the browser must get the new id regardless.
         _set_session_cookies(response, settings, resolved.rotated_session)
         request.state.rotated_session = resolved.rotated_session
+    # Errors from here on are reported with who was signed in: an internal id only.
+    identify_request(
+        user_id=resolved.user.id, workspace_id=None, project_id=None, auth_mode=settings.AUTH_MODE
+    )
     return resolved
 
 
@@ -192,6 +197,13 @@ async def _resolve_workspace_scope(
         await tenancy.require_membership(base, workspace_id)
     else:
         workspace_id = settings.AUTH_LOCAL_WORKSPACE_ID
+    # Only once membership is proven: never a value a client merely claimed.
+    identify_request(
+        user_id=auth_session.user.id,
+        workspace_id=workspace_id,
+        project_id=None,
+        auth_mode=settings.AUTH_MODE,
+    )
     return AccessScope(
         actor_user_id=auth_session.user.id,
         auth_mode=mode,
@@ -272,6 +284,12 @@ async def _resolve_project_scope(
         project_id=project_id,
     )
     await tenancy.require_project(scope, workspace_id, project_id, permission)
+    identify_request(
+        user_id=auth_session.user.id,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        auth_mode=settings.AUTH_MODE,
+    )
     return scope
 
 

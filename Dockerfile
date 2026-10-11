@@ -10,7 +10,17 @@ RUN corepack enable && corepack prepare pnpm@11.26.0 --activate
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY frontend/ ./
-RUN pnpm run build
+# The site is built without its source maps; they are set aside for error reporting.
+RUN pnpm run build \
+    && mkdir -p /maps/assets \
+    && cp dist/assets/*.js /maps/assets/ \
+    && find dist -name '*.map' -exec mv {} /maps/assets/ \;
+
+# ---- source maps, for upload to error reporting only -------------------------
+# Not part of the site. Export with:
+#   docker build --target web-maps --output type=local,dest=<dir> .
+FROM scratch AS web-maps
+COPY --from=web /maps/ /
 
 # ---- locked Python dependencies (no dev tools, no optional embeddings) --------
 FROM python:3.13-slim-bookworm AS python-deps

@@ -152,7 +152,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     frontend = frontend_directory(resolved_settings)
     if frontend is not None:
         # Registered last so every API route above takes precedence.
-        mount_frontend(app, frontend)
+        mount_frontend(app, frontend, resolved_settings)
     else:
 
         @app.get("/")
