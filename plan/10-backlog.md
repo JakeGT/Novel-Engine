@@ -105,8 +105,10 @@ These IDs are retained for traceability from ADR-001. Identity and isolation wor
   belief holders, and provenance through commit/decision/source evidence, shared by every transport.
 - **CAN-012 · P1 — Tags and compensation:** immutable named revision pointers plus conflict-aware
   compensating revert proposals through normal review.
+  - **Status:** History page names versions, shows changes since a version, and goes back as a new version (2026-10-11). No screen compares two arbitrary versions.
 - **CAN-013 · P0 — Story invariant contract:** safe versioned predicate AST, dependencies, examples,
   warning default, explicit blocking publication, and separation from permanent integrity rules.
+  - **Status:** Built 2026-10-11 as a fixed vocabulary with versions and examples, warning only (ADR-019). Blocking publication is not built.
 
 ## Time, branches, and visibility
 
@@ -146,6 +148,7 @@ These IDs are retained for traceability from ADR-001. Identity and isolation wor
   scope-safe cache boundaries, and provider-reported cache usage.
 - **CTX-016 · P1 — Alias/epithet memory:** branch/time/narrative/POV-scoped bindings and reviewed
   positive/negative resolution examples shared by editor, import, extraction, and checks.
+  - **Status:** Built 2026-10-11 scoped to the story or one text. Scoping by branch, time, narrative position and point of view waits for Phase 3.
 
 ## Multimodal assets
 
@@ -198,6 +201,7 @@ These IDs are retained for traceability from ADR-001. Identity and isolation wor
 - **CON-014 · P1 — Multimodal consistency:** deterministic checks against reviewed media facts plus bounded evidence-citing image/audio/video critic bundles, region/timestamp anchors, secret leakage, and fallback-quality reporting.
 - **CON-015 · P1 — Authored invariant runner:** validate examples, evaluate on commits/runs, cite
   rule versions, and block only explicitly enabled deterministic rules.
+  - **Status:** Built 2026-10-11: examples are validated on save, rules are evaluated on preview and commit and cite the rule. Rules only warn.
 - **CON-016 · P1 — Scoped suppressions:** versioned rationale/scope/expiry/dependencies, staleness,
   explicit calibration policy, and permanent exclusion of integrity failures.
 - **CON-017 · P1 — Impact preview:** scratch canonical overlay plus dependency coverage for scenes,
@@ -216,8 +220,10 @@ These IDs are retained for traceability from ADR-001. Identity and isolation wor
 - **EXT-007 · P1 — End-to-end loop:** commit scene, advance state, update threads, and inspect resulting history.
 - **EXT-008 · P0 — Extraction/resolution evaluation:** labeled reference-manuscript cases for
   propositions, pronouns, aliases, epithets, narration, speech, disclosures, and review corrections.
+  - **Status:** Names: labelled passage and pinned baseline (2026-10-11). Extraction: a scorer only; no model reading measured.
 - **EXT-009 · P1 — Text-first manuscript intake:** paste/Markdown source version, explicit marks,
   grouped/confidence-tiered extraction review, and commit without generation.
+  - **Status:** Built 2026-10-11. Reading with the assistant has only run against a scripted model.
 
 ## Query projections, exports, and integrations
 

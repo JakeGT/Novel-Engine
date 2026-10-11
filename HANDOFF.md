@@ -33,7 +33,9 @@ Two rules dominate every design decision:
 | Phase 0 — prototype stabilization | Complete (merged PR #1). See `plan/phase-0-evidence.md`. |
 | Phase 1 — identity, tenancy, distribution | Implemented with external exit items pending. See `plan/phase-1-evidence.md`. |
 | Phase 2 — trustworthy canon | **Complete; accepted by the owner on 2026-10-09.** Every code-completable 2B–2L item is done; the open items are owner/operational (see §11). See `plan/phase-2-todo.md` and `plan/phase-2-evidence.md`. |
-| Phase 2.5 | Next: text-first author workflow probe (manuscript import, extraction into proposals, story-rule authoring). See `plan/09-delivery-roadmap.md`. |
+| Phase 2.5 — assistant-led creation | Built (2026-10-10). See `plan/phase-2.5-todo.md`. Assistant features verified against a scripted model only. |
+| Phase 2.6 — story planning | Built (2026-10-11). See `plan/phase-2.6-todo.md`. |
+| Phase 2.7 — text intake | Built (2026-10-11). See `plan/phase-2.7-todo.md`. Extraction quality unmeasured. |
 | Phase 3+ | Planned (branch forks/overlays, world/narrative time, POV filtering, planning/prose). See `plan/09-delivery-roadmap.md`. |
 
 **Not production-ready.** Billing, platform-funded inference, public signup, and real-time
@@ -246,9 +248,10 @@ then `pnpm --dir frontend run gen:api`.
 
 ## 10. Data & migrations
 
-- Alembic (PostgreSQL) head: **`0022_archive_imports`** (… → `0018_commit_integrity` →
-  `0019_review_workflow` → `0020_entity_identity` → `0021_media_lifecycle` →
-  `0022_archive_imports`).
+- Alembic (PostgreSQL) head: **`0031_story_rules`** (… → `0022_archive_imports` →
+  `0023_session_id_token` → `0024_assist_sessions` → `0025_workspace_ai_settings` →
+  `0026_assist_suggestions` → `0027_usage_allowance` → `0028_plan_items` →
+  `0029_plan_conversations` → `0030_source_texts` → `0031_story_rules`).
 - Neo4j ordered migrations: `0001_initial_graph_schema`, `0002_entity_scope_identity`,
   `0003_canon_scope_identity`, `0004_canon_projection_labels` (checksums in
   `plan/phase-2-evidence.md`).
@@ -530,4 +533,34 @@ assistant (`plan_workflow.py`, `/assist/plan/*`, `PlanAssist.tsx`).
 main things not done: scene contracts, any measure of plan quality, a form editor for plan
 changes on the review page, and putting a removed plan item back by undo. The assistant
 workflows have only run against the scripted model.
+
+## Phase 2.7: text intake (2026-10-11)
+
+An author can bring in prose they have already written, and it becomes another way to fill
+in the story bible. The decision record is ADR-019: a text is evidence, never canon; a story
+rule is data in a fixed vocabulary, never code.
+
+- **Texts** (`backend/domain/sources.py`, `source_service.py`, `/texts`, migration 0030):
+  kept exactly as given, each change a new version whose words cannot change. Names are found
+  with no model. "Who is this?" answers are remembered (`/names`).
+- **Reading with the assistant** (`intake_workflow.py`, `/assist/texts/{id}/read`): one
+  bounded passage; every item must quote words really in it; the result is ordinary suggested
+  changes that show their passage (`FromText.tsx`).
+- **Story rules** (`backend/domain/rules.py`, `rule_service.py`, `/rules`, migration 0031):
+  checked by one evaluator that also runs a rule's examples and a scene's conditions.
+  `RuleService` is registered as an evaluator on the commit validator and only ever returns
+  warnings.
+- **Scene conditions** (`scene_conditions.py`, `PUT /plan/{id}/conditions`): kept in the
+  scene's details under `_conditions`.
+- **Measured**: name-finding against a labelled passage, pinned in
+  `tests/fixtures/intake_eval/baseline.json`. Regenerate it on purpose with
+  `python -m backend.devtools.intake_eval tests/fixtures/intake_eval/lantern_coast.json`.
+
+The assistant chain is now `… → PlanWorkflow → IntakeWorkflow → RuleWorkflow`; the container
+and tests construct `RuleWorkflow`. Alembic head is `0031_story_rules`.
+
+`plan/phase-2.7-todo.md` has the state of each item and of the roadmap's exit criteria. Main
+things not done: blocking rules, rules about time or belief, name memory scoped by time or
+point of view, any measurement of a real model's reading, MCP access, and review telemetry.
+Both assistant workflows have only run against the scripted model.
 
