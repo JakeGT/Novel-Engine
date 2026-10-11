@@ -559,6 +559,51 @@ describe('ReviewDetail', () => {
     expect(box).toHaveValue('')
   })
 
+  it('reads a change to the story plan in words, as its own group', async () => {
+    mockApi({
+      ...entries,
+      'GET /plan': {
+        items: [{ id: 'pln_beat', kind: 'beat', title: 'The theft is discovered', summary: '', parent_id: null, position: 0, refs: [], sets_up: [], pays_off: [], details: {}, created_revision: 1 }],
+        open: [],
+      },
+      'GET /mutations/mut_1': mutation({
+        operations: [
+          operation({
+            operation_type: 'create_plan_item',
+            payload: { op: 'create_plan_item', id: 'tmp:plan-0', kind: 'thread', title: 'Who took the ledgers?', summary: '', parent_id: null, position: 0, refs: [], sets_up: [], pays_off: [], details: {} },
+          }),
+          operation({
+            ordinal: 1,
+            operation_type: 'create_plan_item',
+            payload: {
+              op: 'create_plan_item',
+              id: 'tmp:plan-1',
+              kind: 'scene',
+              title: 'The empty vault',
+              summary: 'Mara finds the ledgers gone.',
+              parent_id: 'pln_beat',
+              position: 0,
+              refs: [{ entity_id: 'ent_mara', role: 'point_of_view' }],
+              sets_up: ['tmp:plan-0'],
+              pays_off: [],
+              details: {},
+            },
+          }),
+        ],
+      }),
+    })
+    const { container } = renderInProject(<ReviewDetail />, at)
+
+    const plan = await screen.findByRole('region', { name: 'Story plan' })
+    expect(within(plan).getByText('Plan scene “The empty vault”')).toBeInTheDocument()
+    const scene = within(plan).getByText('Plan scene “The empty vault”').closest('li') as HTMLElement
+    expect(within(scene).getByRole('row', { name: /What happens/ })).toHaveTextContent('Mara finds the ledgers gone.')
+    expect(within(scene).getByRole('row', { name: /Under/ })).toHaveTextContent('The theft is discovered')
+    expect(within(scene).getByRole('row', { name: /Who and where/ })).toHaveTextContent('Mara Venn (point of view)')
+    expect(within(scene).getByRole('row', { name: /Opens/ })).toHaveTextContent('Who took the ledgers?')
+    await expectAccessible(container)
+  })
+
   it('keeps an edited change open with the text when the server rejects it', async () => {
     mockApi({
       ...entries,

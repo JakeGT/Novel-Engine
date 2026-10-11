@@ -466,6 +466,19 @@ export const api = {
       expected_revision: expectedRevision,
     } satisfies Schemas['RemovePlanItemRequest']),
 
+  // --- planning with the assistant: always a proposal or options, never a change ---
+  planQuestions: (scope: Scope, body: Schemas['PlanBriefRequest']) =>
+    send<AssistQuestionSheet>(scope, 'POST', '/assist/plan/questions', body),
+  planProposal: (scope: Scope, body: Schemas['PlanProposalRequest']) =>
+    send<Schemas['PlanProposalModel']>(scope, 'POST', '/assist/plan/proposals', body),
+  planDirections: (scope: Scope, aboutId: string | null) =>
+    send<Schemas['DirectionsModel']>(scope, 'POST', '/assist/plan/directions', { about_id: aboutId }),
+  chooseDirection: (scope: Scope, draft: Schemas['PlanDraft'], expectedRevision: number) =>
+    send<Schemas['PlanProposalModel']>(scope, 'POST', '/assist/plan/directions/choose', {
+      draft,
+      expected_revision: expectedRevision,
+    }),
+
   /** Fill an empty project with the short sample story, as one version. */
   loadSample: (scope: Scope, expectedRevision: number) =>
     send<Schemas['SampleLoadedModel']>(scope, 'POST', '/entities/sample', {

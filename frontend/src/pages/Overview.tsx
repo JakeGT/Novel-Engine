@@ -5,6 +5,7 @@ import { OpenConversations } from '../components/Conversations'
 import { EntryMarks } from '../components/EntryMarks'
 import { Icon } from '../components/icons'
 import { Portrait } from '../components/Pictures'
+import { PlanNudge } from '../components/PlanNudge'
 import { SampleStory } from '../components/SampleStory'
 import { Button, ErrorNotice, Loading, TypeAvatar } from '../components/ui'
 import { byPriority } from '../lib/marks'
@@ -223,6 +224,8 @@ export function Overview() {
           </ul>
         </section>
       )}
+
+      <PlanNudge entryCount={active.length} />
 
       {!hasFacts && anyFact.isSuccess && canWrite && (
         <section className="card quiet" aria-labelledby="next-heading">

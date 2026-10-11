@@ -2410,3 +2410,28 @@ ul.chips {
   margin: 0 0 0.4rem;
   padding: 0;
 }
+
+/* Directions offered by the assistant: separate choices, read one after another. */
+.directions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.directions > li {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.directions h3 {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 450;
+}
+
+.directions ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}

@@ -37,6 +37,8 @@ import {
   describeOperation,
   namesFromOperations,
   originLabel,
+  PLAN_ROLES,
+  planKindLabel,
   plural,
   valueText,
   words,
@@ -57,6 +59,8 @@ const GROUPS: { label: string; one: string; types: string[] }[] = [
   { label: 'Beliefs ended', one: 'belief ended', types: ['close_belief'] },
   { label: 'New beliefs', one: 'new belief', types: ['assert_belief'] },
   { label: 'Events', one: 'event', types: ['create_event', 'amend_event', 'retire_event'] },
+  // What the author means to happen. Kept as its own group: it is not part of the story bible.
+  { label: 'Story plan', one: 'part of the plan', types: ['create_plan_item', 'update_plan_item', 'retire_plan_item'] },
   { label: 'Archived', one: 'archived', types: ['retire_entity'] },
 ]
 
@@ -91,7 +95,50 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 const isFlat = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-function fieldRows(operation: MutationOperation): Row[] {
+const PLAN_OPERATIONS = new Set(['create_plan_item', 'update_plan_item', 'retire_plan_item'])
+const PLAN_LABELS: Record<string, string> = {
+  kind: 'What it is',
+  title: 'Title',
+  summary: 'What happens',
+  parent_id: 'Under',
+  refs: 'Who and where',
+  sets_up: 'Opens',
+  pays_off: 'Resolves',
+  details: 'Notes',
+}
+
+/** A part of the plan, read as words: names instead of ids, roles in plain terms. */
+function planRows(operation: MutationOperation, names: Map<string, string>): Row[] {
+  const before = operation.target_before ?? null
+  const name = (id: unknown) => names.get(String(id)) ?? 'something no longer there'
+  const shown = (key: string, value: unknown): unknown => {
+    if (value === null || value === undefined) return value
+    if (key === 'kind') return planKindLabel(String(value))
+    if (key === 'parent_id') return name(value)
+    if (key === 'refs' && Array.isArray(value)) {
+      return value.map((ref) => `${name(ref.entity_id)} (${PLAN_ROLES[String(ref.role)] ?? String(ref.role)})`)
+    }
+    if ((key === 'sets_up' || key === 'pays_off') && Array.isArray(value)) return value.map(name)
+    return value
+  }
+  return Object.keys(PLAN_LABELS)
+    .filter((key) => {
+      const value = operation.payload[key]
+      if (value === null || value === undefined || value === '') return false
+      if (Array.isArray(value) && value.length === 0 && !before) return false
+      if (isFlat(value) && Object.keys(value).length === 0) return false
+      return !before || !same(before[key], value)
+    })
+    .map((key) => ({
+      key,
+      label: PLAN_LABELS[key],
+      before: before ? shown(key, before[key]) : undefined,
+      after: shown(key, operation.payload[key]),
+    }))
+}
+
+function fieldRows(operation: MutationOperation, names: Map<string, string>): Row[] {
+  if (PLAN_OPERATIONS.has(operation.operation_type)) return planRows(operation, names)
   const before = operation.target_before ?? null
   return Object.entries(operation.payload)
     .filter(([key, value]) => !HIDDEN_KEYS.has(key) && value !== null && value !== undefined)
@@ -120,6 +167,7 @@ function ChangeCard({
   title,
   issues,
   candidates,
+  names,
   editable,
   busy,
   onDecide,
@@ -129,6 +177,8 @@ function ChangeCard({
   title: string
   issues: Issue[]
   candidates: Candidate[]
+  /** Names of entries and titles of plan items, by id. */
+  names: Map<string, string>
   editable: boolean
   busy: boolean
   onDecide: (decision: 'accepted' | 'rejected', note: string | null) => void
@@ -143,7 +193,7 @@ function ChangeCard({
   const number = operation.ordinal + 1
   const decision = operation.decision?.decision
   const skipped = decision === 'rejected'
-  const rows = fieldRows(operation)
+  const rows = fieldRows(operation, names)
   const isEdit = Boolean(operation.target_before && Object.keys(operation.target_before).length > 0)
   const gone = operation.target_before !== null && operation.target_before !== undefined && !isEdit
 
@@ -347,6 +397,11 @@ export function ReviewDetail() {
     queryKey: scopedKey(scope, 'mutation', mutationId),
     queryFn: () => api.getMutation(scope, mutationId),
   })
+  // Titles of what is already planned, so a change to the plan reads in words.
+  const planned = useQuery({
+    queryKey: scopedKey(scope, 'plan'),
+    queryFn: () => api.outline(scope),
+  })
   const [note, setNote] = useState('')
   const [validation, setValidation] = useState<MutationValidation | null>(null)
   // Checked against the story as soon as the page opens, and again whenever a change is
@@ -428,8 +483,18 @@ export function ReviewDetail() {
   const busy = action.isPending || commit.isPending
   const needsApproval = change.status !== 'approved' && (change.requires_review || change.status !== 'draft')
   const canCommit = editable && !change.is_stale && included.length > 0
-  const names = new Map([...entries.names, ...namesFromOperations(change.operations)])
+  const names = new Map([
+    ...entries.names,
+    ...(planned.data?.items ?? []).map((item) => [item.id, item.title] as const),
+    ...namesFromOperations(change.operations),
+  ])
   const groups = groupOperations(change.operations)
+  // A set that only touches the plan adds intent, not fact, and is worded that way.
+  const planOnly = included.length > 0 && included.every((item) => PLAN_OPERATIONS.has(item.operation_type))
+  // Where to go once it is added: back to the plan, or to what the story bible needs next.
+  const afterwards = planOnly
+    ? { to: `/projects/${scope.projectId}/plan`, label: 'Open the story plan' }
+    : { to: `/projects/${scope.projectId}`, label: 'See what to fill in next' }
   // What a fact can be about or point to: the story's entries and the ones this set would add.
   const candidates: Candidate[] = [
     ...entries.items
@@ -479,7 +544,7 @@ export function ReviewDetail() {
         {open && (
           <div className="notice" role="status">
             <p>
-              <strong>Not part of your story yet.</strong>{' '}
+              <strong>{planOnly ? 'Not part of your plan yet.' : 'Not part of your story yet.'}</strong>{' '}
               {understood ? `The assistant understood: ${understood} ` : ''}
               {change.requires_review
                 ? `It needs your approval because ${change.review_reasons
@@ -522,18 +587,18 @@ export function ReviewDetail() {
           <p className="notice ok" role="status">
             <span>
               <strong>
-                Added to canon as version {committed?.revision ?? change.committed_revision}.
+                Added to {planOnly ? 'your plan' : 'canon'} as version {committed?.revision ?? change.committed_revision}.
               </strong>{' '}
-              These changes are now part of your story.
+              These changes are now part of your {planOnly ? 'plan' : 'story'}.
             </span>
-            <Link className="btn" to={`/projects/${scope.projectId}`}>
-              See what to fill in next
+            <Link className="btn" to={afterwards.to}>
+              {afterwards.label}
             </Link>
           </p>
         ) : null}
         {announce && committed && (
           <Dialog
-            title="Added to your story"
+            title={planOnly ? 'Added to your plan' : 'Added to your story'}
             onClose={() => {
               setAnnounce(false)
               window.scrollTo({ top: 0 })
@@ -542,7 +607,7 @@ export function ReviewDetail() {
             <div className="stack">
               <p>
                 {included.length === 1 ? 'The change is' : `All ${included.length} changes are`} now
-                part of your story, saved as version {committed.revision}. You can undo this from
+                part of your {planOnly ? 'plan' : 'story'}, saved as version {committed.revision}. You can undo this from
                 this page.
               </p>
               <div className="actions end">
@@ -555,8 +620,8 @@ export function ReviewDetail() {
                 >
                   Stay on this page
                 </Button>
-                <Link className="btn primary" data-autofocus to={`/projects/${scope.projectId}`}>
-                  See what to fill in next
+                <Link className="btn primary" data-autofocus to={afterwards.to}>
+                  {afterwards.label}
                 </Link>
               </div>
             </div>
@@ -713,6 +778,7 @@ export function ReviewDetail() {
                       title={describeOperation(operation, names)}
                       issues={issuesFor(operation.ordinal)}
                       candidates={candidates}
+                      names={names}
                       editable={editable}
                       busy={busy}
                       onDecide={(decision, operationNote) =>
@@ -775,7 +841,7 @@ export function ReviewDetail() {
                 disabled={busy || !canCommit}
                 onClick={() => commit.mutate(needsApproval)}
               >
-                {commit.isPending ? 'Adding…' : needsApproval ? 'Approve and add to canon' : 'Add to canon'}
+                {commit.isPending ? 'Adding…' : `${needsApproval ? 'Approve and add' : 'Add'} to ${planOnly ? 'the plan' : 'canon'}`}
               </Button>
             </div>
           </section>

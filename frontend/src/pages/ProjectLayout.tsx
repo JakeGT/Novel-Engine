@@ -155,6 +155,8 @@ export function ProjectLayout() {
   const openGodHand = useCallback((entity?: CanonEntity) => setGodHand({ entity }), [])
   const resumeConversation = useCallback(
     (session: AssistSession) => {
+      // A planning conversation is picked up on the plan page, where it belongs.
+      if (session.kind === 'plan') return navigate(`/projects/${projectId}/plan`, { state: { resume: session } })
       if (session.kind === 'change') return setGodHand({ resume: session })
       if (session.kind !== 'fill_in' || !session.entity_id) return setNewEntry({ resume: session })
       // Filling in needs the entry itself; if it has gone, there is nothing to carry on with.
@@ -163,7 +165,7 @@ export function ProjectLayout() {
         () => setNewEntry({ resume: { ...session, kind: 'create', entity_id: null } }),
       )
     },
-    [workspaceId, projectId],
+    [workspaceId, projectId, navigate],
   )
 
   useEffect(() => {

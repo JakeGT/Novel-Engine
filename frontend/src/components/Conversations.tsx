@@ -12,6 +12,7 @@ const KIND: Record<string, string> = {
   create: 'Adding to the story bible',
   fill_in: 'Filling in an entry',
   change: 'Changing something',
+  plan: 'Planning the story',
 }
 
 /** The author's own words, shortened to fit a row. */

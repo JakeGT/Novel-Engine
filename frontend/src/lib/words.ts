@@ -163,7 +163,7 @@ export const PLAN_ROLES: Record<string, string> = {
   point_of_view: 'point of view',
   place: 'place',
   participant: 'in it',
-  about: 'about',
+  about: 'whose it is',
 }
 
 export const ORIGINS: Record<string, string> = {

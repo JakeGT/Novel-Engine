@@ -517,3 +517,17 @@ screen that fails to draw now shows a message and a way back instead of a blank 
 Not verified: any event reaching the real Sentry projects, and `upload-sourcemaps.sh`. An
 exception's message is sent as it is, so code must not put an author's words in one.
 
+## Phase 2.6: story planning (2026-10-11)
+
+A story plan now exists as its own kind of record: story, arc, beat, scene, thread. It is
+governed like canon (review, history, undo) but lives in its own table and is never projected
+to the graph, so a planned scene cannot be read as something that happened (ADR-018). Build
+order was: records and rules (`backend/domain/canon/plans.py`, migration 0028); the by-hand
+service and API (`plan_service.py`, `/plan`); the outline page (`PlanPage.tsx`); then the
+assistant (`plan_workflow.py`, `/assist/plan/*`, `PlanAssist.tsx`).
+
+`plan/phase-2.6-todo.md` has the state of each item and of the roadmap's exit criteria. The
+main things not done: scene contracts, any measure of plan quality, a form editor for plan
+changes on the review page, and putting a removed plan item back by undo. The assistant
+workflows have only run against the scripted model.
+

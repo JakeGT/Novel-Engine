@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
-import { api, type PlanItem, type PlanKind } from '../api/client'
+import { Link, useLocation } from 'react-router-dom'
+import { api, type AssistSession, type PlanItem, type PlanKind } from '../api/client'
+import { NextDirections, PlanAssist } from '../components/PlanAssist'
 import { PlanItemForm } from '../components/PlanItemForm'
 import {
   Button,
@@ -36,6 +37,12 @@ export function PlanPage() {
   })
   const [editing, setEditing] = useState<Editing | null>(null)
   const [removing, setRemoving] = useState<PlanItem | null>(null)
+  // Arriving from "Pick up where you left off" carries the unfinished conversation.
+  const arrived = (useLocation().state as { resume?: AssistSession } | null)?.resume
+  const [assist, setAssist] = useState<{ about?: PlanItem; resume?: AssistSession } | null>(
+    arrived ? { resume: arrived } : null,
+  )
+  const [next, setNext] = useState<{ about?: PlanItem } | null>(null)
 
   const items = outline.data?.items ?? []
   const stillOpen = outline.data?.open ?? []
@@ -130,6 +137,14 @@ export function PlanPage() {
             >
               Move down
             </Button>
+            {CHILD_KINDS[item.kind].length > 0 && (
+              <Button size="sm" variant="ghost" icon="spark" onClick={() => setAssist({ about: item })}>
+                Plan what goes under it
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" icon="spark" onClick={() => setNext({ about: item })}>
+              What could happen from here?
+            </Button>
             <Button size="sm" variant="ghost" onClick={() => setRemoving(item)}>
               Remove
             </Button>
@@ -188,6 +203,18 @@ export function PlanPage() {
             nothing in it is treated as true in your story.
           </p>
         </div>
+        {canWrite && (
+          <div className="actions">
+            {items.length > 0 && (
+              <Button icon="spark" onClick={() => setNext({})}>
+                What could happen next?
+              </Button>
+            )}
+            <Button variant="primary" icon="chat" onClick={() => setAssist({})}>
+              Plan with the assistant
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="section-gap">
@@ -203,7 +230,7 @@ export function PlanPage() {
             action={
               canWrite ? (
                 <div className="actions">
-                  <Button variant="primary" onClick={() => setEditing({ kind: 'story', parentId: null })}>
+                  <Button onClick={() => setEditing({ kind: 'story', parentId: null })}>
                     Start with the premise
                   </Button>
                   <Button onClick={() => setEditing({ kind: 'arc', parentId: null })}>Add an arc</Button>
@@ -212,8 +239,9 @@ export function PlanPage() {
               ) : undefined
             }
           >
-            You can write without one. If you like to outline, start anywhere: the premise, an
-            arc, or a single scene you already know you want.
+            You can write without one. If you like to outline, talk it through with the
+            assistant, or start by hand anywhere: the premise, an arc, or a single scene you
+            already know you want.
           </EmptyState>
         )}
 
@@ -310,6 +338,21 @@ export function PlanPage() {
           />
         </Dialog>
       )}
+
+      {assist && (
+        <PlanAssist
+          key={assist.about?.id ?? assist.resume?.id ?? 'plan'}
+          about={assist.about}
+          resume={assist.resume}
+          onClose={() => setAssist(null)}
+          onManual={() => {
+            const under = assist.about
+            setAssist(null)
+            setEditing({ kind: under ? CHILD_KINDS[under.kind][0] ?? 'scene' : 'story', parentId: under?.id ?? null })
+          }}
+        />
+      )}
+      {next && <NextDirections about={next.about} onClose={() => setNext(null)} />}
 
       {removing && (
         <ConfirmDialog
