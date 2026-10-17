@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { PageError } from '../components/PageError'
 import { api, isApiError, type AssistSession, type CanonEntity, type Scope } from '../api/client'
 import { CommandPalette } from '../components/CommandPalette'
 import { GodHand } from '../components/GodHand'
@@ -579,7 +580,9 @@ export function ProjectLayout() {
             )}
           </div>
           )}
-          <Outlet context={context} />
+          <PageError home={base}>
+            <Outlet context={context} />
+          </PageError>
         </main>
       </div>
 

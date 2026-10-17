@@ -26,7 +26,17 @@ export default defineConfig({
     // Playwright-managed Chromium (`make frontend-e2e-install`).
     channel: process.env.E2E_BROWSER_CHANNEL || undefined,
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    // The first workflow test needs a brand-new story, so the sweep, which fills the shared
+    // local story with something on every page, runs after everything else.
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: [/.*\.model\.spec\.ts/, /accessibility-sweep/] },
+    {
+      name: 'accessibility-sweep',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: /accessibility-sweep\.spec\.ts/,
+      dependencies: ['chromium'],
+    },
+  ],
   webServer: [
     {
       command: `uv run --locked python -m scripts.e2e.serve --port ${apiPort}`,

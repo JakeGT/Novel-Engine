@@ -8,7 +8,7 @@ Novel Engine is an open-source fiction authoring system with self-hosted and fre
 
 ## Current maturity
 
-The repository is a stabilized prototype, not a production application. Phase 0 is complete.
+The repository is a release-one candidate that has not been released, not a production application. Phase 0 is complete.
 Phase 1 is implemented with explicit external/operational exit items remaining. Phase 2
 (trustworthy canon) is complete and accepted by the owner (2026-10-09); the evidence is in
 `plan/phase-2-evidence.md`. Still open and operational: the first hosted CI run and the clean-host backup/restore rehearsal (deferred by the owner until the
@@ -28,16 +28,21 @@ project is on a permanent host). ADR-014–016 are accepted. See `plan/phase-2-t
 - The guided character workflow produces review proposals only. The generic graph API (CRUD,
   tagged-entity context retrieval, the original character questionnaire) is a separate legacy
   store whose writes are restricted to local mode; the world workflow is parked and unfinished.
-- The vector store is PostgreSQL/pgvector behind the vector port. Canon has no derived vector
-  index yet.
-- The React frontend covers entity, relationship, and character authoring, schema drafting and
-  publishing, proposal review, history/provenance/revert, and read-only media panels, with
-  component, accessibility, and browser end-to-end tests.
+- The vector store is PostgreSQL/pgvector behind the vector port. The author's writing has a
+  derived passage index (pointers and names, never the words), rebuildable; embeddings optional.
+- The React frontend covers the story bible, planning, texts and their reading, story rules, the
+  timeline, what-ifs, knowledge and the reader's ledger, scene context, the scene studio, review,
+  history, customisation and media panels, with component, accessibility and browser tests.
 - OIDC/local identity, invite-only multi-tenancy, scoped storage, encrypted OpenRouter BYOK,
   object storage, and a verified, ledgered project archive restore exist.
-- Story-rule authoring, manuscript import, extraction, story planning, long-form generation,
-  temporal branching, point-of-view filtering, media ingestion, and production operations remain
-  planned work.
+- Built since Phase 2 (each with a todo file and an ADR in `plan/`): assistant-led creation (2.5),
+  story planning (2.6), text intake and story rules (2.7), story time, what-ifs and point-of-view
+  knowledge (3), explainable scene context (4, text only), the scene studio with background jobs
+  (5), and reading scenes back into reviewed proposals (6).
+- Still planned or partial: media processing (images, audio, video), consistency profiles and
+  suppressions, release hardening items that are the owner's (licence, hosted CI run, restore
+  drill on a clean host), and any measurement of a real model's output. Every assistant path has
+  run against the scripted model and the local stand-in only.
 
 Do not describe a planned capability as implemented. When changing a capability, update its
 status in `plan/`.

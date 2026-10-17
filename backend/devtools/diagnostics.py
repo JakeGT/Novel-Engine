@@ -7,11 +7,16 @@ and record counts. It never includes secrets, DSNs, tokens, or manuscript text.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import platform
 import sys
+import time
 from collections.abc import Sequence
 from typing import Any
+from urllib.parse import urlsplit
+
+from pydantic import BaseModel
 
 from backend.core.config import Settings
 from backend.core.config import settings as default_settings
@@ -22,6 +27,80 @@ VERSION = "1"
 
 def _safe_dsn_host(host: str) -> str:
     return host or "unset"
+
+
+def ai_route(settings: Settings) -> dict[str, Any]:
+    """Which model route a self-hosted install uses: a provider, a model on this machine, or none."""
+    base = settings.AI_BASE_URL.strip()
+    host = urlsplit(base).hostname or "" if base else ""
+    local = host in {"localhost", "127.0.0.1", "::1", "host.docker.internal"} or host.endswith(
+        ".local"
+    )
+    if not settings.OPENAI_API_KEY and not base:
+        kind = "none"
+    elif local:
+        kind = "local"
+    else:
+        kind = "provider"
+    return {
+        "kind": kind,
+        "provider": settings.AI_PROVIDER,
+        # The host only: a URL can carry credentials or tokens in its path or query.
+        "host": host or ("api.openai.com" if settings.OPENAI_API_KEY else ""),
+        "model": settings.AI_MODEL,
+    }
+
+
+class _Ready(BaseModel):
+    ready: bool
+
+
+async def check_ai(settings: Settings, gateway: Any = None) -> dict[str, Any]:
+    """Ask the configured route two tiny questions: one in prose, one with a required shape.
+
+    Nothing from the author's story is sent, and no answer text is kept; only whether each
+    worked, how long it took, and the kind of error if it did not."""
+    if gateway is None:
+        from backend.adapters.ai import OpenAIGateway
+
+        gateway = OpenAIGateway(
+            settings.OPENAI_API_KEY,
+            settings.AI_MODEL,
+            provider=settings.AI_PROVIDER,
+            base_url=settings.AI_BASE_URL,
+        )
+    result: dict[str, Any] = {"route": ai_route(settings)}
+    if result["route"]["kind"] == "none":
+        result["ok"] = False
+        result["problem"] = "No model is configured: set AI_BASE_URL or OPENAI_API_KEY."
+        return result
+    messages = [{"role": "user", "content": "Reply with the single word: ready"}]
+    for name, call in (
+        ("prose", lambda: gateway.generate_text(messages=messages, max_tokens=8)),
+        (
+            "shaped",
+            lambda: gateway.generate_structured(
+                messages=[{"role": "user", "content": "Is this working? Answer ready=true."}],
+                response_format=_Ready,
+            ),
+        ),
+    ):
+        start = time.perf_counter()
+        try:
+            await call()
+            result[name] = {"ok": True, "ms": round((time.perf_counter() - start) * 1000)}
+        except Exception as error:  # noqa: BLE001 - every failure is reported, by kind only
+            result[name] = {"ok": False, "error": type(error).__name__}
+    result["ok"] = bool(result["prose"]["ok"] and result["shaped"]["ok"])
+    if not result["ok"]:
+        result["problem"] = (
+            "The model route did not answer as needed. Check that the server is running, the "
+            "model name exists there, and (for a local server) that it is reachable from here."
+        )
+    aclose = getattr(gateway, "aclose", None)
+    if aclose is not None:
+        await aclose()
+    return result
 
 
 def build_diagnostics(
@@ -43,7 +122,8 @@ def build_diagnostics(
             "is_hosted": settings.is_hosted,
         },
         "capabilities": {
-            "ai_configured": bool(settings.OPENAI_API_KEY),
+            "ai_configured": bool(settings.OPENAI_API_KEY or settings.AI_BASE_URL),
+            "ai_route": ai_route(settings),
             "sentry_enabled": bool(settings.SENTRY_DSN_BACKEND) and settings.APP_ENV != "test",
             "credentials_configured": bool(settings.CREDENTIAL_KEK),
             "embeddings": {
@@ -65,9 +145,16 @@ def build_diagnostics(
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="backend.devtools.diagnostics")
     parser.add_argument("--output", default=None, help="write JSON to a file instead of stdout")
+    parser.add_argument(
+        "--check-ai",
+        action="store_true",
+        help="ask the configured model two tiny questions (no story text is sent)",
+    )
     args = parser.parse_args(argv)
 
     payload = build_diagnostics(default_settings)
+    if args.check_ai:
+        payload["ai_check"] = asyncio.run(check_ai(default_settings))
     rendered = json.dumps(payload, indent=2, sort_keys=True) + "\n"
     if args.output:
         with open(args.output, "w", encoding="utf-8") as handle:

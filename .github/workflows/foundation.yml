@@ -117,6 +117,9 @@ jobs:
           pnpm exec openapi-typescript ../tests/contract/openapi_snapshot.json -o "$RUNNER_TEMP/schema.ts"
           diff -u src/api/schema.ts "$RUNNER_TEMP/schema.ts"
 
+      - name: Audit production frontend dependencies
+        run: pnpm audit --prod --audit-level high
+
       - name: Lint frontend
         run: pnpm run lint
 
@@ -275,10 +278,17 @@ jobs:
         working-directory: frontend
         run: pnpm exec playwright test
 
+      # Drafting and checking need a model: a local stand-in with set answers, never a provider.
+      - name: Run the browser tests that need a model
+        working-directory: frontend
+        run: pnpm exec playwright test --config playwright.model.config.ts
+
       - name: Upload end-to-end traces
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: e2e-traces
-          path: frontend/test-results
+          path: |
+            frontend/test-results
+            frontend/test-results-model
           if-no-files-found: ignore

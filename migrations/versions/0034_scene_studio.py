@@ -160,6 +160,8 @@ def downgrade() -> None:
     for column in ("manifest_id", "draft_id", "parent_version_id", "origin"):
         op.execute(f"ALTER TABLE source_versions DROP COLUMN IF EXISTS {column}")
     op.execute("ALTER TABLE source_texts DROP CONSTRAINT IF EXISTS source_texts_kind_check")
+    # A scene's words are kept: they become an ordinary text, never deleted by a rollback.
+    op.execute("UPDATE source_texts SET kind = 'paste' WHERE kind = 'scene'")
     op.execute(
         "ALTER TABLE source_texts ADD CONSTRAINT source_texts_kind_check "
         "CHECK (kind IN ('paste', 'markdown'))"

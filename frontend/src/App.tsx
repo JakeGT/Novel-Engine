@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
+import { PageError } from './components/PageError'
 import { SignedOutOverlay } from './components/SignedOutOverlay'
 import { KeepSignedIn } from './lib/keepalive'
 import { AssistantPage } from './pages/AssistantPage'
@@ -40,38 +41,40 @@ export default function App() {
       <KeepSignedIn />
       <SignedOutOverlay />
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/invite/:token" element={<InvitePage />} />
-          <Route path="/projects/:projectId" element={<ProjectLayout />}>
-            <Route index element={<Overview />} />
-            <Route path="bible" element={<BiblePage />} />
-            <Route path="entries/:entityId" element={<EntryPage />} />
-            <Route path="review" element={<ReviewQueue />} />
-            <Route path="review/:mutationId" element={<ReviewDetail />} />
-            <Route path="plan" element={<PlanPage />} />
-            <Route path="plan/:planId/write" element={<StudioPage />} />
-            <Route path="rules" element={<RulesPage />} />
-            <Route path="timeline" element={<TimelinePage />} />
-            <Route path="what-ifs" element={<WhatIfsPage />} />
-            <Route path="what-ifs/:branchId" element={<WhatIfPage />} />
-            <Route path="texts" element={<TextsPage />} />
-            <Route path="texts/:sourceId" element={<TextPage />} />
-            <Route path="history" element={<HistoryPage />} />
-            <Route path="customize" element={<CustomizePage />} />
-            <Route path="media" element={<MediaPage />} />
-            <Route path="assistant" element={<AssistantPage />} />
-            <Route path="people" element={<PeoplePage />} />
-            <Route path="entities/:entityId" element={<Moved to={(p) => `../entries/${p.entityId}`} />} />
-            <Route path="characters/:entityId" element={<Moved to={(p) => `../entries/${p.entityId}`} />} />
-            <Route path="mutations" element={<Navigate to="../review" replace />} />
-            <Route path="mutations/:mutationId" element={<Moved to={(p) => `../review/${p.mutationId}`} />} />
-            <Route path="revisions" element={<Navigate to="../history" replace />} />
-            <Route path="schema" element={<Navigate to="../customize" replace />} />
-            <Route path="assets" element={<Navigate to="../media" replace />} />
-          </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <PageError home="/">
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/invite/:token" element={<InvitePage />} />
+            <Route path="/projects/:projectId" element={<ProjectLayout />}>
+              <Route index element={<Overview />} />
+              <Route path="bible" element={<BiblePage />} />
+              <Route path="entries/:entityId" element={<EntryPage />} />
+              <Route path="review" element={<ReviewQueue />} />
+              <Route path="review/:mutationId" element={<ReviewDetail />} />
+              <Route path="plan" element={<PlanPage />} />
+              <Route path="plan/:planId/write" element={<StudioPage />} />
+              <Route path="rules" element={<RulesPage />} />
+              <Route path="timeline" element={<TimelinePage />} />
+              <Route path="what-ifs" element={<WhatIfsPage />} />
+              <Route path="what-ifs/:branchId" element={<WhatIfPage />} />
+              <Route path="texts" element={<TextsPage />} />
+              <Route path="texts/:sourceId" element={<TextPage />} />
+              <Route path="history" element={<HistoryPage />} />
+              <Route path="customize" element={<CustomizePage />} />
+              <Route path="media" element={<MediaPage />} />
+              <Route path="assistant" element={<AssistantPage />} />
+              <Route path="people" element={<PeoplePage />} />
+              <Route path="entities/:entityId" element={<Moved to={(p) => `../entries/${p.entityId}`} />} />
+              <Route path="characters/:entityId" element={<Moved to={(p) => `../entries/${p.entityId}`} />} />
+              <Route path="mutations" element={<Navigate to="../review" replace />} />
+              <Route path="mutations/:mutationId" element={<Moved to={(p) => `../review/${p.mutationId}`} />} />
+              <Route path="revisions" element={<Navigate to="../history" replace />} />
+              <Route path="schema" element={<Navigate to="../customize" replace />} />
+              <Route path="assets" element={<Navigate to="../media" replace />} />
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </PageError>
       </BrowserRouter>
     </QueryClientProvider>
   )

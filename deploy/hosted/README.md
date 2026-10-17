@@ -14,6 +14,7 @@ Status: deployed on 2026-10-10. The owner signed in through Authentik and create
 | Identity | Authentik application `novel-engine`; callback `https://novel-engine.jaketalling.com/auth/callback`, post-logout `https://novel-engine.jaketalling.com/` |
 | Secrets | `./secrets/` (git-ignored, directory mode 0700), created by `./init-secrets.sh` |
 | Backup | `./backup.sh`: Postgres dump + stored objects. Neo4j is rebuilt from Postgres |
+| Restore | `./restore.sh backups/novel-engine-<timestamp>`: checks every file against the manifest first, asks before replacing anything |
 
 ## 1. Build the image
 
@@ -130,6 +131,21 @@ Run `./backup.sh` first. Build the new image, set `NOVEL_ENGINE_VERSION`, `docke
 --wait`; migrations run before the server starts and are forward-only. To roll back, set the
 previous version; if the newer one applied migrations, restore the Postgres dump taken before the
 upgrade. `docker compose stop` keeps all volumes.
+
+## Restore drill
+
+Do this on a scratch host (or a copy of the stack) before relying on the backups:
+
+1. `./backup.sh`, then note one story's title and its last change.
+2. Make a change you can recognise (add an entry).
+3. `./restore.sh backups/novel-engine-<timestamp>` and type `restore`.
+4. Rebuild that story's graph (the command is printed at the end), then open the story: the entry
+   from step 2 is gone and everything from step 1 is there, including texts, scenes and pictures.
+5. A damaged backup is refused before anything changes: change one byte of `objects.tar` in a copy
+   of the folder and run `./restore.sh` on the copy.
+
+The credential key is not in the backup. Restoring with a different key keeps everything except
+stored provider keys, which must be entered again.
 
 ## What an anonymous visitor can reach
 

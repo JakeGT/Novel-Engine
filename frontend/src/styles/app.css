@@ -2870,6 +2870,15 @@ input.when-number,
   margin-top: 0.5rem;
 }
 
+/* A scene written before it was planned: an offer to fill in the card, set apart from
+   the card itself by a rule, not a box. */
+/* An offer, not a warning: the plain notice, with its text above its action. */
+.studio-plan-fill {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+}
+
 .studio-surface,
 .studio-page {
   max-width: 70ch;
@@ -3062,3 +3071,10 @@ input.when-number,
     padding: 0.9rem 1rem;
   }
 }
+
+/* A page that stopped working: what happened, that nothing saved is lost, and two ways on. */
+.page-error {
+  max-width: 40rem;
+  padding: 3rem 0;
+}
+

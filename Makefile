@@ -100,6 +100,7 @@ archive:
 
 audit:
 	uv run --locked pip-audit
+	pnpm --dir frontend audit --prod --audit-level high
 
 api:
 	uv run --locked uvicorn backend.main:app --reload

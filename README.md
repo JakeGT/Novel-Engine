@@ -114,6 +114,28 @@ Logs are emitted as single-line JSON with a correlation ID and are redacted by d
 
 Error monitoring is opt-in. The server reports to `SENTRY_DSN_BACKEND` and hands `SENTRY_DSN_WEB` to the page it serves, so the browser needs no build-time setting; an empty value switches that side off. Events are scrubbed on both sides before they leave: no request bodies, query strings, cookies, headers that identify, user details, breadcrumbs or local variables. What remains is the stack, the route, the release, and internal ids. An exception's own message is sent, so code must never put an author's words in one. `python -m backend.core.observability` sends a test event.
 
+Browser tests come in two sets: `playwright.config.ts` runs with no model at all, and
+`playwright.model.config.ts` runs the tests named `*.model.spec.ts` against a local stand-in model
+with set answers (`scripts/e2e/fake_model.py`), so drafting and checking are tested end to end
+without a provider. `make e2e` runs both.
+
+### Using a model on your own computer
+
+A self-hosted install can use any OpenAI-compatible server instead of a provider, so nothing about
+the story leaves the machine. Ollama (0.5 or later) and LM Studio both answer with the required
+shape; anything else is asked for the shape in words and checked. In `.env`:
+
+```bash
+OPENAI_API_KEY=                       # not needed for a local server
+AI_BASE_URL=http://localhost:11434/v1 # Ollama; LM Studio is http://localhost:1234/v1
+AI_MODEL=llama3.1                     # a model you have pulled or loaded
+```
+
+From inside Docker, the host is `host.docker.internal` rather than `localhost`. Check the route
+with `uv run python -m backend.devtools.diagnostics --check-ai`: it asks two tiny questions (no
+story text) and says whether each worked. Smaller local models draft and read less well than large
+hosted ones; the checks and the review step are the same either way.
+
 For coding-agent conventions and project boundaries, read [AGENTS.md](AGENTS.md). For architecture, scope, roadmap, and open decisions, start with [plan/README.md](plan/README.md).
 
 ## Deployment, backup, and privacy
@@ -135,8 +157,8 @@ redirect/logout URLs are the registered allow-list entries (see ADR-009).
 
 Operational tooling:
 
-- `make diagnostics` prints a redacted support bundle (versions, capability flags, safe host
-  names; no secrets or manuscript text).
+- `make diagnostics` prints a redacted support bundle (versions, capability flags, the model route
+  by host only; no secrets or manuscript text). `--check-ai` also checks the model answers.
 - `make retention` purges expired sessions, login attempts, invitations, and stale rate-limit
   hits without touching canonical data.
 - `make project` advances the Neo4j projection; `make project PROJECT_ARGS=--verify` checks that
@@ -148,20 +170,29 @@ Operational tooling:
   writes a security-audit record. A restore is recorded in a status ledger and is only marked
   complete after it has been verified; `--imports` shows the ledger and `--remove-import` erases a
   failed one. `--upgrade-graph` files a Phase 1 graph bundle as a proposal for review rather than
-  restoring it. A coordinated PostgreSQL/Neo4j/object-store backup procedure is documented but not
-  yet automated; a project archive is not a database backup.
+  restoring it. A project archive is not a database backup: the hosted profile has
+  `deploy/hosted/backup.sh` (PostgreSQL and stored objects, with checksums) and
+  `deploy/hosted/restore.sh` (checks the checksums before replacing anything), with a restore drill
+  in `deploy/hosted/README.md`.
 - Operational metrics are available in Prometheus text format at `/health/metrics` when
   `METRICS_ENABLED=true` (counts and timings only; set `METRICS_TOKEN` outside local development).
 
-Privacy: the only outbound connections are the configured OIDC provider, the AI provider
-(OpenRouter/OpenAI), and opt-in Sentry. Sentry is disabled unless a DSN is set and scrubs
+Privacy: the only outbound connections are the configured OIDC provider, the AI provider (none
+when the model runs on your own computer), and opt-in Sentry. Sentry is disabled unless a DSN is set and scrubs
 request data, headers, and PII (`backend/core/observability.py`). Provider credentials are
 stored envelope-encrypted and never returned by the API; logs redact `sk-`/`sk-or-` keys.
 
 ## Current limitations
 
-- The React application is a minimal TypeScript authoring shell (session, project switcher, entity list/create/detail with history and projection status); schema publish, mutation review, media panels, and end-to-end browser tests are still pending.
-- Canonical API routes live under `/api/v1` with stable DTOs and an `application/problem+json` error contract; deprecated `/api` aliases have been removed.
-- Product routes use the injected container. Generic graph writes are an explicitly namespaced, local/admin-only development surface and cannot bypass the hosted canon journal.
-- The world workflow and generic RAG answer endpoint are incomplete (`/api/v1/rag/query` returns 501).
-- The architecture document at the repository root records the original concept; `plan/` is the maintained implementation plan.
+- No real provider has been measured. Every assistant path (creation, planning, reading texts,
+  drafting scenes, checking them, filling in a plan card) is tested against a scripted model and a
+  local stand-in; the quality of what a real model drafts or reads is unmeasured.
+- Media: pictures are stored, linked and named in context, but no image, audio or video is processed
+  or sent to a model.
+- Drafts are kept or discarded whole: no streaming, no editing inside a draft, no merging.
+- Consistency profiles, finding suppressions and impact preview are not built; checks are worked out
+  each time.
+- No open-source licence has been chosen yet; see `plan/phase-7-todo.md` for release items that are
+  the owner's.
+- The generic RAG answer endpoint is incomplete (`/api/v1/rag/query` returns 501), and the root
+  `architecture.md` records the original concept; `plan/` is the maintained plan.
