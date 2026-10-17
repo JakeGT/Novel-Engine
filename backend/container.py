@@ -437,5 +437,6 @@ def build_container(settings: Settings | None = None) -> Container:
         local_mode=not resolved.is_hosted,
         sources=container.sources,
         rules=container.rules,
+        clocks=container.story_clocks,
     )
     return container

@@ -1734,6 +1734,41 @@
             "title": "Label",
             "type": "string"
           },
+          "main_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Main Label"
+          },
+          "main_parts": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Main Parts"
+          },
+          "parts": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parts"
+          },
           "record_id": {
             "title": "Record Id",
             "type": "string"

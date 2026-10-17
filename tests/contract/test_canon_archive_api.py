@@ -146,3 +146,66 @@ def test_an_archive_without_writing_or_rules_has_no_such_sections(
     _publish_schema(auth_client, project_id)
     archive = auth_client.post(f"/api/v1/projects/{project_id}/archive/export").json()
     assert "writing" not in archive and "story_rules" not in archive
+
+
+@pytest.mark.asyncio
+async def test_story_time_and_secrets_survive_a_restore_and_what_ifs_stay_out(
+    auth_client, fake_container
+) -> None:
+    from tests.contract.test_god_hand import _world
+
+    w = _world(auth_client, fake_container)
+    base, head = w["base"], int(w["head"])
+    auth_client.put(f"{base}/timeline/unit", json={"unit": "season"})
+    for fact, body in (
+        ("in_guild", {"visibility": "secret"}),
+        ("at_harbor", {"ends": {"kind": "at", "at": 9}}),
+    ):
+        amended = auth_client.post(
+            f"{base}/facts/{w[fact]}/amend", json={"expected_revision": head, **body}
+        )
+        assert amended.status_code == 200, amended.text
+        head += 1
+    head -= 1
+    war = auth_client.post(
+        f"{base}/events",
+        json={
+            "kind": "battle",
+            "name": "The War",
+            "expected_revision": head + 1,
+            "when": {"kind": "at", "at": 100, "label": "the long winter"},
+        },
+    ).json()
+    what_if = auth_client.post(f"{base}/what-ifs", json={"name": "No war"}).json()
+    auth_client.post(
+        f"{base}/entities",
+        json={"type": "Character", "name": "Only in the what-if", "expected_revision": head + 2},
+        headers={"X-Story-Branch": what_if["id"]},
+    )
+
+    # Asked for from inside the what-if, the archive is still the main story.
+    archive = auth_client.post(
+        f"{base}/archive/export", headers={"X-Story-Branch": what_if["id"]}
+    ).json()
+    assert archive["story_time"] == {"unit": "season"}
+    assert "Only in the what-if" not in str(archive)
+
+    service = fake_container.archive_service
+    workspace_id = archive["project"]["workspace_id"]
+    await service.import_project(workspace_id, "restored", archive)
+    canon = fake_container.canon_repository
+    secret = await canon.get_fact(
+        workspace_id=workspace_id, project_id="restored", fact_id=w["in_guild"]
+    )
+    bounded = await canon.get_fact(
+        workspace_id=workspace_id, project_id="restored", fact_id=w["at_harbor"]
+    )
+    assert secret.visibility.value == "secret" and bounded.ends.at == 9
+    event = await canon.get_event(
+        workspace_id=workspace_id, project_id="restored", event_id=war["id"]
+    )
+    assert event.when.label == "the long winter"
+    assert (
+        await fake_container.story_clocks.get_unit(workspace_id=workspace_id, project_id="restored")
+        == "season"
+    )

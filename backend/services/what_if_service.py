@@ -11,7 +11,7 @@ chooses which version to keep for each before the proposal is made.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Any
 
@@ -57,6 +57,11 @@ class RecordChange:
     record_id: str
     kind: ChangeKind
     label: str
+    # For a fact or belief: its subject, kind of fact and object, so a screen can phrase it.
+    parts: dict[str, Any] | None = None
+    # For a record changed in both lines: how the main story has it.
+    main_label: str | None = None
+    main_parts: dict[str, Any] | None = None
 
     @property
     def key(self) -> str:
@@ -236,9 +241,10 @@ class WhatIfService:
 
     async def _labels(
         self, workspace_id: str, project_id: str, branch: Branch
-    ) -> dict[tuple[str, str], str]:
-        """Plain names for the records of one line of the story."""
+    ) -> tuple[dict[tuple[str, str], str], dict[tuple[str, str], dict[str, Any]]]:
+        """Plain names for the records of one line of the story, and each fact's parts."""
         labels: dict[tuple[str, str], str] = {}
+        parts: dict[tuple[str, str], dict[str, Any]] = {}
         with working_in(None if branch.is_root else branch.id):
             entities = await self._canon.list_entities(
                 workspace_id=workspace_id, project_id=project_id, include_retired=True, limit=10_000
@@ -253,6 +259,7 @@ class WhatIfService:
                 labels[("fact", fact.id)] = _sentence(
                     names, fact.proposition.subject_id, fact.proposition
                 )
+                parts[("fact", fact.id)] = _parts(fact.proposition)
             beliefs = await self._canon.list_beliefs(
                 workspace_id=workspace_id, project_id=project_id, include_closed=True, limit=10_000
             )
@@ -271,12 +278,14 @@ class WhatIfService:
             )
             for item in items:
                 labels[("plan_item", item.id)] = item.title
-        return labels
+        return labels, parts
 
     @staticmethod
     def _summarise(
-        versions: list[RecordVersion], labels: dict[tuple[str, str], str]
+        versions: list[RecordVersion],
+        named: tuple[dict[tuple[str, str], str], dict[tuple[str, str], dict[str, Any]]],
     ) -> dict[str, RecordChange]:
+        labels, parts = named
         changes: dict[str, RecordChange] = {}
         for version in versions:
             key = f"{version.record_type}:{version.record_id}"
@@ -293,8 +302,14 @@ class WhatIfService:
                 kind = ChangeKind.ARCHIVED
             else:
                 kind = ChangeKind.CHANGED
-            label = labels.get((version.record_type, version.record_id)) or "A record"
-            changes[key] = RecordChange(version.record_type, version.record_id, kind, label)
+            record = (version.record_type, version.record_id)
+            changes[key] = RecordChange(
+                version.record_type,
+                version.record_id,
+                kind,
+                labels.get(record) or "A record",
+                parts=parts.get(record),
+            )
         return changes
 
     async def compare(
@@ -316,7 +331,10 @@ class WhatIfService:
         comparison.in_what_if = sorted(mine.values(), key=lambda change: change.label.lower())
         comparison.in_main = sorted(theirs.values(), key=lambda change: change.label.lower())
         comparison.conflicts = sorted(
-            (mine[key] for key in mine.keys() & theirs.keys()),
+            (
+                replace(mine[key], main_label=theirs[key].label, main_parts=theirs[key].parts)
+                for key in mine.keys() & theirs.keys()
+            ),
             key=lambda change: change.label.lower(),
         )
         return comparison
@@ -423,6 +441,14 @@ _RECORD_OF = {
 
 def _record_key(operation: CanonOperation) -> str:
     return f"{_RECORD_OF.get(operation.op, operation.op)}:{operation.id}"
+
+
+def _parts(proposition: Any) -> dict[str, Any]:
+    return {
+        "subject_id": proposition.subject_id,
+        "predicate": proposition.predicate,
+        "object": proposition.object.model_dump(mode="json"),
+    }
 
 
 def _sentence(names: dict[str, str], subject_id: str, proposition: Any) -> str:

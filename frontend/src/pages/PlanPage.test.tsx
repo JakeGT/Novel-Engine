@@ -132,14 +132,14 @@ describe('PlanPage', () => {
     renderInProject(<PlanPage />, at)
 
     const second = (await screen.findByRole('heading', { name: 'She confronts her father' })).closest('li') as HTMLElement
-    await user.click(within(second).getByText('More'))
+    await user.click(within(second).getByText('Move, plan, remove'))
     expect(within(second).getByRole('button', { name: 'Move down' })).toBeDisabled()
     await user.click(within(second).getByRole('button', { name: 'Move up' }))
     await waitFor(() => expect(api.find('POST', '/move')).toHaveLength(1))
     expect(api.find('POST', '/move')[0].body).toEqual({ parent_id: 'pln_arc', before_id: 'pln_b1', expected_revision: 3 })
 
     const arcRow = screen.getByRole('heading', { name: 'Ines learns the truth' }).closest('li') as HTMLElement
-    await user.click(within(arcRow).getAllByText('More')[0])
+    await user.click(within(arcRow).getAllByText('Move, plan, remove')[0])
     await user.click(within(arcRow).getAllByRole('button', { name: 'Remove' })[0])
     const dialog = screen.getByRole('dialog', { name: 'Remove “Ines learns the truth” from the plan?' })
     expect(dialog).toHaveTextContent('It has 2 parts directly under it, and everything under those goes too.')
@@ -185,7 +185,9 @@ describe('PlanPage', () => {
     expect(after).toHaveTextContent('True now')
     await expectAccessible(container)
 
-    await user.click(screen.getByText('More', { selector: 'summary[aria-label="More for The lamp room at night"]' }))
+    await user.click(screen.getByText('Move, plan, remove', {
+        selector: 'summary[aria-label="Move, plan or remove The lamp room at night"]',
+      }))
     await user.click(screen.getByRole('button', { name: 'Before and after' }))
     const dialog = screen.getByRole('dialog', { name: 'Before and after “The lamp room at night”' })
     expect(within(dialog).getByRole('button', { name: 'Save' })).toBeDisabled()

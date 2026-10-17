@@ -5,6 +5,8 @@ import { api, type CanonEntity, type Fact, type VocabularyPredicate } from '../a
 import { JSON_HINTS, buildObject, type Entered } from '../lib/facts'
 import { objectText, predicateLabel, typePlural } from '../lib/words'
 import { entryPath, scopedKey, useCanonWrite, useEntries, useProject } from '../project'
+import { spanText, useStoryClock } from '../lib/storytime'
+import { FactDetailsDialog } from './FactDetailsDialog'
 import { ObjectControl } from './ObjectControl'
 import { Button, ErrorNotice, Loading, UndoNotice, WriteProblem } from './ui'
 
@@ -85,6 +87,9 @@ export function FactsPanel({ entity }: { entity: CanonEntity }) {
     if (!built.error) void add.submit()
   }
 
+  const clock = useStoryClock(scope)
+  const [details, setDetails] = useState<{ fact: Fact; sentence: string } | null>(null)
+
   const linked = (id: string) => (
     <Link to={entryPath(scope, id)}>{entries.names.get(id) ?? 'an entry'}</Link>
   )
@@ -92,6 +97,11 @@ export function FactsPanel({ entity }: { entity: CanonEntity }) {
   const row = (fact: Fact, direction: 'out' | 'in') => {
     const object = fact.object as Record<string, unknown>
     const text = objectText(object, entries.names)
+    const sentence =
+      direction === 'out'
+        ? `${entity.name} ${predicateLabel(fact.predicate)} ${text}`
+        : `${entries.names.get(fact.subject_id) ?? 'An entry'} ${predicateLabel(fact.predicate)} ${entity.name}`
+    const span = spanText(fact.starts, fact.ends, clock.unit, clock.eventName)
     return (
       <li className="row" key={fact.id}>
         <span className="grow sentence">
@@ -106,27 +116,34 @@ export function FactsPanel({ entity }: { entity: CanonEntity }) {
               <strong>{entity.name}</strong>
             </>
           )}
+          {span && <span className="muted"> ({span})</span>}
         </span>
+        {fact.visibility === 'secret' && <span className="knowledge-tag secret">Secret</span>}
+        {fact.visibility === 'common' && <span className="knowledge-tag">Everyone knows</span>}
         <span className="muted small">since version {fact.created_revision}</span>
+        <span className="row-actions">
+        {fact.status === 'asserted' && (
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-label={`When and who knows: ${sentence}`}
+            onClick={() => setDetails({ fact, sentence })}
+          >
+            When and who knows
+          </Button>
+        )}
         {canWrite && fact.status === 'asserted' && (
           <Button
             size="sm"
             variant="ghost"
             disabled={end.pending}
             aria-label={`End fact: ${predicateLabel(fact.predicate)} ${text}`}
-            onClick={() =>
-              void end.submit({
-                fact,
-                sentence:
-                  direction === 'out'
-                    ? `${entity.name} ${predicateLabel(fact.predicate)} ${text}`
-                    : `${entries.names.get(fact.subject_id) ?? 'An entry'} ${predicateLabel(fact.predicate)} ${entity.name}`,
-              })
-            }
+            onClick={() => void end.submit({ fact, sentence })}
           >
             No longer true
           </Button>
         )}
+        </span>
       </li>
     )
   }
@@ -157,6 +174,13 @@ export function FactsPanel({ entity }: { entity: CanonEntity }) {
       )}
       <WriteProblem write={end} scope={scope} />
       <WriteProblem write={restore} scope={scope} />
+      {details && (
+        <FactDetailsDialog
+          fact={details.fact}
+          sentence={details.sentence}
+          onClose={() => setDetails(null)}
+        />
+      )}
 
       {canWrite && active && predicates.length > 0 && (
         <form className="stack tight" onSubmit={onSubmit} noValidate aria-label="Add a fact" style={{ marginTop: '1.1rem' }}>

@@ -6,6 +6,8 @@ import { ActivityPanel } from '../components/ActivityPanel'
 import { ArchiveEntry } from '../components/ArchiveEntry'
 import { EntityForm } from '../components/EntityForm'
 import { BeliefsPanel } from '../components/BeliefsPanel'
+import { KnowledgePanel } from '../components/KnowledgePanel'
+import { useStoryClock, whenText } from '../lib/storytime'
 import { FactsPanel } from '../components/FactsPanel'
 import { EntryMarks } from '../components/EntryMarks'
 import { Icon } from '../components/icons'
@@ -82,6 +84,7 @@ function Details({ entity, onEdit }: { entity: CanonEntity; onEdit?: () => void 
 
 function Events({ entity }: { entity: CanonEntity }) {
   const { scope } = useProject()
+  const clock = useStoryClock(scope)
   const events = useQuery({
     queryKey: scopedKey(scope, 'events', 'entity', entity.id),
     queryFn: () => api.listEvents(scope, { entity_id: entity.id, limit: 200 }),
@@ -109,7 +112,11 @@ function Events({ entity }: { entity: CanonEntity }) {
               </span>
             </span>
             <Badge>{words(event.kind)}</Badge>
-            <span className="muted small">{event.world_position ?? 'date unknown'}</span>
+            <span className="muted small">
+              {event.when
+                ? whenText(event.when, clock.unit, clock.eventName)
+                : (event.world_position ?? 'not placed in time')}
+            </span>
           </li>
         ))}
       </ul>
@@ -255,6 +262,7 @@ export function EntryPage() {
               <Details entity={entity} onEdit={editable ? () => setEditing(true) : undefined} />
               <FactsPanel entity={entity} />
               {entity.type === 'Character' && <BeliefsPanel entity={entity} />}
+              {entity.type === 'Character' && <KnowledgePanel entity={entity} />}
               {entity.type === 'Character' && <Events entity={entity} />}
               {editable && !bare && <Assistant entity={entity} bare={false} />}
             </div>

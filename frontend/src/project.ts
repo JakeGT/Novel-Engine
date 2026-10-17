@@ -43,9 +43,12 @@ export function useProject(): ProjectContext {
   return (provided ?? outlet) as ProjectContext
 }
 
-/** Every cache key starts with workspace + project so one scope can never serve another. */
+/**
+ * Every cache key starts with workspace + project so one scope can never serve another,
+ * then the what-if, so the story and a what-if never share an answer.
+ */
 export function scopedKey(scope: Scope, ...parts: unknown[]): unknown[] {
-  return [parts[0], scope.workspaceId, scope.projectId, ...parts.slice(1)]
+  return [parts[0], scope.workspaceId, scope.projectId, scope.branchId ?? 'main', ...parts.slice(1)]
 }
 
 /** The most entries one screen loads at once; lists say so when they reach it. */

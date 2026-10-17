@@ -71,7 +71,7 @@ describe('ProjectLayout', () => {
     // Two entries: still getting the first idea down.
     const nav = await screen.findByRole('navigation', { name: 'Project' })
     await within(nav).findByRole('link', { name: /Characters/ })
-    const more = within(nav).getByText('More').closest('details') as HTMLElement
+    const more = within(nav).getByText('Pages you have not used yet').closest('details') as HTMLElement
     expect(more).not.toHaveAttribute('open')
     for (const name of ['History', 'Types and fields', 'Media']) {
       expect(within(more).getByRole('link', { name, hidden: true })).toBeInTheDocument()
@@ -79,7 +79,7 @@ describe('ProjectLayout', () => {
     expect(within(nav).getByRole('link', { name: /Story bible/ })).toBeVisible()
 
     // An author who wants the whole menu says so once, and it is remembered.
-    await user.click(within(nav).getByText('More'))
+    await user.click(within(nav).getByText('Pages you have not used yet'))
     await user.click(within(more).getByLabelText('Always show every page'))
     expect(within(more).queryByRole('link', { name: 'History' })).not.toBeInTheDocument()
     expect(within(nav).getByRole('link', { name: 'History' })).toBeInTheDocument()

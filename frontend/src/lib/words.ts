@@ -244,6 +244,15 @@ export function describeOperation(operation: OperationLike, names: Names): strin
       return `Add fact: ${sentence(payload, names)}`
     case 'close_fact':
       return 'End a fact'
+    case 'amend_fact': {
+      const parts: string[] = []
+      if (payload.starts || payload.ends) parts.push('say when a fact is true')
+      if (payload.visibility === 'secret') parts.push('make a fact a secret')
+      if (payload.visibility === 'common') parts.push('mark a fact as known to everyone')
+      if (payload.visibility === 'ordinary') parts.push('stop treating a fact as a secret')
+      const text = parts.join(' and ') || 'change when a fact is true'
+      return text.charAt(0).toUpperCase() + text.slice(1)
+    }
     case 'assert_belief':
       return `${nameOf(names, String(payload.holder_entity_id ?? ''))} believes: ${sentence(payload, names)}`
     case 'close_belief':

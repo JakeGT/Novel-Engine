@@ -7,6 +7,7 @@ project request; with no header everything is the main story.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -53,6 +54,11 @@ class ChangeModel(BaseModel):
     record_id: str
     kind: str
     label: str
+    # For a fact or belief: subject_id, predicate, object (and holder_id), to phrase it.
+    parts: dict[str, Any] | None = None
+    # For a record changed in both: how the story itself has it.
+    main_label: str | None = None
+    main_parts: dict[str, Any] | None = None
 
 
 class ComparisonModel(BaseModel):
@@ -94,6 +100,9 @@ def _change(change: RecordChange) -> ChangeModel:
         record_id=change.record_id,
         kind=change.kind.value,
         label=change.label,
+        parts=change.parts,
+        main_label=change.main_label,
+        main_parts=change.main_parts,
     )
 
 

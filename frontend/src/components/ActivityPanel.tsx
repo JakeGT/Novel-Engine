@@ -17,6 +17,7 @@ const VERBS: Record<string, string> = {
   close_belief: 'Belief ended',
   create_event: 'Event added',
   amend_event: 'Event edited',
+  amend_fact: 'When or who knows changed',
   retire_event: 'Event archived',
 }
 

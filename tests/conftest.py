@@ -304,6 +304,7 @@ def _build_fake_container(settings, tmp_path):
         local_mode=not settings.is_hosted,
         sources=sources,
         rules=rules,
+        clocks=story_clocks,
     )
     return Container(
         settings=settings,

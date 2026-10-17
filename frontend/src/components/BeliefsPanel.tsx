@@ -8,9 +8,9 @@ import { ObjectControl } from './ObjectControl'
 import { Badge, Button, ErrorNotice, UndoNotice, WriteProblem } from './ui'
 
 const AGREEMENT: Record<string, { label: string; tone: Tone }> = {
-  agrees: { label: 'True in canon', tone: 'ok' },
-  disagrees: { label: 'Contradicts canon', tone: 'danger' },
-  unknown: { label: 'Canon doesn’t say', tone: 'neutral' },
+  agrees: { label: 'True in your story', tone: 'ok' },
+  disagrees: { label: 'Not so in your story', tone: 'danger' },
+  unknown: { label: 'Your story doesn’t say', tone: 'neutral' },
 }
 
 // How sure a character is, in words. The number is what is stored.

@@ -36,6 +36,7 @@ from typing import Any
 from backend.core.logging import log_event
 from backend.core.metrics import metrics
 from backend.domain.archive import ArchiveImport, ArchiveImportError, ImportStatus
+from backend.domain.branching import working_in
 from backend.domain.canon.propositions import EntityRefObject
 from backend.domain.canon.revisions import OriginKind
 from backend.domain.errors import NotFoundError
@@ -136,8 +137,10 @@ class CanonArchiveService:
         local_mode: bool = False,
         sources: object | None = None,
         rules: object | None = None,
+        clocks: object | None = None,
     ) -> None:
         self._canon = canon
+        self._clocks = clocks
         self._journal = journal
         self._schemas = schemas
         self._media = media
@@ -321,6 +324,12 @@ class CanonArchiveService:
 
     # ---------------------------------------------------------------- export
     async def export_project(self, workspace_id: str, project_id: str) -> dict[str, Any]:
+        # An archive is the main story, whatever what-if the request was made from:
+        # its records and its history must come from the same line (ADR-020).
+        with working_in(None):
+            return await self._export_main(workspace_id, project_id)
+
+    async def _export_main(self, workspace_id: str, project_id: str) -> dict[str, Any]:
         branch_id = await self._root_branch_id(workspace_id, project_id)
         schema_versions = await self._schemas.list(workspace_id=workspace_id, project_id=project_id)
         revisions = await self._canon.list_commits(
@@ -495,6 +504,12 @@ class CanonArchiveService:
         story_rules = await self._export_rules(workspace_id, project_id)
         if story_rules:
             body["story_rules"] = story_rules
+        if self._clocks is not None:
+            unit = await self._clocks.get_unit(  # type: ignore[attr-defined]
+                workspace_id=workspace_id, project_id=project_id
+            )
+            if unit:
+                body["story_time"] = {"unit": unit}
         body["checksum"] = _checksum(body)
         metrics.increment(
             "archive_operations_total",
@@ -653,6 +668,15 @@ class CanonArchiveService:
                     )
                 )
                 restored["names"] += 1
+        unit = (archive.get("story_time") or {}).get("unit")
+        if self._clocks is not None and isinstance(unit, str) and unit.strip():
+            current = await self._clocks.get_unit(  # type: ignore[attr-defined]
+                workspace_id=workspace_id, project_id=project_id
+            )
+            if current is None:
+                await self._clocks.set_unit(  # type: ignore[attr-defined]
+                    workspace_id=workspace_id, project_id=project_id, unit=unit.strip()[:30]
+                )
         if self._rules is not None:
             for rule in archive.get("story_rules", []):
                 existing = await self._rules.get_rule(  # type: ignore[attr-defined]

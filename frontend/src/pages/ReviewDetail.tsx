@@ -8,6 +8,7 @@ import {
   type MutationDetail as Detail,
   type MutationOperation,
   type MutationValidation,
+  type WorldTime,
 } from '../api/client'
 import { AskForChanges } from '../components/AskForChanges'
 import { FromText } from '../components/FromText'
@@ -30,6 +31,7 @@ import {
 import { useConversationFor } from '../lib/conversations'
 import { hasChangeForm } from '../lib/facts'
 import { IMPORTANCE_KEY, NEEDS_DETAIL_KEY, TAGS_KEY } from '../lib/marks'
+import { useStoryClock, whenText } from '../lib/storytime'
 import { fullDate, timeAgo } from '../lib/time'
 import {
   CHANGE_STATES,
@@ -57,6 +59,7 @@ const GROUPS: { label: string; one: string; types: string[] }[] = [
   { label: 'Changes to entries', one: 'change to an entry', types: ['update_entity'] },
   { label: 'Facts ended', one: 'fact ended', types: ['close_fact'] },
   { label: 'New facts', one: 'new fact', types: ['assert_fact'] },
+  { label: 'When facts are true, and who knows', one: 'change to when or who knows', types: ['amend_fact'] },
   { label: 'Beliefs ended', one: 'belief ended', types: ['close_belief'] },
   { label: 'New beliefs', one: 'new belief', types: ['assert_belief'] },
   { label: 'Events', one: 'event', types: ['create_event', 'amend_event', 'retire_event'] },
@@ -138,7 +141,23 @@ function planRows(operation: MutationOperation, names: Map<string, string>): Row
     }))
 }
 
-function fieldRows(operation: MutationOperation, names: Map<string, string>): Row[] {
+// Story time and who may know a fact, in the author's words (ADR-020).
+const TIME_LABELS: Record<string, string> = {
+  starts: 'True from',
+  ends: 'No longer true from',
+  when: 'When',
+}
+const VISIBILITY_WORDS: Record<string, string> = {
+  ordinary: 'Nothing said',
+  common: 'Everyone in the story knows it',
+  secret: 'A secret',
+}
+
+function fieldRows(
+  operation: MutationOperation,
+  names: Map<string, string>,
+  describeTime: (value: WorldTime) => string = (value) => JSON.stringify(value),
+): Row[] {
   if (PLAN_OPERATIONS.has(operation.operation_type)) return planRows(operation, names)
   const before = operation.target_before ?? null
   return Object.entries(operation.payload)
@@ -159,7 +178,28 @@ function fieldRows(operation: MutationOperation, names: Map<string, string>): Ro
             after: item,
           }))
       }
-      return [{ key, label: words(key), before: before && key in before ? before[key] : undefined, after: value }]
+      const was = before && key in before ? before[key] : undefined
+      if (key in TIME_LABELS && isFlat(value)) {
+        return [
+          {
+            key,
+            label: TIME_LABELS[key],
+            before: isFlat(was) ? describeTime(was as WorldTime) : was,
+            after: describeTime(value as WorldTime),
+          },
+        ]
+      }
+      if (key === 'visibility') {
+        return [
+          {
+            key,
+            label: 'Who knows',
+            before: was === undefined ? undefined : (VISIBILITY_WORDS[String(was)] ?? was),
+            after: VISIBILITY_WORDS[String(value)] ?? value,
+          },
+        ]
+      }
+      return [{ key, label: words(key), before: was, after: value }]
     })
 }
 
@@ -194,7 +234,9 @@ function ChangeCard({
   const number = operation.ordinal + 1
   const decision = operation.decision?.decision
   const skipped = decision === 'rejected'
-  const rows = fieldRows(operation, names)
+  const { scope } = useProject()
+  const clock = useStoryClock(scope)
+  const rows = fieldRows(operation, names, (value) => whenText(value, clock.unit, clock.eventName))
   const isEdit = Boolean(operation.target_before && Object.keys(operation.target_before).length > 0)
   const gone = operation.target_before !== null && operation.target_before !== undefined && !isEdit
 
@@ -674,8 +716,12 @@ export function ReviewDetail() {
             <p>
               <strong>Your story has moved on since this was written.</strong> It was based on
               version {change.expected_revision}, and you are now on version {change.head_revision}
-              , so it cannot be added as it stands. Updating keeps every change and decision, and
-              asks for review again.
+              , so it cannot be added as it stands.{' '}
+              {(change.changed_since ?? []).length === 0
+                ? 'Nothing it touches has changed since, so updating moves it onto the new version as it is, keeping any approval.'
+                : `Since then, ${(change.changed_since ?? [])
+                    .map((id) => names.get(id) ?? 'something it touches')
+                    .join(', ')} changed, so updating keeps every change and decision and asks for review again.`}
             </p>
             {editable && (
               <Button

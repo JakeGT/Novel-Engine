@@ -10,6 +10,7 @@ import { Logo } from '../components/Logo'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { Button, EmptyState, Loading } from '../components/ui'
 import { rememberVisit, useMenu, type PageId } from '../lib/levels'
+import { useWorkingWhatIf } from '../lib/whatif'
 import { displayName, useSession, useSignOut } from '../lib/session'
 import { initial, isOpenChange, roleLabel, typePlural } from '../lib/words'
 import {
@@ -63,17 +64,23 @@ const LATER_PAGES: { id: PageId; label: string; icon: IconName }[] = [
   { id: 'plan', label: 'Story plan', icon: 'layers' },
   { id: 'texts', label: 'Your writing', icon: 'feather' },
   { id: 'rules', label: 'Story rules', icon: 'shield' },
+  { id: 'timeline', label: 'Timeline', icon: 'timeline' },
+  { id: 'whatifs', label: 'What-ifs', icon: 'branch' },
   { id: 'history', label: 'History', icon: 'clock' },
   { id: 'customize', label: 'Types and fields', icon: 'sliders' },
   { id: 'media', label: 'Media', icon: 'image' },
 ]
+
+// Where a page lives when its address is not its id.
+const PAGE_PATHS: Partial<Record<PageId, string>> = { whatifs: 'what-ifs' }
 
 export function ProjectLayout() {
   const { projectId = '' } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
   const workspaceId = getActiveWorkspaceId()
-  const scope: Scope = { workspaceId, projectId }
+  const { whatIf, set: setWhatIf } = useWorkingWhatIf(projectId)
+  const scope: Scope = { workspaceId, projectId, branchId: whatIf?.id ?? null }
   const invalidate = useInvalidateProject(scope)
   const session = useSession()
   const { signOut, pending: signingOut } = useSignOut()
@@ -110,13 +117,21 @@ export function ProjectLayout() {
 
   const texts = useQuery({ queryKey: scopedKey(scope, 'texts'), queryFn: () => api.texts(scope) })
   const rules = useQuery({ queryKey: scopedKey(scope, 'rules'), queryFn: () => api.rules(scope) })
+  const whatIfs = useQuery({ queryKey: scopedKey(scope, 'what-ifs'), queryFn: () => api.whatIfs(scope) })
+  const timeline = useQuery({ queryKey: scopedKey(scope, 'timeline'), queryFn: () => api.timeline(scope) })
+
+  // A what-if remembered by this browser that no longer exists: back to the story.
+  const lostWhatIf = Boolean(whatIf) && isApiError(access.error) && access.error.status === 404
+  useEffect(() => {
+    if (lostWhatIf) setWhatIf(null)
+  }, [lostWhatIf, setWhatIf])
 
   // A page the author has opened once stays in their menu.
   useEffect(() => {
     const page = location.pathname.split('/')[3]
-    if (page === 'plan' || page === 'texts' || page === 'rules' || page === 'history' || page === 'customize' || page === 'media') {
-      rememberVisit(projectId, page)
-    }
+    const pages: PageId[] = ['plan', 'texts', 'rules', 'timeline', 'history', 'customize', 'media']
+    if ((pages as string[]).includes(page)) rememberVisit(projectId, page as PageId)
+    if (page === 'what-ifs') rememberVisit(projectId, 'whatifs')
   }, [location.pathname, projectId])
 
   // More than the starter setup means the author has made types or kinds of fact of their own.
@@ -126,6 +141,8 @@ export function ProjectLayout() {
     { customize: (schemas.data?.length ?? 0) > 1, plan: (plan.data?.items.length ?? 0) > 0,
       texts: (texts.data?.items.length ?? 0) > 0,
       rules: (rules.data?.items.length ?? 0) > 0,
+      timeline: (timeline.data?.placed.length ?? 0) + (timeline.data?.spans.length ?? 0) > 0,
+      whatifs: (whatIfs.data?.items.length ?? 0) > 0 || Boolean(whatIf),
     },
   )
 
@@ -187,7 +204,7 @@ export function ProjectLayout() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  if (isApiError(access.error) && [401, 403, 404].includes(access.error.status)) {
+  if (!lostWhatIf && isApiError(access.error) && [401, 403, 404].includes(access.error.status)) {
     const signedOut = access.error.status === 401
     return (
       <div className="center-page">
@@ -365,6 +382,16 @@ export function ProjectLayout() {
                 Story rules
               </NavItem>
             )}
+            {menu.shown('timeline') && (
+              <NavItem to={`${base}/timeline`} icon="timeline">
+                Timeline
+              </NavItem>
+            )}
+            {menu.shown('whatifs') && (
+              <NavItem to={`${base}/what-ifs`} icon="branch">
+                What-ifs
+              </NavItem>
+            )}
             {menu.shown('history') && (
               <NavItem to={`${base}/history`} icon="clock">
                 History
@@ -402,10 +429,10 @@ export function ProjectLayout() {
           {/* Nothing is hidden: pages a new project does not need yet wait here. */}
           {(later.length > 0 || menu.showAll) && (
             <details className="nav-more">
-              <summary>More</summary>
+              <summary>Pages you have not used yet</summary>
               <div className="nav-group">
                 {later.map((page) => (
-                  <NavItem key={page.id} to={`${base}/${page.id}`} icon={page.icon}>
+                  <NavItem key={page.id} to={`${base}/${PAGE_PATHS[page.id] ?? page.id}`} icon={page.icon}>
                     {page.label}
                   </NavItem>
                 ))}
@@ -434,7 +461,9 @@ export function ProjectLayout() {
             ) : (
               <>
                 <span className={`dot ${status.status === 'error' ? 'warn' : ''}`} aria-hidden="true" />
-                <span>Version {status.head_revision} · saved</span>
+                <span>
+                  {whatIf ? 'What-if version' : 'Version'} {status.head_revision} · saved
+                </span>
               </>
             )}
           </div>
@@ -494,6 +523,25 @@ export function ProjectLayout() {
         </header>
 
         <main id="main" className="content" tabIndex={-1}>
+          {whatIf && (
+            <div className="what-if-band" role="region" aria-label="Working in a what-if">
+              <Icon name="branch" />
+              <p>
+                <strong>
+                  You are trying out a what-if: “{whatIf.name}”{/[.?!]$/.test(whatIf.name) ? '' : '.'}
+                </strong>{' '}
+                Changes made here stay in the what-if. Your story itself is not touched.
+              </p>
+              <span className="actions">
+                <Link className="btn sm" to={`${base}/what-ifs/${whatIf.id}`}>
+                  Compare with the story
+                </Link>
+                <Button size="sm" onClick={() => setWhatIf(null)}>
+                  Back to the story
+                </Button>
+              </span>
+            </div>
+          )}
           {banners && (
           <div className="stack" style={{ marginBottom: '1.25rem' }}>
             {importState && importState.status !== 'completed' && (

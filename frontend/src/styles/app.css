@@ -2610,3 +2610,201 @@ mark {
   gap: 0.25rem;
   font-size: 0.92rem;
 }
+
+/* ------------------------------------------------------------ what-ifs --- */
+/* Working in a what-if: a band across the page that says so in words, with a dashed
+   rule like a pencilled alternative in a margin, so it is not read as a warning. */
+.what-if-band {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1rem;
+  margin-bottom: 2rem;
+  padding: 0.75rem 1rem;
+  border: 1px dashed var(--accent);
+  border-left-width: 4px;
+  border-left-style: solid;
+  background: var(--accent-soft);
+  font-family: var(--font-ui);
+  font-size: 0.92rem;
+}
+
+.what-if-band > svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.what-if-band p {
+  flex: 1 1 22rem;
+}
+
+.what-if-band .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* ---------------------------------------------------------- story time --- */
+.when-field {
+  display: grid;
+  gap: 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  padding: 0.7rem 0.9rem 0.85rem;
+}
+
+.when-field legend {
+  font-family: var(--font-ui);
+  font-size: 0.86rem;
+  padding: 0 0.35rem;
+}
+
+.when-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.1rem;
+}
+
+.when-field .rule-line select {
+  width: auto;
+}
+
+input.when-number,
+.rule-line input.when-number {
+  width: 6.5rem;
+  flex: none;
+}
+
+.when-words {
+  display: grid;
+  gap: 0.2rem;
+}
+
+/* The timeline: story time down the left, what happened beside it. */
+.timeline-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-left: 2px solid var(--line-strong);
+}
+
+.timeline-list > li {
+  display: grid;
+  grid-template-columns: minmax(8rem, 13rem) 1fr auto;
+  gap: 0.3rem 1rem;
+  align-items: start;
+  padding: 0.6rem 0 0.6rem 1rem;
+  position: relative;
+  border-bottom: 1px solid var(--line);
+}
+
+.timeline-list > li::before {
+  content: '';
+  position: absolute;
+  left: -0.4rem;
+  top: 1.05rem;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2px solid var(--ink-2);
+}
+
+.timeline-list .when {
+  font-family: var(--font-ui);
+  font-size: 0.86rem;
+  color: var(--ink-2);
+}
+
+.timeline-list .who {
+  display: block;
+  font-size: 0.88rem;
+}
+
+.timeline-list .resolved {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--ink-3);
+}
+
+@media (max-width: 640px) {
+  .timeline-list > li {
+    grid-template-columns: 1fr;
+  }
+  .timeline-list > li > .btn {
+    justify-self: start;
+  }
+}
+
+/* Who may know a fact: small words beside it, never colour alone. */
+.knowledge-tag {
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--line-strong);
+  padding: 0.05rem 0.4rem;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
+.knowledge-tag.secret {
+  border-style: dashed;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Two things side by side that are read against each other, stacked on a narrow screen. */
+.split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: 1.25rem;
+  align-items: start;
+}
+
+/* An action that reads as a link because it leads somewhere quiet (a download, a guide). */
+.link-button {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+  text-decoration-line: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+.link-button:hover {
+  color: var(--accent);
+}
+
+/* A long list inside a dialog keeps the dialog's buttons in view. */
+.scroll-list {
+  max-height: min(50vh, 26rem);
+  overflow-y: auto;
+}
+
+/* What kind of record and what happened to it travel together when a row wraps. */
+.change-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  white-space: nowrap;
+}
+
+/* A row's own buttons wrap as one group, never one at a time. */
+.row-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.reads-as {
+  font-family: var(--font-ui);
+  font-size: 0.86rem;
+  color: var(--ink-2);
+}
+.when-field .link-button { justify-self: start; }
+.when-field .link-button { font-family: var(--font-ui); font-size: 0.86rem; }

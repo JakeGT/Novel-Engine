@@ -78,12 +78,29 @@ async def test_a_fork_copies_the_story_and_each_line_keeps_its_own_changes(stack
         0,
     )
     assert made.revision == 1
+    # A picture link too: every story table is copied, keyed by its branch.
+    async with session_scope(factory) as session:
+        await session.execute(
+            text(
+                "INSERT INTO asset_links (workspace_id, project_id, branch_id, id, asset_id, "
+                "role, target_record_type, target_record_id, created_revision) "
+                "SELECT :w, :p, id, 'link_1', 'asset_1', 'DEPICTS', 'entity', 'x', 1 "
+                "FROM branches WHERE workspace_id = :w AND project_id = :p AND is_root"
+            ),
+            {"w": WS, "p": PR},
+        )
     what_if = await what_ifs.start(SCOPE, WS, PR, name="What if Mara refused?")
     assert what_if.fork_revision == 1 and what_if.parent_branch_id is not None
 
     # Every story table now holds the same rows twice, once per line.
     async with session_scope(factory) as session:
-        for table in ("canon_entities", "canon_facts", "canon_events", "canon_record_versions"):
+        for table in (
+            "canon_entities",
+            "canon_facts",
+            "canon_events",
+            "canon_record_versions",
+            "asset_links",
+        ):
             counts = (
                 await session.execute(
                     text(

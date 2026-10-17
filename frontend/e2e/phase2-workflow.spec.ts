@@ -192,7 +192,7 @@ test('author, review, archive, and export a project end to end', async ({ page }
 
   // --- history explains every version, newest first -----------------------------------
   // A project this small keeps the later pages under "More"; nothing is out of reach.
-  await page.getByRole('navigation', { name: 'Project' }).getByText('More', { exact: true }).click()
+  await page.getByRole('navigation', { name: 'Project' }).getByText('Pages you have not used yet', { exact: true }).click()
   await page.getByRole('navigation', { name: 'Project' }).getByRole('link', { name: 'History' }).click()
   const versions = page.getByRole('main').getByRole('listitem')
   await expect(versions).toHaveCount(7)

@@ -48,6 +48,14 @@ def upgrade() -> None:
         "CHECK (NOT is_root OR parent_branch_id IS NULL)"
     )
 
+    # Picture links were keyed by project and id only; a what-if keeps its own copy of
+    # each link under the same id, so the branch joins the key like every story table.
+    op.execute("ALTER TABLE asset_links DROP CONSTRAINT IF EXISTS asset_links_pkey")
+    op.execute(
+        "ALTER TABLE asset_links ADD CONSTRAINT asset_links_pkey "
+        "PRIMARY KEY (workspace_id, project_id, branch_id, id)"
+    )
+
     op.execute(
         """
         CREATE TABLE IF NOT EXISTS story_clocks (
@@ -63,6 +71,11 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute("DROP TABLE IF EXISTS story_clocks")
+    op.execute("ALTER TABLE asset_links DROP CONSTRAINT IF EXISTS asset_links_pkey")
+    op.execute(
+        "ALTER TABLE asset_links ADD CONSTRAINT asset_links_pkey "
+        "PRIMARY KEY (workspace_id, project_id, id)"
+    )
     op.execute("ALTER TABLE branches DROP CONSTRAINT IF EXISTS branches_root_has_no_parent")
     op.execute("ALTER TABLE branches DROP CONSTRAINT IF EXISTS branches_not_own_parent")
     for column in ("created_by", "status", "description", "fork_revision", "parent_branch_id"):

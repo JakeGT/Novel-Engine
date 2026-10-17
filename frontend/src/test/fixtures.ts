@@ -184,3 +184,14 @@ export function provenanceEntry(overrides: Partial<ProvenanceEntry> = {}): Prove
     ...overrides,
   }
 }
+
+/** An empty timeline, counted in years. */
+export const EMPTY_TIMELINE = { unit: 'year', placed: [], unplaced: [], spans: [], issues: [] }
+
+/** A character nothing is recorded about. */
+export function knowledge(entityId: string) {
+  return { entity_id: entityId, knows: [], wrong: [], unconfirmed: [], unaware: [], unrecorded: 0 }
+}
+
+/** A plan whose scenes show the reader nothing yet. */
+export const EMPTY_JOURNEY = { steps: [], facts: {} }

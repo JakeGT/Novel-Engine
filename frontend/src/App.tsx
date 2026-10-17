@@ -16,6 +16,8 @@ import { PlanPage } from './pages/PlanPage'
 import { RulesPage } from './pages/RulesPage'
 import { TextPage } from './pages/TextPage'
 import { TextsPage } from './pages/TextsPage'
+import { TimelinePage } from './pages/TimelinePage'
+import { WhatIfPage, WhatIfsPage } from './pages/WhatIfsPage'
 import { ProjectLayout } from './pages/ProjectLayout'
 import { ReviewDetail } from './pages/ReviewDetail'
 import { ReviewQueue } from './pages/ReviewQueue'
@@ -48,6 +50,9 @@ export default function App() {
             <Route path="review/:mutationId" element={<ReviewDetail />} />
             <Route path="plan" element={<PlanPage />} />
             <Route path="rules" element={<RulesPage />} />
+            <Route path="timeline" element={<TimelinePage />} />
+            <Route path="what-ifs" element={<WhatIfsPage />} />
+            <Route path="what-ifs/:branchId" element={<WhatIfPage />} />
             <Route path="texts" element={<TextsPage />} />
             <Route path="texts/:sourceId" element={<TextPage />} />
             <Route path="history" element={<HistoryPage />} />

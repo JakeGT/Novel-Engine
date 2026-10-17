@@ -24,7 +24,7 @@ test('a rule is built by hand, read back in words, and checked against the story
   await page.getByRole('link', { name: /Your project/ }).click()
   await expect(page.getByText(/Version \d+ · saved/)).toBeVisible()
 
-  await page.getByText('More', { exact: true }).first().click()
+  await page.getByText('Pages you have not used yet', { exact: true }).first().click()
   await page.getByRole('link', { name: 'Story rules' }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Story rules' })).toBeVisible()
   await expectAccessible(page)

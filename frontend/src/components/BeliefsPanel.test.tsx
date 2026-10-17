@@ -80,7 +80,7 @@ describe('BeliefsPanel', () => {
     const panel = await screen.findByRole('region', { name: 'What Mara Venn believes' })
     expect(await within(panel).findByText('Tobin Ashe is located at Lantern Harbor')).toBeInTheDocument()
     expect(within(panel).getByText('75% sure')).toBeInTheDocument()
-    expect(await within(panel).findByText('Canon doesn’t say')).toBeInTheDocument()
+    expect(await within(panel).findByText('Your story doesn’t say')).toBeInTheDocument()
 
     await user.click(
       within(panel).getByRole('button', { name: 'No longer believes: Tobin Ashe is located at Lantern Harbor' }),

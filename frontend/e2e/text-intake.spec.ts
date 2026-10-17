@@ -25,7 +25,7 @@ test('a pasted text names its people, and a marked name becomes an entry that po
   await expect(page.getByText(/Version \d+ · saved/)).toBeVisible()
 
   // Not in a new project's menu yet, but one click away.
-  await page.getByText('More', { exact: true }).first().click()
+  await page.getByText('Pages you have not used yet', { exact: true }).first().click()
   await page.getByRole('link', { name: 'Your writing' }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Your writing' })).toBeVisible()
   await expectAccessible(page)

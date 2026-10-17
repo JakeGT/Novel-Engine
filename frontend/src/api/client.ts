@@ -59,10 +59,25 @@ export type AiChoice = Schemas['AiChoiceModel']
 export type Member = Schemas['MembershipModel']
 export type Invitation = Schemas['InvitationModel']
 export type MemberRole = Member['role']
+export type WorldTime = NonNullable<Schemas['EventModel']['when']>
+export type FactVisibility = Schemas['FactModel']['visibility']
+export type WhatIf = Schemas['WhatIfModel']
+export type WhatIfComparison = Schemas['ComparisonModel']
+export type WhatIfChange = Schemas['ChangeModel']
+export type Timeline = Schemas['TimelineModel']
+export type PlacedEvent = Schemas['PlacedEventModel']
+export type Moment = Schemas['MomentModel']
+export type CharacterKnowledge = Schemas['CharacterKnowledgeModel']
+export type FactKnowledge = Schemas['FactKnowledgeModel']
+export type ReaderJourney = Schemas['JourneyModel']
+export type ReaderStep = Schemas['ReaderStepModel']
+export type Reveal = Schemas['Reveal']
 
 export interface Scope {
   workspaceId: string | null
   projectId: string
+  /** The what-if being worked in; absent or null for the story itself (ADR-020). */
+  branchId?: string | null
 }
 
 /** A list endpoint the backend returns as an untyped `{items}` object. */
@@ -340,14 +355,23 @@ function project(scope: Scope): string {
   return `/api/v1/projects/${encodeURIComponent(scope.projectId)}`
 }
 
+/** Every project request says which line of the story it works in. */
+function branchHeaders(scope: Scope): Record<string, string> {
+  return scope.branchId ? { 'X-Story-Branch': scope.branchId } : {}
+}
+
 function get<T>(scope: Scope, path: string, params: QueryParams = {}): Promise<T> {
-  return request<T>(`${project(scope)}${path}${query(params)}`, { workspaceId: scope.workspaceId })
+  return request<T>(`${project(scope)}${path}${query(params)}`, {
+    workspaceId: scope.workspaceId,
+    headers: branchHeaders(scope),
+  })
 }
 
 function send<T>(scope: Scope, method: string, path: string, json?: unknown): Promise<T> {
   return request<T>(`${project(scope)}${path}`, {
     method,
     workspaceId: scope.workspaceId,
+    headers: branchHeaders(scope),
     json,
   })
 }
@@ -607,6 +631,60 @@ export const api = {
 
   listEvents: (scope: Scope, params: { entity_id?: string; limit?: number } = {}) =>
     get<Items<CanonEvent>>(scope, '/events', params),
+  createEvent: (scope: Scope, body: Schemas['EventRequest']) =>
+    send<CanonEvent>(scope, 'POST', '/events', body),
+  amendEvent: (scope: Scope, eventId: string, body: Schemas['AmendEventRequest']) =>
+    send<CanonEvent>(scope, 'PATCH', `/events/${id(eventId)}`, body),
+  /** When a fact is true, and who may know it. */
+  amendFact: (scope: Scope, factId: string, body: Schemas['AmendFactRequest']) =>
+    send<Fact>(scope, 'POST', `/facts/${id(factId)}/amend`, body),
+
+  // --- story time (ADR-020) ----------------------------------------------------
+  timeline: (scope: Scope) => get<Timeline>(scope, '/timeline'),
+  moment: (scope: Scope, at: number) => get<Moment>(scope, '/timeline/moment', { at }),
+  setTimeUnit: (scope: Scope, unit: string) =>
+    send<{ unit: string }>(scope, 'PUT', '/timeline/unit', { unit }),
+
+  // --- who knows what, and what the reader is shown ----------------------------
+  characterKnowledge: (scope: Scope, entityId: string) =>
+    get<CharacterKnowledge>(scope, `/knowledge/characters/${id(entityId)}`),
+  factKnowledge: (scope: Scope, factId: string) =>
+    get<FactKnowledge>(scope, `/knowledge/facts/${id(factId)}`),
+  tell: (scope: Scope, body: Schemas['TellRequest']) =>
+    send<Schemas['TellResult']>(scope, 'POST', '/knowledge/tell', body),
+  readerJourney: (scope: Scope) => get<ReaderJourney>(scope, '/reader'),
+  readerGuide: (scope: Scope, sceneId: string, viewpoint?: string) =>
+    get<Schemas['GuideModel']>(scope, '/reader/guide', { scene: sceneId, viewpoint }),
+  setSceneReveals: (scope: Scope, planId: string, reveals: Reveal[], expectedRevision: number) =>
+    send<PlanItem>(scope, 'PUT', `/plan/${id(planId)}/reveals`, {
+      reveals,
+      expected_revision: expectedRevision,
+    }),
+  setSceneTime: (scope: Scope, planId: string, when: WorldTime | null, expectedRevision: number) =>
+    send<PlanItem>(scope, 'PUT', `/plan/${id(planId)}/when`, {
+      when,
+      expected_revision: expectedRevision,
+    }),
+
+  // --- what-ifs: try a turn of the story without touching it (ADR-020) ----------
+  // These are about the story's lines themselves, so they always speak to the main story.
+  whatIfs: (scope: Scope) =>
+    get<{ items: WhatIf[] }>({ ...scope, branchId: null }, '/what-ifs'),
+  startWhatIf: (scope: Scope, body: { name: string; description?: string | null }) =>
+    send<WhatIf>({ ...scope, branchId: null }, 'POST', '/what-ifs', body),
+  setWhatIfAside: (scope: Scope, branchId: string, aside: boolean) =>
+    send<WhatIf>({ ...scope, branchId: null }, 'POST', `/what-ifs/${id(branchId)}/set-aside`, {
+      aside,
+    }),
+  compareWhatIf: (scope: Scope, branchId: string) =>
+    get<WhatIfComparison>({ ...scope, branchId: null }, `/what-ifs/${id(branchId)}/compare`),
+  bringBackWhatIf: (scope: Scope, branchId: string, keep: Record<string, 'what_if' | 'main'>) =>
+    send<{ mutation_id: string }>(
+      { ...scope, branchId: null },
+      'POST',
+      `/what-ifs/${id(branchId)}/bring-back`,
+      { keep },
+    ),
 
   // --- assisted creation: describe, answer a few questions, review the draft -----
   assistQuestions: (scope: Scope, body: AssistBrief) =>
@@ -790,7 +868,7 @@ export const api = {
    * the server needs, so the bytes are fetched here and handed to the image.
    */
   pictureUrl: async (scope: Scope, assetId: string, versionId: string): Promise<string> => {
-    const headers = new Headers()
+    const headers = new Headers(branchHeaders(scope))
     if (scope.workspaceId) headers.set('X-Workspace-Id', scope.workspaceId)
     const response = await fetch(
       `${project(scope)}/assets/${id(assetId)}/versions/${id(versionId)}/content`,

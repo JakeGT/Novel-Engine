@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { entity, VOCABULARY } from '../test/fixtures'
+import { EMPTY_TIMELINE, entity, knowledge, VOCABULARY } from '../test/fixtures'
 import { expectAccessible, mockApi, renderInProject, VIEWER } from '../test/harness'
 import { EntryPage } from './EntryPage'
 
@@ -18,6 +18,8 @@ const base = {
   'GET /events': { items: [] },
   'GET /links': { items: [] },
   'GET /provenance/entity/ent_mara': { items: [] },
+  'GET /knowledge/characters/ent_mara': knowledge('ent_mara'),
+  'GET /timeline': EMPTY_TIMELINE,
   'GET /entities/name-collisions': { items: [], limit: 0, offset: 0 },
 }
 const at = { path: 'entries/:entityId', at: 'entries/ent_mara' }
@@ -79,7 +81,7 @@ describe('EntryPage', () => {
     const beliefs = await screen.findByRole('region', { name: 'What Mara Venn believes' })
     expect(within(beliefs).getByText('Mara Venn is located at Lantern Harbor')).toBeInTheDocument()
     expect(within(beliefs).getByText('60% sure')).toBeInTheDocument()
-    expect(await within(beliefs).findByText('Contradicts canon')).toBeInTheDocument()
+    expect(await within(beliefs).findByText('Not so in your story')).toBeInTheDocument()
   })
 
   it('offers the assistant on a bare entry first, and more quietly once it has details', async () => {

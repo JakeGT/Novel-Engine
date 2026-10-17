@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, type AssistSession, type CanonEntity, type ChangeProposal } from '../api/client'
+import { useWorkingWhatIf } from '../lib/whatif'
 import { scopedKey, useInvalidateProject, useProject } from '../project'
 import { AssistantProblem } from './AssistFlow'
 import { SetupSuggestions } from './Conversations'
@@ -107,6 +108,35 @@ export function GodHand({
     },
   })
 
+  // Offered by need (Level 5): "What if…" is a question about another turn of the
+  // story, so it can be tried in a what-if, leaving the story itself untouched.
+  const { whatIf: working, set: work } = useWorkingWhatIf(scope.projectId)
+  const soundsLikeWhatIf = /^\s*what\s+if\b/i.test(instruction) && !working
+  const tryWhatIf = useMutation({
+    mutationFn: async () => {
+      const name = instruction.trim().replace(/\s+/g, ' ').slice(0, 120)
+      const made = await api.startWhatIf(scope, { name })
+      const inside = { ...scope, branchId: made.id }
+      const result = await api.assistChange(inside, {
+        instruction: instruction.trim(),
+        entity_id: focusId,
+        expected_revision: made.version,
+      })
+      return { made, result }
+    },
+    onSuccess: async ({ made, result }) => {
+      work({ id: made.id, name: made.name })
+      await invalidate()
+      onClose()
+      navigate(
+        result.mutation_id
+          ? `/projects/${scope.projectId}/review/${result.mutation_id}`
+          : `/projects/${scope.projectId}/what-ifs/${made.id}`,
+        { state: { fromAssistant: true, understood: result.understood, notes: result.notes, discarded: result.discarded } },
+      )
+    },
+  })
+
   const onSubmit = (event: FormEvent) => {
     event.preventDefault()
     if (!instruction.trim()) return setProblem('Say what should change.')
@@ -130,7 +160,7 @@ export function GodHand({
   }
 
   return (
-    <Dialog title="The God Hand" onClose={onClose} wide>
+    <Dialog title="Change anything" onClose={onClose} wide>
       <form className="stack" onSubmit={onSubmit} noValidate aria-label="Change anything">
         <p className="muted">
           Say what should change{entity ? ` about ${entity.name}, or anything else` : ''}, in your
@@ -163,6 +193,19 @@ export function GodHand({
                 {example}
               </button>
             ))}
+          </div>
+        )}
+
+        {soundsLikeWhatIf && (
+          <div className="notice plain" role="note">
+            <p>
+              <strong>This sounds like a what-if.</strong> Try it in a what-if instead, and your
+              story stays exactly as it is while you see what would change.
+            </p>
+            <Button icon="branch" disabled={tryWhatIf.isPending} onClick={() => tryWhatIf.mutate()}>
+              {tryWhatIf.isPending ? 'Starting the what-if…' : 'Try it in a what-if'}
+            </Button>
+            <AssistantProblem error={tryWhatIf.error} />
           </div>
         )}
 

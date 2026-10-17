@@ -6,6 +6,12 @@ import { NextDirections, PlanAssist } from '../components/PlanAssist'
 import { PlanItemForm } from '../components/PlanItemForm'
 import { SceneConditionsDialog } from '../components/SceneConditions'
 import {
+  ReaderGuideDialog,
+  SceneReaderNotes,
+  SceneRevealsDialog,
+  SceneTimeDialog,
+} from '../components/SceneReader'
+import {
   Badge,
   Button,
   ConfirmDialog,
@@ -46,6 +52,15 @@ export function PlanPage() {
   )
   const [next, setNext] = useState<{ about?: PlanItem } | null>(null)
   const [conditioning, setConditioning] = useState<PlanItem | null>(null)
+  const [revealing, setRevealing] = useState<PlanItem | null>(null)
+  const [timing, setTiming] = useState<PlanItem | null>(null)
+  const [guiding, setGuiding] = useState<PlanItem | null>(null)
+  // What the reader has been shown, scene by scene, in reading order.
+  const journey = useQuery({
+    queryKey: scopedKey(scope, 'reader'),
+    queryFn: () => api.readerJourney(scope),
+  })
+  const stepFor = (planId: string) => journey.data?.steps.find((step) => step.scene_id === planId)
 
   const items = outline.data?.items ?? []
   const stillOpen = outline.data?.open ?? []
@@ -124,7 +139,7 @@ export function PlanPage() {
           </Button>
         )}
         <details className="plan-more">
-          <summary aria-label={`More for ${item.title}`}>More</summary>
+          <summary aria-label={`Move, plan or remove ${item.title}`}>Move, plan, remove</summary>
           <div className="actions">
             {rest.map((kind) => (
               <Button key={kind} size="sm" variant="ghost" icon="plus" aria-label={addLabel(kind, item)} onClick={() => setEditing({ kind, parentId: item.id })}>
@@ -153,6 +168,16 @@ export function PlanPage() {
             {item.kind === 'scene' && (
               <Button size="sm" variant="ghost" onClick={() => setConditioning(item)}>
                 Before and after
+              </Button>
+            )}
+            {item.kind === 'scene' && (
+              <Button size="sm" variant="ghost" onClick={() => setRevealing(item)}>
+                What the reader learns
+              </Button>
+            )}
+            {item.kind === 'scene' && (
+              <Button size="sm" variant="ghost" onClick={() => setTiming(item)}>
+                When it happens
               </Button>
             )}
             <Button size="sm" variant="ghost" onClick={() => setRemoving(item)}>
@@ -198,6 +223,16 @@ export function PlanPage() {
                 </li>
               ))}
             </ul>
+          )}
+          {item.kind === 'scene' && (
+            <SceneReaderNotes scene={item} step={stepFor(item.id)} facts={journey.data?.facts ?? {}} />
+          )}
+          {item.kind === 'scene' && (
+            <p className="small">
+              <button type="button" className="link-button" onClick={() => setGuiding(item)}>
+                Reader’s guide up to this scene
+              </button>
+            </p>
           )}
           {openFor(item.id).length > 0 && (
             <ul className="plan-open" aria-label={`Still to do for ${item.title}`}>
@@ -389,6 +424,10 @@ export function PlanPage() {
           onClose={() => setConditioning(null)}
         />
       )}
+
+      {revealing && <SceneRevealsDialog key={revealing.id} scene={revealing} onClose={() => setRevealing(null)} />}
+      {timing && <SceneTimeDialog key={timing.id} scene={timing} onClose={() => setTiming(null)} />}
+      {guiding && <ReaderGuideDialog key={guiding.id} scene={guiding} onClose={() => setGuiding(null)} />}
 
       {removing && (
         <ConfirmDialog

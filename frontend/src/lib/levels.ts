@@ -3,7 +3,15 @@
 // to what a newcomer needs first. See plan/19-assistant-first-experience.md.
 import { useCallback, useSyncExternalStore } from 'react'
 
-export type PageId = 'plan' | 'texts' | 'rules' | 'history' | 'customize' | 'media'
+export type PageId =
+  | 'plan'
+  | 'texts'
+  | 'rules'
+  | 'timeline'
+  | 'whatifs'
+  | 'history'
+  | 'customize'
+  | 'media'
 
 /** A project with fewer entries than this is still getting its first idea down. */
 export const SHAPING_FROM = 3
@@ -70,9 +78,9 @@ export function useMenu(
     showAll ||
     visited.has(page) ||
     Boolean(inUse[page]) ||
-    // The plan, the author's texts, rules and the setup appear once used or opened; the rest once
-    // the project has grown.
-    (page !== 'customize' && page !== 'plan' && page !== 'texts' && page !== 'rules' && shaping)
+    // History and media appear once the project has grown; everything else (the plan, the
+    // author's texts, rules, the timeline, what-ifs, the setup) once used or opened.
+    ((page === 'history' || page === 'media') && shaping)
   const setShowAll = useCallback((value: boolean) => write(SHOW_ALL, value ? 'yes' : 'no'), [])
   return { shown, showAll, setShowAll }
 }

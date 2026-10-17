@@ -27,7 +27,7 @@ describe('GodHand', () => {
     const user = userEvent.setup()
     const { container } = renderInProject(<GodHand entity={entity()} onClose={onClose} />)
 
-    const dialog = screen.getByRole('dialog', { name: 'The God Hand' })
+    const dialog = screen.getByRole('dialog', { name: 'Change anything' })
     await user.click(within(dialog).getByRole('button', { name: 'Show me what would change' }))
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Say what should change')
     expect(api.find('POST', '/assist/changes')).toHaveLength(0)
@@ -158,7 +158,7 @@ describe('GodHand', () => {
     const user = userEvent.setup()
     renderInProject(<GodHand onClose={onClose} />)
 
-    const dialog = screen.getByRole('dialog', { name: 'The God Hand' })
+    const dialog = screen.getByRole('dialog', { name: 'Change anything' })
     await user.type(within(dialog).getByLabelText('What should change?'), 'Undo yesterday.')
     await user.click(within(dialog).getByRole('button', { name: 'Show me what would change' }))
 
@@ -197,7 +197,7 @@ describe('GodHand', () => {
     const user = userEvent.setup()
     renderInProject(<GodHand onClose={vi.fn()} />)
 
-    const dialog = screen.getByRole('dialog', { name: 'The God Hand' })
+    const dialog = screen.getByRole('dialog', { name: 'Change anything' })
     await user.type(within(dialog).getByLabelText('What should change?'), 'Undo the last one and invite Sam.')
     await user.click(within(dialog).getByRole('button', { name: 'Show me what would change' }))
 
@@ -212,7 +212,7 @@ describe('GodHand', () => {
 
     // Changing one's mind returns to the request, as it was.
     await user.click(within(restore).getByRole('button', { name: /Keep|Cancel|Close/ }))
-    expect(await screen.findByRole('dialog', { name: 'The God Hand' })).toBeInTheDocument()
+    expect(await screen.findByRole('dialog', { name: 'Change anything' })).toBeInTheDocument()
     expect(screen.getByLabelText('What should change?')).toHaveValue('Undo the last one and invite Sam.')
   })
 })

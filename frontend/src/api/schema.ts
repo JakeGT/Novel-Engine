@@ -3582,6 +3582,16 @@ export interface components {
             kind: string;
             /** Label */
             label: string;
+            /** Main Label */
+            main_label?: string | null;
+            /** Main Parts */
+            main_parts?: {
+                [key: string]: unknown;
+            } | null;
+            /** Parts */
+            parts?: {
+                [key: string]: unknown;
+            } | null;
             /** Record Id */
             record_id: string;
             /** Record Type */
