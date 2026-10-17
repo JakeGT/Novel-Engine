@@ -93,6 +93,8 @@ class SourceService:
         self._store = store
         self._reader = reader
         self._entities = entities
+        # The passage index (ADR-021), attached by the container once both exist.
+        self.passages: object | None = None
         self._tenancy = tenancy
         self._local_mode = local_mode
 
@@ -150,6 +152,26 @@ class SourceService:
             workspace_id=workspace_id, project_id=project_id
         )
 
+    async def all_texts(self, workspace_id: str, project_id: str) -> list[SourceText]:
+        """Every text, for the passage index; callers have already been authorized."""
+        return await self._store.list_sources(  # type: ignore[attr-defined,no-any-return]
+            workspace_id=workspace_id, project_id=project_id
+        )
+
+    async def _reindex(
+        self, workspace_id: str, project_id: str, source_id: str, *, gone: bool = False
+    ) -> None:
+        """Keep the passage index in step. It is derived: a failure never loses the text."""
+        if self.passages is None:
+            return
+        try:
+            if gone:
+                await self.passages.forget_source(workspace_id, project_id, source_id)  # type: ignore[attr-defined]
+            else:
+                await self.passages.index_source(workspace_id, project_id, source_id)  # type: ignore[attr-defined]
+        except Exception as error:  # noqa: BLE001 - the index can be rebuilt; the text is safe
+            log_event(logger, "passages.index_failed", error_type=type(error).__name__)
+
     async def add(
         self,
         scope: AccessScope,
@@ -187,6 +209,7 @@ class SourceService:
         )
         # Sizes only: an author's prose never reaches a log.
         log_event(logger, "source.added", source_id=source_id, characters=len(content))
+        await self._reindex(workspace_id, project_id, source_id)
         return await self._source(workspace_id, project_id, source_id)
 
     async def revise(
@@ -227,6 +250,7 @@ class SourceService:
                     content_hash=digest,
                     actor_user_id=scope.actor_user_id,
                 )
+                await self._reindex(workspace_id, project_id, source_id)
         return await self._source(workspace_id, project_id, source_id)
 
     async def remove(
@@ -238,6 +262,7 @@ class SourceService:
             workspace_id=workspace_id, project_id=project_id, source_id=source_id
         )
         log_event(logger, "source.removed", source_id=source_id)
+        await self._reindex(workspace_id, project_id, source_id, gone=True)
 
     # ------------------------------------------------------------- reading
     async def index_for(

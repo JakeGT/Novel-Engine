@@ -254,10 +254,10 @@ def test_the_readers_guide_leaves_out_unshown_secrets_and_the_unmet(auth_client,
     )
 
     early = auth_client.get(f"{w['base']}/reader/guide", params={"scene": first["id"]}).json()
-    assert "Mara located at Lantern Harbor." in early["markdown"]
+    assert "Mara is located at Lantern Harbor." in early["markdown"]
     assert "Harbor Guild" not in early["markdown"] and "Tobin" not in early["markdown"]
     later = auth_client.get(f"{w['base']}/reader/guide", params={"scene": second["id"]}).json()
-    assert "Mara member of Harbor Guild." in later["markdown"]
+    assert "Mara is a member of Harbor Guild." in later["markdown"]
 
     as_tobin = auth_client.get(
         f"{w['base']}/reader/guide", params={"scene": second["id"], "viewpoint": w["tobin"]}

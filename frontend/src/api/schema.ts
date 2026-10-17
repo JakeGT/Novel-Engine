@@ -2067,6 +2067,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Scene Context */
+        get: operations["scene_context_api_v1_projects__project_id__plan__plan_id__context_get"];
+        /** Set Scene Context */
+        put: operations["set_scene_context_api_v1_projects__project_id__plan__plan_id__context_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/plan/{plan_id}/move": {
         parameters: {
             query?: never;
@@ -2525,6 +2543,45 @@ export interface paths {
         put?: never;
         /** Add Text */
         post: operations["add_text_api_v1_projects__project_id__texts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/texts-index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Writing Index */
+        get: operations["writing_index_api_v1_projects__project_id__texts_index_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/texts-index/rebuild": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rebuild Writing Index
+         * @description Index every text again, finding names with the story as it is now.
+         *
+         *     The write scope already requires permission to change the project.
+         */
+        post: operations["rebuild_writing_index_api_v1_projects__project_id__texts_index_rebuild_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3845,6 +3902,35 @@ export interface components {
             /** When */
             when: string;
         };
+        /** ContextItemModel */
+        ContextItemModel: {
+            /** Authority */
+            authority: string;
+            /** Hard */
+            hard: boolean;
+            /** Key */
+            key: string;
+            /** Location */
+            location?: string | null;
+            /** Pinned */
+            pinned: boolean;
+            /** Reason */
+            reason: string;
+            /** Record Id */
+            record_id: string;
+            /** Record Type */
+            record_type: string;
+            /** Score */
+            score: number;
+            /** Section */
+            section: string;
+            /** Section Title */
+            section_title: string;
+            /** Text */
+            text: string;
+            /** Words */
+            words: number;
+        };
         /** ContextNode */
         ContextNode: {
             /** Created At */
@@ -3883,6 +3969,39 @@ export interface components {
             policy_used: string;
             /** Summary */
             summary: string;
+        };
+        /**
+         * ContextSettings
+         * @description What the author has said about a scene's context, kept with the scene.
+         */
+        ContextSettings: {
+            /** Budget */
+            budget?: number | null;
+            /** Excludes */
+            excludes?: string[];
+            /**
+             * Include Secrets
+             * @default false
+             */
+            include_secrets: boolean;
+            /** Pins */
+            pins?: string[];
+        };
+        /** ContextSettingsRequest */
+        ContextSettingsRequest: {
+            /** Budget */
+            budget?: number | null;
+            /** Excludes */
+            excludes?: string[];
+            /** Expected Revision */
+            expected_revision: number;
+            /**
+             * Include Secrets
+             * @default false
+             */
+            include_secrets: boolean;
+            /** Pins */
+            pins?: string[];
         };
         /** CreateCredentialRequest */
         CreateCredentialRequest: {
@@ -4558,6 +4677,19 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** IndexStatusModel */
+        IndexStatusModel: {
+            /** Behind */
+            behind: string[];
+            /** Indexed */
+            indexed: number;
+            /** Names As Of */
+            names_as_of?: number | null;
+            /** Semantic */
+            semantic: boolean;
+            /** Texts */
+            texts: number;
+        };
         /** IntegerObject */
         IntegerObject: {
             /**
@@ -4628,6 +4760,12 @@ export interface components {
             fact: components["schemas"]["FactModel"];
             /** How */
             how: string;
+        };
+        /** LeftOutModel */
+        LeftOutModel: {
+            item: components["schemas"]["ContextItemModel"];
+            /** Reason */
+            reason: string;
         };
         /** LinkAssetOp */
         LinkAssetOp: {
@@ -5398,6 +5536,11 @@ export interface components {
             /** Withheld */
             withheld: string[];
         };
+        /** RebuildResult */
+        RebuildResult: {
+            /** Passages */
+            passages: number;
+        };
         /**
          * Relative
          * @description So long before or after an event: "three years before the war".
@@ -5725,6 +5868,29 @@ export interface components {
              * @enum {string}
              */
             when: "before" | "after";
+        };
+        /** SceneContextModel */
+        SceneContextModel: {
+            /** Budget */
+            budget: number;
+            /** Checksum */
+            checksum: string;
+            index?: components["schemas"]["IndexStatusModel"] | null;
+            /** Items */
+            items: components["schemas"]["ContextItemModel"][];
+            /** Left Out */
+            left_out: components["schemas"]["LeftOutModel"][];
+            /** Point Of View */
+            point_of_view?: string | null;
+            /** Policy Version */
+            policy_version: string;
+            /** Rendered */
+            rendered: string;
+            /** Scene Id */
+            scene_id: string;
+            settings: components["schemas"]["ContextSettings"];
+            /** Words */
+            words: number;
         };
         /** SchemaDefinitionRequest */
         SchemaDefinitionRequest: {
@@ -10839,6 +11005,77 @@ export interface operations {
             };
         };
     };
+    scene_context_api_v1_projects__project_id__plan__plan_id__context_get: {
+        parameters: {
+            query?: {
+                budget?: number | null;
+                secrets?: boolean | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneContextModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_scene_context_api_v1_projects__project_id__plan__plan_id__context_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContextSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneContextModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     move_plan_item_api_v1_projects__project_id__plan__plan_id__move_post: {
         parameters: {
             query?: never;
@@ -11819,6 +12056,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TextModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    writing_index_api_v1_projects__project_id__texts_index_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndexStatusModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rebuild_writing_index_api_v1_projects__project_id__texts_index_rebuild_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RebuildResult"];
                 };
             };
             /** @description Validation Error */

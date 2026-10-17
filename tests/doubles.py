@@ -4377,3 +4377,62 @@ class InMemoryStoryClockStore:
 
     async def set_unit(self, *, workspace_id: str, project_id: str, unit: str) -> None:
         self.units[(workspace_id, project_id)] = unit
+
+
+class InMemoryPassageStore:
+    """The derived passage index, as pointers and the entries each names."""
+
+    def __init__(self) -> None:
+        self.passages: dict[tuple[str, str, str], list[Any]] = {}
+
+    async def replace_source(self, *, workspace_id, project_id, source_id, passages) -> None:
+        self.passages[(workspace_id, project_id, source_id)] = list(passages)
+
+    async def forget_source(self, *, workspace_id, project_id, source_id) -> None:
+        self.passages.pop((workspace_id, project_id, source_id), None)
+
+    async def for_source(self, *, workspace_id, project_id, source_id) -> list[Any]:
+        return list(self.passages.get((workspace_id, project_id, source_id), []))
+
+    async def mentioning(self, *, workspace_id, project_id, entity_ids, limit=200) -> list[Any]:
+        wanted = set(entity_ids)
+        found = [
+            passage
+            for (ws, pj, _), items in sorted(self.passages.items())
+            if ws == workspace_id and pj == project_id
+            for passage in items
+            if wanted & set(passage.entity_ids)
+        ]
+        return found[:limit]
+
+    async def indexed_versions(self, *, workspace_id, project_id) -> dict[str, tuple[str, int]]:
+        return {
+            source_id: (items[0].version_id, min(item.indexed_revision for item in items))
+            for (ws, pj, source_id), items in self.passages.items()
+            if ws == workspace_id and pj == project_id and items
+        }
+
+
+class InMemoryManifestStore:
+    def __init__(self) -> None:
+        self.saved: dict[tuple[str, str, str], Any] = {}
+
+    async def save(self, *, workspace_id, project_id, manifest_id, **fields) -> None:
+        from backend.domain.context import SavedManifest
+        from backend.domain.identity import utcnow
+
+        self.saved[(workspace_id, project_id, manifest_id)] = SavedManifest(
+            id=manifest_id,
+            purpose=fields["purpose"],
+            plan_id=fields["plan_id"],
+            policy_version=fields["policy_version"],
+            checksum=fields["checksum"],
+            words=fields["words"],
+            budget=fields["budget"],
+            manifest=fields["manifest"],
+            created_by=fields["created_by"],
+            created_at=utcnow(),
+        )
+
+    async def get(self, *, workspace_id, project_id, manifest_id) -> Any:
+        return self.saved.get((workspace_id, project_id, manifest_id))

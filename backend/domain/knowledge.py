@@ -24,7 +24,15 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from backend.domain.canon.assertions import Belief, Fact, FactStatus, FactVisibility
 from backend.domain.canon.plans import PlanItem, PlanKind
-from backend.domain.worldtime import WORLD_TIME, Interval, Unknown, parse_world_time
+from backend.domain.worldtime import (
+    WORLD_TIME,
+    At,
+    Between,
+    Interval,
+    Relative,
+    Unknown,
+    parse_world_time,
+)
 
 # Kept in a scene's details under reserved keys, like its conditions.
 REVEALS_KEY = "_reveals"
@@ -67,7 +75,7 @@ def with_reveals(details: dict[str, str], reveals: Sequence[Reveal]) -> dict[str
     return kept
 
 
-def scene_time(details: dict[str, str]) -> object | None:
+def scene_time(details: dict[str, str]) -> Unknown | At | Between | Relative | None:
     raw = details.get(SCENE_TIME_KEY)
     if not raw:
         return None

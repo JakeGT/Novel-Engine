@@ -74,6 +74,10 @@ class Container:
     story_time_service: Any = None
     what_if_service: Any = None
     knowledge_service: Any = None
+    passage_store: Any = None
+    manifests: Any = None
+    passage_index: Any = None
+    context_service: Any = None
     media_store: Any = None
     archive_service: Any = None
     media_service: Any = None
@@ -347,6 +351,33 @@ def build_container(settings: Settings | None = None) -> Container:
         reader=container.canon_repository,
         mutation=container.mutation_service,
         schema_store=container.schema_versions,
+        tenancy=container.tenancy_service,
+        local_mode=not resolved.is_hosted,
+    )
+    from backend.adapters.passage_store import PostgresManifestStore, PostgresPassageStore
+    from backend.services.context_service import ContextService
+    from backend.services.passage_index import PassageIndex
+
+    container.passage_store = PostgresPassageStore(database.session_factory)
+    container.manifests = PostgresManifestStore(database.session_factory)
+    container.passage_index = PassageIndex(
+        store=container.passage_store,
+        sources=container.source_service,
+        reader=container.canon_repository,
+        journal=container.journal,
+        embeddings=container.embeddings,
+        vectors=container.vectors,
+    )
+    container.source_service.passages = container.passage_index
+    container.context_service = ContextService(
+        reader=container.canon_repository,
+        plan=container.plan_service,
+        rules=container.rules,
+        sources=container.source_service,
+        passages=container.passage_index,
+        passage_store=container.passage_store,
+        manifests=container.manifests,
+        clocks=container.story_clocks,
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
     )

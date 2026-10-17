@@ -1,0 +1,743 @@
+"""What the assistant would be given to write a scene, and why (ADR-021).
+
+Candidates come from the story itself, in fixed ways, each with a reason in plain
+words: the scene and where it sits in the plan, who and what is in it, what is true
+of them at the scene's time, what the viewpoint character knows and gets wrong, what
+has happened, what the reader has been shown, the story rules, pictures, and passages
+of the author's writing that name the scene's people and places. Search by meaning,
+when available, only adds to the score of a passage; it never adds a fact.
+
+The author's pins, exclusions, budget and choice about secrets are kept with the
+scene and changed through the ordinary reviewed path.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+from backend.adapters.system import uuid7
+from backend.domain.branching import working_branch_id
+from backend.domain.canon.assertions import FactVisibility
+from backend.domain.canon.entities import CanonEntity
+from backend.domain.canon.marks import details as plain_details_of
+from backend.domain.canon.phrasing import phrase
+from backend.domain.canon.plans import PlanItem, PlanKind
+from backend.domain.context import (
+    SCENE_DRAFT_POLICY,
+    ContextItem,
+    ContextManifest,
+    ContextSection,
+    ContextSettings,
+    assemble,
+    context_settings,
+    with_context_settings,
+)
+from backend.domain.errors import NotFoundError, ValidationError
+from backend.domain.identity import AccessScope
+from backend.domain.knowledge import knowledge_of, reader_journey, reading_order, scene_reveals
+from backend.domain.knowledge import scene_time as scene_when
+from backend.domain.rules import RuleStatus, read_rule
+from backend.domain.scene_conditions import plain_details, scene_conditions
+from backend.domain.tenancy import Permission
+from backend.domain.worldtime import Interval, Order, Truth, compare, describe, true_at
+from backend.services.passage_index import IndexStatus
+from backend.services.story_time_service import event_times, fact_span, read_story, time_of
+
+MAX_PASSAGES = 40
+MAX_EVENTS = 40
+PASSAGE_WORDS = 220
+
+ROLE_WORDS = {
+    "point_of_view": "is the scene's point of view",
+    "place": "is where the scene happens",
+    "participant": "is in the scene",
+    "about": "is what the scene is about",
+}
+ROLE_SCORE = {"point_of_view": 10.0, "place": 9.0, "participant": 8.0, "about": 6.0}
+
+
+@dataclass(frozen=True)
+class SceneContext:
+    scene: PlanItem
+    point_of_view: str | None
+    settings: ContextSettings
+    manifest: ContextManifest
+    index: IndexStatus | None
+    semantic: bool
+
+
+def _phrase(predicate: str) -> str:
+    return phrase(predicate)
+
+
+def _value(obj: Any, names: dict[str, str]) -> str:
+    target = getattr(obj, "entity_id", None)
+    if target:
+        return names.get(target, "something no longer in the story")
+    value = getattr(obj, "value", None)
+    if isinstance(value, dict):
+        return " ".join(str(part) for part in value.values())
+    return "" if value is None else str(value)
+
+
+def _sentence(proposition: Any, names: dict[str, str]) -> str:
+    subject = names.get(proposition.subject_id, "Something")
+    return f"{subject} {_phrase(proposition.predicate)} {_value(proposition.object, names)}".strip()
+
+
+def _trim(text: str, words: int) -> str:
+    parts = text.split()
+    return text.strip() if len(parts) <= words else " ".join(parts[:words]) + " …"
+
+
+class ContextService:
+    def __init__(
+        self,
+        *,
+        reader: Any,
+        plan: Any,
+        rules: Any = None,
+        sources: Any = None,
+        passages: Any = None,
+        passage_store: Any = None,
+        manifests: Any = None,
+        clocks: Any = None,
+        tenancy: Any = None,
+        local_mode: bool = False,
+    ) -> None:
+        self._reader = reader
+        self._plan = plan
+        self._rules = rules
+        self._sources = sources
+        self._passages = passages
+        self._passage_store = passage_store
+        self._manifests = manifests
+        self._clocks = clocks
+        self._tenancy = tenancy
+        self._local_mode = local_mode
+
+    async def _authorize(
+        self, scope: AccessScope, workspace_id: str, project_id: str, permission: Permission
+    ) -> None:
+        if self._local_mode or self._tenancy is None:
+            return
+        await self._tenancy.require_project(scope, workspace_id, project_id, permission)
+
+    async def _scene(
+        self, scope: AccessScope, workspace_id: str, project_id: str, plan_id: str
+    ) -> PlanItem:
+        scene = await self._plan.get(scope, workspace_id, project_id, plan_id)
+        if scene.kind is not PlanKind.SCENE:
+            raise ValidationError("Only a scene has something to write.")
+        return scene  # type: ignore[no-any-return]
+
+    # ------------------------------------------------------------------ preview
+
+    async def for_scene(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        *,
+        budget: int | None = None,
+        include_secrets: bool | None = None,
+    ) -> SceneContext:
+        """What the assistant would be given for this scene now, and what it would not."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        scene = await self._scene(scope, workspace_id, project_id, plan_id)
+        settings = context_settings(scene.details)
+        candidates, pov = await self.candidates(workspace_id, project_id, scene)
+        manifest = assemble(
+            candidates,
+            policy=SCENE_DRAFT_POLICY,
+            budget=budget if budget is not None else settings.budget,
+            pins=settings.pins,
+            excludes=settings.excludes,
+            include_secrets=settings.include_secrets
+            if include_secrets is None
+            else include_secrets,
+        )
+        index = None
+        semantic = False
+        if self._passages is not None:
+            index = await self._passages.status(workspace_id, project_id)
+            semantic = index.semantic
+        return SceneContext(
+            scene=scene,
+            point_of_view=pov,
+            settings=settings,
+            manifest=manifest,
+            index=index,
+            semantic=semantic,
+        )
+
+    async def set_settings(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        *,
+        settings: ContextSettings,
+        expected_revision: int,
+    ) -> PlanItem:
+        """Keep the author's pins, exclusions, budget and choice about secrets with the scene."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        scene = await self._scene(scope, workspace_id, project_id, plan_id)
+        overlap = set(settings.pins) & set(settings.excludes)
+        if overlap:
+            raise ValidationError("Something cannot be both always used and never used.")
+        _result, item = await self._plan._set_scene_details(  # noqa: SLF001 - same plan path
+            scope,
+            workspace_id,
+            project_id,
+            scene.id,
+            lambda details: with_context_settings(details, settings),
+            expected_revision,
+        )
+        return item  # type: ignore[no-any-return]
+
+    async def keep(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        context: SceneContext,
+        *,
+        purpose: str,
+    ) -> str:
+        """Record exactly what was given, so what came of it can be traced back."""
+        if self._manifests is None:
+            raise ValidationError("Context cannot be kept here.")
+        manifest_id = f"ctx_{uuid7()}"
+        manifest = context.manifest
+        await self._manifests.save(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            manifest_id=manifest_id,
+            branch_id=working_branch_id(),
+            purpose=purpose,
+            plan_id=context.scene.id,
+            policy_version=manifest.policy_version,
+            checksum=manifest.checksum,
+            words=manifest.words,
+            budget=manifest.budget,
+            manifest={
+                "items": [
+                    {
+                        "key": item.key,
+                        "section": item.section.value,
+                        "reason": item.reason,
+                        "authority": item.authority,
+                        "record_type": item.record_type,
+                        "record_id": item.record_id,
+                        "location": item.location,
+                        "words": item.words,
+                        "score": item.score,
+                    }
+                    for item in manifest.items
+                ],
+                "left_out": [
+                    {"key": omission.item.key, "reason": omission.reason.value}
+                    for omission in manifest.left_out
+                ],
+                "point_of_view": context.point_of_view,
+            },
+            created_by=scope.actor_user_id,
+        )
+        return manifest_id
+
+    # --------------------------------------------------------------- candidates
+
+    async def candidates(
+        self, workspace_id: str, project_id: str, scene: PlanItem
+    ) -> tuple[list[ContextItem], str | None]:
+        story = await read_story(self._reader, workspace_id, project_id)
+        entities: dict[str, CanonEntity] = story.entities
+        names = {entity.id: entity.name for entity in entities.values()}
+        beliefs = await self._reader.list_beliefs(
+            workspace_id=workspace_id, project_id=project_id, limit=10_000
+        )
+        items_all = await self._reader.list_plan_items(  # type: ignore[call-arg]
+            workspace_id=workspace_id, project_id=project_id
+        )
+        plan_by_id = {item.id: item for item in items_all}
+        unit = "year"
+        if self._clocks is not None:
+            unit = (
+                await self._clocks.get_unit(workspace_id=workspace_id, project_id=project_id)
+                or "year"
+            )
+        times = event_times(story.events)
+        event_names = {event.id: event.name for event in story.events}
+        moment: Interval | None = time_of(scene_when(scene.details), times)
+
+        pov = next(iter(scene.refs_as("point_of_view")), None)
+        cast: dict[str, str] = {}
+        for ref in scene.refs:
+            if ref.entity_id in entities and ref.entity_id not in cast:
+                cast[ref.entity_id] = ref.role
+        out: list[ContextItem] = []
+
+        # The scene itself: always given, last in the rendering.
+        when = describe(scene_when(scene.details), unit=unit, event_name=event_names.get)
+        text = f"{scene.title}."
+        if scene.summary:
+            text += f" {scene.summary}"
+        if scene_when(scene.details) is not None:
+            text += f" It happens {when}."
+        notes = plain_details(scene.details)
+        if notes:
+            text += " " + " ".join(f"{key}: {value}." for key, value in notes.items())
+        out.append(
+            ContextItem(
+                key=f"scene:{scene.id}",
+                section=ContextSection.SCENE,
+                text=text,
+                reason="This is the scene to write.",
+                authority="plan",
+                record_type="plan_item",
+                record_id=scene.id,
+                score=100,
+                hard=True,
+            )
+        )
+        for index, condition in enumerate(scene_conditions(scene.details)):
+            subject = names.get(condition.entity_id, "An entry")
+            phrase = _phrase(condition.check.pattern.predicate)
+            out.append(
+                ContextItem(
+                    key=f"condition:{scene.id}:{index}",
+                    section=ContextSection.SCENE,
+                    text=(
+                        f"{'Before' if condition.when == 'before' else 'By the end'}: "
+                        f"{subject} {condition.check.kind.replace('_', ' ')} “{phrase}”."
+                    ),
+                    reason="You said this must hold around the scene.",
+                    authority="plan",
+                    record_type="plan_item",
+                    record_id=scene.id,
+                    score=90,
+                    hard=True,
+                )
+            )
+        facts_by_id = {fact.id: fact for fact in story.facts}
+        for reveal in scene_reveals(scene.details):
+            fact = facts_by_id.get(reveal.fact_id)
+            if fact is None:
+                continue
+            how = "shows the reader" if reveal.how == "shown" else "only hints at"
+            out.append(
+                ContextItem(
+                    key=f"reveal:{scene.id}:{fact.id}",
+                    section=ContextSection.SCENE,
+                    text=f"This scene {how}: {_sentence(fact.proposition, names)}.",
+                    reason="You said the reader learns this here.",
+                    authority="plan",
+                    record_type="fact",
+                    record_id=fact.id,
+                    score=85,
+                    hard=True,
+                )
+            )
+
+        # Who and what is in it.
+        for entity_id, role in cast.items():
+            entity = entities[entity_id]
+            details = plain_details_of(entity.attributes)
+            text = f"{entity.name} ({entity.type.lower()})"
+            if entity.aliases:
+                text += f", also called {', '.join(entity.aliases)}"
+            if details:
+                text += ": " + "; ".join(f"{key} {value}" for key, value in details.items())
+            out.append(
+                ContextItem(
+                    key=f"entity:{entity_id}",
+                    section=ContextSection.CAST,
+                    text=text + ".",
+                    reason=f"{entity.name} {ROLE_WORDS.get(role, 'is in the scene')}.",
+                    authority="entry",
+                    record_type="entity",
+                    record_id=entity_id,
+                    score=ROLE_SCORE.get(role, 5.0),
+                    hard=role in ("point_of_view", "place"),
+                )
+            )
+
+        # What is true of them at the scene's time; secrets the viewpoint does not know apart.
+        known = knowledge_of(pov, story.facts, beliefs) if pov else None
+        known_ids = known.known_ids() if known else set()
+        linked: dict[str, int] = {}
+        for fact in story.facts:
+            if fact.closed_revision is not None:
+                continue
+            ends = [fact.proposition.subject_id]
+            target = getattr(fact.proposition.object, "entity_id", None)
+            if target:
+                ends.append(target)
+            inside = [entity_id for entity_id in ends if entity_id in cast]
+            if not inside:
+                continue
+            truth = Truth.TRUE
+            if moment is not None:
+                truth = true_at(fact_span(fact, times), moment)
+                if truth is Truth.FALSE:
+                    continue
+            sentence = _sentence(fact.proposition, names)
+            if truth is Truth.MAYBE:
+                sentence += " (around this time; when it starts or ends is not certain)"
+            about = names.get(inside[0], "someone in the scene")
+            secret_from_pov = (
+                pov is not None
+                and fact.visibility is FactVisibility.SECRET
+                and fact.id not in known_ids
+            )
+            if secret_from_pov:
+                out.append(
+                    ContextItem(
+                        key=f"fact:{fact.id}",
+                        section=ContextSection.SECRETS,
+                        text=f"{sentence}. {names.get(pov or '', 'The viewpoint character')} does not know this.",
+                        reason=f"It is a secret {names.get(pov or '', 'they')} does not know.",
+                        authority="fact",
+                        record_type="fact",
+                        record_id=fact.id,
+                        score=4 + len(inside),
+                    )
+                )
+                continue
+            # Only an ordinary or common fact makes a neighbour worth naming: a secret's
+            # other end, named on its own, would hint at the secret.
+            for entity_id in ends:
+                if entity_id not in cast:
+                    linked[entity_id] = linked.get(entity_id, 0) + 1
+            out.append(
+                ContextItem(
+                    key=f"fact:{fact.id}",
+                    section=ContextSection.TRUE,
+                    text=sentence + ".",
+                    reason=f"It is about {about}, who is in the scene.",
+                    authority="fact",
+                    record_type="fact",
+                    record_id=fact.id,
+                    score=5 + len(inside) + (1 if fact.visibility is FactVisibility.COMMON else 0),
+                )
+            )
+        # Entries one step away: named so the facts above make sense.
+        for entity_id, count in sorted(linked.items(), key=lambda pair: (-pair[1], pair[0]))[:20]:
+            neighbour = entities.get(entity_id)
+            if neighbour is None or not neighbour.is_active:
+                continue
+            out.append(
+                ContextItem(
+                    key=f"entity:{entity_id}",
+                    section=ContextSection.CAST,
+                    text=f"{neighbour.name} ({neighbour.type.lower()}).",
+                    reason=f"Someone in the scene is connected to {neighbour.name}.",
+                    authority="entry",
+                    record_type="entity",
+                    record_id=entity_id,
+                    score=2 + min(count, 3) * 0.5,
+                )
+            )
+
+        # What the viewpoint character knows and gets wrong.
+        if known is not None and pov is not None:
+            who = names.get(pov, "The viewpoint character")
+            for belief, fact in known.wrong:
+                out.append(
+                    ContextItem(
+                        key=f"belief:{belief.id}",
+                        section=ContextSection.WRONG,
+                        text=(
+                            f"{who} believes {_sentence(belief.proposition, names)}; "
+                            f"in truth {_sentence(fact.proposition, names)}."
+                        ),
+                        reason=f"{who} sees the scene, and is wrong about this.",
+                        authority="belief",
+                        record_type="belief",
+                        record_id=belief.id,
+                        score=7,
+                    )
+                )
+            for belief in known.unconfirmed:
+                out.append(
+                    ContextItem(
+                        key=f"belief:{belief.id}",
+                        section=ContextSection.KNOWS,
+                        text=f"{who} believes {_sentence(belief.proposition, names)}.",
+                        reason=f"{who} sees the scene; the story does not say whether it is so.",
+                        authority="belief",
+                        record_type="belief",
+                        record_id=belief.id,
+                        score=5,
+                    )
+                )
+            for fact, _how in known.knows:
+                if fact.visibility is FactVisibility.SECRET:
+                    out.append(
+                        ContextItem(
+                            key=f"knows:{fact.id}",
+                            section=ContextSection.KNOWS,
+                            text=f"{who} knows a secret: {_sentence(fact.proposition, names)}.",
+                            reason=f"{who} sees the scene and holds this secret.",
+                            authority="belief",
+                            record_type="fact",
+                            record_id=fact.id,
+                            score=6,
+                        )
+                    )
+
+        # What has happened, nearest the scene's time first.
+        involved = [
+            event
+            for event in story.events
+            if any(part.entity_id in cast for part in event.participants)
+            or any(location in cast for location in event.location_ids)
+        ]
+        for event in involved[:MAX_EVENTS]:
+            interval = times[event.id].interval
+            if moment is not None and interval is not None:
+                if compare(interval, moment) is Order.AFTER:
+                    continue
+            words = describe(event.when, unit=unit, event_name=event_names.get)
+            closeness = 0.0
+            if moment is not None and interval is not None:
+                closeness = 1 / (1 + abs(moment.lo - interval.hi))
+            out.append(
+                ContextItem(
+                    key=f"event:{event.id}",
+                    section=ContextSection.HAPPENED,
+                    text=f"{event.name} ({words}).",
+                    reason="Someone or somewhere in the scene was part of it.",
+                    authority="event",
+                    record_type="event",
+                    record_id=event.id,
+                    score=3 + 3 * closeness,
+                )
+            )
+
+        # Where it sits in the plan.
+        parent_id = scene.parent_id
+        depth = 0
+        while parent_id and parent_id in plan_by_id and depth < 5:
+            parent = plan_by_id[parent_id]
+            if parent.is_active:
+                summary = f" {parent.summary}" if parent.summary else ""
+                out.append(
+                    ContextItem(
+                        key=f"plan:{parent.id}",
+                        section=ContextSection.PLAN,
+                        text=f"Part of the {parent.kind.value} “{parent.title}”.{summary}",
+                        reason=f"The scene sits under this {parent.kind.value}.",
+                        authority="plan",
+                        record_type="plan_item",
+                        record_id=parent.id,
+                        score=6 - depth,
+                    )
+                )
+            parent_id = parent.parent_id
+            depth += 1
+        for thread_id, verb in [(t, "opens") for t in scene.sets_up] + [
+            (t, "resolves") for t in scene.pays_off
+        ]:
+            thread = plan_by_id.get(thread_id)
+            if thread is not None and thread.is_active:
+                out.append(
+                    ContextItem(
+                        key=f"thread:{scene.id}:{thread.id}",
+                        section=ContextSection.PLAN,
+                        text=f"This scene {verb} the thread “{thread.title}”.",
+                        reason=f"You said the scene {verb} it.",
+                        authority="plan",
+                        record_type="plan_item",
+                        record_id=thread.id,
+                        score=8,
+                    )
+                )
+        order = reading_order(items_all)
+        position = next((i for i, item in enumerate(order) if item.id == scene.id), None)
+        if position is not None and position > 0:
+            before = order[position - 1]
+            summary = f" {before.summary}" if before.summary else ""
+            out.append(
+                ContextItem(
+                    key=f"plan:{before.id}",
+                    section=ContextSection.PLAN,
+                    text=f"The scene before: “{before.title}”.{summary}",
+                    reason="It comes just before this one.",
+                    authority="plan",
+                    record_type="plan_item",
+                    record_id=before.id,
+                    score=6,
+                )
+            )
+
+        # What the reader has already been shown, before this scene.
+        if position is not None and position > 0:
+            steps = reader_journey(order[: position + 1], story.facts, beliefs)
+            shown_before = steps[position - 1].reader_knows if position >= 1 else set()
+            for fact_id in sorted(shown_before):
+                fact = facts_by_id.get(fact_id)
+                if fact is None:
+                    continue
+                out.append(
+                    ContextItem(
+                        key=f"reader:{fact_id}",
+                        section=ContextSection.READER,
+                        text=f"{_sentence(fact.proposition, names)}.",
+                        reason="An earlier scene already showed the reader this.",
+                        authority="reader",
+                        record_type="fact",
+                        record_id=fact_id,
+                        score=4,
+                    )
+                )
+
+        # The story's rules.
+        if self._rules is not None:
+            rules = await self._rules.list_rules(workspace_id=workspace_id, project_id=project_id)
+            types = {entities[e].type for e in cast}
+            for rule in rules:
+                if rule.status is not RuleStatus.ON:
+                    continue
+                reading = rule.sentence or read_rule(rule.body, names)
+                applies = (
+                    rule.body.applies_to.type in types or rule.body.applies_to.entity_id in cast
+                )
+                out.append(
+                    ContextItem(
+                        key=f"rule:{rule.id}",
+                        section=ContextSection.RULES,
+                        text=reading.rstrip(".") + ".",
+                        reason="It is one of your story rules"
+                        + (" and is about someone or something in the scene." if applies else "."),
+                        authority="rule",
+                        record_type="story_rule",
+                        record_id=rule.id,
+                        score=6 if applies else 3,
+                    )
+                )
+
+        # Pictures of who and what is in it.
+        links = await self._reader.list_links(
+            workspace_id=workspace_id, project_id=project_id, limit=500
+        )
+        for link in links:
+            if link.target_record_id in cast and link.retired_revision is None:
+                name = names.get(link.target_record_id, "an entry")
+                out.append(
+                    ContextItem(
+                        key=f"picture:{link.id}",
+                        section=ContextSection.PICTURES,
+                        text=f"There is a picture of {name} ({str(link.role).lower().replace('_', ' ')}).",
+                        reason=f"It shows {name}. Only its existence is given, not the image.",
+                        authority="picture",
+                        record_type="asset_link",
+                        record_id=link.id,
+                        score=1.5,
+                    )
+                )
+
+        # The author's own writing that names the scene's people and places.
+        out.extend(await self._writing(workspace_id, project_id, scene, cast, names))
+        return out, pov
+
+    async def _writing(
+        self,
+        workspace_id: str,
+        project_id: str,
+        scene: PlanItem,
+        cast: dict[str, str],
+        names: dict[str, str],
+    ) -> list[ContextItem]:
+        if self._passage_store is None or self._sources is None or not cast:
+            return []
+        passages = await self._passage_store.mentioning(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            entity_ids=list(cast),
+            limit=MAX_PASSAGES * 4,
+        )
+        semantic: dict[str, float] = {}
+        if self._passages is not None:
+            semantic = await self._passages.semantic_scores(
+                workspace_id, project_id, f"{scene.title}. {scene.summary}"
+            )
+        texts: dict[str, Any] = {}
+        out: list[ContextItem] = []
+        for passage in passages:
+            if passage.source_id not in texts:
+                try:
+                    source, version, _ = await self._sources.version(
+                        workspace_id, project_id, passage.source_id
+                    )
+                except NotFoundError:
+                    continue
+                texts[passage.source_id] = (source, version)
+            source, version = texts[passage.source_id]
+            if version.id != passage.version_id:
+                continue  # an older version's passage; the index is catching up
+            shared = [entity_id for entity_id in passage.entity_ids if entity_id in cast]
+            words = version.content[passage.start : passage.end]
+            named = ", ".join(names.get(entity_id, "") for entity_id in shared[:3])
+            out.append(
+                ContextItem(
+                    key=passage.key,
+                    section=ContextSection.WRITING,
+                    text=f"From “{source.title}”: {_trim(words, PASSAGE_WORDS)}",
+                    reason=f"It mentions {named}." if named else "It is from your writing.",
+                    authority="writing",
+                    record_type="source_version",
+                    record_id=version.id,
+                    location=f"chars:{passage.start}-{passage.end}",
+                    score=1 + len(shared) + 3 * semantic.get(passage.key, 0.0),
+                )
+            )
+        out.sort(key=lambda item: (-item.score, item.key))
+        out = out[:MAX_PASSAGES]
+        # A sample of the author's voice, even when it names nobody in the scene: writers
+        # report that re-feeding representative passages keeps voice from drifting.
+        sample = await self._voice_sample(workspace_id, project_id, {item.key for item in out})
+        if sample is not None:
+            out.append(sample)
+        return out
+
+    async def _voice_sample(
+        self, workspace_id: str, project_id: str, taken: set[str]
+    ) -> ContextItem | None:
+        texts = await self._sources.all_texts(workspace_id, project_id)
+        if not texts:
+            return None
+        newest = max(texts, key=lambda text: (text.created_at, text.id))
+        indexed = await self._passage_store.for_source(
+            workspace_id=workspace_id, project_id=project_id, source_id=newest.id
+        )
+        if not indexed:
+            return None
+        last = indexed[-1]
+        if last.key in taken:
+            return None
+        try:
+            _, version, _ = await self._sources.version(workspace_id, project_id, newest.id)
+        except NotFoundError:
+            return None
+        if version.id != last.version_id:
+            return None
+        words = version.content[last.start : last.end]
+        return ContextItem(
+            key=last.key,
+            section=ContextSection.WRITING,
+            text=f"From “{newest.title}”: {_trim(words, PASSAGE_WORDS)}",
+            reason="A sample of your voice, from your most recent writing.",
+            authority="writing",
+            record_type="source_version",
+            record_id=version.id,
+            location=f"chars:{last.start}-{last.end}",
+            score=2.5,
+        )
+
+
+__all__ = ["SceneContext", "ContextService"]

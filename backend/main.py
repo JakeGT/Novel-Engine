@@ -19,6 +19,7 @@ from backend.api.v1.canon_characters import router as canon_characters_router
 from backend.api.v1.canon_entities import router as canon_entities_router
 from backend.api.v1.canon_history import router as canon_history_router
 from backend.api.v1.canon_mutations import router as canon_mutations_router
+from backend.api.v1.context import router as context_router
 from backend.api.v1.credentials import router as credentials_router
 from backend.api.v1.knowledge import router as knowledge_router
 from backend.api.v1.media import router as media_router
@@ -152,6 +153,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.include_router(story_time_router, prefix="/api/v1")
     app.include_router(what_ifs_router, prefix="/api/v1")
     app.include_router(knowledge_router, prefix="/api/v1")
+    app.include_router(context_router, prefix="/api/v1")
     app.include_router(canon_archive_router, prefix="/api/v1")
     app.add_api_route(
         "/api/v1/projects/{project_id}/access",

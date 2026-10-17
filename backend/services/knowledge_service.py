@@ -15,6 +15,7 @@ from backend.domain.canon.assertions import Belief, Fact, FactVisibility
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.events import EventParticipant
 from backend.domain.canon.ids import format_canon_id
+from backend.domain.canon.phrasing import phrase
 from backend.domain.canon.propositions import Proposition
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
@@ -341,13 +342,13 @@ def _plural(entity_type: str) -> str:
 
 def _sentence(proposition: Proposition, names: dict[str, str]) -> str:
     subject = names.get(proposition.subject_id, "Someone")
-    phrase = proposition.predicate.replace("_", " ").lower()
+    verb = phrase(proposition.predicate)
     obj = proposition.object
     target = names.get(getattr(obj, "entity_id", ""), None)
     if target is None:
         value = getattr(obj, "value", None)
         target = str(value) if value is not None else ""
-    return f"{subject} {phrase} {target}".strip() + "."
+    return f"{subject} {verb} {target}".strip() + "."
 
 
 __all__ = ["Guide", "Journey", "KnowledgeService", "Telling"]

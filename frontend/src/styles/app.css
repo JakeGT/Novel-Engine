@@ -2808,3 +2808,35 @@ input.when-number,
 }
 .when-field .link-button { justify-self: start; }
 .when-field .link-button { font-family: var(--font-ui); font-size: 0.86rem; }
+
+/* ------------------------------------------------- what the assistant uses --- */
+.context-row .context-text {
+  display: block;
+  font-size: 0.98rem;
+}
+
+.context-row .context-reason {
+  display: block;
+  margin-top: 0.15rem;
+}
+
+.context-summary {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+}
+
+.context-summary .field select {
+  max-width: 22rem;
+}
+
+.notice.small {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+.context-section { margin-top: 0.6rem; }

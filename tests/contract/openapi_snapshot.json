@@ -2608,6 +2608,85 @@
         "title": "ConditionStateModel",
         "type": "object"
       },
+      "ContextItemModel": {
+        "properties": {
+          "authority": {
+            "title": "Authority",
+            "type": "string"
+          },
+          "hard": {
+            "title": "Hard",
+            "type": "boolean"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "pinned": {
+            "title": "Pinned",
+            "type": "boolean"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "record_id": {
+            "title": "Record Id",
+            "type": "string"
+          },
+          "record_type": {
+            "title": "Record Type",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "section": {
+            "title": "Section",
+            "type": "string"
+          },
+          "section_title": {
+            "title": "Section Title",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "words": {
+            "title": "Words",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "section",
+          "section_title",
+          "text",
+          "reason",
+          "authority",
+          "record_type",
+          "record_id",
+          "words",
+          "score",
+          "hard",
+          "pinned"
+        ],
+        "title": "ContextItemModel",
+        "type": "object"
+      },
       "ContextNode": {
         "properties": {
           "created_at": {
@@ -2701,6 +2780,97 @@
           "policy_used"
         ],
         "title": "ContextResponse",
+        "type": "object"
+      },
+      "ContextSettings": {
+        "additionalProperties": false,
+        "description": "What the author has said about a scene's context, kept with the scene.",
+        "properties": {
+          "budget": {
+            "anyOf": [
+              {
+                "maximum": 100000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget"
+          },
+          "excludes": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Excludes",
+            "type": "array"
+          },
+          "include_secrets": {
+            "default": false,
+            "title": "Include Secrets",
+            "type": "boolean"
+          },
+          "pins": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Pins",
+            "type": "array"
+          }
+        },
+        "title": "ContextSettings",
+        "type": "object"
+      },
+      "ContextSettingsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "budget": {
+            "anyOf": [
+              {
+                "maximum": 100000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget"
+          },
+          "excludes": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Excludes",
+            "type": "array"
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "include_secrets": {
+            "default": false,
+            "title": "Include Secrets",
+            "type": "boolean"
+          },
+          "pins": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Pins",
+            "type": "array"
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "title": "ContextSettingsRequest",
         "type": "object"
       },
       "CreateCredentialRequest": {
@@ -4519,6 +4689,48 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "IndexStatusModel": {
+        "properties": {
+          "behind": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Behind",
+            "type": "array"
+          },
+          "indexed": {
+            "title": "Indexed",
+            "type": "integer"
+          },
+          "names_as_of": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Names As Of"
+          },
+          "semantic": {
+            "title": "Semantic",
+            "type": "boolean"
+          },
+          "texts": {
+            "title": "Texts",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "texts",
+          "indexed",
+          "behind",
+          "semantic"
+        ],
+        "title": "IndexStatusModel",
+        "type": "object"
+      },
       "IntegerObject": {
         "additionalProperties": false,
         "properties": {
@@ -4699,6 +4911,23 @@
           "how"
         ],
         "title": "KnownFactModel",
+        "type": "object"
+      },
+      "LeftOutModel": {
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/ContextItemModel"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "reason"
+        ],
+        "title": "LeftOutModel",
         "type": "object"
       },
       "LinkAssetOp": {
@@ -6928,6 +7157,19 @@
         "title": "ReaderStepModel",
         "type": "object"
       },
+      "RebuildResult": {
+        "properties": {
+          "passages": {
+            "title": "Passages",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "passages"
+        ],
+        "title": "RebuildResult",
+        "type": "object"
+      },
       "Relative": {
         "additionalProperties": false,
         "description": "So long before or after an event: \"three years before the war\".",
@@ -7882,6 +8124,85 @@
           "check"
         ],
         "title": "SceneCondition",
+        "type": "object"
+      },
+      "SceneContextModel": {
+        "properties": {
+          "budget": {
+            "title": "Budget",
+            "type": "integer"
+          },
+          "checksum": {
+            "title": "Checksum",
+            "type": "string"
+          },
+          "index": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IndexStatusModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ContextItemModel"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "left_out": {
+            "items": {
+              "$ref": "#/components/schemas/LeftOutModel"
+            },
+            "title": "Left Out",
+            "type": "array"
+          },
+          "point_of_view": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Point Of View"
+          },
+          "policy_version": {
+            "title": "Policy Version",
+            "type": "string"
+          },
+          "rendered": {
+            "title": "Rendered",
+            "type": "string"
+          },
+          "scene_id": {
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ContextSettings"
+          },
+          "words": {
+            "title": "Words",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scene_id",
+          "settings",
+          "policy_version",
+          "budget",
+          "words",
+          "checksum",
+          "items",
+          "left_out",
+          "rendered"
+        ],
+        "title": "SceneContextModel",
         "type": "object"
       },
       "SchemaDefinitionRequest": {
@@ -16691,6 +17012,150 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/context": {
+      "get": {
+        "operationId": "scene_context_api_v1_projects__project_id__plan__plan_id__context_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "budget",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Budget"
+            }
+          },
+          {
+            "in": "query",
+            "name": "secrets",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Secrets"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneContextModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scene Context",
+        "tags": [
+          "context"
+        ]
+      },
+      "put": {
+        "operationId": "set_scene_context_api_v1_projects__project_id__plan__plan_id__context_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContextSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneContextModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Scene Context",
+        "tags": [
+          "context"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/plan/{plan_id}/move": {
       "post": {
         "operationId": "move_plan_item_api_v1_projects__project_id__plan__plan_id__move_post",
@@ -18188,6 +18653,91 @@
         "summary": "Add Text",
         "tags": [
           "texts"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/texts-index": {
+      "get": {
+        "operationId": "writing_index_api_v1_projects__project_id__texts_index_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexStatusModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Writing Index",
+        "tags": [
+          "context"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/texts-index/rebuild": {
+      "post": {
+        "description": "Index every text again, finding names with the story as it is now.\n\nThe write scope already requires permission to change the project.",
+        "operationId": "rebuild_writing_index_api_v1_projects__project_id__texts_index_rebuild_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RebuildResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rebuild Writing Index",
+        "tags": [
+          "context"
         ]
       }
     },

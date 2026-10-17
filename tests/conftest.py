@@ -74,8 +74,10 @@ def _build_fake_container(settings, tmp_path):
         InMemoryGraphRepository,
         InMemoryIdentityStore,
         InMemoryLoginAttemptStore,
+        InMemoryManifestStore,
         InMemoryMediaStore,
         InMemoryObjectStore,
+        InMemoryPassageStore,
         InMemoryProviderUsageStore,
         InMemoryRateLimiter,
         InMemoryRuleStore,
@@ -244,6 +246,32 @@ def _build_fake_container(settings, tmp_path):
         tenancy=tenancy_service,
         local_mode=not settings.is_hosted,
     )
+    from backend.services.context_service import ContextService
+    from backend.services.passage_index import PassageIndex
+
+    passage_store = InMemoryPassageStore()
+    manifests = InMemoryManifestStore()
+    passage_index = PassageIndex(
+        store=passage_store,
+        sources=source_service,
+        reader=canon_repository,
+        journal=journal,
+        embeddings=embeddings,
+        vectors=vectors,
+    )
+    source_service.passages = passage_index
+    context_service = ContextService(
+        reader=canon_repository,
+        plan=plan_service,
+        rules=rules,
+        sources=source_service,
+        passages=passage_index,
+        passage_store=passage_store,
+        manifests=manifests,
+        clocks=story_clocks,
+        tenancy=tenancy_service,
+        local_mode=not settings.is_hosted,
+    )
     what_if_service = WhatIfService(
         journal=journal,
         canon=canon_repository,
@@ -352,6 +380,10 @@ def _build_fake_container(settings, tmp_path):
         story_time_service=story_time_service,
         what_if_service=what_if_service,
         knowledge_service=knowledge_service,
+        passage_store=passage_store,
+        manifests=manifests,
+        passage_index=passage_index,
+        context_service=context_service,
         canon_character_workflow=canon_character_workflow,
         equivalence_service=equivalence_service,
         assist_sessions=assist_sessions,

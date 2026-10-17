@@ -72,6 +72,10 @@ export type FactKnowledge = Schemas['FactKnowledgeModel']
 export type ReaderJourney = Schemas['JourneyModel']
 export type ReaderStep = Schemas['ReaderStepModel']
 export type Reveal = Schemas['Reveal']
+export type SceneContext = Schemas['SceneContextModel']
+export type ContextItem = Schemas['ContextItemModel']
+export type ContextSettings = Schemas['ContextSettings']
+export type WritingIndex = Schemas['IndexStatusModel']
 
 export interface Scope {
   workspaceId: string | null
@@ -665,6 +669,18 @@ export const api = {
       when,
       expected_revision: expectedRevision,
     }),
+
+  // --- what the assistant would be given for a scene (ADR-021) ------------------
+  sceneContext: (scope: Scope, planId: string, params: { budget?: number; secrets?: boolean } = {}) =>
+    get<SceneContext>(scope, `/plan/${id(planId)}/context`, params),
+  setSceneContext: (scope: Scope, planId: string, settings: ContextSettings, expectedRevision: number) =>
+    send<SceneContext>(scope, 'PUT', `/plan/${id(planId)}/context`, {
+      ...settings,
+      expected_revision: expectedRevision,
+    }),
+  writingIndex: (scope: Scope) => get<WritingIndex>(scope, '/texts-index'),
+  rebuildWritingIndex: (scope: Scope) =>
+    send<{ passages: number }>(scope, 'POST', '/texts-index/rebuild'),
 
   // --- what-ifs: try a turn of the story without touching it (ADR-020) ----------
   // These are about the story's lines themselves, so they always speak to the main story.

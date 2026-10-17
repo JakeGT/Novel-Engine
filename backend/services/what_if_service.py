@@ -18,6 +18,7 @@ from typing import Any
 from backend.adapters.system import uuid7
 from backend.domain.branching import working_in
 from backend.domain.canon.ids import format_canon_id
+from backend.domain.canon.phrasing import phrase
 from backend.domain.errors import ConflictError, NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.journal import Branch, MutationSet
@@ -453,13 +454,13 @@ def _parts(proposition: Any) -> dict[str, Any]:
 
 def _sentence(names: dict[str, str], subject_id: str, proposition: Any) -> str:
     subject = names.get(subject_id, "Something")
-    phrase = proposition.predicate.replace("_", " ").lower()
+    verb = phrase(proposition.predicate)
     obj = proposition.object
     target = names.get(getattr(obj, "entity_id", ""), None)
     if target is None:
         value = getattr(obj, "value", None)
         target = str(value) if value is not None else ""
-    return f"{subject} {phrase} {target}".strip()
+    return f"{subject} {verb} {target}".strip()
 
 
 __all__ = ["ChangeKind", "Comparison", "Keep", "RecordChange", "WhatIf", "WhatIfService"]

@@ -5,6 +5,7 @@ import { api, type AssistSession, type PlanItem, type PlanKind } from '../api/cl
 import { NextDirections, PlanAssist } from '../components/PlanAssist'
 import { PlanItemForm } from '../components/PlanItemForm'
 import { SceneConditionsDialog } from '../components/SceneConditions'
+import { SceneContextDialog } from '../components/SceneContext'
 import {
   ReaderGuideDialog,
   SceneReaderNotes,
@@ -55,6 +56,7 @@ export function PlanPage() {
   const [revealing, setRevealing] = useState<PlanItem | null>(null)
   const [timing, setTiming] = useState<PlanItem | null>(null)
   const [guiding, setGuiding] = useState<PlanItem | null>(null)
+  const [contexting, setContexting] = useState<PlanItem | null>(null)
   // What the reader has been shown, scene by scene, in reading order.
   const journey = useQuery({
     queryKey: scopedKey(scope, 'reader'),
@@ -178,6 +180,11 @@ export function PlanPage() {
             {item.kind === 'scene' && (
               <Button size="sm" variant="ghost" onClick={() => setTiming(item)}>
                 When it happens
+              </Button>
+            )}
+            {item.kind === 'scene' && (
+              <Button size="sm" variant="ghost" onClick={() => setContexting(item)}>
+                What the assistant would use
               </Button>
             )}
             <Button size="sm" variant="ghost" onClick={() => setRemoving(item)}>
@@ -428,6 +435,9 @@ export function PlanPage() {
       {revealing && <SceneRevealsDialog key={revealing.id} scene={revealing} onClose={() => setRevealing(null)} />}
       {timing && <SceneTimeDialog key={timing.id} scene={timing} onClose={() => setTiming(null)} />}
       {guiding && <ReaderGuideDialog key={guiding.id} scene={guiding} onClose={() => setGuiding(null)} />}
+      {contexting && (
+        <SceneContextDialog key={contexting.id} scene={contexting} onClose={() => setContexting(null)} />
+      )}
 
       {removing && (
         <ConfirmDialog

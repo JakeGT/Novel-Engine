@@ -114,7 +114,7 @@ def test_comparing_lists_each_side_and_what_both_changed(auth_client, fake_conta
     }
     assert {(c["label"], c["kind"]) for c in compared["in_main"]} == {
         ("Tobin Marsh", "changed"),
-        ("Mara member of Harbor Guild", "ended"),
+        ("Mara is a member of Harbor Guild", "ended"),
     }
     assert [c["key"] for c in compared["conflicts"]] == [f"entity:{w['tobin']}"]
 

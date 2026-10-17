@@ -148,6 +148,7 @@ def clean_content(content: str) -> str:
 
 
 _HEADING = re.compile(r"^(#{1,3})[ \t]+(.+?)[ \t#]*$", re.MULTILINE)
+HEADING = _HEADING
 
 
 def split_sections(content: str) -> list[Section]:
