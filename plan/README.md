@@ -93,7 +93,9 @@ The plan was audited and revised on 2026-10-10 to be assistant-first with a gent
 (ADR-017, documents 19 and 20, and the audit record).
 
 Built on 2026-10-17: Phase 3 (story time, what-ifs, who knows what, the reader's ledger,
-record-level rebasing); see `phase-3-todo.md` and ADR-020.
+record-level rebasing); see `phase-3-todo.md` and ADR-020. Phase 4 (explainable scene context and
+the passage index; ADR-021, `phase-4-todo.md`) and Phase 5 (the scene studio: drafts, checks and jobs;
+ADR-022, `phase-5-todo.md`).
 
 Not yet built (later phases, as resequenced):
 
@@ -102,6 +104,7 @@ Not yet built (later phases, as resequenced):
 - story structure and story planning through conversation (Phase 2.6)
 - manuscript import, extraction/entity-resolution evaluation, story rules, scene contracts
   (Phase 2.7)
-- explainable context, derived vector/search memory, and media ingestion/processing (Phase 4)
-- scene drafting, consistency workflows, and extraction-to-commit (Phase 5–6)
+- media ingestion/processing (Phase 4 remainder)
+- consistency profiles and suppressions (Phase 5 remainder) and extraction-to-commit from scenes
+  (Phase 6, `phase-6-todo.md`)
 - production operations, backup automation, and release hardening (Phase 7)

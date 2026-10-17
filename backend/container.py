@@ -78,6 +78,10 @@ class Container:
     manifests: Any = None
     passage_index: Any = None
     context_service: Any = None
+    jobs: Any = None
+    job_runner: Any = None
+    studio_store: Any = None
+    studio_service: Any = None
     media_store: Any = None
     archive_service: Any = None
     media_service: Any = None
@@ -90,6 +94,8 @@ class Container:
     graph_upgrade_service: Any = None
 
     async def aclose(self) -> None:
+        if self.job_runner is not None:
+            await self.job_runner.stop()
         self.graph.close()
         await self.ai.aclose()
         if self.identity_provider is not None:
@@ -379,8 +385,40 @@ def build_container(settings: Settings | None = None) -> Container:
         manifests=container.manifests,
         clocks=container.story_clocks,
         tenancy=container.tenancy_service,
+        journal=container.journal,
         local_mode=not resolved.is_hosted,
     )
+    from backend.adapters.job_store import PostgresJobStore
+    from backend.adapters.studio_store import PostgresStudioStore
+    from backend.services.job_runner import JobRunner
+    from backend.services.studio_service import StudioService
+
+    container.jobs = PostgresJobStore(database.session_factory)
+    container.job_runner = JobRunner(
+        store=container.jobs,
+        journal=container.journal,
+        tenancy=container.tenancy_service,
+        local_mode=not resolved.is_hosted,
+    )
+    container.studio_store = PostgresStudioStore(database.session_factory)
+    container.context_service.studio = container.studio_store
+    container.studio_service = StudioService(
+        store=container.studio_store,
+        sources=container.source_service,
+        plan=container.plan_service,
+        context=container.context_service,
+        reader=container.canon_repository,
+        journal=container.journal,
+        jobs=container.jobs,
+        runner=container.job_runner,
+        ai=container.ai,
+        settings=resolved,
+        credentials=container.credential_service,
+        usage=container.usage_service,
+        tenancy=container.tenancy_service,
+        local_mode=not resolved.is_hosted,
+    )
+    container.studio_service.register_jobs()
     container.what_if_service = WhatIfService(
         journal=container.journal,
         canon=container.canon_repository,
@@ -469,5 +507,6 @@ def build_container(settings: Settings | None = None) -> Container:
         sources=container.sources,
         rules=container.rules,
         clocks=container.story_clocks,
+        studio=container.studio_store,
     )
     return container

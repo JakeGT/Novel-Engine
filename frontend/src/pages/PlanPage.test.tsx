@@ -162,6 +162,27 @@ describe('PlanPage', () => {
     expect(screen.queryByRole('button', { name: /Edit|Add|Remove|Thread/ })).not.toBeInTheDocument()
   })
 
+  it('opens a scene in the studio from the plan, for writing or (for a reader) reading', async () => {
+    mockApi({ ...everyone, 'GET /plan': outline, 'GET /reader': { steps: [], facts: {} } })
+    const user = userEvent.setup()
+    const first = renderInProject(<PlanPage />, at)
+    const lamp = (await screen.findByRole('heading', { name: 'The lamp room at night' })).closest('li') as HTMLElement
+    // Only scenes are written; the way there is in view, not tucked in a menu.
+    expect(screen.getAllByRole('link', { name: /^Write this scene/ })).toHaveLength(1)
+    const write = within(lamp).getByRole('link', { name: 'Write this scene: The lamp room at night' })
+    expect(write).toHaveTextContent('Write this scene')
+    await expectAccessible(first.container)
+    await user.click(write)
+    expect(screen.getAllByTestId('location')[0]).toHaveTextContent('/projects/prj_1/plan/pln_s/write')
+    first.unmount()
+
+    renderInProject(<PlanPage />, { ...at, context: { access: VIEWER } })
+    expect(await screen.findByRole('link', { name: 'Read this scene: The lamp room at night' })).toHaveAttribute(
+      'href',
+      '/projects/prj_1/plan/pln_s/write',
+    )
+  })
+
   it('shows what must be true around a scene, and lets the author set it by hand', async () => {
     const withConditions = {
       ...outline,

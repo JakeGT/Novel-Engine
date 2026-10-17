@@ -5,9 +5,18 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from backend.core.database import session_scope
-from backend.domain.sources import AliasBinding, SourceKind, SourceText, SourceVersion, Verdict
+from backend.domain.errors import ConflictError
+from backend.domain.sources import (
+    AliasBinding,
+    SourceKind,
+    SourceText,
+    SourceVersion,
+    Verdict,
+    VersionOrigin,
+)
 
 _OWN = "v.workspace_id = s.workspace_id AND v.project_id = s.project_id AND v.source_id = s.id"
 _SOURCE = f"""
@@ -19,10 +28,11 @@ _SOURCE = f"""
              ORDER BY v.number DESC LIMIT 1)
     FROM source_texts s
 """
-_VERSION = (
-    "SELECT workspace_id, project_id, id, source_id, number, content, content_hash, "
-    "created_by, created_at FROM source_versions"
+_VERSION_COLUMNS = (
+    "workspace_id, project_id, id, source_id, number, content, content_hash, "
+    "created_by, created_at, origin, parent_version_id, draft_id, manifest_id"
 )
+_VERSION = f"SELECT {_VERSION_COLUMNS} FROM source_versions"
 _BINDING = (
     "SELECT workspace_id, project_id, id, phrase, normalized, verdict, entity_id, source_id, "
     "decided_by, decided_at FROM alias_bindings"
@@ -56,6 +66,10 @@ def _version(row: Any) -> SourceVersion:
         content_hash=row[6],
         created_by=row[7],
         created_at=row[8],
+        origin=VersionOrigin(row[9] or "author"),
+        parent_version_id=row[10],
+        draft_id=row[11],
+        manifest_id=row[12],
     )
 
 
@@ -115,21 +129,60 @@ class PostgresSourceStore:
         content: str,
         content_hash: str,
         actor_user_id: str | None,
+        origin: VersionOrigin = VersionOrigin.AUTHOR,
+        parent_version_id: str | None = None,
+        draft_id: str | None = None,
+        manifest_id: str | None = None,
+    ) -> SourceVersion:
+        try:
+            return await self._insert_version(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                version_id=version_id,
+                source_id=source_id,
+                content=content,
+                content_hash=content_hash,
+                actor_user_id=actor_user_id,
+                origin=origin,
+                parent_version_id=parent_version_id,
+                draft_id=draft_id,
+                manifest_id=manifest_id,
+            )
+        except IntegrityError as error:
+            # Two saves at the same moment both took the next number; the second loses.
+            raise ConflictError(
+                "This text changed at the same moment. Your words are still here; try again."
+            ) from error
+
+    async def _insert_version(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        version_id: str,
+        source_id: str,
+        content: str,
+        content_hash: str,
+        actor_user_id: str | None,
+        origin: VersionOrigin,
+        parent_version_id: str | None,
+        draft_id: str | None,
+        manifest_id: str | None,
     ) -> SourceVersion:
         async with session_scope(self._session_factory) as db:
             row = (
                 await db.execute(
                     text(
-                        """
+                        f"""
                         INSERT INTO source_versions
                             (workspace_id, project_id, id, source_id, number, content,
-                             content_hash, created_by)
+                             content_hash, created_by, origin, parent_version_id, draft_id,
+                             manifest_id)
                         SELECT :ws, :pj, :id, :source, coalesce(max(number), 0) + 1, :content,
-                               :hash, :actor
+                               :hash, :actor, :origin, :parent, :draft, :manifest
                         FROM source_versions
                         WHERE workspace_id = :ws AND project_id = :pj AND source_id = :source
-                        RETURNING workspace_id, project_id, id, source_id, number, content,
-                                  content_hash, created_by, created_at
+                        RETURNING {_VERSION_COLUMNS}
                         """
                     ),
                     {
@@ -140,6 +193,10 @@ class PostgresSourceStore:
                         "content": content,
                         "hash": content_hash,
                         "actor": actor_user_id,
+                        "origin": origin.value,
+                        "parent": parent_version_id,
+                        "draft": draft_id,
+                        "manifest": manifest_id,
                     },
                 )
             ).one()

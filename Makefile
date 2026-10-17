@@ -170,5 +170,6 @@ frontend-e2e-install:
 # installed Chrome instead of the Playwright-managed Chromium.
 e2e:
 	pnpm --dir frontend exec playwright test
+	pnpm --dir frontend exec playwright test --config playwright.model.config.ts
 
 check: lock-check lint format-check secret-scan typecheck test frontend-api-check frontend-lint frontend-typecheck frontend-test frontend-build

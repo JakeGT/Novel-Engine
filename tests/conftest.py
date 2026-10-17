@@ -270,8 +270,41 @@ def _build_fake_container(settings, tmp_path):
         manifests=manifests,
         clocks=story_clocks,
         tenancy=tenancy_service,
+        journal=journal,
         local_mode=not settings.is_hosted,
     )
+    from backend.services.job_runner import JobRunner
+    from backend.services.studio_service import StudioService
+    from tests.doubles import InMemoryJobStore, InMemoryStudioStore
+
+    jobs = InMemoryJobStore()
+    job_runner = JobRunner(
+        store=jobs,
+        journal=journal,
+        tenancy=tenancy_service,
+        local_mode=not settings.is_hosted,
+        autostart=False,
+    )
+    studio_store = InMemoryStudioStore()
+    canon_repository.studio = studio_store
+    context_service.studio = studio_store
+    studio_service = StudioService(
+        store=studio_store,
+        sources=source_service,
+        plan=plan_service,
+        context=context_service,
+        reader=canon_repository,
+        journal=journal,
+        jobs=jobs,
+        runner=job_runner,
+        ai=ai,
+        settings=settings,
+        credentials=credential_service,
+        usage=usage_service,
+        tenancy=tenancy_service,
+        local_mode=not settings.is_hosted,
+    )
+    studio_service.register_jobs()
     what_if_service = WhatIfService(
         journal=journal,
         canon=canon_repository,
@@ -333,6 +366,7 @@ def _build_fake_container(settings, tmp_path):
         sources=sources,
         rules=rules,
         clocks=story_clocks,
+        studio=studio_store,
     )
     return Container(
         settings=settings,
@@ -384,6 +418,10 @@ def _build_fake_container(settings, tmp_path):
         manifests=manifests,
         passage_index=passage_index,
         context_service=context_service,
+        jobs=jobs,
+        job_runner=job_runner,
+        studio_store=studio_store,
+        studio_service=studio_service,
         canon_character_workflow=canon_character_workflow,
         equivalence_service=equivalence_service,
         assist_sessions=assist_sessions,

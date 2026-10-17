@@ -76,6 +76,14 @@ export type SceneContext = Schemas['SceneContextModel']
 export type ContextItem = Schemas['ContextItemModel']
 export type ContextSettings = Schemas['ContextSettings']
 export type WritingIndex = Schemas['IndexStatusModel']
+export type Studio = Schemas['StudioModel']
+export type SceneDraft = Schemas['DraftModel']
+export type DraftCheck = Schemas['CheckModel']
+export type AssistantNote = Schemas['AssistantNoteModel']
+export type SceneVersion = Schemas['backend__api__v1__studio__VersionModel']
+export type StudioJob = Schemas['JobModel']
+export type DraftEstimate = Schemas['backend__api__v1__studio__EstimateModel']
+export type DraftAsk = Schemas['DraftRequest']
 
 export interface Scope {
   workspaceId: string | null
@@ -682,6 +690,39 @@ export const api = {
   rebuildWritingIndex: (scope: Scope) =>
     send<{ passages: number }>(scope, 'POST', '/texts-index/rebuild'),
 
+  // --- the scene studio: a scene's prose, drafts waiting, and checks (ADR-022) -------
+  studio: (scope: Scope, planId: string) => get<Studio>(scope, `/plan/${id(planId)}/studio`),
+  saveSceneText: (scope: Scope, planId: string, content: string, baseVersionId: string | null) =>
+    send<Studio>(scope, 'PUT', `/plan/${id(planId)}/studio/text`, {
+      content,
+      base_version_id: baseVersionId,
+    } satisfies Schemas['SaveRequest']),
+  draftEstimate: (scope: Scope, planId: string, ask: DraftAsk) =>
+    send<DraftEstimate>(scope, 'POST', `/plan/${id(planId)}/studio/estimate`, ask),
+  /** Ask for drafts. The key makes a resent request start the same work, not a second one. */
+  startDraft: (scope: Scope, planId: string, ask: DraftAsk, key: string) =>
+    request<StudioJob>(`${project(scope)}/plan/${id(planId)}/studio/drafts`, {
+      method: 'POST',
+      workspaceId: scope.workspaceId,
+      headers: { ...branchHeaders(scope), 'Idempotency-Key': key },
+      json: ask,
+    }),
+  /** Ask the assistant to check the scene's text, or one draft. */
+  startReview: (scope: Scope, planId: string, draftId: string | null) =>
+    send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/studio/reviews`, {
+      draft_id: draftId,
+    } satisfies Schemas['ReviewRequest']),
+  keepDraft: (scope: Scope, draftId: string, baseVersionId: string | null) =>
+    send<Studio>(scope, 'POST', `/drafts/${id(draftId)}/keep`, {
+      base_version_id: baseVersionId,
+    } satisfies Schemas['KeepRequest']),
+  discardDraft: (scope: Scope, draftId: string) => send<void>(scope, 'DELETE', `/drafts/${id(draftId)}`),
+  job: (scope: Scope, jobId: string) => get<StudioJob>(scope, `/jobs/${id(jobId)}`),
+  cancelJob: (scope: Scope, jobId: string) => send<StudioJob>(scope, 'POST', `/jobs/${id(jobId)}/cancel`),
+  voice: (scope: Scope) => get<Schemas['VoiceModel']>(scope, '/voice'),
+  setVoice: (scope: Scope, notes: string) =>
+    send<Schemas['VoiceModel']>(scope, 'PUT', '/voice', { notes } satisfies Schemas['VoiceModel']),
+
   // --- what-ifs: try a turn of the story without touching it (ADR-020) ----------
   // These are about the story's lines themselves, so they always speak to the main story.
   whatIfs: (scope: Scope) =>
@@ -711,7 +752,7 @@ export const api = {
   assistChange: (scope: Scope, body: Schemas['ChangeRequest']) =>
     send<ChangeProposal>(scope, 'POST', '/assist/changes', body),
   /** Roughly what the assistant will read, to show before a request is sent. */
-  assistEstimate: (scope: Scope) => get<Schemas['EstimateModel']>(scope, '/assist/estimate'),
+  assistEstimate: (scope: Scope) => get<Schemas['backend__api__v1__canon_assist__EstimateModel']>(scope, '/assist/estimate'),
   /** Connections the entries describe but no fact records, as changes to review. */
   assistLinks: (scope: Scope, expectedRevision: number) =>
     send<ChangeProposal>(scope, 'POST', '/assist/links', {

@@ -7,6 +7,7 @@ server stop) the database and object store are removed. Development databases
 and volumes are never touched.
 
     uv run --locked python -m scripts.e2e.serve --port 8010
+    uv run --locked python -m scripts.e2e.serve --port 8012 --fake-model
 """
 
 from __future__ import annotations
@@ -67,6 +68,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="scripts.e2e.serve")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8010)
+    parser.add_argument(
+        "--fake-model",
+        action="store_true",
+        help="answer model requests with a local stand-in (for *.model.spec.ts)",
+    )
     args = parser.parse_args(argv)
 
     database = f"novel_e2e_{uuid.uuid4().hex[:10]}"
@@ -94,6 +100,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             "OPENAI_API_KEY": "",
             "SENTRY_DSN_BACKEND": "",
         }
+        if args.fake_model:
+            from scripts.e2e.fake_model import start
+
+            _server, base_url = start(args.host)
+            env.update({"OPENAI_API_KEY": "e2e-stand-in", "AI_BASE_URL": base_url})
         process = subprocess.Popen(
             [
                 sys.executable,

@@ -138,9 +138,11 @@ class CanonArchiveService:
         sources: object | None = None,
         rules: object | None = None,
         clocks: object | None = None,
+        studio: object | None = None,
     ) -> None:
         self._canon = canon
         self._clocks = clocks
+        self._studio = studio
         self._journal = journal
         self._schemas = schemas
         self._media = media
@@ -548,6 +550,12 @@ class CanonArchiveService:
                             "number": version.number,
                             "content": version.content,
                             "content_hash": version.content_hash,
+                            # Only when not the author's, so older archives are unchanged.
+                            **(
+                                {"origin": version.origin.value}
+                                if version.origin.value != "author"
+                                else {}
+                            ),
                         }
                         for version in versions
                     ],
@@ -567,7 +575,25 @@ class CanonArchiveService:
             # A model's unanswered guess is not the author's and is not carried.
             if binding.verdict.value != "suggested"
         ]
-        return {"texts": texts, "names": names} if texts or names else {}
+        found: dict[str, Any] = {"texts": texts, "names": names} if texts or names else {}
+        if self._studio is not None and self._journal is not None:
+            main = await self._journal.working_branch(  # type: ignore[attr-defined]
+                workspace_id=workspace_id, project_id=project_id
+            )
+            scenes = await self._studio.manuscripts_for(  # type: ignore[attr-defined]
+                workspace_id=workspace_id, project_id=project_id, branch_id=main.id
+            )
+            # Only links to texts the archive carries: a removed text is not exported.
+            carried = {item["id"] for item in texts}
+            scenes = [(plan, text) for plan, text in scenes if text in carried]
+            if scenes:
+                found["scenes"] = [{"plan_id": plan, "text_id": text} for plan, text in scenes]
+            voice = await self._studio.voice(  # type: ignore[attr-defined]
+                workspace_id=workspace_id, project_id=project_id
+            )
+            if voice:
+                found["voice"] = voice
+        return found
 
     async def _export_rules(self, workspace_id: str, project_id: str) -> list[dict[str, Any]]:
         if self._rules is None:
@@ -614,7 +640,13 @@ class CanonArchiveService:
 
         from backend.domain.canon.naming import normalize_name
         from backend.domain.rules import RuleBody, RuleExample, RuleStatus
-        from backend.domain.sources import AliasBinding, SourceKind, Verdict, content_hash
+        from backend.domain.sources import (
+            AliasBinding,
+            SourceKind,
+            Verdict,
+            VersionOrigin,
+            content_hash,
+        )
 
         restored = {"texts": 0, "names": 0, "rules": 0}
         writing = archive.get("writing") or {}
@@ -633,6 +665,7 @@ class CanonArchiveService:
                     kind=SourceKind(text["kind"]),
                     actor_user_id=actor_user_id,
                 )
+                previous: str | None = None
                 for version in sorted(text["versions"], key=lambda item: item["number"]):
                     await self._sources.add_version(  # type: ignore[attr-defined]
                         workspace_id=workspace_id,
@@ -642,7 +675,10 @@ class CanonArchiveService:
                         content=version["content"],
                         content_hash=content_hash(version["content"]),
                         actor_user_id=actor_user_id,
+                        origin=VersionOrigin(version.get("origin", "author")),
+                        parent_version_id=previous,
                     )
+                    previous = version["id"]
                 restored["texts"] += 1
             known = {
                 binding.id
@@ -668,6 +704,38 @@ class CanonArchiveService:
                     )
                 )
                 restored["names"] += 1
+        if self._studio is not None and self._journal is not None:
+            main = await self._journal.working_branch(  # type: ignore[attr-defined]
+                workspace_id=workspace_id, project_id=project_id
+            )
+            for link in writing.get("scenes", []):
+                # A link to a text the archive does not carry would point at nothing.
+                if not isinstance(link, dict) or not await self._sources.get_source(  # type: ignore[union-attr, attr-defined]
+                    workspace_id=workspace_id, project_id=project_id, source_id=link.get("text_id")
+                ):
+                    continue
+                current = await self._studio.manuscript(  # type: ignore[attr-defined]
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    branch_id=main.id,
+                    plan_id=link["plan_id"],
+                )
+                if current is None:
+                    await self._studio.link(  # type: ignore[attr-defined]
+                        workspace_id=workspace_id,
+                        project_id=project_id,
+                        branch_id=main.id,
+                        plan_id=link["plan_id"],
+                        source_id=link["text_id"],
+                    )
+            voice = writing.get("voice")
+            if isinstance(voice, str) and voice.strip():
+                if not await self._studio.voice(  # type: ignore[attr-defined]
+                    workspace_id=workspace_id, project_id=project_id
+                ):
+                    await self._studio.set_voice(  # type: ignore[attr-defined]
+                        workspace_id=workspace_id, project_id=project_id, notes=voice[:4000]
+                    )
         unit = (archive.get("story_time") or {}).get("unit")
         if self._clocks is not None and isinstance(unit, str) and unit.strip():
             current = await self._clocks.get_unit(  # type: ignore[attr-defined]

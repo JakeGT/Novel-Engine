@@ -5,7 +5,6 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query, status
 
-from backend.adapters.system import uuid7
 from backend.api.auth import (
     get_project_scope,
     require_local_graph_write,
@@ -27,23 +26,21 @@ from backend.api.v1 import schemas as s
 from backend.container import Container
 from backend.core.config import Settings
 from backend.domain.errors import (
-    CapabilityUnavailableError,
     ConflictError,
     FeatureNotImplementedError,
     NotFoundError,
     ValidationError,
 )
 from backend.domain.identity import AccessScope
-from backend.domain.providers import set_request_model
-from backend.domain.usage import UsageOutcome, UsageRecord
 from backend.graph.policies import get_policy
 from backend.graph.resolver import extract_entity_ids
 from backend.graph.schema import Edge, Node
 from backend.graph.summarizer import summarize_context
-from backend.ports import AIUsage, EmbeddingPort, GraphRepository, SchemaRegistryPort
+from backend.ports import EmbeddingPort, GraphRepository, SchemaRegistryPort
 from backend.services.auth_service import AuthenticatedSession
 from backend.services.character_service import CharacterService
 from backend.services.credential_service import CredentialService
+from backend.services.provider_route import resolve_provider
 from backend.services.usage_service import ProviderUsageService
 
 project_router = APIRouter()
@@ -65,48 +62,10 @@ async def _provider_context(
     usage: ProviderUsageService,
     scope: AccessScope,
 ) -> tuple[str | None, str | None, str | None, Any]:
-    """Resolve the BYOK credential, enforce usage limits, and build a usage sink.
-
-    Hosted deployments require a workspace credential (no platform-funded
-    inference); local self-hosted mode uses the operator's server key.
-    """
-    workspace_id = scope.workspace_id or ""
-    project_id = scope.project_id or ""
-    credential_id: str | None = None
-    api_key: str | None = None
-    provider_base_url: str | None = None
-    provider = settings.AI_PROVIDER
-    if settings.is_hosted:
-        route = await credentials.resolve_route_for_use(scope, workspace_id)
-        if route is None:
-            raise CapabilityUnavailableError(
-                "No provider credential is configured for this workspace."
-            )
-        credential_id, api_key = route.credential_id, route.api_key
-        provider_base_url = route.provider.base_url
-        provider = route.provider.id
-        # The workspace's own choice of model, read by the gateway for this request.
-        set_request_model(route.model)
-
-    await usage.ensure_within_limits(workspace_id=workspace_id, actor_user_id=scope.actor_user_id)
-
-    async def sink(ai_usage: AIUsage, model: str) -> None:
-        await usage.record(
-            UsageRecord(
-                id=str(uuid7()),
-                workspace_id=workspace_id,
-                project_id=project_id or None,
-                actor_user_id=scope.actor_user_id,
-                provider=provider,
-                model=model or "",
-                requested_route=model or "",
-                prompt_tokens=ai_usage.prompt_tokens,
-                completion_tokens=ai_usage.completion_tokens,
-                outcome=UsageOutcome.SUCCESS,
-            )
-        )
-
-    return credential_id, api_key, provider_base_url, sink
+    """Resolve the BYOK credential, enforce usage limits, and build a usage sink."""
+    return await resolve_provider(
+        settings=settings, credentials=credentials, usage=usage, scope=scope
+    )
 
 
 @project_router.get("/entities", response_model=s.EntityList, tags=["entities"])

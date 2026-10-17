@@ -565,6 +565,43 @@ class ScriptedAIGateway:
             raise item
         return StructuredResponse(parsed=item, model=model or "fake")
 
+    async def generate_text(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        max_tokens: int,
+        model: str | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+    ) -> Any:
+        from backend.ports import AIUsage, TextResponse
+
+        self.calls.append(
+            {
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "model": model,
+                "api_key": api_key,
+                "base_url": base_url,
+                "route_model": request_model(),
+                "text": True,
+            }
+        )
+        if self._index >= len(self._responses):
+            raise AssertionError("ScriptedAIGateway has no response queued")
+        item = self._responses[self._index]
+        self._index += 1
+        if isinstance(item, BaseException):
+            raise item
+        if isinstance(item, TextResponse):
+            return item
+        words = len(str(item).split())
+        return TextResponse(
+            text=str(item),
+            model=model or "fake",
+            usage=AIUsage(prompt_tokens=100, completion_tokens=words),
+        )
+
     async def list_models(self, *, api_key: str, base_url: str) -> list[str]:
         self.model_list_calls.append({"api_key": api_key, "base_url": base_url})
         if isinstance(self.models, BaseException):
@@ -2611,6 +2648,12 @@ class InMemoryCanonRepository:
         source = self._stores.get(self._branch_namespace(parent_branch_id), {})
         self._stores[branch_id] = {key: copy.copy(value) for key, value in source.items()}
         self.heads[(workspace_id, project_id, branch_id)] = head
+        # Like _FORKED_TABLES: the scene-to-text links are copied too.
+        studio = getattr(self, "studio", None)
+        if studio is not None:
+            for (ws, pj, branch, plan), text_id in list(studio.manuscripts.items()):
+                if (ws, pj, branch) == (workspace_id, project_id, parent_branch_id):
+                    studio.manuscripts[(ws, pj, branch_id, plan)] = text_id
         return head
 
     async def set_branch_status(
@@ -4134,8 +4177,12 @@ class InMemorySourceStore:
         content: str,
         content_hash: str,
         actor_user_id: str | None,
+        origin: Any = None,
+        parent_version_id: str | None = None,
+        draft_id: str | None = None,
+        manifest_id: str | None = None,
     ) -> Any:
-        from backend.domain.sources import SourceVersion
+        from backend.domain.sources import SourceVersion, VersionOrigin
 
         number = 1 + max(
             (
@@ -4156,6 +4203,10 @@ class InMemorySourceStore:
             content_hash=content_hash,
             created_by=actor_user_id,
             created_at=datetime.now(UTC),
+            origin=origin or VersionOrigin.AUTHOR,
+            parent_version_id=parent_version_id,
+            draft_id=draft_id,
+            manifest_id=manifest_id,
         )
         self.versions[(workspace_id, project_id, version_id)] = version
         return version
@@ -4436,3 +4487,254 @@ class InMemoryManifestStore:
 
     async def get(self, *, workspace_id, project_id, manifest_id) -> Any:
         return self.saved.get((workspace_id, project_id, manifest_id))
+
+
+class InMemoryJobStore:
+    """Jobs as the PostgreSQL store keeps them, with leases and cancellation."""
+
+    def __init__(self) -> None:
+        self.jobs: dict[tuple[str, str, str], Any] = {}
+        self.owners: dict[tuple[str, str, str], str | None] = {}
+
+    def _key(self, job) -> tuple[str, str, str]:
+        return (job.workspace_id, job.project_id, job.id)
+
+    async def create(self, job):
+        if job.idempotency_key:
+            for existing in self.jobs.values():
+                if (
+                    existing.workspace_id == job.workspace_id
+                    and existing.project_id == job.project_id
+                    and existing.actor_user_id == job.actor_user_id
+                    and existing.idempotency_key == job.idempotency_key
+                ):
+                    return existing
+        self.jobs[self._key(job)] = job
+        return job
+
+    async def get(self, *, workspace_id, project_id, job_id):
+        return self.jobs.get((workspace_id, project_id, job_id))
+
+    async def find_by_key(self, *, workspace_id, project_id, actor_user_id, idempotency_key):
+        if not idempotency_key:
+            return None
+        for job in self.jobs.values():
+            if (job.workspace_id, job.project_id, job.actor_user_id, job.idempotency_key) == (
+                workspace_id,
+                project_id,
+                actor_user_id,
+                idempotency_key,
+            ):
+                return job
+        return None
+
+    async def count_active(self, *, workspace_id, project_id, actor_user_id):
+        return sum(
+            1
+            for job in self.jobs.values()
+            if (job.workspace_id, job.project_id, job.actor_user_id)
+            == (workspace_id, project_id, actor_user_id)
+            and not job.status.finished
+        )
+
+    async def recent(self, *, workspace_id, project_id, kind, plan_id, limit=10, branch_id="any"):
+        found = [
+            job
+            for job in self.jobs.values()
+            if (job.workspace_id, job.project_id, job.kind) == (workspace_id, project_id, kind)
+            and job.payload.get("plan_id") == plan_id
+            and (branch_id == "any" or job.payload.get("branch_id") == branch_id)
+        ]
+        return sorted(found, key=lambda job: job.created_at, reverse=True)[:limit]
+
+    async def claim(self, *, owner):
+        from dataclasses import replace
+
+        from backend.domain.jobs import JobStatus
+
+        for key, job in sorted(self.jobs.items(), key=lambda pair: pair[1].created_at):
+            if job.status is JobStatus.QUEUED:
+                claimed = replace(job, status=JobStatus.RUNNING, attempts=job.attempts + 1)
+                self.jobs[key] = claimed
+                self.owners[key] = owner
+                return claimed
+        return None
+
+    async def heartbeat(self, job, *, owner, stage, progress):
+        from dataclasses import replace
+
+        from backend.domain.jobs import JobStatus, LeaseLost
+
+        key = self._key(job)
+        current = self.jobs[key]
+        if self.owners.get(key) != owner or current.status is not JobStatus.RUNNING:
+            raise LeaseLost(job.id)
+        self.jobs[key] = replace(current, stage=stage, progress=progress)
+        return current.cancel_requested
+
+    async def add_usage(self, job, *, owner, prompt_tokens, completion_tokens):
+        from dataclasses import replace
+
+        key = self._key(job)
+        current = self.jobs[key]
+        if self.owners.get(key) != owner:
+            return
+        self.jobs[key] = replace(
+            current,
+            prompt_tokens=current.prompt_tokens + prompt_tokens,
+            completion_tokens=current.completion_tokens + completion_tokens,
+        )
+
+    async def requeue(self, job, *, owner):
+        from dataclasses import replace
+
+        from backend.domain.jobs import JobStatus
+
+        key = self._key(job)
+        current = self.jobs[key]
+        if self.owners.get(key) != owner or current.status is not JobStatus.RUNNING:
+            return
+        self.jobs[key] = replace(
+            current, status=JobStatus.QUEUED, attempts=max(current.attempts - 1, 0)
+        )
+        self.owners[key] = None
+
+    async def finish(self, job, *, owner, status, result=None, error_code=None, error_message=None):
+        from dataclasses import replace
+
+        from backend.domain.jobs import JobStatus
+
+        key = self._key(job)
+        current = self.jobs[key]
+        if current.status is not JobStatus.RUNNING or self.owners.get(key) != owner:
+            # A job that has already ended keeps its ending, and a worker that lost the
+            # job never ends it, as in PostgreSQL.
+            return current
+        self.jobs[key] = replace(
+            current,
+            status=status,
+            result=result or {},
+            error_code=error_code,
+            error_message=error_message,
+            progress=100 if status is JobStatus.SUCCEEDED else current.progress,
+            finished_at=utcnow(),
+        )
+        self.owners[key] = None
+        return self.jobs[key]
+
+    async def request_cancel(self, *, workspace_id, project_id, job_id):
+        from dataclasses import replace
+
+        from backend.domain.jobs import JobStatus
+
+        key = (workspace_id, project_id, job_id)
+        current = self.jobs.get(key)
+        if current is None:
+            return None
+        if current.status.finished:
+            return current
+        queued = current.status is JobStatus.QUEUED
+        self.jobs[key] = replace(
+            current,
+            cancel_requested=True,
+            status=JobStatus.CANCELLED if queued else current.status,
+            finished_at=utcnow() if queued else current.finished_at,
+        )
+        return self.jobs[key]
+
+
+class InMemoryStudioStore:
+    def __init__(self) -> None:
+        self.manuscripts: dict[tuple[str, str, str, str], str] = {}
+        self.drafts_by_id: dict[tuple[str, str, str], Any] = {}
+        self.assistant_findings: list[tuple[str, str, Any]] = []
+        self.voices: dict[tuple[str, str], str] = {}
+
+    async def manuscript(self, *, workspace_id, project_id, branch_id, plan_id):
+        return self.manuscripts.get((workspace_id, project_id, branch_id, plan_id))
+
+    async def manuscripts_for(self, *, workspace_id, project_id, branch_id):
+        return sorted(
+            (plan, value)
+            for (ws, pj, branch, plan), value in self.manuscripts.items()
+            if (ws, pj, branch) == (workspace_id, project_id, branch_id)
+        )
+
+    async def link(self, *, workspace_id, project_id, branch_id, plan_id, source_id):
+        self.manuscripts[(workspace_id, project_id, branch_id, plan_id)] = source_id
+
+    async def relink(
+        self, *, workspace_id, project_id, from_source_id, to_source_id, except_branch_id
+    ):
+        for (ws, pj, branch, plan), value in list(self.manuscripts.items()):
+            if (ws, pj) == (workspace_id, project_id) and value == from_source_id:
+                if branch != except_branch_id:
+                    self.manuscripts[(ws, pj, branch, plan)] = to_source_id
+
+    async def linked_elsewhere(self, *, workspace_id, project_id, branch_id, source_id):
+        return any(
+            ws == workspace_id and pj == project_id and branch != branch_id and value == source_id
+            for (ws, pj, branch, _), value in self.manuscripts.items()
+        )
+
+    async def add_draft(self, draft):
+        self.drafts_by_id[(draft.workspace_id, draft.project_id, draft.id)] = draft
+
+    async def drafts(self, *, workspace_id, project_id, branch_id, plan_id):
+        return sorted(
+            (
+                draft
+                for draft in self.drafts_by_id.values()
+                if (draft.workspace_id, draft.project_id, draft.plan_id, draft.branch_id)
+                == (workspace_id, project_id, plan_id, branch_id)
+                and draft.status == "proposed"
+            ),
+            key=lambda draft: (draft.created_at, draft.number),
+        )
+
+    async def get_draft(self, *, workspace_id, project_id, draft_id):
+        return self.drafts_by_id.get((workspace_id, project_id, draft_id))
+
+    async def drafts_for_job(self, *, workspace_id, project_id, job_id):
+        return sorted(
+            (
+                draft
+                for draft in self.drafts_by_id.values()
+                if (draft.workspace_id, draft.project_id, draft.job_id)
+                == (workspace_id, project_id, job_id)
+            ),
+            key=lambda draft: draft.number,
+        )
+
+    async def mark_kept(self, *, workspace_id, project_id, draft_id, version_id):
+        from dataclasses import replace
+
+        key = (workspace_id, project_id, draft_id)
+        self.drafts_by_id[key] = replace(
+            self.drafts_by_id[key], status="kept", kept_version_id=version_id, content=""
+        )
+
+    async def discard(self, *, workspace_id, project_id, draft_id):
+        self.drafts_by_id.pop((workspace_id, project_id, draft_id), None)
+        self.assistant_findings = [
+            item
+            for item in self.assistant_findings
+            if not (item[2].target_kind == "draft" and item[2].target_id == draft_id)
+        ]
+
+    async def add_findings(self, *, workspace_id, project_id, findings):
+        self.assistant_findings.extend((workspace_id, project_id, f) for f in findings)
+
+    async def findings(self, *, workspace_id, project_id, target_kind, target_id):
+        return [
+            f
+            for ws, pj, f in self.assistant_findings
+            if (ws, pj, f.target_kind, f.target_id)
+            == (workspace_id, project_id, target_kind, target_id)
+        ]
+
+    async def voice(self, *, workspace_id, project_id):
+        return self.voices.get((workspace_id, project_id), "")
+
+    async def set_voice(self, *, workspace_id, project_id, notes):
+        self.voices[(workspace_id, project_id)] = notes

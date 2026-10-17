@@ -36,6 +36,7 @@ from backend.domain.sources import (
     SourceText,
     SourceVersion,
     Verdict,
+    VersionOrigin,
     build_index,
     clean_content,
     content_hash,
@@ -183,6 +184,9 @@ class SourceService:
         kind: SourceKind = SourceKind.PASTE,
     ) -> SourceText:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        if kind is SourceKind.SCENE:
+            # A scene's text is started from the scene, in the studio.
+            raise ValidationError("Write a scene from the story plan, in the scene's studio.")
         title, content = self._checked(title, content)
         existing = await self._store.list_sources(  # type: ignore[attr-defined]
             workspace_id=workspace_id, project_id=project_id
@@ -233,6 +237,9 @@ class SourceService:
                 workspace_id=workspace_id, project_id=project_id, source_id=source_id, title=title
             )
         if content is not None:
+            if source.kind is SourceKind.SCENE:
+                # A scene's words may be shared with a what-if; the studio copies before changing.
+                raise ValidationError("This is a scene's text. Change it in the scene's studio.")
             content = self._checked_content(content)
             versions = await self._store.list_versions(  # type: ignore[attr-defined]
                 workspace_id=workspace_id, project_id=project_id, source_id=source_id
@@ -253,11 +260,137 @@ class SourceService:
                 await self._reindex(workspace_id, project_id, source_id)
         return await self._source(workspace_id, project_id, source_id)
 
+    # -------------------------------------------------- for the scene studio (ADR-022)
+    async def _room_for_another(self, workspace_id: str, project_id: str) -> None:
+        existing = await self._store.list_sources(  # type: ignore[attr-defined]
+            workspace_id=workspace_id, project_id=project_id
+        )
+        if len(existing) >= MAX_SOURCES_PER_PROJECT:
+            raise ValidationError("This story has as many texts as it can hold. Remove one first.")
+
+    async def copy_text(
+        self,
+        workspace_id: str,
+        project_id: str,
+        source_id: str,
+        *,
+        actor_user_id: str | None,
+    ) -> SourceText:
+        """A new text with every version of another, each remembering where its words came from."""
+        source, _, versions = await self.version(workspace_id, project_id, source_id)
+        await self._room_for_another(workspace_id, project_id)
+        copy_id = format_canon_id("source_text", str(uuid7()))
+        await self._store.add_source(  # type: ignore[attr-defined]
+            workspace_id=workspace_id,
+            project_id=project_id,
+            source_id=copy_id,
+            title=source.title,
+            kind=source.kind,
+            actor_user_id=actor_user_id,
+        )
+        previous: str | None = None
+        for version in versions:
+            added = await self._store.add_version(  # type: ignore[attr-defined]
+                workspace_id=workspace_id,
+                project_id=project_id,
+                version_id=format_canon_id("source_version", str(uuid7())),
+                source_id=copy_id,
+                content=version.content,
+                content_hash=version.content_hash,
+                actor_user_id=version.created_by,
+                origin=version.origin,
+                parent_version_id=previous,
+                draft_id=version.draft_id,
+                manifest_id=version.manifest_id,
+            )
+            previous = added.id
+        await self._reindex(workspace_id, project_id, copy_id)
+        return await self._source(workspace_id, project_id, copy_id)
+
+    async def create_text(
+        self,
+        workspace_id: str,
+        project_id: str,
+        *,
+        title: str,
+        kind: SourceKind,
+        content: str,
+        actor_user_id: str | None,
+        origin: VersionOrigin = VersionOrigin.AUTHOR,
+        draft_id: str | None = None,
+        manifest_id: str | None = None,
+    ) -> SourceText:
+        """A new text with its first version. Callers have already authorized the author."""
+        title = " ".join(title.split())[:MAX_TITLE_LENGTH] or "Untitled"
+        content = self._checked_content(content)
+        await self._room_for_another(workspace_id, project_id)
+        source_id = format_canon_id("source_text", str(uuid7()))
+        await self._store.add_source(  # type: ignore[attr-defined]
+            workspace_id=workspace_id,
+            project_id=project_id,
+            source_id=source_id,
+            title=title,
+            kind=kind,
+            actor_user_id=actor_user_id,
+        )
+        await self._store.add_version(  # type: ignore[attr-defined]
+            workspace_id=workspace_id,
+            project_id=project_id,
+            version_id=format_canon_id("source_version", str(uuid7())),
+            source_id=source_id,
+            content=content,
+            content_hash=content_hash(content),
+            actor_user_id=actor_user_id,
+            origin=origin,
+            draft_id=draft_id,
+            manifest_id=manifest_id,
+        )
+        await self._reindex(workspace_id, project_id, source_id)
+        return await self._source(workspace_id, project_id, source_id)
+
+    async def write_version(
+        self,
+        workspace_id: str,
+        project_id: str,
+        source_id: str,
+        *,
+        content: str,
+        actor_user_id: str | None,
+        origin: VersionOrigin = VersionOrigin.AUTHOR,
+        parent_version_id: str | None = None,
+        draft_id: str | None = None,
+        manifest_id: str | None = None,
+    ) -> SourceVersion:
+        """A new version with where it came from. Callers have already authorized the author."""
+        content = self._checked_content(content)
+        versions = await self._store.list_versions(  # type: ignore[attr-defined]
+            workspace_id=workspace_id, project_id=project_id, source_id=source_id
+        )
+        if len(versions) >= MAX_VERSIONS_PER_SOURCE:
+            raise ValidationError("This scene has too many versions to keep another.")
+        version = await self._store.add_version(  # type: ignore[attr-defined]
+            workspace_id=workspace_id,
+            project_id=project_id,
+            version_id=format_canon_id("source_version", str(uuid7())),
+            source_id=source_id,
+            content=content,
+            content_hash=content_hash(content),
+            actor_user_id=actor_user_id,
+            origin=origin,
+            parent_version_id=parent_version_id,
+            draft_id=draft_id,
+            manifest_id=manifest_id,
+        )
+        await self._reindex(workspace_id, project_id, source_id)
+        return version  # type: ignore[no-any-return]
+
     async def remove(
         self, scope: AccessScope, workspace_id: str, project_id: str, source_id: str
     ) -> None:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
-        await self._source(workspace_id, project_id, source_id)
+        source = await self._source(workspace_id, project_id, source_id)
+        if source.kind is SourceKind.SCENE:
+            raise ValidationError("This is a scene's text. It belongs to the scene in the plan.")
         await self._store.remove_source(  # type: ignore[attr-defined]
             workspace_id=workspace_id, project_id=project_id, source_id=source_id
         )

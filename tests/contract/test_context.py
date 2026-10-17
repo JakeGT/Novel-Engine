@@ -239,3 +239,85 @@ def test_a_secret_does_not_leak_through_who_someone_is_connected_to(auth_client,
     with_secrets = _context(auth_client, w, scene, secrets="true", budget=12000)
     secret = next(i for i in with_secrets["items"] if i["key"] == f"fact:{w['in_guild']}")
     assert secret["text"].startswith("Mara is a member of Harbor Guild")
+
+
+def _reveal(client, w, scene: dict, fact_key: str) -> None:
+    shown = client.put(
+        f"{w['base']}/plan/{scene['id']}/reveals",
+        json={
+            "reveals": [{"fact_id": w[fact_key], "how": "shown"}],
+            "expected_revision": _head(client, w),
+        },
+    )
+    assert shown.status_code == 200, shown.text
+
+
+def test_a_secret_the_reader_was_shown_stays_the_authors_when_the_viewpoint_lacks_it(
+    auth_client, fake_container
+):
+    w = _world(auth_client, fake_container)
+    earlier = _scene(auth_client, w, [("mara", "point_of_view")], title="A The Guildhall")
+    scene = _setup(auth_client, w)  # Tobin's scene; Mara's guild membership is a secret
+    _reveal(auth_client, w, earlier, "in_guild")
+    key = f"reader:{w['in_guild']}"
+
+    context = _context(auth_client, w, scene, budget=12000)
+    assert key not in {item["key"] for item in context["items"]}
+    left = next(o for o in context["left_out"] if o["item"]["key"] == key)
+    assert left["reason"] == "secret" and left["item"]["section"] == "secrets"
+    assert left["item"]["reason"].startswith("An earlier scene showed the reader this.")
+    assert "Tobin Ashe does not know this" in left["item"]["text"]
+    assert "Harbor Guild" not in context["rendered"]
+
+    given = _context(auth_client, w, scene, secrets="true", budget=12000)
+    item = next(item for item in given["items"] if item["key"] == key)
+    assert item["section"] == "secrets"
+    assert item["section_title"].startswith("For the author only")
+
+
+def test_a_secret_the_viewpoint_knows_stays_with_what_the_reader_was_shown(
+    auth_client, fake_container
+):
+    w = _world(auth_client, fake_container)
+    earlier = _scene(auth_client, w, [("tobin", "point_of_view")], title="A The Quay")
+    auth_client.post(
+        f"{w['base']}/facts/{w['in_guild']}/amend",
+        json={"expected_revision": _head(auth_client, w), "visibility": "secret"},
+    )
+    # Mara knows her own secret, and sees the scene.
+    auth_client.post(
+        f"{w['base']}/beliefs",
+        json={
+            "holder_entity_id": w["mara"],
+            "proposition": _prop(w, "mara", "MEMBER_OF", "guild"),
+            "source_ref": "author",
+            "expected_revision": _head(auth_client, w),
+        },
+    )
+    scene = _scene(auth_client, w, [("mara", "point_of_view"), ("harbor", "place")])
+    _reveal(auth_client, w, earlier, "in_guild")
+    context = _context(auth_client, w, scene, budget=12000)
+    item = next(i for i in context["items"] if i["key"] == f"reader:{w['in_guild']}")
+    assert item["section"] == "reader"
+
+
+def test_with_no_viewpoint_every_secret_is_the_authors_alone(auth_client, fake_container):
+    w = _world(auth_client, fake_container)
+    auth_client.post(
+        f"{w['base']}/facts/{w['in_guild']}/amend",
+        json={"expected_revision": _head(auth_client, w), "visibility": "secret"},
+    )
+    scene = _scene(auth_client, w, [("harbor", "place"), ("mara", "participant")])
+    context = _context(auth_client, w, scene, budget=12000)
+    assert context["point_of_view"] is None
+    items = {item["key"]: item for item in context["items"]}
+    assert items[f"fact:{w['at_harbor']}"]["section"] == "true"
+    left = next(o for o in context["left_out"] if o["item"]["key"] == f"fact:{w['in_guild']}")
+    assert left["reason"] == "secret" and left["item"]["section"] == "secrets"
+    assert left["item"]["text"].endswith("It is a secret.")
+    assert "no point of view is chosen" in left["item"]["reason"]
+    assert "Harbor Guild" not in context["rendered"]
+
+    given = _context(auth_client, w, scene, secrets="true", budget=12000)
+    secret = next(i for i in given["items"] if i["key"] == f"fact:{w['in_guild']}")
+    assert secret["section_title"].startswith("For the author only")

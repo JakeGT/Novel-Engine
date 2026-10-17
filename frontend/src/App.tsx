@@ -14,6 +14,7 @@ import { Overview } from './pages/Overview'
 import { PeoplePage } from './pages/PeoplePage'
 import { PlanPage } from './pages/PlanPage'
 import { RulesPage } from './pages/RulesPage'
+import { StudioPage } from './pages/StudioPage'
 import { TextPage } from './pages/TextPage'
 import { TextsPage } from './pages/TextsPage'
 import { TimelinePage } from './pages/TimelinePage'
@@ -49,6 +50,7 @@ export default function App() {
             <Route path="review" element={<ReviewQueue />} />
             <Route path="review/:mutationId" element={<ReviewDetail />} />
             <Route path="plan" element={<PlanPage />} />
+            <Route path="plan/:planId/write" element={<StudioPage />} />
             <Route path="rules" element={<RulesPage />} />
             <Route path="timeline" element={<TimelinePage />} />
             <Route path="what-ifs" element={<WhatIfsPage />} />

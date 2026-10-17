@@ -37,6 +37,14 @@ EXCERPT_MARGIN = 80
 class SourceKind(StrEnum):
     PASTE = "paste"
     MARKDOWN = "markdown"
+    # A planned scene's prose, written or kept in the scene studio (ADR-022).
+    SCENE = "scene"
+
+
+class VersionOrigin(StrEnum):
+    AUTHOR = "author"
+    # A draft from the assistant that the author kept.
+    ASSISTANT = "assistant"
 
 
 class Verdict(StrEnum):
@@ -76,6 +84,11 @@ class SourceVersion:
     content_hash: str
     created_by: str | None
     created_at: datetime
+    # Where these words came from (ADR-022). Texts brought in are the author's.
+    origin: VersionOrigin = VersionOrigin.AUTHOR
+    parent_version_id: str | None = None
+    draft_id: str | None = None
+    manifest_id: str | None = None
 
 
 @dataclass(frozen=True)

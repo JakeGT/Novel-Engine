@@ -8,7 +8,8 @@ from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.api.auth import get_project_scope, require_project_scope
-from backend.api.dependencies import get_source_service
+from backend.api.dependencies import get_container, get_source_service
+from backend.container import Container
 from backend.domain.identity import AccessScope
 from backend.domain.sources import (
     MAX_PHRASE_LENGTH,
@@ -34,6 +35,8 @@ class TextModel(BaseModel):
     latest_version_id: str | None
     # Characters in the latest version.
     length: int
+    # For a scene's text: the scene it belongs to, written in its studio (ADR-022).
+    scene_id: str | None = None
 
 
 class TextListModel(BaseModel):
@@ -153,8 +156,9 @@ class AddedEntryModel(BaseModel):
     revision: int
 
 
-def _text(source: SourceText) -> TextModel:
+def _text(source: SourceText, scenes: dict[str, str] | None = None) -> TextModel:
     return TextModel(
+        scene_id=(scenes or {}).get(source.id),
         id=source.id,
         title=source.title,
         kind=source.kind.value,
@@ -176,7 +180,7 @@ def _decision(binding: AliasBinding) -> NameDecisionModel:
     )
 
 
-def _detail(reading: SourceReading) -> TextDetailModel:
+def _detail(reading: SourceReading, scenes: dict[str, str] | None = None) -> TextDetailModel:
     def version(item: object) -> VersionModel:
         return VersionModel(
             id=item.id,  # type: ignore[attr-defined]
@@ -186,7 +190,7 @@ def _detail(reading: SourceReading) -> TextDetailModel:
         )
 
     return TextDetailModel(
-        text=_text(reading.source),
+        text=_text(reading.source, scenes),
         version=version(reading.version),
         versions=[version(item) for item in reading.versions],
         content=reading.version.content,
@@ -225,9 +229,13 @@ async def list_texts(
     project_id: str,
     scope: AccessScope = Depends(get_project_scope),
     service: SourceService = Depends(get_source_service),
+    container: Container = Depends(get_container),
 ) -> TextListModel:
     items = await service.texts(scope, scope.workspace_id or "", project_id)
-    return TextListModel(items=[_text(item) for item in items])
+    scenes = await container.studio_service.scene_texts(scope.workspace_id or "", project_id)
+    # A scene's text from another line of the story is not this line's writing.
+    shown = [item for item in items if item.kind is not SourceKind.SCENE or item.id in scenes]
+    return TextListModel(items=[_text(item, scenes) for item in shown])
 
 
 @router.post("/texts", response_model=TextModel, status_code=201)
@@ -278,11 +286,13 @@ async def read_text(
     version_id: str | None = Query(default=None, max_length=200),
     scope: AccessScope = Depends(get_project_scope),
     service: SourceService = Depends(get_source_service),
+    container: Container = Depends(get_container),
 ) -> TextDetailModel:
     reading = await service.read(
         scope, scope.workspace_id or "", project_id, source_id, version_id=version_id
     )
-    return _detail(reading)
+    scenes = await container.studio_service.scene_texts(scope.workspace_id or "", project_id)
+    return _detail(reading, scenes)
 
 
 @router.patch("/texts/{source_id}", response_model=TextModel)

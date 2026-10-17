@@ -1,6 +1,6 @@
 # Phase 4 implementation todo: explainable context and derived memory
 
-- Status: Built (2026-10-17) for text; media processing not built. Nothing calls a model yet.
+- Status: Built (2026-10-17) for text; media processing not built. Phase 5 drafting uses it.
 - Scope: `09-delivery-roadmap.md` Phase 4; backlog `CTX-001`, `CTX-002`, `CTX-004`–`CTX-010`,
   `CTX-015`; the multimodal items (`CTX-011`–`CTX-014`, `AST-003`, `AST-005`) as far as pictures.
 - Governing documents: `04-ai-and-retrieval.md`, `17-multimodal-context.md`, ADR-005, ADR-020,
@@ -69,7 +69,8 @@
 
 ## What is not
 
-- [ ] No model reads the context yet: drafting is Phase 5. The panel says nothing is sent.
+- [x] Drafting (Phase 5, ADR-022) now sends this context to the model and keeps the manifest with
+      each draft.
 - [ ] No relevance evaluation set; retrieval quality is unmeasured beyond the leakage cases.
 - [ ] No image, audio or video processing, captions or cross-modal search; a picture is named, not
       shown. EmbeddingGemma was not evaluated and the vector dimension is unchanged (384).

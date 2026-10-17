@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, type PassageRead, type SourceTextDetail, type TextMention } from '../api/client'
 import { AllowanceNote } from '../components/Allowance'
 import { NameQuestions } from '../components/NameQuestions'
+import { Icon } from '../components/icons'
 import {
   Button,
   ConfirmDialog,
@@ -104,17 +105,27 @@ export function TextPage() {
             >
               {read.pending ? 'Reading…' : 'Have the assistant read it'}
             </Button>
-            <details className="plan-more">
-              <summary aria-label="More for this text">More</summary>
-              <div className="actions">
-                <Button size="sm" variant="ghost" onClick={() => setReplacing(true)}>
-                  Change the words
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setRemoving(true)}>
-                  Remove this text
-                </Button>
-              </div>
-            </details>
+            {detail.text.kind === 'scene' ? (
+              // A scene's words may be shared with a what-if: they change only in its studio.
+              detail.text.scene_id && (
+                <Link className="btn" to={`/projects/${scope.projectId}/plan/${detail.text.scene_id}/write`}>
+                  <Icon name="feather" size={15} />
+                  Write it in the scene&rsquo;s studio
+                </Link>
+              )
+            ) : (
+              <details className="plan-more">
+                <summary>Change or remove</summary>
+                <div className="actions">
+                  <Button size="sm" variant="ghost" onClick={() => setReplacing(true)}>
+                    Change the words
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setRemoving(true)}>
+                    Remove this text
+                  </Button>
+                </div>
+              </details>
+            )}
           </div>
         )}
       </div>

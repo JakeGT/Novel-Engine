@@ -10,6 +10,8 @@ const webUrl = `http://127.0.0.1:${webPort}`
 
 export default defineConfig({
   testDir: './e2e',
+  // Tests that need a model run in playwright.model.config.ts.
+  testIgnore: /.*\.model\.spec\.ts/,
   timeout: 120_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,

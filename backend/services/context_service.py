@@ -39,6 +39,7 @@ from backend.domain.knowledge import knowledge_of, reader_journey, reading_order
 from backend.domain.knowledge import scene_time as scene_when
 from backend.domain.rules import RuleStatus, read_rule
 from backend.domain.scene_conditions import plain_details, scene_conditions
+from backend.domain.sources import SourceKind, SourceText
 from backend.domain.tenancy import Permission
 from backend.domain.worldtime import Interval, Order, Truth, compare, describe, true_at
 from backend.services.passage_index import IndexStatus
@@ -91,6 +92,30 @@ def _trim(text: str, words: int) -> str:
     return text.strip() if len(parts) <= words else " ".join(parts[:words]) + " …"
 
 
+def _hidden(fact: Any, pov: str | None, known_ids: set[str]) -> bool:
+    """A secret that must stay off the page: the viewpoint does not know it, or none is chosen."""
+    return fact.visibility is FactVisibility.SECRET and (pov is None or fact.id not in known_ids)
+
+
+def _secret_words(sentence: str, pov: str | None, names: dict[str, str]) -> tuple[str, str]:
+    """The text and reason of a secret kept for the author alone."""
+    if pov is None:
+        return (
+            f"{sentence}. It is a secret.",
+            "It is a secret, and no point of view is chosen for the scene.",
+        )
+    who = names.get(pov)
+    return (
+        f"{sentence}. {who or 'The viewpoint character'} does not know this.",
+        f"It is a secret {who or 'the viewpoint character'} does not know.",
+    )
+
+
+def _usable(source: SourceText, scene_texts: set[str]) -> bool:
+    """Whether a text may shape a draft in this line of the story."""
+    return source.kind != SourceKind.SCENE or source.id in scene_texts
+
+
 class ContextService:
     def __init__(
         self,
@@ -104,6 +129,8 @@ class ContextService:
         manifests: Any = None,
         clocks: Any = None,
         tenancy: Any = None,
+        journal: Any = None,
+        studio: Any = None,
         local_mode: bool = False,
     ) -> None:
         self._reader = reader
@@ -115,6 +142,10 @@ class ContextService:
         self._manifests = manifests
         self._clocks = clocks
         self._tenancy = tenancy
+        self._journal = journal
+        # The scene studio's store: which scene texts belong to which line of the story.
+        # Set after construction, because the studio is built after this service.
+        self.studio = studio
         self._local_mode = local_mode
 
     async def _authorize(
@@ -389,18 +420,16 @@ class ContextService:
             if truth is Truth.MAYBE:
                 sentence += " (around this time; when it starts or ends is not certain)"
             about = names.get(inside[0], "someone in the scene")
-            secret_from_pov = (
-                pov is not None
-                and fact.visibility is FactVisibility.SECRET
-                and fact.id not in known_ids
-            )
-            if secret_from_pov:
+            # With no viewpoint chosen, nobody's knowledge says a secret may be on the
+            # page, so every secret is the author's alone.
+            if _hidden(fact, pov, known_ids):
+                text, reason = _secret_words(sentence, pov, names)
                 out.append(
                     ContextItem(
                         key=f"fact:{fact.id}",
                         section=ContextSection.SECRETS,
-                        text=f"{sentence}. {names.get(pov or '', 'The viewpoint character')} does not know this.",
-                        reason=f"It is a secret {names.get(pov or '', 'they')} does not know.",
+                        text=text,
+                        reason=reason,
                         authority="fact",
                         record_type="fact",
                         record_id=fact.id,
@@ -583,6 +612,27 @@ class ContextService:
                 fact = facts_by_id.get(fact_id)
                 if fact is None:
                     continue
+                if _hidden(fact, pov, known_ids):
+                    # The reader knowing a secret does not mean the viewpoint character
+                    # does: it stays with the author, like any other secret.
+                    text, reason = _secret_words(
+                        f"An earlier scene showed the reader that {_sentence(fact.proposition, names)}",
+                        pov,
+                        names,
+                    )
+                    out.append(
+                        ContextItem(
+                            key=f"reader:{fact_id}",
+                            section=ContextSection.SECRETS,
+                            text=text,
+                            reason="An earlier scene showed the reader this. " + reason,
+                            authority="reader",
+                            record_type="fact",
+                            record_id=fact_id,
+                            score=4,
+                        )
+                    )
+                    continue
                 out.append(
                     ContextItem(
                         key=f"reader:{fact_id}",
@@ -655,6 +705,7 @@ class ContextService:
     ) -> list[ContextItem]:
         if self._passage_store is None or self._sources is None or not cast:
             return []
+        usable, own = await self._scene_texts(workspace_id, project_id, scene)
         passages = await self._passage_store.mentioning(
             workspace_id=workspace_id,
             project_id=project_id,
@@ -678,6 +729,8 @@ class ContextService:
                     continue
                 texts[passage.source_id] = (source, version)
             source, version = texts[passage.source_id]
+            if not _usable(source, usable):
+                continue  # a scene's words from another line of the story
             if version.id != passage.version_id:
                 continue  # an older version's passage; the index is catching up
             shared = [entity_id for entity_id in passage.entity_ids if entity_id in cast]
@@ -700,15 +753,50 @@ class ContextService:
         out = out[:MAX_PASSAGES]
         # A sample of the author's voice, even when it names nobody in the scene: writers
         # report that re-feeding representative passages keeps voice from drifting.
-        sample = await self._voice_sample(workspace_id, project_id, {item.key for item in out})
+        sample = await self._voice_sample(
+            workspace_id, project_id, {item.key for item in out}, usable, own
+        )
         if sample is not None:
             out.append(sample)
         return out
 
+    async def _scene_texts(
+        self, workspace_id: str, project_id: str, scene: PlanItem
+    ) -> tuple[set[str], str | None]:
+        """The scene texts of the line of the story being worked in, and this scene's own.
+
+        A scene's words written in a what-if must never shape the main story's drafts, or
+        another what-if's. Without the studio's links nothing says which line a scene text
+        belongs to, so none is used.
+        """
+        if self.studio is None or self._journal is None:
+            return set(), None
+        branch = await self._journal.working_branch(
+            workspace_id=workspace_id, project_id=project_id
+        )
+        links = await self.studio.manuscripts_for(
+            workspace_id=workspace_id, project_id=project_id, branch_id=branch.id
+        )
+        own = next((source_id for plan_id, source_id in links if plan_id == scene.id), None)
+        return {source_id for _, source_id in links}, own
+
     async def _voice_sample(
-        self, workspace_id: str, project_id: str, taken: set[str]
+        self,
+        workspace_id: str,
+        project_id: str,
+        taken: set[str],
+        usable: set[str],
+        own: str | None,
     ) -> ContextItem | None:
-        texts = await self._sources.all_texts(workspace_id, project_id)
+        texts = [
+            text
+            for text in await self._sources.all_texts(workspace_id, project_id)
+            if _usable(text, usable)
+        ]
+        # The scene's own words are what is being rewritten: a sample of the author's
+        # voice comes from elsewhere when there is anything else.
+        others = [text for text in texts if text.id != own]
+        texts = others or texts
         if not texts:
             return None
         newest = max(texts, key=lambda text: (text.created_at, text.id))

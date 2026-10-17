@@ -258,6 +258,10 @@ _FORKED_TABLES = (
     "canon_evidence",
     "canon_record_versions",
     "canon_tags",
+    # Which text holds each scene's prose; the text itself is copied on first change.
+    "scene_manuscripts",
+    # What was last read from each scene, so a what-if does not propose it again.
+    "scene_readings",
 )
 
 # A story read: the what-if this request works in, or the main story when none is named.

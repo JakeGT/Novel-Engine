@@ -1,6 +1,6 @@
 # API surface
 
-- Status: Phase 2. The committed contract is `tests/contract/openapi_snapshot.json` (151
+- Status: Phase 5. The committed contract is `tests/contract/openapi_snapshot.json` (226
   operations), exact-checked by `tests/contract/test_openapi.py`; the frontend client is generated
   from it and `make frontend-api-check` fails on drift. This page is a guide to that contract, not a
   second source of truth.
@@ -102,7 +102,40 @@ Under `/projects/{project_id}`:
   `/reader/guide?scene=&viewpoint=`; `PUT /plan/{id}/reveals`, `PUT /plan/{id}/when`.
 - `/mutations/{id}` reports `changed_since` for a stale proposal.
 
+## Scene context (Phase 4, ADR-021)
+
+Under `/projects/{project_id}`:
+
+- `GET /plan/{id}/context?budget=&secrets=`: what the assistant would use to write a scene, each
+  item with its reason, authority, source and word cost, and what was left out and why. Secrets the
+  viewpoint character does not know are apart and left out unless asked for. Calls no model.
+- `PUT /plan/{id}/context`: the author's pins, exclusions, budget and whether to give secrets, kept in
+  the scene's details through the reviewed plan path.
+
+## The scene studio (Phase 5, ADR-022)
+
+Under `/projects/{project_id}`:
+
+- `GET /plan/{id}/studio`: the scene's prose (one of the author's texts, for the line of the story
+  being worked in), its versions with where each came from (`origin`, `parent_version_id`,
+  `draft_id`, `manifest_id`), checks that need no model, the assistant's notes, drafts waiting to be
+  kept, and recent work.
+- `PUT /plan/{id}/studio/text`: save the author's words as a new version; `base_version_id` must be
+  the current one or it is `409` and nothing is lost. In a what-if, the first save copies the text.
+- `POST /plan/{id}/studio/estimate`: about how many tokens drafting would read and write. Calls no
+  model.
+- `POST /plan/{id}/studio/drafts` (`202`, optional `Idempotency-Key`): ask for 1–3 drafts of
+  150–3,000 words, with an optional direction. Returns a job. Checks the allowance first (`429
+  usage_limit`). Changes no text.
+- `POST /plan/{id}/studio/reviews` (`202`): a check with the assistant of the current text or one
+  draft. Returns a job. Every note quotes the text; one that does not is dropped.
+- `POST /drafts/{id}/keep` (`base_version_id`): the draft becomes the scene's newest version and
+  remembers the job and context it came from. `DELETE /drafts/{id}`: discard it.
+- `GET /jobs/{id}`: status, stage, progress, tokens used, and a plain-words reason when it failed.
+  `POST /jobs/{id}/cancel`: a waiting job stops at once, a running one at its next step.
+- `GET/PUT /voice`: how the author writes, a note per story given first in every draft request.
+
 ## Not yet in the API
 
-Generation, explainable context, media processing, and an HTTP archive import are later-phase
-work. No route accepts parameters that imply they are enforced.
+Streaming drafts, merging drafts, media processing, reading prose into proposed changes, and an
+HTTP archive import are later-phase work. No route accepts parameters that imply they are enforced.

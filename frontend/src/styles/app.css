@@ -2840,3 +2840,225 @@ input.when-number,
   gap: 0.5rem 1rem;
 }
 .context-section { margin-top: 0.6rem; }
+
+/* ------------------------------------------------------- the scene studio --- */
+/* The page being written is the focal point: set like a page of the book, with the
+   checks in the margin beside it, as an editor's pencil notes would be. */
+.studio-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.studio-side {
+  position: sticky;
+  top: 1rem;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  padding-left: 1rem;
+  border-left: 1px solid var(--line);
+}
+
+.studio-side-title {
+  font-family: var(--font-ui);
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.studio-plan {
+  margin-top: 0.5rem;
+}
+
+.studio-surface,
+.studio-page {
+  max-width: 70ch;
+}
+
+/* Body text first (T1): 17–18px, line height within 1.45, about 70 characters a line. */
+.studio-surface {
+  display: block;
+  min-height: 60vh;
+  padding: 1.25rem 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-m);
+  font-size: 1.1rem;
+  line-height: 1.45;
+}
+
+.studio-surface::selection {
+  background: var(--warn-soft);
+  color: var(--ink);
+}
+
+.studio-page.text-words {
+  font-size: 1.1rem;
+  line-height: 1.45;
+  padding: 1.25rem 1.5rem;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-m);
+}
+
+.studio-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  max-width: 70ch;
+  margin-top: 0.5rem;
+}
+
+.studio-bar .save-state {
+  padding: 0;
+  font-size: 0.86rem;
+  color: var(--ink-2);
+}
+
+.studio-views {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.studio-views .segmented button {
+  min-height: 2.2rem;
+}
+
+.studio-draft-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+/* Keeping and discarding sit apart and look different (D3). */
+.studio-draft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem 2rem;
+  max-width: 70ch;
+}
+
+.studio-ask,
+.studio-job {
+  max-width: 46rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--ink);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+}
+
+.studio-ask .segmented button {
+  min-width: 2.75rem;
+  min-height: 2.2rem;
+}
+
+.studio-length {
+  max-width: 22rem;
+}
+
+.studio-cost {
+  display: grid;
+  gap: 0.35rem;
+  font-family: var(--font-ui);
+  font-size: 0.9rem;
+}
+
+.studio-cost .link-button {
+  justify-self: start;
+}
+
+.studio-job {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.studio-job-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-family: var(--font-ui);
+  font-size: 0.95rem;
+}
+
+.studio-job-head p {
+  flex: 1 1 auto;
+}
+
+/* Margin notes: a pencil rule down the side; a warning's rule is stronger and says so in words. */
+.findings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.finding {
+  display: grid;
+  gap: 0.3rem;
+  justify-items: start;
+  padding: 0.15rem 0 0.15rem 0.75rem;
+  border-left: 2px solid var(--line-strong);
+  font-family: var(--font-ui);
+  font-size: 0.9rem;
+}
+
+.finding.warning {
+  border-left-color: var(--warn);
+}
+
+.finding.assistant {
+  border-left-color: var(--info);
+}
+
+.finding-passage {
+  font-size: 0.86rem;
+  color: var(--ink-2);
+}
+
+.finding-passage q {
+  font-family: var(--font-text);
+  font-size: 0.98rem;
+  font-style: italic;
+  /* The italic closing quote leans into the link after it. */
+  margin-right: 0.4em;
+}
+
+.finding-suggestion {
+  color: var(--ink-2);
+}
+
+.studio-versions td:last-child {
+  text-align: right;
+}
+
+.studio-versions td:first-child,
+.studio-versions td:nth-child(4) {
+  white-space: nowrap;
+}
+
+@media (max-width: 1040px) {
+  .studio-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .studio-side {
+    position: static;
+    max-height: none;
+    padding-left: 0;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    padding-top: 1rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .studio-surface,
+  .studio-page.text-words {
+    padding: 0.9rem 1rem;
+  }
+}

@@ -6,6 +6,7 @@ import { NextDirections, PlanAssist } from '../components/PlanAssist'
 import { PlanItemForm } from '../components/PlanItemForm'
 import { SceneConditionsDialog } from '../components/SceneConditions'
 import { SceneContextDialog } from '../components/SceneContext'
+import { Icon } from '../components/icons'
 import {
   ReaderGuideDialog,
   SceneReaderNotes,
@@ -124,13 +125,27 @@ export function PlanPage() {
     return parts.length > 0 ? <p className="plan-about">{parts}</p> : null
   }
 
+  // A scene is written in the studio; the way there is always in view (V1).
+  const writeLink = (item: PlanItem) =>
+    item.kind === 'scene' ? (
+      <Link
+        className="btn sm"
+        to={`/projects/${scope.projectId}/plan/${item.id}/write`}
+        aria-label={`${canWrite ? 'Write' : 'Read'} this scene: ${item.title}`}
+      >
+        <Icon name="feather" size={15} />
+        {canWrite ? 'Write this scene' : 'Read this scene'}
+      </Link>
+    ) : null
+
   const tools = (item: PlanItem) => {
-    if (!canWrite) return null
+    if (!canWrite) return item.kind === 'scene' ? <div className="plan-tools">{writeLink(item)}</div> : null
     const beside = siblingsOf(items, item)
     const index = beside.findIndex((other) => other.id === item.id)
     const [first, ...rest] = CHILD_KINDS[item.kind]
     return (
       <div className="plan-tools">
+        {writeLink(item)}
         <Button size="sm" icon="edit" aria-label={`Edit ${item.title}`} onClick={() => setEditing({ item, kind: item.kind as PlanKind, parentId: item.parent_id ?? null })}>
           Edit
         </Button>

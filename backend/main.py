@@ -32,6 +32,7 @@ from backend.api.v1.schema_versions import router as schema_versions_router
 from backend.api.v1.sources import router as sources_router
 from backend.api.v1.sources_assist import router as sources_assist_router
 from backend.api.v1.story_time import router as story_time_router
+from backend.api.v1.studio import router as studio_router
 from backend.api.v1.tenancy import router as tenancy_router
 from backend.api.v1.what_ifs import router as what_ifs_router
 from backend.container import Container, build_container
@@ -108,6 +109,8 @@ def create_app(settings: Settings | None = None, container: Container | None = N
                 ai_available=active.ai.is_available(),
                 embeddings_available=active.embeddings.available(),
             )
+            if active.job_runner is not None:
+                active.job_runner.start()
             yield
         finally:
             await active.aclose()
@@ -154,6 +157,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.include_router(what_ifs_router, prefix="/api/v1")
     app.include_router(knowledge_router, prefix="/api/v1")
     app.include_router(context_router, prefix="/api/v1")
+    app.include_router(studio_router, prefix="/api/v1")
     app.include_router(canon_archive_router, prefix="/api/v1")
     app.add_api_route(
         "/api/v1/projects/{project_id}/access",

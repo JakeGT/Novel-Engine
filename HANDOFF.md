@@ -37,7 +37,9 @@ Two rules dominate every design decision:
 | Phase 2.6 — story planning | Built (2026-10-11). See `plan/phase-2.6-todo.md`. |
 | Phase 2.7 — text intake | Built (2026-10-11). See `plan/phase-2.7-todo.md`. Extraction quality unmeasured. |
 | Phase 3 — time, what-ifs, knowledge | Built (2026-10-17). See `plan/phase-3-todo.md` and ADR-020. Assistant paths scripted model only. |
-| Phase 4+ | Planned (explainable context, derived memory, scene drafting, extraction, release). See `plan/09-delivery-roadmap.md`. |
+| Phase 4 — explainable context | Built for text (2026-10-17); media processing not built. See `plan/phase-4-todo.md` and ADR-021. |
+| Phase 5 — scene studio | Built (2026-10-17). See `plan/phase-5-todo.md` and ADR-022. Drafting and checks run against a scripted model and a local stand-in only. |
+| Phase 6+ | Planned (extraction from scenes, release hardening). See `plan/phase-6-todo.md` and `plan/09-delivery-roadmap.md`. |
 
 **Not production-ready.** Billing, platform-funded inference, public signup, and real-time
 collaboration do not exist by design. Do not describe a deferred capability as implemented
@@ -597,3 +599,46 @@ review and the roadmap's exit criteria.
 Not done: what-ifs of what-ifs, field-level merges, alias memory by time or viewpoint, trust,
 contradictions that need prose, an assistant path for telling or reveals. Every assistant path
 has only run against the scripted model.
+
+
+## Phase 4: explainable scene context (2026-10-17)
+
+ADR-021 records the decisions; `plan/phase-4-todo.md` has the state of each item.
+
+- `backend/domain/context.py` assembles what the assistant would be given for a scene: each item
+  with a reason, section, authority, words and score; stable sections first and the scene last;
+  a word budget that never cuts hard items; the author's pins, exclusions and choice about secrets
+  kept in the scene's details. `ContextService.for_scene`, `GET/PUT /plan/{id}/context`.
+- The passage index (`text_passages`, `backend/services/passage_index.py`) keeps pointers into the
+  author's writing and the entries each passage names, never the words; optional embeddings.
+  `POST /texts-index/rebuild`, `python -m backend.devtools.reindex`.
+- `context_manifests` keeps exactly what was given for a request; Phase 5 drafts point at it.
+- Frontend: `SceneContextDialog` ("What the assistant would use"), from the plan's scene menu.
+
+## Phase 5: the scene studio (2026-10-17)
+
+ADR-022 records the decisions; `plan/phase-5-todo.md` has the state, the adversarial review, the
+design review and the exit criteria. Alembic head is `0035_scene_readings` (0035 is the first
+Phase 6 table).
+
+- **Prose** is a text of kind `scene` linked per line of the story (`scene_manuscripts`, in
+  `_FORKED_TABLES`). Versions record origin, parent, draft and manifest. Copy on write keeps full
+  history (`SourceService.copy_text`); the texts page cannot change or remove a scene's text.
+- **Jobs** (`jobs`, `backend/adapters/job_store.py`, `backend/services/job_runner.py`): claimed with
+  `FOR UPDATE SKIP LOCKED` under a lease renewed during model calls; every write needs the lease;
+  `LeaseLost` stops a worker quietly. The loop starts in the app lifespan; tests call
+  `container.job_runner.run_pending()`. New work kinds register a handler with `runner.register`.
+- **Studio** (`backend/services/studio_service.py`, `backend/api/v1/studio.py`): state, save, keep,
+  discard, estimate, `scene_draft` and `scene_review` jobs, voice notes. Deterministic checks are in
+  `backend/domain/drafting.py`. Provider resolution for requests and jobs is shared
+  (`backend/services/provider_route.py`). `AIGateway.generate_text` was added for prose.
+- **Frontend**: `StudioPage` at `/projects/:id/plan/:planId/write`, `StudioWork`, `VoiceDialog`,
+  `lib/studio.ts`; "Write this scene" on each scene in the plan.
+- **Browser tests that need a model** end in `.model.spec.ts` and run with
+  `playwright.model.config.ts`, whose API uses `scripts/e2e/fake_model.py` (a local stand-in with
+  set answers). `make e2e` runs both configs. The database engine now hides bound values
+  (`hide_parameters=True`) so a failed statement cannot log prose.
+
+Not done: a real provider has never drafted or checked a scene; no streaming; drafts are kept or
+discarded whole; media is named, not sent; consistency profiles and suppressions.
+

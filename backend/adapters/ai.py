@@ -13,6 +13,7 @@ from backend.ports import (
     AIUsage,
     ProviderCapabilities,
     StructuredResponse,
+    TextResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -170,6 +171,67 @@ class OpenAIGateway:
             parsed=parsed,
             model=resolved_model,
             usage=usage_model,
+        )
+
+    async def generate_text(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        max_tokens: int,
+        model: str | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+    ) -> TextResponse:
+        from openai import OpenAIError
+
+        resolved_model = request_model() or model or self._default_model
+        start = time.perf_counter()
+        per_call_client: Any = None
+        if api_key or base_url:
+            per_call_client = self._build_client(api_key, base_url)
+            client = per_call_client
+        else:
+            client = self.client
+        try:
+            response = await client.chat.completions.create(
+                model=resolved_model, messages=messages, max_tokens=max_tokens
+            )
+        except OpenAIError as error:
+            log_event(
+                logger,
+                "ai.generate_text.error",
+                level=logging.WARNING,
+                model=resolved_model,
+                duration_ms=round((time.perf_counter() - start) * 1000, 3),
+                error_type=type(error).__name__,
+            )
+            raise AIProviderError("model provider request failed") from error
+        finally:
+            if per_call_client is not None:
+                await per_call_client.close()
+        choice = response.choices[0] if response.choices else None
+        text = (choice.message.content or "") if choice is not None else ""
+        if not text.strip():
+            raise AIInvalidOutputError("provider returned no text")
+        usage = getattr(response, "usage", None)
+        usage_model = AIUsage(
+            prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+            completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
+        )
+        # Sizes and timing only: the text is the author's story.
+        log_event(
+            logger,
+            "ai.generate_text",
+            model=resolved_model,
+            duration_ms=round((time.perf_counter() - start) * 1000, 3),
+            prompt_tokens=usage_model.prompt_tokens,
+            completion_tokens=usage_model.completion_tokens,
+        )
+        return TextResponse(
+            text=text,
+            model=resolved_model,
+            usage=usage_model,
+            truncated=getattr(choice, "finish_reason", None) == "length",
         )
 
     @staticmethod

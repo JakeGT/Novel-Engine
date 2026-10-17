@@ -1361,6 +1361,56 @@
         "title": "AssistSessionModel",
         "type": "object"
       },
+      "AssistantNoteModel": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "suggestion": {
+            "title": "Suggestion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "category",
+          "message",
+          "suggestion"
+        ],
+        "title": "AssistantNoteModel",
+        "type": "object"
+      },
       "At": {
         "additionalProperties": false,
         "properties": {
@@ -2418,6 +2468,51 @@
           "pattern"
         ],
         "title": "Check",
+        "type": "object"
+      },
+      "CheckModel": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "message"
+        ],
+        "title": "CheckModel",
         "type": "object"
       },
       "ChooseAiRequest": {
@@ -3513,6 +3608,77 @@
         "title": "DiscardedItemModel",
         "type": "object"
       },
+      "DraftModel": {
+        "properties": {
+          "assistant": {
+            "items": {
+              "$ref": "#/components/schemas/AssistantNoteModel"
+            },
+            "title": "Assistant",
+            "type": "array"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/CheckModel"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "manifest_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manifest Id"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "words": {
+            "title": "Words",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "job_id",
+          "model",
+          "content",
+          "words",
+          "created_at",
+          "checks",
+          "assistant"
+        ],
+        "title": "DraftModel",
+        "type": "object"
+      },
       "DraftPlanEntry": {
         "properties": {
           "name": {
@@ -3621,6 +3787,33 @@
           "role"
         ],
         "title": "DraftPlanRef",
+        "type": "object"
+      },
+      "DraftRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "direction": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Direction",
+            "type": "string"
+          },
+          "variants": {
+            "default": 1,
+            "maximum": 3.0,
+            "minimum": 1.0,
+            "title": "Variants",
+            "type": "integer"
+          },
+          "words": {
+            "default": 800,
+            "maximum": 3000.0,
+            "minimum": 150.0,
+            "title": "Words",
+            "type": "integer"
+          }
+        },
+        "title": "DraftRequest",
         "type": "object"
       },
       "DraftRuleRequest": {
@@ -4037,24 +4230,6 @@
           "allowed"
         ],
         "title": "EnumObject",
-        "type": "object"
-      },
-      "EstimateModel": {
-        "properties": {
-          "entry_tokens": {
-            "title": "Entry Tokens",
-            "type": "integer"
-          },
-          "story_tokens": {
-            "title": "Story Tokens",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "story_tokens",
-          "entry_tokens"
-        ],
-        "title": "EstimateModel",
         "type": "object"
       },
       "EventModel": {
@@ -4863,6 +5038,100 @@
         "title": "InviteModel",
         "type": "object"
       },
+      "JobModel": {
+        "properties": {
+          "cancel_requested": {
+            "title": "Cancel Requested",
+            "type": "boolean"
+          },
+          "completion_tokens": {
+            "title": "Completion Tokens",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "progress": {
+            "title": "Progress",
+            "type": "integer"
+          },
+          "prompt_tokens": {
+            "title": "Prompt Tokens",
+            "type": "integer"
+          },
+          "result": {
+            "additionalProperties": true,
+            "title": "Result",
+            "type": "object"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "stage",
+          "progress",
+          "cancel_requested",
+          "prompt_tokens",
+          "completion_tokens",
+          "result",
+          "created_at"
+        ],
+        "title": "JobModel",
+        "type": "object"
+      },
       "JourneyModel": {
         "properties": {
           "facts": {
@@ -4895,6 +5164,24 @@
         ],
         "title": "Keep",
         "type": "string"
+      },
+      "KeepRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "base_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Version Id"
+          }
+        },
+        "title": "KeepRequest",
+        "type": "object"
       },
       "KnownFactModel": {
         "properties": {
@@ -7565,6 +7852,24 @@
         "title": "ReviewNoteRequest",
         "type": "object"
       },
+      "ReviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "draft_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Id"
+          }
+        },
+        "title": "ReviewRequest",
+        "type": "object"
+      },
       "ReviseOperationRequest": {
         "additionalProperties": false,
         "properties": {
@@ -8095,6 +8400,32 @@
           }
         },
         "title": "SaveAnswersRequest",
+        "type": "object"
+      },
+      "SaveRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "base_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Version Id"
+          },
+          "content": {
+            "maxLength": 500000,
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "SaveRequest",
         "type": "object"
       },
       "SceneCondition": {
@@ -8636,7 +8967,8 @@
       "SourceKind": {
         "enum": [
           "paste",
-          "markdown"
+          "markdown",
+          "scene"
         ],
         "title": "SourceKind",
         "type": "string"
@@ -8742,6 +9074,96 @@
           "value"
         ],
         "title": "StructuredObject",
+        "type": "object"
+      },
+      "StudioModel": {
+        "properties": {
+          "assistant": {
+            "items": {
+              "$ref": "#/components/schemas/AssistantNoteModel"
+            },
+            "title": "Assistant",
+            "type": "array"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/CheckModel"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "drafts": {
+            "items": {
+              "$ref": "#/components/schemas/DraftModel"
+            },
+            "title": "Drafts",
+            "type": "array"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/JobModel"
+            },
+            "title": "Jobs",
+            "type": "array"
+          },
+          "scene_id": {
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "text_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Id"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/backend__api__v1__studio__VersionModel"
+            },
+            "title": "Versions",
+            "type": "array"
+          },
+          "words": {
+            "title": "Words",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scene_id",
+          "title",
+          "content",
+          "words",
+          "versions",
+          "checks",
+          "assistant",
+          "drafts",
+          "jobs"
+        ],
+        "title": "StudioModel",
         "type": "object"
       },
       "TellRequest": {
@@ -8871,11 +9293,11 @@
             "$ref": "#/components/schemas/TextModel"
           },
           "version": {
-            "$ref": "#/components/schemas/VersionModel"
+            "$ref": "#/components/schemas/backend__api__v1__sources__VersionModel"
           },
           "versions": {
             "items": {
-              "$ref": "#/components/schemas/VersionModel"
+              "$ref": "#/components/schemas/backend__api__v1__sources__VersionModel"
             },
             "title": "Versions",
             "type": "array"
@@ -8939,6 +9361,17 @@
           "length": {
             "title": "Length",
             "type": "integer"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
           },
           "title": {
             "title": "Title",
@@ -9549,35 +9982,6 @@
         "title": "Verdict",
         "type": "string"
       },
-      "VersionModel": {
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "length": {
-            "title": "Length",
-            "type": "integer"
-          },
-          "number": {
-            "title": "Number",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "id",
-          "number",
-          "created_at",
-          "length"
-        ],
-        "title": "VersionModel",
-        "type": "object"
-      },
       "VocabularyModel": {
         "description": "The entity types and predicates a write to this project may use right now.",
         "properties": {
@@ -9625,6 +10029,19 @@
           "predicates"
         ],
         "title": "VocabularyModel",
+        "type": "object"
+      },
+      "VoiceModel": {
+        "additionalProperties": false,
+        "properties": {
+          "notes": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Notes",
+            "type": "string"
+          }
+        },
+        "title": "VoiceModel",
         "type": "object"
       },
       "WhatIfModel": {
@@ -9731,6 +10148,148 @@
           "fact"
         ],
         "title": "WrongBeliefModel",
+        "type": "object"
+      },
+      "backend__api__v1__canon_assist__EstimateModel": {
+        "properties": {
+          "entry_tokens": {
+            "title": "Entry Tokens",
+            "type": "integer"
+          },
+          "story_tokens": {
+            "title": "Story Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "story_tokens",
+          "entry_tokens"
+        ],
+        "title": "EstimateModel",
+        "type": "object"
+      },
+      "backend__api__v1__sources__VersionModel": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "length": {
+            "title": "Length",
+            "type": "integer"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "created_at",
+          "length"
+        ],
+        "title": "VersionModel",
+        "type": "object"
+      },
+      "backend__api__v1__studio__EstimateModel": {
+        "properties": {
+          "completion_tokens": {
+            "title": "Completion Tokens",
+            "type": "integer"
+          },
+          "context_words": {
+            "title": "Context Words",
+            "type": "integer"
+          },
+          "prompt_tokens": {
+            "title": "Prompt Tokens",
+            "type": "integer"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "prompt_tokens",
+          "completion_tokens",
+          "total_tokens",
+          "context_words"
+        ],
+        "title": "EstimateModel",
+        "type": "object"
+      },
+      "backend__api__v1__studio__VersionModel": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "draft_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "manifest_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manifest Id"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "parent_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Version Id"
+          },
+          "words": {
+            "title": "Words",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "words",
+          "origin",
+          "created_at"
+        ],
+        "title": "VersionModel",
         "type": "object"
       }
     }
@@ -12441,7 +13000,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EstimateModel"
+                  "$ref": "#/components/schemas/backend__api__v1__canon_assist__EstimateModel"
                 }
               }
             },
@@ -13816,6 +14375,111 @@
         "summary": "Character Questions",
         "tags": [
           "canon-characters"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/drafts/{draft_id}": {
+      "delete": {
+        "operationId": "discard_draft_api_v1_projects__project_id__drafts__draft_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discard Draft",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/drafts/{draft_id}/keep": {
+      "post": {
+        "operationId": "keep_draft_api_v1_projects__project_id__drafts__draft_id__keep_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeepRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Keep Draft",
+        "tags": [
+          "studio"
         ]
       }
     },
@@ -15639,6 +16303,108 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/jobs/{job_id}": {
+      "get": {
+        "operationId": "job_api_v1_projects__project_id__jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Job",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/jobs/{job_id}/cancel": {
+      "post": {
+        "operationId": "cancel_job_api_v1_projects__project_id__jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Job",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/knowledge/characters/{entity_id}": {
       "get": {
         "operationId": "character_knowledge_api_v1_projects__project_id__knowledge_characters__entity_id__get",
@@ -17337,6 +18103,318 @@
         "summary": "Set Scene Reveals",
         "tags": [
           "plan"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/studio": {
+      "get": {
+        "operationId": "studio_api_v1_projects__project_id__plan__plan_id__studio_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Studio",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/studio/drafts": {
+      "post": {
+        "operationId": "start_draft_api_v1_projects__project_id__plan__plan_id__studio_drafts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Draft",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/studio/estimate": {
+      "post": {
+        "operationId": "estimate_api_v1_projects__project_id__plan__plan_id__studio_estimate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/backend__api__v1__studio__EstimateModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Estimate",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/studio/reviews": {
+      "post": {
+        "operationId": "start_review_api_v1_projects__project_id__plan__plan_id__studio_reviews_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Review",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/studio/text": {
+      "put": {
+        "operationId": "save_text_api_v1_projects__project_id__plan__plan_id__studio_text_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Text",
+        "tags": [
+          "studio"
         ]
       }
     },
@@ -19187,6 +20265,98 @@
         "summary": "Set Unit",
         "tags": [
           "story-time"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/voice": {
+      "get": {
+        "operationId": "voice_api_v1_projects__project_id__voice_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Voice",
+        "tags": [
+          "studio"
+        ]
+      },
+      "put": {
+        "operationId": "set_voice_api_v1_projects__project_id__voice_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceModel"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Voice",
+        "tags": [
+          "studio"
         ]
       }
     },

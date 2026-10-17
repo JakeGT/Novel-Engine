@@ -239,6 +239,17 @@ class StructuredResponse:
     usage: AIUsage = field(default_factory=AIUsage)
 
 
+@dataclass
+class TextResponse:
+    """Prose from a model, with what it cost."""
+
+    text: str
+    model: str = ""
+    usage: AIUsage = field(default_factory=AIUsage)
+    # True when the model stopped at the length limit rather than finishing.
+    truncated: bool = False
+
+
 @dataclass(frozen=True)
 class ProviderCapabilities:
     """Typed provider/model capability description (no media transfer).
@@ -283,6 +294,18 @@ class AIGateway(Protocol):
         api_key: str | None = None,
         base_url: str | None = None,
     ) -> StructuredResponse: ...
+
+    async def generate_text(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        max_tokens: int,
+        model: str | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+    ) -> TextResponse:
+        """Prose, not structured output: a scene draft (ADR-022)."""
+        ...
 
     async def list_models(self, *, api_key: str, base_url: str) -> list[str]: ...
 
