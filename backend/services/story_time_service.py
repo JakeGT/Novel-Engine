@@ -7,6 +7,7 @@ Reads only; every change to a time goes through the ordinary reviewed change pat
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -229,20 +230,31 @@ def build_timeline(story: Story, unit: str) -> Timeline:
     return timeline
 
 
-def fact_span(fact: Fact, times: dict[str, Resolved]) -> Any:
+def anchor_lookup(times: dict[str, Resolved]) -> Callable[[str], Any]:
+    """How a relative time finds its anchor: as the interval that event resolved to."""
+
     def when_of(event_id: str) -> Any:
         resolved = times.get(event_id)
         if resolved is None:
             return False
         if resolved.interval is None:
             return None
-        # Re-express the anchor's resolved interval as a span so it composes.
         interval = resolved.interval
         return Between(
             earliest=None if math.isinf(interval.lo) else interval.lo,
             latest=None if math.isinf(interval.hi) else interval.hi,
         )
 
+    return when_of
+
+
+def time_of(when: Any, times: dict[str, Resolved]) -> Interval | None:
+    """Resolve a time that may be relative to the story's events."""
+    return resolve(when, anchor_lookup(times)).interval
+
+
+def fact_span(fact: Fact, times: dict[str, Resolved]) -> Any:
+    when_of = anchor_lookup(times)
     return span_of(
         resolve(fact.starts, when_of) if fact.starts is not None else None,
         resolve(fact.ends, when_of) if fact.ends is not None else None,
@@ -278,7 +290,9 @@ __all__ = [
     "TrueThen",
     "build_timeline",
     "event_times",
+    "anchor_lookup",
     "fact_span",
     "moment_in",
     "read_story",
+    "time_of",
 ]

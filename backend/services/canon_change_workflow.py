@@ -18,15 +18,19 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from backend.adapters.system import uuid7
 from backend.core.logging import log_event
 from backend.domain.assist import SchemaSuggestion
-from backend.domain.canon.assertions import Belief, Fact
+from backend.domain.canon.assertions import Belief, Fact, FactVisibility
 from backend.domain.canon.entities import CanonEntity
+from backend.domain.canon.events import Event, EventParticipant
+from backend.domain.canon.ids import format_canon_id
 from backend.domain.canon.naming import normalize_name
 from backend.domain.canon.registry import Cardinality, PredicateSpec
 from backend.domain.canon.revisions import OriginKind
@@ -34,16 +38,21 @@ from backend.domain.errors import ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.journal import MutationSet
 from backend.domain.operations import (
+    AmendEventOp,
+    AmendFactOp,
     AssertFactOp,
     CanonOperation,
     CloseBeliefOp,
     CloseFactOp,
     CreateEntityOp,
+    CreateEventOp,
     EvidenceRef,
     RetireEntityOp,
     UpdateEntityOp,
 )
 from backend.domain.tenancy import Permission
+from backend.domain.worldtime import describe, resolve, resolve_all, span_of, spans_overlap
+from backend.services.assist_time import StoryTime, to_world_time
 from backend.services.canon_character_workflow import DiscardedItem, UsageSink
 from backend.services.canon_creation_workflow import (
     MAX_ALIASES,
@@ -65,6 +74,7 @@ from backend.services.schema_suggestions import (
     SuggestedType,
     clean_suggestions,
 )
+from backend.services.story_time_service import anchor_lookup
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +83,7 @@ CHANGE_PROMPT_VERSION = "change-by-instruction/1"
 MAX_INSTRUCTION_LENGTH = 4000
 MAX_CONTEXT_FACTS = 300
 MAX_CONTEXT_BELIEFS = 200
+MAX_CONTEXT_EVENTS = 200
 MAX_CHANGES = 80
 MAX_QUESTIONS = 5
 _EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,255}\.[^@\s]{2,}$")
@@ -113,6 +124,39 @@ ELSEWHERE = {
 }
 
 
+class TimedFact(DraftFact):
+    starts: StoryTime | None = Field(default=None, description="When it starts being true")
+    ends: StoryTime | None = Field(default=None, description="When it stops being true")
+
+
+class NewEvent(BaseModel):
+    ref: str = Field(description="A short handle for this event, used by other times")
+    name: str
+    kind: str = Field(default="happening", description="A word for what kind of event it is")
+    participants: list[str] = Field(
+        default_factory=list, description="Ids of existing entries, or refs of new ones"
+    )
+    when: StoryTime | None = None
+
+
+class EventTime(BaseModel):
+    event: str = Field(description="The id of an existing event, exactly as listed")
+    when: StoryTime
+
+
+class FactTime(BaseModel):
+    fact: str = Field(description="The id of an existing fact, exactly as listed")
+    starts: StoryTime | None = None
+    ends: StoryTime | None = None
+
+
+class Secrecy(BaseModel):
+    fact: str = Field(description="The id of an existing fact, exactly as listed")
+    visibility: str = Field(
+        description="secret (only those who believe it know), common (everyone knows), or ordinary"
+    )
+
+
 class ChangePlan(BaseModel):
     """Structured model output. Untrusted: resolved and typed before it becomes operations."""
 
@@ -123,11 +167,29 @@ class ChangePlan(BaseModel):
     )
     new_entities: list[DraftEntity] = Field(default_factory=list)
     entity_changes: list[EntityChange] = Field(default_factory=list)
-    add_facts: list[DraftFact] = Field(default_factory=list)
+    add_facts: list[TimedFact] = Field(default_factory=list)
+
+    @field_validator("add_facts", mode="before")
+    @classmethod
+    def _plain_facts(cls, value: object) -> object:
+        # A fact drafted without a time is still a fact here.
+        if isinstance(value, list):
+            return [
+                item.model_dump()
+                if isinstance(item, DraftFact) and not isinstance(item, TimedFact)
+                else item
+                for item in value
+            ]
+        return value
+
     end_facts: list[RecordRef] = Field(default_factory=list)
     add_beliefs: list[DraftBelief] = Field(default_factory=list)
     end_beliefs: list[RecordRef] = Field(default_factory=list)
     archive_entities: list[RecordRef] = Field(default_factory=list)
+    new_events: list[NewEvent] = Field(default_factory=list)
+    event_times: list[EventTime] = Field(default_factory=list)
+    fact_times: list[FactTime] = Field(default_factory=list)
+    secrecy: list[Secrecy] = Field(default_factory=list)
     suggested_types: list[SuggestedType] = Field(default_factory=list)
     suggested_fact_kinds: list[SuggestedFactKind] = Field(default_factory=list)
     notes: list[str] = Field(
@@ -171,6 +233,17 @@ class ChangeResult:
     invite: tuple[str, str | None] | None = None
 
 
+def _fact_extras(fact: Fact, unit: str, event_names: dict[str, str]) -> str:
+    extras = []
+    if fact.visibility is not FactVisibility.ORDINARY:
+        extras.append(fact.visibility.value)
+    if fact.starts is not None:
+        extras.append("from " + describe(fact.starts, unit=unit, event_name=event_names.get))
+    if fact.ends is not None:
+        extras.append("until " + describe(fact.ends, unit=unit, event_name=event_names.get))
+    return f" ({'; '.join(extras)})" if extras else ""
+
+
 def _value(fact_object: object, names: dict[str, str]) -> str:
     target = getattr(fact_object, "entity_id", None)
     if target:
@@ -178,8 +251,51 @@ def _value(fact_object: object, names: dict[str, str]) -> str:
     return str(getattr(fact_object, "value", ""))
 
 
+@dataclass
+class _Timed:
+    """The story-time and secrecy part of a change, and how to tell values apart in time."""
+
+    asserts: list[CanonOperation]
+    new_events: list[CanonOperation] = field(default_factory=list)
+    event_changes: list[CanonOperation] = field(default_factory=list)
+    fact_changes: list[CanonOperation] = field(default_factory=list)
+    times: dict[str, Any] = field(default_factory=dict)
+    known: dict[str, Any] = field(default_factory=dict)
+    amended: dict[str, dict[str, Any]] = field(default_factory=dict)
+    kept_both: bool = False
+
+    def apart(self, old: Fact, new: AssertFactOp) -> bool:
+        """Whether an old value and its replacement are each true at different times."""
+        resolved = resolve_all({**self.known, **self.times})
+        lookup = anchor_lookup(resolved)
+        change = self.amended.get(old.id, {})
+        old_span = span_of(
+            resolve(change.get("starts", old.starts), lookup),
+            resolve(change.get("ends", old.ends), lookup),
+        )
+        new_span = span_of(resolve(new.starts, lookup), resolve(new.ends, lookup))
+        if not old_span.stated or not new_span.stated or spans_overlap(old_span, new_span):
+            return False
+        self.kept_both = True
+        return True
+
+
 class CanonChangeWorkflow(CanonCreationWorkflow):
     """Any instruction about the story → one reviewable proposal of everything it implies."""
+
+    async def _unit(self, workspace_id: str, project_id: str) -> str:
+        if self._clocks is None:
+            return "year"
+        unit = await self._clocks.get_unit(  # type: ignore[attr-defined]
+            workspace_id=workspace_id, project_id=project_id
+        )
+        return unit or "year"
+
+    async def _events(self, workspace_id: str, project_id: str) -> list[Event]:
+        events = await self._reader.list_events(
+            workspace_id=workspace_id, project_id=project_id, limit=MAX_CONTEXT_EVENTS
+        )
+        return [event for event in events if event.retired_revision is None]
 
     async def _story(
         self, workspace_id: str, project_id: str, focus: CanonEntity | None
@@ -209,12 +325,28 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
             if entity.attributes:
                 parts.append(f"details {entity.attributes}")
             lines.append("; ".join(parts))
+        unit = await self._unit(workspace_id, project_id)
+        events = await self._events(workspace_id, project_id)
+        event_names = {event.id: event.name for event in events}
         if facts:
             lines.append("Facts (true in the story):")
             lines.extend(
                 f"- {fact.id}: {names.get(fact.proposition.subject_id, fact.proposition.subject_id)}"
                 f" {fact.proposition.predicate} {_value(fact.proposition.object, names)}"
+                + _fact_extras(fact, unit, event_names)
                 for fact in facts
+            )
+        lines.append(f"Story time is counted in {unit}s.")
+        if events:
+            lines.append("Events:")
+            lines.extend(
+                f"- {event.id}: {event.name}"
+                + (
+                    f" (when: {describe(event.when, unit=unit, event_name=event_names.get)})"
+                    if event.when is not None
+                    else ""
+                )
+                for event in events
             )
         if beliefs:
             lines.append("Beliefs (what a character thinks, which may be false):")
@@ -295,6 +427,17 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
                 "- when the author asks to invite someone, also set `invite` with the role "
                 "they should have (reader unless the author says they may make changes) and "
                 "an email address only if the author gave one.\n"
+                "- story time: to say when something happened, use new_events (for something "
+                "new that happened) or event_times (for a listed event). A time is at a point, "
+                'between two points, or relative to an event ("three years before the war" is '
+                "relative, anchor the war, offset 3, direction before). Keep the author's words "
+                "in `words`. Never invent a date the author did not give.\n"
+                "- to say when a fact is true, use fact_times for a listed fact, or starts/ends "
+                'on a new fact. When a one-at-a-time fact changes at a stated time ("she moved '
+                'to Saltmere in year 10"), end the old one with fact_times ends and give the '
+                "new one starts, instead of ending the old fact.\n"
+                '- "X doesn\'t know this" or "this is a secret": put the fact in secrecy '
+                'as secret, and end any belief by which X knows it. "Everyone knows": common.\n'
                 "- `understood` restates the change in one plain sentence.\n" + PROMPT_RULE
             ),
             user=(
@@ -321,6 +464,7 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
             entities=entities,
             facts=facts,
             beliefs=beliefs,
+            events=await self._events(workspace_id, project_id),
             predicates=predicates,
             entity_types=entity_types,
             session_id=session_id,
@@ -426,6 +570,7 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
         entity_types: set[str],
         session_id: str,
         project_id: str,
+        events: list[Event] | None = None,
     ) -> tuple[list[CanonOperation], list[DiscardedItem], list[str]]:
         discarded: list[DiscardedItem] = []
         notes: list[str] = []
@@ -439,7 +584,7 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
         drafted, draft_discards = self._draft_operations(
             CreationDraft(
                 entities=plan.new_entities[:MAX_CHANGES],
-                facts=plan.add_facts[:MAX_CHANGES],
+                facts=list[DraftFact](plan.add_facts[:MAX_CHANGES]),
                 beliefs=plan.add_beliefs[:MAX_CHANGES],
             ),
             brief=CreationBrief(),
@@ -453,7 +598,7 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
         )
         discarded.extend(draft_discards)
         creates = [op for op in drafted if isinstance(op, CreateEntityOp)]
-        asserts = [op for op in drafted if not isinstance(op, CreateEntityOp)]
+        asserts: list[CanonOperation] = [op for op in drafted if not isinstance(op, CreateEntityOp)]
 
         updates: list[CanonOperation] = []
         changed: set[str] = set()
@@ -504,6 +649,18 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
                 )
             )
 
+        timed = self._time_operations(
+            plan,
+            creates=creates,
+            asserts=asserts,
+            active=active,
+            open_facts=open_facts,
+            events=events or [],
+            evidence=evidence,
+            discarded=discarded,
+        )
+        asserts = timed.asserts
+
         closes: list[CanonOperation] = []
         ending: set[str] = set()
         for ref in plan.end_facts[:MAX_CHANGES]:
@@ -532,7 +689,8 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
                     fact.proposition.subject_id == op.proposition.subject_id
                     and fact.proposition.predicate == op.proposition.predicate
                 )
-                if same and fact.id not in ending:
+                if same and fact.id not in ending and not timed.apart(fact, op):
+                    # Each true for its own stretch of story time: both stand.
                     ending.add(fact.id)
                     closes.append(CloseFactOp(id=fact.id, evidence=evidence))
                     subject = active.get(fact.proposition.subject_id)
@@ -569,8 +727,142 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
 
         # Order matters to the validator: things must exist before they are linked, and
         # an old single-valued fact must end before its replacement is added.
-        operations = [*creates, *updates, *closes, *asserts, *retires]
+        if timed.kept_both:
+            notes.append(
+                "Both values are kept, each for its own stretch of story time; "
+                "the timeline shows when each is true."
+            )
+        # Events before the facts that may be timed by them, and an old value's end
+        # before the new value that follows it.
+        operations = [
+            *creates,
+            *updates,
+            *closes,
+            *timed.new_events,
+            *timed.event_changes,
+            *timed.fact_changes,
+            *asserts,
+            *retires,
+        ]
         return operations[: MAX_CHANGES * 2], discarded, notes
+
+    def _time_operations(
+        self,
+        plan: ChangePlan,
+        *,
+        creates: Sequence[CanonOperation],
+        asserts: list[CanonOperation],
+        active: dict[str, CanonEntity],
+        open_facts: dict[str, Fact],
+        events: list[Event],
+        evidence: list[EvidenceRef],
+        discarded: list[DiscardedItem],
+    ) -> _Timed:
+        """Events placed in time, facts bounded in time, and secrets (ADR-020)."""
+        timed = _Timed(asserts=list(asserts))
+        known_events = {event.id: event for event in events}
+        anchors: dict[str, str] = {}
+        for new_event in plan.new_events[:MAX_CHANGES]:
+            if new_event.ref.strip() and new_event.name.strip():
+                anchors[new_event.ref.strip()] = format_canon_id("event", str(uuid7()))
+        created_by_name = {
+            normalize_name(op.name): op.id for op in creates if isinstance(op, CreateEntityOp)
+        }
+        new_refs = {
+            entity.ref: created_by_name.get(normalize_name(entity.name))
+            for entity in plan.new_entities
+        }
+
+        def when(value: StoryTime | None, what: str) -> Any:
+            if value is None:
+                return None
+            converted, reason = to_world_time(value, anchors=anchors)
+            if converted is None:
+                discarded.append(DiscardedItem("time", f"{what}: {reason}"))
+                return False
+            anchor = getattr(converted, "anchor_event_id", None)
+            if anchor is not None and anchor not in known_events and anchor not in anchors.values():
+                discarded.append(DiscardedItem("time", f"{what}: {anchor!r} is not a known event"))
+                return False
+            return converted
+
+        for item in plan.new_events[:MAX_CHANGES]:
+            event_id = anchors.get(item.ref.strip())
+            if event_id is None:
+                discarded.append(DiscardedItem("event", "an event needs a name and a ref"))
+                continue
+            participants = []
+            for ref in item.participants[:20]:
+                entity_id = ref if ref in active else new_refs.get(ref)
+                if entity_id is None:
+                    discarded.append(DiscardedItem("event", f"{item.name}: {ref!r} is not known"))
+                    continue
+                participants.append(EventParticipant(entity_id=entity_id, role="participant"))
+            placed = when(item.when, item.name)
+            timed.new_events.append(
+                CreateEventOp(
+                    id=event_id,
+                    kind=(item.kind.strip() or "happening")[:60],
+                    name=item.name.strip()[:MAX_NAME_LENGTH],
+                    participants=participants,
+                    when=placed or None,
+                    evidence=evidence,
+                )
+            )
+            timed.times[event_id] = placed or None
+        for event_time in plan.event_times[:MAX_CHANGES]:
+            if event_time.event not in known_events:
+                discarded.append(
+                    DiscardedItem("event", f"{event_time.event!r} is not a listed event")
+                )
+                continue
+            placed = when(event_time.when, known_events[event_time.event].name)
+            if placed is False:
+                continue
+            timed.event_changes.append(
+                AmendEventOp(id=event_time.event, when=placed, evidence=evidence)
+            )
+            timed.times[event_time.event] = placed
+
+        changes: dict[str, dict[str, Any]] = {}
+        for fact_time in plan.fact_times[:MAX_CHANGES]:
+            if fact_time.fact not in open_facts:
+                discarded.append(DiscardedItem("fact", f"{fact_time.fact!r} is not a current fact"))
+                continue
+            starts, ends = when(fact_time.starts, "a fact"), when(fact_time.ends, "a fact")
+            if starts is False or ends is False:
+                continue
+            change = changes.setdefault(fact_time.fact, {})
+            if starts is not None:
+                change["starts"] = starts
+            if ends is not None:
+                change["ends"] = ends
+        for secrecy in plan.secrecy[:MAX_CHANGES]:
+            visibility = secrecy.visibility.strip().lower()
+            if secrecy.fact not in open_facts:
+                discarded.append(DiscardedItem("fact", f"{secrecy.fact!r} is not a current fact"))
+            elif visibility not in {v.value for v in FactVisibility}:
+                discarded.append(DiscardedItem("fact", f"{visibility!r} is not secret or common"))
+            elif FactVisibility(visibility) is not open_facts[secrecy.fact].visibility:
+                changes.setdefault(secrecy.fact, {})["visibility"] = FactVisibility(visibility)
+        for fact_id, change in changes.items():
+            if change:
+                timed.fact_changes.append(AmendFactOp(id=fact_id, evidence=evidence, **change))
+                timed.amended[fact_id] = change
+
+        for index, added in enumerate(plan.add_facts[:MAX_CHANGES]):
+            if added.starts is None and added.ends is None:
+                continue
+            target = f"tmp:fact-{index}"
+            for position, op in enumerate(timed.asserts):
+                if isinstance(op, AssertFactOp) and op.id == target:
+                    starts = when(added.starts, added.predicate)
+                    ends = when(added.ends, added.predicate)
+                    if starts is False or ends is False:
+                        break
+                    timed.asserts[position] = op.model_copy(update={"starts": starts, "ends": ends})
+        timed.known = {event.id: event.when for event in events}
+        return timed
 
 
 __all__ = [

@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 
 from backend.core.logging import log_event
 from backend.core.metrics import metrics, span
+from backend.domain.branching import working_in
 from backend.domain.canon.assertions import Belief, Fact
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.events import Event
@@ -43,6 +44,7 @@ from backend.domain.media import AssetLink, MediaAsset, MediaAssetVersion
 from backend.domain.operations import (
     CanonOperation,
     canonicalize_operations,
+    operation_reference_ids,
     operations_checksum,
     parse_operation,
     resolve_temporary_ids,
@@ -129,6 +131,8 @@ class MutationReview:
     targets_before: dict[int, dict | None]
     commit_id: str | None = None
     committed_revision: int | None = None
+    # For a stale proposal: the records it touches that changed after it was made.
+    changed_since: tuple[str, ...] = ()
 
 
 class ReviewRequiredError(CanonValidationError):
@@ -555,7 +559,52 @@ class MutationService:
             targets_before=targets_before,
             commit_id=commit_id,
             committed_revision=committed_revision,
+            changed_since=tuple(await self._changed_since(mutation, operations)),
         )
+
+    async def _changed_since(
+        self,
+        mutation: MutationSet,
+        operations: Sequence[MutationOperation],
+        head: int | None = None,
+    ) -> list[str]:
+        """Records this proposal touches that changed after it was made (record-level rebase).
+
+        A proposal whose records nobody else changed can be moved onto the newer
+        version as it is; one that overlaps needs the author to look again.
+        """
+        if mutation.status is MutationStatus.COMMITTED:
+            return []
+        if head is None:
+            head = await self._repository.get_head(
+                workspace_id=mutation.workspace_id,
+                project_id=mutation.project_id,
+                branch_id=mutation.branch_id,
+            )
+        if head <= mutation.expected_head:
+            return []
+        touched: set[str] = set()
+        for item in operations:
+            try:
+                operation = parse_operation(item.payload)
+            except ValueError:
+                continue
+            touched.add(operation.id)
+            touched.update(operation_reference_ids(operation))
+        branch = await self._journal.get_branch(
+            workspace_id=mutation.workspace_id,
+            project_id=mutation.project_id,
+            branch_id=mutation.branch_id,
+        )
+        with working_in(None if branch is None or branch.is_root else branch.id):
+            versions = await self._repository.list_record_versions(
+                workspace_id=mutation.workspace_id,
+                project_id=mutation.project_id,
+                min_revision=mutation.expected_head,
+                max_revision=head,
+                limit=5000,
+            )
+        return sorted({version.record_id for version in versions} & touched)
 
     async def validate(self, scope: AccessScope, mutation_id: str) -> ValidationReport:
         """Non-transactional preview. The commit revalidates authoritatively in-tx."""
@@ -780,13 +829,24 @@ class MutationService:
     async def retarget(
         self, scope: AccessScope, mutation_id: str, expected_head: int
     ) -> MutationSet:
-        """Recover a stale proposal by pointing it at the current head (re-review required)."""
-        await self._require(scope, mutation_id, Permission.PROJECT_WRITE)
+        """Move a stale proposal onto a newer version of the story.
+
+        If nothing it touches changed in between, it moves as it is and keeps any
+        approval. Otherwise it goes back to review so the author can look again.
+        """
+        mutation = await self._require(scope, mutation_id, Permission.PROJECT_WRITE)
+        operations = await self._journal.list_operations(mutation_id=mutation_id)
+        overlap = await self._changed_since(mutation, operations, head=expected_head)
         return await self._journal.retarget_mutation(
             mutation_id=mutation_id,
             expected_head=expected_head,
             actor_user_id=scope.actor_user_id,
-            reason=f"retargeted to revision {expected_head}",
+            reason=(
+                f"moved to revision {expected_head}; nothing it touches had changed"
+                if not overlap
+                else f"retargeted to revision {expected_head}"
+            ),
+            keep_approval=not overlap,
         )
 
     async def commit_author_change(

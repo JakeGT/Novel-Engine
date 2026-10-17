@@ -235,6 +235,15 @@ def _build_fake_container(settings, tmp_path):
         tenancy=tenancy_service,
         local_mode=not settings.is_hosted,
     )
+    from backend.services.knowledge_service import KnowledgeService
+
+    knowledge_service = KnowledgeService(
+        reader=canon_repository,
+        mutation=mutation_service,
+        schema_store=schema_versions,
+        tenancy=tenancy_service,
+        local_mode=not settings.is_hosted,
+    )
     what_if_service = WhatIfService(
         journal=journal,
         canon=canon_repository,
@@ -254,6 +263,7 @@ def _build_fake_container(settings, tmp_path):
         schema_store=schema_versions,
         tenancy=tenancy_service,
         local_mode=not settings.is_hosted,
+        clocks=story_clocks,
     )
     equivalence_service = CanonEquivalenceService(
         canon=canon_repository, journal=journal, writer=canon_writer
@@ -340,6 +350,7 @@ def _build_fake_container(settings, tmp_path):
         story_clocks=story_clocks,
         story_time_service=story_time_service,
         what_if_service=what_if_service,
+        knowledge_service=knowledge_service,
         canon_character_workflow=canon_character_workflow,
         equivalence_service=equivalence_service,
         assist_sessions=assist_sessions,

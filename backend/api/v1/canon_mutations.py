@@ -83,6 +83,8 @@ class MutationDetailModel(MutationSummaryModel):
     transitions: list[MutationTransitionModel]
     commit_id: str | None = None
     committed_revision: int | None = None
+    # For a stale proposal: ids of the records it touches that changed after it was made.
+    changed_since: list[str] = Field(default_factory=list)
 
 
 class MutationListResponse(BaseModel):
@@ -232,6 +234,7 @@ def _detail(review: MutationReview) -> MutationDetailModel:
         ],
         commit_id=review.commit_id,
         committed_revision=review.committed_revision,
+        changed_since=list(review.changed_since),
     )
 
 

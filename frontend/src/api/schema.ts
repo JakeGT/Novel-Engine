@@ -1692,6 +1692,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/knowledge/characters/{entity_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Character Knowledge */
+        get: operations["character_knowledge_api_v1_projects__project_id__knowledge_characters__entity_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/knowledge/facts/{fact_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fact Knowledge */
+        get: operations["fact_knowledge_api_v1_projects__project_id__knowledge_facts__fact_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/knowledge/tell": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Tell */
+        post: operations["tell_api_v1_projects__project_id__knowledge_tell_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/links": {
         parameters: {
             query?: never;
@@ -2050,6 +2101,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/reveals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Scene Reveals
+         * @description Say which facts a scene shows the reader.
+         */
+        put: operations["set_scene_reveals_api_v1_projects__project_id__plan__plan_id__reveals_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/when": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Scene When
+         * @description Say when in story time a scene happens.
+         */
+        put: operations["set_scene_when_api_v1_projects__project_id__plan__plan_id__when_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/projection": {
         parameters: {
             query?: never;
@@ -2082,6 +2173,40 @@ export interface paths {
          *     identities and notes are withheld from members who cannot write to the project.
          */
         get: operations["record_provenance_api_v1_projects__project_id__provenance__record_type___record_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/reader": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Reader Journey */
+        get: operations["reader_journey_api_v1_projects__project_id__reader_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/reader/guide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Reader Guide */
+        get: operations["reader_guide_api_v1_projects__project_id__reader_guide_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3565,6 +3690,21 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** CharacterKnowledgeModel */
+        CharacterKnowledgeModel: {
+            /** Entity Id */
+            entity_id: string;
+            /** Knows */
+            knows: components["schemas"]["KnownFactModel"][];
+            /** Unaware */
+            unaware: components["schemas"]["FactModel"][];
+            /** Unconfirmed */
+            unconfirmed: components["schemas"]["BeliefModel"][];
+            /** Unrecorded */
+            unrecorded: number;
+            /** Wrong */
+            wrong: components["schemas"]["WrongBeliefModel"][];
+        };
         /** CharacterProposalModel */
         CharacterProposalModel: {
             /** Discarded */
@@ -4338,6 +4478,16 @@ export interface components {
             /** Outcome */
             outcome: string;
         };
+        /** FactKnowledgeModel */
+        FactKnowledgeModel: {
+            /** Everyone */
+            everyone: boolean;
+            fact: components["schemas"]["FactModel"];
+            /** Holders */
+            holders: string[];
+            /** Mistaken */
+            mistaken: string[];
+        };
         /** FactModel */
         FactModel: {
             /** Closed Revision */
@@ -4385,6 +4535,13 @@ export interface components {
             edges: components["schemas"]["EdgeUpdateItem"][];
             /** Nodes */
             nodes: components["schemas"]["NodeUpdateItem"][];
+        };
+        /** GuideModel */
+        GuideModel: {
+            /** Markdown */
+            markdown: string;
+            /** Title */
+            title: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -4441,12 +4598,27 @@ export interface components {
             /** Role */
             role: string;
         };
+        /** JourneyModel */
+        JourneyModel: {
+            /** Facts */
+            facts: {
+                [key: string]: components["schemas"]["FactModel"];
+            };
+            /** Steps */
+            steps: components["schemas"]["ReaderStepModel"][];
+        };
         /**
          * Keep
          * @description For a record changed in both lines: whose version to keep.
          * @enum {string}
          */
         Keep: "what_if" | "main";
+        /** KnownFactModel */
+        KnownFactModel: {
+            fact: components["schemas"]["FactModel"];
+            /** How */
+            how: string;
+        };
         /** LinkAssetOp */
         LinkAssetOp: {
             /** Asset Id */
@@ -4571,6 +4743,8 @@ export interface components {
         MutationDetailModel: {
             /** Actor User Id */
             actor_user_id?: string | null;
+            /** Changed Since */
+            changed_since?: string[];
             /** Commit Id */
             commit_id?: string | null;
             /** Committed Revision */
@@ -4938,12 +5112,16 @@ export interface components {
             position: number;
             /** Refs */
             refs: components["schemas"]["PlanRefModel"][];
+            /** Reveals */
+            reveals?: components["schemas"]["Reveal"][];
             /** Sets Up */
             sets_up: string[];
             /** Summary */
             summary: string;
             /** Title */
             title: string;
+            /** When */
+            when?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
         };
         /**
          * PlanKind
@@ -5189,6 +5367,27 @@ export interface components {
             /** Version Id */
             version_id?: string | null;
         };
+        /** ReaderStepModel */
+        ReaderStepModel: {
+            /** Flashback */
+            flashback: boolean;
+            /** Irony */
+            irony: string[];
+            /** Number */
+            number: number;
+            /** Point Of View */
+            point_of_view?: string | null;
+            /** Repeated */
+            repeated: string[];
+            /** Scene Id */
+            scene_id: string;
+            /** Shown */
+            shown: components["schemas"]["ShownModel"][];
+            /** Title */
+            title: string;
+            /** Withheld */
+            withheld: string[];
+        };
         /**
          * Relative
          * @description So long before or after an event: "three years before the war".
@@ -5300,6 +5499,20 @@ export interface components {
             acknowledge_high_impact: boolean;
             /** Expected Revision */
             expected_revision: number;
+        };
+        /**
+         * Reveal
+         * @description A fact a scene shows the reader: plainly, or only as a hint.
+         */
+        Reveal: {
+            /** Fact Id */
+            fact_id: string;
+            /**
+             * How
+             * @default shown
+             * @enum {string}
+             */
+            how: "shown" | "hinted";
         };
         /** RevertCommitRequest */
         RevertCommitRequest: {
@@ -5627,9 +5840,30 @@ export interface components {
             /** Expected Revision */
             expected_revision: number;
         };
+        /** SetRevealsRequest */
+        SetRevealsRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+            /** Reveals */
+            reveals: components["schemas"]["Reveal"][];
+        };
         /** SetRoleRequest */
         SetRoleRequest: {
             role: components["schemas"]["Role"];
+        };
+        /** SetSceneTimeRequest */
+        SetSceneTimeRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+            /** When */
+            when?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
+        };
+        /** ShownModel */
+        ShownModel: {
+            /** Fact Id */
+            fact_id: string;
+            /** How */
+            how: string;
         };
         /**
          * SourceKind
@@ -5672,6 +5906,31 @@ export interface components {
             value: {
                 [key: string]: unknown;
             };
+        };
+        /** TellRequest */
+        TellRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+            /** Fact Id */
+            fact_id?: string | null;
+            /** Listener Ids */
+            listener_ids: string[];
+            /** Overheard By */
+            overheard_by?: string[];
+            proposition?: components["schemas"]["PropositionRequest"] | null;
+            /** Speaker Id */
+            speaker_id: string;
+        };
+        /** TellResult */
+        TellResult: {
+            /** Already Knew */
+            already_knew: string[];
+            /** Beliefs */
+            beliefs: number;
+            /** Event Id */
+            event_id: string;
+            /** Revision */
+            revision: number;
         };
         /** TextDetailModel */
         TextDetailModel: {
@@ -5964,6 +6223,11 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** WrongBeliefModel */
+        WrongBeliefModel: {
+            belief: components["schemas"]["BeliefModel"];
+            fact: components["schemas"]["FactModel"];
         };
     };
     responses: never;
@@ -9736,6 +10000,105 @@ export interface operations {
             };
         };
     };
+    character_knowledge_api_v1_projects__project_id__knowledge_characters__entity_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CharacterKnowledgeModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fact_knowledge_api_v1_projects__project_id__knowledge_facts__fact_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                fact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FactKnowledgeModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tell_api_v1_projects__project_id__knowledge_tell_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TellRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TellResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_project_links_api_v1_projects__project_id__links_get: {
         parameters: {
             query?: {
@@ -10538,6 +10901,78 @@ export interface operations {
             };
         };
     };
+    set_scene_reveals_api_v1_projects__project_id__plan__plan_id__reveals_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetRevealsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanItemModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_scene_when_api_v1_projects__project_id__plan__plan_id__when_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetSceneTimeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanItemModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     projection_lag_api_v1_projects__project_id__projection_get: {
         parameters: {
             query?: never;
@@ -10593,6 +11028,71 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reader_journey_api_v1_projects__project_id__reader_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JourneyModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reader_guide_api_v1_projects__project_id__reader_guide_get: {
+        parameters: {
+            query: {
+                scene: string;
+                viewpoint?: string | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuideModel"];
                 };
             };
             /** @description Validation Error */

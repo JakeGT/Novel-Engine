@@ -307,7 +307,9 @@ async def test_direct_repository_write_cannot_skip_review_of_a_reviewed_set() ->
 
 
 @pytest.mark.asyncio
-async def test_stale_proposal_can_be_retargeted_and_must_be_re_reviewed() -> None:
+async def test_a_stale_proposal_touching_nothing_that_changed_moves_and_keeps_its_approval() -> (
+    None
+):
     from backend.domain.journal import HeadConflict
 
     service, journal, _ = _service()
@@ -322,11 +324,31 @@ async def test_stale_proposal_can_be_retargeted_and_must_be_re_reviewed() -> Non
     assert [issue.code for issue in report.issues] == ["stale_head"]
     with pytest.raises(HeadConflict):
         await service.commit(_scope(), stale.id)
+    assert (await service.review(_scope(), stale.id)).changed_since == ()
 
+    # Record-level rebase (ADR-020): nothing it touches changed, so the approval stands.
     await service.retarget(_scope(), stale.id, 1)
+    assert journal.mutations[stale.id].status is MutationStatus.APPROVED
+    assert (await service.commit(_scope(), stale.id)).revision == 2
+
+
+@pytest.mark.asyncio
+async def test_a_stale_proposal_touching_a_changed_record_must_be_reviewed_again() -> None:
+    service, journal, _ = _service()
+    created = await _draft(service, [CreateEntityOp(id="ent_1", type="Character", name="Mara")])
+    await service.commit(_scope(), created.id)
+    stale = await _draft(
+        service, [UpdateEntityOp(id="ent_1", name="Mara Venn")], origin="model", expected_head=1
+    )
+    await service.approve(_scope(), stale.id)
+    other = await _draft(service, [UpdateEntityOp(id="ent_1", name="Mara Ashe")], expected_head=1)
+    await service.commit(_scope(), other.id)
+
+    assert (await service.review(_scope(), stale.id)).changed_since == ("ent_1",)
+    await service.retarget(_scope(), stale.id, 2)
     assert journal.mutations[stale.id].status is MutationStatus.NEEDS_REVIEW
     await service.approve(_scope(), stale.id)
-    assert (await service.commit(_scope(), stale.id)).revision == 2
+    assert (await service.commit(_scope(), stale.id)).revision == 3
 
 
 @pytest.mark.asyncio

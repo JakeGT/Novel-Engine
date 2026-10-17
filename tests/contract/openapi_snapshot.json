@@ -2167,6 +2167,56 @@
         "title": "CharacterInitRequest",
         "type": "object"
       },
+      "CharacterKnowledgeModel": {
+        "properties": {
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "knows": {
+            "items": {
+              "$ref": "#/components/schemas/KnownFactModel"
+            },
+            "title": "Knows",
+            "type": "array"
+          },
+          "unaware": {
+            "items": {
+              "$ref": "#/components/schemas/FactModel"
+            },
+            "title": "Unaware",
+            "type": "array"
+          },
+          "unconfirmed": {
+            "items": {
+              "$ref": "#/components/schemas/BeliefModel"
+            },
+            "title": "Unconfirmed",
+            "type": "array"
+          },
+          "unrecorded": {
+            "title": "Unrecorded",
+            "type": "integer"
+          },
+          "wrong": {
+            "items": {
+              "$ref": "#/components/schemas/WrongBeliefModel"
+            },
+            "title": "Wrong",
+            "type": "array"
+          }
+        },
+        "required": [
+          "entity_id",
+          "knows",
+          "wrong",
+          "unconfirmed",
+          "unaware",
+          "unrecorded"
+        ],
+        "title": "CharacterKnowledgeModel",
+        "type": "object"
+      },
       "CharacterProposalModel": {
         "properties": {
           "discarded": {
@@ -4171,6 +4221,39 @@
         "title": "ExampleResultModel",
         "type": "object"
       },
+      "FactKnowledgeModel": {
+        "properties": {
+          "everyone": {
+            "title": "Everyone",
+            "type": "boolean"
+          },
+          "fact": {
+            "$ref": "#/components/schemas/FactModel"
+          },
+          "holders": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Holders",
+            "type": "array"
+          },
+          "mistaken": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Mistaken",
+            "type": "array"
+          }
+        },
+        "required": [
+          "fact",
+          "everyone",
+          "holders",
+          "mistaken"
+        ],
+        "title": "FactKnowledgeModel",
+        "type": "object"
+      },
       "FactModel": {
         "properties": {
           "closed_revision": {
@@ -4370,6 +4453,24 @@
         "title": "GraphUpdateResponse",
         "type": "object"
       },
+      "GuideModel": {
+        "properties": {
+          "markdown": {
+            "title": "Markdown",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "markdown"
+        ],
+        "title": "GuideModel",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -4515,6 +4616,30 @@
         "title": "InviteModel",
         "type": "object"
       },
+      "JourneyModel": {
+        "properties": {
+          "facts": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FactModel"
+            },
+            "title": "Facts",
+            "type": "object"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/ReaderStepModel"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "steps",
+          "facts"
+        ],
+        "title": "JourneyModel",
+        "type": "object"
+      },
       "Keep": {
         "description": "For a record changed in both lines: whose version to keep.",
         "enum": [
@@ -4523,6 +4648,23 @@
         ],
         "title": "Keep",
         "type": "string"
+      },
+      "KnownFactModel": {
+        "properties": {
+          "fact": {
+            "$ref": "#/components/schemas/FactModel"
+          },
+          "how": {
+            "title": "How",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fact",
+          "how"
+        ],
+        "title": "KnownFactModel",
+        "type": "object"
       },
       "LinkAssetOp": {
         "additionalProperties": false,
@@ -4862,6 +5004,13 @@
               }
             ],
             "title": "Actor User Id"
+          },
+          "changed_since": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Changed Since",
+            "type": "array"
           },
           "commit_id": {
             "anyOf": [
@@ -5866,6 +6015,13 @@
             "title": "Refs",
             "type": "array"
           },
+          "reveals": {
+            "items": {
+              "$ref": "#/components/schemas/Reveal"
+            },
+            "title": "Reveals",
+            "type": "array"
+          },
           "sets_up": {
             "items": {
               "type": "string"
@@ -5880,6 +6036,39 @@
           "title": {
             "title": "Title",
             "type": "string"
+          },
+          "when": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "at": "#/components/schemas/At",
+                    "between": "#/components/schemas/Between",
+                    "relative": "#/components/schemas/Relative",
+                    "unknown": "#/components/schemas/Unknown"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Unknown"
+                  },
+                  {
+                    "$ref": "#/components/schemas/At"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Between"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Relative"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "When"
           }
         },
         "required": [
@@ -6633,6 +6822,77 @@
         "title": "ReadPassageRequest",
         "type": "object"
       },
+      "ReaderStepModel": {
+        "properties": {
+          "flashback": {
+            "title": "Flashback",
+            "type": "boolean"
+          },
+          "irony": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Irony",
+            "type": "array"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "point_of_view": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Point Of View"
+          },
+          "repeated": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Repeated",
+            "type": "array"
+          },
+          "scene_id": {
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "shown": {
+            "items": {
+              "$ref": "#/components/schemas/ShownModel"
+            },
+            "title": "Shown",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "withheld": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Withheld",
+            "type": "array"
+          }
+        },
+        "required": [
+          "scene_id",
+          "title",
+          "number",
+          "shown",
+          "irony",
+          "withheld",
+          "repeated",
+          "flashback"
+        ],
+        "title": "ReaderStepModel",
+        "type": "object"
+      },
       "Relative": {
         "additionalProperties": false,
         "description": "So long before or after an event: \"three years before the war\".",
@@ -6882,6 +7142,32 @@
           "expected_revision"
         ],
         "title": "RetireRequest",
+        "type": "object"
+      },
+      "Reveal": {
+        "additionalProperties": false,
+        "description": "A fact a scene shows the reader: plainly, or only as a hint.",
+        "properties": {
+          "fact_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Fact Id",
+            "type": "string"
+          },
+          "how": {
+            "default": "shown",
+            "enum": [
+              "shown",
+              "hinted"
+            ],
+            "title": "How",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fact_id"
+        ],
+        "title": "Reveal",
         "type": "object"
       },
       "RevertCommitRequest": {
@@ -7889,6 +8175,30 @@
         "title": "SetConditionsRequest",
         "type": "object"
       },
+      "SetRevealsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "reveals": {
+            "items": {
+              "$ref": "#/components/schemas/Reveal"
+            },
+            "maxItems": 30,
+            "title": "Reveals",
+            "type": "array"
+          }
+        },
+        "required": [
+          "reveals",
+          "expected_revision"
+        ],
+        "title": "SetRevealsRequest",
+        "type": "object"
+      },
       "SetRoleRequest": {
         "properties": {
           "role": {
@@ -7899,6 +8209,72 @@
           "role"
         ],
         "title": "SetRoleRequest",
+        "type": "object"
+      },
+      "SetSceneTimeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "when": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "at": "#/components/schemas/At",
+                    "between": "#/components/schemas/Between",
+                    "relative": "#/components/schemas/Relative",
+                    "unknown": "#/components/schemas/Unknown"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Unknown"
+                  },
+                  {
+                    "$ref": "#/components/schemas/At"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Between"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Relative"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "When"
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "title": "SetSceneTimeRequest",
+        "type": "object"
+      },
+      "ShownModel": {
+        "properties": {
+          "fact_id": {
+            "title": "Fact Id",
+            "type": "string"
+          },
+          "how": {
+            "title": "How",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fact_id",
+          "how"
+        ],
+        "title": "ShownModel",
         "type": "object"
       },
       "SourceKind": {
@@ -8010,6 +8386,95 @@
           "value"
         ],
         "title": "StructuredObject",
+        "type": "object"
+      },
+      "TellRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "fact_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fact Id"
+          },
+          "listener_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 12,
+            "minItems": 1,
+            "title": "Listener Ids",
+            "type": "array"
+          },
+          "overheard_by": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 12,
+            "title": "Overheard By",
+            "type": "array"
+          },
+          "proposition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PropositionRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "speaker_id": {
+            "title": "Speaker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "speaker_id",
+          "listener_ids",
+          "expected_revision"
+        ],
+        "title": "TellRequest",
+        "type": "object"
+      },
+      "TellResult": {
+        "properties": {
+          "already_knew": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Already Knew",
+            "type": "array"
+          },
+          "beliefs": {
+            "title": "Beliefs",
+            "type": "integer"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision",
+          "event_id",
+          "beliefs",
+          "already_knew"
+        ],
+        "title": "TellResult",
         "type": "object"
       },
       "TextDetailModel": {
@@ -8894,6 +9359,22 @@
           "updated_at"
         ],
         "title": "WorkspaceModel",
+        "type": "object"
+      },
+      "WrongBeliefModel": {
+        "properties": {
+          "belief": {
+            "$ref": "#/components/schemas/BeliefModel"
+          },
+          "fact": {
+            "$ref": "#/components/schemas/FactModel"
+          }
+        },
+        "required": [
+          "belief",
+          "fact"
+        ],
+        "title": "WrongBeliefModel",
         "type": "object"
       }
     }
@@ -14802,6 +15283,160 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/knowledge/characters/{entity_id}": {
+      "get": {
+        "operationId": "character_knowledge_api_v1_projects__project_id__knowledge_characters__entity_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "entity_id",
+            "required": true,
+            "schema": {
+              "title": "Entity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CharacterKnowledgeModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Character Knowledge",
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/knowledge/facts/{fact_id}": {
+      "get": {
+        "operationId": "fact_knowledge_api_v1_projects__project_id__knowledge_facts__fact_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "fact_id",
+            "required": true,
+            "schema": {
+              "title": "Fact Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FactKnowledgeModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fact Knowledge",
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/knowledge/tell": {
+      "post": {
+        "operationId": "tell_api_v1_projects__project_id__knowledge_tell_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TellRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TellResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Tell",
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/links": {
       "get": {
         "description": "Evidence links in the project, optionally only those attached to one record.",
@@ -16143,6 +16778,130 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/reveals": {
+      "put": {
+        "description": "Say which facts a scene shows the reader.",
+        "operationId": "set_scene_reveals_api_v1_projects__project_id__plan__plan_id__reveals_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetRevealsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanItemModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Scene Reveals",
+        "tags": [
+          "plan"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/when": {
+      "put": {
+        "description": "Say when in story time a scene happens.",
+        "operationId": "set_scene_when_api_v1_projects__project_id__plan__plan_id__when_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetSceneTimeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanItemModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Scene When",
+        "tags": [
+          "plan"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/projection": {
       "get": {
         "operationId": "projection_lag_api_v1_projects__project_id__projection_get",
@@ -16247,6 +17006,118 @@
         "summary": "Record Provenance",
         "tags": [
           "canon-history"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/reader": {
+      "get": {
+        "operationId": "reader_journey_api_v1_projects__project_id__reader_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JourneyModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reader Journey",
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/reader/guide": {
+      "get": {
+        "operationId": "reader_guide_api_v1_projects__project_id__reader_guide_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scene",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Scene",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "viewpoint",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Viewpoint"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuideModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reader Guide",
+        "tags": [
+          "knowledge"
         ]
       }
     },

@@ -146,8 +146,11 @@ class CanonCharacterWorkflow:
         tenancy: object | None = None,
         local_mode: bool = False,
         model: str | None = None,
+        clocks: object | None = None,
     ) -> None:
         self._ai = ai
+        # The unit each story counts time in; only the change workflow reads it.
+        self._clocks = clocks
         self._mutation = mutation
         self._reader = reader
         self._schema_store = schema_store

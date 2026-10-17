@@ -17,12 +17,14 @@ from backend.domain.canon.plans import (
     PlanRef,
 )
 from backend.domain.identity import AccessScope
+from backend.domain.knowledge import MAX_REVEALS, Reveal, scene_reveals, scene_time
 from backend.domain.scene_conditions import (
     MAX_CONDITIONS,
     SceneCondition,
     plain_details,
     scene_conditions,
 )
+from backend.domain.worldtime import WorldTime
 from backend.services.plan_service import PlanService
 
 router = APIRouter(prefix="/projects/{project_id}/plan", tags=["plan"])
@@ -51,6 +53,10 @@ class PlanItemModel(BaseModel):
     details: dict[str, str]
     # For a scene: what must be true before it, and what it should leave true after it.
     conditions: list[SceneCondition]
+    # For a scene: the facts it shows the reader, plainly or as a hint.
+    reveals: list[Reveal] = Field(default_factory=list)
+    # For a scene: when in story time it happens, if the author has said.
+    when: WorldTime | None = None
     created_revision: int
 
 
@@ -83,6 +89,21 @@ class SetConditionsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     conditions: list[SceneCondition] = Field(max_length=MAX_CONDITIONS)
+    expected_revision: int = Field(ge=0)
+
+
+class SetRevealsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reveals: list[Reveal] = Field(max_length=MAX_REVEALS)
+    expected_revision: int = Field(ge=0)
+
+
+class SetSceneTimeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Null, or an unknown time, clears it.
+    when: WorldTime | None = None
     expected_revision: int = Field(ge=0)
 
 
@@ -148,6 +169,8 @@ def _model(item: PlanItem) -> PlanItemModel:
         pays_off=item.pays_off,
         details=plain_details(item.details),
         conditions=scene_conditions(item.details),
+        reveals=scene_reveals(item.details),
+        when=scene_time(item.details),  # type: ignore[arg-type]
         created_revision=item.created_revision,
     )
 
@@ -197,6 +220,50 @@ async def set_scene_conditions(
         project_id,
         plan_id,
         conditions=body.conditions,
+        expected_revision=body.expected_revision,
+    )
+    response.headers["ETag"] = f'"{result.revision}"'
+    return _model(item)
+
+
+@router.put("/{plan_id}/reveals", response_model=PlanItemModel)
+async def set_scene_reveals(
+    project_id: str,
+    plan_id: str,
+    body: SetRevealsRequest,
+    response: Response,
+    scope: AccessScope = Depends(require_project_scope),
+    service: PlanService = Depends(get_plan_service),
+) -> PlanItemModel:
+    """Say which facts a scene shows the reader."""
+    result, item = await service.set_reveals(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        plan_id,
+        reveals=body.reveals,
+        expected_revision=body.expected_revision,
+    )
+    response.headers["ETag"] = f'"{result.revision}"'
+    return _model(item)
+
+
+@router.put("/{plan_id}/when", response_model=PlanItemModel)
+async def set_scene_when(
+    project_id: str,
+    plan_id: str,
+    body: SetSceneTimeRequest,
+    response: Response,
+    scope: AccessScope = Depends(require_project_scope),
+    service: PlanService = Depends(get_plan_service),
+) -> PlanItemModel:
+    """Say when in story time a scene happens."""
+    result, item = await service.set_scene_time(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        plan_id,
+        when=body.when,
         expected_revision=body.expected_revision,
     )
     response.headers["ETag"] = f'"{result.revision}"'

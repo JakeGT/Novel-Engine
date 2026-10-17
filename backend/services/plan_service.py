@@ -11,6 +11,7 @@ a plan with gaps is a valid plan.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from backend.adapters.system import uuid7
@@ -19,6 +20,7 @@ from backend.domain.canon.ids import format_canon_id
 from backend.domain.canon.plans import ALLOWED_PARENTS, PlanItem, PlanKind, PlanRef
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
+from backend.domain.knowledge import MAX_REVEALS, Reveal, with_reveals, with_scene_time
 from backend.domain.operations import (
     CanonOperation,
     CreatePlanItemOp,
@@ -27,7 +29,6 @@ from backend.domain.operations import (
 )
 from backend.domain.rules import body_problems, world_from_canon
 from backend.domain.scene_conditions import (
-    CONDITIONS_KEY,
     MAX_CONDITIONS,
     ConditionState,
     SceneCondition,
@@ -38,6 +39,7 @@ from backend.domain.scene_conditions import (
     with_conditions,
 )
 from backend.domain.tenancy import Permission
+from backend.domain.worldtime import Relative
 from backend.ports import CanonRepositoryPort, SchemaVersionStorePort
 from backend.services.mutation_service import CommitResult, MutationService
 
@@ -271,6 +273,82 @@ class PlanService:
         result = await self._commit(scope, workspace_id, project_id, [operation], expected_revision)
         return result, await self.get(scope, workspace_id, project_id, plan_id)
 
+    async def _set_scene_details(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        details_for: Callable[[dict[str, str]], dict[str, str]],
+        expected_revision: int,
+    ) -> tuple[CommitResult, PlanItem]:
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        current = await self.get(scope, workspace_id, project_id, plan_id)
+        if current.kind is not PlanKind.SCENE:
+            raise ValidationError("Only a scene can say this.")
+        details = details_for(current.details)
+        if details == current.details:
+            raise ValidationError("Nothing has changed, so there is nothing to save.")
+        operation = UpdatePlanItemOp(id=plan_id, details=details)
+        result = await self._commit(scope, workspace_id, project_id, [operation], expected_revision)
+        return result, await self.get(scope, workspace_id, project_id, plan_id)
+
+    async def set_reveals(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        *,
+        reveals: list[Reveal],
+        expected_revision: int,
+    ) -> tuple[CommitResult, PlanItem]:
+        """Replace what a scene shows the reader. Saved as a change to the plan."""
+        if len(reveals) > MAX_REVEALS:
+            raise ValidationError(f"A scene can show at most {MAX_REVEALS} things here.")
+        if len({reveal.fact_id for reveal in reveals}) != len(reveals):
+            raise ValidationError("Each fact can be listed once per scene.")
+        for reveal in reveals:
+            fact = await self._reader.get_fact(
+                workspace_id=workspace_id, project_id=project_id, fact_id=reveal.fact_id
+            )
+            if fact is None or fact.closed_revision is not None:
+                raise ValidationError("A scene can only show facts that are in the story.")
+        return await self._set_scene_details(
+            scope,
+            workspace_id,
+            project_id,
+            plan_id,
+            lambda details: with_reveals(details, reveals),
+            expected_revision,
+        )
+
+    async def set_scene_time(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        *,
+        when: object | None,
+        expected_revision: int,
+    ) -> tuple[CommitResult, PlanItem]:
+        """Say when in story time a scene happens, or clear it."""
+        if isinstance(when, Relative):
+            event = await self._reader.get_event(
+                workspace_id=workspace_id, project_id=project_id, event_id=when.anchor_event_id
+            )
+            if event is None or event.retired_revision is not None:
+                raise ValidationError("That event is not in the story.")
+        return await self._set_scene_details(
+            scope,
+            workspace_id,
+            project_id,
+            plan_id,
+            lambda details: with_scene_time(details, when),
+            expected_revision,
+        )
+
     async def _vocabulary(self, workspace_id: str, project_id: str) -> tuple[set[str], set[str]]:
         from backend.domain.canon.registry import CORE_ENTITY_TYPES, CORE_PREDICATES
         from backend.services.schema_compiler import compile_definition
@@ -351,10 +429,12 @@ class PlanService:
         if title is not None and not title.strip():
             raise ValidationError("Give it a title.")
         if details is not None:
-            # A scene's conditions are changed in their own right, never by editing its notes.
+            # A scene's conditions, reveals and time are changed in their own right,
+            # never by editing its notes.
             details = plain_details(details)
-            if CONDITIONS_KEY in current.details:
-                details[CONDITIONS_KEY] = current.details[CONDITIONS_KEY]
+            details.update(
+                {key: value for key, value in current.details.items() if key.startswith("_")}
+            )
         # Only what differs is sent, so an unrelated edit never rewrites other fields.
         operation = UpdatePlanItemOp(
             id=plan_id,

@@ -653,6 +653,7 @@ class CanonJournalPort(Protocol):
         expected_head: int,
         actor_user_id: str | None,
         reason: str,
+        keep_approval: bool = False,
     ) -> MutationSet: ...
 
     async def record_operations(

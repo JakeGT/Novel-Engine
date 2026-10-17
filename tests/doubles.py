@@ -1620,6 +1620,7 @@ class InMemoryCanonJournal:
         expected_head: int,
         actor_user_id: str | None,
         reason: str,
+        keep_approval: bool = False,
     ) -> MutationSet:
         mutation = self._require(mutation_id)
         if not is_editable(mutation.status):
@@ -1629,7 +1630,7 @@ class InMemoryCanonJournal:
         self.mutations[mutation_id] = mutation.model_copy(
             update={"expected_head": expected_head, "updated_at": self._now()}
         )
-        if mutation.status is MutationStatus.APPROVED:
+        if mutation.status is MutationStatus.APPROVED and not keep_approval:
             self.apply_transition(
                 mutation_id,
                 MutationStatus.NEEDS_REVIEW,

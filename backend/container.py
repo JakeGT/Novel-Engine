@@ -73,6 +73,7 @@ class Container:
     story_clocks: Any = None
     story_time_service: Any = None
     what_if_service: Any = None
+    knowledge_service: Any = None
     media_store: Any = None
     archive_service: Any = None
     media_service: Any = None
@@ -340,6 +341,15 @@ def build_container(settings: Settings | None = None) -> Container:
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
     )
+    from backend.services.knowledge_service import KnowledgeService
+
+    container.knowledge_service = KnowledgeService(
+        reader=container.canon_repository,
+        mutation=container.mutation_service,
+        schema_store=container.schema_versions,
+        tenancy=container.tenancy_service,
+        local_mode=not resolved.is_hosted,
+    )
     container.what_if_service = WhatIfService(
         journal=container.journal,
         canon=container.canon_repository,
@@ -388,6 +398,7 @@ def build_container(settings: Settings | None = None) -> Container:
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
         model=resolved.AI_MODEL,
+        clocks=container.story_clocks,
     )
     from backend.services.assist_session_service import AssistSessionService
 

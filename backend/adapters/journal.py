@@ -385,8 +385,13 @@ class PostgresCanonJournal:
         expected_head: int,
         actor_user_id: str | None,
         reason: str,
+        keep_approval: bool = False,
     ) -> MutationSet:
-        """Point an uncommitted proposal at a newer head; any approval is invalidated."""
+        """Point an uncommitted proposal at a newer head.
+
+        Any approval is invalidated unless ``keep_approval``: the caller has shown that
+        nothing the proposal touches changed in between.
+        """
         async with session_scope(self._session_factory) as session:
             mutation = await _lock_mutation(session, mutation_id)
             status = MutationStatus(mutation.status)
@@ -399,7 +404,7 @@ class PostgresCanonJournal:
                 ),
                 {"head": expected_head, "id": mutation_id},
             )
-            if status is MutationStatus.APPROVED:
+            if status is MutationStatus.APPROVED and not keep_approval:
                 await apply_transition(
                     session,
                     mutation,
