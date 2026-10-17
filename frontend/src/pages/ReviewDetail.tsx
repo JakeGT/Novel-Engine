@@ -527,7 +527,11 @@ export function ReviewDetail() {
   const general = issuesFor(-1)
   const busy = action.isPending || commit.isPending
   const needsApproval = change.status !== 'approved' && (change.requires_review || change.status !== 'draft')
-  const canCommit = editable && !change.is_stale && included.length > 0
+  // A story rule the author set to block holds the set back until it is fixed (CON-015).
+  const ruleBlocked = (findings?.issues ?? []).some(
+    (issue) => issue.severity === 'blocking' && issue.code.startsWith('rule:'),
+  )
+  const canCommit = editable && !change.is_stale && included.length > 0 && !ruleBlocked
   const names = new Map([
     ...entries.names,
     ...(planned.data?.items ?? []).map((item) => [item.id, item.title] as const),
@@ -876,9 +880,13 @@ export function ReviewDetail() {
           <section className="sticky-bar" aria-label="Decision">
             <div style={{ flex: '1 1 14rem' }}>
               <strong>
-                {included.length === change.operations.length
-                  ? `All ${plural(included.length, 'change')} will be added`
-                  : `${included.length} of ${plural(change.operations.length, 'change')} will be added`}
+                {ruleBlocked
+                  ? 'Nothing can be added until the problem above is fixed'
+                  : included.length === change.operations.length
+                    ? included.length === 1
+                      ? 'The change will be added'
+                      : `All ${plural(included.length, 'change')} will be added`
+                    : `${included.length} of ${plural(change.operations.length, 'change')} will be added`}
               </strong>
               <details className="more">
                 <summary>Add a note</summary>
@@ -890,9 +898,16 @@ export function ReviewDetail() {
             <div className="actions">
               {!canCommit && (
                 <span className="hint">
-                  {change.is_stale
-                    ? 'Update to the latest version first.'
-                    : 'Every change is skipped, so there is nothing to add.'}
+                  {change.is_stale ? (
+                    'Update to the latest version first.'
+                  ) : ruleBlocked ? (
+                    <>
+                      A change breaks a story rule you set to block. Skip or edit that change, or{' '}
+                      <Link to={`/projects/${scope.projectId}/rules`}>set the rule to warn</Link>.
+                    </>
+                  ) : (
+                    'Every change is skipped, so there is nothing to add.'
+                  )}
                 </span>
               )}
               <Button

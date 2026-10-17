@@ -70,6 +70,7 @@ async def resolve_provider(
                 requested_route=model or "",
                 prompt_tokens=ai_usage.prompt_tokens,
                 completion_tokens=ai_usage.completion_tokens,
+                cached_prompt_tokens=ai_usage.cached_prompt_tokens,
                 outcome=UsageOutcome.SUCCESS,
                 idempotency_key=idempotency_key,
             )

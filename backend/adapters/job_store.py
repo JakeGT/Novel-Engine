@@ -27,7 +27,7 @@ _COLUMNS = (
     "workspace_id, project_id, id, kind, status, stage, progress, payload, result, "
     "actor_user_id, auth_mode, policy_version, role, correlation_id, idempotency_key, "
     "cancel_requested, attempts, error_code, error_message, prompt_tokens, completion_tokens, "
-    "created_at, updated_at, finished_at"
+    "cached_prompt_tokens, created_at, updated_at, finished_at"
 )
 
 
@@ -60,6 +60,7 @@ def _job(row: Any) -> Job:
         error_message=row.error_message,
         prompt_tokens=int(row.prompt_tokens),
         completion_tokens=int(row.completion_tokens),
+        cached_prompt_tokens=int(row.cached_prompt_tokens),
         created_at=row.created_at,
         updated_at=row.updated_at,
         finished_at=row.finished_at,
@@ -150,6 +151,21 @@ class PostgresJobStore:
                 )
             ).first()
         return _job(row) if row is not None else None
+
+    async def waiting(self) -> tuple[int, float | None]:
+        """(how many jobs wait to start, seconds the oldest has waited), across every story.
+        For the readiness check: counts only, never what a job is about."""
+        async with session_scope(self._session_factory) as db:
+            row = (
+                await db.execute(
+                    text(
+                        "SELECT count(*), EXTRACT(EPOCH FROM now() - min(created_at)) "
+                        "FROM jobs WHERE status = 'queued'"
+                    )
+                )
+            ).one()
+        count = int(row[0])
+        return count, (max(0.0, float(row[1])) if count and row[1] is not None else None)
 
     async def count_active(self, *, workspace_id: str, project_id: str, actor_user_id: str) -> int:
         """How many of this person's jobs in the project are waiting or under way."""
@@ -268,20 +284,28 @@ class PostgresJobStore:
         return bool(row.cancel_requested)
 
     async def add_usage(
-        self, job: Job, *, owner: str, prompt_tokens: int, completion_tokens: int
+        self,
+        job: Job,
+        *,
+        owner: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        cached_prompt_tokens: int = 0,
     ) -> None:
         """Add to the job's token counts, only while this worker still holds it."""
         async with session_scope(self._session_factory) as db:
             await db.execute(
                 text(
                     "UPDATE jobs SET prompt_tokens = prompt_tokens + :pt, "
-                    "completion_tokens = completion_tokens + :ct, updated_at = now() "
+                    "completion_tokens = completion_tokens + :ct, "
+                    "cached_prompt_tokens = cached_prompt_tokens + :cached, updated_at = now() "
                     "WHERE workspace_id = :w AND project_id = :p AND id = :id "
                     "AND lease_owner = :owner"
                 ),
                 {
                     "pt": prompt_tokens,
                     "ct": completion_tokens,
+                    "cached": max(0, cached_prompt_tokens),
                     "w": job.workspace_id,
                     "p": job.project_id,
                     "id": job.id,

@@ -142,6 +142,15 @@ Release one needs a user-owned export containing:
 
 Embeddings are optional because they are derived. A restore test must create a clean environment, import the export, rebuild indexes, and compare canonical checksums and representative queries.
 
+As built (`backend/services/canon_archive.py`, format v4, 2026-10-17): the archive also carries
+every what-if (the version it started from, its own saved changes and named versions, which text
+holds each of its scenes, what was read from them and the findings dismissed there), the main
+story's readings and dismissed findings, and the conversations with the assistant. A what-if is
+restored by starting it again from the main story at that version and replaying its own changes,
+and its history is checked against the archive's checksums. Drafts waiting to be kept or discarded,
+unsaved proposals, jobs and usage records are left out, and the archive says so in its `left_out`
+list. Version 3 archives (main story only) still restore.
+
 ## Data lifecycle
 
 - Retire canonical entities rather than deleting referenced history.

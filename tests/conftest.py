@@ -398,6 +398,7 @@ def _build_fake_container(settings, tmp_path):
         rules=rules,
         clocks=story_clocks,
         studio=studio_store,
+        assists=assist_sessions,
     )
     return Container(
         settings=settings,

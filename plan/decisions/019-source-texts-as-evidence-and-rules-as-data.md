@@ -57,6 +57,12 @@ Publishing a rule as blocking (ADR-013) is not offered in this phase.
 - Rule evaluation reads committed state through the repository, not through the commit's
   own transaction. That is sound while rules only warn; a blocking rule would need the
   evaluator moved onto the transaction's reader.
+  *Amended 2026-10-17 (CON-015):* rules can now be set to block. The evaluator reads the
+  story through the commit's reader (`CanonTxReader.active_entities`/`asserted_facts`), on
+  the branch being committed, under the commit's lock. A result that could not see the
+  whole story (a reader without those reads, or more than a rule may read) is incomplete
+  and only warns. A blocking rule also refuses approval, so the author hears it first in
+  review. Rewording never makes a rule block; a project archive carries the choice.
 - Texts, name answers and rules are keyed by project, travel in a project archive
   (`writing`, `story_rules`), and are restored after canon. Removing a failed import does
   not remove texts or rules that import had already restored.

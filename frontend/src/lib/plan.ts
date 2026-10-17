@@ -56,3 +56,24 @@ export function siblingsOf(items: PlanItem[], item: PlanItem): PlanItem[] {
     )
     .sort(inOrder)
 }
+
+/**
+ * How a scene ends for its viewpoint character: the four answers of the common
+ * goal–conflict–outcome pattern of scene writing (Swain; Bickham, Scene & Structure).
+ */
+export const OUTCOMES: { value: 'yes' | 'no' | 'yes_but' | 'no_and'; label: string; hint: string }[] = [
+  { value: 'yes_but', label: 'Yes, but', hint: 'they get it, with a cost or a new complication' },
+  { value: 'no_and', label: 'No, and', hint: 'they do not get it, and things get worse' },
+  { value: 'yes', label: 'Yes', hint: 'they get what they want' },
+  { value: 'no', label: 'No', hint: 'they do not get it' },
+]
+
+export const outcomeLabel = (value: string | null | undefined): string | null =>
+  OUTCOMES.find((outcome) => outcome.value === value)?.label ?? null
+
+/** What each step of a thread is called on screen. */
+export const THREAD_STEPS: Record<string, string> = {
+  opens: 'Opens',
+  advances: 'Moves along',
+  resolves: 'Resolves',
+}

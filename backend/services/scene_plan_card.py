@@ -238,7 +238,11 @@ class ScenePlanCardService:
             # Recorded inside the lease: a call that finished is counted even if the lease is
             # lost just after it.
             await sink(response.usage, response.model, idempotency_key=call_key)
-            await ctx.used(response.usage.prompt_tokens, response.usage.completion_tokens)
+            await ctx.used(
+                response.usage.prompt_tokens,
+                response.usage.completion_tokens,
+                response.usage.cached_prompt_tokens,
+            )
 
         await ctx.step("Checking what it suggests against the scene", 85)
         # The plan as it is now: the author may have changed it while the job waited.

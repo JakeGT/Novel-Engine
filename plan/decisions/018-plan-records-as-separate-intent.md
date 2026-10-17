@@ -40,3 +40,15 @@ item, and there is nothing to forget.
 - A removed plan item cannot be put back by undo (as with entries); undoing an edit can.
 - Archives carry the plan in a top-level `plan` section marked `intent`, outside `canon`.
   Restoring replays the journal, so the plan is rebuilt from its own operations.
+
+## Amendment (2026-10-17): more structure in details, not columns
+
+A beat or scene's threads moved along (`_advances`, STY-002) and a scene's intent
+(`_intent`: goal, what stands in the way, outcome; STY-003) are kept in the item's details
+under reserved keys, like conditions and reveals, so no column or operation field was
+added and every earlier envelope checksum is unchanged. The plan service checks them; the
+commit validator sees them only as details within the usual size limits. A thread's steps
+are derived on read in outline order (`backend/domain/threads.py`), never stored. Promoting
+either to typed operation fields later would need a migration and a replay that reads the
+reserved keys.
+

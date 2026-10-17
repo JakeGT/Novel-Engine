@@ -1,7 +1,15 @@
 // Helpers for the scene studio (ADR-022): where a check points in the text, the
 // author's unsaved words kept in this browser, and the words the studio uses.
-import { useQueries } from '@tanstack/react-query'
-import { api, type AssistantNote, type DraftCheck, type PlanItem, type Scope, type StudioJob } from '../api/client'
+import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query'
+import {
+  api,
+  type AssistantNote,
+  type DismissAsk,
+  type DraftCheck,
+  type PlanItem,
+  type Scope,
+  type StudioJob,
+} from '../api/client'
 import { scopedKey, useProject } from '../project'
 
 export interface Span {
@@ -59,6 +67,22 @@ export function orderChecks(checks: DraftCheck[]): DraftCheck[] {
 
 export function orderNotes(notes: AssistantNote[]): AssistantNote[] {
   return [...notes].sort((a, b) => (a.start ?? Infinity) - (b.start ?? Infinity))
+}
+
+/** Dismissing and bringing back, for one scene: the page's copy of the scene is replaced. */
+export function useDismissals(planId: string) {
+  const { scope } = useProject()
+  const client = useQueryClient()
+  const studioKey = scopedKey(scope, 'studio', planId)
+  const dismiss = useMutation({
+    mutationFn: (ask: DismissAsk) => api.dismissFinding(scope, planId, ask),
+    onSuccess: (next) => client.setQueryData(studioKey, next),
+  })
+  const undo = useMutation({
+    mutationFn: (dismissalId: string) => api.undoDismissal(scope, planId, dismissalId),
+    onSuccess: (next) => client.setQueryData(studioKey, next),
+  })
+  return { dismiss, undo }
 }
 
 /** What a check with the assistant looks for, in the author's words. */

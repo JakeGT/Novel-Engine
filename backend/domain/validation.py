@@ -99,6 +99,8 @@ class ValidationFinding:
     code: str
     message: str
     operation_ordinal: int | None = None
+    # For a story rule's finding, which wording of the rule it came from.
+    rule_version: int | None = None
 
 
 @dataclass(frozen=True)
@@ -141,6 +143,8 @@ class RuleEvaluation:
     enforcement: RuleEnforcement = RuleEnforcement.WARNING
     deterministic: bool = True
     complete: bool = True
+    # Which wording of the rule gave this result (CON-015: findings cite rule versions).
+    rule_version: int | None = None
 
 
 def classify_rule_evaluation(evaluation: RuleEvaluation) -> ValidationSeverity:
@@ -219,6 +223,14 @@ class CanonTxReader(Protocol):
         """Open facts/beliefs, live events, and active links that reference the entity."""
         ...
 
+    async def active_entities(self, limit: int) -> list[CanonEntity]:
+        """The active entities on this branch, at most ``limit`` (for story rules)."""
+        ...
+
+    async def asserted_facts(self, limit: int) -> list[Fact]:
+        """The facts asserted now on this branch, at most ``limit`` (for story rules)."""
+        ...
+
 
 @dataclass(frozen=True)
 class ValidationContext:
@@ -288,6 +300,7 @@ class AuthoritativeValidator:
                         f"rule:{evaluation.rule_id}",
                         evaluation.message,
                         evaluation.operation_ordinal,
+                        evaluation.rule_version,
                     )
                 )
         return DomainValidationReport(findings=tuple(findings))

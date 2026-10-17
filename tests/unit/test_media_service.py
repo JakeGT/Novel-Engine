@@ -130,3 +130,32 @@ async def test_link_to_unknown_target_is_rejected_in_tx() -> None:
         await service.create_link(
             scope, WS, PR, asset_id=asset.id, target_id="ent_missing", expected_revision=0
         )
+
+
+@pytest.mark.asyncio
+async def test_a_picture_is_cleaned_off_the_event_loop(monkeypatch) -> None:
+    import asyncio
+
+    from backend.domain.image_metadata import strip_metadata
+
+    service, *_ = _services()
+    ran: list[object] = []
+    real = asyncio.to_thread
+
+    async def spy(func, /, *args, **kwargs):
+        ran.append(func)
+        return await real(func, *args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "to_thread", spy)
+    # A JPEG with no frame and no image data is refused once its structure is walked.
+    with pytest.raises(ValidationError):
+        await service.add_picture(
+            _scope(),
+            WS,
+            PR,
+            entity_id="ent_1",
+            data=b"\xff\xd8\xff\xd9",
+            name=None,
+            expected_revision=0,
+        )
+    assert strip_metadata in ran

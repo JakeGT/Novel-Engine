@@ -47,6 +47,14 @@
       "AddPlanItemRequest": {
         "additionalProperties": false,
         "properties": {
+          "advances": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Advances",
+            "type": "array"
+          },
           "details": {
             "additionalProperties": {
               "type": "string"
@@ -58,6 +66,16 @@
             "minimum": 0.0,
             "title": "Expected Revision",
             "type": "integer"
+          },
+          "intent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SceneIntent"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "kind": {
             "$ref": "#/components/schemas/PlanKind"
@@ -1367,6 +1385,16 @@
             "title": "Category",
             "type": "string"
           },
+          "dismissal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DismissalModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "end": {
             "anyOf": [
               {
@@ -1380,6 +1408,11 @@
           },
           "id": {
             "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "default": "",
+            "title": "Key",
             "type": "string"
           },
           "message": {
@@ -1841,6 +1874,21 @@
       "ChangePlanItemRequest": {
         "additionalProperties": false,
         "properties": {
+          "advances": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Advances"
+          },
           "details": {
             "anyOf": [
               {
@@ -1859,6 +1907,16 @@
             "minimum": 0.0,
             "title": "Expected Revision",
             "type": "integer"
+          },
+          "intent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SceneIntent"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "pays_off": {
             "anyOf": [
@@ -2114,6 +2172,16 @@
               }
             ]
           },
+          "enforcement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuleEnforcement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "examples": {
             "anyOf": [
               {
@@ -2165,6 +2233,53 @@
           }
         },
         "title": "ChangeRuleRequest",
+        "type": "object"
+      },
+      "ChangedContextModel": {
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/ContextItemModel"
+          },
+          "reason_then": {
+            "title": "Reason Then",
+            "type": "string"
+          },
+          "section_title_then": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section Title Then"
+          },
+          "text_then": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Then"
+          },
+          "what": {
+            "items": {
+              "type": "string"
+            },
+            "title": "What",
+            "type": "array"
+          }
+        },
+        "required": [
+          "item",
+          "reason_then",
+          "what"
+        ],
+        "title": "ChangedContextModel",
         "type": "object"
       },
       "CharacterAnswerModel": {
@@ -2476,6 +2591,16 @@
             "title": "Code",
             "type": "string"
           },
+          "dismissal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DismissalModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "end": {
             "anyOf": [
               {
@@ -2486,6 +2611,11 @@
               }
             ],
             "title": "End"
+          },
+          "key": {
+            "default": "",
+            "title": "Key",
+            "type": "string"
           },
           "message": {
             "title": "Message",
@@ -2701,6 +2831,84 @@
           "holds"
         ],
         "title": "ConditionStateModel",
+        "type": "object"
+      },
+      "ContextComparisonModel": {
+        "properties": {
+          "added": {
+            "items": {
+              "$ref": "#/components/schemas/ContextItemModel"
+            },
+            "title": "Added",
+            "type": "array"
+          },
+          "budget_now": {
+            "title": "Budget Now",
+            "type": "integer"
+          },
+          "budget_then": {
+            "title": "Budget Then",
+            "type": "integer"
+          },
+          "changed": {
+            "items": {
+              "$ref": "#/components/schemas/ChangedContextModel"
+            },
+            "title": "Changed",
+            "type": "array"
+          },
+          "kept_at": {
+            "format": "date-time",
+            "title": "Kept At",
+            "type": "string"
+          },
+          "manifest_id": {
+            "title": "Manifest Id",
+            "type": "string"
+          },
+          "removed": {
+            "items": {
+              "$ref": "#/components/schemas/RemovedContextModel"
+            },
+            "title": "Removed",
+            "type": "array"
+          },
+          "rules_changed": {
+            "title": "Rules Changed",
+            "type": "boolean"
+          },
+          "same": {
+            "title": "Same",
+            "type": "boolean"
+          },
+          "unchanged": {
+            "title": "Unchanged",
+            "type": "integer"
+          },
+          "words_now": {
+            "title": "Words Now",
+            "type": "integer"
+          },
+          "words_then": {
+            "title": "Words Then",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "manifest_id",
+          "kept_at",
+          "words_then",
+          "words_now",
+          "budget_then",
+          "budget_now",
+          "rules_changed",
+          "same",
+          "added",
+          "removed",
+          "changed",
+          "unchanged"
+        ],
+        "title": "ContextComparisonModel",
         "type": "object"
       },
       "ContextItemModel": {
@@ -3606,6 +3814,97 @@
           "reason"
         ],
         "title": "DiscardedItemModel",
+        "type": "object"
+      },
+      "DismissReason": {
+        "enum": [
+          "intended",
+          "not_a_problem",
+          "other"
+        ],
+        "title": "DismissReason",
+        "type": "string"
+      },
+      "DismissRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "days": {
+            "anyOf": [
+              {
+                "enum": [
+                  7,
+                  30
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days"
+          },
+          "key": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Key",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Note",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/DismissReason"
+          }
+        },
+        "required": [
+          "key",
+          "reason"
+        ],
+        "title": "DismissRequest",
+        "type": "object"
+      },
+      "DismissalModel": {
+        "description": "The author dismissed this finding, and why (CON-010, CON-016).",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/DismissReason"
+          }
+        },
+        "required": [
+          "id",
+          "reason",
+          "created_at"
+        ],
+        "title": "DismissalModel",
         "type": "object"
       },
       "DraftModel": {
@@ -5040,6 +5339,11 @@
       },
       "JobModel": {
         "properties": {
+          "cached_prompt_tokens": {
+            "default": 0,
+            "title": "Cached Prompt Tokens",
+            "type": "integer"
+          },
           "cancel_requested": {
             "title": "Cancel Requested",
             "type": "boolean"
@@ -5181,6 +5485,41 @@
           }
         },
         "title": "KeepRequest",
+        "type": "object"
+      },
+      "KeptContextModel": {
+        "description": "The context a kept version of the scene's prose was drafted from.",
+        "properties": {
+          "kept_at": {
+            "format": "date-time",
+            "title": "Kept At",
+            "type": "string"
+          },
+          "manifest_id": {
+            "title": "Manifest Id",
+            "type": "string"
+          },
+          "version_id": {
+            "title": "Version Id",
+            "type": "string"
+          },
+          "version_number": {
+            "title": "Version Number",
+            "type": "integer"
+          },
+          "words": {
+            "title": "Words",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "manifest_id",
+          "version_id",
+          "version_number",
+          "kept_at",
+          "words"
+        ],
+        "title": "KeptContextModel",
         "type": "object"
       },
       "KnownFactModel": {
@@ -6270,6 +6609,13 @@
             },
             "title": "Open",
             "type": "array"
+          },
+          "threads": {
+            "items": {
+              "$ref": "#/components/schemas/ThreadProgressModel"
+            },
+            "title": "Threads",
+            "type": "array"
           }
         },
         "required": [
@@ -6522,6 +6868,13 @@
       },
       "PlanItemModel": {
         "properties": {
+          "advances": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Advances",
+            "type": "array"
+          },
           "conditions": {
             "items": {
               "$ref": "#/components/schemas/SceneCondition"
@@ -6543,6 +6896,16 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "intent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SceneIntent"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "kind": {
             "title": "Kind",
@@ -7602,6 +7965,72 @@
         "title": "RemovePlanItemRequest",
         "type": "object"
       },
+      "RemovedContextModel": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "left_out": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Left Out"
+          },
+          "now": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContextItemModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "section_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section Title"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "words": {
+            "title": "Words",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "reason",
+          "words"
+        ],
+        "title": "RemovedContextModel",
+        "type": "object"
+      },
       "RemovedModel": {
         "properties": {
           "removed": {
@@ -8319,6 +8748,15 @@
         "title": "RuleDraftModel",
         "type": "object"
       },
+      "RuleEnforcement": {
+        "description": "How an author story rule is published. Warning is the default (ADR-013).",
+        "enum": [
+          "warning",
+          "blocking"
+        ],
+        "title": "RuleEnforcement",
+        "type": "string"
+      },
       "RuleExample": {
         "additionalProperties": false,
         "description": "A tiny made-up story, and whether the rule should catch it.",
@@ -8388,6 +8826,10 @@
             },
             "title": "Broken By",
             "type": "array"
+          },
+          "enforcement": {
+            "$ref": "#/components/schemas/RuleEnforcement",
+            "default": "warning"
           },
           "example_results": {
             "items": {
@@ -8611,6 +9053,42 @@
           "rendered"
         ],
         "title": "SceneContextModel",
+        "type": "object"
+      },
+      "SceneIntent": {
+        "additionalProperties": false,
+        "properties": {
+          "goal": {
+            "default": "",
+            "maxLength": 400,
+            "title": "Goal",
+            "type": "string"
+          },
+          "obstacle": {
+            "default": "",
+            "maxLength": 400,
+            "title": "Obstacle",
+            "type": "string"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "yes",
+                  "no",
+                  "yes_but",
+                  "no_and"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          }
+        },
+        "title": "SceneIntent",
         "type": "object"
       },
       "SchemaDefinitionRequest": {
@@ -9473,6 +9951,45 @@
           "length"
         ],
         "title": "TextModel",
+        "type": "object"
+      },
+      "ThreadProgressModel": {
+        "properties": {
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/ThreadStepModel"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "thread_id",
+          "steps"
+        ],
+        "title": "ThreadProgressModel",
+        "type": "object"
+      },
+      "ThreadStepModel": {
+        "properties": {
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "step": {
+            "title": "Step",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_id",
+          "step"
+        ],
+        "title": "ThreadStepModel",
         "type": "object"
       },
       "TimeIssueModel": {
@@ -18008,6 +18525,123 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/context/kept": {
+      "get": {
+        "description": "The contexts kept versions of this scene were drafted from, newest first.",
+        "operationId": "kept_scene_contexts_api_v1_projects__project_id__plan__plan_id__context_kept_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/KeptContextModel"
+                  },
+                  "title": "Response Kept Scene Contexts Api V1 Projects  Project Id  Plan  Plan Id  Context Kept Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Kept Scene Contexts",
+        "tags": [
+          "context"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/context/kept/{manifest_id}": {
+      "get": {
+        "description": "What the assistant would use now against what it used for a kept draft.",
+        "operationId": "compare_scene_context_api_v1_projects__project_id__plan__plan_id__context_kept__manifest_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "manifest_id",
+            "required": true,
+            "schema": {
+              "title": "Manifest Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextComparisonModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Compare Scene Context",
+        "tags": [
+          "context"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/plan/{plan_id}/move": {
       "post": {
         "operationId": "move_plan_item_api_v1_projects__project_id__plan__plan_id__move_post",
@@ -18238,6 +18872,129 @@
           }
         },
         "summary": "Studio",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/studio/dismissals": {
+      "post": {
+        "description": "Dismiss a check or a note on this scene with a reason. The text is not changed.",
+        "operationId": "dismiss_finding_api_v1_projects__project_id__plan__plan_id__studio_dismissals_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dismiss Finding",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/studio/dismissals/{dismissal_id}": {
+      "delete": {
+        "description": "Bring a dismissed finding back.",
+        "operationId": "undo_dismissal_api_v1_projects__project_id__plan__plan_id__studio_dismissals__dismissal_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "dismissal_id",
+            "required": true,
+            "schema": {
+              "title": "Dismissal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Undo Dismissal",
         "tags": [
           "studio"
         ]
@@ -21949,6 +22706,7 @@
     },
     "/health/ready": {
       "get": {
+        "description": "Ready when the required stores are; degraded (still 200) when an optional part is\ndown, with plain reasons; unavailable (503) when a required store is down. Never\nreports addresses, credentials or error messages that could carry them.",
         "operationId": "readiness_health_ready_get",
         "responses": {
           "200": {

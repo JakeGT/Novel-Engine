@@ -72,12 +72,15 @@ class JobContext:
         if await self._store.heartbeat(self.job, owner=self._owner, stage=stage, progress=progress):
             raise JobCancelled(stage)
 
-    async def used(self, prompt_tokens: int, completion_tokens: int) -> None:
+    async def used(
+        self, prompt_tokens: int, completion_tokens: int, cached_prompt_tokens: int = 0
+    ) -> None:
         await self._store.add_usage(
             self.job,
             owner=self._owner,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
+            cached_prompt_tokens=cached_prompt_tokens,
         )
 
     @asynccontextmanager
@@ -339,6 +342,11 @@ class JobRunner:
                     await asyncio.wait_for(self._wake.wait(), timeout=POLL_SECONDS)
                 except TimeoutError:
                     pass
+
+    @property
+    def running(self) -> bool:
+        """Whether the background loop is going (it never ends on its own)."""
+        return self._task is not None and not self._task.done()
 
     def start(self) -> None:
         if self._task is None and self.autostart:

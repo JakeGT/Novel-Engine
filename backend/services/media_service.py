@@ -9,9 +9,12 @@ explicit links (no processing/scanning).
 
 from __future__ import annotations
 
+import asyncio
+
 from backend.adapters.system import uuid7
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
+from backend.domain.image_metadata import ImageMetadataError, strip_metadata
 from backend.domain.media import (
     AssetLifecycle,
     AssetLink,
@@ -227,6 +230,8 @@ class MediaService:
 
         Any member who can write may do this. The type is decided from the bytes,
         never from what the upload claims, and only still images are accepted.
+        Where and when it was taken, the device and any other hidden details are
+        removed before it is stored, keeping only which way up it goes (AST-006).
         Nothing is decoded, resized, or sent to a model.
         """
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
@@ -239,6 +244,14 @@ class MediaService:
         content_type = sniff_image_type(data)
         if content_type is None:
             raise ValidationError("Only PNG, JPEG, and WebP pictures can be added.")
+        try:
+            # Walking a large file's structure takes a moment: off the event loop.
+            data = await asyncio.to_thread(strip_metadata, data, content_type)
+        except ImageMetadataError as error:
+            raise ValidationError(
+                "This picture could not be read. Save it again as a PNG, JPEG, or WebP "
+                "file and add it once more."
+            ) from error
         entity = await self._reader.get_entity(
             workspace_id=workspace_id, project_id=project_id, entity_id=entity_id
         )

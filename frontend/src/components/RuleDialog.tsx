@@ -193,7 +193,11 @@ export function RuleDialog({
             {save.isPending ? 'Saving…' : rule ? 'Save the rule' : 'Keep this rule'}
           </Button>
         </div>
-        <p className="muted small">A rule only ever warns you. It never stops a change.</p>
+        <p className="muted small">
+          {rule?.enforcement === 'blocking'
+            ? 'This rule blocks a change that would break it. Changing its words does not change that.'
+            : 'A rule warns you when a change would break it. To have it block such a change instead, choose “Block the change” on the list of rules.'}
+        </p>
       </form>
     </Dialog>
   )

@@ -226,6 +226,9 @@ class SchemaVersionStorePort(Protocol):
 class AIUsage:
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    # Of the prompt tokens, how many the provider read back from its cache (CTX-015).
+    # Already counted in ``prompt_tokens``; 0 when the provider does not say.
+    cached_prompt_tokens: int = 0
 
     @property
     def total_tokens(self) -> int:

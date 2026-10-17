@@ -57,6 +57,9 @@ class DraftFinding:
     message: str
     start: int | None = None
     end: int | None = None
+    # What the finding is about (a name, a secret, a place), so the same finding can be
+    # recognised again when the author has dismissed it. Never shown.
+    subject: str = ""
 
 
 @dataclass(frozen=True)
@@ -126,6 +129,7 @@ def check_draft(text: str, brief: DraftBrief, mentions: Sequence[Mention]) -> li
                     f"“{mention.phrase}” is a new name. Add it to the story bible, or say who it is.",
                     mention.start,
                     mention.end,
+                    subject=key,
                 )
             )
 
@@ -145,6 +149,7 @@ def check_draft(text: str, brief: DraftBrief, mentions: Sequence[Mention]) -> li
                         f"does not know: {secret.sentence}.",
                         start,
                         end,
+                        subject=secret.sentence,
                     )
                 )
                 break
@@ -158,6 +163,7 @@ def check_draft(text: str, brief: DraftBrief, mentions: Sequence[Mention]) -> li
                     "reveal_missing",
                     Severity.NOTE,
                     f"The plan says the reader learns this here, and it may be missing: {reveal.sentence}.",
+                    subject=reveal.sentence,
                 )
             )
 
@@ -168,6 +174,7 @@ def check_draft(text: str, brief: DraftBrief, mentions: Sequence[Mention]) -> li
                 "place_missing",
                 Severity.NOTE,
                 f"The scene happens at {brief.place}, which is never named.",
+                subject=brief.place,
             )
         )
     if (
@@ -181,6 +188,7 @@ def check_draft(text: str, brief: DraftBrief, mentions: Sequence[Mention]) -> li
                 "viewpoint_missing",
                 Severity.NOTE,
                 f"The scene is seen through {brief.point_of_view}, who is never named.",
+                subject=brief.point_of_view,
             )
         )
 
@@ -198,6 +206,7 @@ def check_draft(text: str, brief: DraftBrief, mentions: Sequence[Mention]) -> li
                 f"“{match.group(1)}” is stock phrasing that readers often notice.",
                 match.start(),
                 match.end(),
+                subject=phrase,
             )
         )
 
@@ -210,6 +219,7 @@ def check_draft(text: str, brief: DraftBrief, mentions: Sequence[Mention]) -> li
                     "short",
                     Severity.NOTE,
                     f"About {words} words, against the {brief.words_asked} asked for.",
+                    subject=str(brief.words_asked),
                 )
             )
         elif words > brief.words_asked * 2:
@@ -218,6 +228,7 @@ def check_draft(text: str, brief: DraftBrief, mentions: Sequence[Mention]) -> li
                     "long",
                     Severity.NOTE,
                     f"About {words} words, against the {brief.words_asked} asked for.",
+                    subject=str(brief.words_asked),
                 )
             )
 

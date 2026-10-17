@@ -57,3 +57,14 @@ drift.
 Image, audio and video processing; captions; the EmbeddingGemma evaluation and any change of
 vector dimension; per-request (rather than per-scene) controls; a model explaining sources in
 conversation.
+
+## Amendment (2026-10-17): comparing with a kept context (CTX-009)
+
+A kept manifest now records each item's words and a 16-character SHA-256 fingerprint, so the
+context now can be compared with the one a draft was written from (added, no longer given
+and why, changed). Passages of the author's writing keep the fingerprint only: like the
+passage index, a manifest never holds the author's words. Manifests kept before this compare
+by length and cannot see a rewording of the same length. A kept context is read only for its
+own scene, and only in the line of the story it was made in, or one a version of the scene's
+prose there still points to (a what-if started after the draft was kept).
+

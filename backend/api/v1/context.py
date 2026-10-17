@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import get_container
 from backend.container import Container
-from backend.domain.context import SECTION_TITLES, ContextItem, ContextSettings
+from backend.domain.context import (
+    SECTION_TITLES,
+    ContextComparison,
+    ContextItem,
+    ContextSettings,
+)
 from backend.domain.identity import AccessScope
 from backend.services.context_service import ContextService, SceneContext
 
@@ -77,6 +84,56 @@ class RebuildResult(BaseModel):
     passages: int
 
 
+class KeptContextModel(BaseModel):
+    """The context a kept version of the scene's prose was drafted from."""
+
+    manifest_id: str
+    version_id: str
+    version_number: int
+    kept_at: datetime
+    words: int
+
+
+class RemovedContextModel(BaseModel):
+    key: str
+    section_title: str | None = None
+    # The words given then. Null for a passage of the author's writing, or a context kept
+    # before words were recorded.
+    text: str | None = None
+    reason: str
+    words: int
+    # Why it is not given now: excluded, budget or secret. Null when it is no longer found.
+    left_out: str | None = None
+    # The item as it would be now, when it is still found but left out.
+    now: ContextItemModel | None = None
+
+
+class ChangedContextModel(BaseModel):
+    item: ContextItemModel
+    text_then: str | None = None
+    reason_then: str
+    section_title_then: str | None = None
+    # What differs: words, section, reason.
+    what: list[str]
+
+
+class ContextComparisonModel(BaseModel):
+    manifest_id: str
+    kept_at: datetime
+    words_then: int
+    words_now: int
+    budget_then: int
+    budget_now: int
+    # The rules for putting the context together changed since it was kept.
+    rules_changed: bool
+    # Exactly the same context as was given then.
+    same: bool
+    added: list[ContextItemModel]
+    removed: list[RemovedContextModel]
+    changed: list[ChangedContextModel]
+    unchanged: int
+
+
 def _item(item: ContextItem, pinned: set[str]) -> ContextItemModel:
     return ContextItemModel(
         key=item.key,
@@ -137,6 +194,85 @@ async def scene_context(
         scope, scope.workspace_id or "", project_id, plan_id, budget=budget, include_secrets=secrets
     )
     return _model(context)
+
+
+_WHAT = {"the words": "words", "where it sits": "section", "why it is given": "reason"}
+
+
+def _comparison(result: ContextComparison) -> ContextComparisonModel:
+    kept, now = result.kept, result.now
+    return ContextComparisonModel(
+        manifest_id=kept.id,
+        kept_at=kept.created_at,
+        words_then=kept.words,
+        words_now=now.words,
+        budget_then=kept.budget,
+        budget_now=now.budget,
+        rules_changed=kept.policy_version != now.policy_version,
+        same=result.same,
+        added=[_item(item, set()) for item in result.added],
+        removed=[
+            RemovedContextModel(
+                key=then.key,
+                section_title=SECTION_TITLES[then.section] if then.section else None,
+                text=then.text,
+                reason=then.reason,
+                words=then.words,
+                left_out=omission.reason.value if omission else None,
+                now=_item(omission.item, set()) if omission else None,
+            )
+            for then, omission in result.removed
+        ],
+        changed=[
+            ChangedContextModel(
+                item=_item(change.now, set()),
+                text_then=change.then.text,
+                reason_then=change.then.reason,
+                section_title_then=SECTION_TITLES[change.then.section]
+                if change.then.section
+                else None,
+                what=[_WHAT[what] for what in change.what],
+            )
+            for change in result.changed
+        ],
+        unchanged=result.unchanged,
+    )
+
+
+@router.get("/plan/{plan_id}/context/kept")
+async def kept_scene_contexts(
+    project_id: str,
+    plan_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    service: ContextService = Depends(get_context_service),
+) -> list[KeptContextModel]:
+    """The contexts kept versions of this scene were drafted from, newest first."""
+    kept = await service.kept_for_scene(scope, scope.workspace_id or "", project_id, plan_id)
+    return [
+        KeptContextModel(
+            manifest_id=item.manifest_id,
+            version_id=item.version_id,
+            version_number=item.version_number,
+            kept_at=item.kept_at,
+            words=item.words,
+        )
+        for item in kept
+    ]
+
+
+@router.get("/plan/{plan_id}/context/kept/{manifest_id}")
+async def compare_scene_context(
+    project_id: str,
+    plan_id: str,
+    manifest_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    service: ContextService = Depends(get_context_service),
+) -> ContextComparisonModel:
+    """What the assistant would use now against what it used for a kept draft."""
+    result = await service.compare_kept(
+        scope, scope.workspace_id or "", project_id, plan_id, manifest_id
+    )
+    return _comparison(result)
 
 
 @router.put("/plan/{plan_id}/context")

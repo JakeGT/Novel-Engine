@@ -1,4 +1,6 @@
-"""Story rules: an author's own continuity rules, checked without a model, warning only."""
+"""Story rules: an author's own continuity rules, checked without a model.
+
+A rule warns by default; the author may set it to block (ADR-013, CON-015)."""
 
 from __future__ import annotations
 
@@ -26,6 +28,7 @@ from backend.domain.rules import (
     RuleStatus,
     Violation,
 )
+from backend.domain.validation import RuleEnforcement
 from backend.services.credential_service import CredentialService
 from backend.services.rule_service import RuleCheck, RuleReading, RuleService
 from backend.services.rule_workflow import RuleWorkflow
@@ -57,6 +60,8 @@ class RuleModel(BaseModel):
     reading: str
     # on or paused.
     status: str
+    # warning (the default) or blocking: whether a change that breaks it can be added.
+    enforcement: RuleEnforcement = RuleEnforcement.WARNING
     version: int
     body: RuleBody
     examples: list[RuleExample]
@@ -95,6 +100,8 @@ class ChangeRuleRequest(BaseModel):
     title: str | None = Field(default=None, max_length=MAX_TITLE_LENGTH)
     sentence: str | None = Field(default=None, max_length=MAX_SENTENCE_LENGTH)
     status: RuleStatus | None = None
+    # Warn about a change that breaks the rule, or block it until it is fixed.
+    enforcement: RuleEnforcement | None = None
     # New wording becomes a new version; the earlier one is kept.
     body: RuleBody | None = None
     examples: list[RuleExample] | None = Field(default=None, max_length=MAX_EXAMPLES)
@@ -150,6 +157,7 @@ def _model(found: RuleReading) -> RuleModel:
         sentence=rule.sentence,
         reading=found.reading,
         status=rule.status.value,
+        enforcement=rule.enforcement,
         version=rule.version,
         body=rule.body,
         examples=rule.examples,
@@ -218,6 +226,7 @@ async def change_rule(
         status=body.status,
         body=body.body,
         examples=body.examples,
+        enforcement=body.enforcement,
     )
     return _model(found)
 

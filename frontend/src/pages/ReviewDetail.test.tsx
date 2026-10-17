@@ -387,6 +387,32 @@ describe('ReviewDetail', () => {
     expect(within(second).getByRole('note')).toHaveTextContent('Worth a look: You already have a location')
   })
 
+  it('holds back a set that breaks a story rule set to block, and says how to go on', async () => {
+    mockApi({
+      ...entries,
+      'GET /mutations/mut_1': mutation(),
+      'POST /mutations/mut_1/validate': {
+        ok: false,
+        head_revision: 3,
+        issues: [
+          {
+            ordinal: 0,
+            code: 'rule:inv_1',
+            severity: 'blocking',
+            message: 'This breaks your rule “Guilds have members”, which you set to block: it would no longer hold for Harbor Guild.',
+          },
+        ],
+      },
+    })
+    const { container } = renderInProject(<ReviewDetail />, at)
+    const first = (await screen.findByText('Add character “Iven”')).closest('li') as HTMLElement
+    expect(await within(first).findByRole('alert')).toHaveTextContent('This must be fixed first: This breaks your rule')
+    expect(screen.getByRole('button', { name: 'Approve and add to your story' })).toBeDisabled()
+    expect(screen.getByText(/A change breaks a story rule you set to block/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'set the rule to warn' })).toHaveAttribute('href', '/projects/prj_1/rules')
+    await expectAccessible(container)
+  })
+
   it('undoes a set of changes that was just added, in one step from where it was added', async () => {
     const api = mockApi({
       ...entries,

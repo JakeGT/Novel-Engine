@@ -164,8 +164,12 @@ Operational tooling:
 - `make project` advances the Neo4j projection; `make project PROJECT_ARGS=--verify` checks that
   the journal, normalized canon, and the projection agree; `make verify` checks journal
   consistency. Neither ever changes canon.
-- Canonical project export/restore is available through `make archive` (checksummed archive v3,
-  including accepted history and permitted object bytes, but never credentials or sessions).
+- Canonical project export/restore is available through `make archive` (checksummed archive v4,
+  including accepted history, permitted object bytes, the author's texts and rules, every what-if
+  with its own changes and scene texts, scene readings, dismissed findings and conversations with
+  the assistant, but never credentials or sessions). Drafts waiting to be kept or discarded are
+  working material and are left out; the archive lists what it leaves out. Version 3 archives
+  still restore.
   It acts as `--actor USER_ID`, requires a project administrator in a hosted deployment, and
   writes a security-audit record. A restore is recorded in a status ledger and is only marked
   complete after it has been verified; `--imports` shows the ledger and `--remove-import` erases a

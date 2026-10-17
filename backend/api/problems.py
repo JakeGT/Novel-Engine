@@ -206,13 +206,19 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(OperationValidationError)
     @app.exception_handler(CanonValidationError)
     async def _handle_operation_validation(request: Request, exc: Exception) -> JSONResponse:
+        detail = str(exc)
+        # A story rule the author set to block says so in its own words (CON-015).
+        if isinstance(exc, CanonValidationError):
+            blocking = exc.report.blocking
+            if blocking and all(item.code.startswith("rule:") for item in blocking):
+                detail = " ".join(dict.fromkeys(item.message for item in blocking))
         return _problem_response(
             422,
             problem_body(
                 status=422,
                 title="Mutation validation failed",
                 code="validation_error",
-                detail=str(exc),
+                detail=detail,
                 correlation_id=_correlation_id(request),
             ),
         )

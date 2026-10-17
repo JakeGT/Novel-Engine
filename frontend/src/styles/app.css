@@ -2601,6 +2601,45 @@ mark {
   width: 5rem;
 }
 
+/* What the viewpoint character wants in a scene: the question the scene asks. */
+.scene-intent-card {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.1rem 0.75rem;
+  margin: 0.35rem 0 0.25rem;
+  padding-left: 0.7rem;
+  border-left: 2px solid var(--line);
+  font-size: 0.94rem;
+  max-width: 62ch;
+}
+.scene-intent-card > div { display: contents; }
+.scene-intent-card dt {
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  color: var(--ink-3);
+  padding-top: 0.12rem;
+}
+.scene-intent-card dd { margin: 0; color: var(--ink-2); }
+.scene-intent-card .outcome-hint { color: var(--ink-3); font-size: 0.88rem; }
+.scene-intent { padding-top: 0.25rem; }
+
+/* A thread's steps through the plan, in outline order; the step names carry the order. */
+.thread-steps {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding-left: 1.6rem;
+  display: grid;
+  gap: 0.2rem;
+  font-family: var(--font-ui);
+  font-size: 0.88rem;
+}
+.thread-step-name {
+  display: inline-block;
+  min-width: 6.5rem;
+  color: var(--ink-3);
+  font-weight: 560;
+}
+
 /* What must be true around a planned scene, each with whether it holds now. */
 .plan-conditions {
   list-style: none;
@@ -2841,6 +2880,31 @@ input.when-number,
 }
 .context-section { margin-top: 0.6rem; }
 
+/* Comparing with the context a kept draft was written from. The mark says the kind of
+   change in a word, not by colour alone; a quiet rule on the left groups each kind. */
+.context-compare {
+  padding: 0.8rem 1rem;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-m);
+}
+.context-compare .field select { max-width: 26rem; }
+.compare-mark {
+  display: inline-block;
+  font-family: var(--font-ui);
+  font-size: 0.74rem;
+  font-weight: 640;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.compare-added .compare-mark { color: var(--ok); }
+.compare-removed .compare-mark { color: var(--accent); }
+.compare-removed .context-text { color: var(--ink-2); }
+.context-row .context-was {
+  display: block;
+  margin-top: 0.15rem;
+}
+
 /* ------------------------------------------------------- the scene studio --- */
 /* The page being written is the focal point: set like a page of the book, with the
    checks in the margin beside it, as an editor's pencil notes would be. */
@@ -3039,6 +3103,55 @@ input.when-number,
 
 .finding-suggestion {
   color: var(--ink-2);
+}
+
+/* Dismissing a margin note: a quiet link under it, then a short form in place. */
+.finding-dismiss {
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  color: var(--ink-2);
+  min-height: 24px;
+}
+
+.dismiss-form {
+  justify-self: stretch;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+}
+
+.dismiss-form .segmented {
+  flex-wrap: wrap;
+  justify-self: start;
+}
+
+/* Warn or block, on each story rule: the two choices sit together, not stretched. */
+.rule-enforcement .segmented {
+  justify-self: start;
+}
+
+.just-dismissed {
+  font-family: var(--font-ui);
+  color: var(--ink-2);
+}
+
+.dismiss-form .segmented button {
+  padding: 0.2rem 0.65rem;
+}
+
+.dismiss-form select,
+.dismiss-form input {
+  width: 100%;
+}
+
+/* What was dismissed: the same note, its rule dashed, so it reads as set aside. */
+details.dismissed .findings {
+  margin-top: 0.25rem;
+}
+
+.finding.dismissed {
+  border-left-style: dashed;
 }
 
 .studio-versions td:last-child {

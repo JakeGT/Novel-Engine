@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
-import { api, type CanonEntity, type PlanItem, type PlanKind, type PlanRef } from '../api/client'
+import { api, type CanonEntity, type PlanItem, type PlanKind, type PlanRef, type SceneIntent } from '../api/client'
 import { parseRows, toRows, type AttributeRow } from '../attributes'
+import { OUTCOMES } from '../lib/plan'
 import { planKindLabel, typeLabel } from '../lib/words'
 import { useCanonWrite, useProject } from '../project'
 import { Button, Field, WriteProblem } from './ui'
@@ -97,6 +98,10 @@ export function PlanItemForm({ item, kind, parentId, entries, threads, onSaved, 
   const [about, setAbout] = useState(refsAs('about'))
   const [setsUp, setSetsUp] = useState(item?.sets_up ?? [])
   const [paysOff, setPaysOff] = useState(item?.pays_off ?? [])
+  const [advances, setAdvances] = useState(item?.advances ?? [])
+  const [goal, setGoal] = useState(item?.intent?.goal ?? '')
+  const [obstacle, setObstacle] = useState(item?.intent?.obstacle ?? '')
+  const [outcome, setOutcome] = useState<string>(item?.intent?.outcome ?? '')
   const [rows, setRows] = useState<AttributeRow[]>(toRows(item?.details))
   const [problems, setProblems] = useState<Record<string, string>>({})
 
@@ -123,13 +128,22 @@ export function PlanItemForm({ item, kind, parentId, entries, threads, onSaved, 
 
   const write = useCanonWrite<PlanItem>((expectedRevision) => {
     const { refs, details } = collect()
+    const intent: SceneIntent = {
+      goal: goal.trim(),
+      obstacle: obstacle.trim(),
+      outcome: (outcome || null) as SceneIntent['outcome'],
+    }
+    const decided = Boolean(intent.goal || intent.obstacle || intent.outcome)
     const fields = {
       title: title.trim(),
       summary: summary.trim(),
       refs,
       sets_up: carriesThreads ? setsUp : [],
       pays_off: carriesThreads ? paysOff : [],
+      advances: carriesThreads ? advances : [],
       details,
+      // Only a scene has one; an empty one clears what was there.
+      ...(scene && (item || decided) ? { intent } : {}),
     }
     return item
       ? api.changePlanItem(scope, item.id, { ...fields, expected_revision: expectedRevision })
@@ -145,7 +159,9 @@ export function PlanItemForm({ item, kind, parentId, entries, threads, onSaved, 
   }
   const setRow = (index: number, patch: Partial<AttributeRow>) =>
     setRows((list) => list.map((row, i) => (i === index ? { ...row, ...patch } : row)))
-  const threadOptions = threads.map((thread) => ({ id: thread.id, label: thread.title }))
+  // A thread is opened, moved along or resolved here: one of the three, never two.
+  const threadOptions = (except: string[]) =>
+    threads.filter((thread) => !except.includes(thread.id)).map((thread) => ({ id: thread.id, label: thread.title }))
   const kindName = planKindLabel(kind).toLowerCase()
 
   return (
@@ -203,19 +219,64 @@ export function PlanItemForm({ item, kind, parentId, entries, threads, onSaved, 
           onChange={setAbout}
         />
       )}
+      {scene && (
+        <fieldset className="stack tight scene-intent">
+          <legend>What the viewpoint character wants here (optional)</legend>
+          <div className="grid-2">
+            <Field label="Wants" hint="Their goal in this scene.">
+              {(props) => (
+                <input {...props} value={goal} maxLength={400} autoComplete="off" onChange={(event) => setGoal(event.target.value)} />
+              )}
+            </Field>
+            <Field label="In the way" hint="Who or what stands against it.">
+              {(props) => (
+                <input
+                  {...props}
+                  value={obstacle}
+                  maxLength={400}
+                  autoComplete="off"
+                  onChange={(event) => setObstacle(event.target.value)}
+                />
+              )}
+            </Field>
+          </div>
+          <Field
+            label="How it ends for them"
+            hint="“Yes, but” and “No, and” keep a story moving; a plain yes or no can let it stall."
+          >
+            {(props) => (
+              <select {...props} value={outcome} onChange={(event) => setOutcome(event.target.value)}>
+                <option value="">Not decided</option>
+                {OUTCOMES.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}: {option.hint}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
+        </fieldset>
+      )}
       {carriesThreads && threads.length > 0 && (
         <div className="grid-2">
           <PickSeveral
             label="Threads it opens (optional)"
             hint="A question raised or a promise made here."
-            options={threadOptions}
+            options={threadOptions(advances)}
             chosen={setsUp}
             onChange={setSetsUp}
           />
           <PickSeveral
+            label="Threads it moves along (optional)"
+            hint="A clue, a doubt or a promise renewed, between opening and resolving."
+            options={threadOptions([...setsUp, ...paysOff])}
+            chosen={advances}
+            onChange={setAdvances}
+          />
+          <PickSeveral
             label="Threads it resolves (optional)"
             hint="A question answered or a promise kept here."
-            options={threadOptions}
+            options={threadOptions(advances)}
             chosen={paysOff}
             onChange={setPaysOff}
           />

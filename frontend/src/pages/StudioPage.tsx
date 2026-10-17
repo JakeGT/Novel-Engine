@@ -4,8 +4,6 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import {
   api,
   isApiError,
-  type AssistantNote,
-  type DraftCheck,
   type SceneDraft,
   type SceneReading,
   type SceneVersion,
@@ -13,10 +11,10 @@ import {
   type StudioJob,
 } from '../api/client'
 import { SceneContextDialog } from '../components/SceneContext'
+import { Checks, Notes } from '../components/StudioFindings'
 import { DraftForm, JobOutcome, JobProgress } from '../components/StudioWork'
 import { VoiceDialog } from '../components/VoiceDialog'
 import {
-  Badge,
   Button,
   ConfirmDialog,
   Dialog,
@@ -27,7 +25,6 @@ import {
 import {
   DEFAULT_CHOICES,
   eitherOf,
-  excerpt,
   forgetUnsaved,
   isFinished,
   isPlanJob,
@@ -36,13 +33,11 @@ import {
   locate,
   missingFromCard,
   newRequestKey,
-  NOTE_KINDS,
-  orderChecks,
-  orderNotes,
   parseAt,
   planCardProposal,
   readUnsaved,
   reviewPath,
+  useDismissals,
   useSuggestedChanges,
   scrollAreaTo,
   type DraftChoices,
@@ -94,6 +89,9 @@ export function StudioPage() {
   const [contextOpen, setContextOpen] = useState(false)
   const [notice, setNotice] = useState<ReactNode>(null)
   const area = useRef<HTMLTextAreaElement>(null)
+  // Dismissing a check or a note with a reason; each list keeps its own outcome.
+  const checkDismissals = useDismissals(planId)
+  const noteDismissals = useDismissals(planId)
 
   // Opened from a change under review ("See it in the scene"): the passage it came from,
   // in the version it was read from, is found in the text as it is now and selected.
@@ -604,6 +602,7 @@ export function StudioPage() {
               onShow={onShow}
               stale={!shown && dirty}
               empty={!shown && nothingSaved}
+              dismissals={canWrite ? checkDismissals : null}
             />
             <Notes
               notes={target.notes}
@@ -611,6 +610,7 @@ export function StudioPage() {
               point={point}
               onShow={onShow}
               stale={!shown && dirty}
+              dismissals={canWrite ? noteDismissals : null}
               action={
                 canWrite ? (
                   <div className="stack tight">
@@ -773,112 +773,6 @@ function StoryReading({
             )}
           </p>
         </div>
-      )}
-      {action}
-    </section>
-  )
-}
-
-type Point = (start?: number | null, end?: number | null) => Span | null | undefined
-
-/** Where a note points: a quotation and a way to go to it, or why it can no longer be found. */
-function Passage({ text, span, onShow }: { text: string; span: Span | null | undefined; onShow: (span: Span) => void }) {
-  if (span === undefined) return null
-  if (span === null) return <p className="hint">The passage it was about has changed since.</p>
-  return (
-    <p className="finding-passage">
-      <q>{excerpt(text, span)}</q>{' '}
-      <button type="button" className="link-button" onClick={() => onShow(span)}>
-        Show in the text
-      </button>
-    </p>
-  )
-}
-
-function Checks({
-  checks,
-  text,
-  point,
-  onShow,
-  stale,
-  empty,
-}: {
-  checks: DraftCheck[]
-  text: string
-  point: Point
-  onShow: (span: Span) => void
-  stale: boolean
-  empty: boolean
-}) {
-  const ordered = orderChecks(checks)
-  return (
-    <section className="stack tight" aria-labelledby="checks-heading">
-      <div>
-        <h2 id="checks-heading" className="studio-side-title">
-          Checks
-        </h2>
-        <p className="hint">Against your story bible and plan, every time the text changes. No assistant needed.</p>
-      </div>
-      {stale && <p className="hint">These are about the saved text. Save to check again.</p>}
-      {empty ? (
-        <p className="muted small">Nothing to check until there are some words.</p>
-      ) : ordered.length === 0 ? (
-        <p className="muted small">Nothing to point out.</p>
-      ) : (
-        <ul className="findings">
-          {ordered.map((check, index) => (
-            <li key={`${check.code}-${index}`} className={`finding ${check.severity}`}>
-              <Badge tone={check.severity === 'warning' ? 'warn' : 'neutral'}>
-                {check.severity === 'warning' ? 'Worth checking' : 'Note'}
-              </Badge>
-              <p>{check.message}</p>
-              <Passage text={text} span={point(check.start, check.end)} onShow={onShow} />
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  )
-}
-
-function Notes({
-  notes,
-  text,
-  point,
-  onShow,
-  stale,
-  action,
-}: {
-  notes: AssistantNote[]
-  text: string
-  point: Point
-  onShow: (span: Span) => void
-  stale: boolean
-  action: ReactNode
-}) {
-  return (
-    <section className="stack tight" aria-labelledby="notes-heading">
-      <div>
-        <h2 id="notes-heading" className="studio-side-title">
-          The assistant’s notes
-        </h2>
-        <p className="hint">
-          Only when you ask. It reads for continuity, viewpoint, the plan, your voice and clarity,
-          and every note quotes your words.
-        </p>
-      </div>
-      {stale && notes.length > 0 && <p className="hint">These are about the saved text.</p>}
-      {notes.length > 0 && (
-        <ul className="findings">
-          {orderNotes(notes).map((note) => (
-            <li key={note.id} className="finding assistant">
-              <Badge tone="info">{NOTE_KINDS[note.category] ?? 'Note'}</Badge>
-              <p>{note.message}</p>
-              {note.suggestion && <p className="small finding-suggestion">Suggestion: {note.suggestion}</p>}
-              <Passage text={text} span={point(note.start, note.end)} onShow={onShow} />
-            </li>
-          ))}
-        </ul>
       )}
       {action}
     </section>

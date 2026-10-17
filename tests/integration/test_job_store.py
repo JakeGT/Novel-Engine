@@ -191,7 +191,9 @@ async def test_a_heartbeat_renews_the_lease_records_progress_and_says_when_to_st
     now = await store.get(workspace_id=WS, project_id=PR, job_id="job_1")
     assert len(now.stage) == 120 and now.progress == 100
 
-    await store.add_usage(job, owner="worker_a", prompt_tokens=100, completion_tokens=20)
+    await store.add_usage(
+        job, owner="worker_a", prompt_tokens=100, completion_tokens=20, cached_prompt_tokens=64
+    )
     await store.add_usage(job, owner="worker_a", prompt_tokens=5, completion_tokens=1)
     cancelled = await store.request_cancel(workspace_id=WS, project_id=PR, job_id="job_1")
     # A running job is not ended by the request; it stops at its next step.
@@ -201,6 +203,8 @@ async def test_a_heartbeat_renews_the_lease_records_progress_and_says_when_to_st
     ended = await store.finish(job, owner="worker_a", status=JobStatus.CANCELLED)
     assert ended.status is JobStatus.CANCELLED and ended.progress == 50
     assert (ended.prompt_tokens, ended.completion_tokens) == (105, 21)
+    # Of the prompt, what the provider read from its cache (CTX-015).
+    assert ended.cached_prompt_tokens == 64
     assert await _lease(factory, "job_1") == (None, False)
 
 
@@ -363,3 +367,21 @@ async def test_the_drafts_one_job_made_are_found_by_job(stack) -> None:
     found = await studio.drafts_for_job(workspace_id=WS, project_id=PR, job_id="job_1")
     assert [(d.id, d.number) for d in found] == [("d1", 1), ("d2", 2)]
     assert await studio.drafts_for_job(workspace_id="ws_x", project_id=PR, job_id="job_1") == []
+
+
+@pytest.mark.asyncio
+async def test_waiting_counts_queued_jobs_and_the_oldest_wait(stack) -> None:
+    store, factory = stack
+    assert await store.waiting() == (0, None)
+    await store.create(_job("job_w1"))
+    await store.create(_job("job_w2"))
+    async with session_scope(factory) as db:
+        await db.execute(
+            text("UPDATE jobs SET created_at = now() - interval '10 minutes' WHERE id = 'job_w1'")
+        )
+    count, oldest = await store.waiting()
+    assert count == 2 and oldest is not None and 590 <= oldest <= 700
+    # A job under way is no longer waiting.
+    await store.claim(owner="worker_a")
+    count, oldest = await store.waiting()
+    assert count == 1 and oldest is not None and oldest < 60

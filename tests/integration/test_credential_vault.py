@@ -76,7 +76,9 @@ async def test_usage_store_totals_and_idempotency(session_factory) -> None:
     store = PostgresProviderUsageStore(factory)
     now = datetime.now(UTC)
 
-    for index, (prompt, completion, cost) in enumerate([(10, 5, 0.01), (20, 0, 0.02)]):
+    for index, (prompt, completion, cost, cached) in enumerate(
+        [(10, 5, 0.01, 8), (20, 0, 0.02, 0)]
+    ):
         await store.record(
             UsageRecord(
                 id=f"u{index}",
@@ -87,6 +89,7 @@ async def test_usage_store_totals_and_idempotency(session_factory) -> None:
                 requested_route="chat",
                 prompt_tokens=prompt,
                 completion_tokens=completion,
+                cached_prompt_tokens=cached,
                 provider_cost_usd=cost,
                 idempotency_key=f"j{index}",
                 created_at=now,
@@ -98,6 +101,8 @@ async def test_usage_store_totals_and_idempotency(session_factory) -> None:
     )
     assert totals.request_count == 2
     assert totals.total_tokens == 35
+    # Cached prompt tokens are part of the prompt, never added to the total (CTX-015).
+    assert totals.cached_prompt_tokens == 8
     assert await store.has_idempotency_key(idempotency_key="j0") is True
     assert await store.has_idempotency_key(idempotency_key="missing") is False
     job = await store.totals_for_job(idempotency_key="j0")

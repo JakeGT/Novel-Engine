@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -10,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import get_container
 from backend.container import Container
+from backend.domain.dismissals import MAX_NOTE, DismissReason, FindingDismissal
 from backend.domain.drafting import DraftFinding, word_count
 from backend.domain.identity import AccessScope
 from backend.domain.jobs import Job
@@ -49,12 +51,27 @@ async def _answer(
     return _model(state, status)
 
 
+class DismissalModel(BaseModel):
+    """The author dismissed this finding, and why (CON-010, CON-016)."""
+
+    id: str
+    reason: DismissReason
+    # The author's own words, when the reason is theirs.
+    note: str = ""
+    # None: dismissed until the words it points at change.
+    expires_at: datetime | None = None
+    created_at: datetime
+
+
 class CheckModel(BaseModel):
     code: str
     severity: str
     message: str
     start: int | None = None
     end: int | None = None
+    # Names this finding when dismissing it; the same finding on the same words keeps it.
+    key: str = ""
+    dismissal: DismissalModel | None = None
 
 
 class AssistantNoteModel(BaseModel):
@@ -64,6 +81,17 @@ class AssistantNoteModel(BaseModel):
     suggestion: str
     start: int | None = None
     end: int | None = None
+    key: str = ""
+    dismissal: DismissalModel | None = None
+
+
+class DismissRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    key: str = Field(min_length=64, max_length=64)
+    reason: DismissReason
+    note: str = Field(default="", max_length=MAX_NOTE)
+    # How long it stays dismissed; none means until the words change.
+    days: Literal[7, 30] | None = None
 
 
 class VersionModel(BaseModel):
@@ -101,6 +129,8 @@ class JobModel(BaseModel):
     cancel_requested: bool
     prompt_tokens: int
     completion_tokens: int
+    # Of the prompt tokens, those the provider read back from its cache.
+    cached_prompt_tokens: int = 0
     result: dict
     created_at: datetime
     finished_at: datetime | None = None
@@ -170,17 +200,35 @@ class VoiceModel(BaseModel):
     notes: str = Field(default="", max_length=MAX_VOICE)
 
 
-def _check(finding: DraftFinding) -> CheckModel:
+def _dismissal(found: FindingDismissal | None) -> DismissalModel | None:
+    if found is None:
+        return None
+    return DismissalModel(
+        id=found.id,
+        reason=found.reason,
+        note=found.note,
+        expires_at=found.expires_at,
+        created_at=found.created_at,
+    )
+
+
+def _check(
+    finding: DraftFinding, key: str = "", dismissal: FindingDismissal | None = None
+) -> CheckModel:
     return CheckModel(
         code=finding.code,
         severity=finding.severity.value,
         message=finding.message,
         start=finding.start,
         end=finding.end,
+        key=key,
+        dismissal=_dismissal(dismissal),
     )
 
 
-def _note(finding: AssistantFinding) -> AssistantNoteModel:
+def _note(
+    finding: AssistantFinding, key: str = "", dismissal: FindingDismissal | None = None
+) -> AssistantNoteModel:
     return AssistantNoteModel(
         id=finding.id,
         category=finding.category,
@@ -188,7 +236,25 @@ def _note(finding: AssistantFinding) -> AssistantNoteModel:
         suggestion=finding.suggestion,
         start=finding.start,
         end=finding.end,
+        key=key,
+        dismissal=_dismissal(dismissal),
     )
+
+
+def _checks(findings: list[DraftFinding], keys: list[str], state: StudioState) -> list[CheckModel]:
+    return [
+        _check(f, key, state.dismissals.get(key))
+        for f, key in zip(findings, keys or [""] * len(findings), strict=False)
+    ]
+
+
+def _notes(
+    findings: list[AssistantFinding], keys: list[str], state: StudioState
+) -> list[AssistantNoteModel]:
+    return [
+        _note(f, key, state.dismissals.get(key))
+        for f, key in zip(findings, keys or [""] * len(findings), strict=False)
+    ]
 
 
 def _version(version: SourceVersion) -> VersionModel:
@@ -216,6 +282,7 @@ def _job(job: Job) -> JobModel:
         cancel_requested=job.cancel_requested,
         prompt_tokens=job.prompt_tokens,
         completion_tokens=job.completion_tokens,
+        cached_prompt_tokens=job.cached_prompt_tokens,
         result=job.result,
         created_at=job.created_at,
         finished_at=job.finished_at,
@@ -232,8 +299,12 @@ def _draft(draft: SceneDraft, state: StudioState) -> DraftModel:
         content=draft.content,
         words=word_count(draft.content),
         created_at=draft.created_at,
-        checks=[_check(f) for f in state.draft_checks.get(draft.id, [])],
-        assistant=[_note(f) for f in state.draft_assistant.get(draft.id, [])],
+        checks=_checks(
+            state.draft_checks.get(draft.id, []), state.draft_check_keys.get(draft.id, []), state
+        ),
+        assistant=_notes(
+            state.draft_assistant.get(draft.id, []), state.draft_note_keys.get(draft.id, []), state
+        ),
     )
 
 
@@ -260,8 +331,8 @@ def _model(state: StudioState, reading: ReadingStatus) -> StudioModel:
         content=content,
         words=word_count(content),
         versions=[_version(v) for v in reversed(state.versions)],
-        checks=[_check(f) for f in state.checks],
-        assistant=[_note(f) for f in state.assistant],
+        checks=_checks(state.checks, state.check_keys, state),
+        assistant=_notes(state.assistant, state.note_keys, state),
         drafts=[_draft(d, state) for d in state.drafts],
         jobs=[_job(j) for j in state.jobs],
         reading=_reading(reading),
@@ -296,6 +367,45 @@ async def save_text(
         plan_id,
         content=body.content,
         base_version_id=body.base_version_id,
+    )
+    return await _answer(state, reading, scope.workspace_id or "", project_id)
+
+
+@router.post("/plan/{plan_id}/studio/dismissals")
+async def dismiss_finding(
+    project_id: str,
+    plan_id: str,
+    body: DismissRequest,
+    scope: AccessScope = Depends(require_project_scope),
+    service: StudioService = Depends(get_studio),
+    reading: SceneReadingService = Depends(get_reading),
+) -> StudioModel:
+    """Dismiss a check or a note on this scene with a reason. The text is not changed."""
+    state = await service.dismiss(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        plan_id,
+        key=body.key,
+        reason=body.reason,
+        note=body.note,
+        days=body.days,
+    )
+    return await _answer(state, reading, scope.workspace_id or "", project_id)
+
+
+@router.delete("/plan/{plan_id}/studio/dismissals/{dismissal_id}")
+async def undo_dismissal(
+    project_id: str,
+    plan_id: str,
+    dismissal_id: str,
+    scope: AccessScope = Depends(require_project_scope),
+    service: StudioService = Depends(get_studio),
+    reading: SceneReadingService = Depends(get_reading),
+) -> StudioModel:
+    """Bring a dismissed finding back."""
+    state = await service.undo_dismissal(
+        scope, scope.workspace_id or "", project_id, plan_id, dismissal_id
     )
     return await _answer(state, reading, scope.workspace_id or "", project_id)
 

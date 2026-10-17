@@ -7,7 +7,7 @@ what remains. Read `AGENTS.md` first (the operating contract) and the plans unde
 - Repo: `https://github.com/JakeGT/Novel-Engine`
 - Branch: `phase-2-closure`, local only (not pushed). It branches from `main` at `827a9c2` and holds
   the Phase 2 closure work as a series of commits; `main` and `origin/main` are unchanged.
-- Date: 2026-10-09
+- Date: 2026-10-17 (Phases 3–7 sections at the end)
 
 ---
 
@@ -252,10 +252,12 @@ then `pnpm --dir frontend run gen:api`.
 
 ## 10. Data & migrations
 
-- Alembic (PostgreSQL) head: **`0032_story_time`** (… → `0022_archive_imports` →
+- Alembic (PostgreSQL) head: **`0037_finding_decisions`** (… → `0022_archive_imports` →
   `0023_session_id_token` → `0024_assist_sessions` → `0025_workspace_ai_settings` →
   `0026_assist_suggestions` → `0027_usage_allowance` → `0028_plan_items` →
-  `0029_plan_conversations` → `0030_source_texts` → `0031_story_rules` → `0032_story_time`).
+  `0029_plan_conversations` → `0030_source_texts` → `0031_story_rules` → `0032_story_time` →
+  `0033_context` → `0034_scene_studio` → `0035_scene_readings` → `0036_cached_tokens` →
+  `0037_finding_decisions`).
 - Neo4j ordered migrations: `0001_initial_graph_schema`, `0002_entity_scope_identity`,
   `0003_canon_scope_identity`, `0004_canon_projection_labels` (checksums in
   `plan/phase-2-evidence.md`).
@@ -561,7 +563,7 @@ rule is data in a fixed vocabulary, never code.
   `python -m backend.devtools.intake_eval tests/fixtures/intake_eval/lantern_coast.json`.
 
 The assistant chain is now `… → PlanWorkflow → IntakeWorkflow → RuleWorkflow`; the container
-and tests construct `RuleWorkflow`. Alembic head is `0031_story_rules`.
+and tests construct `RuleWorkflow`. Alembic head was `0031_story_rules` at the end of Phase 2.7.
 
 `plan/phase-2.7-todo.md` has the state of each item and of the roadmap's exit criteria. Main
 things not done: blocking rules, rules about time or belief, name memory scoped by time or
@@ -659,4 +661,37 @@ ADR-023 records the decisions; `plan/phase-6-todo.md` has the state. Alembic hea
   and plan cards.
 
 Not done: facts read from a scene do not take its story time.
+
+## After Phase 7: open release-one items, first batch (2026-10-18)
+
+The backlog's status lines were audited against the code on 2026-10-17 (`plan/10-backlog.md`).
+This batch built items that need no model; their status lines say what is done and what is not.
+
+- **Retention** (OPS-005): `make retention RETENTION_ARGS='--days 30 --dry-run'` deletes finished
+  jobs, unreferenced kept contexts and notes on old versions, never what the author kept.
+- **Readiness** (OPS-006): `/health/ready` is `ready`, `degraded` (200; the job worker, waiting work
+  or the search store) or `unavailable` (503; a required store). Watchers of the old `degraded` for a
+  required store must look for `unavailable`.
+- **Picture metadata** (AST-006): uploads lose EXIF/XMP/comments without decoding
+  (`backend/domain/image_metadata.py`); orientation is kept; unreadable files are refused.
+- **Cached tokens** (CTX-015, migration 0036): recorded on usage and jobs from each provider's
+  usage format; counted as part of the prompt, never added.
+- **Dismissing findings** (CON-010, CON-016, migration 0037): a studio check or note can be
+  dismissed with a reason, tied to the sentence it points at; it comes back when that changes.
+  Forked with what-ifs.
+- **Blocking rules** (CON-015): a rule can be set to block; it is evaluated inside the commit
+  transaction; only complete evaluation blocks (ADR-019 amendment).
+- **Archive v4** (CAN-010): what-ifs, conversations, scene readings and dismissals travel; v3 still
+  restores; a `left_out` list says what is not carried.
+- **Planning depth** (STY-002, STY-003, CTX-009): thread steps ("moves along"), a scene's want,
+  obstacle and outcome, and comparing today's context with a kept draft's (ADR-018/021 amendments).
+
+A read-only review of this batch found 1 high, 4 medium and 9 low issues; all were fixed with tests
+(blocking rules now compare every violation, not the first 200, and are fast inside the commit;
+approval checks the change's own line of the story; restores record each conversation and rule they
+write; malformed archives are refused in plain words; JPEG cleaning keeps only what a decoder needs;
+readiness numbers need the metrics token on a hosted site). Known limits: a restored what-if's
+rebuilt story is checked against the archive's checksums but not compared with its own journal
+(`canon_equivalence.verify` covers the main story only); removing a failed import also clears that
+story's studio work (waiting drafts, voice note, dismissals), as it did before for drafts.
 

@@ -10,6 +10,7 @@ from typing import Any
 from sqlalchemy import text
 
 from backend.core.database import session_scope
+from backend.domain.dismissals import DismissReason, FindingDismissal, FindingKind
 from backend.domain.studio import AssistantFinding, SceneDraft, SceneReading
 
 _DRAFT = (
@@ -53,6 +54,31 @@ def _finding(row: Any) -> AssistantFinding:
         start=row[7],
         end=row[8],
         created_at=row[9],
+    )
+
+
+_DISMISSAL = (
+    "SELECT workspace_id, project_id, branch_id, id, plan_id, fingerprint, kind, code, reason, "
+    "note, expires_at, created_by, created_at, withdrawn_at FROM finding_dismissals"
+)
+
+
+def _dismissal(row: Any) -> FindingDismissal:
+    return FindingDismissal(
+        workspace_id=row[0],
+        project_id=row[1],
+        branch_id=row[2],
+        id=row[3],
+        plan_id=row[4],
+        fingerprint=row[5],
+        kind=FindingKind(row[6]),
+        code=row[7],
+        reason=DismissReason(row[8]),
+        note=row[9],
+        expires_at=row[10],
+        created_by=row[11],
+        created_at=row[12],
+        withdrawn_at=row[13],
     )
 
 
@@ -390,6 +416,240 @@ class PostgresStudioStore:
             if reading.status == "complete":
                 return reading
         return None
+
+    # ------------------------------------------------------------- dismissals
+    async def dismissals(
+        self, *, workspace_id: str, project_id: str, branch_id: str, plan_id: str
+    ) -> list[FindingDismissal]:
+        """This scene's standing dismissals in one line of the story (expired ones included)."""
+        async with session_scope(self._session_factory) as db:
+            rows = (
+                await db.execute(
+                    text(
+                        _DISMISSAL + " WHERE workspace_id = :w AND project_id = :p "
+                        "AND branch_id = :b AND plan_id = :plan AND withdrawn_at IS NULL "
+                        "ORDER BY created_at, id"
+                    ),
+                    {"w": workspace_id, "p": project_id, "b": branch_id, "plan": plan_id},
+                )
+            ).all()
+        return [_dismissal(row) for row in rows]
+
+    async def add_dismissal(self, dismissal: FindingDismissal) -> None:
+        """Keep a dismissal; one already standing for the same finding gives way to it."""
+        async with session_scope(self._session_factory) as db:
+            # Two dismissals of the same finding at once take turns, so the second replaces
+            # the first rather than tripping over the one-standing-dismissal index.
+            await db.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+                {
+                    "key": "finding_dismissal\x1f"
+                    + "\x1f".join(
+                        (
+                            dismissal.workspace_id,
+                            dismissal.project_id,
+                            dismissal.branch_id,
+                            dismissal.plan_id,
+                            dismissal.fingerprint,
+                        )
+                    )
+                },
+            )
+            await db.execute(
+                text(
+                    "UPDATE finding_dismissals SET withdrawn_at = :at WHERE workspace_id = :w "
+                    "AND project_id = :p AND branch_id = :b AND plan_id = :plan "
+                    "AND fingerprint = :f AND withdrawn_at IS NULL"
+                ),
+                {
+                    "w": dismissal.workspace_id,
+                    "p": dismissal.project_id,
+                    "b": dismissal.branch_id,
+                    "plan": dismissal.plan_id,
+                    "f": dismissal.fingerprint,
+                    "at": dismissal.created_at,
+                },
+            )
+            await db.execute(
+                text(
+                    "INSERT INTO finding_dismissals (workspace_id, project_id, branch_id, id, "
+                    "plan_id, fingerprint, kind, code, reason, note, expires_at, created_by, "
+                    "created_at) VALUES (:w, :p, :b, :id, :plan, :f, :kind, :code, :reason, "
+                    ":note, :expires, :by, :at)"
+                ),
+                {
+                    "w": dismissal.workspace_id,
+                    "p": dismissal.project_id,
+                    "b": dismissal.branch_id,
+                    "id": dismissal.id,
+                    "plan": dismissal.plan_id,
+                    "f": dismissal.fingerprint,
+                    "kind": dismissal.kind.value,
+                    "code": dismissal.code,
+                    "reason": dismissal.reason.value,
+                    "note": dismissal.note,
+                    "expires": dismissal.expires_at,
+                    "by": dismissal.created_by,
+                    "at": dismissal.created_at,
+                },
+            )
+
+    async def withdraw_dismissal(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        branch_id: str,
+        plan_id: str,
+        dismissal_id: str,
+        at: Any,
+    ) -> bool:
+        """Undo a dismissal. The record stays, marked withdrawn."""
+        async with session_scope(self._session_factory) as db:
+            result = await db.execute(
+                text(
+                    "UPDATE finding_dismissals SET withdrawn_at = :at WHERE workspace_id = :w "
+                    "AND project_id = :p AND branch_id = :b AND plan_id = :plan AND id = :id "
+                    "AND withdrawn_at IS NULL"
+                ),
+                {
+                    "w": workspace_id,
+                    "p": project_id,
+                    "b": branch_id,
+                    "plan": plan_id,
+                    "id": dismissal_id,
+                    "at": at,
+                },
+            )
+            return bool(result.rowcount)  # type: ignore[attr-defined]
+
+    async def readings_in(
+        self, *, workspace_id: str, project_id: str, branch_id: str
+    ) -> list[SceneReading]:
+        """Every reading in one line of the story, oldest first (for the project archive)."""
+        async with session_scope(self._session_factory) as db:
+            rows = (
+                await db.execute(
+                    text(
+                        "SELECT workspace_id, project_id, branch_id, id, plan_id, source_id, "
+                        "version_id, job_id, passages, proposals, discarded, created_by, "
+                        "created_at, status, covered, base_reading_id FROM scene_readings "
+                        "WHERE workspace_id = :w AND project_id = :p AND branch_id = :b "
+                        "ORDER BY created_at, id"
+                    ),
+                    {"w": workspace_id, "p": project_id, "b": branch_id},
+                )
+            ).all()
+        found = []
+        for row in rows:
+            proposals = row[9] if isinstance(row[9], list) else json.loads(row[9] or "[]")
+            covered = row[14] if isinstance(row[14], list) else json.loads(row[14] or "[]")
+            found.append(
+                SceneReading(
+                    workspace_id=row[0],
+                    project_id=row[1],
+                    branch_id=row[2],
+                    id=row[3],
+                    plan_id=row[4],
+                    source_id=row[5],
+                    version_id=row[6],
+                    job_id=row[7],
+                    passages=int(row[8]),
+                    proposals=tuple(proposals),
+                    discarded=int(row[10]),
+                    created_by=row[11],
+                    created_at=row[12],
+                    status=row[13],
+                    covered=tuple((int(a), int(b)) for a, b in covered),
+                    base_reading_id=row[15],
+                )
+            )
+        return found
+
+    async def restore_reading(self, reading: SceneReading) -> bool:
+        """Bring back a reading from an archive, with its own time; one already there stays.
+
+        Returns whether it was added.
+        """
+        async with session_scope(self._session_factory) as db:
+            result = await db.execute(
+                text(
+                    "INSERT INTO scene_readings (workspace_id, project_id, branch_id, id, plan_id, "
+                    "source_id, version_id, job_id, passages, proposals, discarded, created_by, "
+                    "created_at, status, covered, base_reading_id) VALUES (:w, :p, :b, :id, :plan, "
+                    ":s, :v, :job, :n, CAST(:proposals AS JSONB), :discarded, :by, :at, :status, "
+                    "CAST(:covered AS JSONB), :base) "
+                    "ON CONFLICT (workspace_id, project_id, branch_id, id) DO NOTHING"
+                ),
+                {
+                    "w": reading.workspace_id,
+                    "p": reading.project_id,
+                    "b": reading.branch_id,
+                    "id": reading.id,
+                    "plan": reading.plan_id,
+                    "s": reading.source_id,
+                    "v": reading.version_id,
+                    "job": reading.job_id,
+                    "n": reading.passages,
+                    "proposals": json.dumps(list(reading.proposals)),
+                    "discarded": reading.discarded,
+                    "by": reading.created_by,
+                    "at": reading.created_at,
+                    "status": reading.status,
+                    "covered": json.dumps([list(span) for span in reading.covered]),
+                    "base": reading.base_reading_id,
+                },
+            )
+            return bool(result.rowcount)  # type: ignore[attr-defined]
+
+    async def dismissals_in(
+        self, *, workspace_id: str, project_id: str, branch_id: str
+    ) -> list[FindingDismissal]:
+        """Every dismissal in one line of the story, withdrawn ones too, oldest first
+        (for the project archive)."""
+        async with session_scope(self._session_factory) as db:
+            rows = (
+                await db.execute(
+                    text(
+                        _DISMISSAL + " WHERE workspace_id = :w AND project_id = :p "
+                        "AND branch_id = :b ORDER BY created_at, id"
+                    ),
+                    {"w": workspace_id, "p": project_id, "b": branch_id},
+                )
+            ).all()
+        return [_dismissal(row) for row in rows]
+
+    async def restore_dismissal(self, dismissal: FindingDismissal) -> bool:
+        """Bring back a dismissal from an archive exactly as it was; one already there stays.
+
+        Returns whether it was added.
+        """
+        async with session_scope(self._session_factory) as db:
+            result = await db.execute(
+                text(
+                    "INSERT INTO finding_dismissals (workspace_id, project_id, branch_id, id, "
+                    "plan_id, fingerprint, kind, code, reason, note, expires_at, created_by, "
+                    "created_at, withdrawn_at) VALUES (:w, :p, :b, :id, :plan, :f, :kind, :code, "
+                    ":reason, :note, :expires, :by, :at, :withdrawn) ON CONFLICT DO NOTHING"
+                ),
+                {
+                    "w": dismissal.workspace_id,
+                    "p": dismissal.project_id,
+                    "b": dismissal.branch_id,
+                    "id": dismissal.id,
+                    "plan": dismissal.plan_id,
+                    "f": dismissal.fingerprint,
+                    "kind": dismissal.kind.value,
+                    "code": dismissal.code,
+                    "reason": dismissal.reason.value,
+                    "note": dismissal.note,
+                    "expires": dismissal.expires_at,
+                    "by": dismissal.created_by,
+                    "at": dismissal.created_at,
+                    "withdrawn": dismissal.withdrawn_at,
+                },
+            )
+            return bool(result.rowcount)  # type: ignore[attr-defined]
 
     # ------------------------------------------------------------------ voice
     async def voice(self, *, workspace_id: str, project_id: str) -> str:

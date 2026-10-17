@@ -24,6 +24,8 @@ from backend.domain.scene_conditions import (
     plain_details,
     scene_conditions,
 )
+from backend.domain.scene_intent import SceneIntent, scene_intent
+from backend.domain.threads import thread_advances, thread_progress
 from backend.domain.worldtime import WorldTime
 from backend.services.plan_service import PlanService
 
@@ -50,7 +52,11 @@ class PlanItemModel(BaseModel):
     refs: list[PlanRefModel]
     sets_up: list[str]
     pays_off: list[str]
+    # Threads it moves along between their opening and their resolution.
+    advances: list[str] = Field(default_factory=list)
     details: dict[str, str]
+    # For a scene: what its viewpoint character wants, what stands in the way, how it ends.
+    intent: SceneIntent | None = None
     # For a scene: what must be true before it, and what it should leave true after it.
     conditions: list[SceneCondition]
     # For a scene: the facts it shows the reader, plainly or as a hint.
@@ -77,12 +83,26 @@ class ConditionStateModel(BaseModel):
     holds: bool | None
 
 
+class ThreadStepModel(BaseModel):
+    plan_id: str
+    # opens, advances or resolves.
+    step: str
+
+
+class ThreadProgressModel(BaseModel):
+    thread_id: str
+    # Where the thread opens, moves along and resolves, in outline order.
+    steps: list[ThreadStepModel]
+
+
 class OutlineModel(BaseModel):
     items: list[PlanItemModel]
     # What the plan still needs. Derived; a plan with gaps is still a valid plan.
     open: list[OpenItemModel]
     # Each scene's conditions checked against the story now. Derived; never blocks.
     conditions: list[ConditionStateModel]
+    # Each thread's steps through the plan. Derived.
+    threads: list[ThreadProgressModel] = Field(default_factory=list)
 
 
 class SetConditionsRequest(BaseModel):
@@ -117,7 +137,10 @@ class AddPlanItemRequest(BaseModel):
     refs: list[PlanRefModel] = Field(default_factory=list, max_length=40)
     sets_up: list[str] = Field(default_factory=list, max_length=20)
     pays_off: list[str] = Field(default_factory=list, max_length=20)
+    advances: list[str] = Field(default_factory=list, max_length=20)
     details: dict[str, str] = Field(default_factory=dict)
+    # For a scene only.
+    intent: SceneIntent | None = None
     expected_revision: int = Field(ge=0)
 
 
@@ -130,7 +153,10 @@ class ChangePlanItemRequest(BaseModel):
     refs: list[PlanRefModel] | None = Field(default=None, max_length=40)
     sets_up: list[str] | None = Field(default=None, max_length=20)
     pays_off: list[str] | None = Field(default=None, max_length=20)
+    advances: list[str] | None = Field(default=None, max_length=20)
     details: dict[str, str] | None = None
+    # For a scene only; an empty one clears it.
+    intent: SceneIntent | None = None
     expected_revision: int = Field(ge=0)
 
 
@@ -167,7 +193,9 @@ def _model(item: PlanItem) -> PlanItemModel:
         refs=[PlanRefModel(entity_id=ref.entity_id, role=ref.role) for ref in item.refs],
         sets_up=item.sets_up,
         pays_off=item.pays_off,
+        advances=thread_advances(item.details),
         details=plain_details(item.details),
+        intent=scene_intent(item.details),
         conditions=scene_conditions(item.details),
         reveals=scene_reveals(item.details),
         when=scene_time(item.details),  # type: ignore[arg-type]
@@ -200,6 +228,13 @@ async def get_outline(
                 plan_id=state.plan_id, when=state.when, reading=state.reading, holds=state.holds
             )
             for state in states
+        ],
+        threads=[
+            ThreadProgressModel(
+                thread_id=thread_id,
+                steps=[ThreadStepModel(plan_id=s.plan_id, step=s.step) for s in steps],
+            )
+            for thread_id, steps in sorted(thread_progress(items).items())
         ],
     )
 
@@ -290,6 +325,8 @@ async def add_plan_item(
         sets_up=body.sets_up,
         pays_off=body.pays_off,
         details=body.details,
+        advances=body.advances,
+        intent=body.intent,
         expected_revision=body.expected_revision,
     )
     response.headers["ETag"] = f'"{result.revision}"'
@@ -316,6 +353,8 @@ async def change_plan_item(
         sets_up=body.sets_up,
         pays_off=body.pays_off,
         details=body.details,
+        advances=body.advances,
+        intent=body.intent,
         expected_revision=body.expected_revision,
     )
     response.headers["ETag"] = f'"{result.revision}"'

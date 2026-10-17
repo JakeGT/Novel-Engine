@@ -21,7 +21,7 @@ help:
 	@echo "seed                Seed the deterministic reference world"
 	@echo "reset-dev           Reset development stores (guarded; refuses production)"
 	@echo "diagnostics         Print a redacted diagnostics/support bundle"
-	@echo "retention           Purge expired sessions, attempts, invitations, and rate-limit hits"
+	@echo "retention           Purge expired sign-ins and assistant leftovers (RETENTION_ARGS='--days 30 --dry-run')"
 	@echo "reconcile           Reconcile an interrupted canon commit by id"
 	@echo "project             Project committed canon into the graph (PROJECT_ARGS=--lag|--rebuild|--verify)"
 	@echo "watch               Drain the canonical outbox into the graph (WATCH_ARGS=--interval N|--rebuild)"
@@ -84,7 +84,7 @@ diagnostics:
 	uv run --locked python -m backend.devtools.diagnostics
 
 retention:
-	uv run --locked python -m backend.devtools.retention
+	uv run --locked python -m backend.devtools.retention $(RETENTION_ARGS)
 
 reconcile:
 	uv run --locked python -m backend.devtools.reconcile $(COMMIT)

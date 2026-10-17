@@ -340,6 +340,20 @@ class _RepositoryReader:
             workspace_id=self._workspace_id, project_id=self._project_id, entity_id=entity_id
         )
 
+    async def active_entities(self, limit: int) -> list[CanonEntity]:
+        return list(
+            await self._repository.list_entities(
+                workspace_id=self._workspace_id, project_id=self._project_id, limit=limit
+            )
+        )
+
+    async def asserted_facts(self, limit: int) -> list[Fact]:
+        return list(
+            await self._repository.list_facts(
+                workspace_id=self._workspace_id, project_id=self._project_id, limit=limit
+            )
+        )
+
 
 class MutationService:
     def __init__(
@@ -607,8 +621,21 @@ class MutationService:
         return sorted({version.record_id for version in versions} & touched)
 
     async def validate(self, scope: AccessScope, mutation_id: str) -> ValidationReport:
-        """Non-transactional preview. The commit revalidates authoritatively in-tx."""
+        """Non-transactional preview. The commit revalidates authoritatively in-tx.
+
+        Read in the change's own line of the story, whatever line the request came
+        from: a what-if's change is checked against the what-if.
+        """
         mutation = await self._require(scope, mutation_id, Permission.PROJECT_WRITE)
+        branch = await self._journal.get_branch(
+            workspace_id=mutation.workspace_id,
+            project_id=mutation.project_id,
+            branch_id=mutation.branch_id,
+        )
+        with working_in(None if branch is None or branch.is_root else branch.id):
+            return await self._validate(mutation, mutation_id)
+
+    async def _validate(self, mutation: MutationSet, mutation_id: str) -> ValidationReport:
         accepted = await self._effective(mutation_id)
         ordinals = [item.ordinal for item in accepted]
         operations = [parse_operation(item.payload) for item in accepted]
@@ -800,6 +827,15 @@ class MutationService:
                     )
                 )
             )
+        # A story rule the author set to block cannot be approved past (CON-015). The
+        # commit refuses it again inside its own transaction; this says so up front.
+        broken = [
+            issue.message
+            for issue in (await self.validate(scope, mutation_id)).issues
+            if issue.severity == "blocking" and issue.code.startswith("rule:")
+        ]
+        if broken:
+            raise DomainValidationError(" ".join(dict.fromkeys(broken)))
         await self._journal.record_decision(
             mutation_id=mutation_id,
             decision="approved",

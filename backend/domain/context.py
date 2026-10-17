@@ -147,6 +147,8 @@ class SavedManifest:
     manifest: dict[str, Any]
     created_by: str | None
     created_at: datetime
+    # The what-if it was made in, or None for the main story.
+    branch_id: str | None = None
 
 
 def clamp_budget(budget: int | None, policy: ContextPolicy) -> int:
@@ -209,6 +211,131 @@ def assemble(
     return manifest
 
 
+def text_digest(text: str) -> str:
+    """A short fingerprint of an item's words, so a change can be seen without keeping them."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def stored_manifest(manifest: ContextManifest, point_of_view: str | None) -> dict[str, Any]:
+    """What is kept of a manifest: every item, why it was given, and how to tell it changed.
+
+    The words of an item are kept too, except a passage of the author's writing: the
+    passage index never holds the author's words (ADR-021), and the manifest does not
+    either. A passage is told apart by its fingerprint and where it sits in its text.
+    """
+    return {
+        "items": [
+            {
+                "key": item.key,
+                "section": item.section.value,
+                "reason": item.reason,
+                "authority": item.authority,
+                "record_type": item.record_type,
+                "record_id": item.record_id,
+                "location": item.location,
+                "words": item.words,
+                "score": item.score,
+                "digest": text_digest(item.text),
+                **({} if item.authority == "writing" else {"text": item.text}),
+            }
+            for item in manifest.items
+        ],
+        "left_out": [
+            {"key": omission.item.key, "reason": omission.reason.value}
+            for omission in manifest.left_out
+        ],
+        "point_of_view": point_of_view,
+    }
+
+
+@dataclass(frozen=True)
+class KeptItem:
+    """An item as a kept manifest recorded it. ``text`` is None where words were not kept."""
+
+    key: str
+    section: ContextSection | None
+    reason: str
+    authority: str
+    words: int
+    text: str | None
+    digest: str | None
+
+
+@dataclass(frozen=True)
+class ChangedItem:
+    now: ContextItem
+    then: KeptItem
+    # What differs, in plain words: "the words", "why it is given", "where it sits".
+    what: list[str]
+
+
+@dataclass
+class ContextComparison:
+    """The context now against the context kept for a draft: what was added, removed, changed."""
+
+    kept: SavedManifest
+    now: ContextManifest
+    added: list[ContextItem] = field(default_factory=list)
+    # Given then, not now; with why it is left out now, if it is still found at all.
+    removed: list[tuple[KeptItem, Omission | None]] = field(default_factory=list)
+    changed: list[ChangedItem] = field(default_factory=list)
+    unchanged: int = 0
+    same: bool = False
+
+
+def _kept_item(raw: dict[str, Any]) -> KeptItem:
+    try:
+        section: ContextSection | None = ContextSection(str(raw.get("section", "")))
+    except ValueError:
+        section = None
+    return KeptItem(
+        key=str(raw.get("key", "")),
+        section=section,
+        reason=str(raw.get("reason", "")),
+        authority=str(raw.get("authority", "")),
+        words=int(raw.get("words") or 0),
+        text=raw.get("text") if isinstance(raw.get("text"), str) else None,
+        digest=raw.get("digest") if isinstance(raw.get("digest"), str) else None,
+    )
+
+
+def compare_contexts(current: ContextManifest, kept: SavedManifest) -> ContextComparison:
+    """Item by item, by key: a key stands for the same thing across requests.
+
+    A manifest kept before fingerprints were recorded can still tell an item was added,
+    removed, moved or re-explained, and a change of length; it cannot see a rewording
+    that kept the same number of words.
+    """
+    then = [_kept_item(raw) for raw in kept.manifest.get("items", []) if isinstance(raw, dict)]
+    then_by_key = {item.key: item for item in then}
+    now_by_key = {item.key: item for item in current.items}
+    left_now = {omission.item.key: omission for omission in current.left_out}
+    result = ContextComparison(kept=kept, now=current, same=current.checksum == kept.checksum)
+    for item in current.items:
+        before = then_by_key.get(item.key)
+        if before is None:
+            result.added.append(item)
+            continue
+        what: list[str] = []
+        if before.digest is not None:
+            if before.digest != text_digest(item.text):
+                what.append("the words")
+        elif before.words != item.words:
+            what.append("the words")
+        if before.section is not None and before.section is not item.section:
+            what.append("where it sits")
+        if before.reason and before.reason != item.reason:
+            what.append("why it is given")
+        if what:
+            result.changed.append(ChangedItem(now=item, then=before, what=what))
+        else:
+            result.unchanged += 1
+    for before in then:
+        if before.key not in now_by_key:
+            result.removed.append((before, left_now.get(before.key)))
+    return result
+
+
 def render(items: Iterable[ContextItem]) -> str:
     """The context as text, section by section, stable first. Deterministic."""
     lines: list[str] = []
@@ -226,6 +353,12 @@ def render(items: Iterable[ContextItem]) -> str:
 __all__ = [
     "SCENE_DRAFT_POLICY",
     "SETTINGS_KEY",
+    "ChangedItem",
+    "ContextComparison",
+    "KeptItem",
+    "compare_contexts",
+    "stored_manifest",
+    "text_digest",
     "ContextSettings",
     "context_settings",
     "with_context_settings",

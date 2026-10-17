@@ -2,11 +2,14 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import {
   api,
+  type ContextComparison,
   type ContextItem,
   type ContextSettings,
+  type KeptContext,
   type PlanItem,
   type SceneContext as SceneContextData,
 } from '../api/client'
+import { fullDate } from '../lib/time'
 import { plural } from '../lib/words'
 import { scopedKey, useCanonWrite, useEntries, useInvalidateProject, useProject } from '../project'
 import { Button, Dialog, ErrorNotice, Loading, WriteProblem } from './ui'
@@ -23,6 +26,160 @@ const LEFT_OUT: Record<string, string> = {
   excluded: 'You said not to use these',
   budget: 'No room within the length you chose',
   secret: 'Secrets the viewpoint character does not know',
+}
+
+// Why something given for a kept draft is not given now.
+const NOW_LEFT_OUT: Record<string, string> = {
+  excluded: 'You said not to use it',
+  budget: 'No room now within the length you chose',
+  secret: 'A secret the viewpoint character does not know, now left out',
+}
+
+const WHAT_CHANGED: Record<string, string> = {
+  words: 'its words',
+  section: 'where it sits',
+  reason: 'why it is given',
+}
+
+const keptLabel = (kept: KeptContext) =>
+  `Version ${kept.version_number}, kept ${fullDate(kept.kept_at)}`
+
+/**
+ * The context now against the one a kept draft was written from: what was added, what
+ * is no longer given and why, and what changed. Read only; nothing is sent or changed.
+ */
+export function ContextCompare({ scene }: { scene: PlanItem }) {
+  const { scope } = useProject()
+  const kept = useQuery({
+    queryKey: scopedKey(scope, 'scene-context-kept', scene.id),
+    queryFn: () => api.keptSceneContexts(scope, scene.id),
+  })
+  const [chosen, setChosen] = useState('')
+  const comparison = useQuery({
+    queryKey: scopedKey(scope, 'scene-context-compare', scene.id, chosen),
+    queryFn: () => api.compareSceneContext(scope, scene.id, chosen),
+    enabled: chosen !== '',
+  })
+  const versions = kept.data ?? []
+  if (kept.isPending) return null
+  if (kept.error) return <ErrorNotice error={kept.error} prefix="Could not find the kept drafts" />
+  if (versions.length === 0)
+    return (
+      <p className="muted small">
+        When you keep a draft of this scene, you can compare what the assistant used for it with
+        what it would use now.
+      </p>
+    )
+  const version = versions.find((item) => item.manifest_id === chosen)
+  return (
+    <section className="stack tight context-compare" aria-label="Compare with a kept draft">
+      <label className="field">
+        <span>Compare with what a kept draft was written from</span>
+        <select value={chosen} onChange={(event) => setChosen(event.target.value)}>
+          <option value="">Don’t compare</option>
+          {versions.map((item) => (
+            <option key={item.manifest_id} value={item.manifest_id}>
+              {keptLabel(item)}
+            </option>
+          ))}
+        </select>
+      </label>
+      {chosen && comparison.isPending && <Loading>Comparing…</Loading>}
+      <ErrorNotice error={comparison.error} prefix="Could not compare" />
+      {comparison.data && version && <ComparisonView data={comparison.data} version={version} />}
+    </section>
+  )
+}
+
+function ComparisonView({ data, version }: { data: ContextComparison; version: KeptContext }) {
+  const name = `version ${version.version_number}`
+  const counts = [
+    data.added.length && `${data.added.length} added`,
+    data.removed.length && `${data.removed.length} no longer given`,
+    data.changed.length && `${data.changed.length} changed`,
+  ].filter(Boolean)
+  return (
+    <div className="stack tight compare-result" aria-live="polite">
+      <p>
+        {data.same || counts.length === 0 ? (
+          <strong>Nothing has changed since {name} was drafted.</strong>
+        ) : (
+          <>
+            <strong>Since {name} was drafted: {counts.join(', ')}</strong>
+            {data.unchanged > 0 ? `; ${plural(data.unchanged, 'thing')} the same.` : '.'}
+          </>
+        )}{' '}
+        <span className="muted small">
+          About {data.words_then.toLocaleString()} words then, {data.words_now.toLocaleString()} now.
+        </span>
+      </p>
+      {data.rules_changed && (
+        <p className="muted small">The way the context is put together has changed since then too.</p>
+      )}
+      {data.added.length > 0 && (
+        <div className="stack tight">
+          <ul className="rows">
+            {data.added.map((item) => (
+              <li className="row context-row compare-added" key={item.key}>
+                <span className="grow">
+                  <span className="compare-mark">Added</span> <span className="context-text">{item.text}</span>
+                  <span className="muted small context-reason">
+                    {item.section_title} · {item.reason}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {data.removed.length > 0 && (
+        <div className="stack tight">
+          <ul className="rows">
+            {data.removed.map((item) => (
+              <li className="row context-row compare-removed" key={item.key}>
+                <span className="grow">
+                  <span className="compare-mark">Not given now</span>{' '}
+                  <span className="context-text">
+                    {item.text ?? item.now?.text ?? `A passage of your writing. ${item.reason}`}
+                  </span>
+                  <span className="muted small context-reason">
+                    {item.section_title ? `${item.section_title} · ` : ''}
+                    {item.left_out ? NOW_LEFT_OUT[item.left_out] : 'No longer in the story, or no longer about this scene'}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {data.changed.length > 0 && (
+        <div className="stack tight">
+          <ul className="rows">
+            {data.changed.map((change) => (
+              <li className="row context-row compare-changed" key={change.item.key}>
+                <span className="grow">
+                  <span className="compare-mark">Changed</span>{' '}
+                  <span className="context-text">{change.item.text}</span>
+                  {change.what.includes('words') && change.text_then && (
+                    <span className="small context-was">
+                      <span className="muted">Before: {change.text_then}</span>
+                    </span>
+                  )}
+                  <span className="muted small context-reason">
+                    What is different: {change.what.map((what) => WHAT_CHANGED[what] ?? what).join(', ')}
+                    {change.what.includes('reason') ? ` · was “${change.reason_then}”` : ''}
+                    {change.what.includes('section') && change.section_title_then
+                      ? ` · was under ${change.section_title_then}`
+                      : ''}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function sectionsOf(items: ContextItem[]): { title: string; items: ContextItem[] }[] {
@@ -174,6 +331,7 @@ export function SceneContextDialog({ scene, onClose }: { scene: PlanItem; onClos
               )}
             </div>
             <WriteProblem write={save} scope={scope} />
+            <ContextCompare scene={scene} />
 
             {data.index && (data.index.texts > 0 || data.index.behind.length > 0) && (
               <p className="notice plain small">

@@ -249,3 +249,123 @@ def test_every_provider_has_a_distinct_address_and_a_key_page() -> None:
         assert spec_for_base_url(spec.base_url.rstrip("/")) is spec
         assert provider_spec(spec.id) is spec
     assert spec_for_base_url("http://localhost:11434/v1") is None
+
+
+# --------------------------------------------------------- prompt tokens from the cache
+
+
+def test_cached_prompt_tokens_are_read_from_the_openai_usage_shape() -> None:
+    from openai.types.completion_usage import CompletionUsage, PromptTokensDetails
+
+    from backend.adapters.ai import usage_from
+
+    usage = usage_from(
+        CompletionUsage(
+            prompt_tokens=1200,
+            completion_tokens=300,
+            total_tokens=1500,
+            prompt_tokens_details=PromptTokensDetails(cached_tokens=1024),
+        )
+    )
+    assert (usage.prompt_tokens, usage.completion_tokens, usage.cached_prompt_tokens) == (
+        1200,
+        300,
+        1024,
+    )
+
+
+@pytest.mark.parametrize(
+    ("raw", "cached"),
+    [
+        # OpenRouter answers in the OpenAI shape, as a plain mapping here.
+        ({"prompt_tokens": 900, "prompt_tokens_details": {"cached_tokens": 512}}, 512),
+        # DeepSeek names its cache hits on the usage itself.
+        ({"prompt_tokens": 900, "prompt_cache_hit_tokens": 640}, 640),
+        # Anthropic's own shape.
+        ({"prompt_tokens": 900, "cache_read_input_tokens": 300}, 300),
+        # A provider that says nothing, or nonsense, counts as nothing from the cache.
+        ({"prompt_tokens": 900}, 0),
+        ({"prompt_tokens": 900, "prompt_tokens_details": {"cached_tokens": None}}, 0),
+        ({"prompt_tokens": 900, "prompt_tokens_details": {"cached_tokens": -4}}, 0),
+        # Never more than the prompt itself, even when the prompt is reported as nothing.
+        ({"prompt_tokens": 100, "prompt_tokens_details": {"cached_tokens": 512}}, 100),
+        ({"prompt_tokens": 0, "prompt_tokens_details": {"cached_tokens": 512}}, 0),
+        ({"prompt_cache_hit_tokens": 640}, 0),
+    ],
+)
+def test_cached_prompt_tokens_from_other_providers(raw: dict, cached: int) -> None:
+    from backend.adapters.ai import usage_from
+
+    assert usage_from(raw).cached_prompt_tokens == cached
+
+
+def test_anthropics_own_shape_counts_cache_reads_and_writes_in_the_prompt() -> None:
+    from backend.adapters.ai import usage_from
+
+    usage = usage_from(
+        {
+            "input_tokens": 50,
+            "output_tokens": 200,
+            "cache_read_input_tokens": 1000,
+            "cache_creation_input_tokens": 300,
+        }
+    )
+    assert (usage.prompt_tokens, usage.completion_tokens, usage.cached_prompt_tokens) == (
+        1350,
+        200,
+        1000,
+    )
+    # Without the cache fields it is simply its input and output.
+    plain = usage_from({"input_tokens": 40, "output_tokens": 7})
+    assert (plain.prompt_tokens, plain.completion_tokens, plain.cached_prompt_tokens) == (40, 7, 0)
+
+
+def test_cache_reads_kept_among_a_clients_extras_are_counted() -> None:
+    from openai.types.completion_usage import CompletionUsage
+
+    from backend.adapters.ai import usage_from
+
+    raw = CompletionUsage.model_validate(
+        {
+            "prompt_tokens": 900,
+            "completion_tokens": 10,
+            "total_tokens": 910,
+            "prompt_cache_hit_tokens": 640,
+        }
+    )
+    assert usage_from(raw).cached_prompt_tokens == 640
+
+
+def test_no_usage_reported_is_all_zero() -> None:
+    from backend.adapters.ai import usage_from
+
+    usage = usage_from(None)
+    assert (usage.prompt_tokens, usage.completion_tokens, usage.cached_prompt_tokens) == (0, 0, 0)
+
+
+@pytest.mark.asyncio
+async def test_a_structured_answer_carries_its_cached_tokens(monkeypatch) -> None:
+    gateway = OpenAIGateway(api_key="sk-platform", default_model="gpt-4o")
+
+    async def _parse(**kwargs: object) -> object:
+        return types.SimpleNamespace(
+            choices=[
+                types.SimpleNamespace(message=types.SimpleNamespace(parsed=_Schema(value="ok")))
+            ],
+            usage=types.SimpleNamespace(
+                prompt_tokens=2048,
+                completion_tokens=10,
+                prompt_tokens_details=types.SimpleNamespace(cached_tokens=1536),
+            ),
+        )
+
+    client = types.SimpleNamespace(
+        beta=types.SimpleNamespace(
+            chat=types.SimpleNamespace(completions=types.SimpleNamespace(parse=_parse))
+        )
+    )
+    monkeypatch.setattr(gateway, "_client", client)
+    response = await gateway.generate_structured(
+        messages=[{"role": "user", "content": "hi"}], response_format=_Schema
+    )
+    assert response.usage.cached_prompt_tokens == 1536

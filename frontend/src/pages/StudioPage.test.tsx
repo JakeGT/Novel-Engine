@@ -46,6 +46,7 @@ function job(overrides: Partial<StudioJob> = {}): StudioJob {
     cancel_requested: false,
     prompt_tokens: 0,
     completion_tokens: 0,
+    cached_prompt_tokens: 0,
     result: {},
     created_at: '2026-10-17T10:00:00Z',
     finished_at: null,
@@ -82,12 +83,13 @@ function studio(overrides: Partial<Studio> = {}): Studio {
       { id: 'ver_1', number: 1, words: 12, origin: 'author', created_at: '2026-10-16T09:00:00Z' },
     ],
     checks: [
-      { code: 'stock_phrase', severity: 'note', message: 'A phrase readers often meet: “the weight of”.', ...at('The weight of') },
-      { code: 'new_name', severity: 'warning', message: 'Tobin Ashe is not in your story bible yet.', ...at('Tobin Ashe') },
+      { code: 'stock_phrase', key: 'k_stock', severity: 'note', message: 'A phrase readers often meet: “the weight of”.', ...at('The weight of') },
+      { code: 'new_name', key: 'k_name', severity: 'warning', message: 'Tobin Ashe is not in your story bible yet.', ...at('Tobin Ashe') },
     ],
     assistant: [
       {
         id: 'fnd_1',
+        key: 'k_note',
         category: 'viewpoint',
         message: 'Ines could not see who waited from the stairs.',
         suggestion: 'Let her hear him first.',
@@ -268,7 +270,7 @@ describe('StudioPage', () => {
     const finished = studio({
       drafts: [
         draft(),
-        draft({ id: 'drf_2', number: 2, content: DRAFT_TWO, words: 7, checks: [{ code: 'place_missing', severity: 'warning', message: 'Kestrel Point is never mentioned.' }] }),
+        draft({ id: 'drf_2', number: 2, content: DRAFT_TWO, words: 7, checks: [{ code: 'place_missing', key: 'k_place', severity: 'warning', message: 'Kestrel Point is never mentioned.' }] }),
       ],
       jobs: [job({ status: 'succeeded', progress: 100, result: { drafts: 2 } })],
     })
@@ -647,11 +649,97 @@ describe('StudioPage', () => {
     })
   })
 
+  it('dismisses a check with a reason, lists it under Dismissed, and brings it back with Undo', async () => {
+    const before = studio()
+    const dismissal = { id: 'dis_1', reason: 'intended' as const, note: '', expires_at: null, created_at: '2026-10-17T10:00:00Z' }
+    const after = studio({
+      checks: before.checks.map((check) => (check.key === 'k_stock' ? { ...check, dismissal } : check)),
+    })
+    const api = mockApi({
+      ...base,
+      'GET /plan/pln_s/studio': before,
+      'POST /plan/pln_s/studio/dismissals': after,
+      'DELETE /plan/pln_s/studio/dismissals/dis_1': before,
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<StudioPage />, route)
+    const checks = (await screen.findByRole('heading', { name: 'Checks' })).closest('section') as HTMLElement
+
+    await user.click(within(checks).getByRole('button', { name: 'Dismiss: A phrase readers often meet: “the weight of”.' }))
+    const form = within(checks).getByRole('group', { name: 'Dismiss: A phrase readers often meet: “the weight of”.' })
+    // The common answer is chosen already; how long defaults to "until the words change".
+    expect(within(form).getByRole('button', { name: 'Intended' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(form).getByLabelText('How long')).toHaveValue('')
+    expect(form).toHaveTextContent('It comes back by itself if the words it points at change.')
+    await expectAccessible(container)
+
+    // Their own words are needed for "Other reason", and what was typed is kept.
+    await user.click(within(form).getByRole('button', { name: 'Other reason' }))
+    await user.click(within(form).getByRole('button', { name: 'Dismiss' }))
+    expect(within(form).getByRole('alert')).toHaveTextContent('Say in a few words why this is not a problem.')
+    expect(api.find('POST', '/plan/pln_s/studio/dismissals')).toHaveLength(0)
+    await user.click(within(form).getByRole('button', { name: 'Intended' }))
+    await user.click(within(form).getByRole('button', { name: 'Dismiss' }))
+    await waitFor(() =>
+      expect(api.find('POST', '/plan/pln_s/studio/dismissals')[0]?.body).toEqual({
+        key: 'k_stock',
+        reason: 'intended',
+        note: '',
+        days: null,
+      }),
+    )
+
+    // It leaves the list, says so with an Undo, and waits under Dismissed with its reason.
+    expect(await within(checks).findByText(/Dismissed as/)).toHaveTextContent('Dismissed as Intended.')
+    expect(within(checks).getAllByRole('listitem').filter((item) => !item.closest('details'))).toHaveLength(1)
+    const dismissed = within(checks).getByText('Dismissed: 1 check').closest('details') as HTMLElement
+    expect(dismissed).toHaveTextContent('Intended · until the words change')
+    await expectAccessible(container)
+    await user.click(within(dismissed).getByRole('button', { name: 'Undo dismissing: A phrase readers often meet: “the weight of”.' }))
+    await waitFor(() => expect(api.find('DELETE', '/plan/pln_s/studio/dismissals/dis_1')).toHaveLength(1))
+    await waitFor(() => expect(within(checks).queryByText(/Dismissed:/)).not.toBeInTheDocument())
+  })
+
+  it('dismisses an assistant’s note in the author’s own words, for a while', async () => {
+    const before = studio()
+    const dismissal = {
+      id: 'dis_2',
+      reason: 'other' as const,
+      note: 'She hears him first, a line later.',
+      expires_at: '2026-10-24T10:00:00Z',
+      created_at: '2026-10-17T10:00:00Z',
+    }
+    const api = mockApi({
+      ...base,
+      'GET /plan/pln_s/studio': before,
+      'POST /plan/pln_s/studio/dismissals': studio({ assistant: before.assistant.map((note) => ({ ...note, dismissal })) }),
+    })
+    const user = userEvent.setup()
+    renderInProject(<StudioPage />, route)
+    const notes = (await screen.findByRole('heading', { name: 'The assistant’s notes' })).closest('section') as HTMLElement
+    await user.click(within(notes).getByRole('button', { name: /^Dismiss: Ines could not see/ }))
+    await user.click(within(notes).getByRole('button', { name: 'Other reason' }))
+    await user.type(within(notes).getByLabelText('Your reason'), 'She hears him first, a line later.')
+    await user.selectOptions(within(notes).getByLabelText('How long'), '7')
+    await user.click(within(notes).getByRole('button', { name: 'Dismiss' }))
+    await waitFor(() =>
+      expect(api.find('POST', '/plan/pln_s/studio/dismissals')[0]?.body).toEqual({
+        key: 'k_note',
+        reason: 'other',
+        note: 'She hears him first, a line later.',
+        days: 7,
+      }),
+    )
+    const dismissed = (await within(notes).findByText('Dismissed: 1 note')).closest('details') as HTMLElement
+    expect(dismissed).toHaveTextContent('“She hears him first, a line later.”')
+    expect(dismissed).toHaveTextContent('or until the words change')
+  })
+
   it('lets a reader read the scene but change nothing', async () => {
     mockApi({ ...base, 'GET /plan/pln_s/studio': studio({ drafts: [draft()] }) })
     renderInProject(<StudioPage />, { ...route, context: { access: VIEWER } })
     const box = await screen.findByRole('textbox', { name: /The text of/ })
     expect(box).toHaveAttribute('readonly')
-    expect(screen.queryByRole('button', { name: /Save|Draft with|Check with|Keep|Discard|Update the story/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Save|Draft with|Check with|Keep|Discard|Update the story|Dismiss/ })).not.toBeInTheDocument()
   })
 })

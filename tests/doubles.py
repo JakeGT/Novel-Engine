@@ -563,6 +563,9 @@ class ScriptedAIGateway:
         self._index += 1
         if isinstance(item, BaseException):
             raise item
+        # A queued response is returned as it is, so a test can say what usage it reports.
+        if isinstance(item, StructuredResponse):
+            return item
         return StructuredResponse(parsed=item, model=model or "fake")
 
     async def generate_text(
@@ -1310,6 +1313,7 @@ class InMemoryProviderUsageStore:
             prompt_tokens=sum(r.prompt_tokens for r in records),
             completion_tokens=sum(r.completion_tokens for r in records),
             provider_cost_usd=sum(r.provider_cost_usd or 0.0 for r in records),
+            cached_prompt_tokens=sum(r.cached_prompt_tokens for r in records),
         )
 
     async def delete_workspace(self, workspace_id: str) -> int:
@@ -2562,6 +2566,23 @@ class _MemoryCanonReader:
             workspace_id=self._workspace_id, project_id=self._project_id, entity_id=entity_id
         )
 
+    async def active_entities(self, limit: int) -> list[Any]:
+        found = [
+            entity
+            for (w, p, _), entity in sorted(self._repository.entities.items())
+            if (w, p) == (self._workspace_id, self._project_id) and entity.is_active
+        ]
+        return found[:limit]
+
+    async def asserted_facts(self, limit: int) -> list[Any]:
+        found = [
+            fact
+            for (w, p, _), fact in sorted(self._repository.facts.items())
+            if (w, p) == (self._workspace_id, self._project_id)
+            and getattr(fact.status, "value", fact.status) == "asserted"
+        ]
+        return found[:limit]
+
 
 def _per_branch(name: str, factory: Any) -> property:
     """A store kept separately for each line of the story (ADR-020).
@@ -2663,6 +2684,14 @@ class InMemoryCanonRepository:
                     parent_branch_id,
                 ):
                     studio.saved_readings.append(_replace(reading, branch_id=branch_id))
+            # The author's dismissed findings come too (finding_dismissals is forked).
+            for dismissal in list(studio.saved_dismissals):
+                if (dismissal.workspace_id, dismissal.project_id, dismissal.branch_id) == (
+                    workspace_id,
+                    project_id,
+                    parent_branch_id,
+                ):
+                    studio.saved_dismissals.append(_replace(dismissal, branch_id=branch_id))
         return head
 
     async def set_branch_status(
@@ -4050,6 +4079,15 @@ class InMemoryAssistSessionStore:
         found.sort(key=lambda session: (session.updated_at, session.id), reverse=True)
         return found[:limit]
 
+    async def list_for_project(
+        self, *, workspace_id: str, project_id: str, limit: int
+    ) -> list[Any]:
+        found = sorted(
+            self._scoped(workspace_id, project_id),
+            key=lambda session: (session.created_at, session.id),
+        )
+        return found[:limit]
+
     async def delete_stale_open(self, *, workspace_id: str, project_id: str, before: Any) -> int:
         stale = [
             session.id
@@ -4385,6 +4423,7 @@ class InMemoryRuleStore:
         body: Any = None,
         examples: list[Any] | None = None,
         actor_user_id: str | None = None,
+        enforcement: Any = None,
     ) -> None:
         from dataclasses import replace
 
@@ -4399,6 +4438,8 @@ class InMemoryRuleStore:
             changes["sentence"] = sentence
         if status is not None:
             changes["status"] = status
+        if enforcement is not None:
+            changes["enforcement"] = enforcement
         if body is not None:
             self.versions[key].append((body, list(examples or [])))
             changes.update(
@@ -4492,6 +4533,7 @@ class InMemoryManifestStore:
             manifest=fields["manifest"],
             created_by=fields["created_by"],
             created_at=utcnow(),
+            branch_id=fields.get("branch_id"),
         )
 
     async def get(self, *, workspace_id, project_id, manifest_id) -> Any:
@@ -4523,6 +4565,17 @@ class InMemoryJobStore:
 
     async def get(self, *, workspace_id, project_id, job_id):
         return self.jobs.get((workspace_id, project_id, job_id))
+
+    async def waiting(self):
+        """(how many jobs wait to start, seconds the oldest has waited), across every story."""
+        from backend.domain.identity import utcnow
+        from backend.domain.jobs import JobStatus
+
+        queued = [job for job in self.jobs.values() if job.status is JobStatus.QUEUED]
+        if not queued:
+            return 0, None
+        oldest = min(job.created_at for job in queued)
+        return len(queued), max(0.0, (utcnow() - oldest).total_seconds())
 
     async def find_by_key(self, *, workspace_id, project_id, actor_user_id, idempotency_key):
         if not idempotency_key:
@@ -4581,7 +4634,9 @@ class InMemoryJobStore:
         self.jobs[key] = replace(current, stage=stage, progress=progress)
         return current.cancel_requested
 
-    async def add_usage(self, job, *, owner, prompt_tokens, completion_tokens):
+    async def add_usage(
+        self, job, *, owner, prompt_tokens, completion_tokens, cached_prompt_tokens=0
+    ):
         from dataclasses import replace
 
         key = self._key(job)
@@ -4592,6 +4647,7 @@ class InMemoryJobStore:
             current,
             prompt_tokens=current.prompt_tokens + prompt_tokens,
             completion_tokens=current.completion_tokens + completion_tokens,
+            cached_prompt_tokens=current.cached_prompt_tokens + cached_prompt_tokens,
         )
 
     async def requeue(self, job, *, owner):
@@ -4659,6 +4715,7 @@ class InMemoryStudioStore:
         self.assistant_findings: list[tuple[str, str, Any]] = []
         self.voices: dict[tuple[str, str], str] = {}
         self.saved_readings: list[Any] = []
+        self.saved_dismissals: list[Any] = []
 
     async def manuscript(self, *, workspace_id, project_id, branch_id, plan_id):
         return self.manuscripts.get((workspace_id, project_id, branch_id, plan_id))
@@ -4767,6 +4824,40 @@ class InMemoryStudioStore:
         ]
         return list(reversed(found))[:limit]
 
+    async def readings_in(self, *, workspace_id, project_id, branch_id):
+        found = [
+            r
+            for r in self.saved_readings
+            if (r.workspace_id, r.project_id, r.branch_id) == (workspace_id, project_id, branch_id)
+        ]
+        return sorted(found, key=lambda r: (r.created_at, r.id))
+
+    async def dismissals_in(self, *, workspace_id, project_id, branch_id):
+        found = [
+            d
+            for d in self.saved_dismissals
+            if (d.workspace_id, d.project_id, d.branch_id) == (workspace_id, project_id, branch_id)
+        ]
+        return sorted(found, key=lambda d: (d.created_at, d.id))
+
+    async def restore_dismissal(self, dismissal):
+        key = (dismissal.workspace_id, dismissal.project_id, dismissal.branch_id, dismissal.id)
+        if any(
+            (d.workspace_id, d.project_id, d.branch_id, d.id) == key for d in self.saved_dismissals
+        ):
+            return False
+        self.saved_dismissals.append(dismissal)
+        return True
+
+    async def restore_reading(self, reading):
+        key = (reading.workspace_id, reading.project_id, reading.branch_id, reading.id)
+        if any(
+            (r.workspace_id, r.project_id, r.branch_id, r.id) == key for r in self.saved_readings
+        ):
+            return False
+        self.saved_readings.append(reading)
+        return True
+
     async def last_reading(self, *, workspace_id, project_id, branch_id, plan_id):
         for reading in await self.readings(
             workspace_id=workspace_id, project_id=project_id, branch_id=branch_id, plan_id=plan_id
@@ -4774,6 +4865,49 @@ class InMemoryStudioStore:
             if reading.status == "complete":
                 return reading
         return None
+
+    async def dismissals(self, *, workspace_id, project_id, branch_id, plan_id):
+        return [
+            d
+            for d in self.saved_dismissals
+            if (d.workspace_id, d.project_id, d.branch_id, d.plan_id)
+            == (workspace_id, project_id, branch_id, plan_id)
+            and d.withdrawn_at is None
+        ]
+
+    async def add_dismissal(self, dismissal):
+        from dataclasses import replace
+
+        for n, existing in enumerate(self.saved_dismissals):
+            if (
+                (existing.workspace_id, existing.project_id, existing.branch_id, existing.plan_id)
+                == (
+                    dismissal.workspace_id,
+                    dismissal.project_id,
+                    dismissal.branch_id,
+                    dismissal.plan_id,
+                )
+                and existing.fingerprint == dismissal.fingerprint
+                and existing.withdrawn_at is None
+            ):
+                self.saved_dismissals[n] = replace(existing, withdrawn_at=dismissal.created_at)
+        self.saved_dismissals.append(dismissal)
+
+    async def withdraw_dismissal(
+        self, *, workspace_id, project_id, branch_id, plan_id, dismissal_id, at
+    ):
+        from dataclasses import replace
+
+        for n, existing in enumerate(self.saved_dismissals):
+            if (
+                (existing.workspace_id, existing.project_id, existing.branch_id, existing.plan_id)
+                == (workspace_id, project_id, branch_id, plan_id)
+                and existing.id == dismissal_id
+                and existing.withdrawn_at is None
+            ):
+                self.saved_dismissals[n] = replace(existing, withdrawn_at=at)
+                return True
+        return False
 
     async def voice(self, *, workspace_id, project_id):
         return self.voices.get((workspace_id, project_id), "")

@@ -21,6 +21,7 @@ const rule: StoryRule = {
   sentence: 'Nobody can be in two places at once.',
   reading: 'Every character can have at most 1 of: located at something.',
   status: 'on',
+  enforcement: 'warning',
   version: 1,
   body,
   examples: [],
@@ -54,7 +55,7 @@ describe('RulesPage', () => {
     expect(within(card).getByRole('link', { name: 'Mara' })).toHaveAttribute('href', '/projects/prj_1/entries/ent_mara')
     const quiet = screen.getByRole('heading', { name: 'A quiet one' }).closest('li') as HTMLElement
     expect(quiet).toHaveTextContent('Paused')
-    expect(screen.getByText(/It never stops you/)).toBeInTheDocument()
+    expect(screen.getByText(/holds the change back until it is fixed/)).toBeInTheDocument()
     await expectAccessible(container)
   })
 
@@ -86,7 +87,7 @@ describe('RulesPage', () => {
     expect(how).toHaveTextContent('Would warn about: Ana in two towns')
     expect(how).toHaveTextContent('Would allow: Ana at home')
     expect(how).toHaveTextContent('Your story keeps this rule as it stands.')
-    expect(dialog).toHaveTextContent('A rule only ever warns you. It never stops a change.')
+    expect(dialog).toHaveTextContent('A rule warns you when a change would break it.')
     expect(api.find('POST', '/rules')).toHaveLength(0)
     await expectAccessible(container)
 
@@ -182,5 +183,30 @@ describe('RulesPage', () => {
     await screen.findByRole('heading', { name: 'One place at a time' })
     expect(screen.queryByRole('button', { name: 'New rule' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Pause One place at a time' })).not.toBeInTheDocument()
+  })
+
+  it('lets the author choose whether a rule warns or blocks, and says what that means', async () => {
+    const blocking = { ...rule, enforcement: 'blocking' as const }
+    const api = mockApi({ ...base, 'GET /rules': { items: [rule] }, 'PATCH /rules/inv_1': blocking })
+    const user = userEvent.setup()
+    const { container, unmount } = renderInProject(<RulesPage />, at)
+
+    const choice = await screen.findByRole('group', { name: 'When a change would break One place at a time' })
+    expect(within(choice).getByRole('button', { name: 'Warn me' })).toHaveAttribute('aria-pressed', 'true')
+    const card = choice.closest('li') as HTMLElement
+    expect(card).toHaveTextContent('you can still add the change')
+    await expectAccessible(container)
+
+    await user.click(within(choice).getByRole('button', { name: 'Block the change' }))
+    await waitFor(() => expect(api.find('PATCH', '/rules/inv_1')[0].body).toEqual({ enforcement: 'blocking' }))
+    expect(await screen.findByText(/now blocks any change that would break it/)).toBeInTheDocument()
+    unmount()
+
+    // Someone who can only read is told what it does, with nothing to change.
+    mockApi({ ...base, 'GET /rules': { items: [blocking] } })
+    renderInProject(<RulesPage />, { ...at, context: { access: VIEWER, canWrite: false } })
+    const heading = await screen.findByRole('heading', { name: 'One place at a time' })
+    expect(heading.closest('li')).toHaveTextContent('When a change would break it: the change is blocked.')
+    expect(screen.queryByRole('button', { name: 'Block the change' })).not.toBeInTheDocument()
   })
 })

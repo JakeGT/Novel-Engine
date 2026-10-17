@@ -34,6 +34,8 @@ class UsageRecord(BaseModel):
     actual_route: str | None = None
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    # Of the prompt tokens, those the provider read from its cache (part of prompt_tokens).
+    cached_prompt_tokens: int = 0
     latency_ms: int = 0
     attempt: int = 1
     outcome: UsageOutcome = UsageOutcome.SUCCESS
@@ -50,6 +52,7 @@ class UsageTotals(BaseModel):
     request_count: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    cached_prompt_tokens: int = 0
     provider_cost_usd: float = 0.0
 
     @property

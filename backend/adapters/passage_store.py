@@ -197,6 +197,7 @@ class PostgresManifestStore:
             manifest=manifest,
             created_by=row.created_by,
             created_at=row.created_at,
+            branch_id=row.branch_id,
         )
 
 

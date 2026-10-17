@@ -9,10 +9,11 @@ from sqlalchemy import text
 
 from backend.core.database import session_scope
 from backend.domain.rules import RuleBody, RuleExample, RuleStatus, StoryRule
+from backend.domain.validation import RuleEnforcement
 
 _SELECT = """
     SELECT r.workspace_id, r.project_id, r.id, r.title, r.sentence, r.status, v.number, v.body,
-           v.examples, r.created_by, r.created_at, r.updated_at
+           v.examples, r.created_by, r.created_at, r.updated_at, r.enforcement
     FROM story_rules r
     JOIN story_rule_versions v ON v.workspace_id = r.workspace_id
      AND v.project_id = r.project_id AND v.rule_id = r.id
@@ -37,6 +38,7 @@ def _rule(row: Any) -> StoryRule:
         created_by=row[9],
         created_at=row[10],
         updated_at=row[11],
+        enforcement=RuleEnforcement(row[12]),
     )
 
 
@@ -170,6 +172,7 @@ class PostgresRuleStore:
         body: RuleBody | None = None,
         examples: list[RuleExample] | None = None,
         actor_user_id: str | None = None,
+        enforcement: RuleEnforcement | None = None,
     ) -> None:
         async with session_scope(self._session_factory) as db:
             await db.execute(
@@ -179,6 +182,7 @@ class PostgresRuleStore:
                         title = coalesce(:title, title),
                         sentence = coalesce(:sentence, sentence),
                         status = coalesce(:status, status),
+                        enforcement = coalesce(:enforcement, enforcement),
                         updated_at = now()
                     WHERE workspace_id = :ws AND project_id = :pj AND id = :id
                     """
@@ -190,6 +194,7 @@ class PostgresRuleStore:
                     "title": title,
                     "sentence": sentence,
                     "status": status.value if status is not None else None,
+                    "enforcement": enforcement.value if enforcement is not None else None,
                 },
             )
             if body is not None:

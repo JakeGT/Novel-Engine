@@ -83,7 +83,7 @@ async def test_what_was_given_is_kept_exactly(stores) -> None:
         workspace_id=WS,
         project_id=PR,
         manifest_id="ctx_1",
-        branch_id=None,
+        branch_id="br_what_if",
         purpose="scene-draft",
         plan_id="plan_1",
         policy_version="scene-draft/1",
@@ -95,4 +95,6 @@ async def test_what_was_given_is_kept_exactly(stores) -> None:
     )
     kept = await manifests.get(workspace_id=WS, project_id=PR, manifest_id="ctx_1")
     assert kept is not None and kept.manifest["items"] == [{"key": "scene:plan_1"}]
+    # The line of the story it was made in comes back, so a comparison can stay in it.
+    assert kept.branch_id == "br_what_if"
     assert await manifests.get(workspace_id="other", project_id=PR, manifest_id="ctx_1") is None

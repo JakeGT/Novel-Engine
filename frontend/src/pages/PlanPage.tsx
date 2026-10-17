@@ -24,7 +24,16 @@ import {
   ReadOnlyNotice,
   WriteProblem,
 } from '../components/ui'
-import { CHILD_KINDS, outlineTree, siblingsOf, threadsOf, type OutlineNode } from '../lib/plan'
+import {
+  CHILD_KINDS,
+  OUTCOMES,
+  THREAD_STEPS,
+  outcomeLabel,
+  outlineTree,
+  siblingsOf,
+  threadsOf,
+  type OutlineNode,
+} from '../lib/plan'
 import { planKindLabel, plural } from '../lib/words'
 import { entryPath, scopedKey, useCanonWrite, useEntries, useProject } from '../project'
 
@@ -71,6 +80,8 @@ export function PlanPage() {
     (outline.data?.conditions ?? []).filter((entry) => entry.plan_id === planId)
   const tree = outlineTree(items)
   const threads = threadsOf(items)
+  const progressOf = (threadId: string) =>
+    outline.data?.threads?.find((entry) => entry.thread_id === threadId)?.steps ?? []
   const byId = new Map(items.map((item) => [item.id, item]))
   const openFor = (planId: string) => stillOpen.filter((entry) => entry.plan_id === planId)
   const under = (planId: string) => items.filter((item) => item.parent_id === planId).length
@@ -121,8 +132,43 @@ export function PlanPage() {
     add('With', refs(item, 'participant'))
     add('About', refs(item, 'about'))
     if (item.sets_up.length > 0) parts.push(<span key="opens">Opens: {titles(item.sets_up)}</span>)
+    if ((item.advances ?? []).length > 0)
+      parts.push(<span key="advances">Moves along: {titles(item.advances ?? [])}</span>)
     if (item.pays_off.length > 0) parts.push(<span key="resolves">Resolves: {titles(item.pays_off)}</span>)
     return parts.length > 0 ? <p className="plan-about">{parts}</p> : null
+  }
+
+  /** What the viewpoint character wants, what is in the way, and how it ends. */
+  const intentOf = (item: PlanItem) => {
+    const intent = item.intent
+    if (!intent) return null
+    const ends = outcomeLabel(intent.outcome)
+    const hint = OUTCOMES.find((outcome) => outcome.value === intent.outcome)?.hint
+    return (
+      <dl className="scene-intent-card" aria-label={`What the viewpoint wants in ${item.title}`}>
+        {intent.goal && (
+          <div>
+            <dt>Wants</dt>
+            <dd>{intent.goal}</dd>
+          </div>
+        )}
+        {intent.obstacle && (
+          <div>
+            <dt>In the way</dt>
+            <dd>{intent.obstacle}</dd>
+          </div>
+        )}
+        {ends && (
+          <div>
+            <dt>Ends</dt>
+            <dd>
+              {ends}
+              {hint && <span className="outcome-hint"> — {hint}</span>}
+            </dd>
+          </div>
+        )}
+      </dl>
+    )
   }
 
   // A scene is written in the studio; the way there is always in view (V1).
@@ -218,6 +264,7 @@ export function PlanPage() {
           <span className="eyebrow">{planKindLabel(item.kind)}</span>
           <h3 className="plan-title">{item.title}</h3>
           {item.summary && <p className="plan-summary">{item.summary}</p>}
+          {intentOf(item)}
           {about(item)}
           {Object.keys(item.details).length > 0 && (
             <p className="plan-about">
@@ -390,15 +437,19 @@ export function PlanPage() {
               ) : (
                 <ul className="plan-list top">
                   {threads.map((thread) => {
-                    const opened = items.filter((item) => item.sets_up.includes(thread.id))
-                    const resolved = items.filter((item) => item.pays_off.includes(thread.id))
+                    // Where it opens, moves along and resolves, in the order of the outline.
+                    const steps = progressOf(thread.id)
                     return row(
                       thread,
-                      (opened.length > 0 || resolved.length > 0) && (
-                        <p className="plan-about">
-                          {opened.length > 0 && <span>Opened in: {opened.map((item) => item.title).join(', ')}</span>}
-                          {resolved.length > 0 && <span>Resolved in: {resolved.map((item) => item.title).join(', ')}</span>}
-                        </p>
+                      steps.length > 0 && (
+                        <ol className="thread-steps" aria-label={`How “${thread.title}” runs through the plan`}>
+                          {steps.map((step, index) => (
+                            <li key={`${step.plan_id}:${step.step}:${index}`} className={`step-${step.step}`}>
+                              <span className="thread-step-name">{THREAD_STEPS[step.step] ?? step.step}</span>{' '}
+                              <a href={`#plan-${step.plan_id}`}>{byId.get(step.plan_id)?.title ?? 'a part of the plan'}</a>
+                            </li>
+                          ))}
+                        </ol>
                       ),
                     )
                   })}

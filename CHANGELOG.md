@@ -26,13 +26,23 @@ for authors and for whoever runs an install. Version numbers start when the owne
   can check a scene too, and every note quotes your words. "How you write" guides every draft.
 - **From scenes back to the story bible.** "Update the story from this scene" reads what the scene
   says and suggests it for review; the second time, only what changed.
+- **Checks you can answer.** Dismiss a check or the assistant's note with a reason; it comes back
+  if the words it points at change. A story rule can be set to hold back any change that breaks it.
+- **Deeper plans.** Scenes can move a thread along; a scene can say what the viewpoint character
+  wants, what stands in the way and how it ends for them; compare what the assistant would use now
+  with what a kept draft was written from.
+- **Photos lose their hidden details** (location, camera) when uploaded.
 - **Use a model on your own computer** (Ollama, LM Studio) on a self-hosted install, so nothing
   about your story leaves it.
 
 ### For whoever runs it
 
 - **Upgrading:** take a backup first (`deploy/hosted/backup.sh` on the hosted profile). The server
-  applies migrations on start; this release adds migrations up to `0035_scene_readings`.
+  applies migrations on start; this release adds migrations up to `0037_finding_decisions`.
+- **Readiness** now answers `ready`, `degraded` (200) or `unavailable` (503, a required store is
+  down); a watcher that looked for `degraded` on a store outage must look for `unavailable`.
+- **Archives** are version 4 and carry what-ifs, conversations and scene readings; version 3
+  archives still restore. `make retention` also clears old finished work.
 - **Rolling back:** migrations are applied forward; to go back a version, restore the backup taken
   before the upgrade (`deploy/hosted/restore.sh`, which checks the backup before changing
   anything). Downgrade scripts exist for development and never delete an author's words, but they

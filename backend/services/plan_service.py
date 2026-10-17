@@ -17,7 +17,13 @@ from dataclasses import dataclass
 from backend.adapters.system import uuid7
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.ids import format_canon_id
-from backend.domain.canon.plans import ALLOWED_PARENTS, PlanItem, PlanKind, PlanRef
+from backend.domain.canon.plans import (
+    ALLOWED_PARENTS,
+    MAX_THREAD_LINKS,
+    PlanItem,
+    PlanKind,
+    PlanRef,
+)
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.knowledge import MAX_REVEALS, Reveal, with_reveals, with_scene_time
@@ -38,7 +44,15 @@ from backend.domain.scene_conditions import (
     scene_conditions,
     with_conditions,
 )
+from backend.domain.scene_intent import SceneIntent, with_intent
 from backend.domain.tenancy import Permission
+from backend.domain.threads import (
+    never_moved_along,
+    outline_order,
+    thread_advances,
+    thread_progress,
+    with_advances,
+)
 from backend.domain.worldtime import Relative
 from backend.ports import CanonRepositoryPort, SchemaVersionStorePort
 from backend.services.mutation_service import CommitResult, MutationService
@@ -76,6 +90,8 @@ def open_items(items: list[PlanItem], entities: dict[str, CanonEntity]) -> list[
             children.setdefault(item.parent_id, []).append(item)
     opened = {thread_id for item in active for thread_id in item.sets_up}
     resolved = {thread_id for item in active for thread_id in item.pays_off}
+    order = outline_order(active)
+    progress = thread_progress(active)
 
     found: list[OpenItem] = []
 
@@ -107,6 +123,12 @@ def open_items(items: list[PlanItem], entities: dict[str, CanonEntity]) -> list[
                 add(item, "needs_setup", "Nothing sets this thread up yet.")
             elif item.id not in resolved:
                 add(item, "needs_payoff", "This thread is opened and never resolved.")
+            elif never_moved_along(progress.get(item.id, []), order):
+                add(
+                    item,
+                    "needs_progress",
+                    "This thread opens and resolves, but no scene in between moves it along.",
+                )
         for ref in item.refs:
             entity = entities.get(ref.entity_id)
             if entity is None or not entity.is_active:
@@ -367,6 +389,41 @@ class PlanService:
                 entity_types.update(compiled.entity_types)
         return predicates, entity_types
 
+    @staticmethod
+    def _check_advances(
+        kind: PlanKind,
+        advances: list[str],
+        sets_up: list[str],
+        pays_off: list[str],
+        items: list[PlanItem],
+    ) -> None:
+        """A thread moved along must be a thread in the plan, named once, by a non-thread."""
+        if kind is PlanKind.THREAD:
+            raise ValidationError("A thread cannot move another thread along.")
+        if len(advances) > MAX_THREAD_LINKS:
+            raise ValidationError(f"Something can move at most {MAX_THREAD_LINKS} threads along.")
+        if len(set(advances)) != len(advances):
+            raise ValidationError("Each thread can be listed once.")
+        PlanService._check_overlap(advances, sets_up, pays_off)
+        threads = {item.id for item in items if item.is_active and item.kind is PlanKind.THREAD}
+        if any(thread_id not in threads for thread_id in advances):
+            raise ValidationError("Only a thread in the plan can be moved along.")
+
+    @staticmethod
+    def _check_overlap(advances: list[str], sets_up: list[str], pays_off: list[str]) -> None:
+        """A thread is opened, resolved or moved along by an item, never two of these."""
+        if set(advances) & (set(sets_up) | set(pays_off)):
+            raise ValidationError(
+                "A thread this opens or resolves is already part of it; list it in one place."
+            )
+
+    @staticmethod
+    def _check_intent(kind: PlanKind) -> None:
+        if kind is not PlanKind.SCENE:
+            raise ValidationError(
+                "Only a scene can say what its viewpoint character wants and how it ends."
+            )
+
     # ----------------------------------------------------------------- write
     async def add(
         self,
@@ -382,16 +439,26 @@ class PlanService:
         sets_up: list[str] | None = None,
         pays_off: list[str] | None = None,
         details: dict[str, str] | None = None,
+        advances: list[str] | None = None,
+        intent: SceneIntent | None = None,
         expected_revision: int,
     ) -> tuple[CommitResult, PlanItem]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         if not title.strip():
             raise ValidationError("Give it a title.")
+        items = await self._items(workspace_id, project_id)
         siblings = [
             item
-            for item in await self._items(workspace_id, project_id)
+            for item in items
             if item.parent_id == parent_id and (parent_id is not None or item.kind is kind)
         ]
+        kept = plain_details(details or {})
+        if advances:
+            self._check_advances(kind, advances, sets_up or [], pays_off or [], items)
+            kept = with_advances(kept, advances)
+        if intent is not None:
+            self._check_intent(kind)
+            kept = with_intent(kept, intent)
         plan_id = format_canon_id("plan_item", str(uuid7()))
         operation = CreatePlanItemOp(
             id=plan_id,
@@ -404,7 +471,7 @@ class PlanService:
             refs=refs or [],
             sets_up=sets_up or [],
             pays_off=pays_off or [],
-            details=plain_details(details or {}),
+            details=kept,
         )
         result = await self._commit(scope, workspace_id, project_id, [operation], expected_revision)
         return result, await self.get(scope, workspace_id, project_id, plan_id)
@@ -422,6 +489,8 @@ class PlanService:
         sets_up: list[str] | None = None,
         pays_off: list[str] | None = None,
         details: dict[str, str] | None = None,
+        advances: list[str] | None = None,
+        intent: SceneIntent | None = None,
         expected_revision: int,
     ) -> tuple[CommitResult, PlanItem]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
@@ -435,6 +504,28 @@ class PlanService:
             details.update(
                 {key: value for key, value in current.details.items() if key.startswith("_")}
             )
+        will_set_up = sets_up if sets_up is not None else current.sets_up
+        will_pay_off = pays_off if pays_off is not None else current.pays_off
+        if advances is not None and advances != thread_advances(current.details):
+            self._check_advances(
+                current.kind,
+                advances,
+                will_set_up,
+                will_pay_off,
+                await self._items(workspace_id, project_id),
+            )
+        elif will_set_up != current.sets_up or will_pay_off != current.pays_off:
+            # Opening or resolving a thread this already moves along says it twice.
+            self._check_overlap(
+                advances if advances is not None else thread_advances(current.details),
+                will_set_up,
+                will_pay_off,
+            )
+        if advances is not None:
+            details = with_advances(details if details is not None else current.details, advances)
+        if intent is not None:
+            self._check_intent(current.kind)
+            details = with_intent(details if details is not None else current.details, intent)
         # Only what differs is sent, so an unrelated edit never rewrites other fields.
         operation = UpdatePlanItemOp(
             id=plan_id,
@@ -543,12 +634,17 @@ class PlanService:
                 continue
             sets_up = [thread for thread in item.sets_up if thread not in gone]
             pays_off = [thread for thread in item.pays_off if thread not in gone]
-            if sets_up != item.sets_up or pays_off != item.pays_off:
+            moved = thread_advances(item.details)
+            advances = [thread for thread in moved if thread not in gone]
+            if sets_up != item.sets_up or pays_off != item.pays_off or advances != moved:
                 operations.append(
                     UpdatePlanItemOp(
                         id=item.id,
                         sets_up=sets_up if sets_up != item.sets_up else None,
                         pays_off=pays_off if pays_off != item.pays_off else None,
+                        details=with_advances(item.details, advances)
+                        if advances != moved
+                        else None,
                     )
                 )
         operations.extend(RetirePlanItemOp(id=item_id) for item_id in doomed)

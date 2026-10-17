@@ -39,7 +39,7 @@
 | Planning with the assistant | `POST /assist/plan/questions`, `POST /assist/plan/proposals`, `POST /assist/plan/directions`, `POST /assist/plan/directions/choose` | Questions about what the author means to happen; one round of planning as plan items to review, with what was left undecided returned as notes; up to three directions for what could happen next. Offering directions proposes nothing; choosing one re-checks the draft it carries and calls no model. Nothing here changes the plan directly. |
 | The author's writing | `GET/POST /texts`, `GET/PATCH/DELETE /texts/{id}`, `GET /texts/passage`, `POST /texts/{id}/entries`, `GET/POST /names`, `DELETE /names/{id}` | Prose the author brings in, kept as given in immutable versions; the names found in it with no model; the passage a change points back to; answers about what a phrase means, remembered for the story or one text. A text is evidence, never canon. Needs no provider. |
 | Reading a text with the assistant | `POST /assist/texts/{id}/read` | One bounded passage read into suggested changes to review. Every item must quote words really in the passage. Guesses about nicknames become questions only. |
-| Story rules | `GET/POST /rules`, `PATCH/DELETE /rules/{id}`, `POST /rules/check`, `POST /assist/rules/draft` | The author's own continuity rules in a fixed vocabulary, with examples they must agree with, read back in words, and the entries that break them now. A change that would newly break one is warned about; nothing is blocked. Drafting from a sentence keeps nothing. |
+| Story rules | `GET/POST /rules`, `PATCH/DELETE /rules/{id}`, `POST /rules/check`, `POST /assist/rules/draft` | The author's own continuity rules in a fixed vocabulary, with examples they must agree with, read back in words, and the entries that break them now. A change that would newly break one is warned about, or, for a rule the author set to block (`PATCH` with `enforcement: blocking`), refused at approval and at commit until fixed (CON-015). Drafting from a sentence keeps nothing. |
 | Scene conditions | `PUT /plan/{id}/conditions` | What must be true before a planned scene and after it, checked like a story rule and reported with the outline. |
 | Guided character workflow | `POST /characters/{entity_id}/questions`, `POST /characters/{entity_id}/proposals` | Spends the workspace's provider budget. Returns a proposal in the review queue; never writes canon. |
 | History and provenance | `GET /revisions`, `GET /revisions/{commit_id}`, `GET /revisions/{from}/diff/{to}`, `GET /{entities\|facts\|beliefs\|events}/{id}/history`, `GET /{...}/{id}/at-revision/{revision}`, `GET /provenance/{record_type}/{record_id}`, `GET/POST /tags`, `DELETE /tags/{name}`, `GET /tags/{name}/history`, `POST /reverts/preview`, `POST /reverts` | Provenance withholds reviewer identities and notes from read-only members and says so. A revert is a new commit and needs `acknowledge_high_impact`. |
@@ -68,8 +68,11 @@
 
 ## Health and operations
 
-- `/health/live`, `/health/ready` (store connectivity and read-only migration verification; 503 when
-  degraded), `/health/capabilities` (no secrets, no model load, no writes).
+- `/health/live`, `/health/ready` (store connectivity and read-only migration verification;
+  `unavailable` and 503 when a required store is down; `degraded` but 200 when an optional part
+  — the job worker, waiting work older than five minutes, or the search store — is down, with
+  plain `reasons`; never addresses or credentials), `/health/capabilities` (no secrets, no model
+  load, no writes).
 - `/health/metrics`: Prometheus text format, counts and timings only. Off unless
   `METRICS_ENABLED`; requires `METRICS_TOKEN` as a bearer token when set, and is never served
   unauthenticated in production. Deliberately not part of the OpenAPI contract.
@@ -111,6 +114,14 @@ Under `/projects/{project_id}`:
   viewpoint character does not know are apart and left out unless asked for. Calls no model.
 - `PUT /plan/{id}/context`: the author's pins, exclusions, budget and whether to give secrets, kept in
   the scene's details through the reviewed plan path.
+- `GET /plan/{id}/context/kept`: the versions of the scene's prose kept from a draft, with the
+  context each was written from (this line of the story only).
+  `GET /plan/{id}/context/kept/{manifest_id}`: that context against the context now — added, no
+  longer given (and why), changed. 404 for another scene or another line of the story.
+- The plan (`/plan`): items carry `advances` (threads moved along) and, for a scene, `intent`
+  (`goal`, `obstacle`, `outcome`: `yes` | `no` | `yes_but` | `no_and`); both are accepted on add and
+  change. The outline returns `threads`: each thread's steps (`opens`, `advances`, `resolves`) in
+  outline order.
 
 ## The scene studio (Phase 5, ADR-022)
 
@@ -134,6 +145,12 @@ Under `/projects/{project_id}`:
 - `GET /jobs/{id}`: status, stage, progress, tokens used, and a plain-words reason when it failed.
   `POST /jobs/{id}/cancel`: a waiting job stops at once, a running one at its next step.
 - `GET/PUT /voice`: how the author writes, a note per story given first in every draft request.
+- Every check and note carries `key` (a fingerprint of what it is about and the sentence it points
+  at) and `dismissal` when the author dismissed it. `POST /plan/{id}/studio/dismissals` (`key`,
+  `reason`: `intended`, `not_a_problem` or `other` with `note`, optional `days`: 7 or 30) dismisses
+  it for this scene and line of the story until those words change; `DELETE
+  /plan/{id}/studio/dismissals/{dismissal_id}` brings it back. Both return the studio. The text is
+  never changed (CON-010, CON-016).
 
 ## Scenes back into the story (Phase 6, ADR-023)
 

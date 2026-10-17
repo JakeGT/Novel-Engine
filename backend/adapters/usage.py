@@ -23,11 +23,12 @@ class PostgresProviderUsageStore:
                     INSERT INTO provider_usage (
                         id, workspace_id, project_id, actor_user_id, provider, model,
                         requested_route, actual_route, prompt_tokens, completion_tokens,
-                        latency_ms, attempt, outcome, provider_cost_usd, idempotency_key, created_at
+                        cached_prompt_tokens, latency_ms, attempt, outcome, provider_cost_usd,
+                        idempotency_key, created_at
                     ) VALUES (
                         :id, :workspace_id, :project_id, :actor_user_id, :provider, :model,
                         :requested_route, :actual_route, :prompt_tokens, :completion_tokens,
-                        :latency_ms, :attempt, :outcome, :provider_cost_usd, :idempotency_key,
+                        :cached_prompt_tokens, :latency_ms, :attempt, :outcome, :provider_cost_usd, :idempotency_key,
                         :created_at
                     )
                     """
@@ -43,6 +44,7 @@ class PostgresProviderUsageStore:
                     "actual_route": record.actual_route,
                     "prompt_tokens": record.prompt_tokens,
                     "completion_tokens": record.completion_tokens,
+                    "cached_prompt_tokens": max(0, record.cached_prompt_tokens),
                     "latency_ms": record.latency_ms,
                     "attempt": record.attempt,
                     "outcome": record.outcome.value,
@@ -84,7 +86,8 @@ class PostgresProviderUsageStore:
                 await session.execute(
                     text(
                         "SELECT count(*), coalesce(sum(prompt_tokens), 0), "
-                        "coalesce(sum(completion_tokens), 0), coalesce(sum(provider_cost_usd), 0) "
+                        "coalesce(sum(completion_tokens), 0), coalesce(sum(provider_cost_usd), 0), "
+                        "coalesce(sum(cached_prompt_tokens), 0) "
                         f"FROM provider_usage WHERE {where}"
                     ),
                     params,
@@ -95,6 +98,7 @@ class PostgresProviderUsageStore:
             prompt_tokens=int(row[1]),
             completion_tokens=int(row[2]),
             provider_cost_usd=float(row[3]),
+            cached_prompt_tokens=int(row[4]),
         )
 
     async def delete_workspace(self, workspace_id: str) -> int:

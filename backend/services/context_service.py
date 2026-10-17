@@ -25,12 +25,15 @@ from backend.domain.canon.phrasing import phrase
 from backend.domain.canon.plans import PlanItem, PlanKind
 from backend.domain.context import (
     SCENE_DRAFT_POLICY,
+    ContextComparison,
     ContextItem,
     ContextManifest,
     ContextSection,
     ContextSettings,
     assemble,
+    compare_contexts,
     context_settings,
+    stored_manifest,
     with_context_settings,
 )
 from backend.domain.errors import NotFoundError, ValidationError
@@ -39,8 +42,10 @@ from backend.domain.knowledge import knowledge_of, reader_journey, reading_order
 from backend.domain.knowledge import scene_time as scene_when
 from backend.domain.rules import RuleStatus, read_rule
 from backend.domain.scene_conditions import plain_details, scene_conditions
+from backend.domain.scene_intent import intent_sentences, scene_intent
 from backend.domain.sources import SourceKind, SourceText
 from backend.domain.tenancy import Permission
+from backend.domain.threads import thread_advances
 from backend.domain.worldtime import Interval, Order, Truth, compare, describe, true_at
 from backend.services.passage_index import IndexStatus
 from backend.services.story_time_service import event_times, fact_span, read_story, time_of
@@ -56,6 +61,17 @@ ROLE_WORDS = {
     "about": "is what the scene is about",
 }
 ROLE_SCORE = {"point_of_view": 10.0, "place": 9.0, "participant": 8.0, "about": 6.0}
+
+
+@dataclass(frozen=True)
+class KeptContext:
+    """The context a kept version of the scene was drafted from."""
+
+    manifest_id: str
+    version_id: str
+    version_number: int
+    kept_at: Any
+    words: int
 
 
 @dataclass(frozen=True)
@@ -255,30 +271,84 @@ class ContextService:
             checksum=manifest.checksum,
             words=manifest.words,
             budget=manifest.budget,
-            manifest={
-                "items": [
-                    {
-                        "key": item.key,
-                        "section": item.section.value,
-                        "reason": item.reason,
-                        "authority": item.authority,
-                        "record_type": item.record_type,
-                        "record_id": item.record_id,
-                        "location": item.location,
-                        "words": item.words,
-                        "score": item.score,
-                    }
-                    for item in manifest.items
-                ],
-                "left_out": [
-                    {"key": omission.item.key, "reason": omission.reason.value}
-                    for omission in manifest.left_out
-                ],
-                "point_of_view": context.point_of_view,
-            },
+            manifest=stored_manifest(manifest, context.point_of_view),
             created_by=scope.actor_user_id,
         )
         return manifest_id
+
+    # ---------------------------------------------------------------- comparing
+
+    async def kept_for_scene(
+        self, scope: AccessScope, workspace_id: str, project_id: str, plan_id: str
+    ) -> list[KeptContext]:
+        """The versions of this scene's prose that were kept from a draft, newest first.
+
+        Only the line of the story being worked in: a what-if's scene text is its own.
+        """
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        scene = await self._scene(scope, workspace_id, project_id, plan_id)
+        if self._manifests is None or self._sources is None:
+            return []
+        _usable, own = await self._scene_texts(workspace_id, project_id, scene)
+        if own is None:
+            return []
+        try:
+            _source, _current, versions = await self._sources.version(workspace_id, project_id, own)
+        except NotFoundError:
+            return []
+        kept: list[KeptContext] = []
+        for version in reversed(versions):
+            if not version.manifest_id:
+                continue
+            saved = await self._manifests.get(
+                workspace_id=workspace_id, project_id=project_id, manifest_id=version.manifest_id
+            )
+            if saved is None:
+                continue
+            kept.append(
+                KeptContext(
+                    manifest_id=saved.id,
+                    version_id=version.id,
+                    version_number=version.number,
+                    kept_at=version.created_at,
+                    words=saved.words,
+                )
+            )
+        return kept
+
+    async def compare_kept(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        manifest_id: str,
+    ) -> ContextComparison:
+        """The context now against the one kept for a draft of this scene.
+
+        A kept context is read only for its own scene and its own line of the story: one
+        made in this line, or one a version of this scene's prose here still points to
+        (a what-if started after the draft was kept carries that version with it).
+        """
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        scene = await self._scene(scope, workspace_id, project_id, plan_id)
+        missing = NotFoundError("That kept context was not found for this scene.")
+        if self._manifests is None:
+            raise missing
+        saved = await self._manifests.get(
+            workspace_id=workspace_id, project_id=project_id, manifest_id=manifest_id
+        )
+        if saved is None or saved.plan_id != scene.id:
+            raise missing
+        if saved.branch_id != working_branch_id():
+            carried = {
+                kept.manifest_id
+                for kept in await self.kept_for_scene(scope, workspace_id, project_id, plan_id)
+            }
+            if saved.id not in carried:
+                raise missing
+        now = await self.for_scene(scope, workspace_id, project_id, plan_id)
+        return compare_contexts(now.manifest, saved)
 
     # --------------------------------------------------------------- candidates
 
@@ -335,6 +405,23 @@ class ContextService:
                 hard=True,
             )
         )
+        intent = scene_intent(scene.details)
+        if intent is not None:
+            # What the viewpoint character wants, what is in the way, and how it ends:
+            # the question the scene asks and the answer the author chose.
+            out.append(
+                ContextItem(
+                    key=f"intent:{scene.id}",
+                    section=ContextSection.SCENE,
+                    text=intent_sentences(intent, names.get(pov) if pov else None),
+                    reason="You said what the viewpoint character wants here and how it ends.",
+                    authority="plan",
+                    record_type="plan_item",
+                    record_id=scene.id,
+                    score=95,
+                    hard=True,
+                )
+            )
         for index, condition in enumerate(scene_conditions(scene.details)):
             subject = names.get(condition.entity_id, "An entry")
             phrase = _phrase(condition.check.pattern.predicate)
@@ -569,17 +656,20 @@ class ContextService:
                 )
             parent_id = parent.parent_id
             depth += 1
-        for thread_id, verb in [(t, "opens") for t in scene.sets_up] + [
-            (t, "resolves") for t in scene.pays_off
-        ]:
+        for thread_id, verb in (
+            [(t, "opens") for t in scene.sets_up]
+            + [(t, "moves") for t in thread_advances(scene.details)]
+            + [(t, "resolves") for t in scene.pays_off]
+        ):
             thread = plan_by_id.get(thread_id)
             if thread is not None and thread.is_active:
+                along = " along" if verb == "moves" else ""
                 out.append(
                     ContextItem(
                         key=f"thread:{scene.id}:{thread.id}",
                         section=ContextSection.PLAN,
-                        text=f"This scene {verb} the thread “{thread.title}”.",
-                        reason=f"You said the scene {verb} it.",
+                        text=f"This scene {verb} the thread “{thread.title}”{along}.",
+                        reason=f"You said the scene {verb} it{along}.",
                         authority="plan",
                         record_type="plan_item",
                         record_id=thread.id,
@@ -828,4 +918,4 @@ class ContextService:
         )
 
 
-__all__ = ["SceneContext", "ContextService"]
+__all__ = ["ContextService", "KeptContext", "SceneContext"]

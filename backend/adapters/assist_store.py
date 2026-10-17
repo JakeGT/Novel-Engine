@@ -145,6 +145,22 @@ class PostgresAssistSessionStore:
             ).all()
         return [_from_row(row) for row in rows]
 
+    async def list_for_project(
+        self, *, workspace_id: str, project_id: str, limit: int
+    ) -> list[AssistSession]:
+        """Every conversation kept in a project, oldest first (for the project archive)."""
+        async with session_scope(self._session_factory) as db:
+            rows = (
+                await db.execute(
+                    text(
+                        f"SELECT {_COLUMNS} FROM assist_sessions WHERE workspace_id = :ws "
+                        "AND project_id = :project ORDER BY created_at, id LIMIT :limit"
+                    ),
+                    {"ws": workspace_id, "project": project_id, "limit": limit},
+                )
+            ).all()
+        return [_from_row(row) for row in rows]
+
     async def delete_stale_open(
         self, *, workspace_id: str, project_id: str, before: datetime
     ) -> int:

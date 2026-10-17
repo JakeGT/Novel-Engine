@@ -4,8 +4,8 @@ Operator tool, not a request path. The operator acts as ``--actor`` (a user id),
 which is authorized like any other caller in a hosted deployment and recorded in
 the security audit log together with counts and checksums, never content.
 
-    --export PATH                       write a canonical archive (format v3)
-    --import PATH                       restore one into --target-workspace/--target-project
+    --export PATH                       write a complete project archive (format v4)
+    --import PATH                       restore one (v3 or v4) into --target-workspace/--target-project
     --imports                           show the target project's import ledger
     --remove-import ID                  erase the canon a failed import wrote
     --upgrade-graph PATH                file a Phase 1 graph archive as a review proposal
@@ -71,7 +71,11 @@ async def _run(args: argparse.Namespace) -> int:
             )
             with open(args.export, "w", encoding="utf-8") as handle:
                 json.dump(archive, handle, indent=2, sort_keys=True)
-            print(f"exported {len(archive['commits'])} commit(s) to {args.export}")
+            print(
+                f"exported {len(archive['commits'])} commit(s), "
+                f"{len(archive.get('what_ifs', []))} what-if(s) and "
+                f"{len(archive.get('conversations', []))} conversation(s) to {args.export}"
+            )
             return 0
 
         target_actions = (
@@ -98,7 +102,9 @@ async def _run(args: argparse.Namespace) -> int:
                 print("the project is not a successful restore; retry or use --remove-import")
                 return 1
             print(
-                f"imported {result['commits']} commit(s), {result['objects']} object(s); "
+                f"imported {result['commits']} commit(s), {result['objects']} object(s), "
+                f"{result.get('what_ifs', 0)} what-if(s), "
+                f"{result.get('conversations', 0)} conversation(s); "
                 f"projection rebuilt: {result['projection_rebuilt']}; "
                 f"verified: {result['verified']}; import id: {result['import_id']}"
             )

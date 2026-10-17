@@ -21,6 +21,63 @@ logger = logging.getLogger(__name__)
 MAX_LISTED_MODELS = 1000
 
 
+def _count(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _field(container: Any, name: str) -> Any:
+    if container is None:
+        return None
+    if isinstance(container, dict):
+        return container.get(name)
+    return getattr(container, name, None)
+
+
+def _reported(usage: Any, name: str) -> Any:
+    """A usage field, whether the client typed it or kept it among its extras."""
+    found = _field(usage, name)
+    if found is None:
+        found = _field(_field(usage, "model_extra"), name)
+    return found
+
+
+def usage_from(usage: Any) -> AIUsage:
+    """Token counts from a provider's ``usage``, including prompt tokens read from its cache.
+
+    OpenAI and OpenRouter (for every provider it routes to, Anthropic included) report
+    cache reads as ``prompt_tokens_details.cached_tokens``; DeepSeek as
+    ``prompt_cache_hit_tokens``: both are part of ``prompt_tokens``. Anthropic's own shape
+    (``input_tokens`` and ``output_tokens``) counts the tokens read from the cache
+    (``cache_read_input_tokens``) and written to it (``cache_creation_input_tokens``)
+    apart from ``input_tokens``, so the prompt is all three. Cached tokens never count
+    for more than the prompt."""
+    if _reported(usage, "prompt_tokens") is None and _reported(usage, "input_tokens") is not None:
+        cached = _count(_reported(usage, "cache_read_input_tokens"))
+        prompt = (
+            _count(_reported(usage, "input_tokens"))
+            + cached
+            + _count(_reported(usage, "cache_creation_input_tokens"))
+        )
+        completion = _count(_reported(usage, "output_tokens"))
+    else:
+        prompt = _count(_reported(usage, "prompt_tokens"))
+        completion = _count(_reported(usage, "completion_tokens"))
+        cached = _count(_field(_reported(usage, "prompt_tokens_details"), "cached_tokens"))
+        if not cached:
+            cached = _count(
+                _reported(usage, "prompt_cache_hit_tokens")
+                or _reported(usage, "cache_read_input_tokens")
+            )
+    return AIUsage(
+        prompt_tokens=prompt,
+        completion_tokens=completion,
+        cached_prompt_tokens=min(cached, prompt),
+    )
+
+
 class OpenAIGateway:
     """AsyncOpenAI-compatible adapter.
 
@@ -154,11 +211,7 @@ class OpenAIGateway:
         if parsed is None:
             raise AIInvalidOutputError("provider returned no structured output")
 
-        usage = getattr(response, "usage", None)
-        usage_model = AIUsage(
-            prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
-            completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
-        )
+        usage_model = usage_from(getattr(response, "usage", None))
         log_event(
             logger,
             "ai.generate",
@@ -166,6 +219,7 @@ class OpenAIGateway:
             duration_ms=round((time.perf_counter() - start) * 1000, 3),
             prompt_tokens=usage_model.prompt_tokens,
             completion_tokens=usage_model.completion_tokens,
+            cached_prompt_tokens=usage_model.cached_prompt_tokens,
         )
         return StructuredResponse(
             parsed=parsed,
@@ -213,11 +267,7 @@ class OpenAIGateway:
         text = (choice.message.content or "") if choice is not None else ""
         if not text.strip():
             raise AIInvalidOutputError("provider returned no text")
-        usage = getattr(response, "usage", None)
-        usage_model = AIUsage(
-            prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
-            completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
-        )
+        usage_model = usage_from(getattr(response, "usage", None))
         # Sizes and timing only: the text is the author's story.
         log_event(
             logger,
@@ -226,6 +276,7 @@ class OpenAIGateway:
             duration_ms=round((time.perf_counter() - start) * 1000, 3),
             prompt_tokens=usage_model.prompt_tokens,
             completion_tokens=usage_model.completion_tokens,
+            cached_prompt_tokens=usage_model.cached_prompt_tokens,
         )
         return TextResponse(
             text=text,

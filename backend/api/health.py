@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hmac
 
 from fastapi import APIRouter, Depends, Request, Response, status
@@ -36,20 +37,131 @@ def liveness() -> dict[str, str]:
     return {"status": "alive"}
 
 
+# A job waiting longer than this to start means the worker is stuck or overloaded.
+STALE_QUEUE_SECONDS = 300
+# How long the optional checks may take before they count as down.
+OPTIONAL_CHECK_SECONDS = 3.0
+
+
+async def _job_worker(
+    container: Container,
+) -> tuple[bool, str | None, dict[str, object], str | None]:
+    """Whether background work (drafts, checks, readings) is being picked up: whether it
+    is, the plain reason, the counts, and the reason again without any numbers."""
+    runner = container.job_runner
+    facts: dict[str, object] = {"running": bool(runner.running)}
+    problems: list[str] = []
+    brief: list[str] = []
+    # A worker turned off on purpose (tests, one-off commands) runs work when asked.
+    detail = None if runner.autostart else "Background work runs only when asked for here."
+    if runner.autostart and not runner.running:
+        problems.append(
+            "The background worker is not running, so drafts, checks and readings wait "
+            "until it starts again."
+        )
+        brief.append(problems[-1])
+    if container.jobs is not None and hasattr(container.jobs, "waiting"):
+        try:
+            waiting, oldest = await asyncio.wait_for(
+                container.jobs.waiting(), timeout=OPTIONAL_CHECK_SECONDS
+            )
+        except Exception:  # noqa: BLE001 - reported in plain words, never the error text
+            problems.append("The list of waiting background work could not be read.")
+            brief.append(problems[-1])
+        else:
+            facts["waiting"] = waiting
+            facts["oldest_waiting_seconds"] = None if oldest is None else round(oldest)
+            if runner.autostart and oldest is not None and oldest > STALE_QUEUE_SECONDS:
+                problems.append(
+                    f"The oldest waiting piece of work has waited {round(oldest / 60)} minutes; "
+                    "the worker may be stuck or too busy."
+                )
+                brief.append(
+                    "Background work has waited too long to start; the worker may be stuck "
+                    "or too busy."
+                )
+    if problems:
+        return False, " ".join(problems), facts, " ".join(brief)
+    return True, detail, facts, detail
+
+
+async def _vector_store(container: Container) -> tuple[bool, str | None]:
+    """Whether finding passages by meaning can work. Names and links work without it."""
+    if not getattr(container.vectors, "dimension_supported", lambda: True)():
+        return False, (
+            "The embedding size set for this server does not match the search store, so "
+            "finding passages by meaning is off. Search by name still works."
+        )
+    try:
+        healthy = await asyncio.wait_for(
+            asyncio.to_thread(container.vectors.health), timeout=OPTIONAL_CHECK_SECONDS
+        )
+    except Exception:  # noqa: BLE001 - a slow or failing store is simply down
+        healthy = False
+    if not healthy:
+        return False, (
+            "The search store could not be reached, so finding passages by meaning is off. "
+            "Search by name still works."
+        )
+    return True, None
+
+
+# What a failed required check says to a caller who may not see the details.
+_BRIEF = {
+    "neo4j_migrations": "The story graph's layout is not up to date.",
+    "neo4j": "The story graph cannot be reached.",
+    "postgres": "The database cannot be reached.",
+    "postgres_migrations": "The database's layout is not up to date.",
+}
+
+
+def _may_see_details(request: Request, container: Container) -> bool:
+    """Counts and details are for the person running the server: on a local install, or
+    with the metrics token (the same one ``/health/metrics`` asks for)."""
+    settings = container.settings
+    if not settings.is_hosted:
+        return True
+    if not settings.METRICS_TOKEN:
+        return False
+    supplied = request.headers.get("Authorization", "")
+    return hmac.compare_digest(supplied, f"Bearer {settings.METRICS_TOKEN}")
+
+
 @router.get("/health/ready")
 async def readiness(
-    response: Response, container: Container = Depends(get_container)
+    request: Request, response: Response, container: Container = Depends(get_container)
 ) -> dict[str, object]:
+    """Ready when the required stores are; degraded (still 200) when an optional part is
+    down, with plain reasons; unavailable (503) when a required store is down. Never
+    reports addresses, credentials or error messages that could carry them."""
+    # On a hosted server, how much work is waiting and for how long are shown only with
+    # the metrics token; without it each part says only whether it is up, with a reason
+    # in plain words (the docstring above is the public API description).
     checks: dict[str, dict[str, object]] = {}
+    briefs: dict[str, str] = {}
     ok = True
+    optional_ok = True
 
-    def record(name: str, check_ok: bool, detail: str | None = None) -> None:
-        nonlocal ok
-        entry: dict[str, object] = {"ok": check_ok}
+    def record(
+        name: str,
+        check_ok: bool,
+        detail: str | None = None,
+        *,
+        optional: bool = False,
+        brief: str | None = None,
+        **facts: object,
+    ) -> None:
+        nonlocal ok, optional_ok
+        entry: dict[str, object] = {"ok": check_ok, "optional": optional, **facts}
         if detail:
             entry["detail"] = detail
         checks[name] = entry
-        ok = ok and check_ok
+        if not check_ok:
+            briefs[name] = brief or _BRIEF.get(name) or detail or "A part of the server is down."
+        if optional:
+            optional_ok = optional_ok and check_ok
+        else:
+            ok = ok and check_ok
 
     try:
         migration = container.neo4j_migrations.status()
@@ -82,10 +194,32 @@ async def readiness(
                 f"migration check failed: {type(error).__name__}",
             )
 
+    if container.job_runner is not None:
+        worker_ok, worker_detail, facts, worker_brief = await _job_worker(container)
+        record("job_worker", worker_ok, worker_detail, optional=True, brief=worker_brief, **facts)
+
+    if container.vectors is not None:
+        vectors_ok, vectors_detail = await _vector_store(container)
+        record("vector_store", vectors_ok, vectors_detail, optional=True)
+
     if not ok:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-
-    return {"status": "ready" if ok else "degraded", "checks": checks}
+        overall = "unavailable"
+    else:
+        overall = "ready" if optional_ok else "degraded"
+    if not _may_see_details(request, container):
+        return {
+            "status": overall,
+            "checks": {
+                name: {"ok": entry["ok"], "optional": entry["optional"]}
+                for name, entry in checks.items()
+            },
+            "reasons": list(briefs.values()),
+        }
+    reasons = [
+        str(entry["detail"]) for entry in checks.values() if not entry["ok"] and entry.get("detail")
+    ]
+    return {"status": overall, "checks": checks, "reasons": reasons}
 
 
 @router.get("/health/capabilities")

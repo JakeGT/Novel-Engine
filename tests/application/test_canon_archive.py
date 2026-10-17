@@ -102,7 +102,7 @@ async def test_archive_round_trip_preserves_canonical_checksum() -> None:
     ws, pr = await _seed(service, journal, canon, objects, media)
 
     archive = await service.export_project(ws, pr)
-    assert archive["format_version"] == "3"
+    assert archive["format_version"] == "4"
     assert len(archive["commits"]) == 1
     assert len(archive["media"]["versions"]) == 1
 

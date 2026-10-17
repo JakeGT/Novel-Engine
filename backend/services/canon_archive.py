@@ -1,19 +1,34 @@
-"""Canonical project archive (format v3) export/import.
+"""Project archive (format v4) export/import.
 
-Exports the canonical PostgreSQL model for one project — schema versions, the
-ordered commit envelopes, the canon snapshot, tags, media identity/version
-metadata, and project objects (bytes) — as a checksummed, self-contained archive.
+Exports one project completely — schema versions, the ordered commit envelopes, the
+canon snapshot, tags, media identity/version metadata, project objects (bytes), the
+author's texts, name answers, rules and story-time unit, which text holds each scene,
+what was read from each scene, the author's voice note, every what-if (where it
+started, its own saved changes and named versions, its scene texts and readings) and
+the conversations with the assistant — as a checksummed, self-contained archive.
+
+Left out on purpose, and said so in the archive's ``left_out`` list: drafts waiting
+for the author to keep or discard (working material, not the story), proposals not
+yet saved, assistant jobs, provider usage, credentials and sessions.
+
 Import is preflight-validated and idempotent: commits replay under deterministic
 target-scoped commit ids, so re-importing the same archive into the same project
-is a no-op. Project-scoped entity references are rewritten for the target, so a
-cross-project restore can legitimately produce a different commit checksum.
+is a no-op. A what-if is started again from the main story at the version it first
+started from, then its own changes replay on it. Project-scoped entity references are
+rewritten for the target, so a cross-project restore can legitimately produce a
+different commit checksum.
+
+Version 3 archives (main story only) still import: everything version 4 adds is an
+optional section. The version was raised because an older reader would have
+restored a version 4 archive's main story and silently dropped its what-ifs and
+conversations; a version check makes it refuse instead.
 
 An import is recorded in a status ledger before its first durable write and is
 marked ``completed`` only after every commit has replayed, the graph projection
 has been rebuilt (when one is configured), and the journal, normalized canon,
-and projection have been verified to agree. A failed import stays visibly
-unsuccessful; it can be retried or removed. Canon has no derived vector index
-in Phase 2, so there is nothing else to rebuild.
+and projection have been verified to agree. Each what-if's restored history is
+checked against the archive's checksums too. A failed import stays visibly
+unsuccessful; it can be retried or removed.
 
 Full-history export and import are owner-level operations: the ``*_as`` entry
 points authorize the actor and write a durable security-audit record carrying
@@ -30,15 +45,19 @@ import binascii
 import hashlib
 import json
 import logging
+import re
 from datetime import UTC, datetime
 from typing import Any
 
 from backend.core.logging import log_event
 from backend.core.metrics import metrics
 from backend.domain.archive import ArchiveImport, ArchiveImportError, ImportStatus
+from backend.domain.assist import AssistSession
 from backend.domain.branching import working_in
 from backend.domain.canon.propositions import EntityRefObject
 from backend.domain.canon.revisions import OriginKind
+from backend.domain.dismissals import MAX_NOTE as MAX_DISMISSAL_NOTE
+from backend.domain.dismissals import DismissReason, FindingDismissal, FindingKind
 from backend.domain.errors import NotFoundError
 from backend.domain.history import CanonTag
 from backend.domain.identity import AccessScope
@@ -55,6 +74,7 @@ from backend.domain.operations import (
 from backend.domain.review import MutationIntent, classify_review
 from backend.domain.rules import RuleBody
 from backend.domain.tenancy import Permission
+from backend.domain.validation import AuthoritativeValidator, RuleEnforcement
 from backend.ports import (
     CanonJournalPort,
     CanonRepositoryPort,
@@ -64,9 +84,23 @@ from backend.ports import (
 )
 
 ARCHIVE_FORMAT = "novel-engine/canon-archive"
-FORMAT_VERSION = "3"
+FORMAT_VERSION = "4"
+# Every version this code can restore. A version 3 archive has no what-ifs,
+# conversations or readings; it restores exactly as it always did.
+READABLE_VERSIONS = frozenset({"3", "4"})
+# What an archive does not carry, in the author's words.
+LEFT_OUT = (
+    "Drafts waiting for you to keep or discard: they are working material, not the story.",
+    "Proposed changes not yet reviewed and saved.",
+    "Assistant jobs, usage records, sign-in details and settings.",
+)
+MAX_NAME = 120
 MAX_ENTRIES = 100_000
 MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
+# History in an archive was already accepted once, so a replay checks the story's
+# integrity and never the author's own rules: a rule set to block must not refuse
+# the restore of a story it was never checked against, or a retry of one.
+_REPLAY_VALIDATOR = AuthoritativeValidator()
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +127,18 @@ def _dedup_commit_id(
     return f"cmt_{digest[:32]}"
 
 
+def _dedup_branch_id(
+    archive_checksum: str,
+    source_branch_id: str,
+    target_workspace_id: str,
+    target_project_id: str,
+) -> str:
+    digest = hashlib.sha256(
+        f"{archive_checksum}:branch:{source_branch_id}:{target_workspace_id}:{target_project_id}".encode()
+    ).hexdigest()
+    return f"brn_{digest[:32]}"
+
+
 def _import_id(archive_checksum: str, workspace_id: str, project_id: str) -> str:
     digest = hashlib.sha256(f"{archive_checksum}:{workspace_id}:{project_id}".encode()).hexdigest()
     return f"imp_{digest[:32]}"
@@ -108,6 +154,33 @@ def _remap_operation_scope(operation: CanonOperation, *, target_project_id: str)
         update={"object": obj.model_copy(update={"project_id": target_project_id})}
     )
     return operation.model_copy(update={"proposition": proposition})
+
+
+def _plan_commits(
+    commits: list[dict[str, Any]],
+    archive_checksum: str,
+    target_workspace_id: str,
+    target_project_id: str,
+) -> list[dict[str, Any]]:
+    """Target-scoped commits of one line of the story, in revision order (pure)."""
+    plan: list[dict[str, Any]] = []
+    for raw in sorted(commits, key=lambda item: item["revision"]):
+        operations = [
+            _remap_operation_scope(parse_operation(operation), target_project_id=target_project_id)
+            for operation in json.loads(raw["canonical"])
+        ]
+        plan.append(
+            {
+                "raw": raw,
+                "commit_id": _dedup_commit_id(
+                    archive_checksum, raw["commit_id"], target_workspace_id, target_project_id
+                ),
+                "operations": operations,
+                "canonical": canonicalize_operations(operations),
+                "checksum": operations_checksum(operations),
+            }
+        )
+    return plan
 
 
 def _safe_object_key(key: object) -> bool:
@@ -139,8 +212,10 @@ class CanonArchiveService:
         rules: object | None = None,
         clocks: object | None = None,
         studio: object | None = None,
+        assists: object | None = None,
     ) -> None:
         self._canon = canon
+        self._assists = assists
         self._clocks = clocks
         self._studio = studio
         self._journal = journal
@@ -202,6 +277,8 @@ class CanonArchiveService:
                 "commits": len(archive["commits"]),
                 "objects": len(archive["objects"]),
                 "head_revision": archive["project"]["head_revision"],
+                "what_ifs": len(archive.get("what_ifs", [])),
+                "conversations": len(archive.get("conversations", [])),
             },
         )
         return archive
@@ -234,6 +311,8 @@ class CanonArchiveService:
                 "import_id": result["import_id"],
                 "commits": result["commits"],
                 "objects": result["objects"],
+                "what_ifs": result.get("what_ifs", 0),
+                "conversations": result.get("conversations", 0),
                 "verified": result["verified"],
             },
         )
@@ -297,6 +376,42 @@ class CanonArchiveService:
                 raise ArchiveImportError(
                     "the project contains canon this import did not write; it was not removed"
                 )
+        for branch in await self._journal.list_branches(
+            workspace_id=workspace_id, project_id=project_id
+        ):
+            if branch.is_root:
+                continue
+            for revision in await self._canon.list_commits(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                branch_id=branch.id,
+                after_revision=branch.fork_revision or 0,
+                limit=MAX_ENTRIES,
+            ):
+                envelope = await self._canon.get_envelope(revision.commit_id)
+                mutation = (
+                    await self._journal.get_mutation(
+                        workspace_id=workspace_id,
+                        project_id=project_id,
+                        mutation_id=envelope.mutation_id,
+                    )
+                    if envelope is not None
+                    else None
+                )
+                if mutation is None or not mutation.idempotency_key.startswith("archive:"):
+                    raise ArchiveImportError(
+                        "a what-if holds changes this import did not write; it was not removed"
+                    )
+        if self._assists is not None:
+            for session_id in record.created_records.get("assist_sessions", []):
+                await self._assists.delete(  # type: ignore[attr-defined]
+                    workspace_id=workspace_id, project_id=project_id, session_id=session_id
+                )
+        if self._rules is not None:
+            for rule_id in record.created_records.get("story_rules", []):
+                await self._rules.remove_rule(  # type: ignore[attr-defined]
+                    workspace_id=workspace_id, project_id=project_id, rule_id=rule_id
+                )
         for key in record.object_keys:
             self._objects.delete(key, workspace_id=workspace_id, project_id=project_id)
         # Only what this import created is removed: a schema version or asset the
@@ -331,13 +446,25 @@ class CanonArchiveService:
         with working_in(None):
             return await self._export_main(workspace_id, project_id)
 
-    async def _export_main(self, workspace_id: str, project_id: str) -> dict[str, Any]:
-        branch_id = await self._root_branch_id(workspace_id, project_id)
-        schema_versions = await self._schemas.list(workspace_id=workspace_id, project_id=project_id)
+    async def _export_commits(
+        self,
+        workspace_id: str,
+        project_id: str,
+        branch_id: str,
+        *,
+        after_revision: int = 0,
+        mutation_commits: dict[str, str],
+    ) -> list[dict[str, Any]]:
+        """One line of the story's saved changes, oldest first, as archive entries.
+
+        ``mutation_commits`` collects which saved change each proposal became, so the
+        conversations and readings that point at a proposal can follow it on restore.
+        """
         revisions = await self._canon.list_commits(
             workspace_id=workspace_id,
             project_id=project_id,
             branch_id=branch_id,
+            after_revision=after_revision,
             limit=MAX_ENTRIES,
         )
         commits: list[dict[str, Any]] = []
@@ -345,6 +472,7 @@ class CanonArchiveService:
             envelope = await self._canon.get_envelope(revision.commit_id)
             if envelope is None:
                 raise ArchiveError(f"missing envelope for revision {revision.revision}")
+            mutation_commits[envelope.mutation_id] = envelope.commit_id
             mutation = await self._journal.get_mutation(
                 workspace_id=workspace_id,
                 project_id=project_id,
@@ -395,6 +523,15 @@ class CanonArchiveService:
                     "created_at": envelope.created_at.isoformat(),
                 }
             )
+        return commits
+
+    async def _export_main(self, workspace_id: str, project_id: str) -> dict[str, Any]:
+        branch_id = await self._root_branch_id(workspace_id, project_id)
+        schema_versions = await self._schemas.list(workspace_id=workspace_id, project_id=project_id)
+        mutation_commits: dict[str, str] = {}
+        commits = await self._export_commits(
+            workspace_id, project_id, branch_id, mutation_commits=mutation_commits
+        )
 
         entities = await self._canon.list_entities(
             workspace_id=workspace_id,
@@ -455,7 +592,7 @@ class CanonArchiveService:
                 "workspace_id": workspace_id,
                 "project_id": project_id,
                 "root_branch_id": branch_id,
-                "head_revision": revisions[-1].revision if revisions else 0,
+                "head_revision": commits[-1]["revision"] if commits else 0,
             },
             "schemas": [
                 {
@@ -500,9 +637,20 @@ class CanonArchiveService:
         }
         # The author's own writing and rules: theirs to take away, and never canon.
         # Left out entirely when there are none, so an archive without them is unchanged.
-        writing = await self._export_writing(workspace_id, project_id)
+        what_ifs = await self._export_what_ifs(workspace_id, project_id, mutation_commits)
+        writing = await self._export_writing(workspace_id, project_id, mutation_commits)
         if writing:
             body["writing"] = writing
+        if what_ifs:
+            carried = {text["id"] for text in (writing or {}).get("texts", [])}
+            for what_if in what_ifs:
+                await self._export_what_if_writing(
+                    workspace_id, project_id, what_if, carried, mutation_commits
+                )
+            body["what_ifs"] = what_ifs
+        conversations = await self._export_conversations(workspace_id, project_id, mutation_commits)
+        if conversations:
+            body["conversations"] = conversations
         story_rules = await self._export_rules(workspace_id, project_id)
         if story_rules:
             body["story_rules"] = story_rules
@@ -512,6 +660,8 @@ class CanonArchiveService:
             )
             if unit:
                 body["story_time"] = {"unit": unit}
+        # Said in the archive itself, so whoever opens it knows what is not there.
+        body["left_out"] = list(LEFT_OUT)
         body["checksum"] = _checksum(body)
         metrics.increment(
             "archive_operations_total",
@@ -526,10 +676,177 @@ class CanonArchiveService:
             project_id=project_id,
             commits=len(commits),
             objects=len(objects),
+            what_ifs=len(what_ifs),
         )
         return body
 
-    async def _export_writing(self, workspace_id: str, project_id: str) -> dict[str, Any]:
+    async def _export_what_ifs(
+        self, workspace_id: str, project_id: str, mutation_commits: dict[str, str]
+    ) -> list[dict[str, Any]]:
+        """Every what-if: where it started, its own saved changes and its named versions.
+
+        What it shares with the main story is not repeated; restoring the main story up
+        to the version the what-if started from and then its own changes rebuilds it.
+        """
+        found: list[dict[str, Any]] = []
+        branches = await self._journal.list_branches(
+            workspace_id=workspace_id, project_id=project_id
+        )
+        for branch in sorted(branches, key=lambda item: (item.created_at, item.id)):
+            if branch.is_root:
+                continue
+            fork = branch.fork_revision or 0
+            commits = await self._export_commits(
+                workspace_id,
+                project_id,
+                branch.id,
+                after_revision=fork,
+                mutation_commits=mutation_commits,
+            )
+            tags = await self._canon.list_tags(
+                workspace_id=workspace_id, project_id=project_id, branch_id=branch.id
+            )
+            found.append(
+                {
+                    "id": branch.id,
+                    "name": branch.name,
+                    "description": branch.description,
+                    "status": branch.status,
+                    "created_by": branch.created_by,
+                    "created_at": branch.created_at.isoformat(),
+                    "fork_revision": fork,
+                    "commits": commits,
+                    "tags": [
+                        {
+                            "name": tag.name,
+                            "revision": tag.revision,
+                            "commit_id": tag.commit_id,
+                            "created_by_user_id": tag.created_by_user_id,
+                        }
+                        for tag in tags
+                    ],
+                }
+            )
+        return found
+
+    async def _export_readings(
+        self,
+        workspace_id: str,
+        project_id: str,
+        branch_id: str,
+        carried: set[str],
+        mutation_commits: dict[str, str],
+    ) -> list[dict[str, Any]]:
+        """What was read from each scene in one line of the story, oldest first.
+
+        A proposal a reading made travels as the saved change it became; one that was
+        never saved is not in the archive, so it is not pointed at.
+        """
+        if self._studio is None:
+            return []
+        readings = await self._studio.readings_in(  # type: ignore[attr-defined]
+            workspace_id=workspace_id, project_id=project_id, branch_id=branch_id
+        )
+        return [
+            {
+                "id": reading.id,
+                "plan_id": reading.plan_id,
+                "text_id": reading.source_id,
+                "version_id": reading.version_id,
+                "passages": reading.passages,
+                "proposal_commits": [
+                    mutation_commits[item] for item in reading.proposals if item in mutation_commits
+                ],
+                "discarded": reading.discarded,
+                "created_by": reading.created_by,
+                "created_at": reading.created_at.isoformat(),
+                "status": reading.status,
+                "covered": [list(span) for span in reading.covered],
+                "base_reading_id": reading.base_reading_id,
+            }
+            for reading in readings
+            if reading.source_id in carried
+        ]
+
+    async def _export_dismissals(
+        self, workspace_id: str, project_id: str, branch_id: str
+    ) -> list[dict[str, Any]]:
+        """The author's dismissed findings in one line of the story, withdrawn ones too.
+
+        Each holds a fingerprint of the words it was about, never the words.
+        """
+        if self._studio is None:
+            return []
+        return [
+            {
+                "id": item.id,
+                "plan_id": item.plan_id,
+                "fingerprint": item.fingerprint,
+                "kind": item.kind.value,
+                "code": item.code,
+                "reason": item.reason.value,
+                "note": item.note,
+                "expires_at": item.expires_at.isoformat() if item.expires_at else None,
+                "created_by": item.created_by,
+                "created_at": item.created_at.isoformat(),
+                "withdrawn_at": item.withdrawn_at.isoformat() if item.withdrawn_at else None,
+            }
+            for item in await self._studio.dismissals_in(  # type: ignore[attr-defined]
+                workspace_id=workspace_id, project_id=project_id, branch_id=branch_id
+            )
+        ]
+
+    async def _export_what_if_writing(
+        self,
+        workspace_id: str,
+        project_id: str,
+        what_if: dict[str, Any],
+        carried: set[str],
+        mutation_commits: dict[str, str],
+    ) -> None:
+        """Which text holds each scene in a what-if, and what was read from it there."""
+        if self._studio is None:
+            return
+        scenes = await self._studio.manuscripts_for(  # type: ignore[attr-defined]
+            workspace_id=workspace_id, project_id=project_id, branch_id=what_if["id"]
+        )
+        links = [{"plan_id": plan, "text_id": text} for plan, text in scenes if text in carried]
+        if links:
+            what_if["scenes"] = links
+        readings = await self._export_readings(
+            workspace_id, project_id, what_if["id"], carried, mutation_commits
+        )
+        if readings:
+            what_if["readings"] = readings
+        dismissals = await self._export_dismissals(workspace_id, project_id, what_if["id"])
+        if dismissals:
+            what_if["dismissals"] = dismissals
+
+    async def _export_conversations(
+        self, workspace_id: str, project_id: str, mutation_commits: dict[str, str]
+    ) -> list[dict[str, Any]]:
+        """The author's conversations with the assistant, kept as the evidence they are.
+
+        The proposal a conversation led to travels as the saved change it became.
+        """
+        if self._assists is None:
+            return []
+        sessions = await self._assists.list_for_project(  # type: ignore[attr-defined]
+            workspace_id=workspace_id, project_id=project_id, limit=MAX_ENTRIES
+        )
+        found = []
+        for session in sessions:
+            entry = session.model_dump(mode="json", exclude={"workspace_id", "project_id"})
+            entry["commit_id"] = mutation_commits.get(entry.pop("mutation_id") or "")
+            found.append(entry)
+        return found
+
+    async def _export_writing(
+        self,
+        workspace_id: str,
+        project_id: str,
+        mutation_commits: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         if self._sources is None:
             return {}
         texts: list[dict[str, Any]] = []
@@ -588,6 +905,14 @@ class CanonArchiveService:
             scenes = [(plan, text) for plan, text in scenes if text in carried]
             if scenes:
                 found["scenes"] = [{"plan_id": plan, "text_id": text} for plan, text in scenes]
+            readings = await self._export_readings(
+                workspace_id, project_id, main.id, carried, mutation_commits or {}
+            )
+            if readings:
+                found["readings"] = readings
+            dismissals = await self._export_dismissals(workspace_id, project_id, main.id)
+            if dismissals:
+                found["dismissals"] = dismissals
             voice = await self._studio.voice(  # type: ignore[attr-defined]
                 workspace_id=workspace_id, project_id=project_id
             )
@@ -619,6 +944,13 @@ class CanonArchiveService:
                         }
                         for number, body, examples in versions
                     ],
+                    # Said only for a rule set to block, so a warning rule's entry (and any
+                    # archive made before rules could block) reads the same as before.
+                    **(
+                        {"enforcement": rule.enforcement.value}
+                        if rule.enforcement is RuleEnforcement.BLOCKING
+                        else {}
+                    ),
                 }
             )
         return found
@@ -630,6 +962,7 @@ class CanonArchiveService:
         archive: dict[str, Any],
         *,
         actor_user_id: str | None,
+        import_id: str | None = None,
     ) -> dict[str, int]:
         """Bring back the author's texts, name answers and rules, after canon is restored.
 
@@ -752,6 +1085,12 @@ class CanonArchiveService:
                 )
                 if existing is not None:
                     continue
+                if import_id is not None:
+                    # Attributed before it is written, so removing a failed import
+                    # removes it too; removing one never written does nothing.
+                    await self._record_created(
+                        workspace_id, project_id, import_id, "story_rules", rule["id"]
+                    )
                 versions = sorted(rule["versions"], key=lambda item: item["number"])
                 wordings = [
                     (
@@ -786,8 +1125,260 @@ class CanonArchiveService:
                         rule_id=rule["id"],
                         status=RuleStatus.PAUSED,
                     )
+                if rule.get("enforcement") == RuleEnforcement.BLOCKING.value:
+                    await self._rules.change_rule(  # type: ignore[attr-defined]
+                        workspace_id=workspace_id,
+                        project_id=project_id,
+                        rule_id=rule["id"],
+                        enforcement=RuleEnforcement.BLOCKING,
+                    )
                 restored["rules"] += 1
         return restored
+
+    async def _record_created(
+        self, workspace_id: str, project_id: str, import_id: str, key: str, record_id: str
+    ) -> None:
+        """Attribute one record to an import, so removing the import removes it."""
+        record = next(
+            (
+                item
+                for item in await self._canon.list_imports(
+                    workspace_id=workspace_id, project_id=project_id
+                )
+                if item.id == import_id
+            ),
+            None,
+        )
+        created = {
+            name: list(value) for name, value in (record.created_records if record else {}).items()
+        }
+        ids = created.setdefault(key, [])
+        if record_id not in ids:
+            ids.append(record_id)
+            await self._canon.update_import(
+                import_id=import_id, stage="writing", created_records=created
+            )
+
+    async def _mutation_for(
+        self, archive_checksum: str, workspace_id: str, project_id: str, commit_id: object
+    ) -> str | None:
+        """The restored proposal behind a saved change the archive names, if it is there."""
+        if not isinstance(commit_id, str) or not commit_id:
+            return None
+        envelope = await self._canon.get_envelope(
+            _dedup_commit_id(archive_checksum, commit_id, workspace_id, project_id)
+        )
+        return envelope.mutation_id if envelope is not None else None
+
+    async def _restore_readings(
+        self,
+        workspace_id: str,
+        project_id: str,
+        branch_id: str,
+        readings: list[dict[str, Any]],
+        archive_checksum: str,
+    ) -> int:
+        from backend.domain.studio import SceneReading
+
+        if self._studio is None or self._sources is None:
+            return 0
+        restored = 0
+        for raw in readings:
+            # A reading of a text that is not there would point at nothing.
+            if not await self._sources.get_source(  # type: ignore[attr-defined]
+                workspace_id=workspace_id, project_id=project_id, source_id=raw["text_id"]
+            ):
+                continue
+            proposals = [
+                mutation
+                for commit in raw.get("proposal_commits", [])
+                if (
+                    mutation := await self._mutation_for(
+                        archive_checksum, workspace_id, project_id, commit
+                    )
+                )
+            ]
+            added = await self._studio.restore_reading(  # type: ignore[attr-defined]
+                SceneReading(
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    branch_id=branch_id,
+                    id=raw["id"],
+                    plan_id=raw["plan_id"],
+                    source_id=raw["text_id"],
+                    version_id=raw["version_id"],
+                    # The job that read it is not carried; the reading stands on its own.
+                    job_id=None,
+                    passages=int(raw.get("passages", 0)),
+                    proposals=tuple(proposals),
+                    discarded=int(raw.get("discarded", 0)),
+                    created_by=raw.get("created_by"),
+                    created_at=datetime.fromisoformat(raw["created_at"]),
+                    status=raw.get("status", "complete"),
+                    covered=tuple((int(a), int(b)) for a, b in raw.get("covered", [])),
+                    base_reading_id=raw.get("base_reading_id"),
+                )
+            )
+            restored += 1 if added else 0
+        return restored
+
+    async def _restore_dismissals(
+        self, workspace_id: str, project_id: str, branch_id: str, dismissals: list[dict[str, Any]]
+    ) -> int:
+        if self._studio is None:
+            return 0
+
+        def when(value: object) -> datetime | None:
+            return datetime.fromisoformat(str(value)) if value else None
+
+        restored = 0
+        for raw in dismissals:
+            added = await self._studio.restore_dismissal(  # type: ignore[attr-defined]
+                FindingDismissal(
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    branch_id=branch_id,
+                    id=raw["id"],
+                    plan_id=raw["plan_id"],
+                    fingerprint=raw["fingerprint"],
+                    kind=FindingKind(raw["kind"]),
+                    code=raw["code"],
+                    reason=DismissReason(raw["reason"]),
+                    note=raw.get("note", ""),
+                    expires_at=when(raw.get("expires_at")),
+                    created_by=raw.get("created_by"),
+                    created_at=datetime.fromisoformat(raw["created_at"]),
+                    withdrawn_at=when(raw.get("withdrawn_at")),
+                )
+            )
+            restored += 1 if added else 0
+        return restored
+
+    async def _restore_additions(
+        self,
+        workspace_id: str,
+        project_id: str,
+        archive: dict[str, Any],
+        *,
+        import_id: str,
+    ) -> dict[str, int]:
+        """What version 4 adds beyond the story itself: each what-if's scene texts, and in
+        every line of the story its readings and dismissed findings; then the
+        conversations with the assistant.
+
+        Safe to run again: what is already there is left as it is.
+        """
+        checksum = archive["checksum"]
+        readings = dismissed = 0
+        if self._studio is not None:
+            main = await self._root_branch_id(workspace_id, project_id)
+            dismissed += await self._restore_dismissals(
+                workspace_id,
+                project_id,
+                main,
+                (archive.get("writing") or {}).get("dismissals", []),
+            )
+            for raw in archive.get("what_ifs", []):
+                dismissed += await self._restore_dismissals(
+                    workspace_id,
+                    project_id,
+                    _dedup_branch_id(checksum, raw["id"], workspace_id, project_id),
+                    raw.get("dismissals", []),
+                )
+        if self._studio is not None and self._sources is not None:
+            readings += await self._restore_readings(
+                workspace_id,
+                project_id,
+                main,
+                (archive.get("writing") or {}).get("readings", []),
+                checksum,
+            )
+            for raw in archive.get("what_ifs", []):
+                what_if_id = _dedup_branch_id(checksum, raw["id"], workspace_id, project_id)
+                for link in raw.get("scenes", []):
+                    if not await self._sources.get_source(  # type: ignore[attr-defined]
+                        workspace_id=workspace_id, project_id=project_id, source_id=link["text_id"]
+                    ):
+                        continue
+                    current = await self._studio.manuscript(  # type: ignore[attr-defined]
+                        workspace_id=workspace_id,
+                        project_id=project_id,
+                        branch_id=what_if_id,
+                        plan_id=link["plan_id"],
+                    )
+                    if current != link["text_id"]:
+                        await self._studio.link(  # type: ignore[attr-defined]
+                            workspace_id=workspace_id,
+                            project_id=project_id,
+                            branch_id=what_if_id,
+                            plan_id=link["plan_id"],
+                            source_id=link["text_id"],
+                        )
+                readings += await self._restore_readings(
+                    workspace_id, project_id, what_if_id, raw.get("readings", []), checksum
+                )
+        conversations = 0
+        if self._assists is not None and archive.get("conversations"):
+            prior = next(
+                (
+                    item
+                    for item in await self._canon.list_imports(
+                        workspace_id=workspace_id, project_id=project_id
+                    )
+                    if item.id == import_id
+                ),
+                None,
+            )
+            created = {
+                key: list(value) for key, value in (prior.created_records if prior else {}).items()
+            }
+            mine = created.setdefault("assist_sessions", [])
+            copy_suffix = hashlib.sha256(
+                f"{checksum}:{workspace_id}:{project_id}".encode()
+            ).hexdigest()[:12]
+            for raw in archive["conversations"]:
+                fields = {key: value for key, value in raw.items() if key != "commit_id"}
+                # The id is kept, because the saved changes it led to cite it as their
+                # evidence. Only when another project in this database already holds it
+                # (a copy restored beside its original) does the copy get its own.
+                candidates = [raw["id"], f"{raw['id']}-{copy_suffix}"]
+                present = [
+                    await self._assists.get(  # type: ignore[attr-defined]
+                        workspace_id=workspace_id, project_id=project_id, session_id=candidate
+                    )
+                    for candidate in candidates
+                ]
+                if any(present):
+                    continue
+                mutation_id = await self._mutation_for(
+                    checksum, workspace_id, project_id, raw.get("commit_id")
+                )
+                for candidate in candidates:
+                    await self._assists.save(  # type: ignore[attr-defined]
+                        AssistSession.model_validate(
+                            {
+                                **fields,
+                                "id": candidate,
+                                "workspace_id": workspace_id,
+                                "project_id": project_id,
+                                "mutation_id": mutation_id,
+                            }
+                        )
+                    )
+                    if await self._assists.get(  # type: ignore[attr-defined]
+                        workspace_id=workspace_id, project_id=project_id, session_id=candidate
+                    ):
+                        mine.append(candidate)
+                        conversations += 1
+                        # Attributed at once: if a later one fails, removing the import
+                        # still removes this one, which a retry would skip as present.
+                        await self._canon.update_import(
+                            import_id=import_id, stage="conversations", created_records=created
+                        )
+                        break
+                else:
+                    raise ArchiveError("a conversation could not be restored")
+        return {"conversations": conversations, "readings": readings, "dismissals": dismissed}
 
     # ---------------------------------------------------------------- import
     async def import_project(
@@ -797,6 +1388,20 @@ class CanonArchiveService:
         archive: dict[str, Any],
         *,
         actor_user_id: str | None = None,
+    ) -> dict[str, Any]:
+        # The main story is restored as the main story, whatever line the request named.
+        with working_in(None):
+            return await self._import(
+                target_workspace_id, target_project_id, archive, actor_user_id=actor_user_id
+            )
+
+    async def _import(
+        self,
+        target_workspace_id: str,
+        target_project_id: str,
+        archive: dict[str, Any],
+        *,
+        actor_user_id: str | None,
     ) -> dict[str, Any]:
         # Validation and the target preflight perform no durable writes. Only
         # then is the import recorded, before anything is restored.
@@ -810,7 +1415,8 @@ class CanonArchiveService:
             project_id=target_project_id,
             archive_checksum=archive_checksum,
             format_version=str(archive["format_version"]),
-            commits_total=len(archive["commits"]),
+            commits_total=len(archive["commits"])
+            + sum(len(item.get("commits", [])) for item in archive.get("what_ifs", [])),
             actor_user_id=actor_user_id,
         )
         try:
@@ -821,7 +1427,14 @@ class CanonArchiveService:
             result = {
                 **result,
                 "writing": await self._restore_writing(
-                    target_workspace_id, target_project_id, archive, actor_user_id=actor_user_id
+                    target_workspace_id,
+                    target_project_id,
+                    archive,
+                    actor_user_id=actor_user_id,
+                    import_id=import_id,
+                ),
+                **await self._restore_additions(
+                    target_workspace_id, target_project_id, archive, import_id=import_id
                 ),
             }
         except Exception as error:
@@ -858,30 +1471,30 @@ class CanonArchiveService:
     def _replay_plan(
         self, target_workspace_id: str, target_project_id: str, archive: dict[str, Any]
     ) -> list[dict[str, Any]]:
-        """Target-scoped commits in revision order (pure; no I/O)."""
-        plan: list[dict[str, Any]] = []
-        for raw in sorted(archive["commits"], key=lambda item: item["revision"]):
-            operations = [
-                _remap_operation_scope(
-                    parse_operation(operation), target_project_id=target_project_id
-                )
-                for operation in json.loads(raw["canonical"])
-            ]
-            plan.append(
-                {
-                    "raw": raw,
-                    "commit_id": _dedup_commit_id(
-                        archive["checksum"],
-                        raw["commit_id"],
-                        target_workspace_id,
-                        target_project_id,
-                    ),
-                    "operations": operations,
-                    "canonical": canonicalize_operations(operations),
-                    "checksum": operations_checksum(operations),
-                }
-            )
-        return plan
+        """Target-scoped main-story commits in revision order (pure; no I/O)."""
+        return _plan_commits(
+            archive["commits"], archive["checksum"], target_workspace_id, target_project_id
+        )
+
+    def _what_if_plans(
+        self, target_workspace_id: str, target_project_id: str, archive: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        """Each what-if with its target id and its own target-scoped commits (pure)."""
+        return [
+            {
+                "raw": raw,
+                "branch_id": _dedup_branch_id(
+                    archive["checksum"], raw["id"], target_workspace_id, target_project_id
+                ),
+                "commits": _plan_commits(
+                    raw.get("commits", []),
+                    archive["checksum"],
+                    target_workspace_id,
+                    target_project_id,
+                ),
+            }
+            for raw in archive.get("what_ifs", [])
+        ]
 
     async def _preflight_target(
         self, target_workspace_id: str, target_project_id: str, archive: dict[str, Any]
@@ -903,6 +1516,29 @@ class CanonArchiveService:
                 or existing_envelope.checksum != item["checksum"]
             ):
                 raise ArchiveError("target project already contains unrelated canon")
+        plans = self._what_if_plans(target_workspace_id, target_project_id, archive)
+        if not plans:
+            return
+        ours = {plan["branch_id"]: plan for plan in plans}
+        for branch in await self._journal.list_branches(
+            workspace_id=target_workspace_id, project_id=target_project_id
+        ):
+            if branch.is_root:
+                continue
+            what_if = ours.get(branch.id)
+            if what_if is None:
+                # Its name could clash, and its changes are not this archive's to keep.
+                raise ArchiveError("target project already contains unrelated what-ifs")
+            fork = int(what_if["raw"]["fork_revision"])
+            head = await self._canon.get_head(
+                workspace_id=target_workspace_id, project_id=target_project_id, branch_id=branch.id
+            )
+            if branch.fork_revision != fork or head - fork > len(what_if["commits"]):
+                raise ArchiveError("target project already contains unrelated what-ifs")
+            for item in what_if["commits"][: head - fork]:
+                existing_envelope = await self._canon.get_envelope(item["commit_id"])
+                if existing_envelope is None or existing_envelope.checksum != item["checksum"]:
+                    raise ArchiveError("target project already contains unrelated what-ifs")
 
     async def _restore(
         self,
@@ -929,9 +1565,11 @@ class CanonArchiveService:
         )
         # Records an earlier attempt of this import created stay attributed to it.
         created: dict[str, list[str]] = {
-            key: list((prior_record.created_records if prior_record else {}).get(key, []))
-            for key in ("schema_versions", "assets", "asset_versions")
+            key: list(value)
+            for key, value in (prior_record.created_records if prior_record else {}).items()
         }
+        for key in ("schema_versions", "assets", "asset_versions"):
+            created.setdefault(key, [])
         object_key_map: dict[str, str] = {}
         stored_keys: list[str] = []
         object_count = 0
@@ -1037,102 +1675,65 @@ class CanonArchiveService:
             )
 
         commit_id_map: dict[str, str] = {}
-        for applied, item in enumerate(imported_commits, start=1):
-            raw = item["raw"]
-            new_commit_id = item["commit_id"]
-            commit_id_map[raw["commit_id"]] = new_commit_id
-            raw_mutation = raw.get("mutation") or {}
-            decisions = raw_mutation.get("decisions") or []
-            source_origin = raw.get("origin") or OriginKind.MIGRATION.value
-            intent = raw_mutation.get("intent") or MutationIntent.EDIT.value
-            latest_decision = decisions[-1].get("decision") if decisions else None
-            needs_review = classify_review(
-                origin=source_origin,
-                intent=intent,
-                operation_types=[operation.op for operation in item["operations"]],
-            ).requires_review
-            if needs_review and latest_decision != "approved":
-                # Older archives may contain accepted commits from before the
-                # review gate covered them. Restore them as migrations rather
-                # than fabricating a human decision.
-                source_origin = OriginKind.MIGRATION.value
-            mutation = await self._journal.create_mutation(
-                workspace_id=target_workspace_id,
-                project_id=target_project_id,
-                branch_id=branch_id,
-                expected_head=raw["revision"] - 1,
-                actor_user_id=raw.get("actor_user_id"),
-                origin=source_origin,
-                schema_version_id=schema_map.get(raw.get("schema_version_id") or ""),
-                correlation_id=raw_mutation.get("correlation_id") or "",
-                idempotency_key=f"archive:{new_commit_id}",
-                intent=intent,
+        what_ifs = self._what_if_plans(target_workspace_id, target_project_id, archive)
+        for plan in what_ifs:
+            for item in plan["commits"]:
+                commit_id_map[item["raw"]["commit_id"]] = item["commit_id"]
+        forks: dict[int, list[dict[str, Any]]] = {}
+        for plan in what_ifs:
+            forks.setdefault(int(plan["raw"]["fork_revision"]), []).append(plan)
+
+        async def start_what_ifs_at(revision: int) -> None:
+            # A what-if starts again exactly where it first started: before the main
+            # story moves past that version.
+            for plan in forks.pop(revision, []):
+                await self._restart_what_if(
+                    target_workspace_id, target_project_id, branch_id, plan, revision
+                )
+
+        applied = 0
+        for item in imported_commits:
+            commit_id_map[item["raw"]["commit_id"]] = item["commit_id"]
+            await start_what_ifs_at(item["raw"]["revision"] - 1)
+            await self._replay_commit(
+                target_workspace_id, target_project_id, branch_id, item, schema_map
             )
-            await self._journal.record_operations(
-                mutation_id=mutation.id,
-                operations=[
-                    MutationOperation(
-                        ordinal=index,
-                        operation_type=operation.op,
-                        payload=operation.model_dump(mode="json"),
-                    )
-                    for index, operation in enumerate(item["operations"])
-                ],
-            )
-            existing_decisions = await self._journal.list_decisions(mutation_id=mutation.id)
-            if not existing_decisions:
-                for index, decision in enumerate(decisions):
-                    # The accepted source decision restores the approved state the
-                    # commit transaction requires; it is recorded, never invented.
-                    restores_approval = (
-                        index == len(decisions) - 1
-                        and decision["decision"] == "approved"
-                        and mutation.status is MutationStatus.DRAFT
-                    )
-                    await self._journal.record_decision(
-                        mutation_id=mutation.id,
-                        decision=decision["decision"],
-                        actor_user_id=decision.get("actor_user_id"),
-                        note=decision.get("note") or "restored review decision",
-                        transition_to=MutationStatus.APPROVED if restores_approval else None,
-                    )
-            await self._canon.apply_commit(
-                envelope=CommitEnvelope(
-                    commit_id=new_commit_id,
-                    mutation_id=mutation.id,
-                    workspace_id=target_workspace_id,
-                    project_id=target_project_id,
-                    branch_id=branch_id,
-                    revision=raw["revision"],
-                    expected_head=raw["revision"] - 1,
-                    schema_version_id=schema_map.get(raw.get("schema_version_id") or ""),
-                    canonical=item["canonical"],
-                    checksum=item["checksum"],
-                    actor_user_id=raw.get("actor_user_id"),
-                    created_at=datetime.fromisoformat(raw["created_at"]),
-                ),
-                operations=item["operations"],
-                origin=source_origin,
-            )
+            applied += 1
             await self._canon.update_import(
                 import_id=import_id, stage="commits", commits_applied=applied
             )
+        await start_what_ifs_at(len(imported_commits))
 
-        for raw in archive["tags"]:
-            now = datetime.now(UTC)
-            await self._canon.create_tag(
-                CanonTag(
+        await self._restore_tags(
+            target_workspace_id, target_project_id, branch_id, archive["tags"], commit_id_map
+        )
+
+        for plan in what_ifs:
+            what_if_id = plan["branch_id"]
+            # Validators read the line being written; in a what-if that is the what-if.
+            with working_in(what_if_id):
+                for item in plan["commits"]:
+                    await self._replay_commit(
+                        target_workspace_id, target_project_id, what_if_id, item, schema_map
+                    )
+                    applied += 1
+                    await self._canon.update_import(
+                        import_id=import_id, stage="commits", commits_applied=applied
+                    )
+            await self._restore_tags(
+                target_workspace_id,
+                target_project_id,
+                what_if_id,
+                plan["raw"].get("tags", []),
+                commit_id_map,
+            )
+            if plan["raw"].get("status") == "set_aside":
+                await self._canon.set_branch_status(  # type: ignore[attr-defined]
                     workspace_id=target_workspace_id,
                     project_id=target_project_id,
-                    branch_id=branch_id,
-                    name=raw["name"],
-                    revision=raw["revision"],
-                    commit_id=commit_id_map.get(raw["commit_id"], raw["commit_id"]),
-                    created_by_user_id=None,
-                    created_at=now,
-                    updated_at=now,
+                    branch_id=what_if_id,
+                    status="set_aside",
                 )
-            )
 
         projection_rebuilt = False
         if self._projector is not None:
@@ -1157,6 +1758,20 @@ class CanonArchiveService:
                     "restored canon failed verification: " + "; ".join(report.problems[:5])
                 )
             verified = True
+        # Each what-if's history must be exactly the archive's: same versions, same checksums.
+        for plan in what_ifs:
+            fork = int(plan["raw"]["fork_revision"])
+            restored = await self._canon.list_commits(
+                workspace_id=target_workspace_id,
+                project_id=target_project_id,
+                branch_id=plan["branch_id"],
+                after_revision=fork,
+                limit=MAX_ENTRIES,
+            )
+            expected = [(item["raw"]["revision"], item["checksum"]) for item in plan["commits"]]
+            found = [(rev.revision, rev.envelope_checksum) for rev in restored]
+            if found != expected:
+                raise ArchiveError("a restored what-if failed verification")
 
         log_event(
             logger,
@@ -1172,10 +1787,166 @@ class CanonArchiveService:
             "assets": len(archive["media"]["assets"]),
             "versions": len(archive["media"]["versions"]),
             "commits": len(archive["commits"]),
+            "what_ifs": len(what_ifs),
+            "what_if_commits": sum(len(plan["commits"]) for plan in what_ifs),
             "checksum": archive_checksum,
             "projection_rebuilt": projection_rebuilt,
             "verified": verified,
         }
+
+    async def _replay_commit(
+        self,
+        target_workspace_id: str,
+        target_project_id: str,
+        branch_id: str,
+        item: dict[str, Any],
+        schema_map: dict[str, str],
+    ) -> None:
+        """Replay one saved change onto one line of the story; a no-op when already there."""
+        raw = item["raw"]
+        new_commit_id = item["commit_id"]
+        raw_mutation = raw.get("mutation") or {}
+        decisions = raw_mutation.get("decisions") or []
+        source_origin = raw.get("origin") or OriginKind.MIGRATION.value
+        intent = raw_mutation.get("intent") or MutationIntent.EDIT.value
+        latest_decision = decisions[-1].get("decision") if decisions else None
+        needs_review = classify_review(
+            origin=source_origin,
+            intent=intent,
+            operation_types=[operation.op for operation in item["operations"]],
+        ).requires_review
+        if needs_review and latest_decision != "approved":
+            # Older archives may contain accepted commits from before the
+            # review gate covered them. Restore them as migrations rather
+            # than fabricating a human decision.
+            source_origin = OriginKind.MIGRATION.value
+        mutation = await self._journal.create_mutation(
+            workspace_id=target_workspace_id,
+            project_id=target_project_id,
+            branch_id=branch_id,
+            expected_head=raw["revision"] - 1,
+            actor_user_id=raw.get("actor_user_id"),
+            origin=source_origin,
+            schema_version_id=schema_map.get(raw.get("schema_version_id") or ""),
+            correlation_id=raw_mutation.get("correlation_id") or "",
+            idempotency_key=f"archive:{new_commit_id}",
+            intent=intent,
+        )
+        await self._journal.record_operations(
+            mutation_id=mutation.id,
+            operations=[
+                MutationOperation(
+                    ordinal=index,
+                    operation_type=operation.op,
+                    payload=operation.model_dump(mode="json"),
+                )
+                for index, operation in enumerate(item["operations"])
+            ],
+        )
+        existing_decisions = await self._journal.list_decisions(mutation_id=mutation.id)
+        if not existing_decisions:
+            for index, decision in enumerate(decisions):
+                # The accepted source decision restores the approved state the
+                # commit transaction requires; it is recorded, never invented.
+                restores_approval = (
+                    index == len(decisions) - 1
+                    and decision["decision"] == "approved"
+                    and mutation.status is MutationStatus.DRAFT
+                )
+                await self._journal.record_decision(
+                    mutation_id=mutation.id,
+                    decision=decision["decision"],
+                    actor_user_id=decision.get("actor_user_id"),
+                    note=decision.get("note") or "restored review decision",
+                    transition_to=MutationStatus.APPROVED if restores_approval else None,
+                )
+        await self._canon.apply_commit(
+            envelope=CommitEnvelope(
+                commit_id=new_commit_id,
+                mutation_id=mutation.id,
+                workspace_id=target_workspace_id,
+                project_id=target_project_id,
+                branch_id=branch_id,
+                revision=raw["revision"],
+                expected_head=raw["revision"] - 1,
+                schema_version_id=schema_map.get(raw.get("schema_version_id") or ""),
+                canonical=item["canonical"],
+                checksum=item["checksum"],
+                actor_user_id=raw.get("actor_user_id"),
+                created_at=datetime.fromisoformat(raw["created_at"]),
+            ),
+            operations=item["operations"],
+            validator=_REPLAY_VALIDATOR,
+            origin=source_origin,
+        )
+
+    async def _restore_tags(
+        self,
+        target_workspace_id: str,
+        target_project_id: str,
+        branch_id: str,
+        tags: list[dict[str, Any]],
+        commit_id_map: dict[str, str],
+    ) -> None:
+        for raw in tags:
+            commit_id = commit_id_map.get(raw["commit_id"], raw["commit_id"])
+            current = await self._canon.get_tag(
+                workspace_id=target_workspace_id,
+                project_id=target_project_id,
+                branch_id=branch_id,
+                name=raw["name"],
+            )
+            if current is not None and (current.revision, current.commit_id) == (
+                raw["revision"],
+                commit_id,
+            ):
+                continue
+            now = datetime.now(UTC)
+            await self._canon.create_tag(
+                CanonTag(
+                    workspace_id=target_workspace_id,
+                    project_id=target_project_id,
+                    branch_id=branch_id,
+                    name=raw["name"],
+                    revision=raw["revision"],
+                    commit_id=commit_id,
+                    created_by_user_id=None,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+
+    async def _restart_what_if(
+        self,
+        target_workspace_id: str,
+        target_project_id: str,
+        main_id: str,
+        plan: dict[str, Any],
+        revision: int,
+    ) -> None:
+        """Start a what-if again from the main story, at the version it first started from."""
+        raw = plan["raw"]
+        existing = await self._journal.get_branch(
+            workspace_id=target_workspace_id,
+            project_id=target_project_id,
+            branch_id=plan["branch_id"],
+        )
+        if existing is not None:
+            return
+        head = await self._canon.get_head(
+            workspace_id=target_workspace_id, project_id=target_project_id, branch_id=main_id
+        )
+        if head != revision:
+            raise ArchiveError("a what-if could not be started again where it first started")
+        await self._canon.fork_branch(  # type: ignore[attr-defined]
+            workspace_id=target_workspace_id,
+            project_id=target_project_id,
+            parent_branch_id=main_id,
+            branch_id=plan["branch_id"],
+            name=" ".join(str(raw["name"]).split()),
+            description=raw.get("description"),
+            actor_user_id=raw.get("created_by"),
+        )
 
     async def accepted_checksum(self, workspace_id: str, project_id: str) -> str:
         """Recompute a canonical checksum of the accepted commit chain."""
@@ -1191,10 +1962,199 @@ class CanonArchiveService:
 
     # ------------------------------------------------------------- validation
     @staticmethod
+    def _validate_commits(commits: list[dict[str, Any]], start: int) -> int:
+        """Check one line's saved changes follow on from ``start``; return its last version."""
+        previous = start
+        for raw in sorted(commits, key=lambda item: item["revision"]):
+            if raw["expected_head"] != previous or raw["revision"] != previous + 1:
+                raise ArchiveError("commit revisions are not contiguous")
+            canonical = raw["canonical"]
+            if hashlib.sha256(canonical.encode("utf-8")).hexdigest() != raw["checksum"]:
+                raise ArchiveError("commit canonical checksum mismatch")
+            for op in json.loads(canonical):
+                parse_operation(op)
+            try:
+                OriginKind(raw.get("origin", OriginKind.MIGRATION.value))
+            except (TypeError, ValueError) as error:
+                raise ArchiveError(f"unknown commit origin {raw.get('origin')!r}") from error
+            mutation = raw.get("mutation")
+            if mutation is not None and not isinstance(mutation, dict):
+                raise ArchiveError("commit mutation metadata must be an object or null")
+            if (mutation or {}).get("intent", MutationIntent.EDIT.value) not in {
+                item.value for item in MutationIntent
+            }:
+                raise ArchiveError("unknown mutation intent in commit metadata")
+            decisions = (mutation or {}).get("decisions", [])
+            if not isinstance(decisions, list):
+                raise ArchiveError("commit review decisions must be a list")
+            for decision in decisions:
+                if not isinstance(decision, dict):
+                    raise ArchiveError("commit review decision must be an object")
+                if decision.get("decision") not in {"approved", "rejected"}:
+                    raise ArchiveError("unknown review decision in commit metadata")
+            previous = raw["revision"]
+        return previous
+
+    @staticmethod
+    def _validate_readings(readings: object, text_ids: set[str]) -> None:
+        if not isinstance(readings, list):
+            raise ArchiveError("a scene's readings are malformed")
+        seen: set[str] = set()
+        for raw in readings:
+            if not isinstance(raw, dict) or not isinstance(raw.get("id"), str) or not raw["id"]:
+                raise ArchiveError("a scene's reading is malformed")
+            if raw["id"] in seen:
+                raise ArchiveError(f"duplicate reading id: {raw['id']}")
+            seen.add(raw["id"])
+            if not isinstance(raw.get("plan_id"), str) or not isinstance(
+                raw.get("version_id"), str
+            ):
+                raise ArchiveError("a scene's reading is malformed")
+            if raw.get("text_id") not in text_ids:
+                raise ArchiveError("a reading points at a text outside the archive")
+            if raw.get("status", "complete") not in {"partial", "complete"}:
+                raise ArchiveError("a scene's reading is malformed")
+            passages, discarded = raw.get("passages", 0), raw.get("discarded", 0)
+            if not all(isinstance(n, int) and n >= 0 for n in (passages, discarded)):
+                raise ArchiveError("a scene's reading is malformed")
+            covered = raw.get("covered", [])
+            if not isinstance(covered, list) or not all(
+                isinstance(span, list) and len(span) == 2 and all(isinstance(n, int) for n in span)
+                for span in covered
+            ):
+                raise ArchiveError("a scene's reading is malformed")
+            proposals = raw.get("proposal_commits", [])
+            if not isinstance(proposals, list) or not all(isinstance(c, str) for c in proposals):
+                raise ArchiveError("a scene's reading is malformed")
+            try:
+                datetime.fromisoformat(str(raw.get("created_at")))
+            except ValueError as error:
+                raise ArchiveError("a scene's reading is malformed") from error
+
+    @staticmethod
+    def _validate_dismissals(dismissals: object) -> None:
+        if not isinstance(dismissals, list):
+            raise ArchiveError("dismissed findings are malformed")
+        seen: set[str] = set()
+        for raw in dismissals:
+            if (
+                not isinstance(raw, dict)
+                or not isinstance(raw.get("id"), str)
+                or not raw["id"]
+                or raw["id"] in seen
+                or not isinstance(raw.get("plan_id"), str)
+                or not isinstance(raw.get("code"), str)
+                or not re.fullmatch(r"[0-9a-f]{64}", str(raw.get("fingerprint")))
+                or raw.get("kind") not in {item.value for item in FindingKind}
+                or raw.get("reason") not in {item.value for item in DismissReason}
+                or not isinstance(raw.get("note", ""), str)
+                or len(raw.get("note", "")) > MAX_DISMISSAL_NOTE
+            ):
+                raise ArchiveError("a dismissed finding is malformed")
+            seen.add(raw["id"])
+            try:
+                for key in ("created_at", "expires_at", "withdrawn_at"):
+                    if key == "created_at" or raw.get(key) is not None:
+                        datetime.fromisoformat(str(raw.get(key)))
+            except ValueError as error:
+                raise ArchiveError("a dismissed finding is malformed") from error
+
+    @staticmethod
+    def _validate_additions(
+        archive: dict[str, Any],
+        *,
+        main_head: int,
+        text_ids: set[str],
+        claim: Any,
+    ) -> None:
+        """What version 4 adds: what-ifs, conversations and scene readings."""
+        what_ifs = archive.get("what_ifs", [])
+        conversations = archive.get("conversations", [])
+        if not isinstance(what_ifs, list) or not isinstance(conversations, list):
+            raise ArchiveError("archive what-ifs or conversations are malformed")
+        total = len(conversations) + sum(
+            len(item.get("commits", []) or [])
+            + len(item.get("readings", []) or [])
+            + len(item.get("dismissals", []) or [])
+            for item in what_ifs
+            if isinstance(item, dict)
+        )
+        if total > MAX_ENTRIES:
+            raise ArchiveError("archive exceeds entry limit")
+        writing = archive.get("writing") or {}
+        CanonArchiveService._validate_readings(writing.get("readings", []), text_ids)
+        CanonArchiveService._validate_dismissals(writing.get("dismissals", []))
+        commit_ids = {raw["commit_id"] for raw in archive.get("commits", [])}
+        if len(commit_ids) != len(archive.get("commits", [])):
+            raise ArchiveError("duplicate commit id in archive")
+        names: set[str] = set()
+        for raw in what_ifs:
+            if not isinstance(raw, dict) or not isinstance(raw.get("id"), str):
+                raise ArchiveError("a what-if is malformed")
+            claim(raw["id"], kind="what-if")
+            name = raw.get("name")
+            if not isinstance(name, str) or not name.strip() or len(name) > MAX_NAME:
+                raise ArchiveError("a what-if has no usable name")
+            if name.lower() == "main" or name.lower() in names:
+                raise ArchiveError("two what-ifs share a name")
+            names.add(name.lower())
+            if raw.get("status", "active") not in {"active", "set_aside"}:
+                raise ArchiveError("a what-if is malformed")
+            fork = raw.get("fork_revision")
+            if not isinstance(fork, int) or not 0 <= fork <= main_head:
+                raise ArchiveError("a what-if starts from a version the archive does not hold")
+            commits = raw.get("commits", [])
+            if not isinstance(commits, list):
+                raise ArchiveError("a what-if is malformed")
+            head = CanonArchiveService._validate_commits(commits, fork)
+            for commit in commits:
+                if commit["commit_id"] in commit_ids:
+                    raise ArchiveError("duplicate commit id in archive")
+                commit_ids.add(commit["commit_id"])
+            for tag in raw.get("tags", []):
+                if not isinstance(tag, dict) or not 0 <= int(tag.get("revision", -1)) <= head:
+                    raise ArchiveError("a what-if's named version is malformed")
+            for link in raw.get("scenes", []):
+                if not isinstance(link, dict) or link.get("text_id") not in text_ids:
+                    raise ArchiveError("a what-if's scene points at a text outside the archive")
+            CanonArchiveService._validate_readings(raw.get("readings", []), text_ids)
+            CanonArchiveService._validate_dismissals(raw.get("dismissals", []))
+        for raw in conversations:
+            if not isinstance(raw, dict):
+                raise ArchiveError("a conversation is malformed")
+            claim(str(raw.get("id") or ""), kind="conversation")
+            if raw.get("commit_id") is not None and not isinstance(raw["commit_id"], str):
+                raise ArchiveError("a conversation is malformed")
+            try:
+                AssistSession.model_validate(
+                    {
+                        **{k: v for k, v in raw.items() if k != "commit_id"},
+                        "workspace_id": "-",
+                        "project_id": "-",
+                    }
+                )
+            except ValueError as error:
+                raise ArchiveError("a conversation is malformed") from error
+
+    @staticmethod
     def _validate(archive: dict[str, Any]) -> None:
+        """Refuse a malformed archive in plain words, before anything is written."""
+        try:
+            CanonArchiveService._validate_parts(archive)
+        except ArchiveError:
+            raise
+        except (KeyError, IndexError, TypeError, ValueError, AttributeError) as error:
+            # A part missing, or the wrong kind of thing: the archive is damaged.
+            raise ArchiveError(
+                "the archive is damaged or incomplete: something it needs is missing or not "
+                "what it should be"
+            ) from error
+
+    @staticmethod
+    def _validate_parts(archive: dict[str, Any]) -> None:
         if archive.get("format") != ARCHIVE_FORMAT:
             raise ArchiveError("unsupported archive format")
-        if archive.get("format_version") != FORMAT_VERSION:
+        if archive.get("format_version") not in READABLE_VERSIONS:
             raise ArchiveError("unsupported archive format version")
         if archive.get("checksum") != _checksum(archive):
             raise ArchiveError("archive checksum mismatch")
@@ -1308,35 +2268,10 @@ class CanonArchiveService:
         for raw in (archive.get("media") or {}).get("versions", []):
             claim(raw["id"], kind="asset_version")
 
-        previous = 0
-        for raw in sorted(archive.get("commits", []), key=lambda item: item["revision"]):
-            if raw["expected_head"] != previous or raw["revision"] != previous + 1:
-                raise ArchiveError("commit revisions are not contiguous")
-            canonical = raw["canonical"]
-            if hashlib.sha256(canonical.encode("utf-8")).hexdigest() != raw["checksum"]:
-                raise ArchiveError("commit canonical checksum mismatch")
-            for op in json.loads(canonical):
-                parse_operation(op)
-            try:
-                OriginKind(raw.get("origin", OriginKind.MIGRATION.value))
-            except (TypeError, ValueError) as error:
-                raise ArchiveError(f"unknown commit origin {raw.get('origin')!r}") from error
-            mutation = raw.get("mutation")
-            if mutation is not None and not isinstance(mutation, dict):
-                raise ArchiveError("commit mutation metadata must be an object or null")
-            if (mutation or {}).get("intent", MutationIntent.EDIT.value) not in {
-                item.value for item in MutationIntent
-            }:
-                raise ArchiveError("unknown mutation intent in commit metadata")
-            decisions = (mutation or {}).get("decisions", [])
-            if not isinstance(decisions, list):
-                raise ArchiveError("commit review decisions must be a list")
-            for decision in decisions:
-                if not isinstance(decision, dict):
-                    raise ArchiveError("commit review decision must be an object")
-                if decision.get("decision") not in {"approved", "rejected"}:
-                    raise ArchiveError("unknown review decision in commit metadata")
-            previous = raw["revision"]
+        main_head = CanonArchiveService._validate_commits(archive.get("commits", []), 0)
+        CanonArchiveService._validate_additions(
+            archive, main_head=main_head, text_ids=text_ids, claim=claim
+        )
 
         decoded_bytes = 0
         for raw in archive.get("objects", []):
@@ -1358,4 +2293,10 @@ class CanonArchiveService:
                 raise ArchiveError("object byte_length does not match its payload")
 
 
-__all__ = ["ARCHIVE_FORMAT", "FORMAT_VERSION", "ArchiveError", "CanonArchiveService"]
+__all__ = [
+    "ARCHIVE_FORMAT",
+    "FORMAT_VERSION",
+    "READABLE_VERSIONS",
+    "ArchiveError",
+    "CanonArchiveService",
+]

@@ -190,3 +190,185 @@ def test_scene_conditions_survive_a_round_trip_and_bad_data_is_no_conditions() -
         "scene", SceneCondition(when="before", entity_id="nobody", check=OWNS_ONE), _world()
     )
     assert gone.holds is None
+
+
+# ------------------------------------------------ the commit's check of every rule
+
+
+def _rule(body: RuleBody, *, rule_id: str = "rule-1", blocking: bool = True):
+    from datetime import UTC, datetime
+
+    from backend.domain.rules import RuleStatus, StoryRule
+    from backend.domain.validation import RuleEnforcement
+
+    now = datetime.now(UTC)
+    return StoryRule(
+        workspace_id="w",
+        project_id="p",
+        id=rule_id,
+        title=f"Rule {rule_id}",
+        sentence="",
+        status=RuleStatus.ON,
+        version=1,
+        body=body,
+        examples=[],
+        created_by=None,
+        created_at=now,
+        updated_at=now,
+        enforcement=RuleEnforcement.BLOCKING if blocking else RuleEnforcement.WARNING,
+    )
+
+
+class _Rules:
+    def __init__(self, rules) -> None:
+        self.rules = list(rules)
+        self.listed = 0
+
+    async def list_rules(self, *, workspace_id: str, project_id: str):
+        self.listed += 1
+        return self.rules
+
+
+def _service(world: World, rules):
+    from backend.services.rule_service import RuleService
+
+    class _Service(RuleService):
+        reads = 0
+
+        async def _world_for(self, context):
+            type(self).reads += 1
+            return world, True
+
+    return _Service(_Rules(rules), reader=None)  # type: ignore[arg-type]
+
+
+def _evaluate(service, operations):
+    import asyncio
+
+    from backend.domain.validation import ValidationContext
+
+    context = ValidationContext(
+        workspace_id="w",
+        project_id="p",
+        branch_id="b",
+        schema_version_id=None,
+        head_revision=1,
+        reader=object(),  # type: ignore[arg-type]
+    )
+    return list(asyncio.run(service.evaluate(operations, context=context)))
+
+
+HAS_MEMBER = RuleBody(
+    applies_to=Selector(type="Faction"),
+    checks=[Check(kind="has", pattern=Pattern(predicate="MEMBER_OF", direction="in"))],
+)
+
+
+def _member(fact_id: str, who: str, faction: str) -> AssertFactOp:
+    return AssertFactOp(
+        id=fact_id,
+        proposition=Proposition(
+            subject_id=who,
+            predicate="MEMBER_OF",
+            object=EntityRefObject(entity_id=faction, project_id="p"),
+        ),
+    )
+
+
+def _empty_factions(count: int) -> World:
+    """More factions with nobody in them than a rule ever shows at once."""
+    world = World(entries={"ines": WorldEntry("ines", "Character", "Ines")})
+    for number in range(count):
+        faction = f"n{number:03d}"
+        world.entries[faction] = WorldEntry(faction, "Faction", f"N{number:03d}")
+    return world
+
+
+def test_fixing_one_of_many_breaks_is_not_blocked() -> None:
+    from backend.domain.rules import MAX_VIOLATIONS
+
+    world = _empty_factions(MAX_VIOLATIONS + 1)
+    service = _service(world, [_rule(HAS_MEMBER)])
+    # Giving the first empty faction a member fixes it, and breaks nothing.
+    assert _evaluate(service, [_member("f-new", "ines", "n000")]) == []
+
+
+def test_a_break_past_the_shown_handful_still_blocks() -> None:
+    from backend.domain.rules import MAX_VIOLATIONS
+    from backend.domain.validation import ValidationSeverity, classify_rule_evaluation
+
+    world = _empty_factions(MAX_VIOLATIONS + 1)
+    # A faction that holds now, and sorts after every one already broken.
+    world.entries["zeal"] = WorldEntry("zeal", "Faction", "Zealots")
+    world.facts["f-zeal"] = WorldFact("f-zeal", "ines", "MEMBER_OF", object_id="zeal")
+    service = _service(world, [_rule(HAS_MEMBER)])
+
+    (finding,) = _evaluate(service, [CloseFactOp(id="f-zeal")])
+    assert "Zealots" in finding.message and finding.operation_ordinal == 0
+    assert classify_rule_evaluation(finding) is ValidationSeverity.BLOCKING_RULE
+
+
+def test_a_change_that_touches_no_entry_or_fact_checks_no_rule() -> None:
+    from backend.domain.operations import CreatePlanItemOp
+
+    service = _service(_empty_factions(3), [_rule(HAS_MEMBER)])
+    plan_only = [CreatePlanItemOp(id="tmp:scene", kind="scene", title="The harbour")]
+    assert _evaluate(service, plan_only) == []
+    assert service._store.listed == 0 and type(service).reads == 0  # noqa: SLF001
+
+
+def test_checking_rules_over_a_large_story_is_quick() -> None:
+    """Two thousand entries, ten thousand facts, ten rules: well under a second.
+
+    The bound is generous so a slow machine does not fail it; checking every fact
+    for every entry took tens of seconds.
+    """
+    import time
+
+    world = World()
+    for number in range(1000):
+        world.entries[f"c{number}"] = WorldEntry(f"c{number}", "Character", f"C{number}")
+        world.entries[f"o{number}"] = WorldEntry(f"o{number}", "Object", f"O{number}")
+    for number in range(10_000):
+        if number % 2:
+            world.facts[f"f{number}"] = WorldFact(
+                f"f{number}", f"c{number % 1000}", "OWNS", object_id=f"o{(number * 7) % 1000}"
+            )
+        else:
+            world.facts[f"f{number}"] = WorldFact(
+                f"f{number}", f"c{number % 1000}", "KNOWS", object_id=f"c{(number * 3) % 1000}"
+            )
+    bodies = [
+        ONE_OWNER,
+        RuleBody(
+            applies_to=Selector(type="Character"),
+            checks=[Check(kind="has", pattern=Pattern(predicate="KNOWS"))],
+        ),
+        RuleBody(
+            applies_to=Selector(type="Character"),
+            checks=[
+                Check(kind="at_most", count=50, pattern=Pattern(predicate="OWNS")),
+                Check(kind="lacks", pattern=Pattern(predicate="OWNS", other_type="Character")),
+            ],
+        ),
+        RuleBody(
+            applies_to=Selector(type="Object", having=[Pattern(predicate="OWNS", direction="in")]),
+            checks=[
+                Check(kind="at_least", count=1, pattern=Pattern(predicate="OWNS", direction="in"))
+            ],
+        ),
+    ]
+    rules = [_rule(bodies[number % len(bodies)], rule_id=f"r{number}") for number in range(10)]
+    service = _service(world, rules)
+    operations = [
+        CreateEntityOp(id="c-new", type="Character", name="Newcomer"),
+        _owns("f-new", "c-new"),
+        CloseFactOp(id="f1"),
+    ]
+
+    started = time.perf_counter()
+    _evaluate(service, operations)
+    for rule in rules:
+        violations(rule.id, rule.body, world)
+    elapsed = time.perf_counter() - started
+    assert elapsed < 5.0, f"checking ten rules took {elapsed:.1f}s"

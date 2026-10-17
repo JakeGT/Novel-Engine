@@ -1,5 +1,7 @@
 import pytest
 
+from tests import images
+
 pytestmark = pytest.mark.contract
 
 _EMPTY_DEFINITION = {
@@ -99,9 +101,10 @@ def test_media_requires_session(api_client, fake_container) -> None:
     assert response.status_code == 401
 
 
-PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
-JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 32
-WEBP = b"RIFF\x24\x00\x00\x00WEBPVP8 " + b"\x00" * 16
+# Well-formed files with nothing hidden in them, so they are stored exactly as sent.
+PNG = b"\x89PNG\r\n\x1a\n" + images.PNG_IHDR + images.PNG_IDAT + images.PNG_IEND
+JPEG = images.strip_free_jpeg()
+WEBP = images.simple_webp()
 
 
 def _entry(client, project_id: str, name: str = "Mara", revision: int = 0) -> str:
@@ -220,3 +223,46 @@ def test_pictures_require_a_session(api_client) -> None:
     )
     assert upload.status_code == 401
     assert api_client.get(f"{base}/assets/ast_x/versions/asv_x/content").status_code == 401
+
+
+def test_a_photo_loses_where_it_was_taken_but_keeps_which_way_up_it_goes(
+    auth_client, fake_container
+) -> None:
+    from backend.domain.image_metadata import orientation_from_tiff
+
+    project_id = fake_container.settings.AUTH_LOCAL_PROJECT_ID
+    base = f"/api/v1/projects/{project_id}"
+    _publish_schema(auth_client, project_id)
+    entity_id = _entry(auth_client, project_id)
+    photo = images.jpeg(exif=images.tiff(orientation=6))
+    assert images.GPS_LATITUDE in photo and b"Canon" in photo
+
+    upload = auth_client.post(
+        f"{base}/entities/{entity_id}/pictures", params={"expected_revision": 1}, content=photo
+    )
+    assert upload.status_code == 201, upload.text
+    body = upload.json()
+    stored = auth_client.get(
+        f"{base}/assets/{body['link']['asset_id']}/versions/{body['version']['id']}/content"
+    ).content
+    assert images.GPS_LATITUDE not in stored and b"Canon" not in stored
+    assert b"Lantern Harbor" not in stored and b"taken at home" not in stored
+    exif = stored[stored.index(b"Exif\x00\x00") :]
+    assert orientation_from_tiff(exif) == 6
+    # The stored size and checksum are those of the cleaned file.
+    assert body["version"]["byte_length"] == len(stored)
+
+
+def test_a_picture_whose_structure_is_broken_is_refused(auth_client, fake_container) -> None:
+    project_id = fake_container.settings.AUTH_LOCAL_PROJECT_ID
+    base = f"/api/v1/projects/{project_id}"
+    _publish_schema(auth_client, project_id)
+    entity_id = _entry(auth_client, project_id)
+    broken = auth_client.post(
+        f"{base}/entities/{entity_id}/pictures",
+        params={"expected_revision": 1},
+        content=b"\xff\xd8\xff\xe0" + b"\x00" * 32,
+    )
+    assert broken.status_code == 400
+    assert "could not be read" in broken.json()["detail"]
+    assert auth_client.get(f"{base}/assets").json()["items"] == []

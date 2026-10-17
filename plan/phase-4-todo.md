@@ -37,10 +37,10 @@
 | --- | --- | --- |
 | A. Context manifest and versioned policy | CTX-001, CTX-002 | Implemented (`backend/domain/context.py`) |
 | B. Deterministic retrieval scoped by branch, time and viewpoint | CTX-002 | Implemented for scenes (`context_service.py`) |
-| C. Derived memory of the author's writing; rebuild; staleness | CTX-004–CTX-006A | Implemented as a passage index; embeddings optional |
+| C. Derived memory of the author's writing; rebuild; staleness | CTX-004–CTX-006A | Partly: a passage index, rebuildable, updated inline (not through the outbox); no vector filters or versioned generations; no summary or event-block layers |
 | D. Ranking, budget, deduplication | CTX-007, CTX-008 | Implemented: fixed scores, word budget, hard items first |
 | E. Context preview, pin and exclude | CTX-009 | Implemented; browser tested |
-| F. Stable-to-volatile rendering | CTX-015 | Implemented; provider cache usage not recorded (no generation yet) |
+| F. Stable-to-volatile rendering | CTX-015 | Implemented; recording the provider's cached-token count is backlog work (see CTX-015) |
 | G. Retrieval and leakage evaluation | CTX-010 | Partly: contract tests with leakage cases; no relevance set |
 | H. Media: pictures in context | CTX-013 | Partly: existence and role only |
 | I. Media processing, cross-modal embeddings, EmbeddingGemma | CTX-011, CTX-012, CTX-014, AST-003, AST-005 | Not built |

@@ -35,6 +35,7 @@ from backend.domain.operations import (
     RetireEntityOp,
     UpdateEntityOp,
 )
+from backend.domain.validation import RuleEnforcement
 
 MAX_RULES = 100
 MAX_TITLE_LENGTH = 160
@@ -149,6 +150,8 @@ class StoryRule:
     created_by: str | None
     created_at: datetime
     updated_at: datetime
+    # Warn (the default) or block a change that would newly break it (ADR-013, CON-015).
+    enforcement: RuleEnforcement = RuleEnforcement.WARNING
 
 
 # ------------------------------------------------------------------ the world
@@ -276,20 +279,34 @@ class Violation:
     entity_name: str
 
 
-def _matches(world: World, entry_id: str, pattern: Pattern) -> int:
+class FactIndex:
+    """The facts of one world looked up by the entry they are about or point at.
+
+    Built once per world, so checking a rule costs a lookup per entry instead of a
+    pass over every fact. Build it after the world is complete: it does not follow
+    later changes to the world.
+    """
+
+    def __init__(self, world: World) -> None:
+        self.outgoing: dict[tuple[str, str], list[WorldFact]] = {}
+        self.incoming: dict[tuple[str, str], list[WorldFact]] = {}
+        self.touching: dict[str, list[WorldFact]] = {}
+        for fact in world.facts.values():
+            self.outgoing.setdefault((fact.subject_id, fact.predicate), []).append(fact)
+            self.touching.setdefault(fact.subject_id, []).append(fact)
+            if fact.object_id is not None:
+                self.incoming.setdefault((fact.object_id, fact.predicate), []).append(fact)
+                if fact.object_id != fact.subject_id:
+                    self.touching.setdefault(fact.object_id, []).append(fact)
+
+
+def _matches(world: World, index: FactIndex, entry_id: str, pattern: Pattern) -> int:
     """How many facts of this shape the entry has."""
     found = 0
-    for fact in world.facts.values():
-        if fact.predicate != pattern.predicate:
-            continue
-        if pattern.direction == "out":
-            if fact.subject_id != entry_id:
-                continue
-            other_id = fact.object_id
-        else:
-            if fact.object_id != entry_id:
-                continue
-            other_id = fact.subject_id
+    key = (entry_id, pattern.predicate)
+    outgoing = pattern.direction == "out"
+    for fact in (index.outgoing if outgoing else index.incoming).get(key, ()):
+        other_id = fact.object_id if outgoing else fact.subject_id
         # A fact about an entry that is gone does not count.
         other = world.entries.get(other_id) if other_id is not None else None
         if other_id is not None and other is None:
@@ -306,23 +323,30 @@ def _matches(world: World, entry_id: str, pattern: Pattern) -> int:
     return found
 
 
-def _selected(world: World, selector: Selector) -> list[WorldEntry]:
+def _selected(
+    world: World, index: FactIndex, selector: Selector, only: Iterable[str] | None = None
+) -> list[WorldEntry]:
+    candidates: Iterable[WorldEntry] = (
+        world.entries.values()
+        if only is None
+        else [world.entries[item] for item in set(only) if item in world.entries]
+    )
     chosen: list[WorldEntry] = []
-    for entry in world.entries.values():
+    for entry in candidates:
         if selector.entity_id is not None and entry.id != selector.entity_id:
             continue
         if selector.type is not None and entry.type != selector.type:
             continue
         if selector.tag is not None and normalize_name(selector.tag) not in entry.tags:
             continue
-        if any(_matches(world, entry.id, pattern) == 0 for pattern in selector.having):
+        if any(_matches(world, index, entry.id, pattern) == 0 for pattern in selector.having):
             continue
         chosen.append(entry)
     return sorted(chosen, key=lambda item: (item.name.casefold(), item.id))
 
 
-def _holds(world: World, entry_id: str, check: Check) -> bool:
-    count = _matches(world, entry_id, check.pattern)
+def _holds(world: World, index: FactIndex, entry_id: str, check: Check) -> bool:
+    count = _matches(world, index, entry_id, check.pattern)
     if check.kind == "has":
         return count > 0
     if check.kind == "lacks":
@@ -332,17 +356,80 @@ def _holds(world: World, entry_id: str, check: Check) -> bool:
     return count >= check.count
 
 
-def violations(rule_id: str, body: RuleBody, world: World) -> list[Violation]:
-    """Every entry the rule is about for which it does not hold."""
+def violations(
+    rule_id: str,
+    body: RuleBody,
+    world: World,
+    *,
+    limit: int | None = MAX_VIOLATIONS,
+    index: FactIndex | None = None,
+    only: Iterable[str] | None = None,
+) -> list[Violation]:
+    """Every entry the rule is about for which it does not hold.
+
+    ``limit`` caps how many are returned, for showing; pass None to get all of them,
+    as deciding whether a change newly breaks a rule must. ``only`` restricts the
+    answer to those entries.
+    """
+    index = index if index is not None else FactIndex(world)
     found: list[Violation] = []
-    for entry in _selected(world, body.applies_to):
-        results = [_holds(world, entry.id, check) for check in body.checks]
+    for entry in _selected(world, index, body.applies_to, only):
+        results = [_holds(world, index, entry.id, check) for check in body.checks]
         ok = all(results) if body.mode == "all" else any(results)
         if not ok:
             found.append(Violation(rule_id, entry.id, entry.name))
-            if len(found) >= MAX_VIOLATIONS:
+            if limit is not None and len(found) >= limit:
                 break
     return found
+
+
+_WORLD_CHANGES = (CreateEntityOp, UpdateEntityOp, RetireEntityOp, AssertFactOp, CloseFactOp)
+
+
+def changes_world(operations: Sequence[CanonOperation]) -> bool:
+    """Whether any of these changes alters what a rule can see."""
+    return any(isinstance(operation, _WORLD_CHANGES) for operation in operations)
+
+
+def affected_entries(
+    before: World,
+    after: World,
+    operations: Sequence[CanonOperation],
+    *,
+    indexes: tuple[FactIndex, FactIndex] | None = None,
+) -> set[str]:
+    """Every entry whose standing under any rule these changes could alter.
+
+    An entry's standing depends only on the entry itself, the facts about or
+    pointing at it, and the entries at the other end of those facts. So it can
+    change only for an entry a change names, an end of a fact added or ended, or a
+    neighbour of an entry that was added, changed or removed.
+    """
+    before_index, after_index = indexes or (FactIndex(before), FactIndex(after))
+    affected: set[str] = set()
+
+    def ends(fact: WorldFact | None) -> None:
+        if fact is not None:
+            affected.add(fact.subject_id)
+            if fact.object_id is not None:
+                affected.add(fact.object_id)
+
+    for operation in operations:
+        if isinstance(operation, (CreateEntityOp, UpdateEntityOp, RetireEntityOp)):
+            affected.add(operation.id)
+            for index in (before_index, after_index):
+                for fact in index.touching.get(operation.id, ()):
+                    ends(fact)
+        elif isinstance(operation, (AssertFactOp, CloseFactOp)):
+            ends(before.facts.get(operation.id))
+            ends(after.facts.get(operation.id))
+            proposition = getattr(operation, "proposition", None)
+            if proposition is not None:
+                affected.add(proposition.subject_id)
+                other = getattr(proposition.object, "entity_id", None)
+                if other is not None:
+                    affected.add(other)
+    return affected
 
 
 @dataclass(frozen=True)

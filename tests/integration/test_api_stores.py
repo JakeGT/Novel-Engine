@@ -137,7 +137,10 @@ def test_edges_against_real_neo4j(client: TestClient) -> None:
 def test_health_reports_real_stores(client: TestClient) -> None:
     ready = client.get("/health/ready")
     assert ready.status_code == 200
-    assert ready.json()["status"] == "ready"
+    assert ready.json()["status"] == "ready", ready.json()
+    checks = ready.json()["checks"]
+    # The search store answers (OPS-006).
+    assert checks["vector_store"] == {"ok": True, "optional": True}
 
     capabilities = client.get("/health/capabilities")
     assert capabilities.status_code == 200

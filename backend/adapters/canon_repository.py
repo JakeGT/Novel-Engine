@@ -262,6 +262,8 @@ _FORKED_TABLES = (
     "scene_manuscripts",
     # What was last read from each scene, so a what-if does not propose it again.
     "scene_readings",
+    # Findings the author dismissed in a scene, so a what-if starts with the same decisions.
+    "finding_dismissals",
 )
 
 # A story read: the what-if this request works in, or the main story when none is named.
@@ -677,6 +679,40 @@ class _TxCanonReader:
             )
         ).all()
         return len(rows)
+
+    async def active_entities(self, limit: int) -> list[CanonEntity]:
+        rows = (
+            await self._session.execute(
+                text(
+                    "SELECT * FROM canon_entities WHERE workspace_id = :w AND project_id = :p "
+                    "AND branch_id = :b AND lifecycle = 'active' ORDER BY id LIMIT :limit"
+                ),
+                {
+                    "w": self._workspace_id,
+                    "p": self._project_id,
+                    "b": self._branch_id,
+                    "limit": limit,
+                },
+            )
+        ).all()
+        return [_entity(row) for row in rows]
+
+    async def asserted_facts(self, limit: int) -> list[Fact]:
+        rows = (
+            await self._session.execute(
+                text(
+                    "SELECT * FROM canon_facts WHERE workspace_id = :w AND project_id = :p "
+                    "AND branch_id = :b AND status = 'asserted' ORDER BY id LIMIT :limit"
+                ),
+                {
+                    "w": self._workspace_id,
+                    "p": self._project_id,
+                    "b": self._branch_id,
+                    "limit": limit,
+                },
+            )
+        ).all()
+        return [_fact(row) for row in rows]
 
 
 class PostgresCanonRepository:

@@ -256,7 +256,9 @@ class SceneReadingService:
             nonlocal calls
             calls += 1
             await sink(ai_usage, model, f"{job.id}:{job.attempts}:{calls}")
-            await ctx.used(ai_usage.prompt_tokens, ai_usage.completion_tokens)
+            await ctx.used(
+                ai_usage.prompt_tokens, ai_usage.completion_tokens, ai_usage.cached_prompt_tokens
+            )
 
         head = await self._canon.get_head(
             workspace_id=workspace_id, project_id=project_id, branch_id=branch_id

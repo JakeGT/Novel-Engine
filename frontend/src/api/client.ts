@@ -75,12 +75,18 @@ export type Reveal = Schemas['Reveal']
 export type SceneContext = Schemas['SceneContextModel']
 export type ContextItem = Schemas['ContextItemModel']
 export type ContextSettings = Schemas['ContextSettings']
+export type KeptContext = Schemas['KeptContextModel']
+export type ContextComparison = Schemas['ContextComparisonModel']
+export type SceneIntent = Schemas['SceneIntent']
+export type ThreadProgress = Schemas['ThreadProgressModel']
 export type WritingIndex = Schemas['IndexStatusModel']
 export type Studio = Schemas['StudioModel']
 export type SceneReading = Schemas['ReadingModel']
 export type SceneDraft = Schemas['DraftModel']
 export type DraftCheck = Schemas['CheckModel']
 export type AssistantNote = Schemas['AssistantNoteModel']
+export type FindingDismissal = Schemas['DismissalModel']
+export type DismissAsk = Schemas['DismissRequest']
 export type SceneVersion = Schemas['backend__api__v1__studio__VersionModel']
 export type StudioJob = Schemas['JobModel']
 export type DraftEstimate = Schemas['backend__api__v1__studio__EstimateModel']
@@ -687,6 +693,10 @@ export const api = {
       ...settings,
       expected_revision: expectedRevision,
     }),
+  keptSceneContexts: (scope: Scope, planId: string) =>
+    get<KeptContext[]>(scope, `/plan/${id(planId)}/context/kept`),
+  compareSceneContext: (scope: Scope, planId: string, manifestId: string) =>
+    get<ContextComparison>(scope, `/plan/${id(planId)}/context/kept/${id(manifestId)}`),
   writingIndex: (scope: Scope) => get<WritingIndex>(scope, '/texts-index'),
   rebuildWritingIndex: (scope: Scope) =>
     send<{ passages: number }>(scope, 'POST', '/texts-index/rebuild'),
@@ -724,6 +734,12 @@ export const api = {
       base_version_id: baseVersionId,
     } satisfies Schemas['KeepRequest']),
   discardDraft: (scope: Scope, draftId: string) => send<void>(scope, 'DELETE', `/drafts/${id(draftId)}`),
+  /** Dismiss a check or a note on a scene, with a reason. The text is not changed. */
+  dismissFinding: (scope: Scope, planId: string, body: DismissAsk) =>
+    send<Studio>(scope, 'POST', `/plan/${id(planId)}/studio/dismissals`, body),
+  /** Bring a dismissed check or note back. */
+  undoDismissal: (scope: Scope, planId: string, dismissalId: string) =>
+    send<Studio>(scope, 'DELETE', `/plan/${id(planId)}/studio/dismissals/${id(dismissalId)}`),
   job: (scope: Scope, jobId: string) => get<StudioJob>(scope, `/jobs/${id(jobId)}`),
   cancelJob: (scope: Scope, jobId: string) => send<StudioJob>(scope, 'POST', `/jobs/${id(jobId)}/cancel`),
   voice: (scope: Scope) => get<Schemas['VoiceModel']>(scope, '/voice'),

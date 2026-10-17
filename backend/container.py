@@ -541,5 +541,6 @@ def build_container(settings: Settings | None = None) -> Container:
         rules=container.rules,
         clocks=container.story_clocks,
         studio=container.studio_store,
+        assists=container.assist_sessions,
     )
     return container

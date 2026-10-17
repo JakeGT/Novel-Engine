@@ -53,6 +53,7 @@ const outline = {
     { plan_id: 'pln_b2', code: 'needs_scene', message: 'This beat has no scene yet.' },
     { plan_id: 'pln_t', code: 'needs_payoff', message: 'This thread is opened and never resolved.' },
   ],
+  threads: [{ thread_id: 'pln_t', steps: [{ plan_id: 'pln_s', step: 'opens' }] }],
 }
 
 describe('PlanPage', () => {
@@ -79,7 +80,9 @@ describe('PlanPage', () => {
 
     // Threads are kept apart, and say where they were opened.
     const threads = screen.getByRole('heading', { name: 'Threads' }).closest('section') as HTMLElement
-    expect(threads).toHaveTextContent('Opened in: The lamp room at night')
+    expect(
+      within(threads).getByRole('list', { name: 'How “Who drew the false chart?” runs through the plan' }),
+    ).toHaveTextContent('Opens The lamp room at night')
     expect(threads).toHaveTextContent('This thread is opened and never resolved.')
     // Gaps are things to do, said as such.
     expect(screen.getByText('3 things the plan still needs')).toBeInTheDocument()
@@ -116,8 +119,91 @@ describe('PlanPage', () => {
       ],
       sets_up: [],
       pays_off: ['pln_t'],
+      advances: [],
       details: {},
       expected_revision: 3,
+    })
+  })
+
+  it('shows a thread as steps in outline order, and lets a scene move it along', async () => {
+    const middle = part({ id: 'pln_m', title: 'The harbour office', parent_id: 'pln_b2', advances: ['pln_t'] })
+    const last = part({ id: 'pln_l', title: 'The father’s study', parent_id: 'pln_b2', position: 1, pays_off: ['pln_t'] })
+    const api = mockApi({
+      ...everyone,
+      'GET /plan': {
+        ...outline,
+        items: [...outline.items, middle, last],
+        open: [],
+        threads: [
+          {
+            thread_id: 'pln_t',
+            steps: [
+              { plan_id: 'pln_s', step: 'opens' },
+              { plan_id: 'pln_m', step: 'advances' },
+              { plan_id: 'pln_l', step: 'resolves' },
+            ],
+          },
+        ],
+      },
+      'PATCH /plan/pln_s': scene,
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<PlanPage />, at)
+    const steps = await screen.findByRole('list', { name: 'How “Who drew the false chart?” runs through the plan' })
+    expect(within(steps).getAllByRole('listitem').map((node) => node.textContent)).toEqual([
+      'Opens The lamp room at night',
+      'Moves along The harbour office',
+      'Resolves The father’s study',
+    ])
+    expect(within(steps).getByRole('link', { name: 'The harbour office' })).toHaveAttribute('href', '#plan-pln_m')
+    const office = screen.getByRole('heading', { name: 'The harbour office' }).closest('li') as HTMLElement
+    expect(office).toHaveTextContent('Moves along: Who drew the false chart?')
+    await expectAccessible(container)
+
+    // In the form, a thread this scene opens is not offered as one it moves along.
+    const lamp = screen.getByRole('heading', { name: 'The lamp room at night' }).closest('li') as HTMLElement
+    await user.click(within(lamp).getByRole('button', { name: 'Edit The lamp room at night' }))
+    const form = screen.getByRole('form', { name: 'Change The lamp room at night' })
+    const along = within(form).getByLabelText(/^Threads it moves along/)
+    expect(within(along).queryByRole('option', { name: 'Who drew the false chart?' })).not.toBeInTheDocument()
+    await user.click(within(form).getByRole('button', { name: 'Remove Who drew the false chart?' }))
+    await user.selectOptions(within(form).getByLabelText(/^Threads it moves along/), 'pln_t')
+    await user.click(within(form).getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(api.find('PATCH', '/plan/pln_s')).toHaveLength(1))
+    const body = api.find('PATCH', '/plan/pln_s')[0].body as Record<string, unknown>
+    expect(body.sets_up).toEqual([])
+    expect(body.advances).toEqual(['pln_t'])
+  })
+
+  it('shows what the viewpoint wants in a scene, and lets the author say it by hand', async () => {
+    const wanting = { ...scene, intent: { goal: 'find the true chart', obstacle: 'her father keeps the key', outcome: 'yes_but' as const } }
+    const api = mockApi({
+      ...everyone,
+      'GET /plan': { ...outline, items: [story, arc, beatOne, beatTwo, wanting, thread] },
+      'PATCH /plan/pln_s': wanting,
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<PlanPage />, at)
+    const intent = await screen.findByLabelText('What the viewpoint wants in The lamp room at night')
+    expect(intent).toHaveTextContent('Wantsfind the true chart')
+    expect(intent).toHaveTextContent('In the wayher father keeps the key')
+    expect(intent).toHaveTextContent('EndsYes, but — they get it, with a cost or a new complication')
+    await expectAccessible(container)
+
+    const lamp = screen.getByRole('heading', { name: 'The lamp room at night' }).closest('li') as HTMLElement
+    await user.click(within(lamp).getByRole('button', { name: 'Edit The lamp room at night' }))
+    const form = screen.getByRole('form', { name: 'Change The lamp room at night' })
+    const group = within(form).getByRole('group', { name: 'What the viewpoint character wants here (optional)' })
+    expect(within(group).getByLabelText(/^Wants/)).toHaveValue('find the true chart')
+    await user.clear(within(group).getByLabelText(/^In the way/))
+    await user.type(within(group).getByLabelText(/^In the way/), 'the fog')
+    await user.selectOptions(within(group).getByLabelText(/^How it ends/), 'no_and')
+    await user.click(within(form).getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(api.find('PATCH', '/plan/pln_s')).toHaveLength(1))
+    expect((api.find('PATCH', '/plan/pln_s')[0].body as Record<string, unknown>).intent).toEqual({
+      goal: 'find the true chart',
+      obstacle: 'the fog',
+      outcome: 'no_and',
     })
   })
 

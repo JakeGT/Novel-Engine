@@ -2153,6 +2153,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/context/kept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Kept Scene Contexts
+         * @description The contexts kept versions of this scene were drafted from, newest first.
+         */
+        get: operations["kept_scene_contexts_api_v1_projects__project_id__plan__plan_id__context_kept_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/context/kept/{manifest_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Compare Scene Context
+         * @description What the assistant would use now against what it used for a kept draft.
+         */
+        get: operations["compare_scene_context_api_v1_projects__project_id__plan__plan_id__context_kept__manifest_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/plan/{plan_id}/move": {
         parameters: {
             query?: never;
@@ -2219,6 +2259,46 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/studio/dismissals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Finding
+         * @description Dismiss a check or a note on this scene with a reason. The text is not changed.
+         */
+        post: operations["dismiss_finding_api_v1_projects__project_id__plan__plan_id__studio_dismissals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/studio/dismissals/{dismissal_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Undo Dismissal
+         * @description Bring a dismissed finding back.
+         */
+        delete: operations["undo_dismissal_api_v1_projects__project_id__plan__plan_id__studio_dismissals__dismissal_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3350,7 +3430,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Readiness */
+        /**
+         * Readiness
+         * @description Ready when the required stores are; degraded (still 200) when an optional part is
+         *     down, with plain reasons; unavailable (503) when a required store is down. Never
+         *     reports addresses, credentials or error messages that could carry them.
+         */
         get: operations["readiness_health_ready_get"];
         put?: never;
         post?: never;
@@ -3380,12 +3465,15 @@ export interface components {
         };
         /** AddPlanItemRequest */
         AddPlanItemRequest: {
+            /** Advances */
+            advances?: string[];
             /** Details */
             details?: {
                 [key: string]: string;
             };
             /** Expected Revision */
             expected_revision: number;
+            intent?: components["schemas"]["SceneIntent"] | null;
             kind: components["schemas"]["PlanKind"];
             /** Parent Id */
             parent_id?: string | null;
@@ -3713,10 +3801,16 @@ export interface components {
         AssistantNoteModel: {
             /** Category */
             category: string;
+            dismissal?: components["schemas"]["DismissalModel"] | null;
             /** End */
             end?: number | null;
             /** Id */
             id: string;
+            /**
+             * Key
+             * @default
+             */
+            key: string;
             /** Message */
             message: string;
             /** Start */
@@ -3882,12 +3976,15 @@ export interface components {
         };
         /** ChangePlanItemRequest */
         ChangePlanItemRequest: {
+            /** Advances */
+            advances?: string[] | null;
             /** Details */
             details?: {
                 [key: string]: string;
             } | null;
             /** Expected Revision */
             expected_revision: number;
+            intent?: components["schemas"]["SceneIntent"] | null;
             /** Pays Off */
             pays_off?: string[] | null;
             /** Refs */
@@ -3943,6 +4040,7 @@ export interface components {
         /** ChangeRuleRequest */
         ChangeRuleRequest: {
             body?: components["schemas"]["RuleBody"] | null;
+            enforcement?: components["schemas"]["RuleEnforcement"] | null;
             /** Examples */
             examples?: components["schemas"]["RuleExample"][] | null;
             /** Sentence */
@@ -3950,6 +4048,18 @@ export interface components {
             status?: components["schemas"]["RuleStatus"] | null;
             /** Title */
             title?: string | null;
+        };
+        /** ChangedContextModel */
+        ChangedContextModel: {
+            item: components["schemas"]["ContextItemModel"];
+            /** Reason Then */
+            reason_then: string;
+            /** Section Title Then */
+            section_title_then?: string | null;
+            /** Text Then */
+            text_then?: string | null;
+            /** What */
+            what: string[];
         };
         /** CharacterAnswerModel */
         CharacterAnswerModel: {
@@ -4067,8 +4177,14 @@ export interface components {
         CheckModel: {
             /** Code */
             code: string;
+            dismissal?: components["schemas"]["DismissalModel"] | null;
             /** End */
             end?: number | null;
+            /**
+             * Key
+             * @default
+             */
+            key: string;
             /** Message */
             message: string;
             /** Severity */
@@ -4140,6 +4256,36 @@ export interface components {
             reading: string;
             /** When */
             when: string;
+        };
+        /** ContextComparisonModel */
+        ContextComparisonModel: {
+            /** Added */
+            added: components["schemas"]["ContextItemModel"][];
+            /** Budget Now */
+            budget_now: number;
+            /** Budget Then */
+            budget_then: number;
+            /** Changed */
+            changed: components["schemas"]["ChangedContextModel"][];
+            /**
+             * Kept At
+             * Format: date-time
+             */
+            kept_at: string;
+            /** Manifest Id */
+            manifest_id: string;
+            /** Removed */
+            removed: components["schemas"]["RemovedContextModel"][];
+            /** Rules Changed */
+            rules_changed: boolean;
+            /** Same */
+            same: boolean;
+            /** Unchanged */
+            unchanged: number;
+            /** Words Now */
+            words_now: number;
+            /** Words Then */
+            words_then: number;
         };
         /** ContextItemModel */
         ContextItemModel: {
@@ -4473,6 +4619,45 @@ export interface components {
             kind: string;
             /** Reason */
             reason: string;
+        };
+        /**
+         * DismissReason
+         * @enum {string}
+         */
+        DismissReason: "intended" | "not_a_problem" | "other";
+        /** DismissRequest */
+        DismissRequest: {
+            /** Days */
+            days?: (7 | 30) | null;
+            /** Key */
+            key: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            reason: components["schemas"]["DismissReason"];
+        };
+        /**
+         * DismissalModel
+         * @description The author dismissed this finding, and why (CON-010, CON-016).
+         */
+        DismissalModel: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Id */
+            id: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            reason: components["schemas"]["DismissReason"];
         };
         /** DraftModel */
         DraftModel: {
@@ -5018,6 +5203,11 @@ export interface components {
         };
         /** JobModel */
         JobModel: {
+            /**
+             * Cached Prompt Tokens
+             * @default 0
+             */
+            cached_prompt_tokens: number;
             /** Cancel Requested */
             cancel_requested: boolean;
             /** Completion Tokens */
@@ -5069,6 +5259,25 @@ export interface components {
         KeepRequest: {
             /** Base Version Id */
             base_version_id?: string | null;
+        };
+        /**
+         * KeptContextModel
+         * @description The context a kept version of the scene's prose was drafted from.
+         */
+        KeptContextModel: {
+            /**
+             * Kept At
+             * Format: date-time
+             */
+            kept_at: string;
+            /** Manifest Id */
+            manifest_id: string;
+            /** Version Id */
+            version_id: string;
+            /** Version Number */
+            version_number: number;
+            /** Words */
+            words: number;
         };
         /** KnownFactModel */
         KnownFactModel: {
@@ -5453,6 +5662,8 @@ export interface components {
             items: components["schemas"]["PlanItemModel"][];
             /** Open */
             open: components["schemas"]["OpenItemModel"][];
+            /** Threads */
+            threads?: components["schemas"]["ThreadProgressModel"][];
         };
         /** PassageModel */
         PassageModel: {
@@ -5557,6 +5768,8 @@ export interface components {
         };
         /** PlanItemModel */
         PlanItemModel: {
+            /** Advances */
+            advances?: string[];
             /** Conditions */
             conditions: components["schemas"]["SceneCondition"][];
             /** Created Revision */
@@ -5567,6 +5780,7 @@ export interface components {
             };
             /** Id */
             id: string;
+            intent?: components["schemas"]["SceneIntent"] | null;
             /** Kind */
             kind: string;
             /** Parent Id */
@@ -5919,6 +6133,22 @@ export interface components {
             /** Expected Revision */
             expected_revision: number;
         };
+        /** RemovedContextModel */
+        RemovedContextModel: {
+            /** Key */
+            key: string;
+            /** Left Out */
+            left_out?: string | null;
+            now?: components["schemas"]["ContextItemModel"] | null;
+            /** Reason */
+            reason: string;
+            /** Section Title */
+            section_title?: string | null;
+            /** Text */
+            text?: string | null;
+            /** Words */
+            words: number;
+        };
         /** RemovedModel */
         RemovedModel: {
             /** Removed */
@@ -6151,6 +6381,12 @@ export interface components {
             understood: string;
         };
         /**
+         * RuleEnforcement
+         * @description How an author story rule is published. Warning is the default (ADR-013).
+         * @enum {string}
+         */
+        RuleEnforcement: "warning" | "blocking";
+        /**
          * RuleExample
          * @description A tiny made-up story, and whether the rule should catch it.
          */
@@ -6177,6 +6413,8 @@ export interface components {
             body: components["schemas"]["RuleBody"];
             /** Broken By */
             broken_by: components["schemas"]["BrokenByModel"][];
+            /** @default warning */
+            enforcement: components["schemas"]["RuleEnforcement"];
             /** Example Results */
             example_results: components["schemas"]["ExampleResultModel"][];
             /** Examples */
@@ -6249,6 +6487,21 @@ export interface components {
             settings: components["schemas"]["ContextSettings"];
             /** Words */
             words: number;
+        };
+        /** SceneIntent */
+        SceneIntent: {
+            /**
+             * Goal
+             * @default
+             */
+            goal: string;
+            /**
+             * Obstacle
+             * @default
+             */
+            obstacle: string;
+            /** Outcome */
+            outcome?: ("yes" | "no" | "yes_but" | "no_and") | null;
         };
         /** SchemaDefinitionRequest */
         SchemaDefinitionRequest: {
@@ -6537,6 +6790,20 @@ export interface components {
             title: string;
             /** Versions */
             versions: number;
+        };
+        /** ThreadProgressModel */
+        ThreadProgressModel: {
+            /** Steps */
+            steps: components["schemas"]["ThreadStepModel"][];
+            /** Thread Id */
+            thread_id: string;
+        };
+        /** ThreadStepModel */
+        ThreadStepModel: {
+            /** Plan Id */
+            plan_id: string;
+            /** Step */
+            step: string;
         };
         /** TimeIssueModel */
         TimeIssueModel: {
@@ -11645,6 +11912,71 @@ export interface operations {
             };
         };
     };
+    kept_scene_contexts_api_v1_projects__project_id__plan__plan_id__context_kept_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeptContextModel"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compare_scene_context_api_v1_projects__project_id__plan__plan_id__context_kept__manifest_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+                manifest_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextComparisonModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     move_plan_item_api_v1_projects__project_id__plan__plan_id__move_post: {
         parameters: {
             query?: never;
@@ -11760,6 +12092,75 @@ export interface operations {
             path: {
                 project_id: string;
                 plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_finding_api_v1_projects__project_id__plan__plan_id__studio_dismissals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudioModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_dismissal_api_v1_projects__project_id__plan__plan_id__studio_dismissals__dismissal_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+                dismissal_id: string;
             };
             cookie?: never;
         };

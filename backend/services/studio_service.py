@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -21,6 +22,16 @@ from backend.core.logging import log_event
 from backend.domain.canon.assertions import FactVisibility
 from backend.domain.canon.phrasing import phrase
 from backend.domain.canon.plans import PlanItem, PlanKind
+from backend.domain.dismissals import (
+    MAX_DISMISSALS_PER_SCENE,
+    MAX_NOTE,
+    DismissReason,
+    FindingDismissal,
+    FindingKind,
+    anchor,
+    expiry,
+    fingerprint,
+)
 from backend.domain.drafting import (
     DraftBrief,
     DraftFinding,
@@ -98,6 +109,66 @@ class StudioState:
     draft_checks: dict[str, list[DraftFinding]] = field(default_factory=dict)
     draft_assistant: dict[str, list[AssistantFinding]] = field(default_factory=dict)
     jobs: list[Job] = field(default_factory=list)
+    # The fingerprint of each finding above, in the same order (CON-016).
+    check_keys: list[str] = field(default_factory=list)
+    note_keys: list[str] = field(default_factory=list)
+    draft_check_keys: dict[str, list[str]] = field(default_factory=dict)
+    draft_note_keys: dict[str, list[str]] = field(default_factory=dict)
+    # Standing, unexpired dismissals of this scene, by fingerprint.
+    dismissals: dict[str, FindingDismissal] = field(default_factory=dict)
+
+    def keys(self) -> dict[str, tuple[FindingKind, str]]:
+        """Every finding on the page now, by fingerprint: its kind and code."""
+        found: dict[str, tuple[FindingKind, str]] = {}
+        for key, check in zip(self.check_keys, self.checks, strict=False):
+            found[key] = (FindingKind.CHECK, check.code)
+        for key, note in zip(self.note_keys, self.assistant, strict=False):
+            found[key] = (FindingKind.NOTE, note.category)
+        for draft_id, checks in self.draft_checks.items():
+            for key, check in zip(self.draft_check_keys.get(draft_id, []), checks, strict=False):
+                found[key] = (FindingKind.CHECK, check.code)
+        for draft_id, notes in self.draft_assistant.items():
+            for key, note in zip(self.draft_note_keys.get(draft_id, []), notes, strict=False):
+                found[key] = (FindingKind.NOTE, note.category)
+        return found
+
+
+def check_key(content: str, finding: DraftFinding) -> str:
+    """A check's fingerprint: what it is about and the sentence it points at."""
+    return fingerprint(
+        FindingKind.CHECK,
+        finding.code,
+        finding.subject,
+        anchor(content, finding.start, finding.end),
+    )
+
+
+def note_key(content: str, note: AssistantFinding, *, worded: bool = False) -> str:
+    """A note's fingerprint: its kind, the words it quotes and the sentence they sit in.
+    A check again words its notes afresh, so the wording is left out wherever there is a
+    quote to go by, unless ``worded`` asks for it (two notes on the same words)."""
+    passage = anchor(content, note.start, note.end)
+    if not passage:
+        return fingerprint(FindingKind.NOTE, note.category, note.message, passage)
+    quoted = content[note.start : note.end] if note.start is not None else ""
+    subject = f"{quoted}\x1e{note.message}" if worded else quoted
+    return fingerprint(FindingKind.NOTE, note.category, subject, passage)
+
+
+def _old_note_key(content: str, note: AssistantFinding) -> str:
+    """How a note was fingerprinted before the quoted words were part of it."""
+    passage = anchor(content, note.start, note.end)
+    return fingerprint(FindingKind.NOTE, note.category, "" if passage else note.message, passage)
+
+
+def note_keys(content: str, notes: list[AssistantFinding]) -> list[str]:
+    """Each note's fingerprint. Two notes from one check on the same words are told apart
+    by their wording; the same words noted again by a later check are the same note."""
+    plain = [(note_key(content, note), note.job_id) for note in notes]
+    return [
+        note_key(content, note, worded=True) if plain.count(pair) > 1 else pair[0]
+        for pair, note in zip(plain, notes, strict=True)
+    ]
 
 
 @dataclass(frozen=True)
@@ -254,7 +325,129 @@ class StudioService:
             ),
         ]
         state.jobs.sort(key=lambda job: job.created_at, reverse=True)
+        await self._mark_dismissed(workspace_id, project_id, state)
         return state
+
+    # --------------------------------------------------------------- dismissing
+
+    async def _mark_dismissed(self, workspace_id: str, project_id: str, state: StudioState) -> None:
+        """Fingerprint every finding on the page, and find which the author dismissed."""
+        content = state.current.content if state.current is not None else ""
+        state.check_keys = [check_key(content, check) for check in state.checks]
+        state.note_keys = note_keys(content, state.assistant)
+        notes = [
+            (content, note, key) for note, key in zip(state.assistant, state.note_keys, strict=True)
+        ]
+        for draft in state.drafts:
+            state.draft_check_keys[draft.id] = [
+                check_key(draft.content, check) for check in state.draft_checks.get(draft.id, [])
+            ]
+            drafted = state.draft_assistant.get(draft.id, [])
+            state.draft_note_keys[draft.id] = note_keys(draft.content, drafted)
+            notes += [
+                (draft.content, note, key)
+                for note, key in zip(drafted, state.draft_note_keys[draft.id], strict=True)
+            ]
+        now = datetime.now(UTC)
+        standing = await self._store.dismissals(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            branch_id=await self._branch_id(workspace_id, project_id),
+            plan_id=state.scene.id,
+        )
+        state.dismissals = {item.fingerprint: item for item in standing if item.applies(now)}
+        # A note dismissed under the older fingerprint stays dismissed while it is the only
+        # note on the page that fingerprint fits.
+        old = [_old_note_key(text, note) for text, note, _ in notes]
+        for (_, _, key), old_key in zip(notes, old, strict=True):
+            if key not in state.dismissals and old.count(old_key) == 1:
+                earlier = state.dismissals.get(old_key)
+                if earlier is not None:
+                    state.dismissals[key] = earlier
+
+    async def dismiss(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        *,
+        key: str,
+        reason: DismissReason,
+        note: str = "",
+        days: int | None = None,
+    ) -> StudioState:
+        """Dismiss a check or a note on this scene, with a reason. It stays dismissed while
+        the words it points at are unchanged, or until it runs out."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        state = await self.state(scope, workspace_id, project_id, plan_id)
+        found = state.keys().get(key)
+        if found is None:
+            raise NotFoundError(
+                "That finding is no longer there: the words it was about may have changed."
+            )
+        note = " ".join(note.split())
+        if reason is DismissReason.OTHER and not note:
+            raise ValidationError("Say in a few words why this is not a problem.")
+        if len(note) > MAX_NOTE:
+            raise ValidationError(f"Keep the reason under {MAX_NOTE} characters.")
+        now = datetime.now(UTC)
+        try:
+            expires_at = expiry(now, days)
+        except ValueError:
+            raise ValidationError("Choose how long it stays dismissed.") from None
+        branch_id = await self._branch_id(workspace_id, project_id)
+        standing = await self._store.dismissals(
+            workspace_id=workspace_id, project_id=project_id, branch_id=branch_id, plan_id=plan_id
+        )
+        if len(standing) >= MAX_DISMISSALS_PER_SCENE:
+            raise ValidationError("This scene has as many dismissed findings as it can hold.")
+        kind, code = found
+        await self._store.add_dismissal(
+            FindingDismissal(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                branch_id=branch_id,
+                id=str(uuid7()),
+                plan_id=plan_id,
+                fingerprint=key,
+                kind=kind,
+                code=code,
+                reason=reason,
+                note=note,
+                expires_at=expires_at,
+                created_by=scope.actor_user_id,
+                created_at=now,
+            )
+        )
+        # The reason the author typed is their writing too: only its kind is logged.
+        log_event(
+            logger, "studio.finding_dismissed", kind=kind.value, code=code, reason=reason.value
+        )
+        return await self.state(scope, workspace_id, project_id, plan_id)
+
+    async def undo_dismissal(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        dismissal_id: str,
+    ) -> StudioState:
+        """Bring a dismissed finding back. The dismissal stays on record, withdrawn."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        await self._scene(scope, workspace_id, project_id, plan_id)
+        withdrawn = await self._store.withdraw_dismissal(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            branch_id=await self._branch_id(workspace_id, project_id),
+            plan_id=plan_id,
+            dismissal_id=dismissal_id,
+            at=datetime.now(UTC),
+        )
+        if not withdrawn:
+            raise NotFoundError("That was already brought back.")
+        return await self.state(scope, workspace_id, project_id, plan_id)
 
     async def scene_texts(self, workspace_id: str, project_id: str) -> dict[str, str]:
         """Text id → scene id, for the line of the story being worked in."""
@@ -767,7 +960,11 @@ class StudioService:
                     base_url=base_url,
                 )
             await sink(response.usage, response.model, idempotency_key=call_key(number))
-            await ctx.used(response.usage.prompt_tokens, response.usage.completion_tokens)
+            await ctx.used(
+                response.usage.prompt_tokens,
+                response.usage.completion_tokens,
+                response.usage.cached_prompt_tokens,
+            )
             content = clean_draft(response.text)
             if not content:
                 # An empty answer is not a draft; nothing is stored from it.
@@ -830,7 +1027,11 @@ class StudioService:
                 base_url=base_url,
             )
         await sink(response.usage, response.model, idempotency_key=call_key)
-        await ctx.used(response.usage.prompt_tokens, response.usage.completion_tokens)
+        await ctx.used(
+            response.usage.prompt_tokens,
+            response.usage.completion_tokens,
+            response.usage.cached_prompt_tokens,
+        )
         await ctx.step("Checking what it found against the text", 90)
         kept: list[AssistantFinding] = []
         dropped = 0

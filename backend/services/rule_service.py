@@ -1,9 +1,10 @@
-"""Story rules: keep them, check the story against them, and warn when a change breaks one.
+"""Story rules: keep them, check the story against them, and say when a change breaks one.
 
-Nothing here calls a model, and nothing here can stop a change. A rule that a
-set of changes would newly break is reported next to those changes as something
-worth a look (ADR-013: author rules warn by default; blocking is a later,
-explicit choice that this phase does not offer).
+Nothing here calls a model. A rule that a set of changes would newly break is
+reported next to those changes. A rule warns by default; the author may set it to
+block (ADR-013, CON-015), and then the commit is refused, but only when the rule was
+worked out over the whole story as it stands inside the commit: a rule that could
+not see everything it needed only ever warns.
 """
 
 from __future__ import annotations
@@ -24,22 +25,26 @@ from backend.domain.rules import (
     MAX_RULES,
     MAX_SENTENCE_LENGTH,
     MAX_TITLE_LENGTH,
+    MAX_VIOLATIONS,
     ExampleResult,
+    FactIndex,
     RuleBody,
     RuleExample,
     RuleStatus,
     StoryRule,
     Violation,
     World,
+    affected_entries,
     apply_operations,
     body_problems,
+    changes_world,
     read_rule,
     run_examples,
     violations,
     world_from_canon,
 )
 from backend.domain.tenancy import Permission
-from backend.domain.validation import RuleEvaluation, ValidationContext
+from backend.domain.validation import RuleEnforcement, RuleEvaluation, ValidationContext
 from backend.ports import CanonRepositoryPort, SchemaVersionStorePort
 from backend.services.schema_compiler import compile_definition
 
@@ -258,8 +263,13 @@ class RuleService:
         status: RuleStatus | None = None,
         body: RuleBody | None = None,
         examples: Sequence[RuleExample] | None = None,
+        enforcement: RuleEnforcement | None = None,
     ) -> RuleReading:
-        """Rename, pause, or reword. New wording is a new version; the old one is kept."""
+        """Rename, pause, reword, or choose whether it warns or blocks.
+
+        New wording is a new version; the old one is kept. Setting a rule to block is
+        its own explicit choice (ADR-013), never a side effect of rewording.
+        """
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         rule = await self._rule(workspace_id, project_id, rule_id)
         if title is not None or sentence is not None:
@@ -283,7 +293,10 @@ class RuleService:
             body=body,
             examples=list(examples)[:MAX_EXAMPLES] if body is not None and examples else None,
             actor_user_id=scope.actor_user_id,
+            enforcement=enforcement,
         )
+        if enforcement is not None and enforcement is not rule.enforcement:
+            log_event(logger, "rule.enforcement", rule_id=rule_id, enforcement=enforcement.value)
         rule = await self._rule(workspace_id, project_id, rule_id)
         return self._reading(rule, await self.world(workspace_id, project_id))
 
@@ -298,14 +311,36 @@ class RuleService:
             raise NotFoundError("That rule was not found.")
 
     # ------------------------------------------------- the validation seam
+    async def _world_for(self, context: ValidationContext) -> tuple[World, bool]:
+        """The story as the commit sees it, and whether that is all of it.
+
+        Read through the commit's own reader, so a rule sees the line of the story
+        being changed exactly as it stands under the commit's lock. If the story is
+        larger than a rule may read, or the reader cannot give the whole story, the
+        result is incomplete and cannot block.
+        """
+        reader = context.reader
+        entities_of = getattr(reader, "active_entities", None)
+        facts_of = getattr(reader, "asserted_facts", None)
+        if entities_of is None or facts_of is None:
+            return await self.world(context.workspace_id, context.project_id), False
+        entities = await entities_of(MAX_ENTITIES + 1)
+        facts = await facts_of(MAX_FACTS + 1)
+        complete = len(entities) <= MAX_ENTITIES and len(facts) <= MAX_FACTS
+        return world_from_canon(entities[:MAX_ENTITIES], facts[:MAX_FACTS]), complete
+
     async def evaluate(
         self, operations: Sequence[CanonOperation], *, context: ValidationContext
     ) -> Sequence[RuleEvaluation]:
-        """Rules these changes would newly break. Only ever a warning.
+        """Rules these changes would newly break: a warning, or a block when set to block.
 
         A rule the story already breaks is not blamed on an unrelated change: only
         what is broken afterwards and was not before is reported.
         """
+        # Only adding, changing or removing entries and facts can alter what a rule
+        # sees; anything else (a plan, a picture) leaves every rule as it was.
+        if not changes_world(operations):
+            return []
         rules = [
             rule
             for rule in await self._store.list_rules(  # type: ignore[attr-defined]
@@ -315,22 +350,57 @@ class RuleService:
         ]
         if not rules:
             return []
-        before = await self.world(context.workspace_id, context.project_id)
+        before, complete = await self._world_for(context)
         after = apply_operations(before, operations)
+        # Every entry, not a shown handful: a rule blocks only on the whole answer.
+        # Entries these changes cannot reach keep their standing, so only the
+        # reachable ones are worked out, before and after.
+        before_index, after_index = FactIndex(before), FactIndex(after)
+        reachable = affected_entries(before, after, operations, indexes=(before_index, after_index))
         found: list[RuleEvaluation] = []
         for rule in rules:
-            already = {item.entity_id for item in violations(rule.id, rule.body, before)}
-            for violation in violations(rule.id, rule.body, after):
-                if violation.entity_id in already:
-                    continue
+            already = {
+                item.entity_id
+                for item in violations(
+                    rule.id, rule.body, before, limit=None, index=before_index, only=reachable
+                )
+            }
+            blocks = rule.enforcement is RuleEnforcement.BLOCKING and complete
+            newly = [
+                violation
+                for violation in violations(
+                    rule.id, rule.body, after, limit=None, index=after_index, only=reachable
+                )
+                if violation.entity_id not in already
+            ]
+            # All of them decide; only so many are worth saying one by one.
+            for violation in newly[:MAX_VIOLATIONS]:
+                if blocks:
+                    message = (
+                        f"This breaks your rule “{rule.title}”, which you set to block: it would "
+                        f"no longer hold for {violation.entity_name}. Skip or change this, or "
+                        "set the rule to warn."
+                    )
+                elif rule.enforcement is RuleEnforcement.BLOCKING:
+                    message = (
+                        f"This may break your rule “{rule.title}”: it would no longer hold for "
+                        f"{violation.entity_name}. The story is too large to check this rule "
+                        "completely, so it warns instead of blocking."
+                    )
+                else:
+                    message = (
+                        f"This would break your rule “{rule.title}”: it would no longer "
+                        f"hold for {violation.entity_name}."
+                    )
                 found.append(
                     RuleEvaluation(
                         rule_id=rule.id,
-                        message=(
-                            f"This would break your rule “{rule.title}”: it would no longer "
-                            f"hold for {violation.entity_name}."
-                        ),
+                        message=message,
                         operation_ordinal=_blamed(operations, violation.entity_id, before),
+                        enforcement=rule.enforcement,
+                        deterministic=True,
+                        complete=complete,
+                        rule_version=rule.version,
                     )
                 )
         return found

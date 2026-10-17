@@ -9,7 +9,7 @@ import { entryPath, scopedKey, useEntries, useProject } from '../project'
 /**
  * The author's own rules for the story: things that must stay true, said in a
  * sentence and checked without a model. A rule warns when a change would break
- * it. It never stops anything.
+ * it; the author can choose to have it block such a change instead (CON-015).
  */
 export function RulesPage() {
   const { scope, canWrite } = useProject()
@@ -24,6 +24,16 @@ export function RulesPage() {
     mutationFn: (rule: StoryRule) =>
       api.changeRule(scope, rule.id, { status: rule.status === 'on' ? 'paused' : 'on' }),
     onSuccess: refresh,
+  })
+  // Warn or block: reversible, so it happens at once and says what it now does.
+  const [enforced, setEnforced] = useState<StoryRule | null>(null)
+  const enforce = useMutation({
+    mutationFn: ({ rule, enforcement }: { rule: StoryRule; enforcement: StoryRule['enforcement'] }) =>
+      api.changeRule(scope, rule.id, { enforcement }),
+    onSuccess: async (changed) => {
+      setEnforced(changed)
+      await refresh()
+    },
   })
   const remove = useMutation({
     mutationFn: (rule: StoryRule) => api.removeRule(scope, rule.id),
@@ -41,7 +51,7 @@ export function RulesPage() {
           <h1>Story rules</h1>
           <p className="lede">
             Things that must stay true in your story, said in a sentence. A rule warns you when a
-            change would break it. It never stops you.
+            change would break it, or, if you choose, holds the change back until it is fixed.
           </p>
         </div>
         {canWrite && (
@@ -58,6 +68,19 @@ export function RulesPage() {
         {rules.isPending && <Loading>Opening your rules…</Loading>}
         <ErrorNotice error={rules.error} prefix="Could not open your rules" />
         <ErrorNotice error={pause.error} prefix="Could not change the rule" />
+        {enforced && (
+          <div className="notice ok" role="status">
+            <p>
+              <strong>“{enforced.title}”</strong>{' '}
+              {enforced.enforcement === 'blocking'
+                ? 'now blocks any change that would break it.'
+                : 'now warns you, and lets you add a change that breaks it.'}
+            </p>
+            <Button size="sm" variant="ghost" onClick={() => setEnforced(null)}>
+              Dismiss
+            </Button>
+          </div>
+        )}
 
         {rules.isSuccess && items.length === 0 && (
           <EmptyState
@@ -94,6 +117,16 @@ export function RulesPage() {
                     ))}
                   </p>
                 )}
+                <Enforcement
+                  rule={rule}
+                  canWrite={canWrite}
+                  busy={enforce.isPending}
+                  error={enforce.variables?.rule.id === rule.id ? enforce.error : null}
+                  onChange={(enforcement) => {
+                    setEnforced(null)
+                    enforce.mutate({ rule, enforcement })
+                  }}
+                />
                 {rule.example_results.length > 0 && (
                   <details className="small">
                     <summary>Examples</summary>
@@ -155,5 +188,67 @@ export function RulesPage() {
         </ConfirmDialog>
       )}
     </>
+  )
+}
+
+const ENFORCEMENT: Record<StoryRule['enforcement'], { label: string; says: string }> = {
+  warning: {
+    label: 'Warn me',
+    says: 'You are told when a change would break it, and you can still add the change.',
+  },
+  blocking: {
+    label: 'Block the change',
+    says:
+      'A change that would break it cannot be added until you fix the change or set the rule back to warn. ' +
+      'Where your story already breaks it, other changes are not held back.',
+  },
+}
+
+/** What happens when a change would break the rule: a warning, or a block. */
+function Enforcement({
+  rule,
+  canWrite,
+  busy,
+  error,
+  onChange,
+}: {
+  rule: StoryRule
+  canWrite: boolean
+  busy: boolean
+  error: unknown
+  onChange: (enforcement: StoryRule['enforcement']) => void
+}) {
+  const current = ENFORCEMENT[rule.enforcement]
+  const paused = rule.status !== 'on'
+  if (!canWrite) {
+    return (
+      <p className="small">
+        <strong>When a change would break it:</strong>{' '}
+        {rule.enforcement === 'blocking' ? 'the change is blocked.' : 'you are warned.'}
+      </p>
+    )
+  }
+  return (
+    <fieldset className="rule-enforcement stack tight">
+      <legend className="label">When a change would break it</legend>
+      <div className="segmented" role="group" aria-label={`When a change would break ${rule.title}`}>
+        {(['warning', 'blocking'] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={rule.enforcement === value}
+            disabled={busy}
+            onClick={() => rule.enforcement !== value && onChange(value)}
+          >
+            {ENFORCEMENT[value].label}
+          </button>
+        ))}
+      </div>
+      <p className="hint">
+        {current.says}
+        {paused ? ' While the rule is paused it does neither.' : ''}
+      </p>
+      <ErrorNotice error={error} prefix="Could not change the rule" />
+    </fieldset>
   )
 }
