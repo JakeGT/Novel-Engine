@@ -216,3 +216,31 @@ describe('GodHand', () => {
     expect(screen.getByLabelText('What should change?')).toHaveValue('Undo the last one and invite Sam.')
   })
 })
+
+describe('GodHand and what-ifs', () => {
+  it('offers to try a “what if” in a what-if, leaving the story as it is', async () => {
+    const api = mockApi({
+      'POST /what-ifs': {
+        id: 'branch_1',
+        name: 'What if Tobin stayed?',
+        status: 'active',
+        started_at_version: 3,
+        version: 3,
+        changes: 0,
+        created_at: '2026-10-17T10:00:00Z',
+      },
+      'POST /assist/changes': proposal,
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<GodHand onClose={vi.fn()} />)
+    const dialog = screen.getByRole('dialog', { name: 'Change anything' })
+    await user.type(within(dialog).getByLabelText('What should change?'), 'What if Tobin stayed?')
+    expect(within(dialog).getByText('This sounds like a what-if.')).toBeInTheDocument()
+    await expectAccessible(container)
+    await user.click(within(dialog).getByRole('button', { name: 'Try it in a what-if' }))
+    await waitFor(() => expect(api.find('POST', '/assist/changes')).toHaveLength(1))
+    expect(api.find('POST', '/what-ifs')[0].body).toEqual({ name: 'What if Tobin stayed?' })
+    expect(api.find('POST', '/assist/changes')[0].body).toMatchObject({ expected_revision: 3 })
+    window.localStorage.clear()
+  })
+})

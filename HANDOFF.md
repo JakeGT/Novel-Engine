@@ -36,7 +36,8 @@ Two rules dominate every design decision:
 | Phase 2.5 — assistant-led creation | Built (2026-10-10). See `plan/phase-2.5-todo.md`. Assistant features verified against a scripted model only. |
 | Phase 2.6 — story planning | Built (2026-10-11). See `plan/phase-2.6-todo.md`. |
 | Phase 2.7 — text intake | Built (2026-10-11). See `plan/phase-2.7-todo.md`. Extraction quality unmeasured. |
-| Phase 3+ | Planned (branch forks/overlays, world/narrative time, POV filtering, planning/prose). See `plan/09-delivery-roadmap.md`. |
+| Phase 3 — time, what-ifs, knowledge | Built (2026-10-17). See `plan/phase-3-todo.md` and ADR-020. Assistant paths scripted model only. |
+| Phase 4+ | Planned (explainable context, derived memory, scene drafting, extraction, release). See `plan/09-delivery-roadmap.md`. |
 
 **Not production-ready.** Billing, platform-funded inference, public signup, and real-time
 collaboration do not exist by design. Do not describe a deferred capability as implemented
@@ -248,10 +249,10 @@ then `pnpm --dir frontend run gen:api`.
 
 ## 10. Data & migrations
 
-- Alembic (PostgreSQL) head: **`0031_story_rules`** (… → `0022_archive_imports` →
+- Alembic (PostgreSQL) head: **`0032_story_time`** (… → `0022_archive_imports` →
   `0023_session_id_token` → `0024_assist_sessions` → `0025_workspace_ai_settings` →
   `0026_assist_suggestions` → `0027_usage_allowance` → `0028_plan_items` →
-  `0029_plan_conversations` → `0030_source_texts` → `0031_story_rules`).
+  `0029_plan_conversations` → `0030_source_texts` → `0031_story_rules` → `0032_story_time`).
 - Neo4j ordered migrations: `0001_initial_graph_schema`, `0002_entity_scope_identity`,
   `0003_canon_scope_identity`, `0004_canon_projection_labels` (checksums in
   `plan/phase-2-evidence.md`).
@@ -564,3 +565,35 @@ things not done: blocking rules, rules about time or belief, name memory scoped 
 point of view, any measurement of a real model's reading, MCP access, and review telemetry.
 Both assistant workflows have only run against the scripted model.
 
+
+## Phase 3: time, what-ifs and knowledge (2026-10-17)
+
+ADR-020 records the decisions; `plan/phase-3-todo.md` has the state of each item, the design
+review and the roadmap's exit criteria.
+
+- **Story time** (`backend/domain/worldtime.py`): a time is unknown, at a point, between two
+  points, or relative to an event, on the story's own number line in one unit it names
+  (`story_clocks`). Facts gain `starts`/`ends` and `visibility`, events a time; one new
+  operation, `amend_fact`. All new operation fields are omitted from the canonical form when
+  unset, so old envelope checksums are unchanged. `StoryTimeService`, `/timeline`.
+- **What-ifs are branches** (`what_if_service.py`, `/what-ifs`): starting one copies every story
+  table in one transaction (`PostgresCanonRepository.fork_branch`, `_FORKED_TABLES`). The working
+  branch travels in the `X-Story-Branch` header, is checked in `backend/api/auth.py`, and is held
+  in a context variable (`backend/domain/branching.py`) that every repository read filters by
+  (`_ON_BRANCH`). The in-memory doubles keep one store per branch (`_per_branch`). Only the main
+  story is projected; the outbox consumer skips what-if commits. **A new story table must be
+  added to `_FORKED_TABLES` and keyed by branch**, or forking will miss or collide on it.
+- **Knowledge and the reader** (`backend/domain/knowledge.py`, `knowledge_service.py`,
+  `/knowledge/*`, `/reader`, `/reader/guide`, `PUT /plan/{id}/reveals|when`).
+- **Record-level rebasing**: a stale proposal keeps its approval when nothing it touches
+  changed (`MutationService._changed_since`); this amends ADR-014.
+- **Frontend**: `TimelinePage`, `WhatIfsPage` (list and compare), `KnowledgePanel`,
+  `TellDialog`, `FactDetailsDialog`, `WhenField`, `SceneReader`; `lib/whatif.ts` keeps the
+  working what-if per project and `Scope.branchId` puts it in every request and cache key.
+- **Docker Compose was missing on this machine** (2026-10-17): the local test databases were
+  recreated with `docker run`, and the hosted stack's containers had been removed (volumes
+  intact). The deploy command needs Compose back.
+
+Not done: what-ifs of what-ifs, field-level merges, alias memory by time or viewpoint, trust,
+contradictions that need prose, an assistant path for telling or reveals. Every assistant path
+has only run against the scripted model.

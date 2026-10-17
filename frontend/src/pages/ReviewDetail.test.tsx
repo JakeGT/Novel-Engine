@@ -640,3 +640,37 @@ describe('ReviewDetail', () => {
     expect(screen.queryByRole('button', { name: 'Discard these changes' })).not.toBeInTheDocument()
   })
 })
+
+describe('ReviewDetail and story time', () => {
+  it('offers keeping both values, each for its own time, when one replaced the other', async () => {
+    mockApi({ ...entries, 'GET /mutations/mut_1': mutation(), 'GET /timeline': { unit: 'year', placed: [], unplaced: [], spans: [], issues: [] } })
+    renderInProject(<ReviewDetail />, {
+      ...at,
+      state: {
+        fromAssistant: true,
+        understood: 'Mara is in Saltmere.',
+        notes: ['Mara can be “located at” only one thing at a time, so the current one is ended.'],
+      },
+    })
+    expect(await screen.findByText(/you can keep both instead/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Timeline' })).toHaveAttribute('href', '/projects/prj_1/timeline')
+  })
+
+  it('says whether a stale change can move on as it is, from what changed since', async () => {
+    mockApi({
+      ...entries,
+      'GET /mutations/mut_1': mutation({ is_stale: true, head_revision: 6, changed_since: [] }),
+    })
+    renderInProject(<ReviewDetail />, at)
+    expect(await screen.findByText(/Nothing it touches has changed since/)).toBeInTheDocument()
+  })
+
+  it('names what changed since, when the change touches it', async () => {
+    mockApi({
+      ...entries,
+      'GET /mutations/mut_1': mutation({ is_stale: true, head_revision: 6, changed_since: ['ent_mara'] }),
+    })
+    renderInProject(<ReviewDetail />, at)
+    expect(await screen.findByText(/Since then, Mara Venn changed/)).toBeInTheDocument()
+  })
+})

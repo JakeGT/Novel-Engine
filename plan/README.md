@@ -31,6 +31,7 @@ Read in this order:
 24. [Design direction](20-design-direction.md) — the visual and interaction character of the product, with the research behind it.
 25. [Intuitive design rules](21-intuitive-design-rules.md) — the rules every screen is held to so it can be used without being taught, the sources behind them, and the review of the product against them.
 25. [Plan audit, 2026-10-10](audit-2026-10-10.md) — findings by document, what was changed, and decisions needed from the owner.
+27. [Phase 3 todo](phase-3-todo.md) — time, what-ifs and knowledge: state, design review, exit criteria.
 26. [Phase 2.5 todo](phase-2.5-todo.md) — assistant-led creation: what is built, what is partial, and what is next.
 22. [Phase 2 todo](phase-2-todo.md) — execution plan and completion dashboard for governed schema, revisioned canon, mutation review and commits, evidence assets, authoring UI, and archive recovery. Evidence: [phase-2-evidence.md](phase-2-evidence.md).
 23. [Author rules, canon queries, and derived views](18-author-rules-canon-queries-and-derived-views.md) — story invariants, explanation/history queries, reader disclosure, scene contracts, derived projections, MCP, and suppressions.
@@ -91,6 +92,9 @@ interface, and assisted creation with the to-fill-in list (not yet verified with
 The plan was audited and revised on 2026-10-10 to be assistant-first with a gentle learning curve
 (ADR-017, documents 19 and 20, and the audit record).
 
+Built on 2026-10-17: Phase 3 (story time, what-ifs, who knows what, the reader's ledger,
+record-level rebasing); see `phase-3-todo.md` and ADR-020.
+
 Not yet built (later phases, as resequenced):
 
 - real-provider verification, stored conversations, starting from a premise, link suggestions,
@@ -98,9 +102,6 @@ Not yet built (later phases, as resequenced):
 - story structure and story planning through conversation (Phase 2.6)
 - manuscript import, extraction/entity-resolution evaluation, story rules, scene contracts
   (Phase 2.7)
-- branch forks/overlays/merges, a structured fuzzy/invented-calendar `WorldTime` model,
-  world/narrative-time and point-of-view queries, reader disclosures, and record/dependency-level
-  rebasing (Phase 3)
 - explainable context, derived vector/search memory, and media ingestion/processing (Phase 4)
 - scene drafting, consistency workflows, and extraction-to-commit (Phase 5–6)
 - production operations, backup automation, and release hardening (Phase 7)

@@ -86,8 +86,23 @@ its own `Canon*` labels (ADR-016), so the two never see each other's nodes.
   local mode and a platform administrator. Hosted deployments cannot write through this surface.
 - `/rag/query` is deliberately `501 not_implemented`.
 
+## Story time, what-ifs and knowledge (Phase 3, ADR-020)
+
+Under `/projects/{project_id}`:
+
+- Any project request may carry `X-Story-Branch: <what-if id>` to work in that what-if; it must
+  belong to the project (404 otherwise). Without it, everything is the main story.
+- `/what-ifs` (list, start), `/what-ifs/{id}`, `/what-ifs/{id}/set-aside`,
+  `/what-ifs/{id}/compare`, `/what-ifs/{id}/bring-back` (makes a proposal on the main story).
+- `/timeline`, `/timeline/moment?at=`, `PUT /timeline/unit`.
+- `POST /facts/{id}/amend` (when a fact is true; ordinary, common or secret). Facts and events
+  accept `starts`/`ends`/`visibility` and `when` on create.
+- `/knowledge/characters/{entity_id}`, `/knowledge/facts/{fact_id}`, `POST /knowledge/tell`.
+- `/reader` (the plan's scenes in reading order with what the reader is shown),
+  `/reader/guide?scene=&viewpoint=`; `PUT /plan/{id}/reveals`, `PUT /plan/{id}/when`.
+- `/mutations/{id}` reports `changed_since` for a stale proposal.
+
 ## Not yet in the API
 
-Branch forks and overlays, world/narrative-time and point-of-view query parameters, story-invariant
-authoring, scene contracts, manuscript import, generation, media upload/processing, and an HTTP
-archive import are later-phase work. No route accepts parameters that imply they are enforced.
+Generation, explainable context, media processing, and an HTTP archive import are later-phase
+work. No route accepts parameters that imply they are enforced.

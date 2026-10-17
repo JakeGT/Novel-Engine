@@ -607,6 +607,17 @@ export function ReviewDetail() {
                     <li key={index}>• {item}</li>
                   ))}
                 </ul>
+                {/* Offered by need (Level 5): a value replaced may have been true until a
+                    certain time, and then both can be kept, each for its own stretch. */}
+                {notes.some((item) => item.includes('only one thing at a time')) && (
+                  <p className="hint small">
+                    If the old one was true until a certain time, you can keep both instead: ask
+                    again saying when it changed (“she moved to Saltmere in year 10”), or give each
+                    fact its time under “When and who knows”. The{' '}
+                    <Link to={`/projects/${scope.projectId}/timeline`}>Timeline</Link> shows the
+                    result.
+                  </p>
+                )}
               </div>
             )}
             {leftOut.length > 0 && (

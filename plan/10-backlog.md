@@ -113,18 +113,29 @@ These IDs are retained for traceability from ADR-001. Identity and isolation wor
 ## Time, branches, and visibility
 
 - **TMP-001 · P0 — Three-clock types:** world, narrative, and revision positions with explicit conversion limits.
+  - **Status:** Built 2026-10-17 (ADR-020): world time on the story's own number line; narrative order is outline order; revisions unchanged.
 - **TMP-002 · P0 — Temporal query:** active state at branch/tick using half-open intervals.
+  - **Status:** Built 2026-10-17: facts true for a span, state at a moment (`/timeline/moment`).
 - **TMP-003 · P0 — Branch overlay:** fork, inherited reads, local mutation, and head revision.
+  - **Status:** Built 2026-10-17 as copy-on-start what-ifs (ADR-020); only from the main story.
 - **TMP-004 · P1 — Branch comparison:** mutations from common ancestor and conflict categorization.
+  - **Status:** Built 2026-10-17: compare since the fork, conflicts per record.
 - **TMP-005 · P1 — Merge review:** author-resolved merge mutation set.
+  - **Status:** Built 2026-10-17: bring back as one proposal; conflicts chosen per record, never merged automatically.
 - **KNW-001 · P0 — Visibility policy:** public, private, secret, author-only, and character-accessible classification.
+  - **Status:** Built 2026-10-17: ordinary, common and secret facts; deny-by-default knowledge.
 - **KNW-002 · P0 — Knowledge acquisition:** beliefs linked to perception/report/inference events.
+  - **Status:** Partly 2026-10-17: beliefs from telling cite the telling event; perception and inference are not modelled.
 - **KNW-003 · P1 — POV context gate:** deterministic filtering and leakage explanations.
+  - **Status:** Partly 2026-10-17: a character's knowledge view; there is no generation context to gate yet.
 - **KNW-004 · P1 — Reader disclosure ledger:** explicit/implied disclosures by narrative position,
+  - **Status:** Built 2026-10-17 by hand: scene reveals, irony, withheld knowledge, repeats.
   audience, source, and evidence with irony/reveal queries.
 - **KNW-005 · P1 — Narrated assertions and speech acts:** speaker/listener/overhearer, sincerity,
+  - **Status:** Partly 2026-10-17: telling as an event with speaker, listeners and overhearers; sincerity derived from facts; no narrated assertions.
   modality, visibility, and evidence without treating narration/dialogue as objective truth.
 - **KNW-006 · P1 — Belief propagation proposals:** deterministic perception/report/trust policies
+  - **Status:** Partly 2026-10-17: telling gives each hearer a belief (overhearers at 0.6); no trust.
   that emit reviewed belief mutation sets and never write canon directly.
 
 ## Retrieval and memory
@@ -230,6 +241,7 @@ These IDs are retained for traceability from ADR-001. Identity and isolation wor
 - **QRY-001 · P1 — Temporal read models:** outbox-built location, possession, relationship,
   timeline, reader-disclosure, and dependency views with watermarks and replay verification.
 - **QRY-002 · P1 — Spoiler-safe bibles:** character/location/timeline/recap exports at branch,
+  - **Status:** Partly 2026-10-17: a spoiler-safe reader's guide up to a scene, or as a character knows it, in Markdown.
   revision, narrative position, and viewpoint with artifact-specific sharing and leakage tests.
 - **QRY-003 · P1 — Read-only MCP:** scoped canon/history/provenance tools over the application query
   boundary; write-like tools produce proposals only and cannot commit or change policy.
