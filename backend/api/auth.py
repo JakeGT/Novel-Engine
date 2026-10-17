@@ -17,6 +17,7 @@ from backend.api.dependencies import get_auth_service, get_settings, get_tenancy
 from backend.core.config import Settings
 from backend.core.logging import log_event
 from backend.core.observability import identify_request
+from backend.domain.branching import set_working_branch
 from backend.domain.errors import (
     ForbiddenError,
     NotFoundError,
@@ -293,6 +294,30 @@ async def _resolve_project_scope(
     return scope
 
 
+BRANCH_HEADER = "X-Story-Branch"
+
+
+async def _enter_story_branch(request: Request, scope: AccessScope) -> None:
+    """Work in the what-if the request names, once it is proven to be this project's.
+
+    No header, or the main story's own id, means the main story. A header naming a
+    branch of any other project is "not found", never a quiet fall back to main.
+    """
+    branch_id = request.headers.get(BRANCH_HEADER) or request.headers.get(BRANCH_HEADER.lower())
+    if not branch_id:
+        set_working_branch(None)
+        return
+    journal = request.app.state.container.journal
+    branch = await journal.get_branch(
+        workspace_id=scope.workspace_id or "",
+        project_id=scope.project_id or "",
+        branch_id=branch_id,
+    )
+    if branch is None:
+        raise NotFoundError("That what-if was not found.")
+    set_working_branch(None if branch.is_root else branch.id)
+
+
 async def get_project_scope(
     request: Request,
     auth_session: AuthenticatedSession = Depends(require_session),
@@ -300,9 +325,11 @@ async def get_project_scope(
     tenancy: TenancyService = Depends(get_tenancy_service),
 ) -> AccessScope:
     """Read-only project scope for project-owned routes."""
-    return await _resolve_project_scope(
+    scope = await _resolve_project_scope(
         request, auth_session, settings, tenancy, permission=Permission.PROJECT_READ
     )
+    await _enter_story_branch(request, scope)
+    return scope
 
 
 async def require_project_scope(
@@ -312,9 +339,11 @@ async def require_project_scope(
     tenancy: TenancyService = Depends(get_tenancy_service),
 ) -> AccessScope:
     """CSRF-protected project scope for project-owned mutations."""
-    return await _resolve_project_scope(
+    scope = await _resolve_project_scope(
         request, auth_session, settings, tenancy, permission=Permission.PROJECT_WRITE
     )
+    await _enter_story_branch(request, scope)
+    return scope
 
 
 async def project_access(

@@ -55,7 +55,10 @@ class OutboxConsumer:
         published = 0
         failed = 0
         for message in pending:
-            if message.topic != CANON_COMMIT_TOPIC:
+            # Only the main story is projected (ADR-020). A what-if's commits share
+            # record ids with the story it came from, so projecting them would write
+            # over the main story's graph; they are acknowledged and left out.
+            if message.topic != CANON_COMMIT_TOPIC or message.branch_id != branch_id:
                 await self._journal.mark_outbox_published(message_id=message.id)
                 published += 1
                 continue

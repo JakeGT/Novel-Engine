@@ -1587,6 +1587,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/facts/{fact_id}/amend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Amend Fact */
+        post: operations["amend_fact_api_v1_projects__project_id__facts__fact_id__amend_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/facts/{fact_id}/at-revision/{revision}": {
         parameters: {
             query?: never;
@@ -2448,6 +2465,143 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Timeline */
+        get: operations["get_timeline_api_v1_projects__project_id__timeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/timeline/moment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Moment */
+        get: operations["get_moment_api_v1_projects__project_id__timeline_moment_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/timeline/unit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Unit */
+        put: operations["set_unit_api_v1_projects__project_id__timeline_unit_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/what-ifs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List What Ifs */
+        get: operations["list_what_ifs_api_v1_projects__project_id__what_ifs_get"];
+        put?: never;
+        /** Start What If */
+        post: operations["start_what_if_api_v1_projects__project_id__what_ifs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/what-ifs/{branch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get What If */
+        get: operations["get_what_if_api_v1_projects__project_id__what_ifs__branch_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/what-ifs/{branch_id}/bring-back": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bring Back What If */
+        post: operations["bring_back_what_if_api_v1_projects__project_id__what_ifs__branch_id__bring_back_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/what-ifs/{branch_id}/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Compare What If */
+        get: operations["compare_what_if_api_v1_projects__project_id__what_ifs__branch_id__compare_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/what-ifs/{branch_id}/set-aside": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Aside What If */
+        post: operations["set_aside_what_if_api_v1_projects__project_id__what_ifs__branch_id__set_aside_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/rag/query": {
         parameters: {
             query?: never;
@@ -2926,6 +3080,8 @@ export interface components {
              * @enum {string}
              */
             op: "amend_event";
+            /** When */
+            when?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
             /** World Position */
             world_position?: string | null;
         };
@@ -2935,8 +3091,43 @@ export interface components {
             expected_revision: number;
             /** Name */
             name?: string | null;
+            /** When */
+            when?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
             /** World Position */
             world_position?: string | null;
+        };
+        /**
+         * AmendFactOp
+         * @description Say when a fact is true, or who may know it. ``None`` leaves a field as it is.
+         */
+        AmendFactOp: {
+            /** Ends */
+            ends?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceRef"][];
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "amend_fact";
+            /** Starts */
+            starts?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
+            visibility?: components["schemas"]["FactVisibility"] | null;
+        };
+        /**
+         * AmendFactRequest
+         * @description When a fact is true, and who may know it. Fields left out stay as they are.
+         */
+        AmendFactRequest: {
+            /** Ends */
+            ends?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
+            /** Expected Revision */
+            expected_revision: number;
+            /** Starts */
+            starts?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
+            visibility?: components["schemas"]["FactVisibility"] | null;
         };
         /** AppliedSuggestionsModel */
         AppliedSuggestionsModel: {
@@ -2979,6 +3170,8 @@ export interface components {
              * @default 1
              */
             confidence: number;
+            /** Ends */
+            ends?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
             /** Evidence */
             evidence?: components["schemas"]["EvidenceRef"][];
             /** Id */
@@ -2989,10 +3182,13 @@ export interface components {
              */
             op: "assert_fact";
             proposition: components["schemas"]["Proposition"];
+            /** Starts */
+            starts?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
             /** Valid From */
             valid_from?: string | null;
             /** Valid Until */
             valid_until?: string | null;
+            visibility?: components["schemas"]["FactVisibility"] | null;
         };
         /** AssertFactRequest */
         AssertFactRequest: {
@@ -3001,13 +3197,18 @@ export interface components {
              * @default 1
              */
             confidence: number;
+            /** Ends */
+            ends?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
             /** Expected Revision */
             expected_revision: number;
             proposition: components["schemas"]["PropositionRequest"];
+            /** Starts */
+            starts?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
             /** Valid From */
             valid_from?: string | null;
             /** Valid Until */
             valid_until?: string | null;
+            visibility?: components["schemas"]["FactVisibility"] | null;
         };
         /** AssistBriefRequest */
         AssistBriefRequest: {
@@ -3115,6 +3316,18 @@ export interface components {
              */
             updated_at: string;
         };
+        /** At */
+        At: {
+            /** At */
+            at: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "at";
+            /** Label */
+            label?: string | null;
+        };
         /** BeliefModel */
         BeliefModel: {
             /** Acquisition Provenance Id */
@@ -3155,6 +3368,20 @@ export interface components {
             /** Source Ref */
             source_ref: string;
         };
+        /** Between */
+        Between: {
+            /** Earliest */
+            earliest?: number | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "between";
+            /** Label */
+            label?: string | null;
+            /** Latest */
+            latest?: number | null;
+        };
         /** BooleanObject */
         BooleanObject: {
             /**
@@ -3164,6 +3391,18 @@ export interface components {
             kind: "boolean";
             /** Value */
             value: boolean;
+        };
+        /** BringBackRequest */
+        BringBackRequest: {
+            /** Keep */
+            keep?: {
+                [key: string]: components["schemas"]["Keep"];
+            };
+        };
+        /** BringBackResult */
+        BringBackResult: {
+            /** Mutation Id */
+            mutation_id: string;
         };
         /** BrokenByModel */
         BrokenByModel: {
@@ -3209,6 +3448,19 @@ export interface components {
             slug?: string | null;
             /** Type */
             type: string;
+        };
+        /** ChangeModel */
+        ChangeModel: {
+            /** Key */
+            key: string;
+            /** Kind */
+            kind: string;
+            /** Label */
+            label: string;
+            /** Record Id */
+            record_id: string;
+            /** Record Type */
+            record_type: string;
         };
         /** ChangePlanItemRequest */
         ChangePlanItemRequest: {
@@ -3420,6 +3672,18 @@ export interface components {
             /** Expected Revision */
             expected_revision: number;
         };
+        /** ComparisonModel */
+        ComparisonModel: {
+            /** Conflicts */
+            conflicts: components["schemas"]["ChangeModel"][];
+            /** In Main */
+            in_main: components["schemas"]["ChangeModel"][];
+            /** In What If */
+            in_what_if: components["schemas"]["ChangeModel"][];
+            /** Main Version */
+            main_version: number;
+            what_if: components["schemas"]["WhatIfModel"];
+        };
         /** ConditionStateModel */
         ConditionStateModel: {
             /** Holds */
@@ -3551,6 +3815,8 @@ export interface components {
             outcome_ids?: string[];
             /** Participants */
             participants?: components["schemas"]["EventParticipant"][];
+            /** When */
+            when?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
             /** World Position */
             world_position?: string | null;
         };
@@ -3666,6 +3932,11 @@ export interface components {
             /** Value */
             value: number | string;
         };
+        /**
+         * Direction
+         * @enum {string}
+         */
+        Direction: "before" | "after";
         /** DirectionModel */
         DirectionModel: {
             /** Adds */
@@ -3979,6 +4250,8 @@ export interface components {
             participants: components["schemas"]["EventParticipant"][];
             /** Provenance Id */
             provenance_id: string;
+            /** When */
+            when?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
             /** World Position */
             world_position?: string | null;
         };
@@ -4017,6 +4290,8 @@ export interface components {
              * @default []
              */
             participants: components["schemas"]["EventParticipant"][];
+            /** When */
+            when?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
             /** World Position */
             world_position?: string | null;
         };
@@ -4071,6 +4346,8 @@ export interface components {
             confidence: number;
             /** Created Revision */
             created_revision: number;
+            /** Ends */
+            ends?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
             /** Id */
             id: string;
             /** Object */
@@ -4083,6 +4360,8 @@ export interface components {
             provenance_id: string;
             /** Source Ref */
             source_ref?: string | null;
+            /** Starts */
+            starts?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
             /** Status */
             status: string;
             /** Subject Id */
@@ -4091,7 +4370,15 @@ export interface components {
             valid_from?: string | null;
             /** Valid Until */
             valid_until?: string | null;
+            /** @default ordinary */
+            visibility: components["schemas"]["FactVisibility"];
         };
+        /**
+         * FactVisibility
+         * @description Who in the story may know a fact (ADR-020). Knowledge is deny-by-default.
+         * @enum {string}
+         */
+        FactVisibility: "ordinary" | "common" | "secret";
         /** GraphUpdateResponse */
         GraphUpdateResponse: {
             /** Edges */
@@ -4154,6 +4441,12 @@ export interface components {
             /** Role */
             role: string;
         };
+        /**
+         * Keep
+         * @description For a record changed in both lines: whose version to keep.
+         * @enum {string}
+         */
+        Keep: "what_if" | "main";
         /** LinkAssetOp */
         LinkAssetOp: {
             /** Asset Id */
@@ -4242,6 +4535,17 @@ export interface components {
             listed: boolean;
             /** Models */
             models: string[];
+        };
+        /** MomentModel */
+        MomentModel: {
+            /** At */
+            at: number;
+            /** Facts */
+            facts: components["schemas"]["TrueThenModel"][];
+            /** Happened */
+            happened: components["schemas"]["PlacedEventModel"][];
+            /** Unit */
+            unit: string;
         };
         /** MovePlanItemRequest */
         MovePlanItemRequest: {
@@ -4561,6 +4865,18 @@ export interface components {
              */
             value?: string | null;
         };
+        /** PlacedEventModel */
+        PlacedEventModel: {
+            /** Earliest */
+            earliest?: number | null;
+            event: components["schemas"]["EventModel"];
+            /** Latest */
+            latest?: number | null;
+            /** Problem */
+            problem?: string | null;
+            /** When */
+            when: string;
+        };
         /** PlanBriefRequest */
         PlanBriefRequest: {
             /** About Id */
@@ -4748,7 +5064,7 @@ export interface components {
              */
             idempotency_key: string;
             /** Operations */
-            operations: (components["schemas"]["CreateEntityOp"] | components["schemas"]["UpdateEntityOp"] | components["schemas"]["RetireEntityOp"] | components["schemas"]["AssertFactOp"] | components["schemas"]["CloseFactOp"] | components["schemas"]["AssertBeliefOp"] | components["schemas"]["CloseBeliefOp"] | components["schemas"]["CreateEventOp"] | components["schemas"]["AmendEventOp"] | components["schemas"]["RetireEventOp"] | components["schemas"]["LinkAssetOp"] | components["schemas"]["RetireAssetLinkOp"] | components["schemas"]["CreatePlanItemOp"] | components["schemas"]["UpdatePlanItemOp"] | components["schemas"]["RetirePlanItemOp"])[];
+            operations: (components["schemas"]["CreateEntityOp"] | components["schemas"]["UpdateEntityOp"] | components["schemas"]["RetireEntityOp"] | components["schemas"]["AssertFactOp"] | components["schemas"]["CloseFactOp"] | components["schemas"]["AmendFactOp"] | components["schemas"]["AssertBeliefOp"] | components["schemas"]["CloseBeliefOp"] | components["schemas"]["CreateEventOp"] | components["schemas"]["AmendEventOp"] | components["schemas"]["RetireEventOp"] | components["schemas"]["LinkAssetOp"] | components["schemas"]["RetireAssetLinkOp"] | components["schemas"]["CreatePlanItemOp"] | components["schemas"]["UpdatePlanItemOp"] | components["schemas"]["RetirePlanItemOp"])[];
             /**
              * Origin
              * @default author
@@ -4872,6 +5188,33 @@ export interface components {
             start: number;
             /** Version Id */
             version_id?: string | null;
+        };
+        /**
+         * Relative
+         * @description So long before or after an event: "three years before the war".
+         */
+        Relative: {
+            /** Anchor Event Id */
+            anchor_event_id: string;
+            /** @default after */
+            direction: components["schemas"]["Direction"];
+            /**
+             * Give Or Take
+             * @default 0
+             */
+            give_or_take: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "relative";
+            /** Label */
+            label?: string | null;
+            /**
+             * Offset
+             * @default 0
+             */
+            offset: number;
         };
         /** RemovePlanItemRequest */
         RemovePlanItemRequest: {
@@ -5001,7 +5344,7 @@ export interface components {
         /** ReviseOperationRequest */
         ReviseOperationRequest: {
             /** Operation */
-            operation: components["schemas"]["CreateEntityOp"] | components["schemas"]["UpdateEntityOp"] | components["schemas"]["RetireEntityOp"] | components["schemas"]["AssertFactOp"] | components["schemas"]["CloseFactOp"] | components["schemas"]["AssertBeliefOp"] | components["schemas"]["CloseBeliefOp"] | components["schemas"]["CreateEventOp"] | components["schemas"]["AmendEventOp"] | components["schemas"]["RetireEventOp"] | components["schemas"]["LinkAssetOp"] | components["schemas"]["RetireAssetLinkOp"] | components["schemas"]["CreatePlanItemOp"] | components["schemas"]["UpdatePlanItemOp"] | components["schemas"]["RetirePlanItemOp"];
+            operation: components["schemas"]["CreateEntityOp"] | components["schemas"]["UpdateEntityOp"] | components["schemas"]["RetireEntityOp"] | components["schemas"]["AssertFactOp"] | components["schemas"]["CloseFactOp"] | components["schemas"]["AmendFactOp"] | components["schemas"]["AssertBeliefOp"] | components["schemas"]["CloseBeliefOp"] | components["schemas"]["CreateEventOp"] | components["schemas"]["AmendEventOp"] | components["schemas"]["RetireEventOp"] | components["schemas"]["LinkAssetOp"] | components["schemas"]["RetireAssetLinkOp"] | components["schemas"]["CreatePlanItemOp"] | components["schemas"]["UpdatePlanItemOp"] | components["schemas"]["RetirePlanItemOp"];
             /** Reason */
             reason?: string | null;
         };
@@ -5269,6 +5612,14 @@ export interface components {
             /** Daily Tokens */
             daily_tokens?: number | null;
         };
+        /** SetAsideRequest */
+        SetAsideRequest: {
+            /**
+             * Aside
+             * @default true
+             */
+            aside: boolean;
+        };
         /** SetConditionsRequest */
         SetConditionsRequest: {
             /** Conditions */
@@ -5285,6 +5636,21 @@ export interface components {
          * @enum {string}
          */
         SourceKind: "paste" | "markdown";
+        /** SpannedFactModel */
+        SpannedFactModel: {
+            /** Ends */
+            ends?: string | null;
+            fact: components["schemas"]["FactModel"];
+            /** Starts */
+            starts?: string | null;
+        };
+        /** StartWhatIfRequest */
+        StartWhatIfRequest: {
+            /** Description */
+            description?: string | null;
+            /** Name */
+            name: string;
+        };
         /** StringObject */
         StringObject: {
             /**
@@ -5351,10 +5717,58 @@ export interface components {
             /** Versions */
             versions: number;
         };
+        /** TimeIssueModel */
+        TimeIssueModel: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Record Ids */
+            record_ids: string[];
+        };
+        /** TimelineModel */
+        TimelineModel: {
+            /** Issues */
+            issues: components["schemas"]["TimeIssueModel"][];
+            /** Placed */
+            placed: components["schemas"]["PlacedEventModel"][];
+            /** Spans */
+            spans: components["schemas"]["SpannedFactModel"][];
+            /** Unit */
+            unit: string;
+            /** Unplaced */
+            unplaced: components["schemas"]["PlacedEventModel"][];
+        };
         /** TransferOwnershipRequest */
         TransferOwnershipRequest: {
             /** To User Id */
             to_user_id: string;
+        };
+        /** TrueThenModel */
+        TrueThenModel: {
+            fact: components["schemas"]["FactModel"];
+            /** Truth */
+            truth: string;
+        };
+        /** UnitModel */
+        UnitModel: {
+            /** Unit */
+            unit: string;
+        };
+        /** UnitRequest */
+        UnitRequest: {
+            /** Unit */
+            unit: string;
+        };
+        /** Unknown */
+        Unknown: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "unknown";
+            /** Label */
+            label?: string | null;
         };
         /** UpdateEntityOp */
         UpdateEntityOp: {
@@ -5509,6 +5923,28 @@ export interface components {
             schema_version: number | null;
             /** Schema Version Id */
             schema_version_id: string | null;
+        };
+        /** WhatIfModel */
+        WhatIfModel: {
+            /** Changes */
+            changes: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description?: string | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Started At Version */
+            started_at_version: number;
+            /** Status */
+            status: string;
+            /** Version */
+            version: number;
         };
         /** WorkspaceModel */
         WorkspaceModel: {
@@ -9092,6 +9528,42 @@ export interface operations {
             };
         };
     };
+    amend_fact_api_v1_projects__project_id__facts__fact_id__amend_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                fact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AmendFactRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FactModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     fact_at_revision_api_v1_projects__project_id__facts__fact_id__at_revision__revision__get: {
         parameters: {
             query?: never;
@@ -11007,6 +11479,309 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AddedEntryModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_timeline_api_v1_projects__project_id__timeline_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimelineModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_moment_api_v1_projects__project_id__timeline_moment_get: {
+        parameters: {
+            query: {
+                at: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MomentModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_unit_api_v1_projects__project_id__timeline_unit_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnitModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_what_ifs_api_v1_projects__project_id__what_ifs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_what_if_api_v1_projects__project_id__what_ifs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartWhatIfRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WhatIfModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_what_if_api_v1_projects__project_id__what_ifs__branch_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                branch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WhatIfModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bring_back_what_if_api_v1_projects__project_id__what_ifs__branch_id__bring_back_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                branch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BringBackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BringBackResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compare_what_if_api_v1_projects__project_id__what_ifs__branch_id__compare_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                branch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComparisonModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_aside_what_if_api_v1_projects__project_id__what_ifs__branch_id__set_aside_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                branch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAsideRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WhatIfModel"];
                 };
             };
             /** @description Validation Error */

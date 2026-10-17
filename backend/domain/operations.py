@@ -18,10 +18,12 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
+from backend.domain.canon.assertions import FactVisibility
 from backend.domain.canon.events import EventParticipant
 from backend.domain.canon.plans import PlanKind, PlanRef
 from backend.domain.canon.propositions import EntityRefObject, Proposition
 from backend.domain.canon.revisions import OriginKind
+from backend.domain.worldtime import WorldTime
 
 TEMP_ID_PREFIX = "tmp:"
 _TEMP_ID = re.compile(r"^tmp:[A-Za-z0-9_\-]+$")
@@ -93,10 +95,25 @@ class AssertFactOp(_Operation):
     confidence: float = 1.0
     valid_from: datetime | None = None
     valid_until: datetime | None = None
+    # Story time (ADR-020): when the fact starts and stops being true. Unset means
+    # from the story's start and until its end.
+    starts: WorldTime | None = None
+    ends: WorldTime | None = None
+    # Unset is ordinary: known to whoever holds it, with nothing more said.
+    visibility: FactVisibility | None = None
 
 
 class CloseFactOp(_Operation):
     op: Literal["close_fact"] = "close_fact"
+
+
+class AmendFactOp(_Operation):
+    """Say when a fact is true, or who may know it. ``None`` leaves a field as it is."""
+
+    op: Literal["amend_fact"] = "amend_fact"
+    starts: WorldTime | None = None
+    ends: WorldTime | None = None
+    visibility: FactVisibility | None = None
 
 
 class AssertBeliefOp(_Operation):
@@ -120,12 +137,16 @@ class CreateEventOp(_Operation):
     cause_ids: list[str] = Field(default_factory=list)
     outcome_ids: list[str] = Field(default_factory=list)
     world_position: str | None = None
+    # Story time (ADR-020). ``world_position`` stays the author's free words.
+    when: WorldTime | None = None
 
 
 class AmendEventOp(_Operation):
     op: Literal["amend_event"] = "amend_event"
     name: str | None = None
     world_position: str | None = None
+    # ``None`` leaves the time as it is; an unknown time clears it.
+    when: WorldTime | None = None
 
 
 class RetireEventOp(_Operation):
@@ -185,6 +206,7 @@ CanonOperation = Annotated[
     | RetireEntityOp
     | AssertFactOp
     | CloseFactOp
+    | AmendFactOp
     | AssertBeliefOp
     | CloseBeliefOp
     | CreateEventOp
@@ -360,7 +382,15 @@ def resolve_temporary_ids(
 
 # Fields added after the first committed envelopes. They are omitted from the
 # canonical form while unset so every earlier envelope keeps its exact checksum.
-_CANONICAL_OMIT_WHEN_UNSET = ("evidence", "aliases", "external_ids")
+_CANONICAL_OMIT_WHEN_UNSET = (
+    "evidence",
+    "aliases",
+    "external_ids",
+    "when",
+    "starts",
+    "ends",
+    "visibility",
+)
 
 
 def canonical_operation(operation: CanonOperation) -> dict[str, Any]:
@@ -387,6 +417,7 @@ def parse_operation(payload: dict[str, Any]) -> CanonOperation:
 
 __all__ = [
     "AmendEventOp",
+    "AmendFactOp",
     "AssertBeliefOp",
     "AssertFactOp",
     "CanonOperation",

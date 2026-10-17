@@ -157,6 +157,7 @@ _TARGET_RECORD = {
     "update_entity": "entity",
     "retire_entity": "entity",
     "close_fact": "fact",
+    "amend_fact": "fact",
     "close_belief": "belief",
     "amend_event": "event",
     "retire_event": "event",
@@ -244,16 +245,17 @@ class _RepositoryReader:
             entity_id=entity_id,
         )
 
-    async def count_open_facts(self, subject_id: str, predicate: str) -> int:
-        facts = await self._repository.list_facts(
-            workspace_id=self._workspace_id,
-            project_id=self._project_id,
-            include_closed=False,
-            subject_id=subject_id,
-            predicate=predicate,
-            limit=1,
+    async def open_facts(self, subject_id: str, predicate: str) -> list[Fact]:
+        return list(
+            await self._repository.list_facts(
+                workspace_id=self._workspace_id,
+                project_id=self._project_id,
+                include_closed=False,
+                subject_id=subject_id,
+                predicate=predicate,
+                limit=500,
+            )
         )
-        return len(facts)
 
     async def get_plan_item(self, plan_id: str) -> PlanItem | None:
         return await self._repository.get_plan_item(
@@ -379,7 +381,7 @@ class MutationService:
     ) -> MutationSet:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         if branch_id is None:
-            branch = await self._journal.ensure_root_branch(
+            branch = await self._journal.working_branch(
                 workspace_id=workspace_id, project_id=project_id
             )
             branch_id = branch.id

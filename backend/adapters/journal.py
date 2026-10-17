@@ -14,8 +14,10 @@ from sqlalchemy import text
 
 from backend.adapters.system import uuid7
 from backend.core.database import session_scope
+from backend.domain.branching import working_branch_id
 from backend.domain.canon.ids import format_canon_id
 from backend.domain.canon.revisions import CanonRevision
+from backend.domain.errors import NotFoundError
 from backend.domain.journal import (
     AttemptStatus,
     Branch,
@@ -48,6 +50,11 @@ def _branch(row: Any) -> Branch:
         is_root=row.is_root,
         head_revision=row.head_revision,
         created_at=row.created_at,
+        parent_branch_id=getattr(row, "parent_branch_id", None),
+        fork_revision=getattr(row, "fork_revision", None),
+        description=getattr(row, "description", None),
+        status=getattr(row, "status", None) or "active",
+        created_by=getattr(row, "created_by", None),
     )
 
 
@@ -204,6 +211,18 @@ class PostgresCanonJournal:
             ).one()
         return _branch(row)
 
+    async def working_branch(self, *, workspace_id: str, project_id: str) -> Branch:
+        """The what-if this request works in, or the main story (ADR-020)."""
+        branch_id = working_branch_id()
+        if branch_id is None:
+            return await self.ensure_root_branch(workspace_id=workspace_id, project_id=project_id)
+        branch = await self.get_branch(
+            workspace_id=workspace_id, project_id=project_id, branch_id=branch_id
+        )
+        if branch is None:
+            raise NotFoundError("That what-if was not found.")
+        return branch
+
     async def get_branch(
         self, *, workspace_id: str, project_id: str, branch_id: str
     ) -> Branch | None:
@@ -306,12 +325,15 @@ class PostgresCanonJournal:
                 await session.execute(
                     text(
                         "SELECT * FROM mutation_sets WHERE workspace_id = :w AND project_id = :p "
+                        "AND branch_id = COALESCE(CAST(:wb AS TEXT), (SELECT id FROM branches "
+                        "WHERE workspace_id = :w AND project_id = :p AND is_root)) "
                         "AND (CAST(:status AS TEXT) IS NULL OR status = :status) "
                         "ORDER BY created_at DESC, id DESC LIMIT :limit OFFSET :offset"
                     ),
                     {
                         "w": workspace_id,
                         "p": project_id,
+                        "wb": working_branch_id(),
                         "status": status,
                         "limit": limit,
                         "offset": offset,

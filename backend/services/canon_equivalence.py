@@ -40,6 +40,7 @@ _RECORD_TYPE = {
     "retire_entity": "entity",
     "assert_fact": "fact",
     "close_fact": "fact",
+    "amend_fact": "fact",
     "assert_belief": "belief",
     "close_belief": "belief",
     "create_event": "event",
@@ -71,7 +72,20 @@ def _fact_view(fact: Fact) -> dict[str, Any]:
         "confidence": fact.confidence,
         "created_revision": fact.created_revision,
         "closed_revision": fact.closed_revision,
+        "starts": _time_view(fact.starts),
+        "ends": _time_view(fact.ends),
+        "visibility": fact.visibility.value,
     }
+
+
+def _time_view(value: Any) -> Any:
+    """An unknown time with no words is the same as no time at all."""
+    if value is None:
+        return None
+    dumped = value.model_dump(mode="json")
+    if dumped.get("kind") == "unknown" and not dumped.get("label"):
+        return None
+    return dumped
 
 
 def _belief_view(belief: Belief) -> dict[str, Any]:
@@ -94,6 +108,7 @@ def _event_view(event: Event) -> dict[str, Any]:
         "cause_ids": list(event.cause_ids),
         "outcome_ids": list(event.outcome_ids),
         "world_position": event.world_position,
+        "when": _time_view(event.when),
         "created_revision": event.created_revision,
         "retired_revision": event.retired_revision,
     }

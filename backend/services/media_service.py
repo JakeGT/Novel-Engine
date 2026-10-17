@@ -172,7 +172,7 @@ class MediaService:
     async def _retired_revision(self, workspace_id: str, project_id: str) -> int | None:
         if self._journal is None:
             return None
-        branch = await self._journal.ensure_root_branch(  # type: ignore[attr-defined]
+        branch = await self._journal.working_branch(  # type: ignore[attr-defined]
             workspace_id=workspace_id, project_id=project_id
         )
         return await self._reader.get_head(

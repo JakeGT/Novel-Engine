@@ -19,7 +19,8 @@ from backend.adapters.journal import apply_transition
 from backend.adapters.system import uuid7
 from backend.core.database import session_scope
 from backend.domain.archive import ArchiveImport, ImportStatus
-from backend.domain.canon.assertions import Belief, Fact, FactStatus
+from backend.domain.branching import working_branch_id
+from backend.domain.canon.assertions import Belief, Fact, FactStatus, FactVisibility
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
 from backend.domain.canon.events import Event, EventParticipant
 from backend.domain.canon.ids import format_canon_id
@@ -46,6 +47,7 @@ from backend.domain.journal import (
 from backend.domain.media import AssetLifecycle, AssetLink, LinkRole, MediaAsset, MediaAssetVersion
 from backend.domain.operations import (
     AmendEventOp,
+    AmendFactOp,
     AssertBeliefOp,
     AssertFactOp,
     CanonOperation,
@@ -82,6 +84,7 @@ from backend.domain.validation import (
     ValidationFinding,
     ValidationSeverity,
 )
+from backend.domain.worldtime import Unknown, parse_world_time
 from backend.services.schema_compiler import compile_definition
 
 _DEFAULT_VALIDATOR = AuthoritativeValidator()
@@ -146,6 +149,7 @@ _RECORD_TYPE = {
     "retire_entity": "entity",
     "assert_fact": "fact",
     "close_fact": "fact",
+    "amend_fact": "fact",
     "assert_belief": "belief",
     "close_belief": "belief",
     "create_event": "event",
@@ -170,6 +174,15 @@ _IMPORT_PRESERVED_TABLES = frozenset(
         "archive_imports",
     }
 )
+
+
+def _time_json(value: Any, *, clear_unknown: bool = False) -> str | None:
+    """A story time as stored JSON. An unknown time with no words of its own is no time."""
+    if value is None:
+        return None
+    if clear_unknown and isinstance(value, Unknown) and not value.label:
+        return None
+    return json.dumps(value.model_dump(mode="json"))
 
 
 def _load(value: Any) -> Any:
@@ -231,37 +244,62 @@ def _entity(row: Any) -> CanonEntity:
     )
 
 
+# The story records a what-if starts with: everything one line of the story holds.
+# Named versions come too, since they point at versions the what-if shares.
+_FORKED_TABLES = (
+    "canon_entities",
+    "canon_entity_external_ids",
+    "canon_facts",
+    "canon_beliefs",
+    "canon_events",
+    "plan_items",
+    "asset_links",
+    "canon_provenance",
+    "canon_evidence",
+    "canon_record_versions",
+    "canon_tags",
+)
+
+# A story read: the what-if this request works in, or the main story when none is named.
+_ON_BRANCH = (
+    "branch_id = COALESCE(CAST(:wb AS TEXT), (SELECT id FROM branches "
+    "WHERE workspace_id = :w AND project_id = :p AND is_root))"
+)
+
 _ACTIVE_REFERENCES = """
 SELECT 'fact' AS record_type, id FROM canon_facts
-  WHERE workspace_id = :w AND project_id = :p AND status = 'asserted'
+  WHERE workspace_id = :w AND project_id = :p AND status = 'asserted' AND {branch}
     AND (proposition->>'subject_id' = :id
          OR (proposition->'object'->>'kind' = 'entity_ref'
              AND proposition->'object'->>'entity_id' = :id))
 UNION ALL
 SELECT 'belief', id FROM canon_beliefs
-  WHERE workspace_id = :w AND project_id = :p AND closed_revision IS NULL
+  WHERE workspace_id = :w AND project_id = :p AND closed_revision IS NULL AND {branch}
     AND (holder_entity_id = :id OR proposition->>'subject_id' = :id
          OR (proposition->'object'->>'kind' = 'entity_ref'
              AND proposition->'object'->>'entity_id' = :id))
 UNION ALL
 SELECT 'event', id FROM canon_events
-  WHERE workspace_id = :w AND project_id = :p AND retired_revision IS NULL
+  WHERE workspace_id = :w AND project_id = :p AND retired_revision IS NULL AND {branch}
     AND (participants @> CAST(:participant AS JSONB)
          OR location_ids @> CAST(:member AS JSONB)
          OR cause_ids @> CAST(:member AS JSONB)
          OR outcome_ids @> CAST(:member AS JSONB))
 UNION ALL
 SELECT 'asset_link', id FROM asset_links
-  WHERE workspace_id = :w AND project_id = :p AND retired_revision IS NULL
+  WHERE workspace_id = :w AND project_id = :p AND retired_revision IS NULL AND {branch}
     AND target_record_id = :id
 ORDER BY 1, 2
-"""
+""".replace("{branch}", _ON_BRANCH)
 
 
-def _reference_params(workspace_id: str, project_id: str, entity_id: str) -> dict[str, Any]:
+def _reference_params(
+    workspace_id: str, project_id: str, entity_id: str, branch_id: str | None = None
+) -> dict[str, Any]:
     return {
         "w": workspace_id,
         "p": project_id,
+        "wb": branch_id or working_branch_id(),
         "id": entity_id,
         "participant": json.dumps([{"entity_id": entity_id}]),
         "member": json.dumps([entity_id]),
@@ -269,22 +307,32 @@ def _reference_params(workspace_id: str, project_id: str, entity_id: str) -> dic
 
 
 async def _entity_by_slug(
-    session: Any, workspace_id: str, project_id: str, slug: str
+    session: Any, workspace_id: str, project_id: str, slug: str, branch_id: str | None = None
 ) -> CanonEntity | None:
     row = (
         await session.execute(
             text(
                 "SELECT * FROM canon_entities WHERE workspace_id = :w AND project_id = :p "
-                "AND slug = :slug AND lifecycle = 'active'"
+                "AND slug = :slug AND lifecycle = 'active' AND " + _ON_BRANCH
             ),
-            {"w": workspace_id, "p": project_id, "slug": slug},
+            {
+                "w": workspace_id,
+                "p": project_id,
+                "slug": slug,
+                "wb": branch_id or working_branch_id(),
+            },
         )
     ).first()
     return _entity(row) if row else None
 
 
 async def _entity_by_external_id(
-    session: Any, workspace_id: str, project_id: str, namespace: str, value: str
+    session: Any,
+    workspace_id: str,
+    project_id: str,
+    namespace: str,
+    value: str,
+    branch_id: str | None = None,
 ) -> CanonEntity | None:
     row = (
         await session.execute(
@@ -293,27 +341,40 @@ async def _entity_by_external_id(
                 "ON e.workspace_id = x.workspace_id AND e.project_id = x.project_id "
                 "AND e.branch_id = x.branch_id AND e.id = x.entity_id "
                 "WHERE x.workspace_id = :w AND x.project_id = :p "
-                "AND x.namespace = :ns AND x.value = :value"
+                "AND x.namespace = :ns AND x.value = :value AND "
+                + _ON_BRANCH.replace("branch_id", "x.branch_id", 1)
             ),
-            {"w": workspace_id, "p": project_id, "ns": namespace, "value": value},
+            {
+                "w": workspace_id,
+                "p": project_id,
+                "ns": namespace,
+                "value": value,
+                "wb": branch_id or working_branch_id(),
+            },
         )
     ).first()
     return _entity(row) if row else None
 
 
 async def _entities_by_name(
-    session: Any, workspace_id: str, project_id: str, entity_type: str, name: str
+    session: Any,
+    workspace_id: str,
+    project_id: str,
+    entity_type: str,
+    name: str,
+    branch_id: str | None = None,
 ) -> list[CanonEntity]:
     rows = (
         await session.execute(
             text(
                 "SELECT * FROM canon_entities WHERE workspace_id = :w AND project_id = :p "
-                "AND type = :type AND lifecycle = 'active' "
+                "AND type = :type AND lifecycle = 'active' AND " + _ON_BRANCH + " "
                 "AND lower(regexp_replace(btrim(name), '\\s+', ' ', 'g')) = lower(:name)"
             ),
             {
                 "w": workspace_id,
                 "p": project_id,
+                "wb": branch_id or working_branch_id(),
                 "type": entity_type,
                 "name": " ".join(name.split()),
             },
@@ -338,6 +399,9 @@ def _fact(row: Any) -> Fact:
         closed_revision=row.closed_revision,
         valid_from=row.valid_from,
         valid_until=row.valid_until,
+        starts=parse_world_time(_load(getattr(row, "starts", None))),
+        ends=parse_world_time(_load(getattr(row, "ends", None))),
+        visibility=FactVisibility(getattr(row, "visibility", None) or "ordinary"),
     )
 
 
@@ -370,6 +434,7 @@ def _event(row: Any) -> Event:
         cause_ids=list(_load(row.cause_ids) or []),
         outcome_ids=list(_load(row.outcome_ids) or []),
         world_position=row.world_position,
+        when=parse_world_time(_load(getattr(row, "world_time", None))),
         provenance_id=row.provenance_id,
         created_revision=row.created_revision,
         retired_revision=getattr(row, "retired_revision", None),
@@ -438,14 +503,15 @@ class _TxCanonReader:
         ).first()
         return _entity(row) if row else None
 
-    async def count_open_facts(self, subject_id: str, predicate: str) -> int:
-        value = (
+    async def open_facts(self, subject_id: str, predicate: str) -> list[Fact]:
+        rows = (
             await self._session.execute(
                 text(
-                    "SELECT count(*) FROM canon_facts "
+                    "SELECT * FROM canon_facts "
                     "WHERE workspace_id = :w AND project_id = :p AND branch_id = :b "
                     "AND status = 'asserted' "
-                    "AND proposition->>'subject_id' = :s AND proposition->>'predicate' = :pr"
+                    "AND proposition->>'subject_id' = :s AND proposition->>'predicate' = :pr "
+                    "ORDER BY id"
                 ),
                 {
                     "w": self._workspace_id,
@@ -455,8 +521,8 @@ class _TxCanonReader:
                     "pr": predicate,
                 },
             )
-        ).scalar()
-        return int(value or 0)
+        ).all()
+        return [_fact(row) for row in rows]
 
     async def get_fact(self, fact_id: str) -> Fact | None:
         row = (
@@ -585,23 +651,25 @@ class _TxCanonReader:
         return _asset_version(row) if row else None
 
     async def find_entity_by_slug(self, slug: str) -> CanonEntity | None:
-        return await _entity_by_slug(self._session, self._workspace_id, self._project_id, slug)
+        return await _entity_by_slug(
+            self._session, self._workspace_id, self._project_id, slug, self._branch_id
+        )
 
     async def find_entity_by_external_id(self, namespace: str, value: str) -> CanonEntity | None:
         return await _entity_by_external_id(
-            self._session, self._workspace_id, self._project_id, namespace, value
+            self._session, self._workspace_id, self._project_id, namespace, value, self._branch_id
         )
 
     async def find_entities_by_name(self, entity_type: str, name: str) -> list[CanonEntity]:
         return await _entities_by_name(
-            self._session, self._workspace_id, self._project_id, entity_type, name
+            self._session, self._workspace_id, self._project_id, entity_type, name, self._branch_id
         )
 
     async def count_active_references(self, entity_id: str) -> int:
         rows = (
             await self._session.execute(
                 text(_ACTIVE_REFERENCES),
-                _reference_params(self._workspace_id, self._project_id, entity_id),
+                _reference_params(self._workspace_id, self._project_id, entity_id, self._branch_id),
             )
         ).all()
         return len(rows)
@@ -1170,10 +1238,12 @@ class PostgresCanonRepository:
                     """
                     INSERT INTO canon_facts (
                         workspace_id, project_id, branch_id, id, proposition, status,
-                        confidence, provenance_id, created_revision, valid_from, valid_until
+                        confidence, provenance_id, created_revision, valid_from, valid_until,
+                        starts, ends, visibility
                     )
                     VALUES (:w, :p, :b, :id, CAST(:proposition AS JSONB), 'asserted',
-                            :confidence, :prov, :rev, :valid_from, :valid_until)
+                            :confidence, :prov, :rev, :valid_from, :valid_until,
+                            CAST(:starts AS JSONB), CAST(:ends AS JSONB), :visibility)
                     """
                 ),
                 {
@@ -1185,7 +1255,29 @@ class PostgresCanonRepository:
                     "rev": revision,
                     "valid_from": operation.valid_from,
                     "valid_until": operation.valid_until,
+                    "starts": _time_json(operation.starts, clear_unknown=True),
+                    "ends": _time_json(operation.ends, clear_unknown=True),
+                    "visibility": (operation.visibility or FactVisibility.ORDINARY).value,
                 },
+            )
+        elif isinstance(operation, AmendFactOp):
+            await self._update(
+                session,
+                "UPDATE canon_facts SET "
+                "starts = CASE WHEN :set_starts THEN CAST(:starts AS JSONB) ELSE starts END, "
+                "ends = CASE WHEN :set_ends THEN CAST(:ends AS JSONB) ELSE ends END, "
+                "visibility = COALESCE(:visibility, visibility) "
+                "WHERE workspace_id = :w AND project_id = :p AND branch_id = :b AND id = :id",
+                {
+                    **scope,
+                    "id": operation.id,
+                    "set_starts": operation.starts is not None,
+                    "starts": _time_json(operation.starts, clear_unknown=True),
+                    "set_ends": operation.ends is not None,
+                    "ends": _time_json(operation.ends, clear_unknown=True),
+                    "visibility": operation.visibility.value if operation.visibility else None,
+                },
+                operation.id,
             )
         elif isinstance(operation, CloseFactOp):
             await self._update(
@@ -1234,11 +1326,12 @@ class PostgresCanonRepository:
                     INSERT INTO canon_events (
                         workspace_id, project_id, branch_id, id, kind, name, participants,
                         location_ids, cause_ids, outcome_ids, world_position, provenance_id,
-                        created_revision
+                        created_revision, world_time
                     )
                     VALUES (:w, :p, :b, :id, :kind, :name, CAST(:participants AS JSONB),
                             CAST(:locations AS JSONB), CAST(:causes AS JSONB),
-                            CAST(:outcomes AS JSONB), :world_position, :prov, :rev)
+                            CAST(:outcomes AS JSONB), :world_position, :prov, :rev,
+                            CAST(:world_time AS JSONB))
                     """
                 ),
                 {
@@ -1255,19 +1348,24 @@ class PostgresCanonRepository:
                     "world_position": operation.world_position,
                     "prov": provenance_id,
                     "rev": revision,
+                    "world_time": _time_json(operation.when, clear_unknown=True),
                 },
             )
         elif isinstance(operation, AmendEventOp):
             await self._update(
                 session,
                 "UPDATE canon_events SET name = COALESCE(:name, name), "
-                "world_position = COALESCE(:world_position, world_position) "
+                "world_position = COALESCE(:world_position, world_position), "
+                "world_time = CASE WHEN :set_time THEN CAST(:world_time AS JSONB) "
+                "ELSE world_time END "
                 "WHERE workspace_id = :w AND project_id = :p AND branch_id = :b AND id = :id",
                 {
                     **scope,
                     "id": operation.id,
                     "name": operation.name,
                     "world_position": operation.world_position,
+                    "set_time": operation.when is not None,
+                    "world_time": _time_json(operation.when, clear_unknown=True),
                 },
                 operation.id,
             )
@@ -1603,6 +1701,110 @@ class PostgresCanonRepository:
                 removed += int(result.rowcount or 0)  # type: ignore[attr-defined]
         return removed
 
+    # ------------------------------------------------------------------ what-ifs
+    async def fork_branch(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        parent_branch_id: str,
+        branch_id: str,
+        name: str,
+        description: str | None,
+        actor_user_id: str | None,
+    ) -> int:
+        """Start a what-if from a branch's current head, copying its story (ADR-020).
+
+        One transaction: the parent's head is locked so no commit can land half-way
+        through the copy, and a commit already reserved on it makes the fork wait for
+        another try rather than copy a story that is about to change.
+        """
+        async with session_scope(self._session_factory) as session:
+            parent = (
+                await session.execute(
+                    text(
+                        "SELECT head_revision FROM branches WHERE workspace_id = :w "
+                        "AND project_id = :p AND id = :b FOR UPDATE"
+                    ),
+                    {"w": workspace_id, "p": project_id, "b": parent_branch_id},
+                )
+            ).first()
+            if parent is None:
+                raise HeadConflict("branch not found in this project")
+            busy = (
+                await session.execute(
+                    text(
+                        "SELECT 1 FROM branch_reservations "
+                        "WHERE branch_id = :b AND status = 'active'"
+                    ),
+                    {"b": parent_branch_id},
+                )
+            ).first()
+            if busy is not None:
+                raise HeadConflict("a change is being saved to the story; try again")
+            head = int(parent.head_revision)
+            await session.execute(
+                text(
+                    "INSERT INTO branches (id, workspace_id, project_id, name, is_root, "
+                    "head_revision, parent_branch_id, fork_revision, description, created_by) "
+                    "VALUES (:id, :w, :p, :name, false, :head, :parent, :head, :description, "
+                    ":actor)"
+                ),
+                {
+                    "id": branch_id,
+                    "w": workspace_id,
+                    "p": project_id,
+                    "name": name,
+                    "head": head,
+                    "parent": parent_branch_id,
+                    "description": description,
+                    "actor": actor_user_id,
+                },
+            )
+            for table in _FORKED_TABLES:
+                columns = [
+                    row[0]
+                    for row in (
+                        await session.execute(
+                            text(
+                                "SELECT column_name FROM information_schema.columns "
+                                "WHERE table_schema = current_schema() AND table_name = :t "
+                                "ORDER BY ordinal_position"
+                            ),
+                            {"t": table},
+                        )
+                    ).all()
+                ]
+                selected = ", ".join(
+                    ":new_branch" if column == "branch_id" else column for column in columns
+                )
+                await session.execute(
+                    text(
+                        f"INSERT INTO {table} ({', '.join(columns)}) "  # noqa: S608 - fixed tables
+                        f"SELECT {selected} FROM {table} "
+                        "WHERE workspace_id = :w AND project_id = :p AND branch_id = :parent"
+                    ),
+                    {
+                        "w": workspace_id,
+                        "p": project_id,
+                        "parent": parent_branch_id,
+                        "new_branch": branch_id,
+                    },
+                )
+        return head
+
+    async def set_branch_status(
+        self, *, workspace_id: str, project_id: str, branch_id: str, status: str
+    ) -> None:
+        async with session_scope(self._session_factory) as session:
+            await session.execute(
+                text(
+                    "UPDATE branches SET status = :status WHERE workspace_id = :w "
+                    "AND project_id = :p AND id = :b AND NOT is_root"
+                ),
+                {"w": workspace_id, "p": project_id, "b": branch_id, "status": status},
+            )
+
     # ------------------------------------------------------------------- reads
     async def get_head(self, *, workspace_id: str, project_id: str, branch_id: str) -> int:
         async with session_scope(self._session_factory) as session:
@@ -1612,7 +1814,7 @@ class PostgresCanonRepository:
                         "SELECT head_revision FROM branches "
                         "WHERE workspace_id = :w AND project_id = :p AND id = :b"
                     ),
-                    {"w": workspace_id, "p": project_id, "b": branch_id},
+                    {"w": workspace_id, "p": project_id, "wb": working_branch_id(), "b": branch_id},
                 )
             ).first()
         return int(row.head_revision) if row else 0
@@ -1625,9 +1827,14 @@ class PostgresCanonRepository:
                 await session.execute(
                     text(
                         "SELECT * FROM canon_entities "
-                        "WHERE workspace_id = :w AND project_id = :p AND id = :id"
+                        "WHERE workspace_id = :w AND project_id = :p AND id = :id AND " + _ON_BRANCH
                     ),
-                    {"w": workspace_id, "p": project_id, "id": entity_id},
+                    {
+                        "w": workspace_id,
+                        "p": project_id,
+                        "wb": working_branch_id(),
+                        "id": entity_id,
+                    },
                 )
             ).first()
         return _entity(row) if row else None
@@ -1642,10 +1849,11 @@ class PostgresCanonRepository:
         limit: int = 50,
         offset: int = 0,
     ) -> list[CanonEntity]:
-        clauses = ["workspace_id = :w", "project_id = :p"]
+        clauses = ["workspace_id = :w", "project_id = :p", _ON_BRANCH]
         params: dict[str, Any] = {
             "w": workspace_id,
             "p": project_id,
+            "wb": working_branch_id(),
             "limit": limit,
             "offset": offset,
         }
@@ -1679,6 +1887,7 @@ class PostgresCanonRepository:
         clauses = [
             "workspace_id = :w",
             "project_id = :p",
+            _ON_BRANCH,
             "(lower(name) LIKE :needle OR lower(slug) LIKE :needle OR EXISTS ("
             "SELECT 1 FROM jsonb_array_elements_text(aliases) alias "
             "WHERE lower(alias) LIKE :needle))",
@@ -1686,6 +1895,7 @@ class PostgresCanonRepository:
         params: dict[str, Any] = {
             "w": workspace_id,
             "p": project_id,
+            "wb": working_branch_id(),
             "needle": f"%{query.lower()}%",
             "limit": limit,
         }
@@ -1754,8 +1964,8 @@ class PostgresCanonRepository:
         record_id: str | None = None,
         commit_id: str | None = None,
     ) -> list[EvidenceRecord]:
-        clauses = ["workspace_id = :w", "project_id = :p"]
-        params: dict[str, Any] = {"w": workspace_id, "p": project_id}
+        clauses = ["workspace_id = :w", "project_id = :p", _ON_BRANCH]
+        params: dict[str, Any] = {"w": workspace_id, "p": project_id, "wb": working_branch_id()}
         if record_type is not None:
             clauses.append("record_type = :rtype")
             params["rtype"] = record_type
@@ -1794,9 +2004,9 @@ class PostgresCanonRepository:
                 await session.execute(
                     text(
                         "SELECT * FROM canon_facts "
-                        "WHERE workspace_id = :w AND project_id = :p AND id = :id"
+                        "WHERE workspace_id = :w AND project_id = :p AND id = :id AND " + _ON_BRANCH
                     ),
-                    {"w": workspace_id, "p": project_id, "id": fact_id},
+                    {"w": workspace_id, "p": project_id, "wb": working_branch_id(), "id": fact_id},
                 )
             ).first()
         return _fact(row) if row else None
@@ -1813,10 +2023,11 @@ class PostgresCanonRepository:
         offset: int = 0,
         object_entity_id: str | None = None,
     ) -> list[Fact]:
-        clauses = ["workspace_id = :w", "project_id = :p"]
+        clauses = ["workspace_id = :w", "project_id = :p", _ON_BRANCH]
         params: dict[str, Any] = {
             "w": workspace_id,
             "p": project_id,
+            "wb": working_branch_id(),
             "limit": limit,
             "offset": offset,
         }
@@ -1854,9 +2065,14 @@ class PostgresCanonRepository:
                 await session.execute(
                     text(
                         "SELECT * FROM canon_beliefs "
-                        "WHERE workspace_id = :w AND project_id = :p AND id = :id"
+                        "WHERE workspace_id = :w AND project_id = :p AND id = :id AND " + _ON_BRANCH
                     ),
-                    {"w": workspace_id, "p": project_id, "id": belief_id},
+                    {
+                        "w": workspace_id,
+                        "p": project_id,
+                        "wb": working_branch_id(),
+                        "id": belief_id,
+                    },
                 )
             ).first()
         return _belief(row) if row else None
@@ -1871,10 +2087,11 @@ class PostgresCanonRepository:
         limit: int = 50,
         offset: int = 0,
     ) -> list[Belief]:
-        clauses = ["workspace_id = :w", "project_id = :p"]
+        clauses = ["workspace_id = :w", "project_id = :p", _ON_BRANCH]
         params: dict[str, Any] = {
             "w": workspace_id,
             "p": project_id,
+            "wb": working_branch_id(),
             "limit": limit,
             "offset": offset,
         }
@@ -1901,9 +2118,9 @@ class PostgresCanonRepository:
                 await session.execute(
                     text(
                         "SELECT * FROM canon_events "
-                        "WHERE workspace_id = :w AND project_id = :p AND id = :id"
+                        "WHERE workspace_id = :w AND project_id = :p AND id = :id AND " + _ON_BRANCH
                     ),
-                    {"w": workspace_id, "p": project_id, "id": event_id},
+                    {"w": workspace_id, "p": project_id, "wb": working_branch_id(), "id": event_id},
                 )
             ).first()
         return _event(row) if row else None
@@ -1918,10 +2135,11 @@ class PostgresCanonRepository:
         offset: int = 0,
         entity_id: str | None = None,
     ) -> list[Event]:
-        clauses = ["workspace_id = :w", "project_id = :p"]
+        clauses = ["workspace_id = :w", "project_id = :p", _ON_BRANCH]
         params: dict[str, Any] = {
             "w": workspace_id,
             "p": project_id,
+            "wb": working_branch_id(),
             "limit": limit,
             "offset": offset,
         }
@@ -1957,9 +2175,9 @@ class PostgresCanonRepository:
                 await session.execute(
                     text(
                         "SELECT * FROM plan_items "
-                        "WHERE workspace_id = :w AND project_id = :p AND id = :id"
+                        "WHERE workspace_id = :w AND project_id = :p AND id = :id AND " + _ON_BRANCH
                     ),
-                    {"w": workspace_id, "p": project_id, "id": plan_id},
+                    {"w": workspace_id, "p": project_id, "wb": working_branch_id(), "id": plan_id},
                 )
             ).first()
         return _plan_item(row) if row else None
@@ -1974,7 +2192,7 @@ class PostgresCanonRepository:
     ) -> list[PlanItem]:
         """The whole plan, in outline order within each parent. Intent only: no
         entry, fact, belief or event query ever returns these."""
-        clauses = ["workspace_id = :w", "project_id = :p"]
+        clauses = ["workspace_id = :w", "project_id = :p", _ON_BRANCH]
         if not include_retired:
             clauses.append("retired_revision IS NULL")
         async with session_scope(self._session_factory) as session:
@@ -1984,7 +2202,7 @@ class PostgresCanonRepository:
                         f"SELECT * FROM plan_items WHERE {' AND '.join(clauses)} "
                         "ORDER BY position, created_revision, id LIMIT :limit"
                     ),
-                    {"w": workspace_id, "p": project_id, "limit": limit},
+                    {"w": workspace_id, "p": project_id, "wb": working_branch_id(), "limit": limit},
                 )
             ).all()
         return [_plan_item(row) for row in rows]
@@ -1999,7 +2217,13 @@ class PostgresCanonRepository:
                         "SELECT * FROM canon_provenance WHERE workspace_id = :w "
                         "AND project_id = :p AND branch_id = :b AND id = :id"
                     ),
-                    {"w": workspace_id, "p": project_id, "b": branch_id, "id": provenance_id},
+                    {
+                        "w": workspace_id,
+                        "p": project_id,
+                        "wb": working_branch_id(),
+                        "b": branch_id,
+                        "id": provenance_id,
+                    },
                 )
             ).first()
         if row is None:
@@ -2028,8 +2252,13 @@ class PostgresCanonRepository:
         max_revision: int | None = None,
         limit: int = 100,
     ) -> list[RecordVersion]:
-        clauses = ["workspace_id = :w", "project_id = :p"]
-        params: dict[str, Any] = {"w": workspace_id, "p": project_id, "limit": limit}
+        clauses = ["workspace_id = :w", "project_id = :p", _ON_BRANCH]
+        params: dict[str, Any] = {
+            "w": workspace_id,
+            "p": project_id,
+            "wb": working_branch_id(),
+            "limit": limit,
+        }
         if record_type:
             clauses.append("record_type = :rtype")
             params["rtype"] = record_type
@@ -2348,9 +2577,9 @@ class PostgresCanonRepository:
                 await session.execute(
                     text(
                         "SELECT * FROM asset_links "
-                        "WHERE workspace_id=:w AND project_id=:p AND id=:id"
+                        "WHERE workspace_id=:w AND project_id=:p AND id=:id AND " + _ON_BRANCH
                     ),
-                    {"w": workspace_id, "p": project_id, "id": link_id},
+                    {"w": workspace_id, "p": project_id, "wb": working_branch_id(), "id": link_id},
                 )
             ).first()
         return _link(row) if row else None
@@ -2379,6 +2608,9 @@ class PostgresCanonRepository:
         if branch_id is not None:
             clauses.append("branch_id=:b")
             params["b"] = branch_id
+        else:
+            clauses.append(_ON_BRANCH)
+            params["wb"] = working_branch_id()
         if not include_retired:
             clauses.append("retired_revision IS NULL")
         params["limit"] = limit

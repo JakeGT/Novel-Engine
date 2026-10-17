@@ -82,6 +82,7 @@ def _build_fake_container(settings, tmp_path):
         InMemorySchemaVersionStore,
         InMemorySessionStore,
         InMemorySourceStore,
+        InMemoryStoryClockStore,
         InMemoryTenancyStore,
         InMemoryVectorStore,
         OrderedIdGenerator,
@@ -224,6 +225,24 @@ def _build_fake_container(settings, tmp_path):
         tenancy=tenancy_service,
         local_mode=not settings.is_hosted,
     )
+    from backend.services.story_time_service import StoryTimeService
+    from backend.services.what_if_service import WhatIfService
+
+    story_clocks = InMemoryStoryClockStore()
+    story_time_service = StoryTimeService(
+        reader=canon_repository,
+        clocks=story_clocks,
+        tenancy=tenancy_service,
+        local_mode=not settings.is_hosted,
+    )
+    what_if_service = WhatIfService(
+        journal=journal,
+        canon=canon_repository,
+        mutation=mutation_service,
+        schema_store=schema_versions,
+        tenancy=tenancy_service,
+        local_mode=not settings.is_hosted,
+    )
     from backend.services.assist_session_service import AssistSessionService
     from backend.services.canon_equivalence import CanonEquivalenceService
     from backend.services.rule_workflow import RuleWorkflow
@@ -318,6 +337,9 @@ def _build_fake_container(settings, tmp_path):
         rule_service=rule_service,
         canon_assertion_service=canon_assertion_service,
         canon_history_service=canon_history_service,
+        story_clocks=story_clocks,
+        story_time_service=story_time_service,
+        what_if_service=what_if_service,
         canon_character_workflow=canon_character_workflow,
         equivalence_service=equivalence_service,
         assist_sessions=assist_sessions,

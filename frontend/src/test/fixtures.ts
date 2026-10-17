@@ -83,6 +83,9 @@ export function fact(overrides: Partial<Fact> = {}): Fact {
     closed_revision: null,
     valid_from: null,
     valid_until: null,
+    starts: null,
+    ends: null,
+    visibility: 'ordinary',
     ...overrides,
   }
 }

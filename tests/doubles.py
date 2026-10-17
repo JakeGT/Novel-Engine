@@ -14,7 +14,8 @@ from types import SimpleNamespace
 from typing import Any
 
 from backend.domain.archive import ArchiveImport, ImportStatus
-from backend.domain.canon.assertions import Belief, Fact, FactStatus
+from backend.domain.branching import working_branch_id, working_in
+from backend.domain.canon.assertions import Belief, Fact, FactStatus, FactVisibility
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
 from backend.domain.canon.events import Event
 from backend.domain.canon.ids import format_canon_id
@@ -70,6 +71,7 @@ from backend.domain.media import (
 from backend.domain.objects import ObjectStat
 from backend.domain.operations import (
     AmendEventOp,
+    AmendFactOp,
     AssertBeliefOp,
     AssertFactOp,
     CloseBeliefOp,
@@ -127,9 +129,18 @@ from backend.domain.validation import (
     ValidationFinding,
     ValidationSeverity,
 )
+from backend.domain.worldtime import Unknown
 from backend.graph.schema import Edge, Node
 from backend.ports import MigrationStatus, ProviderCapabilities, StructuredResponse
 from backend.services.schema_compiler import compile_definition
+
+
+def _stored_time(value: Any) -> Any:
+    """As the repository stores a time: an unknown one with no words is no time."""
+    if isinstance(value, Unknown) and not value.label:
+        return None
+    return value
+
 
 _MEMORY_DEFAULT_VALIDATOR = AuthoritativeValidator()
 
@@ -1418,6 +1429,22 @@ class InMemoryCanonJournal:
             if data["workspace_id"] == workspace_id and data["project_id"] == project_id
         ]
 
+    async def working_branch(self, *, workspace_id: str, project_id: str) -> Branch:
+        branch_id = working_branch_id()
+        if branch_id is None:
+            return await self.ensure_root_branch(workspace_id=workspace_id, project_id=project_id)
+        branch = await self.get_branch(
+            workspace_id=workspace_id, project_id=project_id, branch_id=branch_id
+        )
+        if branch is None:
+            from backend.domain.errors import NotFoundError
+
+            raise NotFoundError("That what-if was not found.")
+        return branch
+
+    def is_root(self, branch_id: str) -> bool:
+        return bool(self.branches.get(branch_id, {}).get("is_root", True))
+
     async def create_mutation(
         self,
         *,
@@ -1551,12 +1578,18 @@ class InMemoryCanonJournal:
         limit: int = 50,
         offset: int = 0,
     ) -> list[MutationSet]:
+        working = working_branch_id()
         matches = [
             mutation
             for mutation in reversed(list(self.mutations.values()))
             if mutation.workspace_id == workspace_id
             and mutation.project_id == project_id
             and (status is None or mutation.status.value == status)
+            and (
+                mutation.branch_id == working
+                if working is not None
+                else self.is_root(mutation.branch_id)
+            )
         ]
         return matches[offset : offset + limit]
 
@@ -2060,6 +2093,7 @@ class InMemoryCanonWriter:
     def _apply_assertion(self, ws, pr, branch_id, revision, operation, commit_id) -> None:
         from backend.domain.operations import (
             AmendEventOp,
+            AmendFactOp,
             AssertBeliefOp,
             AssertFactOp,
             CloseBeliefOp,
@@ -2080,7 +2114,19 @@ class InMemoryCanonWriter:
                 "closed_revision": None,
                 "valid_from": operation.valid_from,
                 "valid_until": operation.valid_until,
+                "starts": _stored_time(operation.starts),
+                "ends": _stored_time(operation.ends),
+                "visibility": (operation.visibility or "ordinary"),
             }
+        elif isinstance(operation, AmendFactOp):
+            fact = self.facts.get(key)
+            if fact is not None:
+                if operation.starts is not None:
+                    fact["starts"] = _stored_time(operation.starts)
+                if operation.ends is not None:
+                    fact["ends"] = _stored_time(operation.ends)
+                if operation.visibility is not None:
+                    fact["visibility"] = operation.visibility
         elif isinstance(operation, CloseFactOp):
             fact = self.facts.get(key)
             if fact is not None:
@@ -2113,6 +2159,7 @@ class InMemoryCanonWriter:
                 "cause_ids": list(operation.cause_ids),
                 "outcome_ids": list(operation.outcome_ids),
                 "world_position": operation.world_position,
+                "when": _stored_time(operation.when),
                 "provenance_id": f"prov_{commit_id}",
                 "created_revision": revision,
                 "lifecycle": "active",
@@ -2124,6 +2171,8 @@ class InMemoryCanonWriter:
                     event["name"] = operation.name
                 if operation.world_position is not None:
                     event["world_position"] = operation.world_position
+                if operation.when is not None:
+                    event["when"] = _stored_time(operation.when)
         elif isinstance(operation, RetireEventOp):
             event = self.events.get(key)
             if event is not None:
@@ -2240,6 +2289,9 @@ class InMemoryCanonWriter:
             closed_revision=data["closed_revision"],
             valid_from=data["valid_from"],
             valid_until=data["valid_until"],
+            starts=data.get("starts"),
+            ends=data.get("ends"),
+            visibility=data.get("visibility") or "ordinary",
         )
 
     async def get_fact(self, *, workspace_id, project_id, fact_id):
@@ -2336,6 +2388,7 @@ class InMemoryCanonWriter:
             cause_ids=list(data["cause_ids"]),
             outcome_ids=list(data["outcome_ids"]),
             world_position=data["world_position"],
+            when=data.get("when"),
             provenance_id=data["provenance_id"],
             created_revision=data["created_revision"],
             retired_revision=data.get("retired_revision"),
@@ -2368,6 +2421,7 @@ _CANON_RECORD_TYPE = {
     "retire_entity": "entity",
     "assert_fact": "fact",
     "close_fact": "fact",
+    "amend_fact": "fact",
     "assert_belief": "belief",
     "close_belief": "belief",
     "create_event": "event",
@@ -2393,19 +2447,17 @@ class _MemoryCanonReader:
     async def get_entity(self, entity_id: str) -> Any:
         return self._repository.entities.get((self._workspace_id, self._project_id, entity_id))
 
-    async def count_open_facts(self, subject_id: str, predicate: str) -> int:
-        count = 0
-        for fact in self._repository.facts.values():
-            if (
-                fact.workspace_id == self._workspace_id
-                and fact.project_id == self._project_id
-                and fact.branch_id == self._branch_id
-                and getattr(fact.status, "value", fact.status) == "asserted"
-                and fact.proposition.subject_id == subject_id
-                and fact.proposition.predicate == predicate
-            ):
-                count += 1
-        return count
+    async def open_facts(self, subject_id: str, predicate: str) -> list[Any]:
+        return [
+            fact
+            for fact in self._repository.facts.values()
+            if fact.workspace_id == self._workspace_id
+            and fact.project_id == self._project_id
+            and fact.branch_id == self._branch_id
+            and getattr(fact.status, "value", fact.status) == "asserted"
+            and fact.proposition.subject_id == subject_id
+            and fact.proposition.predicate == predicate
+        ]
 
     async def get_fact(self, fact_id: str) -> Any:
         return self._repository.facts.get((self._workspace_id, self._project_id, fact_id))
@@ -2473,8 +2525,100 @@ class _MemoryCanonReader:
         )
 
 
+def _per_branch(name: str, factory: Any) -> property:
+    """A store kept separately for each line of the story (ADR-020).
+
+    Reads see the what-if the request works in, or the main story; a commit sees
+    the branch it is committed to. ``None`` is the main story.
+    """
+
+    def get(self: Any) -> Any:
+        store = self._stores.setdefault(self._namespace(), {})
+        if name not in store:
+            store[name] = factory()
+        return store[name]
+
+    def put(self: Any, value: Any) -> None:
+        self._stores.setdefault(self._namespace(), {})[name] = value
+
+    return property(get, put)
+
+
+_BRANCHED_STORES = (
+    ("entities", dict),
+    ("facts", dict),
+    ("beliefs", dict),
+    ("events", dict),
+    ("plan_items", dict),
+    ("provenance", dict),
+    ("record_versions", list),
+    ("asset_links", dict),
+    ("evidence", list),
+)
+
+
 class InMemoryCanonRepository:
     """In-memory canonical PostgreSQL canon (ADR-012) with matching invariants."""
+
+    entities = _per_branch("entities", dict)
+    facts = _per_branch("facts", dict)
+    beliefs = _per_branch("beliefs", dict)
+    events = _per_branch("events", dict)
+    plan_items = _per_branch("plan_items", dict)
+    provenance = _per_branch("provenance", dict)
+    record_versions = _per_branch("record_versions", list)
+    asset_links = _per_branch("asset_links", dict)
+    evidence = _per_branch("evidence", list)
+
+    def _namespace(self) -> str | None:
+        return getattr(self, "_committing", None) or working_branch_id()
+
+    def _branch_namespace(self, branch_id: str) -> str | None:
+        if self._journal is None or self._journal.is_root(branch_id):
+            return None
+        return branch_id
+
+    async def fork_branch(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        parent_branch_id: str,
+        branch_id: str,
+        name: str,
+        description: str | None,
+        actor_user_id: str | None,
+    ) -> int:
+        import copy
+
+        assert self._journal is not None
+        parent = self._journal.branches[parent_branch_id]
+        head = self.heads.get((workspace_id, project_id, parent_branch_id), 0)
+        self._journal.branches[branch_id] = {
+            **parent,
+            "id": branch_id,
+            "name": name,
+            "is_root": False,
+            "head_revision": head,
+            "created_at": utcnow(),
+            "parent_branch_id": parent_branch_id,
+            "fork_revision": head,
+            "description": description,
+            "status": "active",
+            "created_by": actor_user_id,
+        }
+        source = self._stores.get(self._branch_namespace(parent_branch_id), {})
+        self._stores[branch_id] = {key: copy.copy(value) for key, value in source.items()}
+        self.heads[(workspace_id, project_id, branch_id)] = head
+        return head
+
+    async def set_branch_status(
+        self, *, workspace_id: str, project_id: str, branch_id: str, status: str
+    ) -> None:
+        assert self._journal is not None
+        branch = self._journal.branches.get(branch_id)
+        if branch is not None and not branch["is_root"]:
+            branch["status"] = status
 
     def __init__(
         self,
@@ -2485,22 +2629,15 @@ class InMemoryCanonRepository:
         self._journal = journal
         self._media = media
         self._schemas = schemas
+        self._stores: dict[str | None, dict[str, Any]] = {}
+        self._committing: str | None = None
         self.heads: dict[tuple[str, str, str], int] = {}
         self.envelopes: dict[str, Any] = {}
         self.envelope_by_mutation: dict[str, str] = {}
         self.revisions: list[Any] = []
-        self.entities: dict[tuple[str, str, str], CanonEntity] = {}
-        self.facts: dict[tuple[str, str, str], Any] = {}
-        self.beliefs: dict[tuple[str, str, str], Any] = {}
-        self.events: dict[tuple[str, str, str], Any] = {}
-        self.plan_items: dict[tuple[str, str, str], Any] = {}
-        self.provenance: dict[str, Any] = {}
-        self.record_versions: list[Any] = []
         self.watermarks: dict[tuple[str, str, str, str], Any] = {}
         self.tags: dict[tuple[str, str, str, str], Any] = {}
         self.tag_history: dict[tuple[str, str, str, str], list[Any]] = {}
-        self.asset_links: dict[tuple[str, str, str], Any] = {}
-        self.evidence: list[EvidenceRecord] = []
         self.imports: dict[tuple[str, str, str], ArchiveImport] = {}
 
     def set_head(self, workspace_id: str, project_id: str, branch_id: str, head: int) -> None:
@@ -2704,6 +2841,24 @@ class InMemoryCanonRepository:
         return self.heads.get((workspace_id, project_id, branch_id), 0)
 
     async def apply_commit(
+        self,
+        *,
+        envelope: Any,
+        operations: list[Any],
+        validator: Any = None,
+        origin: str = "author",
+    ) -> int:
+        previous = self._committing
+        self._committing = self._branch_namespace(envelope.branch_id)
+        try:
+            with working_in(self._committing):
+                return await self._apply_commit(
+                    envelope=envelope, operations=operations, validator=validator, origin=origin
+                )
+        finally:
+            self._committing = previous
+
+    async def _apply_commit(
         self,
         *,
         envelope: Any,
@@ -2986,6 +3141,22 @@ class InMemoryCanonRepository:
                 created_revision=revision,
                 valid_from=operation.valid_from,
                 valid_until=operation.valid_until,
+                starts=_stored_time(operation.starts),
+                ends=_stored_time(operation.ends),
+                visibility=operation.visibility or FactVisibility.ORDINARY,
+            )
+        elif isinstance(operation, AmendFactOp) and key in self.facts:
+            current_fact = self.facts[key]
+            self.facts[key] = current_fact.model_copy(
+                update={
+                    "starts": current_fact.starts
+                    if operation.starts is None
+                    else _stored_time(operation.starts),
+                    "ends": current_fact.ends
+                    if operation.ends is None
+                    else _stored_time(operation.ends),
+                    "visibility": operation.visibility or current_fact.visibility,
+                }
             )
         elif isinstance(operation, CloseFactOp) and key in self.facts:
             self.facts[key] = self.facts[key].model_copy(
@@ -3019,6 +3190,7 @@ class InMemoryCanonRepository:
                 cause_ids=list(operation.cause_ids),
                 outcome_ids=list(operation.outcome_ids),
                 world_position=operation.world_position,
+                when=_stored_time(operation.when),
                 provenance_id=provenance_id,
                 created_revision=revision,
             )
@@ -3030,6 +3202,9 @@ class InMemoryCanonRepository:
                     "world_position": operation.world_position
                     if operation.world_position is not None
                     else current.world_position,
+                    "when": current.when
+                    if operation.when is None
+                    else _stored_time(operation.when),
                 }
             )
         elif isinstance(operation, RetireEventOp) and key in self.events:
@@ -4188,3 +4363,16 @@ class InMemoryRuleStore:
             del self.rules[key]
             self.versions.pop(key, None)
         return len(doomed)
+
+
+class InMemoryStoryClockStore:
+    """The unit each story counts time in."""
+
+    def __init__(self) -> None:
+        self.units: dict[tuple[str, str], str] = {}
+
+    async def get_unit(self, *, workspace_id: str, project_id: str) -> str | None:
+        return self.units.get((workspace_id, project_id))
+
+    async def set_unit(self, *, workspace_id: str, project_id: str, unit: str) -> None:
+        self.units[(workspace_id, project_id)] = unit

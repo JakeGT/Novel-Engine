@@ -599,6 +599,10 @@ class CanonJournalPort(Protocol):
         self, *, workspace_id: str, project_id: str, branch_id: str
     ) -> Branch | None: ...
 
+    async def working_branch(self, *, workspace_id: str, project_id: str) -> Branch:
+        """The what-if the current request works in, or the main story."""
+        ...
+
     async def list_branches(self, *, workspace_id: str, project_id: str) -> list[Branch]: ...
 
     async def create_mutation(

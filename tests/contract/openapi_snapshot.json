@@ -336,6 +336,39 @@
             "title": "Op",
             "type": "string"
           },
+          "when": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "at": "#/components/schemas/At",
+                    "between": "#/components/schemas/Between",
+                    "relative": "#/components/schemas/Relative",
+                    "unknown": "#/components/schemas/Unknown"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Unknown"
+                  },
+                  {
+                    "$ref": "#/components/schemas/At"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Between"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Relative"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "When"
+          },
           "world_position": {
             "anyOf": [
               {
@@ -372,6 +405,39 @@
             ],
             "title": "Name"
           },
+          "when": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "at": "#/components/schemas/At",
+                    "between": "#/components/schemas/Between",
+                    "relative": "#/components/schemas/Relative",
+                    "unknown": "#/components/schemas/Unknown"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Unknown"
+                  },
+                  {
+                    "$ref": "#/components/schemas/At"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Between"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Relative"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "When"
+          },
           "world_position": {
             "anyOf": [
               {
@@ -388,6 +454,202 @@
           "expected_revision"
         ],
         "title": "AmendEventRequest",
+        "type": "object"
+      },
+      "AmendFactOp": {
+        "additionalProperties": false,
+        "description": "Say when a fact is true, or who may know it. ``None`` leaves a field as it is.",
+        "properties": {
+          "ends": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "at": "#/components/schemas/At",
+                    "between": "#/components/schemas/Between",
+                    "relative": "#/components/schemas/Relative",
+                    "unknown": "#/components/schemas/Unknown"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Unknown"
+                  },
+                  {
+                    "$ref": "#/components/schemas/At"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Between"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Relative"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRef"
+            },
+            "maxItems": 10,
+            "title": "Evidence",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "op": {
+            "const": "amend_fact",
+            "default": "amend_fact",
+            "title": "Op",
+            "type": "string"
+          },
+          "starts": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "at": "#/components/schemas/At",
+                    "between": "#/components/schemas/Between",
+                    "relative": "#/components/schemas/Relative",
+                    "unknown": "#/components/schemas/Unknown"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Unknown"
+                  },
+                  {
+                    "$ref": "#/components/schemas/At"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Between"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Relative"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FactVisibility"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "AmendFactOp",
+        "type": "object"
+      },
+      "AmendFactRequest": {
+        "additionalProperties": false,
+        "description": "When a fact is true, and who may know it. Fields left out stay as they are.",
+        "properties": {
+          "ends": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "at": "#/components/schemas/At",
+                    "between": "#/components/schemas/Between",
+                    "relative": "#/components/schemas/Relative",
+                    "unknown": "#/components/schemas/Unknown"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Unknown"
+                  },
+                  {
+                    "$ref": "#/components/schemas/At"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Between"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Relative"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends"
+          },
+          "expected_revision": {
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "starts": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "at": "#/components/schemas/At",
+                    "between": "#/components/schemas/Between",
+                    "relative": "#/components/schemas/Relative",
+                    "unknown": "#/components/schemas/Unknown"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Unknown"
+                  },
+                  {
+                    "$ref": "#/components/schemas/At"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Between"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Relative"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FactVisibility"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "title": "AmendFactRequest",
         "type": "object"
       },
       "AppliedSuggestionsModel": {
@@ -498,6 +760,39 @@
             "title": "Confidence",
             "type": "number"
           },
+          "ends": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "at": "#/components/schemas/At",
+                    "between": "#/components/schemas/Between",
+                    "relative": "#/components/schemas/Relative",
+                    "unknown": "#/components/schemas/Unknown"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Unknown"
+                  },
+                  {
+                    "$ref": "#/components/schemas/At"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Between"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Relative"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends"
+          },
           "evidence": {
             "items": {
               "$ref": "#/components/schemas/EvidenceRef"
@@ -519,6 +814,39 @@
           "proposition": {
             "$ref": "#/components/schemas/Proposition"
           },
+          "starts": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "at": "#/components/schemas/At",
+                    "between": "#/components/schemas/Between",
+                    "relative": "#/components/schemas/Relative",
+                    "unknown": "#/components/schemas/Unknown"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Unknown"
+                  },
+                  {
+                    "$ref": "#/components/schemas/At"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Between"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Relative"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts"
+          },
           "valid_from": {
             "anyOf": [
               {
@@ -542,6 +870,16 @@
               }
             ],
             "title": "Valid Until"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FactVisibility"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -559,12 +897,78 @@
             "title": "Confidence",
             "type": "number"
           },
+          "ends": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "at": "#/components/schemas/At",
+                    "between": "#/components/schemas/Between",
+                    "relative": "#/components/schemas/Relative",
+                    "unknown": "#/components/schemas/Unknown"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Unknown"
+                  },
+                  {
+                    "$ref": "#/components/schemas/At"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Between"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Relative"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends"
+          },
           "expected_revision": {
             "title": "Expected Revision",
             "type": "integer"
           },
           "proposition": {
             "$ref": "#/components/schemas/PropositionRequest"
+          },
+          "starts": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "at": "#/components/schemas/At",
+                    "between": "#/components/schemas/Between",
+                    "relative": "#/components/schemas/Relative",
+                    "unknown": "#/components/schemas/Unknown"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Unknown"
+                  },
+                  {
+                    "$ref": "#/components/schemas/At"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Between"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Relative"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts"
           },
           "valid_from": {
             "anyOf": [
@@ -589,6 +993,16 @@
               }
             ],
             "title": "Valid Until"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FactVisibility"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -947,6 +1361,40 @@
         "title": "AssistSessionModel",
         "type": "object"
       },
+      "At": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "maximum": 1000000000000.0,
+            "minimum": -1000000000000.0,
+            "title": "At",
+            "type": "number"
+          },
+          "kind": {
+            "const": "at",
+            "default": "at",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "required": [
+          "at"
+        ],
+        "title": "At",
+        "type": "object"
+      },
       "BeliefModel": {
         "properties": {
           "acquisition_provenance_id": {
@@ -1051,6 +1499,57 @@
         "title": "BeliefRequest",
         "type": "object"
       },
+      "Between": {
+        "additionalProperties": false,
+        "properties": {
+          "earliest": {
+            "anyOf": [
+              {
+                "maximum": 1000000000000.0,
+                "minimum": -1000000000000.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Earliest"
+          },
+          "kind": {
+            "const": "between",
+            "default": "between",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "latest": {
+            "anyOf": [
+              {
+                "maximum": 1000000000000.0,
+                "minimum": -1000000000000.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest"
+          }
+        },
+        "title": "Between",
+        "type": "object"
+      },
       "BooleanObject": {
         "additionalProperties": false,
         "properties": {
@@ -1069,6 +1568,33 @@
           "value"
         ],
         "title": "BooleanObject",
+        "type": "object"
+      },
+      "BringBackRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "keep": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Keep"
+            },
+            "title": "Keep",
+            "type": "object"
+          }
+        },
+        "title": "BringBackRequest",
+        "type": "object"
+      },
+      "BringBackResult": {
+        "properties": {
+          "mutation_id": {
+            "title": "Mutation Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mutation_id"
+        ],
+        "title": "BringBackResult",
         "type": "object"
       },
       "BrokenByModel": {
@@ -1192,6 +1718,39 @@
           "created_revision"
         ],
         "title": "CanonEntityModel",
+        "type": "object"
+      },
+      "ChangeModel": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "record_id": {
+            "title": "Record Id",
+            "type": "string"
+          },
+          "record_type": {
+            "title": "Record Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "record_type",
+          "record_id",
+          "kind",
+          "label"
+        ],
+        "title": "ChangeModel",
         "type": "object"
       },
       "ChangePlanItemRequest": {
@@ -1888,6 +2447,47 @@
         "title": "CloseRequest",
         "type": "object"
       },
+      "ComparisonModel": {
+        "properties": {
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/ChangeModel"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
+          "in_main": {
+            "items": {
+              "$ref": "#/components/schemas/ChangeModel"
+            },
+            "title": "In Main",
+            "type": "array"
+          },
+          "in_what_if": {
+            "items": {
+              "$ref": "#/components/schemas/ChangeModel"
+            },
+            "title": "In What If",
+            "type": "array"
+          },
+          "main_version": {
+            "title": "Main Version",
+            "type": "integer"
+          },
+          "what_if": {
+            "$ref": "#/components/schemas/WhatIfModel"
+          }
+        },
+        "required": [
+          "what_if",
+          "main_version",
+          "in_what_if",
+          "in_main",
+          "conflicts"
+        ],
+        "title": "ComparisonModel",
+        "type": "object"
+      },
       "ConditionStateModel": {
         "properties": {
           "holds": {
@@ -2222,6 +2822,39 @@
             "title": "Participants",
             "type": "array"
           },
+          "when": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "at": "#/components/schemas/At",
+                    "between": "#/components/schemas/Between",
+                    "relative": "#/components/schemas/Relative",
+                    "unknown": "#/components/schemas/Unknown"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Unknown"
+                  },
+                  {
+                    "$ref": "#/components/schemas/At"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Between"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Relative"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "When"
+          },
           "world_position": {
             "anyOf": [
               {
@@ -2528,6 +3161,14 @@
         ],
         "title": "DecimalObject",
         "type": "object"
+      },
+      "Direction": {
+        "enum": [
+          "before",
+          "after"
+        ],
+        "title": "Direction",
+        "type": "string"
       },
       "DirectionModel": {
         "properties": {
@@ -3211,6 +3852,39 @@
             "title": "Provenance Id",
             "type": "string"
           },
+          "when": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "at": "#/components/schemas/At",
+                    "between": "#/components/schemas/Between",
+                    "relative": "#/components/schemas/Relative",
+                    "unknown": "#/components/schemas/Unknown"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Unknown"
+                  },
+                  {
+                    "$ref": "#/components/schemas/At"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Between"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Relative"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "When"
+          },
           "world_position": {
             "anyOf": [
               {
@@ -3302,6 +3976,39 @@
             },
             "title": "Participants",
             "type": "array"
+          },
+          "when": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "at": "#/components/schemas/At",
+                    "between": "#/components/schemas/Between",
+                    "relative": "#/components/schemas/Relative",
+                    "unknown": "#/components/schemas/Unknown"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Unknown"
+                  },
+                  {
+                    "$ref": "#/components/schemas/At"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Between"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Relative"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "When"
           },
           "world_position": {
             "anyOf": [
@@ -3485,6 +4192,39 @@
             "title": "Created Revision",
             "type": "integer"
           },
+          "ends": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "at": "#/components/schemas/At",
+                    "between": "#/components/schemas/Between",
+                    "relative": "#/components/schemas/Relative",
+                    "unknown": "#/components/schemas/Unknown"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Unknown"
+                  },
+                  {
+                    "$ref": "#/components/schemas/At"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Between"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Relative"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -3512,6 +4252,39 @@
               }
             ],
             "title": "Source Ref"
+          },
+          "starts": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "at": "#/components/schemas/At",
+                    "between": "#/components/schemas/Between",
+                    "relative": "#/components/schemas/Relative",
+                    "unknown": "#/components/schemas/Unknown"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Unknown"
+                  },
+                  {
+                    "$ref": "#/components/schemas/At"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Between"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Relative"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts"
           },
           "status": {
             "title": "Status",
@@ -3544,6 +4317,10 @@
               }
             ],
             "title": "Valid Until"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/FactVisibility",
+            "default": "ordinary"
           }
         },
         "required": [
@@ -3558,6 +4335,16 @@
         ],
         "title": "FactModel",
         "type": "object"
+      },
+      "FactVisibility": {
+        "description": "Who in the story may know a fact (ADR-020). Knowledge is deny-by-default.",
+        "enum": [
+          "ordinary",
+          "common",
+          "secret"
+        ],
+        "title": "FactVisibility",
+        "type": "string"
       },
       "GraphUpdateResponse": {
         "properties": {
@@ -3727,6 +4514,15 @@
         ],
         "title": "InviteModel",
         "type": "object"
+      },
+      "Keep": {
+        "description": "For a record changed in both lines: whose version to keep.",
+        "enum": [
+          "what_if",
+          "main"
+        ],
+        "title": "Keep",
+        "type": "string"
       },
       "LinkAssetOp": {
         "additionalProperties": false,
@@ -3951,6 +4747,40 @@
           "listed"
         ],
         "title": "ModelListModel",
+        "type": "object"
+      },
+      "MomentModel": {
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "number"
+          },
+          "facts": {
+            "items": {
+              "$ref": "#/components/schemas/TrueThenModel"
+            },
+            "title": "Facts",
+            "type": "array"
+          },
+          "happened": {
+            "items": {
+              "$ref": "#/components/schemas/PlacedEventModel"
+            },
+            "title": "Happened",
+            "type": "array"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "unit",
+          "at",
+          "facts",
+          "happened"
+        ],
+        "title": "MomentModel",
         "type": "object"
       },
       "MovePlanItemRequest": {
@@ -4862,6 +5692,56 @@
         "title": "Pattern",
         "type": "object"
       },
+      "PlacedEventModel": {
+        "properties": {
+          "earliest": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Earliest"
+          },
+          "event": {
+            "$ref": "#/components/schemas/EventModel"
+          },
+          "latest": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem"
+          },
+          "when": {
+            "title": "When",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event",
+          "when"
+        ],
+        "title": "PlacedEventModel",
+        "type": "object"
+      },
       "PlanBriefRequest": {
         "additionalProperties": false,
         "properties": {
@@ -5317,6 +6197,7 @@
               "discriminator": {
                 "mapping": {
                   "amend_event": "#/components/schemas/AmendEventOp",
+                  "amend_fact": "#/components/schemas/AmendFactOp",
                   "assert_belief": "#/components/schemas/AssertBeliefOp",
                   "assert_fact": "#/components/schemas/AssertFactOp",
                   "close_belief": "#/components/schemas/CloseBeliefOp",
@@ -5349,6 +6230,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/CloseFactOp"
+                },
+                {
+                  "$ref": "#/components/schemas/AmendFactOp"
                 },
                 {
                   "$ref": "#/components/schemas/AssertBeliefOp"
@@ -5749,6 +6633,59 @@
         "title": "ReadPassageRequest",
         "type": "object"
       },
+      "Relative": {
+        "additionalProperties": false,
+        "description": "So long before or after an event: \"three years before the war\".",
+        "properties": {
+          "anchor_event_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Anchor Event Id",
+            "type": "string"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/Direction",
+            "default": "after"
+          },
+          "give_or_take": {
+            "default": 0,
+            "maximum": 1000000000000.0,
+            "minimum": 0.0,
+            "title": "Give Or Take",
+            "type": "number"
+          },
+          "kind": {
+            "const": "relative",
+            "default": "relative",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "offset": {
+            "default": 0,
+            "maximum": 1000000000000.0,
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "number"
+          }
+        },
+        "required": [
+          "anchor_event_id"
+        ],
+        "title": "Relative",
+        "type": "object"
+      },
       "RemovePlanItemRequest": {
         "additionalProperties": false,
         "properties": {
@@ -6072,6 +7009,7 @@
             "discriminator": {
               "mapping": {
                 "amend_event": "#/components/schemas/AmendEventOp",
+                "amend_fact": "#/components/schemas/AmendFactOp",
                 "assert_belief": "#/components/schemas/AssertBeliefOp",
                 "assert_fact": "#/components/schemas/AssertFactOp",
                 "close_belief": "#/components/schemas/CloseBeliefOp",
@@ -6104,6 +7042,9 @@
               },
               {
                 "$ref": "#/components/schemas/CloseFactOp"
+              },
+              {
+                "$ref": "#/components/schemas/AmendFactOp"
               },
               {
                 "$ref": "#/components/schemas/AssertBeliefOp"
@@ -6912,6 +7853,18 @@
         "title": "SetAllowanceRequest",
         "type": "object"
       },
+      "SetAsideRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "aside": {
+            "default": true,
+            "title": "Aside",
+            "type": "boolean"
+          }
+        },
+        "title": "SetAsideRequest",
+        "type": "object"
+      },
       "SetConditionsRequest": {
         "additionalProperties": false,
         "properties": {
@@ -6955,6 +7908,68 @@
         ],
         "title": "SourceKind",
         "type": "string"
+      },
+      "SpannedFactModel": {
+        "properties": {
+          "ends": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends"
+          },
+          "fact": {
+            "$ref": "#/components/schemas/FactModel"
+          },
+          "starts": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts"
+          }
+        },
+        "required": [
+          "fact"
+        ],
+        "title": "SpannedFactModel",
+        "type": "object"
+      },
+      "StartWhatIfRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "StartWhatIfRequest",
+        "type": "object"
       },
       "StringObject": {
         "additionalProperties": false,
@@ -7125,6 +8140,77 @@
         "title": "TextModel",
         "type": "object"
       },
+      "TimeIssueModel": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "record_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Record Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "record_ids"
+        ],
+        "title": "TimeIssueModel",
+        "type": "object"
+      },
+      "TimelineModel": {
+        "properties": {
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/TimeIssueModel"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "placed": {
+            "items": {
+              "$ref": "#/components/schemas/PlacedEventModel"
+            },
+            "title": "Placed",
+            "type": "array"
+          },
+          "spans": {
+            "items": {
+              "$ref": "#/components/schemas/SpannedFactModel"
+            },
+            "title": "Spans",
+            "type": "array"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "unplaced": {
+            "items": {
+              "$ref": "#/components/schemas/PlacedEventModel"
+            },
+            "title": "Unplaced",
+            "type": "array"
+          }
+        },
+        "required": [
+          "unit",
+          "placed",
+          "unplaced",
+          "spans",
+          "issues"
+        ],
+        "title": "TimelineModel",
+        "type": "object"
+      },
       "TransferOwnershipRequest": {
         "properties": {
           "to_user_id": {
@@ -7137,6 +8223,77 @@
           "to_user_id"
         ],
         "title": "TransferOwnershipRequest",
+        "type": "object"
+      },
+      "TrueThenModel": {
+        "properties": {
+          "fact": {
+            "$ref": "#/components/schemas/FactModel"
+          },
+          "truth": {
+            "title": "Truth",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fact",
+          "truth"
+        ],
+        "title": "TrueThenModel",
+        "type": "object"
+      },
+      "UnitModel": {
+        "properties": {
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "unit"
+        ],
+        "title": "UnitModel",
+        "type": "object"
+      },
+      "UnitRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "unit": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "unit"
+        ],
+        "title": "UnitRequest",
+        "type": "object"
+      },
+      "Unknown": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "unknown",
+            "default": "unknown",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "title": "Unknown",
         "type": "object"
       },
       "UpdateEntityOp": {
@@ -7647,6 +8804,61 @@
           "predicates"
         ],
         "title": "VocabularyModel",
+        "type": "object"
+      },
+      "WhatIfModel": {
+        "properties": {
+          "changes": {
+            "title": "Changes",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "started_at_version": {
+            "title": "Started At Version",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "started_at_version",
+          "version",
+          "changes",
+          "created_at"
+        ],
+        "title": "WhatIfModel",
         "type": "object"
       },
       "WorkspaceModel": {
@@ -13255,6 +14467,67 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/facts/{fact_id}/amend": {
+      "post": {
+        "operationId": "amend_fact_api_v1_projects__project_id__facts__fact_id__amend_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "fact_id",
+            "required": true,
+            "schema": {
+              "title": "Fact Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AmendFactRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FactModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Amend Fact",
+        "tags": [
+          "canon-assertions"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/facts/{fact_id}/at-revision/{revision}": {
       "get": {
         "operationId": "fact_at_revision_api_v1_projects__project_id__facts__fact_id__at_revision__revision__get",
@@ -16311,6 +17584,471 @@
         "summary": "Add Entry From Text",
         "tags": [
           "texts"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/timeline": {
+      "get": {
+        "operationId": "get_timeline_api_v1_projects__project_id__timeline_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimelineModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Timeline",
+        "tags": [
+          "story-time"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/timeline/moment": {
+      "get": {
+        "operationId": "get_moment_api_v1_projects__project_id__timeline_moment_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "at",
+            "required": true,
+            "schema": {
+              "maximum": 1000000000000.0,
+              "minimum": -1000000000000.0,
+              "title": "At",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MomentModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Moment",
+        "tags": [
+          "story-time"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/timeline/unit": {
+      "put": {
+        "operationId": "set_unit_api_v1_projects__project_id__timeline_unit_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnitModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Unit",
+        "tags": [
+          "story-time"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/what-ifs": {
+      "get": {
+        "operationId": "list_what_ifs_api_v1_projects__project_id__what_ifs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List What Ifs Api V1 Projects  Project Id  What Ifs Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List What Ifs",
+        "tags": [
+          "what-ifs"
+        ]
+      },
+      "post": {
+        "operationId": "start_what_if_api_v1_projects__project_id__what_ifs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartWhatIfRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhatIfModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start What If",
+        "tags": [
+          "what-ifs"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/what-ifs/{branch_id}": {
+      "get": {
+        "operationId": "get_what_if_api_v1_projects__project_id__what_ifs__branch_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "branch_id",
+            "required": true,
+            "schema": {
+              "title": "Branch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhatIfModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get What If",
+        "tags": [
+          "what-ifs"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/what-ifs/{branch_id}/bring-back": {
+      "post": {
+        "operationId": "bring_back_what_if_api_v1_projects__project_id__what_ifs__branch_id__bring_back_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "branch_id",
+            "required": true,
+            "schema": {
+              "title": "Branch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BringBackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BringBackResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bring Back What If",
+        "tags": [
+          "what-ifs"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/what-ifs/{branch_id}/compare": {
+      "get": {
+        "operationId": "compare_what_if_api_v1_projects__project_id__what_ifs__branch_id__compare_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "branch_id",
+            "required": true,
+            "schema": {
+              "title": "Branch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComparisonModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Compare What If",
+        "tags": [
+          "what-ifs"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/what-ifs/{branch_id}/set-aside": {
+      "post": {
+        "operationId": "set_aside_what_if_api_v1_projects__project_id__what_ifs__branch_id__set_aside_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "branch_id",
+            "required": true,
+            "schema": {
+              "title": "Branch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAsideRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhatIfModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Aside What If",
+        "tags": [
+          "what-ifs"
         ]
       }
     },

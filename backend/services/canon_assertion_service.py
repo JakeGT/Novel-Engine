@@ -12,7 +12,13 @@ from __future__ import annotations
 from datetime import datetime
 
 from backend.adapters.system import uuid7
-from backend.domain.canon.assertions import Belief, Fact, TruthAgreement, truth_agreement
+from backend.domain.canon.assertions import (
+    Belief,
+    Fact,
+    FactVisibility,
+    TruthAgreement,
+    truth_agreement,
+)
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
 from backend.domain.canon.errors import CanonError
 from backend.domain.canon.events import Event, EventParticipant
@@ -28,6 +34,7 @@ from backend.domain.errors import ConflictError, NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.operations import (
     AmendEventOp,
+    AmendFactOp,
     AssertBeliefOp,
     AssertFactOp,
     CloseBeliefOp,
@@ -36,6 +43,7 @@ from backend.domain.operations import (
     RetireEventOp,
 )
 from backend.domain.tenancy import Permission
+from backend.domain.worldtime import WorldTime, is_unknown
 from backend.ports import CanonRepositoryPort, SchemaVersionStorePort
 from backend.services.mutation_service import CommitResult, MutationService
 from backend.services.schema_compiler import compile_definition
@@ -156,12 +164,18 @@ class CanonAssertionService:
         confidence: float = 1.0,
         valid_from: datetime | None = None,
         valid_until: datetime | None = None,
+        starts: WorldTime | None = None,
+        ends: WorldTime | None = None,
+        visibility: FactVisibility | None = None,
         idempotency_key: str = "",
     ) -> tuple[CommitResult, Fact]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         subject = await self._require_entity(workspace_id, project_id, proposition.subject_id)
         spec = await self._validate_proposition(proposition, subject.type, workspace_id, project_id)
-        if spec is not None and spec.cardinality == Cardinality.ONE:
+        # A fact true for only part of the story may sit beside another value of a
+        # one-at-a-time kind; the commit validator compares the two spans.
+        spanned = not is_unknown(starts) or not is_unknown(ends)
+        if spec is not None and spec.cardinality == Cardinality.ONE and not spanned:
             existing = await self._reader.list_facts(
                 workspace_id=workspace_id,
                 project_id=project_id,
@@ -180,6 +194,9 @@ class CanonAssertionService:
             confidence=confidence,
             valid_from=valid_from,
             valid_until=valid_until,
+            starts=starts,
+            ends=ends,
+            visibility=visibility,
         )
         result = await self._commit(
             scope, workspace_id, project_id, [operation], expected_revision, idempotency_key
@@ -207,6 +224,38 @@ class CanonAssertionService:
         if existing is None:
             raise NotFoundError("Fact not found.")
         operation = CloseFactOp(id=fact_id)
+        result = await self._commit(
+            scope, workspace_id, project_id, [operation], expected_revision, idempotency_key
+        )
+        fact = await self._reader.get_fact(
+            workspace_id=workspace_id, project_id=project_id, fact_id=fact_id
+        )
+        assert fact is not None
+        return result, fact
+
+    async def amend_fact(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        fact_id: str,
+        *,
+        expected_revision: int,
+        starts: WorldTime | None = None,
+        ends: WorldTime | None = None,
+        visibility: FactVisibility | None = None,
+        idempotency_key: str = "",
+    ) -> tuple[CommitResult, Fact]:
+        """Say when a fact is true, or who may know it. Unset fields stay as they are."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        existing = await self._reader.get_fact(
+            workspace_id=workspace_id, project_id=project_id, fact_id=fact_id
+        )
+        if existing is None:
+            raise NotFoundError("Fact not found.")
+        if starts is None and ends is None and visibility is None:
+            raise ValidationError("Say when the fact is true, or who may know it.")
+        operation = AmendFactOp(id=fact_id, starts=starts, ends=ends, visibility=visibility)
         result = await self._commit(
             scope, workspace_id, project_id, [operation], expected_revision, idempotency_key
         )
@@ -381,6 +430,7 @@ class CanonAssertionService:
         cause_ids: list[str] | None = None,
         outcome_ids: list[str] | None = None,
         world_position: str | None = None,
+        when: WorldTime | None = None,
         idempotency_key: str = "",
     ) -> tuple[CommitResult, Event]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
@@ -401,6 +451,7 @@ class CanonAssertionService:
             cause_ids=cause_ids or [],
             outcome_ids=outcome_ids or [],
             world_position=world_position,
+            when=when,
         )
         result = await self._commit(
             scope, workspace_id, project_id, [operation], expected_revision, idempotency_key
@@ -421,6 +472,7 @@ class CanonAssertionService:
         expected_revision: int,
         name: str | None = None,
         world_position: str | None = None,
+        when: WorldTime | None = None,
         idempotency_key: str = "",
     ) -> tuple[CommitResult, Event]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
@@ -429,7 +481,7 @@ class CanonAssertionService:
         )
         if existing is None:
             raise NotFoundError("Event not found.")
-        operation = AmendEventOp(id=event_id, name=name, world_position=world_position)
+        operation = AmendEventOp(id=event_id, name=name, world_position=world_position, when=when)
         result = await self._commit(
             scope, workspace_id, project_id, [operation], expected_revision, idempotency_key
         )

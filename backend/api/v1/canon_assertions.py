@@ -13,10 +13,11 @@ from pydantic import BaseModel, ConfigDict
 
 from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import get_canon_assertion_service
-from backend.domain.canon.assertions import Belief, Fact
+from backend.domain.canon.assertions import Belief, Fact, FactVisibility
 from backend.domain.canon.events import Event, EventParticipant
 from backend.domain.canon.propositions import Proposition
 from backend.domain.identity import AccessScope
+from backend.domain.worldtime import WorldTime
 from backend.services.canon_assertion_service import CanonAssertionService
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["canon-assertions"])
@@ -41,6 +42,19 @@ class AssertFactRequest(BaseModel):
     confidence: float = 1.0
     valid_from: datetime | None = None
     valid_until: datetime | None = None
+    starts: WorldTime | None = None
+    ends: WorldTime | None = None
+    visibility: FactVisibility | None = None
+
+
+class AmendFactRequest(BaseModel):
+    """When a fact is true, and who may know it. Fields left out stay as they are."""
+
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int
+    starts: WorldTime | None = None
+    ends: WorldTime | None = None
+    visibility: FactVisibility | None = None
 
 
 class CloseRequest(BaseModel):
@@ -75,6 +89,7 @@ class EventRequest(BaseModel):
     cause_ids: list[str] = []
     outcome_ids: list[str] = []
     world_position: str | None = None
+    when: WorldTime | None = None
 
 
 class AmendEventRequest(BaseModel):
@@ -82,6 +97,8 @@ class AmendEventRequest(BaseModel):
     expected_revision: int
     name: str | None = None
     world_position: str | None = None
+    # An unknown time clears it; leaving it out keeps it.
+    when: WorldTime | None = None
 
 
 class FactModel(BaseModel):
@@ -97,6 +114,9 @@ class FactModel(BaseModel):
     closed_revision: int | None = None
     valid_from: datetime | None = None
     valid_until: datetime | None = None
+    starts: WorldTime | None = None
+    ends: WorldTime | None = None
+    visibility: FactVisibility = FactVisibility.ORDINARY
 
 
 class BeliefModel(BaseModel):
@@ -121,6 +141,7 @@ class EventModel(BaseModel):
     cause_ids: list[str]
     outcome_ids: list[str]
     world_position: str | None = None
+    when: WorldTime | None = None
     provenance_id: str
     created_revision: int
 
@@ -139,6 +160,9 @@ def _fact_model(fact: Fact) -> FactModel:
         closed_revision=fact.closed_revision,
         valid_from=fact.valid_from,
         valid_until=fact.valid_until,
+        starts=fact.starts,
+        ends=fact.ends,
+        visibility=fact.visibility,
     )
 
 
@@ -167,6 +191,7 @@ def _event_model(event: Event) -> EventModel:
         cause_ids=event.cause_ids,
         outcome_ids=event.outcome_ids,
         world_position=event.world_position,
+        when=event.when,
         provenance_id=event.provenance_id,
         created_revision=event.created_revision,
     )
@@ -218,6 +243,32 @@ async def assert_fact(
         confidence=body.confidence,
         valid_from=body.valid_from,
         valid_until=body.valid_until,
+        starts=body.starts,
+        ends=body.ends,
+        visibility=body.visibility,
+    )
+    response.headers["ETag"] = f'"{result.revision}"'
+    return _fact_model(fact)
+
+
+@router.post("/facts/{fact_id}/amend")
+async def amend_fact(
+    project_id: str,
+    fact_id: str,
+    body: AmendFactRequest,
+    response: Response,
+    scope: AccessScope = Depends(require_project_scope),
+    service: CanonAssertionService = Depends(get_canon_assertion_service),
+) -> FactModel:
+    result, fact = await service.amend_fact(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        fact_id,
+        expected_revision=body.expected_revision,
+        starts=body.starts,
+        ends=body.ends,
+        visibility=body.visibility,
     )
     response.headers["ETag"] = f'"{result.revision}"'
     return _fact_model(fact)
@@ -389,6 +440,7 @@ async def create_event(
         cause_ids=body.cause_ids,
         outcome_ids=body.outcome_ids,
         world_position=body.world_position,
+        when=body.when,
         expected_revision=body.expected_revision,
     )
     response.headers["ETag"] = f'"{result.revision}"'
@@ -422,6 +474,7 @@ async def amend_event(
         event_id,
         name=body.name,
         world_position=body.world_position,
+        when=body.when,
         expected_revision=body.expected_revision,
     )
     response.headers["ETag"] = f'"{result.revision}"'

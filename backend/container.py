@@ -70,6 +70,9 @@ class Container:
     rule_service: Any = None
     canon_assertion_service: Any = None
     canon_history_service: Any = None
+    story_clocks: Any = None
+    story_time_service: Any = None
+    what_if_service: Any = None
     media_store: Any = None
     archive_service: Any = None
     media_service: Any = None
@@ -322,6 +325,25 @@ def build_container(settings: Settings | None = None) -> Container:
     container.canon_assertion_service = CanonAssertionService(
         mutation=container.mutation_service,
         reader=container.canon_repository,
+        schema_store=container.schema_versions,
+        tenancy=container.tenancy_service,
+        local_mode=not resolved.is_hosted,
+    )
+    from backend.adapters.story_clock import PostgresStoryClockStore
+    from backend.services.story_time_service import StoryTimeService
+    from backend.services.what_if_service import WhatIfService
+
+    container.story_clocks = PostgresStoryClockStore(database.session_factory)
+    container.story_time_service = StoryTimeService(
+        reader=container.canon_repository,
+        clocks=container.story_clocks,
+        tenancy=container.tenancy_service,
+        local_mode=not resolved.is_hosted,
+    )
+    container.what_if_service = WhatIfService(
+        journal=container.journal,
+        canon=container.canon_repository,
+        mutation=container.mutation_service,
         schema_store=container.schema_versions,
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,

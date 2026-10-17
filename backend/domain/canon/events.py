@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from backend.domain.worldtime import WorldTime
+
 
 class EventParticipant(BaseModel):
     model_config = {"extra": "forbid"}
@@ -32,6 +34,8 @@ class Event(BaseModel):
     outcome_ids: list[str] = Field(default_factory=list)
     # Author-supplied, possibly fuzzy; stored as given, never normalized here.
     world_position: str | None = None
+    # Story time (ADR-020), when the author has placed it.
+    when: WorldTime | None = None
     provenance_id: str
     created_revision: int
     retired_revision: int | None = None

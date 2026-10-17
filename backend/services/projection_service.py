@@ -19,7 +19,8 @@ from backend.ports import CanonRepositoryPort, CanonWriterPort
 
 GRAPH_PROJECTION = "graph"
 # 2: the projection moved to its own Canon* labels (Neo4j migration 0004).
-PROJECTION_SCHEMA_VERSION = "2"
+# 3: facts carry a story-time span and a visibility, events a story time (ADR-020).
+PROJECTION_SCHEMA_VERSION = "3"
 DEFAULT_BATCH = 100
 
 

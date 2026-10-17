@@ -7,8 +7,9 @@ committed history; they never mutate canon and never expose secret payloads.
 from __future__ import annotations
 
 import json
+from typing import Any
 
-from backend.domain.canon.assertions import Belief, Fact, FactStatus
+from backend.domain.canon.assertions import Belief, Fact, FactStatus, FactVisibility
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
 from backend.domain.canon.events import Event, EventParticipant
 from backend.domain.canon.plans import PlanItem, apply_plan_update, plan_item_from_create
@@ -33,6 +34,7 @@ from backend.domain.operations import parse_operation
 from backend.domain.projection import RecordVersion
 from backend.domain.review import MutationIntent
 from backend.domain.tenancy import Permission
+from backend.domain.worldtime import Unknown, parse_world_time
 from backend.ports import CanonJournalPort, CanonRepositoryPort, TenancyStorePort
 from backend.services.mutation_service import CommitResult, MutationService
 
@@ -72,10 +74,8 @@ class CanonHistoryService:
         self._local_mode = local_mode
         self._mutation = mutation
 
-    async def _root_branch(self, workspace_id: str, project_id: str) -> Branch:
-        return await self._journal.ensure_root_branch(
-            workspace_id=workspace_id, project_id=project_id
-        )
+    async def _working_branch(self, workspace_id: str, project_id: str) -> Branch:
+        return await self._journal.working_branch(workspace_id=workspace_id, project_id=project_id)
 
     async def _authorize(self, scope: AccessScope, workspace_id: str, project_id: str) -> None:
         if self._local_mode or self._tenancy is None:
@@ -116,7 +116,7 @@ class CanonHistoryService:
         offset: int = 0,
     ) -> list[RevisionSummary]:
         await self._authorize(scope, workspace_id, project_id)
-        branch = await self._root_branch(workspace_id, project_id)
+        branch = await self._working_branch(workspace_id, project_id)
         # Newest first. Revisions on a branch are contiguous from 1 to the head, so
         # the page ``offset`` back from the head is a known window; reading from
         # revision 1 instead would return the oldest commits once a project has
@@ -151,7 +151,7 @@ class CanonHistoryService:
         envelope = await self._canon.get_envelope(commit_id)
         if envelope is None:
             raise NotFoundError("Revision not found.")
-        branch = await self._root_branch(workspace_id, project_id)
+        branch = await self._working_branch(workspace_id, project_id)
         commits = await self._canon.list_commits(
             workspace_id=workspace_id,
             project_id=project_id,
@@ -522,7 +522,7 @@ class CanonHistoryService:
         ``to_revision`` is reported as an intervening conflict rather than reverted.
         """
         await self._authorize(scope, workspace_id, project_id)
-        branch = await self._root_branch(workspace_id, project_id)
+        branch = await self._working_branch(workspace_id, project_id)
         head = await self._canon.get_head(
             workspace_id=workspace_id, project_id=project_id, branch_id=branch.id
         )
@@ -622,6 +622,15 @@ class CanonHistoryService:
                     scope, workspace_id, project_id, version.record_id, version.revision - 1
                 )
                 inverse, blocker = _inverse_amend(version, previous)
+                if blocker is not None:
+                    manual(version, blocker)
+                else:
+                    compensate(version, inverse)
+            elif version.operation_type == "amend_fact":
+                earlier_fact = await self.fact_at_revision(
+                    scope, workspace_id, project_id, version.record_id, version.revision - 1
+                )
+                inverse, blocker = _inverse_amend_fact(version, earlier_fact)
                 if blocker is not None:
                     manual(version, blocker)
                 else:
@@ -782,7 +791,7 @@ class CanonHistoryService:
         self, scope: AccessScope, workspace_id: str, project_id: str
     ) -> list[CanonTag]:
         await self._authorize(scope, workspace_id, project_id)
-        branch = await self._root_branch(workspace_id, project_id)
+        branch = await self._working_branch(workspace_id, project_id)
         return await self._canon.list_tags(
             workspace_id=workspace_id, project_id=project_id, branch_id=branch.id
         )
@@ -791,7 +800,7 @@ class CanonHistoryService:
         self, scope: AccessScope, workspace_id: str, project_id: str, name: str
     ) -> list[CanonTagHistoryEntry]:
         await self._authorize(scope, workspace_id, project_id)
-        branch = await self._root_branch(workspace_id, project_id)
+        branch = await self._working_branch(workspace_id, project_id)
         return await self._canon.list_tag_history(
             workspace_id=workspace_id, project_id=project_id, branch_id=branch.id, name=name
         )
@@ -808,7 +817,7 @@ class CanonHistoryService:
         await self._authorize_write(scope, workspace_id, project_id)
         if not name or len(name) > 100:
             raise ValidationError("Tag name must be 1-100 characters.")
-        branch = await self._root_branch(workspace_id, project_id)
+        branch = await self._working_branch(workspace_id, project_id)
         if revision is None:
             revision = await self._canon.get_head(
                 workspace_id=workspace_id, project_id=project_id, branch_id=branch.id
@@ -841,7 +850,7 @@ class CanonHistoryService:
         self, scope: AccessScope, workspace_id: str, project_id: str, name: str
     ) -> bool:
         await self._authorize_write(scope, workspace_id, project_id)
-        branch = await self._root_branch(workspace_id, project_id)
+        branch = await self._working_branch(workspace_id, project_id)
         return await self._canon.delete_tag(
             workspace_id=workspace_id, project_id=project_id, branch_id=branch.id, name=name
         )
@@ -868,6 +877,19 @@ def _inverse_update(version: RecordVersion, before: CanonEntity) -> tuple[dict, 
     return inverse, None
 
 
+def _stored_time(value: object) -> Any:
+    """A time as replayed from a change. An unknown time with no words is no time."""
+    when = parse_world_time(value)
+    if isinstance(when, Unknown) and not when.label:
+        return None
+    return when
+
+
+def _time_or_clear(value: Any) -> dict:
+    """The time to put back: an earlier time, or an unknown one that clears it."""
+    return (value or Unknown()).model_dump(mode="json")
+
+
 def _inverse_amend(version: RecordVersion, before: Event) -> tuple[dict, str | None]:
     change = version.change
     inverse: dict = {"op": "amend_event", "id": version.record_id}
@@ -877,8 +899,24 @@ def _inverse_amend(version: RecordVersion, before: Event) -> tuple[dict, str | N
         if before.world_position is None:
             return inverse, "the earlier state had no world position and it cannot be cleared"
         inverse["world_position"] = before.world_position
+    if change.get("when") is not None:
+        inverse["when"] = _time_or_clear(before.when)
     if len(inverse) == 2:
         return inverse, "the amendment changed nothing"
+    return inverse, None
+
+
+def _inverse_amend_fact(version: RecordVersion, before: Fact) -> tuple[dict, str | None]:
+    change = version.change
+    inverse: dict = {"op": "amend_fact", "id": version.record_id}
+    if change.get("starts") is not None:
+        inverse["starts"] = _time_or_clear(before.starts)
+    if change.get("ends") is not None:
+        inverse["ends"] = _time_or_clear(before.ends)
+    if change.get("visibility") is not None:
+        inverse["visibility"] = before.visibility.value
+    if len(inverse) == 2:
+        return inverse, "the change said nothing new"
     return inverse, None
 
 
@@ -980,9 +1018,21 @@ def _replay_fact(version: RecordVersion, current: Fact | None) -> Fact | None:
             created_revision=version.revision,
             valid_from=change.get("valid_from"),
             valid_until=change.get("valid_until"),
+            starts=_stored_time(change.get("starts")),
+            ends=_stored_time(change.get("ends")),
+            visibility=FactVisibility(change.get("visibility") or "ordinary"),
         )
     if current is None:
         return None
+    if op == "amend_fact":
+        fact_update: dict[str, object] = {}
+        if change.get("starts") is not None:
+            fact_update["starts"] = _stored_time(change["starts"])
+        if change.get("ends") is not None:
+            fact_update["ends"] = _stored_time(change["ends"])
+        if change.get("visibility") is not None:
+            fact_update["visibility"] = FactVisibility(change["visibility"])
+        return current.model_copy(update=fact_update)
     if op == "close_fact":
         return current.model_copy(
             update={"status": FactStatus.CLOSED, "closed_revision": version.revision}
@@ -1031,6 +1081,7 @@ def _replay_event(version: RecordVersion, current: Event | None) -> Event | None
             cause_ids=list(change.get("cause_ids", [])),
             outcome_ids=list(change.get("outcome_ids", [])),
             world_position=change.get("world_position"),
+            when=_stored_time(change.get("when")),
             provenance_id=f"prov_{version.commit_id}",
             created_revision=version.revision,
         )
@@ -1042,6 +1093,8 @@ def _replay_event(version: RecordVersion, current: Event | None) -> Event | None
             update["name"] = change["name"]
         if change.get("world_position") is not None:
             update["world_position"] = change["world_position"]
+        if change.get("when") is not None:
+            update["when"] = _stored_time(change["when"])
         return current.model_copy(update=update)
     if op == "retire_event":
         return current.model_copy(update={"retired_revision": version.revision})

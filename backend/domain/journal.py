@@ -50,6 +50,12 @@ class Branch(BaseModel):
     is_root: bool = True
     head_revision: int = 0
     created_at: datetime
+    # A what-if (ADR-020): the line it came from and the version it started at.
+    parent_branch_id: str | None = None
+    fork_revision: int | None = None
+    description: str | None = None
+    status: str = "active"
+    created_by: str | None = None
 
 
 class MutationSet(BaseModel):

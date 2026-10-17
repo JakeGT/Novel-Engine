@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
-from backend.domain.canon.assertions import Belief, Fact, FactStatus
+from backend.domain.canon.assertions import Belief, Fact, FactStatus, FactVisibility
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
 from backend.domain.canon.events import Event, EventParticipant
 from backend.domain.canon.propositions import EntityRefObject, Proposition
@@ -26,6 +26,7 @@ from backend.domain.commit import ApplyOutcome, CommitMarker
 from backend.domain.journal import RevisionConflict
 from backend.domain.operations import (
     AmendEventOp,
+    AmendFactOp,
     AssertBeliefOp,
     AssertFactOp,
     CanonOperation,
@@ -42,11 +43,21 @@ from backend.domain.operations import (
     UpdateEntityOp,
     UpdatePlanItemOp,
 )
+from backend.domain.worldtime import Unknown, parse_world_time
 from backend.graph.manager import GraphManager
 
 # A predicate becomes a relationship type only when it is a plain identifier, so
 # no project-supplied text is ever interpolated into Cypher unchecked.
 _PREDICATE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
+
+
+def _time(value: Any, *, clear_unknown: bool = False) -> str | None:
+    """A story time as the JSON string kept on a node; see ``canon_repository``."""
+    if value is None:
+        return None
+    if clear_unknown and isinstance(value, Unknown) and not value.label:
+        return None
+    return _dumps(value.model_dump(mode="json"))
 
 
 class CanonWriteError(RuntimeError):
@@ -187,7 +198,8 @@ class Neo4jCanonWriter:
                 SET f.branch_id = $branch_id, f.subject_id = $subject_id, f.predicate = $predicate,
                     f.proposition = $proposition, f.status = 'asserted', f.confidence = $confidence,
                     f.provenance_id = $provenance_id, f.valid_from = $valid_from,
-                    f.valid_until = $valid_until, f.commit_id = $commit_id, f.revision = $revision
+                    f.valid_until = $valid_until, f.starts = $starts, f.ends = $ends,
+                    f.visibility = $visibility, f.commit_id = $commit_id, f.revision = $revision
                 WITH f
                 OPTIONAL MATCH (s:CanonEntity {workspace_id: $workspace_id, project_id: $project_id, id: $subject_id})
                 FOREACH (_ IN CASE WHEN s IS NULL THEN [] ELSE [1] END | MERGE (s)-[:ASSERTS]->(f))
@@ -199,6 +211,9 @@ class Neo4jCanonWriter:
                 confidence=operation.confidence,
                 valid_from=operation.valid_from.isoformat() if operation.valid_from else None,
                 valid_until=operation.valid_until.isoformat() if operation.valid_until else None,
+                starts=_time(operation.starts, clear_unknown=True),
+                ends=_time(operation.ends, clear_unknown=True),
+                visibility=(operation.visibility or FactVisibility.ORDINARY).value,
                 **ctx,
             )
             obj = operation.proposition.object
@@ -221,6 +236,28 @@ class Neo4jCanonWriter:
                     predicate=predicate,
                     **ctx,
                 )
+        elif isinstance(operation, AmendFactOp):
+            self._require(
+                tx.run(
+                    """
+                    MATCH (f:CanonFact {workspace_id: $workspace_id, project_id: $project_id, id: $id})
+                    SET f.commit_id = $commit_id, f.revision = $revision
+                    FOREACH (_ IN CASE WHEN $set_starts THEN [1] ELSE [] END | SET f.starts = $starts)
+                    FOREACH (_ IN CASE WHEN $set_ends THEN [1] ELSE [] END | SET f.ends = $ends)
+                    FOREACH (_ IN CASE WHEN $visibility IS NULL THEN [] ELSE [1] END |
+                        SET f.visibility = $visibility)
+                    RETURN f.id AS id
+                    """,
+                    id=operation.id,
+                    set_starts=operation.starts is not None,
+                    starts=_time(operation.starts, clear_unknown=True),
+                    set_ends=operation.ends is not None,
+                    ends=_time(operation.ends, clear_unknown=True),
+                    visibility=operation.visibility.value if operation.visibility else None,
+                    **ctx,
+                ),
+                operation.id,
+            )
         elif isinstance(operation, CloseFactOp):
             self._require(
                 tx.run(
@@ -292,7 +329,8 @@ class Neo4jCanonWriter:
                 SET e.branch_id = $branch_id, e.event_kind = $kind, e.name = $name,
                     e.participants = $participants,
                     e.locations = $locations, e.causes = $causes, e.outcomes = $outcomes,
-                    e.world_position = $world_position, e.provenance_id = $provenance_id,
+                    e.world_position = $world_position, e.world_time = $world_time,
+                    e.provenance_id = $provenance_id,
                     e.commit_id = $commit_id, e.revision = $revision
                 WITH e
                 UNWIND $participant_edges AS pe
@@ -309,6 +347,7 @@ class Neo4jCanonWriter:
                 causes=_dumps(operation.cause_ids),
                 outcomes=_dumps(operation.outcome_ids),
                 world_position=operation.world_position,
+                world_time=_time(operation.when, clear_unknown=True),
                 **ctx,
             )
         elif isinstance(operation, AmendEventOp):
@@ -320,11 +359,15 @@ class Neo4jCanonWriter:
                     FOREACH (_ IN CASE WHEN $name IS NULL THEN [] ELSE [1] END | SET e.name = $name)
                     FOREACH (_ IN CASE WHEN $world_position IS NULL THEN [] ELSE [1] END |
                         SET e.world_position = $world_position)
+                    FOREACH (_ IN CASE WHEN $set_time THEN [1] ELSE [] END |
+                        SET e.world_time = $world_time)
                     RETURN e.id AS id
                     """,
                     id=operation.id,
                     name=operation.name,
                     world_position=operation.world_position,
+                    set_time=operation.when is not None,
+                    world_time=_time(operation.when, clear_unknown=True),
                     **ctx,
                 ),
                 operation.id,
@@ -575,7 +618,8 @@ class Neo4jCanonWriter:
         "f.branch_id AS branch_id, f.proposition AS proposition, f.status AS status, "
         "f.confidence AS confidence, f.provenance_id AS provenance_id, "
         "f.created_revision AS created_revision, f.closed_revision AS closed_revision, "
-        "f.valid_from AS valid_from, f.valid_until AS valid_until"
+        "f.valid_from AS valid_from, f.valid_until AS valid_until, "
+        "f.starts AS starts, f.ends AS ends, f.visibility AS visibility"
     )
 
     @staticmethod
@@ -597,6 +641,9 @@ class Neo4jCanonWriter:
             valid_until=(
                 datetime.fromisoformat(record["valid_until"]) if record["valid_until"] else None
             ),
+            starts=parse_world_time(json.loads(record["starts"]) if record["starts"] else None),
+            ends=parse_world_time(json.loads(record["ends"]) if record["ends"] else None),
+            visibility=FactVisibility(record["visibility"] or "ordinary"),
         )
 
     async def get_fact(self, *, workspace_id: str, project_id: str, fact_id: str) -> Fact | None:
@@ -718,6 +765,7 @@ class Neo4jCanonWriter:
         "e.branch_id AS branch_id, e.event_kind AS kind, e.name AS name, "
         "e.participants AS participants, e.locations AS locations, e.causes AS causes, "
         "e.outcomes AS outcomes, e.world_position AS world_position, "
+        "e.world_time AS world_time, "
         "e.provenance_id AS provenance_id, e.created_revision AS created_revision, "
         "e.retired_revision AS retired_revision"
     )
@@ -739,6 +787,7 @@ class Neo4jCanonWriter:
             cause_ids=_load(record["causes"], []),
             outcome_ids=_load(record["outcomes"], []),
             world_position=record["world_position"] or None,
+            when=parse_world_time(_load(record["world_time"], None)),
             provenance_id=record["provenance_id"] or "",
             created_revision=record["created_revision"] or 0,
             retired_revision=record["retired_revision"],

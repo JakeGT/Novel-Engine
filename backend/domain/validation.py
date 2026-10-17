@@ -18,7 +18,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
-from backend.domain.canon.assertions import Belief, Fact, FactStatus
+from backend.domain.canon.assertions import Belief, Fact, FactStatus, FactVisibility
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
 from backend.domain.canon.events import Event
 from backend.domain.canon.marks import details
@@ -54,6 +54,7 @@ from backend.domain.canon.registry import (
 from backend.domain.media import AssetLink, LinkRole, MediaAsset, MediaAssetVersion, is_link_role
 from backend.domain.operations import (
     AmendEventOp,
+    AmendFactOp,
     AssertBeliefOp,
     AssertFactOp,
     CanonOperation,
@@ -69,6 +70,17 @@ from backend.domain.operations import (
     RetirePlanItemOp,
     UpdateEntityOp,
     UpdatePlanItemOp,
+)
+from backend.domain.worldtime import (
+    Direction,
+    Relative,
+    Resolved,
+    Span,
+    TimeProblem,
+    is_unknown,
+    resolve,
+    span_of,
+    spans_overlap,
 )
 
 
@@ -169,7 +181,9 @@ class CanonTxReader(Protocol):
 
     async def get_entity(self, entity_id: str) -> CanonEntity | None: ...
 
-    async def count_open_facts(self, subject_id: str, predicate: str) -> int: ...
+    async def open_facts(self, subject_id: str, predicate: str) -> list[Fact]:
+        """The facts currently asserted for one subject and kind of fact."""
+        ...
 
     async def get_fact(self, fact_id: str) -> Fact | None: ...
 
@@ -270,7 +284,9 @@ class AuthoritativeValidator:
         beliefs: dict[str, Belief | None] = {}
         events: dict[str, Event | None] = {}
         links: dict[str, AssetLink | None] = {}
-        open_cardinality: dict[tuple[str, str], int] = {}
+        # Open facts per (subject, kind of fact), loaded once and kept current through
+        # the batch, so a one-at-a-time kind can be checked span against span.
+        open_by_key: dict[tuple[str, str], dict[str, Fact]] = {}
         created_record_ids: set[str] = set()
 
         async def entity(entity_id: str) -> CanonEntity | None:
@@ -310,6 +326,69 @@ class AuthoritativeValidator:
 
         def advisory(index: int, code: str, message: str) -> None:
             findings.append(ValidationFinding(ValidationSeverity.ADVISORY, code, message, index))
+
+        async def resolve_when(when: Any, seen: frozenset[str] = frozenset()) -> Resolved:
+            """Resolve a story time, following relative times through events in this batch."""
+            if not isinstance(when, Relative):
+                return resolve(when, lambda _id: False)
+            anchor_id = when.anchor_event_id
+            if anchor_id in seen:
+                return Resolved(None, TimeProblem.CYCLE)
+            anchor = await event(anchor_id)
+            if anchor is None:
+                return Resolved(None, TimeProblem.MISSING_ANCHOR)
+            inner = await resolve_when(anchor.when, seen | {anchor_id})
+            if inner.interval is None:
+                return inner
+            sign = -1 if when.direction is Direction.BEFORE else 1
+            return Resolved(inner.interval.shift(sign * when.offset, when.give_or_take))
+
+        async def check_when(index: int, event_id: str, when: Any) -> None:
+            resolved = await resolve_when(when, frozenset({event_id}))
+            if resolved.problem is TimeProblem.CYCLE:
+                blocking(
+                    index,
+                    "time_cycle",
+                    "this time is set relative to events that are set relative to it",
+                )
+            elif resolved.problem is TimeProblem.MISSING_ANCHOR:
+                blocking(index, "unknown_anchor", "this time is set relative to an unknown event")
+
+        async def span_for(record: Fact) -> Span:
+            return span_of(await resolve_when(record.starts), await resolve_when(record.ends))
+
+        async def check_span(index: int, record: Fact) -> None:
+            for when in (record.starts, record.ends):
+                if isinstance(when, Relative):
+                    await check_when(index, record.id, when)
+            span = await span_for(record)
+            if span.start is not None and span.end is not None and span.start.lo >= span.end.hi:
+                blocking(index, "invalid_span", "a fact must start before it stops being true")
+
+        async def open_facts(key: tuple[str, str]) -> dict[str, Fact]:
+            if key not in open_by_key:
+                open_by_key[key] = {item.id: item for item in await context.reader.open_facts(*key)}
+            return open_by_key[key]
+
+        async def forget_open(record: Fact) -> None:
+            key = (record.proposition.subject_id, record.proposition.predicate)
+            (await open_facts(key)).pop(record.id, None)
+
+        async def check_one_at_a_time(index: int, record: Fact) -> None:
+            """A one-at-a-time kind of fact may have one value at any moment of story time."""
+            key = (record.proposition.subject_id, record.proposition.predicate)
+            current = await open_facts(key)
+            span = await span_for(record)
+            for other in current.values():
+                if other.id != record.id and spans_overlap(span, await span_for(other)):
+                    blocking(
+                        index,
+                        "cardinality_conflict",
+                        f"predicate {record.proposition.predicate!r} already asserted for "
+                        f"{record.proposition.subject_id!r}",
+                    )
+                    break
+            current[record.id] = record
 
         # Handles claimed or released earlier in this batch (None = released).
         batch_slugs: dict[str, str | None] = {}
@@ -663,29 +742,19 @@ class AuthoritativeValidator:
                 spec = context.predicate_specs.get(
                     operation.proposition.predicate
                 ) or CORE_PREDICATES.get(operation.proposition.predicate)
-                if (
-                    spec is not None
-                    and not spec.temporal_allowed
-                    and (operation.valid_from is not None or operation.valid_until is not None)
-                ):
+                timed = (
+                    operation.valid_from is not None
+                    or operation.valid_until is not None
+                    or not is_unknown(operation.starts)
+                    or not is_unknown(operation.ends)
+                )
+                if spec is not None and not spec.temporal_allowed and timed:
                     blocking(
                         index,
                         "invalid_temporal_fact",
                         f"predicate {spec.predicate!r} does not allow a world-time interval",
                     )
-                key = (operation.proposition.subject_id, operation.proposition.predicate)
-                if spec is not None and spec.cardinality is Cardinality.ONE:
-                    if key not in open_cardinality:
-                        open_cardinality[key] = await context.reader.count_open_facts(*key)
-                    if open_cardinality[key] > 0:
-                        blocking(
-                            index,
-                            "cardinality_conflict",
-                            f"predicate {operation.proposition.predicate!r} already asserted for "
-                            f"{operation.proposition.subject_id!r}",
-                        )
-                    open_cardinality[key] += 1
-                facts[operation.id] = Fact(
+                drafted_fact = Fact(
                     id=operation.id,
                     workspace_id=context.workspace_id,
                     project_id=context.project_id,
@@ -696,7 +765,14 @@ class AuthoritativeValidator:
                     created_revision=context.head_revision + 1,
                     valid_from=operation.valid_from,
                     valid_until=operation.valid_until,
+                    starts=operation.starts,
+                    ends=operation.ends,
+                    visibility=operation.visibility or FactVisibility.ORDINARY,
                 )
+                await check_span(index, drafted_fact)
+                if spec is not None and spec.cardinality is Cardinality.ONE:
+                    await check_one_at_a_time(index, drafted_fact)
+                facts[operation.id] = drafted_fact
             elif isinstance(operation, CloseFactOp):
                 fact_current = await fact(operation.id)
                 if fact_current is None:
@@ -707,23 +783,50 @@ class AuthoritativeValidator:
                 ):
                     blocking(index, "closed_fact", f"fact {operation.id!r} is already closed")
                 else:
-                    spec = context.predicate_specs.get(
-                        fact_current.proposition.predicate
-                    ) or CORE_PREDICATES.get(fact_current.proposition.predicate)
-                    key = (
-                        fact_current.proposition.subject_id,
-                        fact_current.proposition.predicate,
-                    )
-                    if spec is not None and spec.cardinality is Cardinality.ONE:
-                        if key not in open_cardinality:
-                            open_cardinality[key] = await context.reader.count_open_facts(*key)
-                        open_cardinality[key] = max(0, open_cardinality[key] - 1)
+                    await forget_open(fact_current)
                     facts[operation.id] = fact_current.model_copy(
                         update={
                             "status": FactStatus.CLOSED,
                             "closed_revision": context.head_revision + 1,
                         }
                     )
+            elif isinstance(operation, AmendFactOp):
+                fact_current = await fact(operation.id)
+                if fact_current is None:
+                    blocking(index, "unknown_fact", f"fact {operation.id!r} does not exist")
+                elif (
+                    fact_current.status is FactStatus.CLOSED
+                    or fact_current.closed_revision is not None
+                ):
+                    blocking(index, "closed_fact", f"fact {operation.id!r} is no longer true")
+                else:
+                    amended = fact_current.model_copy(
+                        update={
+                            "starts": fact_current.starts
+                            if operation.starts is None
+                            else operation.starts,
+                            "ends": fact_current.ends if operation.ends is None else operation.ends,
+                            "visibility": operation.visibility or fact_current.visibility,
+                        }
+                    )
+                    spec = context.predicate_specs.get(
+                        amended.proposition.predicate
+                    ) or CORE_PREDICATES.get(amended.proposition.predicate)
+                    if (
+                        spec is not None
+                        and not spec.temporal_allowed
+                        and (not is_unknown(amended.starts) or not is_unknown(amended.ends))
+                    ):
+                        blocking(
+                            index,
+                            "invalid_temporal_fact",
+                            f"predicate {spec.predicate!r} does not allow a world-time interval",
+                        )
+                    await check_span(index, amended)
+                    if spec is not None and spec.cardinality is Cardinality.ONE:
+                        await forget_open(fact_current)
+                        await check_one_at_a_time(index, amended)
+                    facts[operation.id] = amended
             elif isinstance(operation, AssertBeliefOp):
                 if operation.id in created_record_ids or await belief(operation.id) is not None:
                     blocking(index, "duplicate_id", f"record id {operation.id!r} already exists")
@@ -794,9 +897,11 @@ class AuthoritativeValidator:
                     cause_ids=operation.cause_ids,
                     outcome_ids=operation.outcome_ids,
                     world_position=operation.world_position,
+                    when=operation.when,
                     provenance_id="pending",
                     created_revision=context.head_revision + 1,
                 )
+                await check_when(index, operation.id, operation.when)
             elif isinstance(operation, AmendEventOp):
                 event_current = await event(operation.id)
                 if event_current is None:
@@ -812,8 +917,13 @@ class AuthoritativeValidator:
                             "world_position": event_current.world_position
                             if operation.world_position is None
                             else operation.world_position,
+                            "when": event_current.when
+                            if operation.when is None
+                            else operation.when,
                         }
                     )
+                    if operation.when is not None:
+                        await check_when(index, operation.id, operation.when)
             elif isinstance(operation, RetireEventOp):
                 event_current = await event(operation.id)
                 if event_current is None:

@@ -14,11 +14,23 @@ from enum import StrEnum
 from pydantic import BaseModel
 
 from backend.domain.canon.propositions import Proposition
+from backend.domain.worldtime import WorldTime
 
 
 class FactStatus(StrEnum):
     ASSERTED = "asserted"
     CLOSED = "closed"
+
+
+class FactVisibility(StrEnum):
+    """Who in the story may know a fact (ADR-020). Knowledge is deny-by-default."""
+
+    # Known to those who hold it; nothing more is said.
+    ORDINARY = "ordinary"
+    # Everyone in the story knows it.
+    COMMON = "common"
+    # Known only to those who hold it, and never assumed.
+    SECRET = "secret"
 
 
 class Fact(BaseModel):
@@ -36,9 +48,12 @@ class Fact(BaseModel):
     provenance_id: str
     created_revision: int
     closed_revision: int | None = None
-    # Reserved for Phase 3 world-time semantics; stored only when supplied.
+    # Reserved in Phase 2 and never used; story time is ``starts``/``ends``.
     valid_from: datetime | None = None
     valid_until: datetime | None = None
+    starts: WorldTime | None = None
+    ends: WorldTime | None = None
+    visibility: FactVisibility = FactVisibility.ORDINARY
 
 
 class Belief(BaseModel):
