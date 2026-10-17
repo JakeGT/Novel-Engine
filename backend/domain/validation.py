@@ -235,6 +235,23 @@ class ValidationContext:
     predicate_specs: dict[str, PredicateSpec] = field(default_factory=dict)
 
 
+def _only_fills(current: PlanItem, change: UpdatePlanItemOp) -> bool:
+    """Whether ``change`` only fills in what is empty and adds to what is there."""
+    if change.title is not None or change.details is not None:
+        return False
+    if change.summary is not None and current.summary.strip():
+        return False
+    if change.refs is not None:
+        proposed = {(ref.entity_id, ref.role) for ref in change.refs}
+        if not {(ref.entity_id, ref.role) for ref in current.refs} <= proposed:
+            return False
+        for role in ("point_of_view", "place"):
+            held = {ref.entity_id for ref in current.refs if ref.role == role}
+            if held and {e for e, r in proposed if r == role} != held:
+                return False
+    return True
+
+
 class AuthoritativeValidator:
     """Pure, deterministic canon validation over an ordered operation set.
 
@@ -957,6 +974,13 @@ class AuthoritativeValidator:
                     )
                 elif not plan_current.is_active:
                     blocking(index, "retired_plan_item", f"plan item {operation.id!r} is removed")
+                elif operation.only_fills and not _only_fills(plan_current, operation):
+                    blocking(
+                        index,
+                        "plan_changed_since",
+                        "The plan for this scene has changed since this was suggested, and "
+                        "approving it would undo that. Ask for a new suggestion instead.",
+                    )
                 else:
                     changed = apply_plan_update(plan_current, operation)
                     await validate_plan_item(index, changed)

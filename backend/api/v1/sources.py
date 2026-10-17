@@ -114,6 +114,9 @@ class PassageModel(BaseModel):
     before: str
     quote: str
     after: str
+    # The scene whose prose this is, in the line of the story being worked in, so the
+    # review can open the studio at these words; None for an ordinary text.
+    scene_id: str | None = None
 
 
 class NameDecisionRequest(BaseModel):
@@ -263,12 +266,14 @@ async def read_passage(
     location: str | None = Query(default=None, max_length=120),
     scope: AccessScope = Depends(get_project_scope),
     service: SourceService = Depends(get_source_service),
+    container: Container = Depends(get_container),
 ) -> PassageModel:
     """The words a kept change points back to."""
     found = await service.evidence(
         scope, scope.workspace_id or "", project_id, version_id, location
     )
     passage = found.passage
+    scenes = await container.studio_service.scene_texts(scope.workspace_id or "", project_id)
     return PassageModel(
         source_id=found.source_id,
         title=found.title,
@@ -276,6 +281,7 @@ async def read_passage(
         before=passage.before if passage else "",
         quote=passage.quote if passage else "",
         after=passage.after if passage else "",
+        scene_id=scenes.get(found.source_id),
     )
 
 

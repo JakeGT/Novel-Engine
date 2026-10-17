@@ -1,6 +1,8 @@
 // Helpers for the scene studio (ADR-022): where a check points in the text, the
 // author's unsaved words kept in this browser, and the words the studio uses.
-import type { AssistantNote, DraftCheck, Scope, StudioJob } from '../api/client'
+import { useQueries } from '@tanstack/react-query'
+import { api, type AssistantNote, type DraftCheck, type PlanItem, type Scope, type StudioJob } from '../api/client'
+import { scopedKey, useProject } from '../project'
 
 export interface Span {
   start: number
@@ -95,6 +97,107 @@ export function isFinished(job: StudioJob | undefined | null): boolean {
 
 export function isDraftJob(job: StudioJob): boolean {
   return job.kind === 'scene_draft'
+}
+
+/** Reading the scene into suggested changes to the story (Phase 6). */
+export const READ_JOB = 'scene_read'
+
+export function isReadJob(job: StudioJob): boolean {
+  return job.kind === READ_JOB
+}
+
+/** Filling in the scene's plan card from its prose (Phase 6). */
+export const PLAN_JOB = 'scene_plan'
+
+export function isPlanJob(job: StudioJob): boolean {
+  return job.kind === PLAN_JOB
+}
+
+/** What each kind of work is, while it runs. */
+export const JOB_DOING: Record<string, string> = {
+  scene_draft: 'The assistant is drafting this scene',
+  scene_review: 'The assistant is reading your text',
+  [READ_JOB]: 'The assistant is reading the scene into your story',
+  [PLAN_JOB]: 'The assistant is filling in the plan card from the scene',
+}
+
+/**
+ * What the scene's plan card is missing that the assistant can fill in from the prose,
+ * in the author's words: a summary, a viewpoint, a place.
+ */
+export function missingFromCard(scene: Pick<PlanItem, 'summary' | 'refs'>): string[] {
+  const missing: string[] = []
+  if (!scene.summary.trim()) missing.push('summary')
+  if (!scene.refs.some((ref) => ref.role === 'point_of_view')) missing.push('viewpoint')
+  if (!scene.refs.some((ref) => ref.role === 'place')) missing.push('place')
+  return missing
+}
+
+/** "summary", "summary or place", "summary, viewpoint or place". */
+export function eitherOf(words: readonly string[]): string {
+  if (words.length <= 1) return words.join('')
+  return `${words.slice(0, -1).join(', ')} or ${words[words.length - 1]}`
+}
+
+/** The set of plan changes a finished plan-card job suggested, if it suggested any. */
+export function planCardProposal(job: StudioJob): string | null {
+  const found = job.result.mutation_id
+  return typeof found === 'string' && found ? found : null
+}
+
+/**
+ * The studio's address for a scene, opened at a passage of one version of its text: the
+ * studio finds those words in the text as it is now and selects them.
+ */
+export function scenePath(
+  projectId: string,
+  sceneId: string,
+  passage?: { versionId: string; start: number; end: number } | null,
+): string {
+  const base = `/projects/${projectId}/plan/${encodeURIComponent(sceneId)}/write`
+  if (!passage) return base
+  const query = new URLSearchParams({ at: `${passage.start}-${passage.end}`, version: passage.versionId })
+  return `${base}?${query.toString()}`
+}
+
+/** The passage a studio address asks for, as "?at=120-180". */
+export function parseAt(value: string | null): Span | null {
+  const match = /^(\d+)-(\d+)$/.exec(value ?? '')
+  if (!match) return null
+  const start = Number(match[1])
+  const end = Number(match[2])
+  return end > start ? { start, end } : null
+}
+
+/**
+ * Where to look at what a reading suggested: the one set of changes itself, or the
+ * review queue when there are several.
+ */
+export function reviewPath(projectId: string, proposals: readonly string[]): string {
+  const base = `/projects/${projectId}/review`
+  return proposals.length === 1 ? `${base}/${encodeURIComponent(proposals[0])}` : base
+}
+
+/**
+ * How many changes a reading suggested, counted from the sets of changes it made (one
+ * per part of the scene read). Null until every set has been looked up.
+ */
+export function useSuggestedChanges(proposals: readonly string[]): number | null {
+  const { scope } = useProject()
+  const found = useQueries({
+    queries: proposals.map((mutationId) => ({
+      queryKey: scopedKey(scope, 'mutation', mutationId),
+      queryFn: () => api.getMutation(scope, mutationId),
+    })),
+  })
+  if (found.some((query) => !query.data)) return null
+  return found.reduce((sum, query) => sum + (query.data?.operations.length ?? 0), 0)
+}
+
+/** The ids of the suggested changes a finished reading made, from its result. */
+export function readingProposals(job: StudioJob): string[] {
+  const found = job.result.proposals
+  return Array.isArray(found) ? found.filter((item): item is string => typeof item === 'string') : []
 }
 
 /** A fresh key for one request to draft, so sending it twice starts the work once. */

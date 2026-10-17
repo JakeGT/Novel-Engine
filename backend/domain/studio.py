@@ -12,6 +12,7 @@ MAX_DIRECTION = 2000
 MAX_VOICE = 4000
 DRAFT_JOB = "scene_draft"
 REVIEW_JOB = "scene_review"
+READ_JOB = "scene_read"
 
 
 @dataclass(frozen=True)
@@ -50,7 +51,33 @@ class AssistantFinding:
     created_at: datetime | None = None
 
 
+@dataclass(frozen=True)
+class SceneReading:
+    """One reading of a scene's text into proposed changes (Phase 6)."""
+
+    workspace_id: str
+    project_id: str
+    branch_id: str
+    id: str
+    plan_id: str
+    source_id: str
+    version_id: str
+    job_id: str | None
+    passages: int
+    proposals: tuple[str, ...]
+    discarded: int
+    created_by: str | None
+    created_at: datetime
+    # "partial" until every passage is read; a stopped reading stays partial.
+    status: str = "complete"
+    # The [start, end] spans of the version read so far.
+    covered: tuple[tuple[int, int], ...] = ()
+    base_reading_id: str | None = None
+
+
 __all__ = [
+    "READ_JOB",
+    "SceneReading",
     "DRAFT_JOB",
     "MAX_DIRECTION",
     "MAX_VARIANTS",

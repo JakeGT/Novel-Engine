@@ -166,12 +166,12 @@ test('author, review, archive, and export a project end to end', async ({ page }
   await expect(page.getByText('1 of 2 changes will be added')).toBeVisible()
   await page.getByRole('button', { name: 'Check for problems' }).click()
   await expect(page.getByText('No problems found.')).toBeVisible()
-  await page.getByRole('button', { name: 'Approve and add to canon' }).click()
+  await page.getByRole('button', { name: 'Approve and add to your story' }).click()
   const added = page.getByRole('dialog', { name: 'Added to your story' })
   await expect(added).toContainText('saved as version 6')
   await expectAccessible(page)
   await added.getByRole('button', { name: 'Stay on this page' }).click()
-  await expect(page.getByText('Added to canon as version 6.')).toBeVisible()
+  await expect(page.getByText('Added to your story as version 6.')).toBeVisible()
 
   // --- only the accepted change became canon ----------------------------------------
   await page.getByRole('navigation', { name: 'Project' }).getByRole('link', { name: /Story bible/ }).click()

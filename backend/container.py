@@ -82,6 +82,8 @@ class Container:
     job_runner: Any = None
     studio_store: Any = None
     studio_service: Any = None
+    scene_reading: Any = None
+    scene_plan_card: Any = None
     media_store: Any = None
     archive_service: Any = None
     media_service: Any = None
@@ -469,6 +471,37 @@ def build_container(settings: Settings | None = None) -> Container:
         model=resolved.AI_MODEL,
         clocks=container.story_clocks,
     )
+    from backend.services.scene_reading import SceneReadingService
+
+    container.scene_reading = SceneReadingService(
+        studio=container.studio_service,
+        store=container.studio_store,
+        sources=container.source_service,
+        workflow=container.canon_character_workflow,
+        canon=container.canon_repository,
+        journal=container.journal,
+        runner=container.job_runner,
+        settings=resolved,
+        credentials=container.credential_service,
+        usage=container.usage_service,
+        jobs=container.jobs,
+    )
+    container.scene_reading.register_jobs()
+    from backend.services.scene_plan_card import ScenePlanCardService
+
+    container.scene_plan_card = ScenePlanCardService(
+        studio=container.studio_service,
+        sources=container.source_service,
+        mutation=container.mutation_service,
+        canon=container.canon_repository,
+        journal=container.journal,
+        runner=container.job_runner,
+        ai=container.ai,
+        settings=resolved,
+        credentials=container.credential_service,
+        usage=container.usage_service,
+    )
+    container.scene_plan_card.register_jobs()
     from backend.services.assist_session_service import AssistSessionService
 
     container.assist_session_service = AssistSessionService(

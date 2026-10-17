@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
+import { scenePath } from '../lib/studio'
 import { isTextEvidence, parseLocation } from '../lib/texts'
 import { scopedKey, useProject } from '../project'
 import { Badge } from './ui'
@@ -45,7 +46,20 @@ function Quoted({ versionId, location }: { versionId: string; location: string |
       {title}
     </Link>
   )
-  if (!found.quote) return <p className="from-text muted small">From {link}.</p>
+  // Words from a scene's text open in its studio, at those words.
+  const inScene = found.scene_id ? (
+    <Link
+      to={scenePath(scope.projectId, found.scene_id, place ? { versionId, start: place.start, end: place.end } : null)}
+    >
+      See it in the scene
+    </Link>
+  ) : null
+  if (!found.quote)
+    return (
+      <p className="from-text muted small">
+        From {link}.{inScene && <> {inScene}</>}
+      </p>
+    )
   return (
     <figure className="from-text">
       <blockquote>
@@ -55,6 +69,7 @@ function Quoted({ versionId, location }: { versionId: string; location: string |
       </blockquote>
       <figcaption className="small muted">
         From {link}
+        {inScene && <> · {inScene}</>}
         {place?.implied && (
           <>
             {' '}

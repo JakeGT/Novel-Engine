@@ -6294,6 +6294,17 @@
             "title": "Quote",
             "type": "string"
           },
+          "scene_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
           "source_id": {
             "title": "Source Id",
             "type": "string"
@@ -7442,6 +7453,72 @@
           "flashback"
         ],
         "title": "ReaderStepModel",
+        "type": "object"
+      },
+      "ReadingModel": {
+        "description": "The last time this scene was read into the story, and whether it has changed since.",
+        "properties": {
+          "changed_since": {
+            "title": "Changed Since",
+            "type": "boolean"
+          },
+          "discarded": {
+            "default": 0,
+            "title": "Discarded",
+            "type": "integer"
+          },
+          "passages": {
+            "default": 0,
+            "title": "Passages",
+            "type": "integer"
+          },
+          "proposals": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Proposals",
+            "type": "array"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read At"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          },
+          "version_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Number"
+          }
+        },
+        "required": [
+          "changed_since"
+        ],
+        "title": "ReadingModel",
         "type": "object"
       },
       "RebuildResult": {
@@ -9110,6 +9187,9 @@
             "title": "Jobs",
             "type": "array"
           },
+          "reading": {
+            "$ref": "#/components/schemas/ReadingModel"
+          },
           "scene_id": {
             "title": "Scene Id",
             "type": "string"
@@ -9161,7 +9241,8 @@
           "checks",
           "assistant",
           "drafts",
-          "jobs"
+          "jobs",
+          "reading"
         ],
         "title": "StudioModel",
         "type": "object"
@@ -9749,6 +9830,11 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "only_fills": {
+            "default": false,
+            "title": "Only Fills",
+            "type": "boolean"
           },
           "op": {
             "const": "update_plan_item",
@@ -18291,6 +18377,110 @@
           }
         },
         "summary": "Estimate",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/studio/plan-card": {
+      "post": {
+        "description": "Fill in the scene's plan card from its prose, as a plan change for review (Phase 6).",
+        "operationId": "start_plan_card_api_v1_projects__project_id__plan__plan_id__studio_plan_card_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Plan Card",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/studio/readings": {
+      "post": {
+        "description": "Read the scene into proposed changes to the story, for review (Phase 6).",
+        "operationId": "start_reading_api_v1_projects__project_id__plan__plan_id__studio_readings_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Reading",
         "tags": [
           "studio"
         ]

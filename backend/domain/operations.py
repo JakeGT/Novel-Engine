@@ -194,6 +194,10 @@ class UpdatePlanItemOp(_Operation):
     sets_up: list[str] | None = None
     pays_off: list[str] | None = None
     details: dict[str, str] | None = None
+    # Set by the assistant's suggestions (ADR-023): the change may only fill in what is empty
+    # and add to what is there. If the author has since written a summary, chosen a viewpoint
+    # or place, or removed someone, approving it is refused rather than undoing their work.
+    only_fills: bool = False
 
 
 class RetirePlanItemOp(_Operation):
@@ -390,6 +394,7 @@ _CANONICAL_OMIT_WHEN_UNSET = (
     "starts",
     "ends",
     "visibility",
+    "only_fills",
 )
 
 

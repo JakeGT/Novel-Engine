@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import {
   api,
   isApiError,
   type AssistantNote,
   type DraftCheck,
   type SceneDraft,
+  type SceneReading,
   type SceneVersion,
   type Studio,
   type StudioJob,
@@ -25,16 +26,24 @@ import {
 } from '../components/ui'
 import {
   DEFAULT_CHOICES,
+  eitherOf,
   excerpt,
   forgetUnsaved,
   isFinished,
+  isPlanJob,
+  isReadJob,
   keepUnsaved,
   locate,
+  missingFromCard,
   newRequestKey,
   NOTE_KINDS,
   orderChecks,
   orderNotes,
+  parseAt,
+  planCardProposal,
   readUnsaved,
+  reviewPath,
+  useSuggestedChanges,
   scrollAreaTo,
   type DraftChoices,
   type Span,
@@ -85,6 +94,22 @@ export function StudioPage() {
   const [contextOpen, setContextOpen] = useState(false)
   const [notice, setNotice] = useState<ReactNode>(null)
   const area = useRef<HTMLTextAreaElement>(null)
+
+  // Opened from a change under review ("See it in the scene"): the passage it came from,
+  // in the version it was read from, is found in the text as it is now and selected.
+  const [search] = useSearchParams()
+  const askedAt = parseAt(search.get('at'))
+  const askedVersion = search.get('version')
+  const needsOlder = Boolean(askedAt && askedVersion && data?.text_id && askedVersion !== data.version_id)
+  const older = useQuery({
+    queryKey: scopedKey(scope, 'text', data?.text_id, askedVersion),
+    queryFn: () => api.text(scope, data?.text_id as string, askedVersion as string),
+    enabled: needsOlder,
+    staleTime: Infinity,
+    retry: false,
+  })
+  const [citeClosed, setCiteClosed] = useState(false)
+  const citeSelected = useRef(false)
 
   // Closing the tab with unsaved words asks first; the words are also kept in this browser.
   useEffect(() => {
@@ -143,7 +168,11 @@ export function StudioPage() {
     queryFn: async () => {
       const found = await api.job(scope, jobId as string)
       // When it finishes, what it made (drafts, notes) is read back with the scene.
-      if (isFinished(found)) await client.invalidateQueries({ queryKey: studioKey })
+      if (isFinished(found)) {
+        await client.invalidateQueries({ queryKey: studioKey })
+        // A reading or a plan card adds to the review queue.
+        if (isReadJob(found) || isPlanJob(found)) void client.invalidateQueries({ queryKey: scopedKey(scope, 'mutations') })
+      }
       return found
     },
     enabled: Boolean(jobId),
@@ -174,6 +203,14 @@ export function StudioPage() {
   })
   const review = useMutation({
     mutationFn: (draftId: string | null) => api.startReview(scope, planId, draftId),
+    onSuccess: watch,
+  })
+  const readIn = useMutation({
+    mutationFn: () => api.startReading(scope, planId),
+    onSuccess: watch,
+  })
+  const planCard = useMutation({
+    mutationFn: () => api.startPlanCard(scope, planId),
     onSuccess: watch,
   })
   const stop = useMutation({
@@ -225,6 +262,21 @@ export function StudioPage() {
     box.scrollIntoView?.({ block: 'nearest' })
   }
 
+  // The words the passage was read from: undefined until they are here, null when that
+  // version cannot be opened. The passage is then found in the words as they are now.
+  const citeFrom =
+    !askedAt || !data ? undefined : needsOlder ? (older.isPending ? undefined : (older.data?.content ?? null)) : data.content
+  const cited =
+    !askedAt || citeFrom === undefined ? undefined : citeFrom === null ? null : locate(citeFrom, value, askedAt.start, askedAt.end)
+  const citeReady = cited !== undefined
+  // Selected once, when it is first found.
+  useEffect(() => {
+    if (citeSelected.current || !citeReady) return
+    citeSelected.current = true
+    if (cited) showInText(cited)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [citeReady])
+
   if (studio.isPending) return <Loading>Opening the scene…</Loading>
   if (!data) {
     return (
@@ -247,6 +299,12 @@ export function StudioPage() {
     )
   const outcomeJob = current && isFinished(current) && !dismissed.includes(current.id) ? current : null
   const nothingSaved = !data.version_id
+  // A scene written before it was planned: the assistant can fill in its plan card.
+  const missing = scene ? missingFromCard(scene) : []
+  // Not offered again while its last suggestion is on screen, waiting to be reviewed.
+  const planWaiting = Boolean(outcomeJob && isPlanJob(outcomeJob) && planCardProposal(outcomeJob))
+  const offerPlanCard = canWrite && !nothingSaved && missing.length > 0 && !planWaiting
+  const planBlocked = dirty ? 'Save first, so it reads what you have now.' : null
 
   // What the side column is about: the author's text, or the draft being read.
   const target = shown
@@ -266,6 +324,13 @@ export function StudioPage() {
       ? 'Save some words first, so there is something to read.'
       : dirty
         ? 'Save first, so it reads what you have now.'
+        : null
+  const readBlocked = nothingSaved
+    ? 'Save some words first, so there is something to read.'
+    : dirty
+      ? 'Save first, so it reads what you have now.'
+      : !data.reading.changed_since
+        ? 'Nothing has changed since it was last read.'
         : null
 
   return (
@@ -305,10 +370,48 @@ export function StudioPage() {
 
       <div className="section-gap">
         <ReadOnlyNotice canWrite={canWrite} />
+        {offerPlanCard && (
+          <div className="notice plain studio-plan-fill">
+            <p className="small">
+              <strong>No {eitherOf(missing)} planned for this scene yet.</strong> The assistant can
+              suggest {missing.length === 1 ? 'it' : 'them'}, and who is in the scene, from what you
+              have written. Nothing changes in your plan until you review it.
+            </p>
+            <div className="actions">
+              <Button
+                size="sm"
+                icon="spark"
+                disabled={working || planCard.isPending || planBlocked !== null}
+                aria-describedby={planBlocked ? 'plan-blocked' : undefined}
+                onClick={() => planCard.mutate()}
+              >
+                {planCard.isPending ? 'Starting…' : 'Fill in the plan card from the prose'}
+              </Button>
+              {planBlocked && (
+                <span id="plan-blocked" className="hint">
+                  {planBlocked}
+                </span>
+              )}
+            </div>
+            <AssistantStartProblem error={planCard.error} prefix="Could not start filling in the plan card" />
+          </div>
+        )}
         {notice && (
           <div className="notice ok" role="status">
             <p>{notice}</p>
             <Button size="sm" variant="ghost" onClick={() => setNotice(null)}>
+              Dismiss
+            </Button>
+          </div>
+        )}
+        {citeReady && !citeClosed && (
+          <div className="notice plain small" role="status">
+            <p>
+              {cited
+                ? 'The words the change came from are selected in your text.'
+                : 'The words the change came from are no longer in this scene: it has changed since they were read. This is the scene as it is now.'}
+            </p>
+            <Button size="sm" variant="ghost" onClick={() => setCiteClosed(true)}>
               Dismiss
             </Button>
           </div>
@@ -350,6 +453,8 @@ export function StudioPage() {
             onRetry={() => {
               setDismissed((list) => [...list, outcomeJob.id])
               if (outcomeJob.kind === 'scene_draft') setAsking(true)
+              else if (isReadJob(outcomeJob)) readIn.mutate()
+              else if (isPlanJob(outcomeJob)) planCard.mutate()
               else review.mutate(shown?.id ?? null)
             }}
             onDismiss={() => setDismissed((list) => [...list, outcomeJob.id])}
@@ -437,6 +542,7 @@ export function StudioPage() {
                   onChange={(event) => {
                     write(event.target.value)
                     save.reset()
+                    setCiteClosed(true)
                   }}
                   onKeyDown={(event) => {
                     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
@@ -512,6 +618,7 @@ export function StudioPage() {
                       size="sm"
                       icon="spark"
                       disabled={working || review.isPending || reviewBlocked !== null}
+                      aria-describedby={reviewBlocked ? 'review-blocked' : undefined}
                       onClick={() => review.mutate(shown?.id ?? null)}
                     >
                       {review.isPending
@@ -520,8 +627,36 @@ export function StudioPage() {
                           ? 'Check again with the assistant'
                           : 'Check with the assistant'}
                     </Button>
-                    {reviewBlocked && <span className="hint">{reviewBlocked}</span>}
-                    <AssistantStartProblem error={review.error} />
+                    {reviewBlocked && (
+                      <span id="review-blocked" className="hint">
+                        {reviewBlocked}
+                      </span>
+                    )}
+                    <AssistantStartProblem error={review.error} prefix="Could not start the check" />
+                  </div>
+                ) : null
+              }
+            />
+            <StoryReading
+              reading={data.reading}
+              action={
+                canWrite ? (
+                  <div className="stack tight">
+                    <Button
+                      size="sm"
+                      icon="spark"
+                      disabled={working || readIn.isPending || readBlocked !== null}
+                      aria-describedby={readBlocked ? 'read-blocked' : undefined}
+                      onClick={() => readIn.mutate()}
+                    >
+                      {readIn.isPending ? 'Starting…' : 'Update the story from this scene'}
+                    </Button>
+                    {readBlocked && (
+                      <span id="read-blocked" className="hint">
+                        {readBlocked}
+                      </span>
+                    )}
+                    <AssistantStartProblem error={readIn.error} prefix="Could not start reading the scene" />
                   </div>
                 ) : null
               }
@@ -570,9 +705,78 @@ export function StudioPage() {
   )
 }
 
-function AssistantStartProblem({ error }: { error: unknown }) {
+function AssistantStartProblem({ error, prefix }: { error: unknown; prefix: string }) {
   if (!error) return null
-  return <ErrorNotice error={error} prefix="Could not start the check" />
+  return <ErrorNotice error={error} prefix={prefix} />
+}
+
+/**
+ * Reading the scene into the story bible (Phase 6): when it was last read, whether it has
+ * changed since, and what came of it. What it finds waits in the review queue.
+ */
+function StoryReading({
+  reading,
+  action,
+}: {
+  reading: SceneReading
+  action: ReactNode
+}) {
+  const { scope } = useProject()
+  const count = useSuggestedChanges(reading.proposals)
+  const read = Boolean(reading.read_at)
+  const when = reading.read_at ? (
+    <time dateTime={reading.read_at} title={fullDate(reading.read_at)}>
+      {timeAgo(reading.read_at)}
+    </time>
+  ) : null
+  const proposals = reading.proposals.length
+  return (
+    <section className="stack tight" aria-labelledby="reading-heading">
+      <div>
+        <h2 id="reading-heading" className="studio-side-title">
+          Your story bible
+        </h2>
+        <p className="hint">
+          The assistant reads your saved text, finds the people, places and facts it states, quotes
+          the words for each, and suggests them for you to review. After the first time, it reads
+          only the paragraphs that changed.
+        </p>
+      </div>
+      {!read ? (
+        <p className="small">Not read into the story yet.</p>
+      ) : (
+        <div className="stack tight small">
+          <p>
+            {reading.changed_since ? (
+              <>
+                <strong>The scene has changed since it was last read</strong>
+                {reading.version_number ? <> at version {reading.version_number}</> : null}, {when}.
+              </>
+            ) : (
+              <>
+                Read into the story{reading.version_number ? <> at version {reading.version_number}</> : null}, {when}.
+              </>
+            )}
+          </p>
+          <p>
+            {proposals === 0 ? (
+              'Nothing new came of it.'
+            ) : (
+              <>
+                {count === null
+                  ? 'It suggested changes. '
+                  : `It suggested ${plural(count, 'change')}. `}
+                <Link to={reviewPath(scope.projectId, reading.proposals)}>
+                  {proposals === 1 ? 'See what it suggested' : 'See them in the review queue'}
+                </Link>
+              </>
+            )}
+          </p>
+        </div>
+      )}
+      {action}
+    </section>
+  )
 }
 
 type Point = (start?: number | null, end?: number | null) => Span | null | undefined

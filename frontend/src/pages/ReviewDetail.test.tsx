@@ -65,14 +65,14 @@ describe('ReviewDetail', () => {
     expect(await screen.findByText('1 of 2 changes will be added')).toBeInTheDocument()
     expect(api.find('POST', '/operations/1/decision')[0].body).toEqual({ decision: 'rejected', note: null })
 
-    await user.click(screen.getByRole('button', { name: 'Approve and add to canon' }))
+    await user.click(screen.getByRole('button', { name: 'Approve and add to your story' }))
     // The result is announced where the author is looking, with the next step in it.
     const added = await screen.findByRole('dialog', { name: 'Added to your story' })
     expect(added).toHaveTextContent('The change is now part of your story, saved as version 4.')
     expect(within(added).getByRole('link', { name: 'See what to fill in next' })).toHaveAttribute('href', '/projects/prj_1')
     await user.click(within(added).getByRole('button', { name: 'Stay on this page' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(screen.getByText('Added to canon as version 4.')).toBeInTheDocument()
+    expect(screen.getByText('Added to your story as version 4.')).toBeInTheDocument()
     // Approval is still its own recorded step, sent before the commit.
     const writes = api.calls
       .filter((call) => call.method === 'POST' && !call.path.endsWith('/validate'))
@@ -343,9 +343,9 @@ describe('ReviewDetail', () => {
     const user = userEvent.setup()
     renderInProject(<ReviewDetail />, at)
 
-    await user.click(await screen.findByRole('button', { name: 'Add to canon' }))
+    await user.click(await screen.findByRole('button', { name: 'Add to your story' }))
     expect(await screen.findByText(/Your story changed while you were reviewing/)).toBeInTheDocument()
-    expect(screen.queryByText(/Added to canon/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Added to your story/)).not.toBeInTheDocument()
   })
 
   it('blocks adding an out-of-date set of changes until it is updated', async () => {
@@ -358,7 +358,7 @@ describe('ReviewDetail', () => {
     renderInProject(<ReviewDetail />, at)
 
     expect(await screen.findByText(/Your story has moved on since this was written/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Approve and add to canon' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Approve and add to your story' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Update to version 6' }))
     await waitFor(() => expect(api.find('POST', '/retarget')).toHaveLength(1))
     expect(api.find('POST', '/retarget')[0].body).toEqual({ expected_revision: 6 })
@@ -559,6 +559,41 @@ describe('ReviewDetail', () => {
     expect(box).toHaveValue('')
   })
 
+  it('shows the words a change came from, and opens a scene’s studio at them', async () => {
+    mockApi({
+      ...entries,
+      'GET /mutations/mut_1': mutation({
+        operations: [
+          operation({
+            payload: {
+              op: 'create_entity',
+              id: 'tmp:a',
+              type: 'Location',
+              name: 'The quay',
+              evidence: [{ source_artefact_id: 'srv_3', location: 'chars:4-44' }],
+            },
+          }),
+        ],
+      }),
+      'GET /texts/passage': {
+        source_id: 'src_9',
+        title: 'Night on the water',
+        version_number: 3,
+        before: 'Now ',
+        quote: 'The lamps along the quay were already lit',
+        after: ' when she came down.',
+        scene_id: 'pln_7',
+      },
+    })
+    const { container } = renderInProject(<ReviewDetail />, at)
+    expect(await screen.findByText('The lamps along the quay were already lit')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'See it in the scene' })).toHaveAttribute(
+      'href',
+      '/projects/prj_1/plan/pln_7/write?at=4-44&version=srv_3',
+    )
+    await expectAccessible(container)
+  })
+
   it('reads a change to the story plan in words, as its own group', async () => {
     mockApi({
       ...entries,
@@ -629,7 +664,7 @@ describe('ReviewDetail', () => {
   it('shows finished and read-only states without any decision controls', async () => {
     mockApi({ ...entries, 'GET /mutations/mut_1': mutation({ status: 'committed', committed_revision: 4 }) })
     const first = renderInProject(<ReviewDetail />, at)
-    expect(await screen.findByText('Added to canon as version 4.')).toBeInTheDocument()
+    expect(await screen.findByText('Added to your story as version 4.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /canon/ })).not.toBeInTheDocument()
     first.unmount()
 

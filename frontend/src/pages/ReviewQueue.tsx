@@ -9,7 +9,7 @@ import { actorLabel, scopedKey, useProject } from '../project'
 
 const FILTERS: { value: string; label: string }[] = [
   { value: 'open', label: 'Waiting for you' },
-  { value: 'committed', label: 'In canon' },
+  { value: 'committed', label: 'In your story' },
   { value: 'rejected', label: 'Discarded' },
   { value: '', label: 'Everything' },
 ]

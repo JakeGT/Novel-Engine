@@ -187,7 +187,7 @@ export const CHANGE_STATES: Record<string, { label: string; tone: Tone }> = {
   approved: { label: 'Approved, not in canon yet', tone: 'info' },
   committing: { label: 'Needs attention', tone: 'danger' },
   recovery_required: { label: 'Needs attention', tone: 'danger' },
-  committed: { label: 'In canon', tone: 'ok' },
+  committed: { label: 'In your story', tone: 'ok' },
   rejected: { label: 'Discarded', tone: 'danger' },
 }
 

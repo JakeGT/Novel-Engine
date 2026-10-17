@@ -1,5 +1,17 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { browserOffset, excerpt, forgetUnsaved, keepUnsaved, locate, orderChecks, readUnsaved } from './studio'
+import {
+  browserOffset,
+  eitherOf,
+  excerpt,
+  forgetUnsaved,
+  keepUnsaved,
+  locate,
+  missingFromCard,
+  orderChecks,
+  parseAt,
+  readUnsaved,
+  scenePath,
+} from './studio'
 
 afterEach(() => window.localStorage.clear())
 
@@ -42,5 +54,23 @@ describe('studio helpers', () => {
     expect(readUnsaved(whatIf, 'pln_1')).toBeNull()
     forgetUnsaved(story, 'pln_1')
     expect(readUnsaved(story, 'pln_1')).toBeNull()
+  })
+
+  it('says what a scene’s plan card is missing, in words', () => {
+    expect(missingFromCard({ summary: '  ', refs: [] })).toEqual(['summary', 'viewpoint', 'place'])
+    expect(missingFromCard({ summary: 'She leaves.', refs: [{ entity_id: 'ent_a', role: 'place' }] })).toEqual(['viewpoint'])
+    expect(eitherOf(['summary'])).toBe('summary')
+    expect(eitherOf(['summary', 'place'])).toBe('summary or place')
+    expect(eitherOf(['summary', 'viewpoint', 'place'])).toBe('summary, viewpoint or place')
+  })
+
+  it('opens a scene at a passage of one version, and reads it back', () => {
+    expect(scenePath('prj_1', 'pln_s')).toBe('/projects/prj_1/plan/pln_s/write')
+    const path = scenePath('prj_1', 'pln_s', { versionId: 'srv_2', start: 12, end: 40 })
+    expect(path).toBe('/projects/prj_1/plan/pln_s/write?at=12-40&version=srv_2')
+    expect(parseAt(new URL(path, 'http://x').searchParams.get('at'))).toEqual({ start: 12, end: 40 })
+    expect(parseAt('40-12')).toBeNull()
+    expect(parseAt('twelve')).toBeNull()
+    expect(parseAt(null)).toBeNull()
   })
 })

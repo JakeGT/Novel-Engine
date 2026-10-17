@@ -49,7 +49,7 @@ import {
 import { actorLabel, scopedKey, useEntries, useInvalidateProject, useProject } from '../project'
 
 const OPEN = new Set(['draft', 'validating', 'needs_review', 'approved'])
-const HIDDEN_KEYS = new Set(['op', 'id', 'evidence', 'proposition', 'project_id'])
+const HIDDEN_KEYS = new Set(['op', 'id', 'evidence', 'proposition', 'project_id', 'only_fills'])
 
 type Issue = MutationValidation['issues'][number]
 
@@ -424,7 +424,7 @@ function ChangeCard({
   )
 }
 
-/** One set of suggested changes: read it as sentences, keep or skip each, then add it to canon. */
+/** One set of suggested changes: read it as sentences, keep or skip each, then add it to the story. */
 export function ReviewDetail() {
   const { scope, canWrite, userId, headRevision } = useProject()
   const { mutationId = '' } = useParams()
@@ -643,7 +643,7 @@ export function ReviewDetail() {
           <p className="notice ok" role="status">
             <span>
               <strong>
-                Added to {planOnly ? 'your plan' : 'canon'} as version {committed?.revision ?? change.committed_revision}.
+                Added to {planOnly ? 'your plan' : 'your story'} as version {committed?.revision ?? change.committed_revision}.
               </strong>{' '}
               These changes are now part of your {planOnly ? 'plan' : 'story'}.
             </span>
@@ -901,7 +901,7 @@ export function ReviewDetail() {
                 disabled={busy || !canCommit}
                 onClick={() => commit.mutate(needsApproval)}
               >
-                {commit.isPending ? 'Adding…' : `${needsApproval ? 'Approve and add' : 'Add'} to ${planOnly ? 'the plan' : 'canon'}`}
+                {commit.isPending ? 'Adding…' : `${needsApproval ? 'Approve and add' : 'Add'} to ${planOnly ? 'the plan' : 'your story'}`}
               </Button>
             </div>
           </section>

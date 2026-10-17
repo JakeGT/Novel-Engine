@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PlanItem, SceneDraft, Studio, StudioJob } from '../api/client'
-import { entity } from '../test/fixtures'
+import { entity, mutation, operation } from '../test/fixtures'
 import { expectAccessible, mockApi, problem, renderInProject, reply, VIEWER, type RecordedCall } from '../test/harness'
 import { StudioPage } from './StudioPage'
 
@@ -96,9 +96,15 @@ function studio(overrides: Partial<Studio> = {}): Studio {
     ],
     drafts: [],
     jobs: [],
+    reading: { changed_since: true, discarded: 0, passages: 0, proposals: [] },
     ...overrides,
   }
 }
+
+const readAt = new Date(Date.now() - 2 * 3600 * 1000).toISOString()
+const withOps = (id: string, count: number) =>
+  mutation({ id, operations: Array.from({ length: count }, (_, index) => operation({ ordinal: index })) })
+const storyBible = () => screen.getByRole('heading', { name: 'Your story bible' }).closest('section') as HTMLElement
 
 const base = {
   'GET /entities': {
@@ -359,11 +365,293 @@ describe('StudioPage', () => {
     expect(await within(dialog).findByText(/Saved. The next draft will follow these notes./)).toBeInTheDocument()
   })
 
+  describe('reading the scene into the story', () => {
+    it('says a scene was never read, explains what reading does, and offers to read it', async () => {
+      mockApi({ ...base, 'GET /plan/pln_s/studio': studio() })
+      const { container } = renderInProject(<StudioPage />, route)
+      await screen.findByRole('heading', { level: 1 })
+      const section = storyBible()
+      expect(section).toHaveTextContent('Not read into the story yet.')
+      expect(section).toHaveTextContent(
+        'The assistant reads your saved text, finds the people, places and facts it states, quotes the words for each, and suggests them for you to review. After the first time, it reads only the paragraphs that changed.',
+      )
+      expect(within(section).getByRole('button', { name: 'Update the story from this scene' })).toBeEnabled()
+      await expectAccessible(container)
+    })
+
+    it('says when it was read and what came of it, and needs no reading while nothing has changed', async () => {
+      mockApi({
+        ...base,
+        'GET /plan/pln_s/studio': studio({
+          reading: { version_id: 'ver_2', version_number: 2, read_at: readAt, passages: 1, proposals: ['mut_1'], discarded: 0, changed_since: false },
+        }),
+        'GET /mutations/mut_1': withOps('mut_1', 2),
+      })
+      const { container } = renderInProject(<StudioPage />, route)
+      await screen.findByRole('heading', { level: 1 })
+      const section = storyBible()
+      expect(section).toHaveTextContent('Read into the story at version 2, 2 hours ago.')
+      expect(await within(section).findByText(/It suggested 2 changes/)).toBeInTheDocument()
+      expect(within(section).getByRole('link', { name: 'See what it suggested' })).toHaveAttribute('href', '/projects/prj_1/review/mut_1')
+      expect(within(section).getByRole('button', { name: 'Update the story from this scene' })).toBeDisabled()
+      expect(section).toHaveTextContent('Nothing has changed since it was last read.')
+      await expectAccessible(container)
+    })
+
+    it('says the scene changed since it was read, and sends several suggestions to the queue', async () => {
+      mockApi({
+        ...base,
+        'GET /plan/pln_s/studio': studio({
+          reading: { version_id: 'ver_1', version_number: 1, read_at: readAt, passages: 2, proposals: ['mut_1', 'mut_2'], discarded: 0, changed_since: true },
+        }),
+        'GET /mutations/mut_1': withOps('mut_1', 1),
+        'GET /mutations/mut_2': withOps('mut_2', 2),
+      })
+      renderInProject(<StudioPage />, route)
+      await screen.findByRole('heading', { level: 1 })
+      const section = storyBible()
+      expect(section).toHaveTextContent('The scene has changed since it was last read at version 1, 2 hours ago.')
+      expect(await within(section).findByText(/It suggested 3 changes/)).toBeInTheDocument()
+      expect(within(section).getByRole('link', { name: 'See them in the review queue' })).toHaveAttribute('href', '/projects/prj_1/review')
+      expect(within(section).getByRole('button', { name: 'Update the story from this scene' })).toBeEnabled()
+    })
+
+    it('says plainly why it cannot read yet: nothing written, or words not saved', async () => {
+      mockApi({
+        ...base,
+        'GET /plan/pln_s/studio': studio({ version_id: null, content: '', words: 0, versions: [], checks: [], assistant: [], reading: { changed_since: false, discarded: 0, passages: 0, proposals: [] } }),
+      })
+      const { unmount } = renderInProject(<StudioPage />, route)
+      await screen.findByRole('textbox', { name: /The text of/ })
+      expect(within(storyBible()).getByRole('button', { name: 'Update the story from this scene' })).toBeDisabled()
+      expect(storyBible()).toHaveTextContent('Save some words first, so there is something to read.')
+      unmount()
+
+      mockApi({ ...base, 'GET /plan/pln_s/studio': studio() })
+      const user = userEvent.setup()
+      renderInProject(<StudioPage />, route)
+      const box = await screen.findByRole('textbox', { name: /The text of/ })
+      const section = storyBible()
+      expect(within(section).getByRole('button', { name: 'Update the story from this scene' })).toBeEnabled()
+      await user.type(box, ' She turned.')
+      const button = within(section).getByRole('button', { name: 'Update the story from this scene' })
+      expect(button).toBeDisabled()
+      expect(button).toHaveAccessibleDescription('Save first, so it reads what you have now.')
+    })
+
+    it('reads the scene as work in the background and says what it suggested', async () => {
+      let state = studio()
+      const api = mockApi({
+        ...base,
+        'GET /plan/pln_s/studio': () => state,
+        'POST /plan/pln_s/studio/readings': reply(202, job({ id: 'job_3', kind: 'scene_read', status: 'queued', stage: '', progress: 0 })),
+        'GET /jobs/job_3': () => {
+          state = studio({
+            reading: { version_id: 'ver_2', version_number: 2, read_at: readAt, passages: 1, proposals: ['mut_1'], discarded: 1, changed_since: false },
+          })
+          return job({ id: 'job_3', kind: 'scene_read', status: 'succeeded', progress: 100, result: { passages: 1, proposals: ['mut_1'], discarded: 1, guesses: 0 } })
+        },
+        'GET /mutations/mut_1': withOps('mut_1', 3),
+      })
+      const user = userEvent.setup()
+      const { container } = renderInProject(<StudioPage />, route)
+      await user.click(await screen.findByRole('button', { name: 'Update the story from this scene' }))
+      await waitFor(() => expect(api.find('POST', '/studio/readings')).toHaveLength(1))
+
+      const outcome = (await screen.findByText('3 changes suggested from this scene.')).closest('.notice') as HTMLElement
+      expect(outcome).toHaveTextContent(
+        '3 changes suggested from this scene. Nothing changes in your story until you review them. 1 thing it found could not be tied to the scene’s words, so it was left out.',
+      )
+      expect(within(outcome).getByRole('link', { name: 'Review them' })).toHaveAttribute('href', '/projects/prj_1/review/mut_1')
+      expect(await within(storyBible()).findByText(/Read into the story at version 2/)).toBeInTheDocument()
+      await expectAccessible(container)
+    })
+
+    it('shows its progress with a way to stop, then says when there was nothing new', async () => {
+      let polls = 0
+      const api = mockApi({
+        ...base,
+        'GET /plan/pln_s/studio': studio({ jobs: [job({ id: 'job_3', kind: 'scene_read', stage: 'Reading the scene', progress: 10 })] }),
+        'GET /jobs/job_3': () => {
+          polls += 1
+          return polls < 2
+            ? job({ id: 'job_3', kind: 'scene_read', stage: 'Reading the scene', progress: 10 })
+            : job({ id: 'job_3', kind: 'scene_read', status: 'succeeded', progress: 100, result: { passages: 1, proposals: [], discarded: 0, guesses: 0 } })
+        },
+      })
+      renderInProject(<StudioPage />, route)
+      const progress = await screen.findByRole('region', { name: 'Work in progress' })
+      expect(progress).toHaveTextContent('The assistant is reading the scene into your story. Reading the scene')
+      expect(within(progress).getByRole('button', { name: 'Stop' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Update the story from this scene' })).toBeDisabled()
+      expect(await screen.findByText('Nothing new to add from this scene.', {}, { timeout: 4000 })).toBeInTheDocument()
+      expect(api.find('GET', '/jobs/job_3').length).toBeGreaterThanOrEqual(2)
+    })
+
+    it('says plainly why a reading failed', async () => {
+      mockApi({
+        ...base,
+        'GET /plan/pln_s/studio': studio({ jobs: [job({ id: 'job_3', kind: 'scene_read' })] }),
+        'GET /jobs/job_3': job({
+          id: 'job_3',
+          kind: 'scene_read',
+          status: 'failed',
+          error_code: 'provider',
+          error_message: 'The AI provider did not answer.',
+        }),
+      })
+      renderInProject(<StudioPage />, route)
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent('The scene was not read into your story. The AI provider did not answer. Your story is unchanged.')
+      expect(within(alert).getByRole('button', { name: 'Try again' })).toBeInTheDocument()
+    })
+  })
+
+  describe('filling in the plan card from the prose', () => {
+    const unplanned: PlanItem = { ...scene, summary: '', refs: [{ entity_id: 'ent_ines', role: 'point_of_view' }] }
+    const planless = { ...base, 'GET /plan': { items: [unplanned], open: [], conditions: [] } }
+    const planJob = (overrides: Partial<StudioJob> = {}) =>
+      job({ id: 'job_4', kind: 'scene_plan', stage: 'The assistant is reading the scene', progress: 30, ...overrides })
+
+    it('offers it where the plan card is, saying what is missing, and reports the suggestion to review', async () => {
+      let polls = 0
+      const api = mockApi({
+        ...planless,
+        'GET /plan/pln_s/studio': studio(),
+        'POST /plan/pln_s/studio/plan-card': reply(202, planJob({ status: 'queued', stage: '', progress: 0 })),
+        'GET /jobs/job_4': () => {
+          polls += 1
+          return polls < 2
+            ? planJob()
+            : planJob({ status: 'succeeded', progress: 100, result: { mutation_id: 'mut_9', summary_filled: true, refs_added: 2, dropped: 1 } })
+        },
+      })
+      const user = userEvent.setup()
+      const { container } = renderInProject(<StudioPage />, route)
+      const offer = (await screen.findByText('No summary or place planned for this scene yet.')).closest('div') as HTMLElement
+      expect(offer).toHaveTextContent(
+        'No summary or place planned for this scene yet. The assistant can suggest them, and who is in the scene, from what you have written. Nothing changes in your plan until you review it.',
+      )
+      await expectAccessible(container)
+      await user.click(within(offer).getByRole('button', { name: 'Fill in the plan card from the prose' }))
+      await waitFor(() => expect(api.find('POST', '/studio/plan-card')).toHaveLength(1))
+
+      const progress = await screen.findByRole('region', { name: 'Work in progress' })
+      expect(progress).toHaveTextContent('The assistant is filling in the plan card from the scene.')
+      expect(within(offer).getByRole('button', { name: 'Fill in the plan card from the prose' })).toBeDisabled()
+
+      const outcome = (await screen.findByText(/plan card\./, {}, { timeout: 4000 })).closest('.notice') as HTMLElement
+      expect(outcome).toHaveTextContent(
+        'The assistant suggests a summary and 2 people or places for this scene’s plan card. Nothing changes in your plan until you review it. 1 suggestion could not be tied to the scene’s words, so it was left out.',
+      )
+      expect(within(outcome).getByRole('link', { name: 'Review it' })).toHaveAttribute('href', '/projects/prj_1/review/mut_9')
+      // Not offered again while that suggestion waits to be reviewed.
+      expect(screen.queryByRole('button', { name: 'Fill in the plan card from the prose' })).not.toBeInTheDocument()
+      await expectAccessible(container)
+    })
+
+    it('says plainly when there was nothing to add, or why it failed', async () => {
+      mockApi({
+        ...planless,
+        'GET /plan/pln_s/studio': studio({ jobs: [planJob()] }),
+        'GET /jobs/job_4': planJob({ status: 'succeeded', progress: 100, result: { mutation_id: null, summary_filled: false, refs_added: 0, dropped: 0 } }),
+      })
+      const { unmount } = renderInProject(<StudioPage />, route)
+      expect((await screen.findByText('Nothing to add to the plan card.')).closest('.notice')).toHaveTextContent(
+        'Nothing to add to the plan card. The assistant suggests only what the scene’s words show, and never replaces what you planned. Your plan is unchanged.',
+      )
+      expect(screen.queryByRole('link', { name: 'Review it' })).not.toBeInTheDocument()
+      unmount()
+
+      mockApi({
+        ...planless,
+        'GET /plan/pln_s/studio': studio({ jobs: [planJob()] }),
+        'GET /jobs/job_4': planJob({ status: 'failed', error_code: 'provider', error_message: 'The AI provider did not answer.' }),
+      })
+      renderInProject(<StudioPage />, route)
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent('The plan card was not filled in. The AI provider did not answer. Your plan is unchanged.')
+      expect(within(alert).getByRole('button', { name: 'Try again' })).toBeInTheDocument()
+    })
+
+    it('is offered only for written words on an unfinished card, and waits for unsaved words', async () => {
+      // A full card: nothing to offer.
+      mockApi({ ...base, 'GET /plan/pln_s/studio': studio() })
+      const first = renderInProject(<StudioPage />, route)
+      await screen.findByText(/Seen by/)
+      expect(screen.queryByRole('button', { name: 'Fill in the plan card from the prose' })).not.toBeInTheDocument()
+      first.unmount()
+
+      // Nothing written yet: nothing to read it from.
+      mockApi({
+        ...planless,
+        'GET /plan/pln_s/studio': studio({ version_id: null, content: '', words: 0, versions: [], checks: [], assistant: [] }),
+      })
+      const second = renderInProject(<StudioPage />, route)
+      await screen.findByText(/Seen by/)
+      expect(screen.queryByRole('button', { name: 'Fill in the plan card from the prose' })).not.toBeInTheDocument()
+      second.unmount()
+
+      // Unsaved words: save first, so it reads them.
+      mockApi({ ...planless, 'GET /plan/pln_s/studio': studio() })
+      const user = userEvent.setup()
+      const third = renderInProject(<StudioPage />, route)
+      const box = await screen.findByRole('textbox', { name: /The text of/ })
+      expect(await screen.findByRole('button', { name: 'Fill in the plan card from the prose' })).toBeEnabled()
+      await user.type(box, ' She turned.')
+      const button = screen.getByRole('button', { name: 'Fill in the plan card from the prose' })
+      expect(button).toBeDisabled()
+      expect(button).toHaveAccessibleDescription('Save first, so it reads what you have now.')
+      third.unmount()
+
+      // A reader sees the card but cannot ask for it.
+      mockApi({ ...planless, 'GET /plan/pln_s/studio': studio() })
+      renderInProject(<StudioPage />, { ...route, context: { access: VIEWER } })
+      await screen.findByText(/Seen by/)
+      expect(screen.queryByRole('button', { name: 'Fill in the plan card from the prose' })).not.toBeInTheDocument()
+    })
+  })
+
+  describe('opened at a passage from the review', () => {
+    it('selects the passage in the version it was read from', async () => {
+      mockApi({ ...base, 'GET /plan/pln_s/studio': studio() })
+      const { start, end } = at('Tobin Ashe')
+      const { container } = renderInProject(<StudioPage />, { ...route, at: `plan/pln_s/write?at=${start}-${end}&version=ver_2` })
+      const box = (await screen.findByRole('textbox', { name: /The text of/ })) as HTMLTextAreaElement
+      expect(await screen.findByText('The words the change came from are selected in your text.')).toBeInTheDocument()
+      expect(box.selectionStart).toBe(start)
+      expect(box.selectionEnd).toBe(end)
+      await expectAccessible(container)
+    })
+
+    it('finds the words of an older version where they are now, or says they are gone', async () => {
+      const OLD = 'Tobin Ashe waited by the glass.'
+      const api = mockApi({
+        ...base,
+        'GET /plan/pln_s/studio': studio(),
+        'GET /texts/src_1': { content: OLD },
+      })
+      const { unmount } = renderInProject(<StudioPage />, { ...route, at: 'plan/pln_s/write?at=0-10&version=ver_1' })
+      const box = (await screen.findByRole('textbox', { name: /The text of/ })) as HTMLTextAreaElement
+      expect(await screen.findByText('The words the change came from are selected in your text.')).toBeInTheDocument()
+      expect(api.find('GET', '/texts/src_1')[0].search.get('version_id')).toBe('ver_1')
+      expect(box.selectionStart).toBe(at('Tobin Ashe').start)
+      expect(box.selectionEnd).toBe(at('Tobin Ashe').end)
+      unmount()
+
+      mockApi({ ...base, 'GET /plan/pln_s/studio': studio(), 'GET /texts/src_1': { content: 'Mara left the harbour.' } })
+      renderInProject(<StudioPage />, { ...route, at: 'plan/pln_s/write?at=0-4&version=ver_1' })
+      expect(await screen.findByText(/The words the change came from are no longer in this scene/)).toHaveTextContent(
+        'The words the change came from are no longer in this scene: it has changed since they were read. This is the scene as it is now.',
+      )
+    })
+  })
+
   it('lets a reader read the scene but change nothing', async () => {
     mockApi({ ...base, 'GET /plan/pln_s/studio': studio({ drafts: [draft()] }) })
     renderInProject(<StudioPage />, { ...route, context: { access: VIEWER } })
     const box = await screen.findByRole('textbox', { name: /The text of/ })
     expect(box).toHaveAttribute('readonly')
-    expect(screen.queryByRole('button', { name: /Save|Draft with|Check with|Keep|Discard/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Save|Draft with|Check with|Keep|Discard|Update the story/ })).not.toBeInTheDocument()
   })
 })

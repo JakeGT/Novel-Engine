@@ -1,12 +1,13 @@
 """What to read when a scene is read into the story again (Phase 6)."""
 
-from backend.domain.reading import changed_passages
+from backend.domain.reading import changed_passages, read_keys
 
 ONE = "Wren swept the mill.\n\nThe wheel turned.\n\nA sack was missing."
 
 
 def _texts(current: str, previous: str | None, **kw) -> list[str]:
-    return [current[p.start : p.end] for p in changed_passages(current, previous, **kw)]
+    seen = read_keys(previous) if previous is not None else None
+    return [current[p.start : p.end] for p in changed_passages(current, seen, **kw)]
 
 
 def test_the_first_reading_reads_everything_as_one_passage() -> None:
@@ -19,7 +20,7 @@ def test_nothing_changed_means_nothing_to_read() -> None:
     assert _texts(ONE.replace("The wheel", "The  wheel"), ONE) == []
 
 
-def test_only_new_or_changed_paragraphs_are_read_and_neighbours_go_together() -> None:
+def test_only_new_or_changed_lines_are_read_and_neighbours_go_together() -> None:
     changed = "Wren swept the mill.\n\nThe wheel stopped.\n\nTobin came in.\n\nA sack was missing."
     assert _texts(changed, ONE) == ["The wheel stopped.\n\nTobin came in."]
 
@@ -30,3 +31,16 @@ def test_changes_apart_are_read_apart_and_long_runs_are_split() -> None:
     long = "\n\n".join(f"Paragraph {n} is new." for n in range(4))
     assert len(_texts(long, None, limit=30)) == 4
     assert len(_texts(long, None, limit=40)) == 2
+
+
+def test_single_line_breaks_are_lines_too() -> None:
+    before = "Tobin waited.\nMara tied up at Saltmere.\nThey spoke."
+    after = "Tobin waited.\nMara tied up at Saltmere.\nThey argued."
+    assert _texts(after, before) == ["They argued."]
+
+
+def test_only_what_was_covered_counts_as_read() -> None:
+    # A reading stopped after its first part: only that part is read.
+    seen = read_keys(ONE, [(0, len("Wren swept the mill."))])
+    rest = [ONE[p.start : p.end] for p in changed_passages(ONE, seen)]
+    assert rest == ["The wheel turned.\n\nA sack was missing."]

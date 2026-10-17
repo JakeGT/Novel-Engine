@@ -2,7 +2,8 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 
 // The scene studio in a real browser against a real backend, with a local stand-in model
-// (scripts/e2e/fake_model.py): write, draft with the assistant, keep the draft, check it.
+// (scripts/e2e/fake_model.py): write, draft with the assistant, keep the draft, check it,
+// and read it into the story for review.
 // Set E2E_SHOTS to a folder to keep a screenshot of each step for a design review.
 
 const PROJECT = 'local-project'
@@ -39,7 +40,7 @@ async function call(page: Page, method: string, path: string, data?: unknown) {
 }
 const head = async (page: Page) => (await call(page, 'GET', '/projection')).head_revision as number
 
-test('write a scene, draft it with the assistant, keep the draft and check it', async ({ page }) => {
+test('write a scene, draft it with the assistant, keep the draft, check it and read it into the story', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto('/')
   await page.getByRole('link', { name: 'Sign in' }).first().click()
@@ -126,4 +127,58 @@ test('write a scene, draft it with the assistant, keep the draft and check it', 
   await shot(page, '09-text-page')
   await page.getByRole('link', { name: /Write it in the scene.s studio/ }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Flour and Dust' })).toBeVisible()
+
+  // Reading the scene into the story: what it finds waits in the review queue.
+  const bible = page.getByRole('region', { name: 'Your story bible' })
+  await expect(bible.getByText('Not read into the story yet.')).toBeVisible()
+  await bible.getByRole('button', { name: 'Update the story from this scene' }).click()
+  await expect(page.getByText(/changes? suggested from this scene\./)).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText('Nothing changes in your story until you review it.')).toBeVisible()
+  await expect(bible.getByText(/Read into the story at version 2/)).toBeVisible()
+  await expect(bible.getByText('Nothing has changed since it was last read.')).toBeVisible()
+  await expect(bible.getByRole('button', { name: 'Update the story from this scene' })).toBeDisabled()
+  await shot(page, '10-read')
+  await expectAccessible(page)
+
+  await page.getByRole('link', { name: 'Review it' }).click()
+  await expect(page).toHaveURL(/\/review\/[^/]+$/)
+  await expect(page.getByText(/The quay/).first()).toBeVisible()
+  await shot(page, '11-read-review')
+
+  // From the review, the words the change came from open in the scene's studio, selected.
+  const inScene = page.getByRole('link', { name: 'See it in the scene' }).first()
+  await expect(inScene).toBeVisible()
+  await inScene.scrollIntoViewIfNeeded()
+  await shot(page, '11-review-link')
+  await expectAccessible(page)
+  await inScene.click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Flour and Dust' })).toBeVisible()
+  await expect(page.getByText('The words the change came from are selected in your text.')).toBeVisible()
+  const selected = await editor.evaluate((box: HTMLTextAreaElement) =>
+    box.value.slice(box.selectionStart, box.selectionEnd),
+  )
+  expect(selected).toBe('The lamps along the quay were already lit')
+  await shot(page, '11b-opened-at-passage')
+
+  // A scene written before it was planned: the assistant fills in its plan card, for review.
+  const unplanned = await call(page, 'POST', '/plan', {
+    kind: 'scene',
+    title: 'After the bell',
+    expected_revision: await head(page),
+  })
+  await page.goto(`/projects/${PROJECT}/plan/${unplanned.id}/write`)
+  await expect(page.getByRole('heading', { level: 1, name: 'After the bell' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Fill in the plan card from the prose' })).toHaveCount(0)
+  await editor.fill('Wren Hollis waited at The Old Mill until the bell had stopped.')
+  await page.getByRole('button', { name: /^Save/ }).first().click()
+  await expect(page.getByText('No summary, viewpoint or place planned for this scene yet.')).toBeVisible()
+  await shot(page, '12a-plan-card-offer')
+  await page.getByRole('button', { name: 'Fill in the plan card from the prose' }).click()
+  await expect(page.getByText(/this scene’s plan card\./)).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText('Nothing changes in your plan until you review it.')).toBeVisible()
+  await shot(page, '12-plan-card')
+  await expectAccessible(page)
+  await page.getByRole('link', { name: 'Review it' }).click()
+  await expect(page).toHaveURL(/\/review\/[^/]+$/)
+  await expect(page.getByText(/After the bell/).first()).toBeVisible()
 })

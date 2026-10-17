@@ -1,6 +1,6 @@
 # API surface
 
-- Status: Phase 5. The committed contract is `tests/contract/openapi_snapshot.json` (226
+- Status: Phase 6. The committed contract is `tests/contract/openapi_snapshot.json` (228
   operations), exact-checked by `tests/contract/test_openapi.py`; the frontend client is generated
   from it and `make frontend-api-check` fails on drift. This page is a guide to that contract, not a
   second source of truth.
@@ -135,7 +135,18 @@ Under `/projects/{project_id}`:
   `POST /jobs/{id}/cancel`: a waiting job stops at once, a running one at its next step.
 - `GET/PUT /voice`: how the author writes, a note per story given first in every draft request.
 
+## Scenes back into the story (Phase 6, ADR-023)
+
+- `GET /plan/{id}/studio` also returns `reading`: the version last read into the story, when, the
+  proposals that came of it, and `changed_since`.
+- `POST /plan/{id}/studio/readings` (`202`): read the scene's current version into proposed changes
+  for review; only paragraphs changed since the last reading are read. `400` when nothing is written
+  or nothing changed. The job's result lists the proposals.
+- `POST /plan/{id}/studio/plan-card` (`202`): suggest the scene's summary, viewpoint, place and who is
+  in it from the prose, as one plan change for review. `400` when nothing is written.
+- `GET /texts/passage` also returns `scene_id` when the text is a scene's, for "See it in the scene".
+
 ## Not yet in the API
 
-Streaming drafts, merging drafts, media processing, reading prose into proposed changes, and an
-HTTP archive import are later-phase work. No route accepts parameters that imply they are enforced.
+Streaming drafts, merging drafts, media processing, and an HTTP archive import are later-phase
+work. No route accepts parameters that imply they are enforced.

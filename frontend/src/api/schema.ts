@@ -2258,6 +2258,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/studio/plan-card": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Plan Card
+         * @description Fill in the scene's plan card from its prose, as a plan change for review (Phase 6).
+         */
+        post: operations["start_plan_card_api_v1_projects__project_id__plan__plan_id__studio_plan_card_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/studio/readings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Reading
+         * @description Read the scene into proposed changes to the story, for review (Phase 6).
+         */
+        post: operations["start_reading_api_v1_projects__project_id__plan__plan_id__studio_readings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/plan/{plan_id}/studio/reviews": {
         parameters: {
             query?: never;
@@ -5422,6 +5462,8 @@ export interface components {
             before: string;
             /** Quote */
             quote: string;
+            /** Scene Id */
+            scene_id?: string | null;
             /** Source Id */
             source_id: string;
             /** Title */
@@ -5810,6 +5852,35 @@ export interface components {
             title: string;
             /** Withheld */
             withheld: string[];
+        };
+        /**
+         * ReadingModel
+         * @description The last time this scene was read into the story, and whether it has changed since.
+         */
+        ReadingModel: {
+            /** Changed Since */
+            changed_since: boolean;
+            /**
+             * Discarded
+             * @default 0
+             */
+            discarded: number;
+            /**
+             * Passages
+             * @default 0
+             */
+            passages: number;
+            /**
+             * Proposals
+             * @default []
+             */
+            proposals: string[];
+            /** Read At */
+            read_at?: string | null;
+            /** Version Id */
+            version_id?: string | null;
+            /** Version Number */
+            version_number?: number | null;
         };
         /** RebuildResult */
         RebuildResult: {
@@ -6382,6 +6453,7 @@ export interface components {
             drafts: components["schemas"]["DraftModel"][];
             /** Jobs */
             jobs: components["schemas"]["JobModel"][];
+            reading: components["schemas"]["ReadingModel"];
             /** Scene Id */
             scene_id: string;
             /** Text Id */
@@ -6579,6 +6651,11 @@ export interface components {
             evidence?: components["schemas"]["EvidenceRef"][];
             /** Id */
             id: string;
+            /**
+             * Only Fills
+             * @default false
+             */
+            only_fills: boolean;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -11769,6 +11846,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["backend__api__v1__studio__EstimateModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_plan_card_api_v1_projects__project_id__plan__plan_id__studio_plan_card_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_reading_api_v1_projects__project_id__plan__plan_id__studio_readings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobModel"];
                 };
             };
             /** @description Validation Error */

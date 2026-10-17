@@ -8,6 +8,7 @@ fixed answer of the asked-for shape. Nothing is sent anywhere.
 from __future__ import annotations
 
 import json
+import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -36,12 +37,50 @@ REVIEW = {
     ]
 }
 
+# Reading the kept draft into the story (Phase 6): one new place, quoting the draft.
+READ = {
+    "entities": [
+        {
+            "ref": "quay",
+            "type": "Location",
+            "name": "The quay",
+            "quote": "The lamps along the quay were already lit",
+        }
+    ]
+}
+
+
+# Filling in a plan card from the prose (Phase 6): the browser test's two names, by the
+# ids the request lists for them, each quoting its own name in the scene.
+CARD_NAMES = {"point_of_view": "Wren Hollis", "place": "The Old Mill"}
+LISTED = re.compile(r"^- (\S+): (.+?) \((?:Character|Location)\)", re.MULTILINE)
+
+
+def _plan_card(body: dict[str, Any]) -> dict[str, Any]:
+    asked = "\n".join(str(message.get("content", "")) for message in body.get("messages", []))
+    ids = {name: entry_id for entry_id, name in LISTED.findall(asked)}
+    card: dict[str, Any] = {"summary": "Wren waits at the mill until dark.", "participants": []}
+    for role, name in CARD_NAMES.items():
+        if name in ids:
+            card[role] = {"id": ids[name], "name": name, "quote": name}
+    return card
+
+
+def _structured(name: str, body: dict[str, Any]) -> dict[str, Any]:
+    if "Review" in name:
+        return REVIEW
+    if name == "PassageDraft":
+        return READ
+    if name == "PlanCardDraft":
+        return _plan_card(body)
+    return {}
+
 
 def _answer(body: dict[str, Any]) -> dict[str, Any]:
     response_format = body.get("response_format") or {}
     if response_format.get("type") == "json_schema":
         name = str((response_format.get("json_schema") or {}).get("name", ""))
-        content = json.dumps(REVIEW if "Review" in name else {})
+        content = json.dumps(_structured(name, body))
     else:
         content = DRAFT
     return {
@@ -93,4 +132,4 @@ def start(host: str = "127.0.0.1") -> tuple[ThreadingHTTPServer, str]:
     return server, f"http://{host}:{server.server_address[1]}/v1"
 
 
-__all__ = ["DRAFT", "REVIEW", "start"]
+__all__ = ["DRAFT", "READ", "REVIEW", "start"]

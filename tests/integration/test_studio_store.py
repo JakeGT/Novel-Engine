@@ -19,7 +19,7 @@ from backend.domain.branching import working_in
 from backend.domain.identity import AccessScope, AuthMode
 from backend.domain.operations import CreateEntityOp
 from backend.domain.sources import SourceKind, VersionOrigin, content_hash
-from backend.domain.studio import AssistantFinding, SceneDraft
+from backend.domain.studio import AssistantFinding, SceneDraft, SceneReading
 from backend.services.mutation_service import MutationService
 from backend.services.what_if_service import WhatIfService
 
@@ -69,6 +69,29 @@ def _draft(draft_id: str, *, branch_id: str | None = None, number: int = 1) -> S
         model="model-a",
         status="proposed",
         kept_version_id=None,
+        created_by="usr_author",
+        created_at=datetime.now(UTC),
+    )
+
+
+def _reading(
+    reading_id: str,
+    *,
+    branch_id: str = "b_main",
+    version_id: str = "src_1_v1",
+    proposals: tuple[str, ...] = (),
+) -> SceneReading:
+    return SceneReading(
+        **S,
+        branch_id=branch_id,
+        id=reading_id,
+        plan_id="plan_1",
+        source_id="src_1",
+        version_id=version_id,
+        job_id=f"job_{reading_id}",
+        passages=2,
+        proposals=proposals,
+        discarded=1,
         created_by="usr_author",
         created_at=datetime.now(UTC),
     )
@@ -183,6 +206,40 @@ async def test_findings_are_kept_against_what_was_checked(stack) -> None:
 
 
 @pytest.mark.asyncio
+async def test_the_last_reading_of_a_scene_is_kept_per_line_of_the_story(stack) -> None:
+    studio, _, _ = stack
+    assert await studio.last_reading(**S, branch_id="b_main", plan_id="plan_1") is None
+    await studio.add_reading(_reading("rdg_1", proposals=("mutation_1", "mutation_2")))
+    await studio.add_reading(_reading("rdg_2", version_id="src_1_v2", proposals=()))
+    await studio.add_reading(_reading("rdg_whatif", branch_id="b_whatif", version_id="v_w"))
+
+    last = await studio.last_reading(**S, branch_id="b_main", plan_id="plan_1")
+    assert last is not None and last.id == "rdg_2" and last.version_id == "src_1_v2"
+    # An empty list of proposals comes back as an empty tuple, not nothing.
+    assert last.proposals == () and last.created_at is not None
+    assert (last.passages, last.discarded, last.job_id, last.created_by) == (
+        2,
+        1,
+        "job_rdg_2",
+        "usr_author",
+    )
+    whatif = await studio.last_reading(**S, branch_id="b_whatif", plan_id="plan_1")
+    assert whatif is not None and whatif.id == "rdg_whatif"
+    assert await studio.last_reading(**S, branch_id="b_main", plan_id="plan_2") is None
+    assert (
+        await studio.last_reading(
+            workspace_id=WS, project_id="pr_other", branch_id="b_main", plan_id="plan_1"
+        )
+        is None
+    )
+
+    # The proposals made survive the trip through JSON, in order.
+    await studio.add_reading(_reading("rdg_3", proposals=("mutation_9", "mutation_3")))
+    again = await studio.last_reading(**S, branch_id="b_main", plan_id="plan_1")
+    assert again is not None and again.proposals == ("mutation_9", "mutation_3")
+
+
+@pytest.mark.asyncio
 async def test_the_authors_voice_is_one_note_per_story_replaced_in_place(stack) -> None:
     studio, _, factory = stack
     assert await studio.voice(**S) == ""
@@ -250,3 +307,33 @@ async def test_starting_a_what_if_copies_each_scenes_link_to_its_text(stack) -> 
     # The text itself is shared until the what-if changes it.
     assert await studio.linked_elsewhere(**S, branch_id=what_if.id, source_id="src_main")
     assert await studio.manuscripts_for(**S, branch_id=main.id) == [("plan_1", "src_main")]
+
+
+@pytest.mark.asyncio
+async def test_starting_a_what_if_copies_what_was_last_read_from_each_scene(stack) -> None:
+    studio, _, factory = stack
+    repository = PostgresCanonRepository(factory)
+    journal = PostgresCanonJournal(factory)
+    mutation = MutationService(journal, repository, local_mode=True)
+    what_ifs = WhatIfService(journal=journal, canon=repository, mutation=mutation, local_mode=True)
+    with working_in(None):
+        draft = await mutation.create_draft(
+            SCOPE,
+            workspace_id=WS,
+            project_id=PR,
+            operations=[CreateEntityOp(id="tmp:m", type="Character", name="Mara")],
+            expected_head=0,
+        )
+        await mutation.commit(SCOPE, draft.id)
+    main = await journal.ensure_root_branch(**S)
+    await studio.add_reading(_reading("rdg_main", branch_id=main.id, proposals=("mutation_1",)))
+
+    what_if = await what_ifs.start(SCOPE, WS, PR, name="What if Mara came?")
+    copied = await studio.last_reading(**S, branch_id=what_if.id, plan_id="plan_1")
+    # The what-if knows what was read, so it does not propose the same changes again.
+    assert copied is not None and copied.id == "rdg_main"
+    assert copied.version_id == "src_1_v1" and copied.proposals == ("mutation_1",)
+    # A later reading in the what-if is the what-if's own.
+    await studio.add_reading(_reading("rdg_w", branch_id=what_if.id, version_id="src_1_v2"))
+    mine = await studio.last_reading(**S, branch_id=main.id, plan_id="plan_1")
+    assert mine is not None and mine.id == "rdg_main"

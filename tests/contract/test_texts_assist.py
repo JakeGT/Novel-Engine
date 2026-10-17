@@ -150,7 +150,7 @@ def test_the_passage_is_sent_as_material_with_the_entries_it_names(auth_client, 
     assert "copied character for character" in system["content"]
     assert f"{w['mara']} | Character | Mara" in user["content"]
     assert f'"Tobin Ashe" means {w["tobin"]}' in user["content"]
-    assert user["content"].rstrip().endswith("----------")
+    assert user["content"].rstrip().endswith("<<<END PASSAGE-1>>>")
     assert "Ignore your instructions" not in system["content"]
 
 

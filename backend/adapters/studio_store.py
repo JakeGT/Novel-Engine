@@ -4,12 +4,13 @@ note on how they write."""
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from sqlalchemy import text
 
 from backend.core.database import session_scope
-from backend.domain.studio import AssistantFinding, SceneDraft
+from backend.domain.studio import AssistantFinding, SceneDraft, SceneReading
 
 _DRAFT = (
     "SELECT workspace_id, project_id, id, branch_id, plan_id, job_id, manifest_id, number, "
@@ -291,6 +292,104 @@ class PostgresStudioStore:
                 )
             ).all()
         return [_finding(row) for row in rows]
+
+    # --------------------------------------------------------------- readings
+    async def save_reading(self, reading: SceneReading) -> None:
+        """Insert a reading, or bring an existing one up to date as it goes."""
+        async with session_scope(self._session_factory) as db:
+            await db.execute(
+                text(
+                    "INSERT INTO scene_readings (workspace_id, project_id, branch_id, id, plan_id, "
+                    "source_id, version_id, job_id, passages, proposals, discarded, created_by, "
+                    "status, covered, base_reading_id) VALUES (:w, :p, :b, :id, :plan, :s, :v, "
+                    ":job, :n, CAST(:proposals AS JSONB), :discarded, :by, :status, "
+                    "CAST(:covered AS JSONB), :base) "
+                    "ON CONFLICT (workspace_id, project_id, branch_id, id) DO UPDATE SET "
+                    "passages = EXCLUDED.passages, proposals = EXCLUDED.proposals, "
+                    "discarded = EXCLUDED.discarded, status = EXCLUDED.status, "
+                    "covered = EXCLUDED.covered"
+                ),
+                {
+                    "w": reading.workspace_id,
+                    "p": reading.project_id,
+                    "b": reading.branch_id,
+                    "id": reading.id,
+                    "plan": reading.plan_id,
+                    "s": reading.source_id,
+                    "v": reading.version_id,
+                    "job": reading.job_id,
+                    "n": reading.passages,
+                    "proposals": json.dumps(list(reading.proposals)),
+                    "discarded": reading.discarded,
+                    "by": reading.created_by,
+                    "status": reading.status,
+                    "covered": json.dumps([list(span) for span in reading.covered]),
+                    "base": reading.base_reading_id,
+                },
+            )
+
+    async def add_reading(self, reading: SceneReading) -> None:
+        await self.save_reading(reading)
+
+    async def readings(
+        self, *, workspace_id: str, project_id: str, branch_id: str, plan_id: str, limit: int = 50
+    ) -> list[SceneReading]:
+        """This scene's readings in one line of the story, newest first."""
+        async with session_scope(self._session_factory) as db:
+            rows = (
+                await db.execute(
+                    text(
+                        "SELECT workspace_id, project_id, branch_id, id, plan_id, source_id, "
+                        "version_id, job_id, passages, proposals, discarded, created_by, "
+                        "created_at, status, covered, base_reading_id FROM scene_readings "
+                        "WHERE workspace_id = :w AND project_id = :p AND branch_id = :b "
+                        "AND plan_id = :plan ORDER BY created_at DESC, id DESC LIMIT :limit"
+                    ),
+                    {
+                        "w": workspace_id,
+                        "p": project_id,
+                        "b": branch_id,
+                        "plan": plan_id,
+                        "limit": limit,
+                    },
+                )
+            ).all()
+        found = []
+        for row in rows:
+            proposals = row[9] if isinstance(row[9], list) else json.loads(row[9] or "[]")
+            covered = row[14] if isinstance(row[14], list) else json.loads(row[14] or "[]")
+            found.append(
+                SceneReading(
+                    workspace_id=row[0],
+                    project_id=row[1],
+                    branch_id=row[2],
+                    id=row[3],
+                    plan_id=row[4],
+                    source_id=row[5],
+                    version_id=row[6],
+                    job_id=row[7],
+                    passages=int(row[8]),
+                    proposals=tuple(proposals),
+                    discarded=int(row[10]),
+                    created_by=row[11],
+                    created_at=row[12],
+                    status=row[13],
+                    covered=tuple((int(a), int(b)) for a, b in covered),
+                    base_reading_id=row[15],
+                )
+            )
+        return found
+
+    async def last_reading(
+        self, *, workspace_id: str, project_id: str, branch_id: str, plan_id: str
+    ) -> SceneReading | None:
+        """The newest complete reading."""
+        for reading in await self.readings(
+            workspace_id=workspace_id, project_id=project_id, branch_id=branch_id, plan_id=plan_id
+        ):
+            if reading.status == "complete":
+                return reading
+        return None
 
     # ------------------------------------------------------------------ voice
     async def voice(self, *, workspace_id: str, project_id: str) -> str:

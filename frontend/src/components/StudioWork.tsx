@@ -1,7 +1,21 @@
 import { useQuery } from '@tanstack/react-query'
+import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type SceneDraft, type StudioJob } from '../api/client'
-import { LENGTHS, MAX_DIRECTION, MAX_DRAFTS, isDraftJob, type DraftChoices } from '../lib/studio'
+import {
+  JOB_DOING,
+  LENGTHS,
+  MAX_DIRECTION,
+  MAX_DRAFTS,
+  isDraftJob,
+  isPlanJob,
+  isReadJob,
+  planCardProposal,
+  readingProposals,
+  reviewPath,
+  useSuggestedChanges,
+  type DraftChoices,
+} from '../lib/studio'
 import { plural } from '../lib/words'
 import { scopedKey, useProject } from '../project'
 import { AllowanceNote } from './Allowance'
@@ -138,11 +152,6 @@ export function DraftForm({
   )
 }
 
-const DOING: Record<string, string> = {
-  scene_draft: 'The assistant is drafting this scene',
-  scene_review: 'The assistant is reading your text',
-}
-
 /**
  * Work in progress: what stage it is at, how far along, and a way to stop it. It keeps
  * going if the author leaves the page, so it says so.
@@ -165,7 +174,7 @@ export function JobProgress({
       <div className="studio-job-head">
         <span className="spinner" aria-hidden="true" />
         <p aria-live="polite">
-          <strong>{DOING[job.kind] ?? 'The assistant is working'}.</strong>{' '}
+          <strong>{JOB_DOING[job.kind] ?? 'The assistant is working'}.</strong>{' '}
           {asked ? 'Stopping after this step…' : job.stage || 'Waiting to start…'}
         </p>
         {canWrite && (
@@ -201,6 +210,8 @@ export function JobOutcome({
 }) {
   const { scope, access } = useProject()
   const drafting = isDraftJob(job)
+  const reading = isReadJob(job)
+  const planning = isPlanJob(job)
   const close = (
     <Button size="sm" variant="ghost" onClick={onDismiss}>
       Dismiss
@@ -210,8 +221,17 @@ export function JobOutcome({
     return (
       <div className="notice danger" role="alert">
         <p>
-          <strong>{drafting ? 'The draft was not written.' : 'The check did not finish.'}</strong>{' '}
-          {job.error_message || 'Something went wrong on our side.'} Your text is unchanged.
+          <strong>
+            {drafting
+              ? 'The draft was not written.'
+              : reading
+                ? 'The scene was not read into your story.'
+                : planning
+                  ? 'The plan card was not filled in.'
+                  : 'The check did not finish.'}
+          </strong>{' '}
+          {job.error_message || 'Something went wrong on our side.'}{' '}
+          {reading ? 'Your story is unchanged.' : planning ? 'Your plan is unchanged.' : 'Your text is unchanged.'}
         </p>
         <div className="actions">
           {job.error_code === 'no_provider' && access?.hosted && (
@@ -232,11 +252,22 @@ export function JobOutcome({
       <div className="notice plain" role="status">
         <p>
           <strong>Stopped.</strong>{' '}
-          {drafts.length > 0
-            ? `${plural(drafts.length, 'draft')} finished before it stopped and ${drafts.length === 1 ? 'is' : 'are'} waiting for you.`
-            : 'Nothing was kept from it. Your text is unchanged.'}
+          {reading
+            ? 'Anything it suggested before it stopped is waiting in the review queue. Your story is unchanged.'
+            : planning
+              ? 'Nothing was suggested for the plan card. Your plan is unchanged.'
+              : drafts.length > 0
+              ? `${plural(drafts.length, 'draft')} finished before it stopped and ${drafts.length === 1 ? 'is' : 'are'} waiting for you.`
+              : 'Nothing was kept from it. Your text is unchanged.'}
         </p>
-        <div className="actions">{close}</div>
+        <div className="actions">
+          {reading && (
+            <Link className="btn sm" to={reviewPath(scope.projectId, [])}>
+              Open the review queue
+            </Link>
+          )}
+          {close}
+        </div>
       </div>
     )
   }
@@ -260,6 +291,8 @@ export function JobOutcome({
       </div>
     )
   }
+  if (reading) return <ReadingOutcome job={job} close={close} />
+  if (planning) return <PlanCardOutcome job={job} close={close} />
   const found = Number(job.result.findings ?? 0)
   const dropped = Number(job.result.dropped ?? 0)
   return (
@@ -274,6 +307,91 @@ export function JobOutcome({
           : ''}
       </p>
       <div className="actions">{close}</div>
+    </div>
+  )
+}
+
+/** What reading the scene into the story came to: suggestions to review, or nothing new. */
+function ReadingOutcome({ job, close }: { job: StudioJob; close: ReactNode }) {
+  const { scope } = useProject()
+  const proposals = readingProposals(job)
+  const count = useSuggestedChanges(proposals)
+  const left = Number(job.result.discarded ?? 0)
+  const leftOut =
+    left > 0
+      ? ` ${plural(left, 'thing')} it found could not be tied to the scene’s words, so ${left === 1 ? 'it was' : 'they were'} left out.`
+      : ''
+  if (proposals.length === 0) {
+    return (
+      <div className="notice plain" role="status">
+        <p>
+          <strong>Nothing new to add from this scene.</strong> Everything it states is already in
+          your story bible.{leftOut}
+        </p>
+        <div className="actions">{close}</div>
+      </div>
+    )
+  }
+  return (
+    <div className="notice ok" role="status">
+      <p>
+        <strong>
+          {count === null ? 'Changes suggested from this scene.' : `${plural(count, 'change')} suggested from this scene.`}
+        </strong>{' '}
+        Nothing changes in your story until you review {count === 1 ? 'it' : 'them'}.{leftOut}
+      </p>
+      <div className="actions">
+        <Link className="btn primary sm" to={reviewPath(scope.projectId, proposals)}>
+          {count === 1 ? 'Review it' : 'Review them'}
+        </Link>
+        {close}
+      </div>
+    </div>
+  )
+}
+
+/** What filling in the plan card came to: one plan change to review, or nothing to add. */
+function PlanCardOutcome({ job, close }: { job: StudioJob; close: ReactNode }) {
+  const { scope } = useProject()
+  const proposal = planCardProposal(job)
+  const summary = job.result.summary_filled === true
+  const refs = Number(job.result.refs_added ?? 0)
+  const left = Number(job.result.dropped ?? 0)
+  const leftOut =
+    left > 0
+      ? ` ${plural(left, 'suggestion')} could not be tied to the scene’s words, so ${left === 1 ? 'it was' : 'they were'} left out.`
+      : ''
+  if (!proposal) {
+    return (
+      <div className="notice plain" role="status">
+        <p>
+          <strong>Nothing to add to the plan card.</strong> The assistant suggests only what the
+          scene’s words show, and never replaces what you planned. Your plan is unchanged.{leftOut}
+        </p>
+        <div className="actions">{close}</div>
+      </div>
+    )
+  }
+  const parts = [
+    summary ? 'a summary' : null,
+    refs > 0 ? plural(refs, 'person or place', 'people or places') : null,
+  ].filter((part): part is string => part !== null)
+  return (
+    <div className="notice ok" role="status">
+      <p>
+        <strong>
+          {parts.length > 0
+            ? `The assistant suggests ${parts.join(' and ')} for this scene’s plan card.`
+            : 'The assistant suggests changes to this scene’s plan card.'}
+        </strong>{' '}
+        Nothing changes in your plan until you review it.{leftOut}
+      </p>
+      <div className="actions">
+        <Link className="btn primary sm" to={reviewPath(scope.projectId, [proposal])}>
+          Review it
+        </Link>
+        {close}
+      </div>
     </div>
   )
 }

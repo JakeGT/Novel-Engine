@@ -1,9 +1,11 @@
 # Phase 6 implementation todo: from written scenes back into the story
 
-- Status: Planned (2026-10-17), after Phase 5.
+- Status: Built (2026-10-17). Reading and the plan card have run against a scripted model and the
+  local stand-in only.
 - Scope: `09-delivery-roadmap.md` Phase 6. Governing documents: `13-consistency-system.md` (Tier 1
   and Tier 2), `15-prose-editor-and-memory.md` ("prose as a second way in"), ADR-014 (review),
-  ADR-022 (the scene studio). Level 4 in `19-assistant-first-experience.md`.
+  ADR-022 (the scene studio), ADR-023 (written with this phase). Level 4 in
+  `19-assistant-first-experience.md`.
 
 Most of the machinery exists already. Reading a text into proposed changes (Phase 2.7,
 `IntakeWorkflow.read_passage`) keeps only what it can quote, points every change at the exact
@@ -38,23 +40,45 @@ joins them up and fills the gaps.
 
 ## Work
 
-- [ ] `scene_readings` table: scene, line of the story, version read, job, proposals made, when.
-- [ ] Reading job: paragraph diff against the last version read; read each changed passage with
-      `IntakeWorkflow.read_passage`; usage and cancellation as other jobs; record the reading.
-- [ ] Facts read from a scene with a story time start at that time unless the text says otherwise.
-- [ ] Studio: "Update the story from this scene", progress and stop, result with a link to the review;
-      "changed since it was last read" status.
-- [ ] Review: "See it in the scene" for evidence from a scene's text.
-- [ ] New scene with only a title from the studio and the plan; "Fill in the plan card from the
-      prose" as a reviewed plan proposal.
-- [ ] Tests: reading twice proposes nothing new for unchanged text; stale review conflicts; commit
-      twice is idempotent; a what-if's scene reads into the what-if only; a reader-only member cannot
-      start a reading; the end-to-end loop plan → draft → keep → read → review → commit in a browser.
-- [ ] Playwright screenshot review against the design rules; ADR-023; HANDOFF.
+- [x] `scene_readings` table (migration 0035): scene, line of the story, version read, job, proposals
+      made, when; forked with a what-if; purged with the project.
+- [x] Reading job (`scene_read`): paragraph diff against the last version read; each changed passage
+      read with `IntakeWorkflow.read_passage`; leases, cancellation and usage as other jobs.
+- [ ] Facts read from a scene with a story time start at that time. Not done: the reader is shared
+      with pasted texts and some kinds of fact cannot take a time; recorded in ADR-023.
+- [x] Studio: "Your story bible" in the margin with the status (never read, read at version N,
+      changed since), "Update the story from this scene" with its reasons when unavailable, progress
+      and Stop, and the outcome with "Review it/them".
+- [x] Review: "See it in the scene", opening the studio with the words selected.
+- [x] A scene with only a title is made from the plan as before; "Fill in the plan card from the
+      prose" (`scene_plan`) proposes summary, viewpoint, place and participants for review.
+- [x] Tests: contract (`test_scene_reading.py`, `test_scene_plan_card.py`), integration (readings
+      store and fork), component tests, and the browser loop draft → keep → check → read → review →
+      see it in the scene, and the plan card, against the local stand-in model.
+- [x] Playwright screenshot review against the design rules; ADR-023; HANDOFF.
 
-## Exit criteria (roadmap)
+## Adversarial review
 
-- No model operation writes canon directly.
-- Every accepted change links to scene evidence and a review decision.
-- Committing twice is idempotent; a stale review gets a conflict, not an overwrite.
-- The whole release-one workflow passes from a clean project.
+One high, four medium and four low findings, all fixed with tests but one known limit; see ADR-023.
+The fixes: readings are recorded passage by passage and resumed; lines, not paragraphs, are the
+unit; one reading at a time, and an out-of-date one reads nothing; the allowance is checked before
+each passage; plan card suggestions are marked `only_fills` and refused if the card changed; the
+reader's passage is fenced with markers the text cannot contain.
+
+## Design review (browser, `~/Projects/Common/rules.md`)
+
+| Rule | Found | Changed |
+| --- | --- | --- |
+| F7 | One suggested change, but "review them" and "Review them" | "it" for one, "them" for several |
+| S6, T4 | The plan card offer sat in the heading and pushed its actions below it | The offer is a plain notice under the heading, with the other notices |
+| F7, plain language | "Approve and add to canon", "In canon", "added to canon" on screen | "your story" everywhere it is shown |
+
+## State of the exit criteria
+
+| Criterion | State |
+| --- | --- |
+| No model operation writes canon directly | Met: readings and plan cards end in proposals |
+| Every accepted mutation links to scene evidence and a review decision | Met for changes read from scenes (evidence → version and words; review decision as for all proposals) |
+| Committing twice is idempotent | Met by the existing commit path (ADR-014); unchanged |
+| Stale reviews receive a conflict rather than overwriting newer state | Met by the existing commit path; unchanged |
+| Full release-one workflow passes from a clean project | Met with the stand-in model in the browser; not run with a real provider |

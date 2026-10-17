@@ -39,7 +39,8 @@ Two rules dominate every design decision:
 | Phase 3 — time, what-ifs, knowledge | Built (2026-10-17). See `plan/phase-3-todo.md` and ADR-020. Assistant paths scripted model only. |
 | Phase 4 — explainable context | Built for text (2026-10-17); media processing not built. See `plan/phase-4-todo.md` and ADR-021. |
 | Phase 5 — scene studio | Built (2026-10-17). See `plan/phase-5-todo.md` and ADR-022. Drafting and checks run against a scripted model and a local stand-in only. |
-| Phase 6+ | Planned (extraction from scenes, release hardening). See `plan/phase-6-todo.md` and `plan/09-delivery-roadmap.md`. |
+| Phase 6 — scenes back into the story | Built (2026-10-17). See `plan/phase-6-todo.md` and ADR-023. Stand-in and scripted models only. |
+| Phase 7 — release hardening | In progress. See `plan/phase-7-todo.md`. |
 
 **Not production-ready.** Billing, platform-funded inference, public signup, and real-time
 collaboration do not exist by design. Do not describe a deferred capability as implemented
@@ -618,8 +619,7 @@ ADR-021 records the decisions; `plan/phase-4-todo.md` has the state of each item
 ## Phase 5: the scene studio (2026-10-17)
 
 ADR-022 records the decisions; `plan/phase-5-todo.md` has the state, the adversarial review, the
-design review and the exit criteria. Alembic head is `0035_scene_readings` (0035 is the first
-Phase 6 table).
+design review and the exit criteria.
 
 - **Prose** is a text of kind `scene` linked per line of the story (`scene_manuscripts`, in
   `_FORKED_TABLES`). Versions record origin, parent, draft and manifest. Copy on write keeps full
@@ -641,4 +641,22 @@ Phase 6 table).
 
 Not done: a real provider has never drafted or checked a scene; no streaming; drafts are kept or
 discarded whole; media is named, not sent; consistency profiles and suppressions.
+
+## Phase 6: scenes back into the story (2026-10-17)
+
+ADR-023 records the decisions; `plan/phase-6-todo.md` has the state. Alembic head is
+`0035_scene_readings`.
+
+- **Reading a scene** (`backend/services/scene_reading.py`, job `scene_read`): reads the exact
+  version asked about with `IntakeWorkflow.read_passage`, only the paragraphs changed since the last
+  reading (`backend/domain/reading.py`), and records the reading (`scene_readings`, forked with a
+  what-if). Proposals go to review. `POST /plan/{id}/studio/readings`; status on the studio.
+- **Plan card from the prose** (`backend/services/scene_plan_card.py`, job `scene_plan`): entries by
+  id and name, of the right kind, with a quote; the author's plan wins; one reviewed plan change.
+- **See it in the scene**: `GET /texts/passage` returns `scene_id`; the review screen links to the
+  studio with `?at=start-end&version=…`, which selects the words.
+- The stand-in model (`scripts/e2e/fake_model.py`) answers by schema name: drafts, reviews, readings
+  and plan cards.
+
+Not done: facts read from a scene do not take its story time.
 

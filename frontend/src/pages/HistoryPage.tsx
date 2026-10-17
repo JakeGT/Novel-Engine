@@ -36,7 +36,7 @@ export function HistoryPage() {
         <div>
           <h1>History</h1>
           <p className="lede">
-            Every time something is added to canon, a new version is saved. Nothing is ever lost:
+            Every time something is added to your story, a new version is saved. Nothing is ever lost:
             you can see what changed and go back to any earlier version.
           </p>
         </div>

@@ -23,6 +23,8 @@ from backend.domain.studio import (
     AssistantFinding,
     SceneDraft,
 )
+from backend.services.scene_plan_card import ScenePlanCardService
+from backend.services.scene_reading import ReadingStatus, SceneReadingService
 from backend.services.studio_service import StudioService, StudioState
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["studio"])
@@ -30,6 +32,21 @@ router = APIRouter(prefix="/projects/{project_id}", tags=["studio"])
 
 def get_studio(container: Container = Depends(get_container)) -> StudioService:
     return container.studio_service  # type: ignore[no-any-return]
+
+
+def get_reading(container: Container = Depends(get_container)) -> SceneReadingService:
+    return container.scene_reading  # type: ignore[no-any-return]
+
+
+def get_plan_card(container: Container = Depends(get_container)) -> ScenePlanCardService:
+    return container.scene_plan_card  # type: ignore[no-any-return]
+
+
+async def _answer(
+    state: StudioState, reading: SceneReadingService, workspace_id: str, project_id: str
+) -> StudioModel:
+    status = await reading.status(workspace_id, project_id, state.scene.id)
+    return _model(state, status)
 
 
 class CheckModel(BaseModel):
@@ -89,6 +106,20 @@ class JobModel(BaseModel):
     finished_at: datetime | None = None
 
 
+class ReadingModel(BaseModel):
+    """The last time this scene was read into the story, and whether it has changed since."""
+
+    # None when it has never been read.
+    version_id: str | None = None
+    version_number: int | None = None
+    read_at: datetime | None = None
+    passages: int = 0
+    # The proposals that came of it, waiting in the review queue or already decided.
+    proposals: list[str] = []
+    discarded: int = 0
+    changed_since: bool
+
+
 class StudioModel(BaseModel):
     scene_id: str
     title: str
@@ -101,6 +132,7 @@ class StudioModel(BaseModel):
     assistant: list[AssistantNoteModel]
     drafts: list[DraftModel]
     jobs: list[JobModel]
+    reading: ReadingModel
 
 
 class SaveRequest(BaseModel):
@@ -205,7 +237,20 @@ def _draft(draft: SceneDraft, state: StudioState) -> DraftModel:
     )
 
 
-def _model(state: StudioState) -> StudioModel:
+def _reading(status: ReadingStatus) -> ReadingModel:
+    last = status.last
+    return ReadingModel(
+        version_id=last.version_id if last else None,
+        version_number=status.version_number,
+        read_at=last.created_at if last else None,
+        passages=last.passages if last else 0,
+        proposals=list(last.proposals) if last else [],
+        discarded=last.discarded if last else 0,
+        changed_since=status.changed_since,
+    )
+
+
+def _model(state: StudioState, reading: ReadingStatus) -> StudioModel:
     content = state.current.content if state.current is not None else ""
     return StudioModel(
         scene_id=state.scene.id,
@@ -219,6 +264,7 @@ def _model(state: StudioState) -> StudioModel:
         assistant=[_note(f) for f in state.assistant],
         drafts=[_draft(d, state) for d in state.drafts],
         jobs=[_job(j) for j in state.jobs],
+        reading=_reading(reading),
     )
 
 
@@ -228,8 +274,10 @@ async def studio(
     plan_id: str,
     scope: AccessScope = Depends(get_project_scope),
     service: StudioService = Depends(get_studio),
+    reading: SceneReadingService = Depends(get_reading),
 ) -> StudioModel:
-    return _model(await service.state(scope, scope.workspace_id or "", project_id, plan_id))
+    state = await service.state(scope, scope.workspace_id or "", project_id, plan_id)
+    return await _answer(state, reading, scope.workspace_id or "", project_id)
 
 
 @router.put("/plan/{plan_id}/studio/text")
@@ -239,6 +287,7 @@ async def save_text(
     body: SaveRequest,
     scope: AccessScope = Depends(require_project_scope),
     service: StudioService = Depends(get_studio),
+    reading: SceneReadingService = Depends(get_reading),
 ) -> StudioModel:
     state = await service.save(
         scope,
@@ -248,7 +297,7 @@ async def save_text(
         content=body.content,
         base_version_id=body.base_version_id,
     )
-    return _model(state)
+    return await _answer(state, reading, scope.workspace_id or "", project_id)
 
 
 @router.post("/plan/{plan_id}/studio/estimate")
@@ -311,6 +360,30 @@ async def start_review(
     return _job(job)
 
 
+@router.post("/plan/{plan_id}/studio/readings", status_code=status.HTTP_202_ACCEPTED)
+async def start_reading(
+    project_id: str,
+    plan_id: str,
+    scope: AccessScope = Depends(require_project_scope),
+    reading: SceneReadingService = Depends(get_reading),
+) -> JobModel:
+    """Read the scene into proposed changes to the story, for review (Phase 6)."""
+    job = await reading.start(scope, scope.workspace_id or "", project_id, plan_id)
+    return _job(job)
+
+
+@router.post("/plan/{plan_id}/studio/plan-card", status_code=status.HTTP_202_ACCEPTED)
+async def start_plan_card(
+    project_id: str,
+    plan_id: str,
+    scope: AccessScope = Depends(require_project_scope),
+    plan_card: ScenePlanCardService = Depends(get_plan_card),
+) -> JobModel:
+    """Fill in the scene's plan card from its prose, as a plan change for review (Phase 6)."""
+    job = await plan_card.start(scope, scope.workspace_id or "", project_id, plan_id)
+    return _job(job)
+
+
 @router.post("/drafts/{draft_id}/keep")
 async def keep_draft(
     project_id: str,
@@ -318,11 +391,12 @@ async def keep_draft(
     body: KeepRequest,
     scope: AccessScope = Depends(require_project_scope),
     service: StudioService = Depends(get_studio),
+    reading: SceneReadingService = Depends(get_reading),
 ) -> StudioModel:
     state = await service.keep(
         scope, scope.workspace_id or "", project_id, draft_id, base_version_id=body.base_version_id
     )
-    return _model(state)
+    return await _answer(state, reading, scope.workspace_id or "", project_id)
 
 
 @router.delete("/drafts/{draft_id}", status_code=status.HTTP_204_NO_CONTENT)

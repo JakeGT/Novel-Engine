@@ -77,6 +77,7 @@ export type ContextItem = Schemas['ContextItemModel']
 export type ContextSettings = Schemas['ContextSettings']
 export type WritingIndex = Schemas['IndexStatusModel']
 export type Studio = Schemas['StudioModel']
+export type SceneReading = Schemas['ReadingModel']
 export type SceneDraft = Schemas['DraftModel']
 export type DraftCheck = Schemas['CheckModel']
 export type AssistantNote = Schemas['AssistantNoteModel']
@@ -712,6 +713,12 @@ export const api = {
     send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/studio/reviews`, {
       draft_id: draftId,
     } satisfies Schemas['ReviewRequest']),
+  /** Read the scene's saved text into suggested changes to the story, for review. */
+  startReading: (scope: Scope, planId: string) =>
+    send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/studio/readings`),
+  /** Fill in the scene's plan card from its saved text, as a plan change for review. */
+  startPlanCard: (scope: Scope, planId: string) =>
+    send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/studio/plan-card`),
   keepDraft: (scope: Scope, draftId: string, baseVersionId: string | null) =>
     send<Studio>(scope, 'POST', `/drafts/${id(draftId)}/keep`, {
       base_version_id: baseVersionId,

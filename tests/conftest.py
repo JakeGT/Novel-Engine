@@ -326,6 +326,37 @@ def _build_fake_container(settings, tmp_path):
         local_mode=not settings.is_hosted,
         clocks=story_clocks,
     )
+    from backend.services.scene_reading import SceneReadingService
+
+    scene_reading = SceneReadingService(
+        studio=studio_service,
+        store=studio_store,
+        sources=source_service,
+        workflow=canon_character_workflow,
+        canon=canon_repository,
+        journal=journal,
+        runner=job_runner,
+        settings=settings,
+        credentials=credential_service,
+        usage=usage_service,
+        jobs=jobs,
+    )
+    scene_reading.register_jobs()
+    from backend.services.scene_plan_card import ScenePlanCardService
+
+    scene_plan_card = ScenePlanCardService(
+        studio=studio_service,
+        sources=source_service,
+        mutation=mutation_service,
+        canon=canon_repository,
+        journal=journal,
+        runner=job_runner,
+        ai=ai,
+        settings=settings,
+        credentials=credential_service,
+        usage=usage_service,
+    )
+    scene_plan_card.register_jobs()
     equivalence_service = CanonEquivalenceService(
         canon=canon_repository, journal=journal, writer=canon_writer
     )
@@ -422,6 +453,8 @@ def _build_fake_container(settings, tmp_path):
         job_runner=job_runner,
         studio_store=studio_store,
         studio_service=studio_service,
+        scene_reading=scene_reading,
+        scene_plan_card=scene_plan_card,
         canon_character_workflow=canon_character_workflow,
         equivalence_service=equivalence_service,
         assist_sessions=assist_sessions,

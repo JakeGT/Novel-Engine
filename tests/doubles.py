@@ -2654,6 +2654,15 @@ class InMemoryCanonRepository:
             for (ws, pj, branch, plan), text_id in list(studio.manuscripts.items()):
                 if (ws, pj, branch) == (workspace_id, project_id, parent_branch_id):
                     studio.manuscripts[(ws, pj, branch_id, plan)] = text_id
+            from dataclasses import replace as _replace
+
+            for reading in list(studio.saved_readings):
+                if (reading.workspace_id, reading.project_id, reading.branch_id) == (
+                    workspace_id,
+                    project_id,
+                    parent_branch_id,
+                ):
+                    studio.saved_readings.append(_replace(reading, branch_id=branch_id))
         return head
 
     async def set_branch_status(
@@ -4649,6 +4658,7 @@ class InMemoryStudioStore:
         self.drafts_by_id: dict[tuple[str, str, str], Any] = {}
         self.assistant_findings: list[tuple[str, str, Any]] = []
         self.voices: dict[tuple[str, str], str] = {}
+        self.saved_readings: list[Any] = []
 
     async def manuscript(self, *, workspace_id, project_id, branch_id, plan_id):
         return self.manuscripts.get((workspace_id, project_id, branch_id, plan_id))
@@ -4732,6 +4742,38 @@ class InMemoryStudioStore:
             if (ws, pj, f.target_kind, f.target_id)
             == (workspace_id, project_id, target_kind, target_id)
         ]
+
+    async def save_reading(self, reading):
+        for n, existing in enumerate(self.saved_readings):
+            if (existing.workspace_id, existing.project_id, existing.branch_id, existing.id) == (
+                reading.workspace_id,
+                reading.project_id,
+                reading.branch_id,
+                reading.id,
+            ):
+                self.saved_readings[n] = reading
+                return
+        self.saved_readings.append(reading)
+
+    async def add_reading(self, reading):
+        await self.save_reading(reading)
+
+    async def readings(self, *, workspace_id, project_id, branch_id, plan_id, limit=50):
+        found = [
+            r
+            for r in self.saved_readings
+            if (r.workspace_id, r.project_id, r.branch_id, r.plan_id)
+            == (workspace_id, project_id, branch_id, plan_id)
+        ]
+        return list(reversed(found))[:limit]
+
+    async def last_reading(self, *, workspace_id, project_id, branch_id, plan_id):
+        for reading in await self.readings(
+            workspace_id=workspace_id, project_id=project_id, branch_id=branch_id, plan_id=plan_id
+        ):
+            if reading.status == "complete":
+                return reading
+        return None
 
     async def voice(self, *, workspace_id, project_id):
         return self.voices.get((workspace_id, project_id), "")
