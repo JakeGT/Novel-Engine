@@ -2427,12 +2427,22 @@
       },
       "BrokenByModel": {
         "properties": {
+          "certain": {
+            "default": true,
+            "title": "Certain",
+            "type": "boolean"
+          },
           "entity_id": {
             "title": "Entity Id",
             "type": "string"
           },
           "name": {
             "title": "Name",
+            "type": "string"
+          },
+          "when": {
+            "default": "",
+            "title": "When",
             "type": "string"
           }
         },
@@ -2751,6 +2761,16 @@
               }
             ],
             "title": "Back To Version"
+          },
+          "context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContextUsedModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "discarded": {
             "items": {
@@ -3125,6 +3145,14 @@
             "title": "Knows",
             "type": "array"
           },
+          "learned": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/LearnedModel"
+            },
+            "title": "Learned",
+            "type": "array"
+          },
           "unaware": {
             "items": {
               "$ref": "#/components/schemas/FactModel"
@@ -3300,7 +3328,21 @@
       },
       "Check": {
         "additionalProperties": false,
+        "description": "One thing that must hold for each entry the rule is about.\n\nhas, lacks, at_most, at_least: how many facts like ``pattern`` it has.\nbetween: every value of ``pattern`` is a number from ``low`` to ``high``.\nimplies: if it has ``if_has``, it must also have ``pattern``.\nnot_both: it cannot have both ``pattern`` and ``not_with``.\nbelieves, does_not_believe: it holds (or holds no) belief like ``pattern``,\nabout ``about_id`` or, when that is empty, about itself.",
         "properties": {
+          "about_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For believes: the entry the belief is about; empty means the entry itself",
+            "title": "About Id"
+          },
           "count": {
             "default": 1,
             "description": "For at_most and at_least",
@@ -3309,15 +3351,70 @@
             "title": "Count",
             "type": "integer"
           },
+          "high": {
+            "anyOf": [
+              {
+                "maximum": 1000000000000.0,
+                "minimum": -1000000000000.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For between: the largest value allowed",
+            "title": "High"
+          },
+          "if_has": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Pattern"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For implies: the fact that, when present, requires pattern"
+          },
           "kind": {
             "enum": [
               "has",
               "lacks",
               "at_most",
-              "at_least"
+              "at_least",
+              "between",
+              "implies",
+              "not_both",
+              "believes",
+              "does_not_believe"
             ],
             "title": "Kind",
             "type": "string"
+          },
+          "low": {
+            "anyOf": [
+              {
+                "maximum": 1000000000000.0,
+                "minimum": -1000000000000.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For between: the smallest value allowed",
+            "title": "Low"
+          },
+          "not_with": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Pattern"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For not_both: the fact that cannot stand with pattern"
           },
           "pattern": {
             "$ref": "#/components/schemas/Pattern"
@@ -4204,6 +4301,137 @@
         "title": "ContextSettingsRequest",
         "type": "object"
       },
+      "ContextUsedModel": {
+        "description": "What part of the story bible the assistant was shown, by which policy (CTX-002).",
+        "properties": {
+          "left_out": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Left Out",
+            "type": "object"
+          },
+          "listed": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Listed",
+            "type": "object"
+          },
+          "policy_version": {
+            "title": "Policy Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "policy_version",
+          "listed",
+          "left_out"
+        ],
+        "title": "ContextUsedModel",
+        "type": "object"
+      },
+      "ContinuityFindingModel": {
+        "properties": {
+          "check": {
+            "title": "Check",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/RecordModel"
+            },
+            "title": "Records",
+            "type": "array"
+          },
+          "scene_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scene Ids",
+            "type": "array"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "check",
+          "code",
+          "severity",
+          "message",
+          "records",
+          "scene_ids"
+        ],
+        "title": "ContinuityFindingModel",
+        "type": "object"
+      },
+      "ContinuityModel": {
+        "properties": {
+          "always": {
+            "title": "Always",
+            "type": "string"
+          },
+          "coverage": {
+            "items": {
+              "$ref": "#/components/schemas/CoverageModel"
+            },
+            "title": "Coverage",
+            "type": "array"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/ContinuityFindingModel"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "not_shown": {
+            "default": 0,
+            "title": "Not Shown",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "findings",
+          "coverage",
+          "always"
+        ],
+        "title": "ContinuityModel",
+        "type": "object"
+      },
+      "CoverageModel": {
+        "properties": {
+          "check": {
+            "title": "Check",
+            "type": "string"
+          },
+          "covers": {
+            "title": "Covers",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "check",
+          "title",
+          "covers"
+        ],
+        "title": "CoverageModel",
+        "type": "object"
+      },
       "CreateAccessKeyRequest": {
         "additionalProperties": false,
         "properties": {
@@ -4457,6 +4685,26 @@
             },
             "title": "Participants",
             "type": "array"
+          },
+          "premises": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 12,
+            "title": "Premises",
+            "type": "array"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
           },
           "when": {
             "anyOf": [
@@ -5869,9 +6117,28 @@
             "title": "Participants",
             "type": "array"
           },
+          "premises": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Premises",
+            "type": "array"
+          },
           "provenance_id": {
             "title": "Provenance Id",
             "type": "string"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
           },
           "when": {
             "anyOf": [
@@ -6079,6 +6346,61 @@
         "title": "EvidenceRef",
         "type": "object"
       },
+      "ExampleBelief": {
+        "additionalProperties": false,
+        "description": "Something a made-up character believes, which may or may not be so.",
+        "properties": {
+          "holder_ref": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Holder Ref",
+            "type": "string"
+          },
+          "object_ref": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Ref"
+          },
+          "predicate": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Predicate",
+            "type": "string"
+          },
+          "subject_ref": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Subject Ref",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "holder_ref",
+          "subject_ref",
+          "predicate"
+        ],
+        "title": "ExampleBelief",
+        "type": "object"
+      },
       "ExampleEntry": {
         "additionalProperties": false,
         "properties": {
@@ -6120,6 +6442,19 @@
       "ExampleFact": {
         "additionalProperties": false,
         "properties": {
+          "ends": {
+            "anyOf": [
+              {
+                "maximum": 1000000000000.0,
+                "minimum": -1000000000000.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends"
+          },
           "object_ref": {
             "anyOf": [
               {
@@ -6137,6 +6472,19 @@
             "minLength": 1,
             "title": "Predicate",
             "type": "string"
+          },
+          "starts": {
+            "anyOf": [
+              {
+                "maximum": 1000000000000.0,
+                "minimum": -1000000000000.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts"
           },
           "subject_ref": {
             "maxLength": 200,
@@ -6190,6 +6538,45 @@
           "agrees"
         ],
         "title": "ExampleResultModel",
+        "type": "object"
+      },
+      "Exceptions": {
+        "additionalProperties": false,
+        "description": "Entries a rule does not apply to. Any one part matching is enough.",
+        "properties": {
+          "entity_ids": {
+            "description": "Named entries",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Entity Ids",
+            "type": "array"
+          },
+          "having": {
+            "description": "Entries that have any of these facts",
+            "items": {
+              "$ref": "#/components/schemas/Pattern"
+            },
+            "maxItems": 4,
+            "title": "Having",
+            "type": "array"
+          },
+          "tag": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Entries with this tag",
+            "title": "Tag"
+          }
+        },
+        "title": "Exceptions",
         "type": "object"
       },
       "FactKnowledgeModel": {
@@ -6575,6 +6962,66 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HowLongModel": {
+        "properties": {
+          "lasting": {
+            "items": {
+              "$ref": "#/components/schemas/LastingModel"
+            },
+            "title": "Lasting",
+            "type": "array"
+          },
+          "travel": {
+            "items": {
+              "$ref": "#/components/schemas/TravelTimeModel"
+            },
+            "title": "Travel",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "travel",
+          "lasting",
+          "version"
+        ],
+        "title": "HowLongModel",
+        "type": "object"
+      },
+      "HowLongRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_version": {
+            "minimum": 0.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "lasting": {
+            "items": {
+              "$ref": "#/components/schemas/LastingModel"
+            },
+            "maxItems": 200,
+            "title": "Lasting",
+            "type": "array"
+          },
+          "travel": {
+            "items": {
+              "$ref": "#/components/schemas/TravelTimeModel"
+            },
+            "maxItems": 200,
+            "title": "Travel",
+            "type": "array"
+          }
+        },
+        "required": [
+          "expected_version"
+        ],
+        "title": "HowLongRequest",
+        "type": "object"
+      },
       "ImpactModel": {
         "description": "What depends on a change: affected, may be affected, and what was not checked.",
         "properties": {
@@ -6656,6 +7103,127 @@
           "semantic"
         ],
         "title": "IndexStatusModel",
+        "type": "object"
+      },
+      "InferRequest": {
+        "additionalProperties": false,
+        "description": "A character works something out from facts and their own beliefs (KNW-002).",
+        "properties": {
+          "confidence": {
+            "default": 1.0,
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "expected_revision": {
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "fact_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fact Id"
+          },
+          "holder_id": {
+            "title": "Holder Id",
+            "type": "string"
+          },
+          "premises": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 12,
+            "minItems": 1,
+            "title": "Premises",
+            "type": "array"
+          },
+          "proposition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PropositionRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
+          "when": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "at": "#/components/schemas/At",
+                    "between": "#/components/schemas/Between",
+                    "relative": "#/components/schemas/Relative",
+                    "unknown": "#/components/schemas/Unknown"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Unknown"
+                  },
+                  {
+                    "$ref": "#/components/schemas/At"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Between"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Relative"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "When"
+          }
+        },
+        "required": [
+          "holder_id",
+          "premises",
+          "expected_revision"
+        ],
+        "title": "InferRequest",
+        "type": "object"
+      },
+      "InferResult": {
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision",
+          "event_id"
+        ],
+        "title": "InferResult",
         "type": "object"
       },
       "IntegerObject": {
@@ -7287,6 +7855,152 @@
           "how"
         ],
         "title": "KnownFactModel",
+        "type": "object"
+      },
+      "LastingModel": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1000000000000.0,
+            "title": "Amount",
+            "type": "number"
+          },
+          "give_or_take": {
+            "default": 0,
+            "maximum": 1000000000000.0,
+            "minimum": 0.0,
+            "title": "Give Or Take",
+            "type": "number"
+          },
+          "subject_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Subject Id",
+            "type": "string"
+          },
+          "subject_kind": {
+            "enum": [
+              "event",
+              "fact"
+            ],
+            "title": "Subject Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subject_kind",
+          "subject_id",
+          "amount"
+        ],
+        "title": "LastingModel",
+        "type": "object"
+      },
+      "LearnedModel": {
+        "description": "How and when a character came to hold one belief (KNW-002).",
+        "properties": {
+          "belief_id": {
+            "title": "Belief Id",
+            "type": "string"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          },
+          "fact_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fact Id"
+          },
+          "how": {
+            "enum": [
+              "told",
+              "overheard",
+              "saw",
+              "worked_out",
+              "heard_said",
+              "event",
+              "recorded"
+            ],
+            "title": "How",
+            "type": "string"
+          },
+          "premises": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PremiseModel"
+            },
+            "title": "Premises",
+            "type": "array"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
+          "scene_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Title"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "when": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "When"
+          },
+          "words": {
+            "title": "Words",
+            "type": "string"
+          }
+        },
+        "required": [
+          "belief_id",
+          "how",
+          "words"
+        ],
+        "title": "LearnedModel",
         "type": "object"
       },
       "LeftOutModel": {
@@ -8553,6 +9267,13 @@
           "plan_id": {
             "title": "Plan Id",
             "type": "string"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/RecordModel"
+            },
+            "title": "Records",
+            "type": "array"
           }
         },
         "required": [
@@ -8970,6 +9691,42 @@
           "when"
         ],
         "title": "PlacedEventModel",
+        "type": "object"
+      },
+      "PlanBase": {
+        "additionalProperties": false,
+        "description": "The parts of a plan item a suggestion read, as they were when it was made (ADR-023).\n\nKept on an ``only_fills`` change so approving it can tell whether the author has\nchanged any part the change would replace since: added or removed someone, a thread\nit opens, settles or moves along.",
+        "properties": {
+          "advances": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Advances",
+            "type": "array"
+          },
+          "pays_off": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pays Off",
+            "type": "array"
+          },
+          "refs": {
+            "items": {
+              "$ref": "#/components/schemas/PlanRef"
+            },
+            "title": "Refs",
+            "type": "array"
+          },
+          "sets_up": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sets Up",
+            "type": "array"
+          }
+        },
+        "title": "PlanBase",
         "type": "object"
       },
       "PlanBriefRequest": {
@@ -9402,6 +10159,34 @@
           "temporal_allowed"
         ],
         "title": "PredicateModel",
+        "type": "object"
+      },
+      "PremiseModel": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "fact",
+              "belief",
+              "gone"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "sentence": {
+            "title": "Sentence",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "sentence"
+        ],
+        "title": "PremiseModel",
         "type": "object"
       },
       "ProjectModel": {
@@ -9952,6 +10737,16 @@
       },
       "ReadPassageModel": {
         "properties": {
+          "context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContextUsedModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "discarded": {
             "items": {
               "$ref": "#/components/schemas/DiscardedItemModel"
@@ -9961,6 +10756,11 @@
           },
           "end": {
             "title": "End",
+            "type": "integer"
+          },
+          "events": {
+            "default": 0,
+            "title": "Events",
             "type": "integer"
           },
           "guesses": {
@@ -10004,6 +10804,11 @@
           },
           "start": {
             "title": "Start",
+            "type": "integer"
+          },
+          "thread_steps": {
+            "default": 0,
+            "title": "Thread Steps",
             "type": "integer"
           },
           "validation_ok": {
@@ -10219,6 +11024,41 @@
           "passages"
         ],
         "title": "RebuildResult",
+        "type": "object"
+      },
+      "RecordModel": {
+        "description": "A record a finding comes from, so it can be opened.",
+        "properties": {
+          "entry_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "label"
+        ],
+        "title": "RecordModel",
         "type": "object"
       },
       "RecordedClaimModel": {
@@ -10993,6 +11833,15 @@
             "title": "Checks",
             "type": "array"
           },
+          "except_for": {
+            "$ref": "#/components/schemas/Exceptions"
+          },
+          "form": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Form",
+            "type": "integer"
+          },
           "mode": {
             "default": "all",
             "enum": [
@@ -11000,6 +11849,16 @@
               "any"
             ],
             "title": "Mode",
+            "type": "string"
+          },
+          "time": {
+            "default": "as_recorded",
+            "enum": [
+              "as_recorded",
+              "every_moment",
+              "at_end"
+            ],
+            "title": "Time",
             "type": "string"
           }
         },
@@ -11133,6 +11992,14 @@
         "additionalProperties": false,
         "description": "A tiny made-up story, and whether the rule should catch it.",
         "properties": {
+          "beliefs": {
+            "items": {
+              "$ref": "#/components/schemas/ExampleBelief"
+            },
+            "maxItems": 12,
+            "title": "Beliefs",
+            "type": "array"
+          },
           "description": {
             "maxLength": 300,
             "minLength": 1,
@@ -11264,6 +12131,313 @@
         ],
         "title": "RuleStatus",
         "type": "string"
+      },
+      "RunFindingModel": {
+        "properties": {
+          "check_pass": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check Pass"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "dismissal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DismissalModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fixed_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "words",
+                  "story"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed By"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "quoted": {
+            "default": "",
+            "title": "Quoted",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "check",
+              "note"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "stale": {
+            "default": false,
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "dismissed",
+              "fixed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_id",
+          "source",
+          "code",
+          "severity",
+          "message",
+          "status"
+        ],
+        "title": "RunFindingModel",
+        "type": "object"
+      },
+      "RunList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RunModel"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "RunList",
+        "type": "object"
+      },
+      "RunModel": {
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/RunFindingModel"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "kind": {
+            "enum": [
+              "checks",
+              "assistant",
+              "audit"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "passes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Passes",
+            "type": "array"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/components/schemas/RunSceneModel"
+            },
+            "title": "Scenes",
+            "type": "array"
+          },
+          "scope": {
+            "enum": [
+              "scene",
+              "part",
+              "story"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "stale": {
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "story_revision": {
+            "title": "Story Revision",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "scope",
+          "plan_id",
+          "title",
+          "story_revision",
+          "passes",
+          "job_id",
+          "status",
+          "created_at",
+          "stale",
+          "scenes",
+          "findings"
+        ],
+        "title": "RunModel",
+        "type": "object"
+      },
+      "RunSceneModel": {
+        "properties": {
+          "dismissed": {
+            "title": "Dismissed",
+            "type": "integer"
+          },
+          "draft_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Id"
+          },
+          "fixed": {
+            "title": "Fixed",
+            "type": "integer"
+          },
+          "in_plan": {
+            "title": "In Plan",
+            "type": "boolean"
+          },
+          "open": {
+            "title": "Open",
+            "type": "integer"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "stale": {
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          }
+        },
+        "required": [
+          "plan_id",
+          "title",
+          "in_plan",
+          "stale",
+          "reasons",
+          "open",
+          "dismissed",
+          "fixed"
+        ],
+        "title": "RunSceneModel",
+        "type": "object"
       },
       "SampleLoadedModel": {
         "properties": {
@@ -12434,9 +13608,54 @@
               }
             ]
           },
+          "scene_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
           "speaker_id": {
             "title": "Speaker Id",
             "type": "string"
+          },
+          "when": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "at": "#/components/schemas/At",
+                    "between": "#/components/schemas/Between",
+                    "relative": "#/components/schemas/Relative",
+                    "unknown": "#/components/schemas/Unknown"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Unknown"
+                  },
+                  {
+                    "$ref": "#/components/schemas/At"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Between"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Relative"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "When"
           }
         },
         "required": [
@@ -12748,6 +13967,36 @@
           "to_user_id"
         ],
         "title": "TransferOwnershipRequest",
+        "type": "object"
+      },
+      "TravelTimeModel": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "maximum": 1000000000000.0,
+            "minimum": 0.0,
+            "title": "Amount",
+            "type": "number"
+          },
+          "from_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "From Id",
+            "type": "string"
+          },
+          "to_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "To Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_id",
+          "to_id",
+          "amount"
+        ],
+        "title": "TravelTimeModel",
         "type": "object"
       },
       "TrueThenModel": {
@@ -13077,6 +14326,16 @@
       "UpdatePlanItemOp": {
         "additionalProperties": false,
         "properties": {
+          "base": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanBase"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "detach": {
             "default": false,
             "title": "Detach",
@@ -13512,6 +14771,51 @@
                 "type": "null"
               }
             ]
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
+          "when": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "at": "#/components/schemas/At",
+                    "between": "#/components/schemas/Between",
+                    "relative": "#/components/schemas/Relative",
+                    "unknown": "#/components/schemas/Unknown"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Unknown"
+                  },
+                  {
+                    "$ref": "#/components/schemas/At"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Between"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Relative"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "When"
           }
         },
         "required": [
@@ -18826,6 +20130,109 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/checks/runs/by-job/{job_id}": {
+      "get": {
+        "description": "The run an audit or a check with the assistant keeps, once it has started reading.",
+        "operationId": "run_for_job_api_v1_projects__project_id__checks_runs_by_job__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run For Job",
+        "tags": [
+          "checks"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/checks/runs/{run_id}": {
+      "get": {
+        "operationId": "get_run_api_v1_projects__project_id__checks_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Run",
+        "tags": [
+          "checks"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/drafts/{draft_id}": {
       "delete": {
         "operationId": "discard_draft_api_v1_projects__project_id__drafts__draft_id__delete",
@@ -21585,6 +22992,59 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/knowledge/infer": {
+      "post": {
+        "description": "Record that a character worked something out, and from what. Saved at once: it is\nthe author's own change, like recording a claim.",
+        "operationId": "infer_api_v1_projects__project_id__knowledge_infer_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InferResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Infer",
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/knowledge/tell": {
       "post": {
         "description": "Propose a telling: the event, and what each hearer comes to believe by their trust.\n\nIt waits in review; nothing is in the story until it is approved.",
@@ -23062,6 +24522,108 @@
         "summary": "Change Plan Item",
         "tags": [
           "plan"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/checks/runs": {
+      "get": {
+        "description": "The checks that read this scene, newest first (audits included), judged for it.",
+        "operationId": "scene_runs_api_v1_projects__project_id__plan__plan_id__checks_runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scene Runs",
+        "tags": [
+          "checks"
+        ]
+      },
+      "post": {
+        "description": "Keep a record of what the checks that need no model find in the scene now. Free;\nwhen nothing changed since the last record, that record is returned.",
+        "operationId": "record_scene_run_api_v1_projects__project_id__plan__plan_id__checks_runs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Scene Run",
+        "tags": [
+          "checks"
         ]
       }
     },
@@ -26173,6 +27735,142 @@
           }
         },
         "summary": "Get Timeline",
+        "tags": [
+          "story-time"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/timeline/checks": {
+      "get": {
+        "description": "Continuity across story time and place: warnings and notes, never blocking.",
+        "operationId": "get_continuity_api_v1_projects__project_id__timeline_checks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContinuityModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Continuity",
+        "tags": [
+          "story-time"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/timeline/how-long": {
+      "get": {
+        "operationId": "get_how_long_api_v1_projects__project_id__timeline_how_long_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HowLongModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get How Long",
+        "tags": [
+          "story-time"
+        ]
+      },
+      "put": {
+        "description": "Replace the author's travel times and lengths. Shared by every line of the story.",
+        "operationId": "set_how_long_api_v1_projects__project_id__timeline_how_long_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HowLongRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HowLongModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set How Long",
         "tags": [
           "story-time"
         ]

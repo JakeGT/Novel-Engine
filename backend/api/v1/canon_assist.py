@@ -47,6 +47,7 @@ from backend.domain.assist import (
     AssistSession,
     SchemaSuggestion,
 )
+from backend.domain.bible_listing import Listing
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.services.assist_session_service import AssistSessionService
@@ -332,6 +333,27 @@ class ElsewhereModel(BaseModel):
     what: str
 
 
+class ContextUsedModel(BaseModel):
+    """What part of the story bible the assistant was shown, by which policy (CTX-002)."""
+
+    # The listing policy and its version, e.g. ``change-story/1``.
+    policy_version: str
+    # How many of each kind of record (entries, facts, events, beliefs, threads) it was
+    # shown, and how many were left out for room. Nothing left out means it saw them all.
+    listed: dict[str, int]
+    left_out: dict[str, int]
+
+
+def context_used(listing: Listing | None) -> ContextUsedModel | None:
+    if listing is None:
+        return None
+    return ContextUsedModel(
+        policy_version=listing.policy_version,
+        listed=dict(listing.listed),
+        left_out=dict(listing.left_out),
+    )
+
+
 class ChangeProposalModel(BaseModel):
     # Null when the assistant asked questions instead of proposing; nothing was created.
     mutation_id: str | None
@@ -353,6 +375,8 @@ class ChangeProposalModel(BaseModel):
     back_to_version: int | None = None
     # When the author asked to invite someone. Nothing has been created or sent.
     invite: InviteModel | None = None
+    # What part of the story bible the assistant was shown (CTX-002).
+    context: ContextUsedModel | None = None
     validation_ok: bool
     validation_issues: list[ProposalIssueModel]
 
@@ -470,6 +494,7 @@ async def assist_change(
             if result.invite is not None
             else None
         ),
+        context=context_used(result.context),
         discarded=[
             DiscardedItemModel(kind=item.kind, reason=item.reason) for item in result.discarded
         ],
@@ -575,6 +600,7 @@ async def assist_links(
         understood=result.understood,
         questions=[],
         notes=result.notes,
+        context=context_used(result.context),
         discarded=[
             DiscardedItemModel(kind=item.kind, reason=item.reason) for item in result.discarded
         ],

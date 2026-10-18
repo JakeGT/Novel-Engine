@@ -1,12 +1,23 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useState, type FormEvent } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import { api, type CanonEvent, type Moment, type PlacedEvent, type WorldTime } from '../api/client'
 import { Button, Dialog, EmptyState, ErrorNotice, Field, Loading, WriteProblem } from '../components/ui'
 import { WhenField } from '../components/WhenField'
+import { ContinuityChecks } from '../components/ContinuityChecks'
+import { HowLongTable } from '../components/HowLongTable'
 import { COMMON_UNITS, spanText, useStoryClock } from '../lib/storytime'
 import { objectText, predicateLabel } from '../lib/words'
 import { entryPath, scopedKey, useCanonWrite, useEntries, useInvalidateProject, useProject } from '../project'
+
+/** Kinds of event the continuity checks read; the first is the default. */
+const EVENT_KINDS = [
+  { value: 'happening', label: 'Something happens' },
+  { value: 'birth', label: 'Someone is born (with that one person in it)' },
+  { value: 'death', label: 'Someone dies (with that one person in it)' },
+  { value: 'founded', label: 'A place is founded or built (with the place in it)' },
+  { value: 'destroyed', label: 'A place is destroyed or abandoned (with the place in it)' },
+]
 
 /** Place a new event, or change when an existing one happened. */
 function EventDialog({ event, onClose }: { event?: CanonEvent; onClose: () => void }) {
@@ -19,6 +30,7 @@ function EventDialog({ event, onClose }: { event?: CanonEvent; onClose: () => vo
     event?.when ?? (event?.world_position ? { kind: 'unknown', label: event.world_position } : null),
   )
   const [who, setWho] = useState<string[]>([])
+  const [kind, setKind] = useState('happening')
   const [problem, setProblem] = useState<string | null>(null)
   const people = entries.items.filter((item) => item.lifecycle === 'active')
   const others = clock.events.filter((item) => item.id !== event?.id)
@@ -32,7 +44,7 @@ function EventDialog({ event, onClose }: { event?: CanonEvent; onClose: () => vo
             when: when ?? { kind: 'unknown' },
           })
         : api.createEvent(scope, {
-            kind: 'happening',
+            kind,
             name: name.trim(),
             expected_revision: expectedRevision,
             participants: who.map((entity_id) => ({ entity_id, role: 'participant' })),
@@ -65,6 +77,22 @@ function EventDialog({ event, onClose }: { event?: CanonEvent; onClose: () => vo
             />
           )}
         </Field>
+        {!event && (
+          <Field
+            label="What kind of event"
+            hint="A birth, a death, or a place built or destroyed is used to check who and where can be in a scene then."
+          >
+            {(props) => (
+              <select {...props} value={kind} onChange={(change) => setKind(change.target.value)}>
+                {EVENT_KINDS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
+        )}
         {!event && people.length > 0 && (
           <fieldset className="stack tight">
             <legend>Who or what was part of it (optional)</legend>
@@ -159,6 +187,18 @@ export function TimelinePage() {
   const [editing, setEditing] = useState<{ event?: CanonEvent } | null>(null)
   const [at, setAt] = useState('')
   const [moment, setMoment] = useState<number | null>(null)
+  const location = useLocation()
+  const loaded = Boolean(timeline.data)
+  // A link from a continuity finding opens the timeline at its event.
+  useEffect(() => {
+    if (loaded && location.hash.startsWith('#event-')) {
+      document.getElementById(location.hash.slice(1))?.scrollIntoView?.({ block: 'center' })
+    }
+  }, [loaded, location.hash])
+  const checks = useQuery({
+    queryKey: scopedKey(scope, 'timeline-checks'),
+    queryFn: () => api.continuity(scope),
+  })
   const momentQuery = useQuery({
     queryKey: scopedKey(scope, 'timeline-moment', moment),
     queryFn: () => api.moment(scope, moment as number),
@@ -172,7 +212,7 @@ export function TimelinePage() {
       .join(', ')
 
   const row = (item: PlacedEvent) => (
-    <li key={item.event.id}>
+    <li key={item.event.id} id={`event-${item.event.id}`}>
       <span className="when">
         {item.when}
         {resolvedText(item, clock.unit) && <span className="resolved">{resolvedText(item, clock.unit)}</span>}
@@ -220,6 +260,10 @@ export function TimelinePage() {
         </p>
       ))}
 
+      <ErrorNotice error={checks.error} prefix="Could not check continuity" />
+      {/* Scenes placed in time are checked too, so findings can show on an empty timeline. */}
+      {data && checks.data && (!empty || checks.data.findings.length > 0) && <ContinuityChecks data={checks.data} />}
+
       {empty && (
         <EmptyState icon="timeline" title="Nothing on the timeline yet">
           Add an event and say when it happened, or tell the assistant: “The war began in year
@@ -239,7 +283,7 @@ export function TimelinePage() {
           <h2 id="unplaced">Not placed in time</h2>
           <ul className="rows">
             {data.unplaced.map((item) => (
-              <li className="row" key={item.event.id}>
+              <li className="row" key={item.event.id} id={`event-${item.event.id}`}>
                 <span className="grow">{item.event.name}</span>
                 {item.event.world_position && (
                   <span className="muted small">You wrote: “{item.event.world_position}”</span>
@@ -274,6 +318,17 @@ export function TimelinePage() {
               </li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {data && (
+        <section className="stack tight" aria-labelledby="how-long-heading">
+          <h2 id="how-long-heading">How long things take</h2>
+          <p className="lede small">
+            Your own travel times and lengths, used by the continuity checks. Nothing is guessed: a journey you have
+            not set is never checked.
+          </p>
+          <HowLongTable unit={data.unit} events={clock.events} spans={data.spans} />
         </section>
       )}
 

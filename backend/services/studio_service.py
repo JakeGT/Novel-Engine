@@ -17,6 +17,7 @@ from typing import Any
 
 from backend.adapters.system import uuid7
 from backend.core.logging import log_event
+from backend.domain.acquisition import held_at
 from backend.domain.canon.assertions import FactVisibility
 from backend.domain.canon.phrasing import phrase
 from backend.domain.canon.plans import PlanItem, PlanKind
@@ -43,8 +44,10 @@ from backend.domain.dismissals import (
 from backend.domain.drafting import (
     DraftBrief,
     DraftFinding,
+    LaterKnowledge,
     PlannedReveal,
     SecretToGuard,
+    Severity,
     check_draft,
 )
 from backend.domain.errors import (
@@ -56,7 +59,7 @@ from backend.domain.errors import (
 )
 from backend.domain.identity import AccessScope
 from backend.domain.jobs import MAX_ACTIVE_JOBS, Job, JobStatus
-from backend.domain.knowledge import knowledge_of, scene_reveals
+from backend.domain.knowledge import knowledge_of, scene_reveals, scene_time
 from backend.domain.prompting import fence
 from backend.domain.prompts import prompt_version
 from backend.domain.sources import (
@@ -85,6 +88,7 @@ from backend.domain.usage_controls import (
 )
 from backend.ports import AIInvalidOutputError
 from backend.services.job_runner import JobContext, JobSubmission
+from backend.services.knowledge_timing import StoryOrder, scene_signals, where_learned
 from backend.services.provider_route import resolve_provider
 from backend.services.scene_checks import PassRunner
 from backend.services.story_time_service import read_story
@@ -264,6 +268,8 @@ class StudioService:
     ) -> None:
         # The story's assistant settings (CON-009, OPS-002); None checks only on request.
         self.controls = controls
+        # Where checks are kept as runs (CON-001); None keeps no record.
+        self.runs: Any = None
         self._store = store
         self._sources = sources
         self._plan = plan
@@ -345,6 +351,10 @@ class StudioService:
                 target_kind="version",
                 target_id=current.id,
             )
+        else:
+            # Before any prose, the scene's continuity (from the plan and the story bible)
+            # is still worth seeing.
+            state.checks = list(brief.continuity)
         state.drafts = await self._store.drafts(
             workspace_id=workspace_id,
             project_id=project_id,
@@ -563,16 +573,40 @@ class StudioService:
                     brief.ids.setdefault(first[entity_id], entity_id)
             return f"{subject} {phrase(proposition.predicate)} {other}".strip(), names
 
-        if pov is not None:
-            beliefs = await self._reader.list_beliefs(
-                workspace_id=workspace_id, project_id=project_id, limit=10_000
+        beliefs = await self._reader.list_beliefs(
+            workspace_id=workspace_id, project_id=project_id, limit=10_000
+        )
+        # What the scene uses before its people learn it (CON-006), in story order.
+        items = await self._reader.list_plan_items(workspace_id=workspace_id, project_id=project_id)
+        order = StoryOrder(items, story.events)
+        later_facts: set[str] = set()
+        for signal in scene_signals(scene, order, story.facts, beliefs):
+            text, names = sentence(signal.later.belief.proposition)
+            if signal.later.fact is not None and signal.viewpoint:
+                later_facts.add(signal.later.fact.id)
+            brief.learned_later.append(
+                LaterKnowledge(
+                    sentence=text,
+                    names=names,
+                    who=first.get(signal.who_id, "Someone"),
+                    where=where_learned(signal.later, order.where),
+                    viewpoint=signal.viewpoint,
+                    planned=signal.planned,
+                    in_context=signal.in_context,
+                    said=signal.said,
+                )
             )
-            known = knowledge_of(pov, story.facts, beliefs).known_ids()
+        if pov is not None:
+            # Only what they hold by this scene: something learned later is not known yet.
+            held = held_at(pov, scene.id, beliefs, order.by_id, order.where)
+            known = knowledge_of(pov, story.facts, held).known_ids()
             for fact in story.facts:
                 if (
                     fact.closed_revision is None
                     and fact.visibility is FactVisibility.SECRET
                     and fact.id not in known
+                    # Something they learn later has its own, plainer check above.
+                    and fact.id not in later_facts
                 ):
                     text, names = sentence(fact.proposition)
                     brief.secrets.append(SecretToGuard(text, names))
@@ -582,7 +616,35 @@ class StudioService:
             if revealed is not None and reveal.how == "shown":
                 text, names = sentence(revealed.proposition)
                 brief.reveals.append(PlannedReveal(text, names))
+        brief.continuity = await self._continuity(workspace_id, project_id, scene, story)
         return brief
+
+    async def _continuity(
+        self, workspace_id: str, project_id: str, scene: PlanItem, story: Any
+    ) -> list[DraftFinding]:
+        """This scene's continuity findings (CON-003, CON-004), from the story bible and the
+        plan. Only a scene placed in story time is checked."""
+        if scene_time(scene.details) is None:
+            return []
+        from backend.services.continuity_service import story_continuity
+
+        found = await story_continuity(
+            self._reader,
+            getattr(self._plan, "clocks", None),
+            workspace_id,
+            project_id,
+            story=story,
+        )
+        return [
+            DraftFinding(
+                f"continuity_{item.code}",
+                Severity.WARNING if item.severity == "warning" else Severity.NOTE,
+                item.message,
+                subject=item.subject,
+            )
+            for item in found
+            if scene.id in item.scene_ids
+        ]
 
     async def _check(
         self,
@@ -629,10 +691,23 @@ class StudioService:
         await self._write(
             scope, workspace_id, project_id, scene, content=content, base_version_id=base_version_id
         )
+        await self._record_checks(scope, workspace_id, project_id, plan_id)
         automatic = await self._automatic_check(scope, workspace_id, project_id, plan_id, "save")
         state = await self.state(scope, workspace_id, project_id, plan_id)
         state.automatic = automatic
         return state
+
+    async def _record_checks(
+        self, scope: AccessScope, workspace_id: str, project_id: str, plan_id: str
+    ) -> None:
+        """Keep what the checks find in the version just saved (CON-001). A record that
+        cannot be kept never loses the author's words: the save has already happened."""
+        if self.runs is None:
+            return
+        try:
+            await self.runs.record_checks(scope, workspace_id, project_id, plan_id)
+        except Exception as error:  # noqa: BLE001 - the record is extra to the save
+            log_event(logger, "checks.run_not_recorded", error_type=type(error).__name__)
 
     async def _write(
         self,
@@ -759,6 +834,7 @@ class StudioService:
             draft_id=draft.id,
             version_id=version.id,
         )
+        await self._record_checks(scope, workspace_id, project_id, draft.plan_id)
         automatic = await self._automatic_check(
             scope, workspace_id, project_id, draft.plan_id, "keep"
         )
@@ -1359,6 +1435,7 @@ class StudioService:
         payload = job.payload
         await ctx.step("Reading the scene and your story", 10)
         draft_id = payload.get("draft_id")
+        source_id: str | None = None
         if draft_id:
             draft = await self._draft(workspace_id, project_id, draft_id, payload["plan_id"])
             content, target_kind, target_id = draft.content, "draft", draft.id
@@ -1368,7 +1445,22 @@ class StudioService:
                 raise NotFoundError("There is nothing written for this scene.")
             _, current, _ = await self._sources.version(workspace_id, project_id, text.id)
             content, target_kind, target_id = current.content, "version", current.id
+            source_id = text.id
         chosen = _passes(payload.get("passes")) or PASS_ORDER
+        if self.runs is not None:
+            # Kept as a run (CON-001) with exactly the words read; once per job.
+            try:
+                await self.runs.record_assistant(
+                    job,
+                    plan_id=payload["plan_id"],
+                    content=content,
+                    source_id=source_id,
+                    version_id=target_id if target_kind == "version" else None,
+                    draft_id=target_id if target_kind == "draft" else None,
+                    passes=tuple(item.value for item in chosen),
+                )
+            except Exception as error:  # noqa: BLE001 - the record is extra to the check
+                log_event(logger, "checks.run_not_recorded", error_type=type(error).__name__)
         plan = await self.check_plan(
             scope, workspace_id, project_id, payload["plan_id"], content, chosen
         )

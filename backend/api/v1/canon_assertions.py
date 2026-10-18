@@ -167,6 +167,9 @@ class EventModel(BaseModel):
     when: WorldTime | None = None
     # On an event of kind "claim": what is said, how, and in which scene (KNW-005).
     claim: EventClaimModel | None = None
+    # The scene it happens in, and what an inference was worked out from (KNW-002).
+    scene_id: str | None = None
+    premises: list[str] = []
     provenance_id: str
     created_revision: int
 
@@ -218,6 +221,8 @@ def _event_model(event: Event) -> EventModel:
         world_position=event.world_position,
         when=event.when,
         claim=_claim_model(event.claim),
+        scene_id=event.scene_id,
+        premises=list(event.premises),
         provenance_id=event.provenance_id,
         created_revision=event.created_revision,
     )

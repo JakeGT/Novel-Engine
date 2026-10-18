@@ -92,8 +92,10 @@ test('choose what a check looks at, then audit a part of the story', async ({ pa
   await shot(page, '01-studio-choices')
   await expectAccessible(page)
   await page.getByRole('button', { name: /Check with the assistant/ }).click()
-  await expect(page.getByText('The scene is set in the morning, but the lamps are lit.')).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByText(/It is not clear whether she counts before or after/)).toBeVisible()
+  await expect(page.getByRole('region', { name: /The assistant.s notes/ }).getByText('The scene is set in the morning, but the lamps are lit.')).toBeVisible({ timeout: 30_000 })
+  await expect(
+    page.getByRole('region', { name: /The assistant.s notes/ }).getByText(/It is not clear whether she counts before or after/),
+  ).toBeVisible()
   await expect(page.getByText('This note cannot be pinned to the text.')).toHaveCount(0)
   await shot(page, '02-studio-checked')
 

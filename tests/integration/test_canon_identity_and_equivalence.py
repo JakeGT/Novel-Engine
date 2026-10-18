@@ -323,7 +323,17 @@ async def test_journal_normalized_canon_and_neo4j_projection_agree(
                     modality="suggests",
                 ),
             ),
+            # Worked out from a fact (KNW-002): its premises kept in every store.
+            CreateEventOp(
+                id="evt_inferred",
+                kind="inferred",
+                name="Iva works out Mara's name",
+                participants=[{"entity_id": "ent_iva", "role": "thinker"}],
+                premises=["fct_name"],
+            ),
         )
+        inferred = await stack.repo.get_event(event_id="evt_inferred", **scope)
+        assert inferred is not None and inferred.premises == ["fct_name"]
         said = await stack.repo.get_event(event_id="evt_claim", **scope)
         assert said is not None and said.claim is not None
         assert said.claim.modality == "suggests" and said.claim.proposition.object.entity_id == (

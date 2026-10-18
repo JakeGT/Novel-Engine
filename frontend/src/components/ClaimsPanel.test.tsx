@@ -22,6 +22,7 @@ function claim(overrides: Partial<Claim> & { modality?: string; place?: string; 
       kind: 'claim',
       name: 'stored name',
       participants: [],
+      premises: [],
       location_ids: [],
       cause_ids: [],
       outcome_ids: [],

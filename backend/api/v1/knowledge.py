@@ -22,7 +22,8 @@ from backend.container import Container
 from backend.domain.errors import ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.trust import Stance, TrustPolicy
-from backend.services.knowledge_service import KnowledgeService, Telling
+from backend.domain.worldtime import WorldTime
+from backend.services.knowledge_service import KnowledgeService, LearnedView, Telling
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["knowledge"])
 
@@ -42,6 +43,33 @@ class WrongBeliefModel(BaseModel):
     fact: FactModel
 
 
+class PremiseModel(BaseModel):
+    id: str
+    # "fact", "belief", or "gone" when it is no longer in the story.
+    kind: Literal["fact", "belief", "gone"]
+    sentence: str
+
+
+class LearnedModel(BaseModel):
+    """How and when a character came to hold one belief (KNW-002)."""
+
+    belief_id: str
+    how: Literal["told", "overheard", "saw", "worked_out", "heard_said", "event", "recorded"]
+    # The same, in plain words: "Told by Mara", "Saw it: The fire at the docks".
+    words: str
+    event_id: str | None = None
+    # Who told them or said it.
+    source_id: str | None = None
+    scene_id: str | None = None
+    scene_title: str | None = None
+    # The story time it was learned, in the story's words; null when not placed in time.
+    when: str | None = None
+    # What it was worked out from, for something worked out.
+    premises: list[PremiseModel] = []
+    # The fact it agrees with, when the story says it is so.
+    fact_id: str | None = None
+
+
 class CharacterKnowledgeModel(BaseModel):
     entity_id: str
     knows: list[KnownFactModel]
@@ -49,6 +77,8 @@ class CharacterKnowledgeModel(BaseModel):
     unconfirmed: list[BeliefModel]
     unaware: list[FactModel]
     unrecorded: int
+    # How and when each of their beliefs was learned.
+    learned: list[LearnedModel] = []
 
 
 class FactKnowledgeModel(BaseModel):
@@ -67,6 +97,9 @@ class TellRequest(BaseModel):
     fact_id: str | None = None
     proposition: PropositionRequest | None = None
     expected_revision: int
+    # Where and when it is told, so what the hearers learn can be placed (KNW-002).
+    scene_id: str | None = Field(default=None, max_length=200)
+    when: WorldTime | None = None
 
 
 class ProposedBeliefModel(BaseModel):
@@ -102,6 +135,29 @@ class WitnessRequest(BaseModel):
     fact_id: str | None = None
     proposition: PropositionRequest | None = None
     expected_revision: int
+    scene_id: str | None = Field(default=None, max_length=200)
+    when: WorldTime | None = None
+
+
+class InferRequest(BaseModel):
+    """A character works something out from facts and their own beliefs (KNW-002)."""
+
+    model_config = ConfigDict(extra="forbid")
+    holder_id: str
+    # What they work out: an existing fact, or a statement of its own (which may be wrong).
+    fact_id: str | None = None
+    proposition: PropositionRequest | None = None
+    # The facts and the holder's own beliefs it was worked out from.
+    premises: list[str] = Field(min_length=1, max_length=12)
+    confidence: float = Field(default=1.0, gt=0, le=1)
+    scene_id: str | None = Field(default=None, max_length=200)
+    when: WorldTime | None = None
+    expected_revision: int
+
+
+class InferResult(BaseModel):
+    revision: int
+    event_id: str
 
 
 class TrustModel(BaseModel):
@@ -263,6 +319,31 @@ async def character_knowledge(
         unconfirmed=[_belief_model(belief) for belief in known.unconfirmed],
         unaware=[_fact_model(fact) for fact in known.unaware],
         unrecorded=known.unrecorded,
+        learned=[
+            _learned_model(view)
+            for view in await service.learned(
+                scope, scope.workspace_id or "", project_id, entity_id
+            )
+        ],
+    )
+
+
+def _learned_model(view: LearnedView) -> LearnedModel:
+    learned = view.learned
+    return LearnedModel(
+        belief_id=learned.belief_id,
+        how=learned.how,
+        words=view.words,
+        event_id=learned.event_id,
+        source_id=learned.source_id,
+        scene_id=learned.scene_id,
+        scene_title=view.scene_title,
+        when=view.when,
+        premises=[
+            PremiseModel(id=item.id, kind=item.kind, sentence=item.sentence)  # type: ignore[arg-type]
+            for item in view.premises
+        ],
+        fact_id=view.fact_id,
     )
 
 
@@ -309,6 +390,8 @@ async def tell(
         overheard_by=body.overheard_by,
         proposition=proposition,
         expected_revision=body.expected_revision,
+        scene_id=body.scene_id,
+        when=body.when,
     )
     return _telling(telling)
 
@@ -338,8 +421,44 @@ async def witness(
         not_noticed=body.not_noticed,
         proposition=proposition,
         expected_revision=body.expected_revision,
+        scene_id=body.scene_id,
+        when=body.when,
     )
     return _telling(telling)
+
+
+@router.post("/knowledge/infer", status_code=status.HTTP_201_CREATED)
+async def infer(
+    project_id: str,
+    body: InferRequest,
+    response: Response,
+    scope: AccessScope = Depends(require_project_scope),
+    service: KnowledgeService = Depends(get_knowledge_service),
+) -> InferResult:
+    """Record that a character worked something out, and from what. Saved at once: it is
+    the author's own change, like recording a claim."""
+    if (body.fact_id is None) == (body.proposition is None):
+        raise ValidationError("Say what they work out: one fact, or a statement of its own.")
+    if body.fact_id is not None:
+        known = await service.fact(scope, scope.workspace_id or "", project_id, body.fact_id)
+        proposition = known.fact.proposition
+    else:
+        assert body.proposition is not None
+        proposition = body.proposition.to_proposition()
+    result, event_id = await service.infer(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        holder_id=body.holder_id,
+        proposition=proposition,
+        premises=body.premises,
+        scene_id=body.scene_id,
+        when=body.when,
+        confidence=body.confidence,
+        expected_revision=body.expected_revision,
+    )
+    response.headers["ETag"] = f'"{result.revision}"'
+    return InferResult(revision=result.revision, event_id=event_id)
 
 
 @router.get("/knowledge/characters/{entity_id}/trust")

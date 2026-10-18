@@ -9,9 +9,22 @@ seed exercises exactly the path product writes use. It contains, on purpose:
 * a false belief, an unknown belief, and a true belief,
 * an event with a fuzzy world position and one with no known date,
 * a close-and-reassert fact history and a retired entity,
-* a media asset with an immutable version and an explicit ``MAP_OF`` link, and
+* a media asset with an immutable version and an explicit ``MAP_OF`` link,
+* story time (ADR-020): a fact that starts at a point, one that holds between two points,
+  an event at a point, a secret fact and a fact everyone knows,
+* a plan (ADR-018): a thread opened, moved along and resolved by three timed scenes, and
+  an arc whose path of stages is placed in those scenes, one tied to a fact,
+* a claim (KNW-005): something a character says in a scene, which is not a fact, and
 * a second tenant whose project reuses the *same* entity/fact ids and names with
   different truths, so isolation tests are meaningful.
+
+The layers that are not canon operations (a scene's prose with a kept draft and the
+context it was written from, a name answer limited to part of the story, and a what-if
+with its own changes) are seeded by ``backend.seed.story`` on top of this.
+
+Steps are only ever appended. A step's idempotency key keeps the version it was first
+seeded under (``_KEY_VERSION``), so a database seeded before later steps existed takes
+them on the next seed instead of reporting that it diverged.
 
 ``VALID_PROPOSALS`` and ``INVALID_PROPOSALS`` are labelled fixtures: each invalid
 proposal names the integrity finding the authoritative validator must raise.
@@ -25,8 +38,10 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from backend.domain.canon.assertions import TruthAgreement, truth_agreement
-from backend.domain.canon.events import EventParticipant
+from backend.domain.arcs import ArcStage, arc_path, with_path
+from backend.domain.canon.assertions import FactVisibility, TruthAgreement, truth_agreement
+from backend.domain.canon.events import CLAIM_PERCEIVER, CLAIM_SPEAKER, EventClaim, EventParticipant
+from backend.domain.canon.plans import PlanKind, PlanRef
 from backend.domain.canon.propositions import (
     BooleanObject,
     EntityRefObject,
@@ -37,20 +52,26 @@ from backend.domain.canon.propositions import (
 )
 from backend.domain.identity import AccessScope, AuthMode
 from backend.domain.journal import HeadConflict
+from backend.domain.knowledge import with_scene_time
 from backend.domain.media import MediaAsset, MediaAssetVersion
 from backend.domain.operations import (
+    AmendFactOp,
     AssertBeliefOp,
     AssertFactOp,
     CanonOperation,
     CloseFactOp,
     CreateEntityOp,
     CreateEventOp,
+    CreatePlanItemOp,
     EvidenceRef,
     LinkAssetOp,
     RetireEntityOp,
     UpdateEntityOp,
+    UpdatePlanItemOp,
     canonicalize_operations,
 )
+from backend.domain.threads import thread_progress, with_advances
+from backend.domain.worldtime import At
 from backend.ports import (
     CanonJournalPort,
     CanonRepositoryPort,
@@ -62,7 +83,9 @@ from backend.seed.apply import SEED_PROJECT_ID, SEED_WORKSPACE_ID
 from backend.seed.tenancy import USER_EDITOR, USER_OWNER, WS_ALT
 from backend.services.mutation_service import MutationService
 
-CANON_SEED_VERSION = "2026-10-09.1"
+CANON_SEED_VERSION = "2026-10-18.1"
+# The version the first steps were seeded under: idempotency keys keep it (see above).
+_KEY_VERSION = "2026-10-09.1"
 ALT_PROJECT_ID = "prj_seed_alt"
 FIXED_TIMESTAMP = datetime(2024, 1, 1, tzinfo=UTC)
 
@@ -75,6 +98,16 @@ COMPASS = "ent_seed_compass"
 LEDGER = "ent_seed_ledger"
 GUILD = "ent_seed_guild"
 SECRET = "ent_seed_secret"
+
+# The plan: a thread run through three scenes, and Mara's arc across them.
+THREAD = "pln_seed_thread_ledger"
+ARC = "pln_seed_arc_mara"
+SCENE_DUSK = "pln_seed_scene_dusk"
+SCENE_SALTKEEP = "pln_seed_scene_saltkeep"
+SCENE_INQUIRY = "pln_seed_scene_inquiry"
+CLAIM_EVENT = "evt_seed_claim_ledger"
+STORM_EVENT = "evt_seed_storm"
+SPAN_FACT = "fct_seed_compass_at"
 
 CHART_ASSET = "ast_seed_harbor_chart"
 CHART_VERSION = "asv_seed_harbor_chart_v1"
@@ -277,6 +310,131 @@ def _primary_steps(project_id: str) -> tuple[SeedStep, ...]:
                 ),
             ),
         ),
+        SeedStep(
+            "story time",
+            (
+                # From year one on: a start and no end.
+                AmendFactOp(id="fct_seed_mara_at", starts=At(at=1)),
+                # Between two points of story time.
+                _fact(
+                    SPAN_FACT,
+                    COMPASS,
+                    "LOCATED_AT",
+                    _ref(SALTKEEP, project_id),
+                    starts=At(at=2),
+                    ends=At(at=5),
+                ),
+                # Who may know it: the secret only its holders, the town's size everyone.
+                AmendFactOp(id="fct_seed_iven_ledger", visibility=FactVisibility.SECRET),
+                AmendFactOp(id="fct_seed_harbor_pop", visibility=FactVisibility.COMMON),
+                CreateEventOp(
+                    id=STORM_EVENT,
+                    kind="storm",
+                    name="The Long Storm",
+                    location_ids=[HARBOR],
+                    when=At(at=3),
+                ),
+            ),
+        ),
+        SeedStep("plan", _plan_operations()),
+        SeedStep(
+            "arc path",
+            (
+                UpdatePlanItemOp(
+                    id=ARC,
+                    details=with_path(
+                        {},
+                        [
+                            ArcStage(name="trusts the guild"),
+                            ArcStage(name="doubts the guild", scene_id=SCENE_SALTKEEP),
+                            ArcStage(
+                                name="sees Iven's part",
+                                scene_id=SCENE_INQUIRY,
+                                fact_id="fct_seed_iven_ledger",
+                            ),
+                        ],
+                    ),
+                ),
+            ),
+        ),
+        SeedStep(
+            "claim",
+            (
+                # Said in a scene, heard by Mara, and false: never a fact (KNW-005).
+                CreateEventOp(
+                    id=CLAIM_EVENT,
+                    kind="claim",
+                    name="Iven says the ledger went down with the ship",
+                    participants=[
+                        EventParticipant(entity_id=IVEN, role=CLAIM_SPEAKER),
+                        EventParticipant(entity_id=MARA, role=CLAIM_PERCEIVER),
+                    ],
+                    claim=EventClaim(
+                        proposition=Proposition(
+                            subject_id=LEDGER,
+                            predicate="LOCATED_AT",
+                            object=_ref(HARBOR, project_id),
+                        ),
+                        modality="states",
+                        scene_id=SCENE_INQUIRY,
+                    ),
+                ),
+            ),
+        ),
+    )
+
+
+def _plan_operations() -> tuple[CanonOperation, ...]:
+    """A thread opened, moved along and resolved by three timed scenes under Mara's arc."""
+
+    def scene(
+        plan_id: str,
+        title: str,
+        place: str,
+        at: float,
+        position: int,
+        **extra: Any,
+    ) -> CreatePlanItemOp:
+        details = with_scene_time(extra.pop("details", {}), At(at=at))
+        return CreatePlanItemOp(
+            id=plan_id,
+            kind=PlanKind.SCENE,
+            title=title,
+            parent_id=ARC,
+            position=position,
+            refs=[
+                PlanRef(entity_id=MARA, role="point_of_view"),
+                PlanRef(entity_id=place, role="place"),
+                PlanRef(entity_id=IVEN, role="participant"),
+            ],
+            details=details,
+            **extra,
+        )
+
+    return (
+        CreatePlanItemOp(
+            id=THREAD,
+            kind=PlanKind.THREAD,
+            title="Who took the ledger?",
+            summary="The Dawn Runner's ledger went missing in the wreck.",
+            refs=[PlanRef(entity_id=LEDGER, role="about")],
+        ),
+        CreatePlanItemOp(
+            id=ARC,
+            kind=PlanKind.ARC,
+            title="Mara stops trusting the guild",
+            refs=[PlanRef(entity_id=MARA, role="about")],
+        ),
+        scene(SCENE_DUSK, "The harbor at dusk", HARBOR, 4, 0, sets_up=[THREAD]),
+        scene(
+            SCENE_SALTKEEP,
+            "Saltkeep by night",
+            SALTKEEP,
+            6,
+            1,
+            details=with_advances({}, [THREAD]),
+        ),
+        scene(SCENE_INQUIRY, "The inquiry", HARBOR, 9, 2, pays_off=[THREAD]),
     )
 
 
@@ -606,7 +764,7 @@ async def apply_canon_seed(
                     project_id=project.project_id,
                     operations=list(step.operations),
                     expected_head=index,
-                    idempotency_key=f"seed:{CANON_SEED_VERSION}:{project.project_id}:{index}",
+                    idempotency_key=f"seed:{_KEY_VERSION}:{project.project_id}:{index}",
                     schema_version_id=published.id,
                 )
                 await service.commit_author_change(
@@ -663,6 +821,44 @@ async def verify_canon_seed(repository: CanonRepositoryPort) -> list[str]:
     if link is None or link.target_record_id != HARBOR:
         problems.append("media evidence link is missing")
 
+    # Story time and who may know: a span, a start, a secret and a fact everyone knows.
+    span = await repository.get_fact(**primary, fact_id=SPAN_FACT)
+    if span is None or span.starts is None or span.ends is None:
+        problems.append("the fact held between two points of story time is missing its span")
+    started = await repository.get_fact(**primary, fact_id="fct_seed_mara_at")
+    if started is None or started.starts is None or started.ends is not None:
+        problems.append("the fact that starts at a point lost its start")
+    for fact_id, visibility in (
+        ("fct_seed_iven_ledger", FactVisibility.SECRET),
+        ("fct_seed_harbor_pop", FactVisibility.COMMON),
+    ):
+        fact = await repository.get_fact(**primary, fact_id=fact_id)
+        if fact is None or fact.visibility is not visibility:
+            problems.append(f"{fact_id} is not {visibility.value}")
+    storm = await repository.get_event(**primary, event_id=STORM_EVENT)
+    if storm is None or storm.when is None:
+        problems.append("the event at a point of story time lost its time")
+
+    # The plan: a thread opened, moved along and resolved; an arc placed in its scenes.
+    items = await repository.list_plan_items(**primary)
+    steps = [step.step for step in thread_progress(items).get(THREAD, [])]
+    if steps != ["opens", "advances", "resolves"]:
+        problems.append(f"the thread's steps are {steps}, not opens, advances, resolves")
+    arc = next((item for item in items if item.id == ARC), None)
+    if arc is None or [stage.scene_id for stage in arc_path(arc.details)] != [
+        None,
+        SCENE_SALTKEEP,
+        SCENE_INQUIRY,
+    ]:
+        problems.append("the arc's stages are not placed in the plan's scenes")
+
+    # A claim is said, never a fact.
+    claim = await repository.get_event(**primary, event_id=CLAIM_EVENT)
+    if claim is None or claim.claim is None or claim.claim.scene_id != SCENE_INQUIRY:
+        problems.append("the claim made in a scene is missing")
+    if await repository.list_facts(**primary, subject_id=LEDGER, predicate="LOCATED_AT"):
+        problems.append("a claim became a fact without review")
+
     # Same ids and names in another tenant must resolve to that tenant's truth only.
     here = await repository.get_fact(**primary, fact_id="fct_seed_mara_at")
     there = await repository.get_fact(**alt, fact_id="fct_seed_mara_at")
@@ -680,7 +876,15 @@ async def verify_canon_seed(repository: CanonRepositoryPort) -> list[str]:
 
 __all__ = [
     "ALT_PROJECT_ID",
+    "ARC",
     "CANON_SEED_VERSION",
+    "CLAIM_EVENT",
+    "SCENE_DUSK",
+    "SCENE_INQUIRY",
+    "SCENE_SALTKEEP",
+    "SPAN_FACT",
+    "STORM_EVENT",
+    "THREAD",
     "EXPECTED_TRUTH_AGREEMENT",
     "INVALID_PROPOSALS",
     "PRIMARY_HEAD",

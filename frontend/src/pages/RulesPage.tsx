@@ -100,22 +100,24 @@ export function RulesPage() {
               <li key={rule.id} className="card stack tight">
                 <div className="actions" style={{ justifyContent: 'space-between' }}>
                   <h2>{rule.title}</h2>
-                  <Badge tone={rule.status === 'on' ? (rule.broken_by.length > 0 ? 'warn' : 'ok') : 'neutral'}>
-                    {rule.status === 'on' ? (rule.broken_by.length > 0 ? 'Broken now' : 'Holds') : 'Paused'}
-                  </Badge>
+                  <Standing rule={rule} />
                 </div>
                 {rule.sentence && <p>“{rule.sentence}”</p>}
                 <p className="muted">Checked as: {rule.reading}</p>
-                {rule.status === 'on' && rule.broken_by.length > 0 && (
-                  <p>
-                    Does not hold for:{' '}
-                    {rule.broken_by.map((item, index) => (
-                      <span key={item.entity_id}>
-                        {index > 0 && ', '}
-                        <Link to={entryPath(scope, item.entity_id)}>{item.name}</Link>
-                      </span>
-                    ))}
-                  </p>
+                {rule.status === 'on' && (
+                  <Breaks
+                    label="Does not hold for:"
+                    items={rule.broken_by.filter((item) => item.certain !== false)}
+                    scope={scope}
+                  />
+                )}
+                {rule.status === 'on' && (
+                  <Breaks
+                    label="May not hold for:"
+                    note="The story's times are too loose to be sure, so this only ever warns."
+                    items={rule.broken_by.filter((item) => item.certain === false)}
+                    scope={scope}
+                  />
                 )}
                 <Enforcement
                   rule={rule}
@@ -188,6 +190,42 @@ export function RulesPage() {
         </ConfirmDialog>
       )}
     </>
+  )
+}
+
+/** Whether a rule holds now: broken, perhaps broken (times too loose to tell), holds, or paused. */
+function Standing({ rule }: { rule: StoryRule }) {
+  if (rule.status !== 'on') return <Badge tone="neutral">Paused</Badge>
+  if (rule.broken_by.some((item) => item.certain !== false)) return <Badge tone="warn">Broken now</Badge>
+  if (rule.broken_by.length > 0) return <Badge tone="warn">May be broken</Badge>
+  return <Badge tone="ok">Holds</Badge>
+}
+
+/** The entries a rule does not hold for, each a link to its page, with when where it matters. */
+function Breaks({
+  label,
+  note,
+  items,
+  scope,
+}: {
+  label: string
+  note?: string
+  items: StoryRule['broken_by']
+  scope: Parameters<typeof entryPath>[0]
+}) {
+  if (items.length === 0) return null
+  return (
+    <p>
+      {label}{' '}
+      {items.map((item, index) => (
+        <span key={item.entity_id}>
+          {index > 0 && ', '}
+          <Link to={entryPath(scope, item.entity_id)}>{item.name}</Link>
+          {item.when && <span className="muted"> ({item.when})</span>}
+        </span>
+      ))}
+      .{note && <span className="muted small"> {note}</span>}
+    </p>
   )
 }
 

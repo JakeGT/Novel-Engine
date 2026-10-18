@@ -76,6 +76,23 @@ class PlannedReveal:
     names: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class LaterKnowledge:
+    """Something a person in the scene only learns after it (CON-006), with the signals
+    that say the scene may use it already."""
+
+    sentence: str
+    names: tuple[str, ...]
+    # Who learns it later, and where ("in “The harbour”", or "later in the story").
+    who: str
+    where: str
+    # The scene is seen through them: their thoughts and actions are on the page.
+    viewpoint: bool = True
+    planned: bool = False
+    in_context: bool = False
+    said: bool = False
+
+
 @dataclass
 class DraftBrief:
     """What the checks know about the scene the prose is meant to be."""
@@ -86,7 +103,11 @@ class DraftBrief:
     place_names: tuple[str, ...] = ()
     secrets: list[SecretToGuard] = field(default_factory=list)
     reveals: list[PlannedReveal] = field(default_factory=list)
+    learned_later: list[LaterKnowledge] = field(default_factory=list)
     words_asked: int | None = None
+    # Continuity across story time and place for this scene (CON-003, CON-004), found
+    # from the story bible and the plan, not the prose; shown with the other checks.
+    continuity: list[DraftFinding] = field(default_factory=list)
     # A name shown above → the entry it stands for, and → other phrases that mean that entry
     # in this scene (its aliases, and the author's answers that hold here; CTX-016).
     ids: dict[str, str] = field(default_factory=dict)
@@ -160,6 +181,71 @@ def check_draft(text: str, brief: DraftBrief, mentions: Sequence[Mention]) -> li
                     )
                 )
                 break
+
+    # Something a person in the scene only learns later (CON-006). The words on the page
+    # name everyone in it, the plan shows it through them, drafting would give it as true,
+    # or they say it: each is only a sign, so each is a warning and never more.
+    # What drafting would give as true is said once, for every such fact together, and not
+    # again for a fact a warning above already points at: one problem, one note.
+    covered: set[str] = set()
+    in_context: list = []
+    for later in brief.learned_later:
+        lead = f"{later.who} only learns this {later.where}: {later.sentence}."
+        if later.viewpoint:
+            names = [name for name in later.names if name]
+            if len(names) >= 2:
+                for start, end in _paragraphs(text):
+                    paragraph = text[start:end]
+                    if all(_mentions(paragraph, brief.names_for(name)) for name in names):
+                        covered.add(later.sentence)
+                        findings.append(
+                            DraftFinding(
+                                "learned_later",
+                                Severity.WARNING,
+                                f"This may use something too early. {lead}",
+                                start,
+                                end,
+                                subject=later.sentence,
+                            )
+                        )
+                        break
+        if later.planned:
+            covered.add(later.sentence)
+            findings.append(
+                DraftFinding(
+                    "learned_later_planned",
+                    Severity.WARNING,
+                    f"The plan shows the reader this through {later.who} here. {lead}",
+                    subject=later.sentence,
+                )
+            )
+        if later.said:
+            covered.add(later.sentence)
+            findings.append(
+                DraftFinding(
+                    "learned_later_said",
+                    Severity.WARNING,
+                    f"{later.who} says this in this scene. {lead}",
+                    subject=f"{later.who}\x1e{later.sentence}",
+                )
+            )
+        if later.in_context:
+            in_context.append(later)
+    shown = [later for later in in_context if later.sentence not in covered]
+    if shown:
+        who = sorted({later.who for later in shown})
+        whom = who[0] if len(who) == 1 else "the people in this scene"
+        facts = "; ".join(f"{later.sentence} ({later.where})" for later in shown)
+        findings.append(
+            DraftFinding(
+                "learned_later_context",
+                Severity.WARNING,
+                f"Drafting would give the assistant {'this' if len(shown) == 1 else 'these'} as "
+                f"true, so {'it' if len(shown) == 1 else 'they'} may end up in {whom}'s thoughts "
+                f"before they learn {'it' if len(shown) == 1 else 'them'}: {facts}.",
+                subject="\x1e".join(sorted(later.sentence for later in shown)),
+            )
+        )
 
     # A reveal the plan promised, with none of its names on the page.
     for reveal in brief.reveals:
@@ -245,6 +331,8 @@ def check_draft(text: str, brief: DraftBrief, mentions: Sequence[Mention]) -> li
                 )
             )
 
+    findings.extend(brief.continuity)
+
     order = {Severity.WARNING: 0, Severity.NOTE: 1}
     findings.sort(key=lambda f: (order[f.severity], f.start if f.start is not None else 10**9))
     return findings
@@ -254,6 +342,7 @@ __all__ = [
     "STOCK_PHRASES",
     "DraftBrief",
     "DraftFinding",
+    "LaterKnowledge",
     "PlannedReveal",
     "SecretToGuard",
     "Severity",

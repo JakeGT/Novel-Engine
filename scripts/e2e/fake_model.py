@@ -63,7 +63,8 @@ def _check(body: dict[str, Any]) -> dict[str, Any]:
     return {"notes": []}
 
 
-# Reading the kept draft into the story (Phase 6): one new place, quoting the draft.
+# Reading the kept draft into the story (Phase 6): one new place, quoting the draft, and
+# one event it shows happening (EXT-001), at the quay. Text without these words drops it.
 READ = {
     "entities": [
         {
@@ -72,7 +73,15 @@ READ = {
             "name": "The quay",
             "quote": "The lamps along the quay were already lit",
         }
-    ]
+    ],
+    "events": [
+        {
+            "name": "A sack goes missing",
+            "kind": "discovery",
+            "participants": ["quay"],
+            "quote": "One was missing, and she said nothing about it.",
+        }
+    ],
 }
 
 

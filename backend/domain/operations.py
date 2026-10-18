@@ -20,9 +20,10 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from backend.domain.canon.assertions import FactVisibility
 from backend.domain.canon.events import EventClaim, EventParticipant
-from backend.domain.canon.plans import PlanKind, PlanRef
+from backend.domain.canon.plans import PlanItem, PlanKind, PlanRef
 from backend.domain.canon.propositions import EntityRefObject, Proposition
 from backend.domain.canon.revisions import OriginKind
+from backend.domain.threads import thread_advances
 from backend.domain.worldtime import WorldTime
 
 TEMP_ID_PREFIX = "tmp:"
@@ -147,6 +148,10 @@ class CreateEventOp(_Operation):
     when: WorldTime | None = None
     # What is said, on an event of kind "claim" (KNW-005). Omitted while unset.
     claim: EventClaim | None = None
+    # The scene it happens in, and what an inference was worked out from (KNW-002).
+    # Both omitted while unset.
+    scene_id: str | None = Field(default=None, max_length=200)
+    premises: list[str] = Field(default_factory=list, max_length=12)
 
 
 class AmendEventOp(_Operation):
@@ -189,6 +194,31 @@ class CreatePlanItemOp(_Operation):
     details: dict[str, str] = Field(default_factory=dict)
 
 
+class PlanBase(BaseModel):
+    """The parts of a plan item a suggestion read, as they were when it was made (ADR-023).
+
+    Kept on an ``only_fills`` change so approving it can tell whether the author has
+    changed any part the change would replace since: added or removed someone, a thread
+    it opens, settles or moves along.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    refs: list[PlanRef] = Field(default_factory=list)
+    sets_up: list[str] = Field(default_factory=list)
+    pays_off: list[str] = Field(default_factory=list)
+    advances: list[str] = Field(default_factory=list)
+
+    @classmethod
+    def of(cls, item: PlanItem) -> PlanBase:
+        return cls(
+            refs=list(item.refs),
+            sets_up=list(item.sets_up),
+            pays_off=list(item.pays_off),
+            advances=thread_advances(item.details),
+        )
+
+
 class UpdatePlanItemOp(_Operation):
     op: Literal["update_plan_item"] = "update_plan_item"
     title: str | None = None
@@ -203,9 +233,13 @@ class UpdatePlanItemOp(_Operation):
     pays_off: list[str] | None = None
     details: dict[str, str] | None = None
     # Set by the assistant's suggestions (ADR-023): the change may only fill in what is empty
-    # and add to what is there. If the author has since written a summary, chosen a viewpoint
-    # or place, or removed someone, approving it is refused rather than undoing their work.
+    # and add to what is there, and never moves the item. If the author has since written a
+    # summary, chosen a viewpoint or place, or changed anything the change would replace
+    # (added or removed someone, or a thread step), approving it is refused rather than
+    # undoing their work. ``base`` is what the suggestion was made from; without it (older
+    # suggestions) only additions and removals the change would drop are caught.
     only_fills: bool = False
+    base: PlanBase | None = None
 
 
 class RetirePlanItemOp(_Operation):
@@ -271,6 +305,7 @@ def operation_reference_ids(operation: CanonOperation) -> list[str]:
             *operation.location_ids,
             *operation.cause_ids,
             *operation.outcome_ids,
+            *operation.premises,
             *claimed,
         ]
     if isinstance(operation, LinkAssetOp):
@@ -323,6 +358,7 @@ def _rewrite(operation: CanonOperation, mapping: dict[str, str]) -> CanonOperati
                 "location_ids": [resolve(x) for x in operation.location_ids],
                 "cause_ids": [resolve(x) for x in operation.cause_ids],
                 "outcome_ids": [resolve(x) for x in operation.outcome_ids],
+                "premises": [resolve(x) for x in operation.premises],
                 "claim": (
                     operation.claim.model_copy(
                         update={
@@ -421,8 +457,11 @@ _CANONICAL_OMIT_WHEN_UNSET = (
     "ends",
     "visibility",
     "only_fills",
+    "base",
     "claim",
     "why",
+    "scene_id",
+    "premises",
 )
 
 
@@ -463,6 +502,7 @@ __all__ = [
     "LinkAssetOp",
     "OperationValidationError",
     "OriginKind",
+    "PlanBase",
     "RetireAssetLinkOp",
     "RetireEntityOp",
     "RetireEventOp",

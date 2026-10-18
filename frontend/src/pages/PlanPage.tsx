@@ -5,6 +5,7 @@ import { api, type AssistSession, type ConditionState, type PlanItem, type PlanK
 import { ArcPathDialog, ArcStages } from '../components/ArcPath'
 import { AuditDialog } from '../components/AuditDialog'
 import { ClaimDialog } from '../components/ClaimDialog'
+import { RecordLinks } from '../components/ContinuityChecks'
 import { NextDirections, PlanAssist } from '../components/PlanAssist'
 import { PlanItemForm } from '../components/PlanItemForm'
 import { PlanPromises } from '../components/PlanPromises'
@@ -516,7 +517,9 @@ export function PlanPage() {
                           <a className="grow" href={`#plan-${entry.plan_id}`}>
                             {byId.get(entry.plan_id)?.title}
                           </a>
-                          <span>{entry.message}</span>
+                          <span>
+                            {entry.message} <RecordLinks records={entry.records ?? []} skip={entry.plan_id} />
+                          </span>
                         </li>
                       ))}
                     </ul>
@@ -531,7 +534,9 @@ export function PlanPage() {
                           <a className="grow" href={`#plan-${entry.plan_id}`}>
                             {byId.get(entry.plan_id)?.title}
                           </a>
-                          <span className="muted">{entry.message}</span>
+                          <span className="muted">
+                            {entry.message} <RecordLinks records={entry.records ?? []} skip={entry.plan_id} />
+                          </span>
                         </li>
                       ))}
                     </ul>

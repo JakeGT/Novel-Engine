@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import get_plan_service
+from backend.api.v1.story_time import RecordModel, record_model
 from backend.domain.arcs import MAX_STAGES, ArcStage, arc_path
 from backend.domain.canon.plans import (
     MAX_SUMMARY_LENGTH,
@@ -76,6 +77,8 @@ class OpenItemModel(BaseModel):
     message: str
     # gap: not filled in yet. problem: out of order, or not ready where it comes.
     kind: str = "gap"
+    # The records a continuity finding comes from, so they can be opened.
+    records: list[RecordModel] = Field(default_factory=list)
 
 
 class ConditionStateModel(BaseModel):
@@ -291,7 +294,11 @@ async def get_outline(
         items=[_model(item) for item in items],
         open=[
             OpenItemModel(
-                plan_id=item.plan_id, code=item.code, message=item.message, kind=item.kind
+                plan_id=item.plan_id,
+                code=item.code,
+                message=item.message,
+                kind=item.kind,
+                records=[record_model(record) for record in item.records],
             )
             for item in reading.open
         ],

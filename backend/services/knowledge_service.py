@@ -15,6 +15,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 from backend.adapters.system import uuid7
+from backend.domain.acquisition import Learned, how_learned
 from backend.domain.canon.assertions import Belief, Fact, FactStatus, FactVisibility
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.events import (
@@ -22,12 +23,16 @@ from backend.domain.canon.events import (
     CLAIM_NARRATOR,
     CLAIM_PERCEIVER,
     CLAIM_SPEAKER,
+    INFERRED_KIND,
+    INFERRED_THINKER,
+    MAX_PREMISES,
     ClaimModality,
     EventClaim,
     EventParticipant,
 )
 from backend.domain.canon.ids import format_canon_id
 from backend.domain.canon.phrasing import phrase
+from backend.domain.canon.plans import PlanKind
 from backend.domain.canon.propositions import Proposition
 from backend.domain.canon.registry import CORE_PREDICATES, Cardinality
 from backend.domain.canon.revisions import OriginKind
@@ -65,7 +70,17 @@ from backend.domain.trust import (
     trust_of,
     with_trust,
 )
-from backend.domain.worldtime import Interval, Order, compare
+from backend.domain.worldtime import (
+    At,
+    Between,
+    Interval,
+    Order,
+    Relative,
+    Unknown,
+    compare,
+    describe,
+    is_unknown,
+)
 from backend.ports import CanonRepositoryPort
 from backend.services.mutation_service import CommitResult, MutationService
 from backend.services.schema_compiler import compile_definition
@@ -108,6 +123,31 @@ class RecordedClaim:
     event_id: str
     # What its hearers would come to believe, waiting in review, when the author asked.
     beliefs: Telling | None = None
+
+
+@dataclass(frozen=True)
+class PremiseView:
+    """One thing an inference was worked out from."""
+
+    id: str
+    # "fact", "belief", or "gone" when it is no longer in the story.
+    kind: str
+    sentence: str
+
+
+@dataclass(frozen=True)
+class LearnedView:
+    """How and when a character came to hold one belief, in plain words (KNW-002)."""
+
+    learned: Learned
+    # "Told by Mara", "Saw it: The fire at the docks", "Worked it out".
+    words: str
+    scene_title: str | None = None
+    # The story time it was learned, in the story's own words; None when not placed.
+    when: str | None = None
+    premises: list[PremiseView] = field(default_factory=list)
+    # The current fact the belief agrees with, when the story says it is so.
+    fact_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -238,7 +278,9 @@ class KnowledgeService:
         tenancy: Any = None,
         local_mode: bool = False,
         journal: Any = None,
+        clocks: Any = None,
     ) -> None:
+        self._clocks = clocks
         self._reader = reader
         self._mutation = mutation
         self._journal = journal
@@ -565,6 +607,8 @@ class KnowledgeService:
         overheard_by: list[str] | None = None,
         proposition: Proposition,
         expected_revision: int,
+        scene_id: str | None = None,
+        when: Unknown | At | Between | Relative | None = None,
     ) -> Telling:
         """One character tells others something. Proposes what each hearer comes to believe.
 
@@ -583,6 +627,7 @@ class KnowledgeService:
         if len(set(hearers)) != len(hearers) or speaker_id in hearers:
             raise ValidationError("Each person can be the teller or a hearer, once.")
         speaker = await self._character(workspace_id, project_id, speaker_id)
+        await self._scene_of(workspace_id, project_id, scene_id)
         trust = await self._trusts(workspace_id, project_id, hearers)
         names = await self._names(workspace_id, project_id)
         event_id = format_canon_id("event", str(uuid7()))
@@ -596,6 +641,8 @@ class KnowledgeService:
                 *(EventParticipant(entity_id=i, role="listener") for i in listener_ids),
                 *(EventParticipant(entity_id=i, role="overheard") for i in overheard_by),
             ],
+            scene_id=scene_id,
+            when=None if is_unknown(when) else when,
         )
         proposals = propose_beliefs(
             proposition,
@@ -630,6 +677,8 @@ class KnowledgeService:
         not_noticed: list[str] | None = None,
         proposition: Proposition,
         expected_revision: int,
+        scene_id: str | None = None,
+        when: Unknown | At | Between | Relative | None = None,
     ) -> Telling:
         """Something happens in front of people. Proposes a belief for each who perceives it.
 
@@ -656,6 +705,7 @@ class KnowledgeService:
             raise ValidationError("Someone who is there has to notice it.")
         for entity_id in present_ids:
             await self._character(workspace_id, project_id, entity_id)
+        await self._scene_of(workspace_id, project_id, scene_id)
         names = await self._names(workspace_id, project_id)
         event = CreateEventOp(
             id=format_canon_id("event", str(uuid7())),
@@ -665,6 +715,8 @@ class KnowledgeService:
                 *(EventParticipant(entity_id=i, role="witness") for i in witnesses),
                 *(EventParticipant(entity_id=i, role="present") for i in not_noticed),
             ],
+            scene_id=scene_id,
+            when=None if is_unknown(when) else when,
         )
         proposals = propose_beliefs(
             proposition,
@@ -684,6 +736,204 @@ class KnowledgeService:
             proposals=proposals,
             expected_revision=expected_revision,
         )
+
+    async def _scene_of(self, workspace_id: str, project_id: str, scene_id: str | None) -> None:
+        """Refuse, in plain words, a scene that is not a scene in the plan."""
+        if scene_id is None:
+            return
+        scene = await self._reader.get_plan_item(  # type: ignore[call-arg]
+            workspace_id=workspace_id, project_id=project_id, plan_id=scene_id
+        )
+        if scene is None or not scene.is_active or scene.kind is not PlanKind.SCENE:
+            raise ValidationError("That scene is not in the plan.")
+
+    async def infer(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        *,
+        holder_id: str,
+        proposition: Proposition,
+        premises: list[str],
+        scene_id: str | None = None,
+        when: Unknown | At | Between | Relative | None = None,
+        confidence: float = 1.0,
+        expected_revision: int,
+    ) -> tuple[CommitResult, str]:
+        """The author records that a character worked something out from other things.
+
+        It is the author's own change, saved at once: an event of kind ``inferred`` naming
+        the facts and beliefs it was worked out from, and the belief it gave them. Whether
+        what they worked out is right is derived from the facts, like any belief.
+        """
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        holder = await self._character(workspace_id, project_id, holder_id)
+        if not premises:
+            raise ValidationError(f"Say what {holder.name} worked it out from.")
+        if len(premises) > MAX_PREMISES:
+            raise ValidationError(f"Name at most {MAX_PREMISES} things it was worked out from.")
+        if len(set(premises)) != len(premises):
+            raise ValidationError("Name each thing it was worked out from once.")
+        if not 0 < confidence <= 1:
+            raise ValidationError("Say how sure they are, from a little to completely.")
+        await self._scene_of(workspace_id, project_id, scene_id)
+        for premise in premises:
+            fact = await self._reader.get_fact(
+                workspace_id=workspace_id, project_id=project_id, fact_id=premise
+            )
+            if fact is not None:
+                if fact.closed_revision is not None:
+                    raise ValidationError("One of those facts is no longer in the story.")
+                if fact.proposition == proposition:
+                    raise ValidationError("Something cannot be worked out from itself.")
+                continue
+            belief = await self._reader.get_belief(
+                workspace_id=workspace_id, project_id=project_id, belief_id=premise
+            )
+            if belief is None or belief.closed_revision is not None:
+                raise ValidationError(
+                    "Each thing it was worked out from must be a fact or a belief."
+                )
+            if belief.holder_entity_id != holder_id:
+                raise ValidationError(
+                    f"{holder.name} can only work it out from what they believe, not from "
+                    "what someone else believes."
+                )
+            if belief.proposition == proposition:
+                raise ValidationError("Something cannot be worked out from itself.")
+        beliefs = await self._beliefs(workspace_id, project_id)
+        if any(
+            belief.holder_entity_id == holder_id
+            and belief.closed_revision is None
+            and belief.proposition == proposition
+            for belief in beliefs
+        ):
+            raise ValidationError(f"{holder.name} already believes this.")
+        names = await self._names(workspace_id, project_id)
+        sentence = _sentence(proposition, names).rstrip(".")
+        event = CreateEventOp(
+            id=format_canon_id("event", str(uuid7())),
+            kind=INFERRED_KIND,
+            name=f"{holder.name} works out that {sentence}"[:MAX_EVENT_NAME],
+            participants=[EventParticipant(entity_id=holder_id, role=INFERRED_THINKER)],
+            premises=list(premises),
+            scene_id=scene_id,
+            when=None if is_unknown(when) else when,
+        )
+        operations: list[CanonOperation] = [
+            event,
+            AssertBeliefOp(
+                id=f"tmp:belief-{holder_id.replace(':', '-')}",
+                holder_entity_id=holder_id,
+                proposition=proposition,
+                confidence=confidence,
+                source_ref=event.id,
+            ),
+        ]
+        mutation = await self._mutation.create_draft(
+            scope,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            operations=operations,
+            expected_head=expected_revision,
+            schema_version_id=await self._schema_version_id(workspace_id, project_id),
+        )
+        result = await self._mutation.commit_author_change(scope, mutation.id)
+        return result, event.id
+
+    async def learned(
+        self, scope: AccessScope, workspace_id: str, project_id: str, entity_id: str
+    ) -> list[LearnedView]:
+        """How and when a character came to hold each of their beliefs (KNW-002)."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        await self._character(workspace_id, project_id, entity_id)
+        held = [
+            belief
+            for belief in await self._reader.list_beliefs(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                holder_entity_id=entity_id,
+                limit=MAX_RECORDS,
+            )
+            if belief.closed_revision is None
+        ]
+        if not held:
+            return []
+        story = await read_story(self._reader, workspace_id, project_id)
+        events = {event.id: event for event in story.events}
+        names = {entity.id: entity.name for entity in story.entities.values()}
+        unit = "year"
+        if self._clocks is not None:
+            unit = (
+                await self._clocks.get_unit(workspace_id=workspace_id, project_id=project_id)
+                or "year"
+            )
+        items = await self._reader.list_plan_items(  # type: ignore[call-arg]
+            workspace_id=workspace_id, project_id=project_id
+        )
+        scenes = {item.id: item for item in items if item.is_active}
+        facts = {fact.id: fact for fact in story.facts}
+        beliefs = {belief.id: belief for belief in await self._beliefs(workspace_id, project_id)}
+        views: list[LearnedView] = []
+        for belief in held:
+            learned = how_learned(belief, events)
+            event = events.get(learned.event_id or "")
+            when_words: str | None = None
+            if event is not None and event.when is not None and not is_unknown(event.when):
+                when_words = describe(
+                    event.when,
+                    unit=unit,
+                    event_name=lambda i: events[i].name if i in events else None,
+                )
+            scene = scenes.get(learned.scene_id or "")
+            if when_words is None and scene is not None:
+                scene_when = scene_time(scene.details)
+                if scene_when is not None and not is_unknown(scene_when):
+                    when_words = describe(
+                        scene_when,
+                        unit=unit,
+                        event_name=lambda i: events[i].name if i in events else None,
+                    )
+            premises: list[PremiseView] = []
+            for premise in learned.premises:
+                if premise in facts:
+                    premises.append(
+                        PremiseView(premise, "fact", _sentence(facts[premise].proposition, names))
+                    )
+                elif premise in beliefs:
+                    premises.append(
+                        PremiseView(
+                            premise,
+                            "belief",
+                            _sentence(beliefs[premise].proposition, names),
+                        )
+                    )
+                else:
+                    premises.append(
+                        PremiseView(premise, "gone", "Something no longer in the story.")
+                    )
+            agreeing = next(
+                (
+                    fact.id
+                    for fact in story.facts
+                    if fact.status is FactStatus.ASSERTED
+                    and fact.closed_revision is None
+                    and fact.proposition == belief.proposition
+                ),
+                None,
+            )
+            views.append(
+                LearnedView(
+                    learned=learned,
+                    words=_how_words(learned, names),
+                    scene_title=scene.title if scene is not None else None,
+                    when=when_words,
+                    premises=premises,
+                    fact_id=agreeing,
+                )
+            )
+        return views
 
     # ----------------------------------------------------------------- trust
 
@@ -914,6 +1164,24 @@ class KnowledgeService:
         )
         await self._mutation.submit(scope, mutation.id, reason="a claim made a fact")
         return Promotion(mutation_id=mutation.id)
+
+
+def _how_words(learned: Learned, names: dict[str, str]) -> str:
+    source = names.get(learned.source_id or "")
+    event = learned.event_name or "an event"
+    if learned.how == "told":
+        return f"Told by {source}" if source else "Told"
+    if learned.how == "overheard":
+        return f"Overheard {source} telling it" if source else "Overheard it"
+    if learned.how == "saw":
+        return f"Saw it: {event}"
+    if learned.how == "worked_out":
+        return "Worked it out"
+    if learned.how == "heard_said":
+        return f"Heard {source} say it" if source else "Heard it said"
+    if learned.how == "event":
+        return f"From {event}"
+    return "Recorded with no telling or event behind it"
 
 
 def _plural(entity_type: str) -> str:

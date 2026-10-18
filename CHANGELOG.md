@@ -33,6 +33,11 @@ for authors and for whoever runs an install. Version numbers start when the owne
   with what a kept draft was written from.
 - **Promises to the reader**: what your plan owes the reader and where each promise is kept; a
   reveal that comes too early is flagged; scenes can say what must be true before them.
+- **Continuity checks**: someone in two places at once, a journey too quick for the travel times
+  you set, a scene after a death, who has what, places that do not exist yet — warnings only.
+- **Richer story rules**: "if this then that", "never both", ranges, exceptions, beliefs, and
+  whether a rule must hold at every moment or by the end.
+- **How each character learned something**, and a warning when a scene uses it too early.
 - **Names that depend on where you are**: "the captain" can mean one person from a scene on, or
   only in a what-if, or only through one character's eyes.
 - **Said is not true**: record what someone says or the narration claims without making it a fact;
@@ -58,7 +63,7 @@ for authors and for whoever runs an install. Version numbers start when the owne
 ### For whoever runs it
 
 - **Upgrading:** take a backup first (`deploy/hosted/backup.sh` on the hosted profile). The server
-  applies migrations on start; this release adds migrations up to `0043_access_keys`.
+  applies migrations on start; this release adds migrations up to `0045_how_long`.
 - **Readiness** now answers `ready`, `degraded` (200) or `unavailable` (503, a required store is
   down); a watcher that looked for `degraded` on a store outage must look for `unavailable`.
 - **Archives** are version 4 and carry what-ifs, conversations and scene readings; version 3

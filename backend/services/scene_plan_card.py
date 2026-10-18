@@ -31,7 +31,12 @@ from backend.domain.canon.revisions import OriginKind
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.jobs import Job
-from backend.domain.operations import MAX_EVIDENCE_PER_OPERATION, EvidenceRef, UpdatePlanItemOp
+from backend.domain.operations import (
+    MAX_EVIDENCE_PER_OPERATION,
+    EvidenceRef,
+    PlanBase,
+    UpdatePlanItemOp,
+)
 from backend.domain.prompts import prompt_version
 from backend.domain.sources import find_mentions, find_quote, location_for
 from backend.domain.tenancy import Permission
@@ -411,6 +416,7 @@ def card_change(
             refs=refs if added else None,
             evidence=evidence,
             only_fills=True,
+            base=PlanBase.of(scene),
         ),
         summary_filled=fill_summary,
         refs_added=added,

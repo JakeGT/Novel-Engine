@@ -28,7 +28,15 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from backend.domain.rules import Check, RuleBody, Selector, World, read_rule, violations
+from backend.domain.rules import (
+    BELIEF_KINDS,
+    Check,
+    RuleBody,
+    Selector,
+    World,
+    read_rule,
+    violations,
+)
 
 # Kept inside the scene's details under a reserved key, like an entry's marks.
 CONDITIONS_KEY = "_conditions"
@@ -64,6 +72,9 @@ class SceneCondition(BaseModel):
             raise ValueError("a condition is either about an entry or in your own words, not both")
         if self.words is None and (self.entity_id is None or self.check is None):
             raise ValueError("say which entry and what must be true, or write it in words")
+        if self.check is not None and self.check.kind in BELIEF_KINDS:
+            # A scene's conditions are judged against facts only; beliefs are not read.
+            raise ValueError("a scene condition cannot be about what someone believes")
         return self
 
 

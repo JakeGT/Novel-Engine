@@ -243,6 +243,7 @@ def _build_fake_container(settings, tmp_path):
     from backend.services.what_if_service import WhatIfService
 
     story_clocks = InMemoryStoryClockStore()
+    plan_service.clocks = story_clocks
     story_time_service = StoryTimeService(
         reader=canon_repository,
         clocks=story_clocks,
@@ -258,6 +259,7 @@ def _build_fake_container(settings, tmp_path):
         tenancy=tenancy_service,
         local_mode=not settings.is_hosted,
         journal=journal,
+        clocks=story_clocks,
     )
     from backend.services.context_service import ContextService
     from backend.services.passage_index import PassageIndex
@@ -318,6 +320,12 @@ def _build_fake_container(settings, tmp_path):
         local_mode=not settings.is_hosted,
     )
     studio_service.register_jobs()
+    from backend.services.consistency_runs import ConsistencyRunService
+    from tests.doubles import InMemoryConsistencyRunStore
+
+    consistency_run_store = InMemoryConsistencyRunStore()
+    consistency_runs = ConsistencyRunService(store=consistency_run_store, studio=studio_service)
+    studio_service.runs = consistency_runs
     source_service.studio = studio_service
     from backend.services.assistant_settings_service import AssistantSettingsService, AssistBudget
     from tests.doubles import InMemoryAssistantSettingsStore
@@ -347,6 +355,7 @@ def _build_fake_container(settings, tmp_path):
         tenancy=tenancy_service,
         local_mode=not settings.is_hosted,
         clocks=story_clocks,
+        passages=passage_store,
     )
     from backend.services.scene_reading import SceneReadingService
 
@@ -493,6 +502,8 @@ def _build_fake_container(settings, tmp_path):
         job_runner=job_runner,
         studio_store=studio_store,
         studio_service=studio_service,
+        consistency_run_store=consistency_run_store,
+        consistency_runs=consistency_runs,
         scene_reading=scene_reading,
         scene_plan_card=scene_plan_card,
         canon_character_workflow=canon_character_workflow,

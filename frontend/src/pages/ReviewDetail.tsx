@@ -56,7 +56,7 @@ import { actorLabel, scopedKey, useEntries, useInvalidateProject, useProject } f
 
 const OPEN = new Set(['draft', 'validating', 'needs_review', 'approved'])
 // ``why`` is shown as its own line under the change, not as a field.
-const HIDDEN_KEYS = new Set(['op', 'id', 'evidence', 'proposition', 'project_id', 'only_fills', 'why'])
+const HIDDEN_KEYS = new Set(['op', 'id', 'evidence', 'proposition', 'project_id', 'only_fills', 'base', 'why'])
 
 type Issue = MutationValidation['issues'][number]
 

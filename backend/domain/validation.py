@@ -10,6 +10,7 @@ repository invokes this validator on every commit.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -21,7 +22,13 @@ from pydantic import ValidationError as PydanticValidationError
 from backend.domain.arcs import PATH_KEY, arc_path, path_problem
 from backend.domain.canon.assertions import Belief, Fact, FactStatus, FactVisibility
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
-from backend.domain.canon.events import CLAIM_KIND, CLAIM_NARRATOR, CLAIM_SPEAKER, Event
+from backend.domain.canon.events import (
+    CLAIM_KIND,
+    CLAIM_NARRATOR,
+    CLAIM_SPEAKER,
+    INFERRED_KIND,
+    Event,
+)
 from backend.domain.canon.marks import details
 from backend.domain.canon.naming import (
     aliases_problem,
@@ -72,6 +79,7 @@ from backend.domain.operations import (
     UpdateEntityOp,
     UpdatePlanItemOp,
 )
+from backend.domain.threads import ADVANCES_KEY, thread_advances
 from backend.domain.worldtime import (
     Direction,
     Relative,
@@ -232,6 +240,14 @@ class CanonTxReader(Protocol):
         """The facts asserted now on this branch, at most ``limit`` (for story rules)."""
         ...
 
+    async def current_beliefs(self, limit: int) -> list[Belief]:
+        """The beliefs held now on this branch, at most ``limit`` (for story rules)."""
+        ...
+
+    async def live_events(self, limit: int) -> list[Event]:
+        """The events not retired on this branch, at most ``limit`` (for story rules)."""
+        ...
+
 
 @dataclass(frozen=True)
 class ValidationContext:
@@ -248,10 +264,44 @@ class ValidationContext:
     predicate_specs: dict[str, PredicateSpec] = field(default_factory=dict)
 
 
-def _only_fills(current: PlanItem, change: UpdatePlanItemOp) -> bool:
-    """Whether ``change`` only fills in what is empty and adds to what is there."""
-    if change.title is not None or change.details is not None:
+def _ref_keys(refs: Sequence[Any]) -> set[tuple[str, str]]:
+    return {(ref.entity_id, ref.role) for ref in refs}
+
+
+def _changed_since(current: PlanItem, change: UpdatePlanItemOp) -> bool:
+    """Whether the author has changed, since the suggestion was made, a part it replaces."""
+    base = change.base
+    if base is None:
         return False
+    return (
+        (change.refs is not None and _ref_keys(current.refs) != _ref_keys(base.refs))
+        or (change.sets_up is not None and set(current.sets_up) != set(base.sets_up))
+        or (change.pays_off is not None and set(current.pays_off) != set(base.pays_off))
+        or (
+            change.details is not None
+            and set(thread_advances(current.details)) != set(base.advances)
+        )
+    )
+
+
+def _only_fills(current: PlanItem, change: UpdatePlanItemOp) -> bool:
+    """Whether ``change`` only fills in what is empty and adds to what is there, on the
+    item as the suggestion found it."""
+    if change.title is not None:
+        return False
+    # A suggestion never moves the item.
+    if change.parent_id is not None or change.detach or change.position is not None:
+        return False
+    if _changed_since(current, change):
+        return False
+    if change.details is not None and not _only_adds_steps(current.details, change.details):
+        return False
+    for held_threads, new_threads in (
+        (current.sets_up, change.sets_up),
+        (current.pays_off, change.pays_off),
+    ):
+        if new_threads is not None and not set(held_threads) <= set(new_threads):
+            return False
     if change.summary is not None and current.summary.strip():
         return False
     if change.refs is not None:
@@ -263,6 +313,26 @@ def _only_fills(current: PlanItem, change: UpdatePlanItemOp) -> bool:
             if held and {e for e, r in proposed if r == role} != held:
                 return False
     return True
+
+
+def _advances_listed(raw: str) -> list[str] | None:
+    """The thread ids stored as moved along, or None when the value is not a list of ids."""
+    try:
+        found = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(found, list) or not all(isinstance(t, str) and t for t in found):
+        return None
+    return list(dict.fromkeys(found))
+
+
+def _only_adds_steps(current: dict[str, str], proposed: dict[str, str]) -> bool:
+    """Whether new details only add threads the item moves along (EXT-001), leaving every
+    other detail exactly as the author has it."""
+    others = {key: value for key, value in current.items() if key != ADVANCES_KEY}
+    if {key: value for key, value in proposed.items() if key != ADVANCES_KEY} != others:
+        return False
+    return set(thread_advances(current)) <= set(thread_advances(proposed))
 
 
 class AuthoritativeValidator:
@@ -638,6 +708,31 @@ class AuthoritativeValidator:
                 )
             if len(links) > MAX_THREAD_LINKS:
                 blocking(index, "invalid_plan_thread_link", "a plan item names too many threads")
+            # The threads it moves along (EXT-001), checked where they changed.
+            raw_advances = item.details.get(ADVANCES_KEY)
+            if raw_advances and raw_advances != (previous.details if previous else {}).get(
+                ADVANCES_KEY
+            ):
+                advancing = _advances_listed(raw_advances)
+                held = set(thread_advances(previous.details)) if previous else set()
+                if advancing is None:
+                    blocking(
+                        index,
+                        "invalid_plan_thread_link",
+                        "the threads a plan item moves along are malformed",
+                    )
+                    advancing = []
+                elif advancing and item.kind is PlanKind.THREAD:
+                    blocking(
+                        index, "invalid_plan_thread_link", "a thread cannot move a thread along"
+                    )
+                elif len(advancing) > MAX_THREAD_LINKS:
+                    blocking(
+                        index,
+                        "invalid_plan_thread_link",
+                        "a plan item moves too many threads along",
+                    )
+                links = [*links, *(t for t in advancing if t not in held and t not in links)]
             for thread_id in links:
                 thread = await plan(thread_id)
                 if thread is None or not thread.is_active or thread.kind is not PlanKind.THREAD:
@@ -976,6 +1071,31 @@ class AuthoritativeValidator:
                     ]
                     if len(speakers) > 1:
                         blocking(index, "invalid_claim", "a claim has at most one speaker")
+                # Where it happens, and what an inference was worked out from (KNW-002).
+                if operation.scene_id is not None:
+                    scene = await plan(operation.scene_id)
+                    if scene is None or not scene.is_active:
+                        blocking(index, "unknown_scene", "the event's scene is not in the plan")
+                    elif scene.kind is not PlanKind.SCENE:
+                        blocking(index, "invalid_scene", "an event happens in a scene")
+                if bool(operation.premises) != (operation.kind == INFERRED_KIND):
+                    blocking(
+                        index,
+                        "invalid_inference",
+                        "only an event of kind 'inferred' has premises, and it must have one",
+                    )
+                if len(set(operation.premises)) != len(operation.premises):
+                    blocking(index, "invalid_inference", "each premise is named once")
+                for premise in operation.premises:
+                    found = await fact(premise) or await belief(premise)
+                    if found is None:
+                        blocking(
+                            index,
+                            "unknown_reference",
+                            f"premise {premise!r} is not a fact or belief",
+                        )
+                    elif found.closed_revision is not None:
+                        blocking(index, "retired_reference", f"premise {premise!r} is closed")
                 events[operation.id] = Event(
                     id=operation.id,
                     workspace_id=context.workspace_id,
@@ -990,6 +1110,8 @@ class AuthoritativeValidator:
                     world_position=operation.world_position,
                     when=operation.when,
                     claim=operation.claim,
+                    scene_id=operation.scene_id,
+                    premises=list(operation.premises),
                     provenance_id="pending",
                     created_revision=context.head_revision + 1,
                 )

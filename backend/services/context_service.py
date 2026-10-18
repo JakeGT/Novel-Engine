@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from backend.adapters.system import uuid7
+from backend.domain.acquisition import held_at
 from backend.domain.arcs import moves_in_scene
 from backend.domain.branching import working_branch_id
 from backend.domain.canon.assertions import FactVisibility
@@ -49,6 +50,7 @@ from backend.domain.sources import SourceKind, SourceText, find_mentions
 from backend.domain.tenancy import Permission
 from backend.domain.threads import thread_advances
 from backend.domain.worldtime import Interval, Order, Truth, compare, describe, true_at
+from backend.services.knowledge_timing import StoryOrder
 from backend.services.passage_index import IndexStatus
 from backend.services.story_time_service import event_times, fact_span, read_story, time_of
 
@@ -452,7 +454,11 @@ class ContextService:
                 )
             )
         facts_by_id = {fact.id: fact for fact in story.facts}
-        # What the viewpoint character knows: a secret they lack stays the author's alone.
+        # What the viewpoint character knows by this scene: a secret they lack, or only
+        # learn later (KNW-002, CON-006), stays the author's alone.
+        if pov:
+            placed = StoryOrder(items_all, story.events)
+            beliefs = held_at(pov, scene.id, beliefs, placed.by_id, placed.where)
         known = knowledge_of(pov, story.facts, beliefs) if pov else None
         known_ids = known.known_ids() if known else set()
         # The viewpoint character's arc, where this scene moves it (STY-006): the stage

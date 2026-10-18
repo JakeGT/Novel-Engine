@@ -120,3 +120,43 @@ async def test_the_outline_reads_only_the_facts_its_conditions_and_reveals_name(
     await mutation.commit(_scope(), draft.id)
     (state,) = (await plans.outline(_scope(), WS, PR)).conditions
     assert state.status == "met"
+
+
+@pytest.mark.asyncio
+async def test_a_timed_scene_reads_the_story_bible_once_for_continuity_and_the_checks() -> None:
+    from backend.domain.knowledge import with_scene_time
+    from backend.domain.worldtime import At
+
+    journal = InMemoryCanonJournal()
+    canon = InMemoryCanonRepository(journal=journal)
+    mutation = MutationService(journal, canon, local_mode=True)
+    watched = _Watched(canon)
+    plans = PlanService(mutation=mutation, reader=watched, local_mode=True)  # type: ignore[arg-type]
+
+    need = SceneCondition(
+        when="before",
+        entity_id="ent_mara",
+        check=Check(kind="has", pattern=Pattern(predicate="LOCATED_AT", other_id="ent_harbor")),
+    )
+    details = with_scene_time(with_conditions({}, [need]), At(at=3))
+    draft = await mutation.create_draft(
+        _scope(),
+        workspace_id=WS,
+        project_id=PR,
+        operations=[
+            CreateEntityOp(id="ent_mara", type="Character", name="Mara"),
+            CreateEntityOp(id="ent_harbor", type="Location", name="Lantern Harbor"),
+            _located("ent_mara", "ent_harbor", "fct_mara"),
+            CreatePlanItemOp(id="pln_scene", kind="scene", title="Low tide", details=details),
+        ],
+        expected_head=0,
+    )
+    await mutation.commit(_scope(), draft.id)
+
+    reading = await plans.outline(_scope(), WS, PR)
+
+    (state,) = reading.conditions
+    assert state.status == "met"
+    # Continuity needs the whole story bible; the checks use that same read.
+    assert sorted(watched.whole_reads) == ["entities", "events"]
+    assert len(watched.fact_reads) == 1

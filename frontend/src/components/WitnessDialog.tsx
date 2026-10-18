@@ -37,6 +37,8 @@ export function WitnessDialog({ witness, onClose }: { witness: CanonEntity; onCl
         present_ids: present,
         not_noticed: unnoticed,
         expected_revision: expectedRevision,
+        // Where it happens, so what they see is placed in the story's order (KNW-002).
+        ...(sceneId ? { scene_id: sceneId } : {}),
         ...(chosen.fact_id ? { fact_id: chosen.fact_id } : { proposition: chosen.proposition }),
       })
     },

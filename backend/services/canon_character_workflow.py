@@ -148,8 +148,11 @@ class CanonCharacterWorkflow:
         local_mode: bool = False,
         model: str | None = None,
         clocks: object | None = None,
+        passages: object | None = None,
     ) -> None:
         self._ai = ai
+        # The passage index: entries the author's writing names together (CTX-002).
+        self._passages = passages
         # The unit each story counts time in; only the change workflow reads it.
         self._clocks = clocks
         self._mutation = mutation

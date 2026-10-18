@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, type AuditScene, type CheckPass } from '../api/client'
+import { AuditRecord } from '../components/CheckHistory'
 import { JobProgress } from '../components/StudioWork'
 import { Badge, ErrorNotice, Loading } from '../components/ui'
 import { AUDIT_STATUS, NOTE_KINDS, PASS_NAMES, isFinished, scenePath } from '../lib/studio'
@@ -107,6 +108,8 @@ export function AuditPage() {
             : `${plural(notes, 'note')} from the assistant and ${plural(checks, 'check')} without it, across ${plural(checked, 'scene')}.`}
         </p>
       )}
+
+      {finished && <AuditRecord jobId={jobId} refresh={found.job.status} />}
 
       <ol className="audit-scenes">
         {found.scenes.map((scene) => (

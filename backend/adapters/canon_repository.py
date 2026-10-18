@@ -448,6 +448,8 @@ def _event(row: Any) -> Event:
         world_position=row.world_position,
         when=parse_world_time(_load(getattr(row, "world_time", None))),
         claim=_claim(_load(getattr(row, "claim", None))),
+        scene_id=getattr(row, "scene_id", None),
+        premises=list(_load(getattr(row, "premises", None)) or []),
         provenance_id=row.provenance_id,
         created_revision=row.created_revision,
         retired_revision=getattr(row, "retired_revision", None),
@@ -720,6 +722,40 @@ class _TxCanonReader:
             )
         ).all()
         return [_fact(row) for row in rows]
+
+    async def current_beliefs(self, limit: int) -> list[Belief]:
+        rows = (
+            await self._session.execute(
+                text(
+                    "SELECT * FROM canon_beliefs WHERE workspace_id = :w AND project_id = :p "
+                    "AND branch_id = :b AND closed_revision IS NULL ORDER BY id LIMIT :limit"
+                ),
+                {
+                    "w": self._workspace_id,
+                    "p": self._project_id,
+                    "b": self._branch_id,
+                    "limit": limit,
+                },
+            )
+        ).all()
+        return [_belief(row) for row in rows]
+
+    async def live_events(self, limit: int) -> list[Event]:
+        rows = (
+            await self._session.execute(
+                text(
+                    "SELECT * FROM canon_events WHERE workspace_id = :w AND project_id = :p "
+                    "AND branch_id = :b AND retired_revision IS NULL ORDER BY id LIMIT :limit"
+                ),
+                {
+                    "w": self._workspace_id,
+                    "p": self._project_id,
+                    "b": self._branch_id,
+                    "limit": limit,
+                },
+            )
+        ).all()
+        return [_event(row) for row in rows]
 
 
 async def _refuse_if_kept_rule_off(session: Any, mutation: Any, revision: int) -> None:
@@ -1440,12 +1476,13 @@ class PostgresCanonRepository:
                     INSERT INTO canon_events (
                         workspace_id, project_id, branch_id, id, kind, name, participants,
                         location_ids, cause_ids, outcome_ids, world_position, provenance_id,
-                        created_revision, world_time, claim
+                        created_revision, world_time, claim, scene_id, premises
                     )
                     VALUES (:w, :p, :b, :id, :kind, :name, CAST(:participants AS JSONB),
                             CAST(:locations AS JSONB), CAST(:causes AS JSONB),
                             CAST(:outcomes AS JSONB), :world_position, :prov, :rev,
-                            CAST(:world_time AS JSONB), CAST(:claim AS JSONB))
+                            CAST(:world_time AS JSONB), CAST(:claim AS JSONB), :scene_id,
+                            CAST(:premises AS JSONB))
                     """
                 ),
                 {
@@ -1468,6 +1505,8 @@ class PostgresCanonRepository:
                         if operation.claim is not None
                         else None
                     ),
+                    "scene_id": operation.scene_id,
+                    "premises": json.dumps(operation.premises) if operation.premises else None,
                 },
             )
         elif isinstance(operation, AmendEventOp):

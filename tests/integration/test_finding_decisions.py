@@ -87,6 +87,107 @@ async def test_a_blocking_rule_refuses_a_real_commit_and_the_head_stays(stack) -
 
 
 @pytest.mark.asyncio
+async def test_rules_about_belief_and_story_time_read_them_inside_the_commit(stack) -> None:
+    """Beliefs and event times come from the commit's own reader, so these rules can block."""
+    from backend.domain.canon.propositions import EntityRefObject, Proposition
+    from backend.domain.operations import (
+        AmendEventOp,
+        AssertBeliefOp,
+        AssertFactOp,
+        CloseBeliefOp,
+        CreateEventOp,
+    )
+    from backend.domain.worldtime import At, Relative
+
+    service, rules, repository, _ = stack
+
+    def at(fact_id: str, who: str, place: str, **times: object) -> AssertFactOp:
+        return AssertFactOp(
+            id=fact_id,
+            proposition=Proposition(
+                subject_id=who,
+                predicate="LOCATED_AT",
+                object=EntityRefObject(entity_id=place, project_id=PR),
+            ),
+            **times,  # type: ignore[arg-type]
+        )
+
+    first = await _commit(
+        service,
+        [
+            CreateEntityOp(id="tmp:m", type="Character", name="Mara"),
+            CreateEntityOp(id="tmp:h", type="Location", name="Harbor"),
+            CreateEntityOp(id="tmp:s", type="Location", name="Saltmere"),
+            CreateEventOp(id="tmp:war", kind="battle", name="The war", when=At(at=20)),
+            at("tmp:f1", "tmp:m", "tmp:h", ends=At(at=12)),
+            AssertBeliefOp(
+                id="tmp:b1",
+                holder_entity_id="tmp:m",
+                proposition=Proposition(
+                    subject_id="tmp:m",
+                    predicate="LOCATED_AT",
+                    object=EntityRefObject(entity_id="tmp:h", project_id=PR),
+                ),
+                source_ref="test",
+            ),
+        ],
+        0,
+    )
+    entities = {
+        e.name: e.id for e in await repository.list_entities(workspace_id=WS, project_id=PR)
+    }
+    (war,) = await repository.list_events(workspace_id=WS, project_id=PR)
+    (belief,) = await repository.list_beliefs(workspace_id=WS, project_id=PR)
+    # She goes to Saltmere when the war comes, long after leaving the harbour.
+    second = await _commit(
+        service,
+        [
+            at(
+                "tmp:f2",
+                entities["Mara"],
+                entities["Saltmere"],
+                starts=Relative(anchor_event_id=war.id),
+            )
+        ],
+        first.revision,
+    )
+
+    one_at_a_time = RuleBody(
+        applies_to=Selector(type="Character"),
+        checks=[Check(kind="at_most", count=1, pattern=Pattern(predicate="LOCATED_AT"))],
+        time="every_moment",
+    )
+    believes = RuleBody(
+        applies_to=Selector(type="Character"),
+        checks=[
+            Check(
+                kind="believes",
+                pattern=Pattern(predicate="LOCATED_AT", other_id=entities["Harbor"]),
+            )
+        ],
+    )
+    for title, body in (("One place at a time", one_at_a_time), ("Knows home", believes)):
+        added = await rules.add(SCOPE, WS, PR, title=title, sentence="", body=body, examples=[])
+        assert added.broken_by == []
+        await rules.change(SCOPE, WS, PR, added.rule.id, enforcement=RuleEnforcement.BLOCKING)
+
+    # Moving the war to year 5 puts her in Saltmere while still at the harbour; the commit
+    # reads the events itself, so the answer is complete and it blocks.
+    with pytest.raises(CanonValidationError) as moved:
+        await _commit(service, [AmendEventOp(id=war.id, when=At(at=5))], second.revision)
+    assert "One place at a time" in moved.value.report.blocking[0].message
+
+    # Ending the belief breaks the other blocking rule: refused too.
+    with pytest.raises(CanonValidationError) as doubted:
+        await _commit(service, [CloseBeliefOp(id=belief.id)], second.revision)
+    assert "Knows home" in doubted.value.report.blocking[0].message
+
+    # A war later still keeps both rules: the change goes through.
+    later = await _commit(service, [AmendEventOp(id=war.id, when=At(at=30))], second.revision)
+    assert later.revision == second.revision + 1
+
+
+@pytest.mark.asyncio
 async def test_dismissals_are_kept_per_line_of_the_story_and_forked(stack) -> None:
     service, _, repository, factory = stack
     await _commit(service, [CreateEntityOp(id="tmp:m", type="Character", name="Mara")], 0)

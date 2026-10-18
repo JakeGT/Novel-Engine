@@ -73,6 +73,39 @@ Publishing a rule as blocking (ADR-013) is not offered in this phase.
 - A rule sees entries and the facts true of them now. It cannot speak of time, order of
   events, belief or the wording of prose ("nobody dead may speak later"). The assistant is
   told to say so rather than bend such a sentence into something else.
+  *Amended 2026-10-18 (CON-005, CAN-013):* the vocabulary grew, still as data and still one
+  evaluator. A check may also be a range (`between`: every value of a kind of fact is a
+  number from `low` to `high`; a quantity's number is compared, not its unit), an implication
+  (`implies`: if it has `if_has` it must also have `pattern`), an incompatibility (`not_both`),
+  or a belief (`believes`/`does_not_believe`: the entry holds a belief like `pattern` about
+  `about_id` or itself; beliefs are read as data, right or wrong). A rule may name exceptions
+  (`except_for`: entries, a tag, or facts that excuse an entry). And a rule says when it must
+  hold (`time`): over every fact as recorded (the default and the old meaning), at every
+  moment of story time (judged at one moment in each stretch where the entry's facts stay
+  the same, from the edges of their spans, with times relative to events followed), or at
+  the end of the story (only facts that have not stopped). The vocabulary was chosen after
+  SHACL's core constraints (value ranges, `sh:not`, `sh:or`), kept as a flat list of checks
+  rather than nested and/or/not so that every rule reads back as one sentence. Where story
+  times are too loose to tell, the answer is "cannot tell", in strong (Kleene) three-valued
+  logic: knowing the times better can only turn it into yes or no, so only a definite break
+  may block; "cannot tell" is shown as "may not hold" and only warns. A body records the
+  `form` of the language it needs (1 for the old vocabulary, 2 for any of the above), so a
+  kept rule means what it said; a form newer than the code reads is refused. Beliefs and
+  event times are read inside the commit (`current_beliefs`, `live_events` on the commit's
+  reader) only when a rule needs them; a reader without them makes the result incomplete,
+  so it warns. Moving an event's time re-checks every entry for rules in story time, since
+  facts can be timed from events. Scene conditions share the evaluator but not belief
+  checks, which they refuse (their worlds hold facts only). Still not expressible: the order
+  of events, what happens after an event, numbers worked out from other facts, and the
+  wording of prose; the assistant says so in `cannot_express` (`draft-rule` v2).
+  *Further, 2026-10-18 (review):* beliefs have no time, so a belief check inside an
+  every-moment rule gives the same answer at every moment; only the facts around it move.
+  A start or end that is set but cannot be placed (timed from an event with no time, a
+  missing event, or a loop) could be at any time: the fact may or may not hold at each
+  moment, so it can make a rule "cannot tell" but never a definite break. A change that
+  turns a break the story only may have into a sure one is blamed for it, and blocks if
+  the rule blocks and the story was read whole. A drafted check that does not fit
+  together is set aside and said in `cannot_express`; the rest of the draft is kept.
 - Rule evaluation reads committed state through the repository, not through the commit's
   own transaction. That is sound while rules only warn; a blocking rule would need the
   evaluator moved onto the transaction's reader.

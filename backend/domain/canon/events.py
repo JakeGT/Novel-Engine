@@ -25,6 +25,11 @@ CLAIM_MODALITIES: tuple[str, ...] = ("states", "suggests", "wonders", "denies")
 CLAIM_SPEAKER = "speaker"
 CLAIM_NARRATOR = "narrator"
 CLAIM_PERCEIVER = "perceiver"
+# A character working something out (KNW-002): an event of this kind names who did, as
+# ``thinker``, and the facts and beliefs they worked it out from, as its ``premises``.
+INFERRED_KIND = "inferred"
+INFERRED_THINKER = "thinker"
+MAX_PREMISES = 12
 
 
 class EventClaim(BaseModel):
@@ -64,6 +69,11 @@ class Event(BaseModel):
     when: WorldTime | None = None
     # Set only on an event of kind ``claim``.
     claim: EventClaim | None = None
+    # The scene (a plan item) it happens in, when the author says (KNW-002). A claim keeps
+    # its scene in ``claim.scene_id`` instead.
+    scene_id: str | None = None
+    # On an event of kind ``inferred``: the facts and beliefs it was worked out from.
+    premises: list[str] = Field(default_factory=list)
     provenance_id: str
     created_revision: int
     retired_revision: int | None = None

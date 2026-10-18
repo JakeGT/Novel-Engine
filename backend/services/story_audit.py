@@ -328,6 +328,12 @@ class StoryAudit:
             ):
                 where = (note.target_id, note.check_pass or note.category)
                 earlier[where] = earlier.get(where, 0) + 1
+        if studio.runs is not None:
+            # Kept as a run (CON-001): the exact versions it reads; once per job.
+            try:
+                await studio.runs.record_audit(job)
+            except Exception as error:  # noqa: BLE001 - the record is extra to the audit
+                log_event(logger, "checks.run_not_recorded", error_type=type(error).__name__)
         provider = None
         total = len(scenes)
         runner = studio.pass_runner()

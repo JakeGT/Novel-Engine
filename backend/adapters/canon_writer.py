@@ -330,7 +330,7 @@ class Neo4jCanonWriter:
                     e.participants = $participants,
                     e.locations = $locations, e.causes = $causes, e.outcomes = $outcomes,
                     e.world_position = $world_position, e.world_time = $world_time,
-                    e.claim = $claim,
+                    e.claim = $claim, e.scene_id = $scene_id, e.premises = $premises,
                     e.provenance_id = $provenance_id,
                     e.commit_id = $commit_id, e.revision = $revision
                 WITH e
@@ -354,6 +354,8 @@ class Neo4jCanonWriter:
                     if operation.claim is not None
                     else None
                 ),
+                scene_id=operation.scene_id,
+                premises=_dumps(operation.premises) if operation.premises else None,
                 **ctx,
             )
         elif isinstance(operation, AmendEventOp):
@@ -772,6 +774,7 @@ class Neo4jCanonWriter:
         "e.participants AS participants, e.locations AS locations, e.causes AS causes, "
         "e.outcomes AS outcomes, e.world_position AS world_position, "
         "e.world_time AS world_time, e.claim AS claim, "
+        "e.scene_id AS scene_id, e.premises AS premises, "
         "e.provenance_id AS provenance_id, e.created_revision AS created_revision, "
         "e.retired_revision AS retired_revision"
     )
@@ -799,6 +802,8 @@ class Neo4jCanonWriter:
                 if record.get("claim")
                 else None
             ),
+            scene_id=record.get("scene_id") or None,
+            premises=_load(record.get("premises"), []),
             provenance_id=record["provenance_id"] or "",
             created_revision=record["created_revision"] or 0,
             retired_revision=record["retired_revision"],

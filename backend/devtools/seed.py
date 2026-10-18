@@ -21,29 +21,48 @@ from backend.seed.apply import apply_manifest
 from backend.seed.canon import SEED_PROJECTS, CanonSeedReport, apply_canon_seed
 from backend.seed.ledger import record_seed
 from backend.seed.schema import apply_schema
+from backend.seed.story import StorySeedReport, apply_story_seed
 from backend.seed.tenancy import apply_tenancy
 from backend.seed.world import REFERENCE_WORLD
 
 
-async def _seed_canon(settings: Settings) -> CanonSeedReport:
-    """Commit the canonical reference world through the real mutation path."""
+async def _seed_canon(settings: Settings) -> tuple[CanonSeedReport, StorySeedReport | None]:
+    """Commit the canonical reference world through the real mutation path, then the
+    layers beside it (a scene's prose and kept draft, a scoped name answer, a what-if)."""
     from backend.adapters.canon_repository import PostgresCanonRepository
     from backend.adapters.journal import PostgresCanonJournal
     from backend.adapters.media_store import PostgresMediaStore
     from backend.adapters.objects import FilesystemObjectStore
+    from backend.adapters.passage_store import PostgresManifestStore
     from backend.adapters.schema_store import PostgresSchemaVersionStore
+    from backend.adapters.source_store import PostgresSourceStore
+    from backend.adapters.studio_store import PostgresStudioStore
     from backend.core.database import create_engine, create_session_factory
 
     engine = create_engine(settings)
     factory = create_session_factory(engine)
     try:
-        return await apply_canon_seed(
-            journal=PostgresCanonJournal(factory),
-            repository=PostgresCanonRepository(factory),
-            schemas=PostgresSchemaVersionStore(factory),
+        journal = PostgresCanonJournal(factory)
+        repository = PostgresCanonRepository(factory)
+        schemas = PostgresSchemaVersionStore(factory)
+        canon = await apply_canon_seed(
+            journal=journal,
+            repository=repository,
+            schemas=schemas,
             media=PostgresMediaStore(factory),
             objects=FilesystemObjectStore(settings.OBJECT_STORE_DIR),
         )
+        if not canon.ok:
+            return canon, None
+        story = await apply_story_seed(
+            journal=journal,
+            repository=repository,
+            schemas=schemas,
+            sources=PostgresSourceStore(factory),
+            studio=PostgresStudioStore(factory),
+            manifests=PostgresManifestStore(factory),
+        )
+        return canon, story
     finally:
         await engine.dispose()
 
@@ -107,7 +126,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         for project in SEED_PROJECTS
     )
-    canon = asyncio.run(_seed_canon(settings))
+    canon, story = asyncio.run(_seed_canon(settings))
 
     print(f"seed version: {report.version}")
     print(f"seed checksum: {report.checksum}")
@@ -118,11 +137,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"canon seed version: {canon.version}")
     print(f"canon seed checksum: {canon.checksum}")
     print(f"canon heads: {canon.heads}")
+    if story is not None:
+        print(f"story layers: {', '.join(story.written) or 'already seeded'}")
     if args.vectors:
         print(f"indexed documents: {report.indexed_documents} (skipped {report.skipped_documents})")
     else:
         print("indexed documents: not requested (pass --vectors to index prose snippets)")
-    problems = [*report.problems, *canon.problems]
+    problems = [*report.problems, *canon.problems, *(story.problems if story else [])]
     if problems:
         print(f"seed verification FAILED with {len(problems)} problem(s):")
         for problem in problems:

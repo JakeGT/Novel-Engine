@@ -90,6 +90,32 @@ mean being present, the author confirms who was there (the screen fills it from 
 Reading a scene does not propose claims: it shares the text reader with every text, and teaching it
 to tell speech from narration is left for later.
 
+**How and when something was learned (amends this ADR; KNW-002, CON-006, 2026-10-18).** A
+belief's `source_ref` names the event it was acquired through, and the event says how: a telling
+(told or overheard), something seen, a claim heard, or a new kind, `inferred`, whose `premises`
+name the facts and the holder's own beliefs it was worked out from. Recording an inference is the
+author's own change, saved at once like recording a claim; telling and seeing still only propose.
+An event may name the scene it happens in (`scene_id`, a new optional field omitted from the
+canonical form while unset, so earlier checksums stand). When it was learned is the event's story
+time, else its scene's time, else its scene's place in the reading order. Someone learns a thing
+*after* a scene only when that is certain: by story time when both have one and they do not
+overlap, otherwise by reading order. Anything unplaced counts as known all along, so nothing warns
+on a guess. Knowledge read for a scene (its context and its checks) leaves out what the viewpoint
+character only learns later; a secret learned later is the author's alone in that scene. A scene
+that uses such knowledge first (its words name everyone in it, the plan shows it through them, a
+claim has them say it, or drafting would give it as true) is a warning in the studio and the plan,
+and never blocks (plan/13).
+
+**How long things take (amends this ADR; CON-003, 2026-10-18).** Beside the unit, a story keeps
+the author's own table of travel times between places (either way; 0 means one place is inside the
+other) and lengths of events and facts (migration `0045_how_long`, on `story_clocks`, versioned so
+two saves at once cannot overwrite each other). Like the unit it is shared by every line of the
+story; rows naming a place, event or fact a line does not have are ignored there. It travels in
+the archive with the unit. Nothing ever fills it in by guessing: tools that compute ages from
+birth dates and keep characters to one place at a time (Aeon Timeline, for one) leave journey
+times to the author too. The continuity checks that read it (`backend/domain/continuity.py`) are
+worked out on read, never stored, and never block.
+
 ## Consequences
 
 - Every story read and every repository double filters by the working branch.

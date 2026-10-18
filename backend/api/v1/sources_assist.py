@@ -14,7 +14,7 @@ from backend.api.dependencies import (
     get_usage_service,
 )
 from backend.api.v1.assistant_settings import confirmed_tokens, get_assist_budget
-from backend.api.v1.canon_assist import DiscardedItemModel
+from backend.api.v1.canon_assist import ContextUsedModel, DiscardedItemModel, context_used
 from backend.api.v1.router import _provider_context
 from backend.core.config import Settings
 from backend.domain.branching import working_branch_id
@@ -61,6 +61,12 @@ class ReadPassageModel(BaseModel):
     guesses: int
     discarded: list[DiscardedItemModel]
     missing: list[MissingModel]
+    # How many of the suggested changes are events, and steps of the plan's threads (a
+    # scene's reading only); they wait for review with the rest (EXT-001).
+    events: int = 0
+    thread_steps: int = 0
+    # What part of the story bible the assistant was shown (CTX-002).
+    context: ContextUsedModel | None = None
     # The longest stretch read in one go.
     limit: int = MAX_PASSAGE
 
@@ -148,4 +154,7 @@ async def read_passage_with_assistant(
             MissingModel(name=item.name, reason=item.reason or item.description)
             for item in result.suggestions
         ],
+        events=result.events,
+        thread_steps=result.thread_steps,
+        context=context_used(result.context),
     )

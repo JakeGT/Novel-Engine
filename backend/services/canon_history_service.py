@@ -1083,6 +1083,8 @@ def _replay_event(version: RecordVersion, current: Event | None) -> Event | None
             world_position=change.get("world_position"),
             when=_stored_time(change.get("when")),
             claim=EventClaim.model_validate(change["claim"]) if change.get("claim") else None,
+            scene_id=change.get("scene_id"),
+            premises=list(change.get("premises") or []),
             provenance_id=f"prov_{version.commit_id}",
             created_revision=version.revision,
         )

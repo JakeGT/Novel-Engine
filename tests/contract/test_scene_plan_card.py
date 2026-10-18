@@ -280,3 +280,32 @@ def test_approving_a_card_suggestion_cannot_undo_what_the_author_set_since(
     item = _item(auth_client, w, scene["id"])
     assert item["summary"] == "Mara comes home."
     assert [(r["entity_id"], r["role"]) for r in item["refs"]] == [(w["mara"], "point_of_view")]
+
+
+def test_approving_a_card_suggestion_cannot_bring_back_someone_the_author_removed(
+    auth_client, fake_container
+):
+    w = _world(auth_client, fake_container)
+    scene = _titled_scene(auth_client, w, refs=[{"entity_id": w["mara"], "role": "participant"}])
+    _save(auth_client, w, scene, PROSE, None)
+    fake_container.ai.queue(
+        PlanCardDraft(point_of_view=_pick(w, "tobin", "Tobin Ashe", "Tobin waited"))
+    )
+    _card(auth_client, w, scene)
+    (done,) = _run(fake_container)
+    proposal = done.result["mutation_id"]
+
+    # Meanwhile the author takes Mara out of the scene.
+    changed = auth_client.patch(
+        f"{w['base']}/plan/{scene['id']}",
+        json={"refs": [], "expected_revision": _head(auth_client, w)},
+    )
+    assert changed.status_code == 200, changed.text
+
+    check = auth_client.post(f"{w['base']}/mutations/{proposal}/validate").json()
+    (issue,) = [i for i in check["issues"] if i["code"] == "plan_changed_since"]
+    assert "changed since this was suggested" in issue["message"]
+    auth_client.post(f"{w['base']}/mutations/{proposal}/approve", json={})
+    committed = auth_client.post(f"{w['base']}/mutations/{proposal}/commit")
+    assert committed.status_code >= 400
+    assert _item(auth_client, w, scene["id"])["refs"] == []

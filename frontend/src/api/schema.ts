@@ -1450,6 +1450,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/checks/runs/by-job/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run For Job
+         * @description The run an audit or a check with the assistant keeps, once it has started reading.
+         */
+        get: operations["run_for_job_api_v1_projects__project_id__checks_runs_by_job__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/checks/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run */
+        get: operations["get_run_api_v1_projects__project_id__checks_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/drafts/{draft_id}": {
         parameters: {
             query?: never;
@@ -2176,6 +2213,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/knowledge/infer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Infer
+         * @description Record that a character worked something out, and from what. Saved at once: it is
+         *     the author's own change, like recording a claim.
+         */
+        post: operations["infer_api_v1_projects__project_id__knowledge_infer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/knowledge/tell": {
         parameters: {
             query?: never;
@@ -2598,6 +2656,31 @@ export interface paths {
         head?: never;
         /** Change Plan Item */
         patch: operations["change_plan_item_api_v1_projects__project_id__plan__plan_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/checks/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Scene Runs
+         * @description The checks that read this scene, newest first (audits included), judged for it.
+         */
+        get: operations["scene_runs_api_v1_projects__project_id__plan__plan_id__checks_runs_get"];
+        put?: never;
+        /**
+         * Record Scene Run
+         * @description Keep a record of what the checks that need no model find in the scene now. Free;
+         *     when nothing changed since the last record, that record is returned.
+         */
+        post: operations["record_scene_run_api_v1_projects__project_id__plan__plan_id__checks_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/projects/{project_id}/plan/{plan_id}/conditions": {
@@ -3485,6 +3568,47 @@ export interface paths {
         /** Get Timeline */
         get: operations["get_timeline_api_v1_projects__project_id__timeline_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/timeline/checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Continuity
+         * @description Continuity across story time and place: warnings and notes, never blocking.
+         */
+        get: operations["get_continuity_api_v1_projects__project_id__timeline_checks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/timeline/how-long": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get How Long */
+        get: operations["get_how_long_api_v1_projects__project_id__timeline_how_long_get"];
+        /**
+         * Set How Long
+         * @description Replace the author's travel times and lengths. Shared by every line of the story.
+         */
+        put: operations["set_how_long_api_v1_projects__project_id__timeline_how_long_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -4696,10 +4820,20 @@ export interface components {
         };
         /** BrokenByModel */
         BrokenByModel: {
+            /**
+             * Certain
+             * @default true
+             */
+            certain: boolean;
             /** Entity Id */
             entity_id: string;
             /** Name */
             name: string;
+            /**
+             * When
+             * @default
+             */
+            when: string;
         };
         /** CanonEntityListResponse */
         CanonEntityListResponse: {
@@ -4788,6 +4922,7 @@ export interface components {
         ChangeProposalModel: {
             /** Back To Version */
             back_to_version?: number | null;
+            context?: components["schemas"]["ContextUsedModel"] | null;
             /** Discarded */
             discarded: components["schemas"]["DiscardedItemModel"][];
             /** Elsewhere */
@@ -4887,6 +5022,11 @@ export interface components {
             entity_id: string;
             /** Knows */
             knows: components["schemas"]["KnownFactModel"][];
+            /**
+             * Learned
+             * @default []
+             */
+            learned: components["schemas"]["LearnedModel"][];
             /** Unaware */
             unaware: components["schemas"]["FactModel"][];
             /** Unconfirmed */
@@ -4946,8 +5086,23 @@ export interface components {
              */
             use_cache: boolean;
         };
-        /** Check */
+        /**
+         * Check
+         * @description One thing that must hold for each entry the rule is about.
+         *
+         *     has, lacks, at_most, at_least: how many facts like ``pattern`` it has.
+         *     between: every value of ``pattern`` is a number from ``low`` to ``high``.
+         *     implies: if it has ``if_has``, it must also have ``pattern``.
+         *     not_both: it cannot have both ``pattern`` and ``not_with``.
+         *     believes, does_not_believe: it holds (or holds no) belief like ``pattern``,
+         *     about ``about_id`` or, when that is empty, about itself.
+         */
         Check: {
+            /**
+             * About Id
+             * @description For believes: the entry the belief is about; empty means the entry itself
+             */
+            about_id?: string | null;
             /**
              * Count
              * @description For at_most and at_least
@@ -4955,10 +5110,24 @@ export interface components {
              */
             count: number;
             /**
+             * High
+             * @description For between: the largest value allowed
+             */
+            high?: number | null;
+            /** @description For implies: the fact that, when present, requires pattern */
+            if_has?: components["schemas"]["Pattern"] | null;
+            /**
              * Kind
              * @enum {string}
              */
-            kind: "has" | "lacks" | "at_most" | "at_least";
+            kind: "has" | "lacks" | "at_most" | "at_least" | "between" | "implies" | "not_both" | "believes" | "does_not_believe";
+            /**
+             * Low
+             * @description For between: the smallest value allowed
+             */
+            low?: number | null;
+            /** @description For not_both: the fact that cannot stand with pattern */
+            not_with?: components["schemas"]["Pattern"] | null;
             pattern: components["schemas"]["Pattern"];
         };
         /** CheckEstimateModel */
@@ -5289,6 +5458,60 @@ export interface components {
             /** Pins */
             pins?: string[];
         };
+        /**
+         * ContextUsedModel
+         * @description What part of the story bible the assistant was shown, by which policy (CTX-002).
+         */
+        ContextUsedModel: {
+            /** Left Out */
+            left_out: {
+                [key: string]: number;
+            };
+            /** Listed */
+            listed: {
+                [key: string]: number;
+            };
+            /** Policy Version */
+            policy_version: string;
+        };
+        /** ContinuityFindingModel */
+        ContinuityFindingModel: {
+            /** Check */
+            check: string;
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Records */
+            records: components["schemas"]["RecordModel"][];
+            /** Scene Ids */
+            scene_ids: string[];
+            /** Severity */
+            severity: string;
+        };
+        /** ContinuityModel */
+        ContinuityModel: {
+            /** Always */
+            always: string;
+            /** Coverage */
+            coverage: components["schemas"]["CoverageModel"][];
+            /** Findings */
+            findings: components["schemas"]["ContinuityFindingModel"][];
+            /**
+             * Not Shown
+             * @default 0
+             */
+            not_shown: number;
+        };
+        /** CoverageModel */
+        CoverageModel: {
+            /** Check */
+            check: string;
+            /** Covers */
+            covers: string;
+            /** Title */
+            title: string;
+        };
         /** CreateAccessKeyRequest */
         CreateAccessKeyRequest: {
             /**
@@ -5388,6 +5611,10 @@ export interface components {
             outcome_ids?: string[];
             /** Participants */
             participants?: components["schemas"]["EventParticipant"][];
+            /** Premises */
+            premises?: string[];
+            /** Scene Id */
+            scene_id?: string | null;
             /** When */
             when?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
             /** World Position */
@@ -5971,8 +6198,15 @@ export interface components {
             outcome_ids: string[];
             /** Participants */
             participants: components["schemas"]["EventParticipant"][];
+            /**
+             * Premises
+             * @default []
+             */
+            premises: string[];
             /** Provenance Id */
             provenance_id: string;
+            /** Scene Id */
+            scene_id?: string | null;
             /** When */
             when?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
             /** World Position */
@@ -6028,6 +6262,22 @@ export interface components {
             /** Source Artefact Id */
             source_artefact_id: string;
         };
+        /**
+         * ExampleBelief
+         * @description Something a made-up character believes, which may or may not be so.
+         */
+        ExampleBelief: {
+            /** Holder Ref */
+            holder_ref: string;
+            /** Object Ref */
+            object_ref?: string | null;
+            /** Predicate */
+            predicate: string;
+            /** Subject Ref */
+            subject_ref: string;
+            /** Value */
+            value?: string | null;
+        };
         /** ExampleEntry */
         ExampleEntry: {
             /** Name */
@@ -6041,10 +6291,14 @@ export interface components {
         };
         /** ExampleFact */
         ExampleFact: {
+            /** Ends */
+            ends?: number | null;
             /** Object Ref */
             object_ref?: string | null;
             /** Predicate */
             predicate: string;
+            /** Starts */
+            starts?: number | null;
             /** Subject Ref */
             subject_ref: string;
             /** Value */
@@ -6060,6 +6314,27 @@ export interface components {
             expect: string;
             /** Outcome */
             outcome: string;
+        };
+        /**
+         * Exceptions
+         * @description Entries a rule does not apply to. Any one part matching is enough.
+         */
+        Exceptions: {
+            /**
+             * Entity Ids
+             * @description Named entries
+             */
+            entity_ids?: string[];
+            /**
+             * Having
+             * @description Entries that have any of these facts
+             */
+            having?: components["schemas"]["Pattern"][];
+            /**
+             * Tag
+             * @description Entries with this tag
+             */
+            tag?: string | null;
         };
         /** FactKnowledgeModel */
         FactKnowledgeModel: {
@@ -6173,6 +6448,24 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HowLongModel */
+        HowLongModel: {
+            /** Lasting */
+            lasting: components["schemas"]["LastingModel"][];
+            /** Travel */
+            travel: components["schemas"]["TravelTimeModel"][];
+            /** Version */
+            version: number;
+        };
+        /** HowLongRequest */
+        HowLongRequest: {
+            /** Expected Version */
+            expected_version: number;
+            /** Lasting */
+            lasting?: components["schemas"]["LastingModel"][];
+            /** Travel */
+            travel?: components["schemas"]["TravelTimeModel"][];
+        };
         /**
          * ImpactModel
          * @description What depends on a change: affected, may be affected, and what was not checked.
@@ -6199,6 +6492,37 @@ export interface components {
             semantic: boolean;
             /** Texts */
             texts: number;
+        };
+        /**
+         * InferRequest
+         * @description A character works something out from facts and their own beliefs (KNW-002).
+         */
+        InferRequest: {
+            /**
+             * Confidence
+             * @default 1
+             */
+            confidence: number;
+            /** Expected Revision */
+            expected_revision: number;
+            /** Fact Id */
+            fact_id?: string | null;
+            /** Holder Id */
+            holder_id: string;
+            /** Premises */
+            premises: string[];
+            proposition?: components["schemas"]["PropositionRequest"] | null;
+            /** Scene Id */
+            scene_id?: string | null;
+            /** When */
+            when?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
+        };
+        /** InferResult */
+        InferResult: {
+            /** Event Id */
+            event_id: string;
+            /** Revision */
+            revision: number;
         };
         /** IntegerObject */
         IntegerObject: {
@@ -6430,6 +6754,55 @@ export interface components {
             fact: components["schemas"]["FactModel"];
             /** How */
             how: string;
+        };
+        /** LastingModel */
+        LastingModel: {
+            /** Amount */
+            amount: number;
+            /**
+             * Give Or Take
+             * @default 0
+             */
+            give_or_take: number;
+            /** Subject Id */
+            subject_id: string;
+            /**
+             * Subject Kind
+             * @enum {string}
+             */
+            subject_kind: "event" | "fact";
+        };
+        /**
+         * LearnedModel
+         * @description How and when a character came to hold one belief (KNW-002).
+         */
+        LearnedModel: {
+            /** Belief Id */
+            belief_id: string;
+            /** Event Id */
+            event_id?: string | null;
+            /** Fact Id */
+            fact_id?: string | null;
+            /**
+             * How
+             * @enum {string}
+             */
+            how: "told" | "overheard" | "saw" | "worked_out" | "heard_said" | "event" | "recorded";
+            /**
+             * Premises
+             * @default []
+             */
+            premises: components["schemas"]["PremiseModel"][];
+            /** Scene Id */
+            scene_id?: string | null;
+            /** Scene Title */
+            scene_title?: string | null;
+            /** Source Id */
+            source_id?: string | null;
+            /** When */
+            when?: string | null;
+            /** Words */
+            words: string;
         };
         /** LeftOutModel */
         LeftOutModel: {
@@ -6851,6 +7224,8 @@ export interface components {
             message: string;
             /** Plan Id */
             plan_id: string;
+            /** Records */
+            records?: components["schemas"]["RecordModel"][];
         };
         /** OperationDecisionItem */
         OperationDecisionItem: {
@@ -6990,6 +7365,24 @@ export interface components {
             problem?: string | null;
             /** When */
             when: string;
+        };
+        /**
+         * PlanBase
+         * @description The parts of a plan item a suggestion read, as they were when it was made (ADR-023).
+         *
+         *     Kept on an ``only_fills`` change so approving it can tell whether the author has
+         *     changed any part the change would replace since: added or removed someone, a thread
+         *     it opens, settles or moves along.
+         */
+        PlanBase: {
+            /** Advances */
+            advances?: string[];
+            /** Pays Off */
+            pays_off?: string[];
+            /** Refs */
+            refs?: components["schemas"]["PlanRef"][];
+            /** Sets Up */
+            sets_up?: string[];
         };
         /** PlanBriefRequest */
         PlanBriefRequest: {
@@ -7144,6 +7537,18 @@ export interface components {
             subject_types: string[];
             /** Temporal Allowed */
             temporal_allowed: boolean;
+        };
+        /** PremiseModel */
+        PremiseModel: {
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "fact" | "belief" | "gone";
+            /** Sentence */
+            sentence: string;
         };
         /** ProjectModel */
         ProjectModel: {
@@ -7328,10 +7733,16 @@ export interface components {
         };
         /** ReadPassageModel */
         ReadPassageModel: {
+            context?: components["schemas"]["ContextUsedModel"] | null;
             /** Discarded */
             discarded: components["schemas"]["DiscardedItemModel"][];
             /** End */
             end: number;
+            /**
+             * Events
+             * @default 0
+             */
+            events: number;
             /** Guesses */
             guesses: number;
             /** Implied */
@@ -7351,6 +7762,11 @@ export interface components {
             operation_count: number;
             /** Start */
             start: number;
+            /**
+             * Thread Steps
+             * @default 0
+             */
+            thread_steps: number;
             /** Validation Ok */
             validation_ok: boolean;
         };
@@ -7422,6 +7838,20 @@ export interface components {
         RebuildResult: {
             /** Passages */
             passages: number;
+        };
+        /**
+         * RecordModel
+         * @description A record a finding comes from, so it can be opened.
+         */
+        RecordModel: {
+            /** Entry Id */
+            entry_id?: string | null;
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Label */
+            label: string;
         };
         /** RecordedClaimModel */
         RecordedClaimModel: {
@@ -7680,12 +8110,24 @@ export interface components {
             applies_to?: components["schemas"]["Selector"];
             /** Checks */
             checks: components["schemas"]["Check"][];
+            except_for?: components["schemas"]["Exceptions"];
+            /**
+             * Form
+             * @default 1
+             */
+            form: number;
             /**
              * Mode
              * @default all
              * @enum {string}
              */
             mode: "all" | "any";
+            /**
+             * Time
+             * @default as_recorded
+             * @enum {string}
+             */
+            time: "as_recorded" | "every_moment" | "at_end";
         };
         /** RuleCheckModel */
         RuleCheckModel: {
@@ -7728,6 +8170,8 @@ export interface components {
          * @description A tiny made-up story, and whether the rule should catch it.
          */
         RuleExample: {
+            /** Beliefs */
+            beliefs?: components["schemas"]["ExampleBelief"][];
             /** Description */
             description: string;
             /** Entries */
@@ -7774,6 +8218,107 @@ export interface components {
          * @enum {string}
          */
         RuleStatus: "on" | "paused";
+        /** RunFindingModel */
+        RunFindingModel: {
+            /** Check Pass */
+            check_pass?: string | null;
+            /** Code */
+            code: string;
+            dismissal?: components["schemas"]["DismissalModel"] | null;
+            /** Fixed By */
+            fixed_by?: ("words" | "story") | null;
+            /** Message */
+            message: string;
+            /** Plan Id */
+            plan_id: string;
+            /**
+             * Quoted
+             * @default
+             */
+            quoted: string;
+            /** Severity */
+            severity: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "check" | "note";
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "open" | "dismissed" | "fixed";
+        };
+        /** RunList */
+        RunList: {
+            /** Items */
+            items: components["schemas"]["RunModel"][];
+        };
+        /** RunModel */
+        RunModel: {
+            /** Created At */
+            created_at: string | null;
+            /** Findings */
+            findings: components["schemas"]["RunFindingModel"][];
+            /** Id */
+            id: string;
+            /** Job Id */
+            job_id: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "checks" | "assistant" | "audit";
+            /** Passes */
+            passes: string[];
+            /** Plan Id */
+            plan_id: string | null;
+            /** Scenes */
+            scenes: components["schemas"]["RunSceneModel"][];
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "scene" | "part" | "story";
+            /** Stale */
+            stale: boolean;
+            /** Status */
+            status: string;
+            /** Story Revision */
+            story_revision: number;
+            /** Title */
+            title: string;
+        };
+        /** RunSceneModel */
+        RunSceneModel: {
+            /** Dismissed */
+            dismissed: number;
+            /** Draft Id */
+            draft_id?: string | null;
+            /** Fixed */
+            fixed: number;
+            /** In Plan */
+            in_plan: boolean;
+            /** Open */
+            open: number;
+            /** Plan Id */
+            plan_id: string;
+            /** Reasons */
+            reasons: string[];
+            /** Source Id */
+            source_id?: string | null;
+            /** Stale */
+            stale: boolean;
+            /** Title */
+            title: string;
+            /** Version Id */
+            version_id?: string | null;
+        };
         /** SampleLoadedModel */
         SampleLoadedModel: {
             /** Revision */
@@ -8155,8 +8700,12 @@ export interface components {
             /** Overheard By */
             overheard_by?: string[];
             proposition?: components["schemas"]["PropositionRequest"] | null;
+            /** Scene Id */
+            scene_id?: string | null;
             /** Speaker Id */
             speaker_id: string;
+            /** When */
+            when?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
         };
         /**
          * TellResult
@@ -8262,6 +8811,15 @@ export interface components {
         TransferOwnershipRequest: {
             /** To User Id */
             to_user_id: string;
+        };
+        /** TravelTimeModel */
+        TravelTimeModel: {
+            /** Amount */
+            amount: number;
+            /** From Id */
+            from_id: string;
+            /** To Id */
+            to_id: string;
         };
         /** TrueThenModel */
         TrueThenModel: {
@@ -8373,6 +8931,7 @@ export interface components {
         };
         /** UpdatePlanItemOp */
         UpdatePlanItemOp: {
+            base?: components["schemas"]["PlanBase"] | null;
             /**
              * Detach
              * @default false
@@ -8514,6 +9073,10 @@ export interface components {
             /** Present Ids */
             present_ids: string[];
             proposition?: components["schemas"]["PropositionRequest"] | null;
+            /** Scene Id */
+            scene_id?: string | null;
+            /** When */
+            when?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
         };
         /** WorkspaceKeptModel */
         WorkspaceKeptModel: {
@@ -11834,6 +12397,70 @@ export interface operations {
             };
         };
     };
+    run_for_job_api_v1_projects__project_id__checks_runs_by_job__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_api_v1_projects__project_id__checks_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     discard_draft_api_v1_projects__project_id__drafts__draft_id__delete: {
         parameters: {
             query?: never;
@@ -13437,6 +14064,41 @@ export interface operations {
             };
         };
     };
+    infer_api_v1_projects__project_id__knowledge_infer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InferRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InferResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     tell_api_v1_projects__project_id__knowledge_tell_post: {
         parameters: {
             query?: never;
@@ -14320,6 +14982,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlanItemModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scene_runs_api_v1_projects__project_id__plan__plan_id__checks_runs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_scene_run_api_v1_projects__project_id__plan__plan_id__checks_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunModel"];
                 };
             };
             /** @description Validation Error */
@@ -16175,6 +16901,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TimelineModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_continuity_api_v1_projects__project_id__timeline_checks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContinuityModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_how_long_api_v1_projects__project_id__timeline_how_long_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HowLongModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_how_long_api_v1_projects__project_id__timeline_how_long_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HowLongRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HowLongModel"];
                 };
             };
             /** @description Validation Error */

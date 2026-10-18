@@ -11,6 +11,7 @@ import {
   type StudioJob,
 } from '../api/client'
 import { CheckingDialog, CheckingStatus } from '../components/AssistantSpending'
+import { CheckHistory } from '../components/CheckHistory'
 import { PassChoices } from '../components/CheckPasses'
 import { SceneContextDialog } from '../components/SceneContext'
 import { Checks, Notes } from '../components/StudioFindings'
@@ -51,6 +52,7 @@ import {
   type DraftChoices,
   type Span,
 } from '../lib/studio'
+import { versionNumbers } from '../lib/checkRuns'
 import { wordCount } from '../lib/texts'
 import { fullDate, timeAgo } from '../lib/time'
 import { useWorkingWhatIf } from '../lib/whatif'
@@ -632,6 +634,15 @@ export function StudioPage() {
             <Versions
               versions={data.versions}
               onRead={setReading}
+            />
+            <CheckHistory
+              planId={planId}
+              versions={versionNumbers(data.versions)}
+              refresh={[
+                data.version_id ?? '',
+                ...data.jobs.map((job) => `${job.id}:${job.status}`),
+                ...[...data.checks, ...data.assistant].map((item) => item.dismissal?.id ?? ''),
+              ].join('|')}
             />
           </div>
 

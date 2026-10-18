@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from backend.adapters.system import uuid7
 from backend.core.logging import log_event
+from backend.domain.bible_listing import LINKS_POLICY
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.marks import (
     IMPORTANCE_KEY,
@@ -272,7 +273,10 @@ class CanonLinkWorkflow(CanonReviseWorkflow):
             for name, spec in predicates.items()
             if spec.object_shape is ObjectKind.ENTITY_REF
         }
-        story, entities, facts, _beliefs = await self._story(workspace_id, project_id, None)
+        bible = await self._bible(
+            workspace_id, project_id, None, policy=LINKS_POLICY, from_details=True
+        )
+        story, entities, facts = bible.text, bible.entities, bible.facts
         active = {entity.id: entity for entity in entities if entity.is_active}
         if len(active) < 2 or not linking:
             raise ValidationError("There need to be at least two entries to connect.")
@@ -343,6 +347,8 @@ class CanonLinkWorkflow(CanonReviseWorkflow):
                 )
                 if link.why.strip():
                     notes.append(f"{subject.name} and {target.name}: {link.why.strip()[:300]}")
+        # What the assistant was not shown is always said, after what it found.
+        told = bible.listing.note()
         if not operations:
             raise ValidationError(
                 "No missing connections were found. Everything your entries say about each "
@@ -365,7 +371,9 @@ class CanonLinkWorkflow(CanonReviseWorkflow):
             project_id=project_id,
         )
         mutation = await self._mutation.submit(
-            review_scope, mutation.id, "suggested connections awaiting review"
+            review_scope,
+            mutation.id,
+            f"suggested connections awaiting review ({bible.listing.provenance()})",
         )
         validation = await self._mutation.validate(review_scope, mutation.id)
         # Kept for the author when they chose to have suggestions like this kept.
@@ -379,6 +387,9 @@ class CanonLinkWorkflow(CanonReviseWorkflow):
             operations=len(operations),
             discarded=len(discarded),
             prompt_version=LINKS_PROMPT_VERSION,
+            context_policy=bible.listing.policy_version,
+            listed=bible.listing.listed,
+            left_out=bible.listing.left_out,
         )
         return ChangeResult(
             session_id=session_id,
@@ -388,8 +399,9 @@ class CanonLinkWorkflow(CanonReviseWorkflow):
             mutation=mutation,
             operation_count=len(operations),
             validation=validation,
-            notes=notes[:12],
+            notes=[*notes[: 11 if told else 12], *([told] if told else [])],
             discarded=discarded,
+            context=bible.listing,
         )
 
 
@@ -574,6 +586,8 @@ def links_messages(story: str, linking: dict[str, PredicateSpec]) -> Messages:
         "- use only the exact ids listed, and only these kinds of fact:\n"
         f"{predicate_lines}\n"
         "- do not repeat a fact that is already listed.\n"
+        "- in a large story the list is in part, the entries whose details name other "
+        "entries first; a last line says how much is not listed.\n"
         "- in `why`, quote or paraphrase the words that imply it.\n"
         "- if nothing is missing, return an empty list."
     )

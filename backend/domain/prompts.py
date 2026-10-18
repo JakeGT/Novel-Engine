@@ -89,7 +89,9 @@ _SPECS = (
     ),
     PromptSpec(
         "change-by-instruction",
-        1,
+        # 2: the story bible is listed by the change-story policy (CTX-002), the request's
+        # own entries first, with a last line saying how much is not listed.
+        2,
         "One instruction from the author, worked out into every change it implies.",
         _S + "canon_change_workflow:change_messages",
         _S + "canon_change_workflow:ChangePlan",
@@ -103,7 +105,9 @@ _SPECS = (
     ),
     PromptSpec(
         "suggest-links",
-        1,
+        # 2: the story bible is listed by the suggest-links policy (CTX-002), entries whose
+        # details name others first, with a last line saying how much is not listed.
+        2,
         "Connections the story bible's own words imply but no fact records yet.",
         _S + "canon_revise_workflow:links_messages",
         _S + "canon_revise_workflow:LinkPlan",
@@ -131,7 +135,8 @@ _SPECS = (
     ),
     PromptSpec(
         "read-passage",
-        1,
+        # 2: the read-text listing policy (CTX-002), and events and thread steps (EXT-001).
+        2,
         "What a passage of the author's writing establishes, as changes to review.",
         _S + "intake_workflow:read_passage_messages",
         _S + "intake_workflow:PassageDraft",
@@ -140,7 +145,9 @@ _SPECS = (
         "read-scene",
         # 2: each fact says whether the scene shows it changing or starting there,
         # instead of whether it was already so; only those take the scene's time.
-        2,
+        # 3: the read-text listing policy (CTX-002), and events (in the scene or not) and
+        # thread steps (EXT-001).
+        3,
         "A passage of a written scene set at a known story time, read as changes to review; "
         "each fact also says whether the scene shows it changing or starting there.",
         _S + "intake_workflow:read_scene_messages",
@@ -148,7 +155,9 @@ _SPECS = (
     ),
     PromptSpec(
         "draft-rule",
-        1,
+        # 2: ranges, implications, incompatibilities, exceptions, beliefs and story
+        # time, with examples that carry times and beliefs (CON-005, CAN-013).
+        2,
         "A continuity rule the author wrote as a sentence, turned into a checkable rule.",
         _S + "rule_workflow:rule_messages",
         _S + "rule_workflow:RuleDraft",

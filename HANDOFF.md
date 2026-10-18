@@ -252,13 +252,13 @@ then `pnpm --dir frontend run gen:api`.
 
 ## 10. Data & migrations
 
-- Alembic (PostgreSQL) head: **`0043_access_keys`** (… → `0022_archive_imports` →
+- Alembic (PostgreSQL) head: **`0045_how_long`** (… → `0022_archive_imports` →
   `0023_session_id_token` → `0024_assist_sessions` → `0025_workspace_ai_settings` →
   `0026_assist_suggestions` → `0027_usage_allowance` → `0028_plan_items` →
   `0029_plan_conversations` → `0030_source_texts` → `0031_story_rules` → `0032_story_time` →
   `0033_context` → `0034_scene_studio` → `0035_scene_readings` → `0036_cached_tokens` →
   `0037_finding_decisions` → `0038_usage_controls` → `0039_check_passes` → `0040_scoped_names` → `0041_claims` →
-  `0042_delegation` → `0043_access_keys`).
+  `0042_delegation` → `0043_access_keys` → `0044_consistency_runs` → `0045_how_long`).
 - Neo4j ordered migrations: `0001_initial_graph_schema`, `0002_entity_scope_identity`,
   `0003_canon_scope_identity`, `0004_canon_projection_labels` (checksums in
   `plan/phase-2-evidence.md`).
@@ -776,4 +776,28 @@ A read-only security review found three medium and many low issues; all were fix
 point-of-view reads give only id, type and name; bodies are capped while read; machine origin is
 reserved for the MCP path; malformed messages get proper errors). Migrations 0042/0043 were
 renumbered before commit (no deployed database has them).
+
+## Consistency engine, fifth batch (2026-10-18)
+
+- **Continuity** (CON-003, CON-004; migration 0045): two places at once, journeys quicker than the
+  author's travel table, age, places that do not exist yet or any more, who holds what, a scene after
+  a death, conditions, and relationship changes off the page — on the timeline, in the plan and in the
+  studio, warnings only (`backend/domain/continuity.py`). A whole unit of a coarse clock ("year 5")
+  means some time in that unit; fractions are exact. A time that cannot be placed never makes a
+  finding certain.
+- **Rule engine** (CON-005, CAN-013): implications, incompatibilities, value ranges, belief checks,
+  exceptions, and when a rule must hold (as recorded / every moment / at the end); old rules keep
+  their meaning; a break that becomes certain is reported (and blocks if the rule blocks).
+- **Knowledge** (KNW-002, CON-006, CON-001; migration 0044): how a character learned each thing
+  (told, seen, worked out — `POST /knowledge/infer`), knowledge used before it was learned flagged in
+  the studio and the plan, and checks kept as runs with open / dismissed / fixed and out-of-date
+  ("Check history").
+- **Listing policies** (CTX-002): the God Hand, link suggestions and reading use versioned listing
+  policies (`backend/domain/bible_listing.py`) instead of fixed limits; reading proposes events (with a
+  time only when the passage states one) and thread steps (one plan change per reading, refused if the
+  author changed the scene's plan since); the reference world exercises every layer
+  (`backend/seed/story.py`).
+
+A read-only review found two high-for-blocking and several medium issues around uncertain times,
+stale plan suggestions and reading; all were fixed with tests.
 

@@ -6,6 +6,7 @@ not mock Neo4j driver calls, OpenAI SDK internals, or filesystem layouts.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import time
 from dataclasses import dataclass, field
@@ -2213,6 +2214,8 @@ class InMemoryCanonWriter:
                 "world_position": operation.world_position,
                 "when": _stored_time(operation.when),
                 "claim": operation.claim,
+                "scene_id": operation.scene_id,
+                "premises": list(operation.premises),
                 "provenance_id": f"prov_{commit_id}",
                 "created_revision": revision,
                 "lifecycle": "active",
@@ -2443,6 +2446,8 @@ class InMemoryCanonWriter:
             world_position=data["world_position"],
             when=data.get("when"),
             claim=data.get("claim"),
+            scene_id=data.get("scene_id"),
+            premises=list(data.get("premises") or []),
             provenance_id=data["provenance_id"],
             created_revision=data["created_revision"],
             retired_revision=data.get("retired_revision"),
@@ -2594,6 +2599,20 @@ class _MemoryCanonReader:
             and getattr(fact.status, "value", fact.status) == "asserted"
         ]
         return found[:limit]
+
+    async def current_beliefs(self, limit: int) -> list[Any]:
+        return list(
+            await self._repository.list_beliefs(
+                workspace_id=self._workspace_id, project_id=self._project_id, limit=limit
+            )
+        )
+
+    async def live_events(self, limit: int) -> list[Any]:
+        return list(
+            await self._repository.list_events(
+                workspace_id=self._workspace_id, project_id=self._project_id, limit=limit
+            )
+        )
 
 
 def _per_branch(name: str, factory: Any) -> property:
@@ -3301,6 +3320,8 @@ class InMemoryCanonRepository:
                 world_position=operation.world_position,
                 when=_stored_time(operation.when),
                 claim=operation.claim,
+                scene_id=operation.scene_id,
+                premises=list(operation.premises),
                 provenance_id=provenance_id,
                 created_revision=revision,
             )
@@ -4731,12 +4752,27 @@ class InMemoryStoryClockStore:
 
     def __init__(self) -> None:
         self.units: dict[tuple[str, str], str] = {}
+        self.how_long: dict[tuple[str, str], tuple[Any, int]] = {}
 
     async def get_unit(self, *, workspace_id: str, project_id: str) -> str | None:
         return self.units.get((workspace_id, project_id))
 
     async def set_unit(self, *, workspace_id: str, project_id: str, unit: str) -> None:
         self.units[(workspace_id, project_id)] = unit
+
+    # The author's travel times and lengths (CON-003), with a version per story.
+    async def get_how_long(self, *, workspace_id: str, project_id: str) -> tuple[Any, int]:
+        table, version = self.how_long.get((workspace_id, project_id), ({}, 0))
+        return copy.deepcopy(table), version
+
+    async def set_how_long(
+        self, *, workspace_id: str, project_id: str, table: Any, expected_version: int
+    ) -> int | None:
+        _, version = self.how_long.get((workspace_id, project_id), ({}, 0))
+        if version != expected_version:
+            return None
+        self.how_long[(workspace_id, project_id)] = (copy.deepcopy(table), version + 1)
+        return version + 1
 
 
 class InMemoryPassageStore:
@@ -5286,3 +5322,69 @@ class InMemoryAccessKeyStore:
         for key_id in gone:
             del self.keys[key_id]
         return len(gone)
+
+
+class InMemoryConsistencyRunStore:
+    """Checks kept as runs (CON-001), in memory."""
+
+    def __init__(self) -> None:
+        self.runs: list[Any] = []
+
+    async def add(self, run: Any) -> bool:
+        from dataclasses import replace
+        from datetime import UTC, datetime, timedelta
+
+        if run.job_id is not None and any(
+            (item.workspace_id, item.project_id, item.job_id)
+            == (run.workspace_id, run.project_id, run.job_id)
+            for item in self.runs
+        ):
+            return False
+        # Strictly later than the run before, so newest-first order is stable in tests.
+        now = datetime.now(UTC)
+        if self.runs and self.runs[-1].created_at is not None and now <= self.runs[-1].created_at:
+            now = self.runs[-1].created_at + timedelta(microseconds=1)
+        self.runs.append(replace(run, created_at=run.created_at or now))
+        return True
+
+    async def get(self, *, workspace_id: str, project_id: str, run_id: str) -> Any:
+        return next(
+            (
+                run
+                for run in self.runs
+                if (run.workspace_id, run.project_id, run.id) == (workspace_id, project_id, run_id)
+            ),
+            None,
+        )
+
+    async def for_job(self, *, workspace_id: str, project_id: str, job_id: str) -> Any:
+        return next(
+            (
+                run
+                for run in self.runs
+                if (run.workspace_id, run.project_id, run.job_id)
+                == (workspace_id, project_id, job_id)
+            ),
+            None,
+        )
+
+    async def recent(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        branch_id: str,
+        plan_id: str | None = None,
+        kind: str | None = None,
+        limit: int = 20,
+    ) -> list[Any]:
+        found = [
+            run
+            for run in self.runs
+            if (run.workspace_id, run.project_id, run.branch_id)
+            == (workspace_id, project_id, branch_id)
+            and (plan_id is None or run.touches(plan_id))
+            and (kind is None or run.kind == kind)
+        ]
+        found.sort(key=lambda run: (run.created_at, run.id), reverse=True)
+        return found[:limit]

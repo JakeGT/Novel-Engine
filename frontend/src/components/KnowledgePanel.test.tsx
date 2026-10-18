@@ -199,10 +199,81 @@ describe('KnowledgePanel', () => {
       not_noticed: ['ent_ines'],
       fact_id: 'fct_1',
       expected_revision: 3,
+      // The scene it happens in, so what they see is placed in the story's order.
+      scene_id: 'pln_docks',
     })
     const done = await screen.findByRole('dialog', { name: 'Suggested for review' })
     expect(within(done).getByText('Mara Venn was there and saw it happen.')).toBeInTheDocument()
     expect(within(done).getByText('Saw it')).toBeInTheDocument()
+  })
+
+  it('says how and when each thing was learned, and records something worked out', async () => {
+    const api = mockApi({
+      'GET /entities': { items: [entity(), tobin, harbor, saltmere], limit: 200, offset: 0 },
+      'GET /knowledge/characters/ent_tobin': {
+        entity_id: 'ent_tobin',
+        knows: [{ fact: truth, how: 'believes' }],
+        wrong: [],
+        unconfirmed: [belief],
+        unaware: [],
+        unrecorded: 0,
+        learned: [
+          {
+            belief_id: 'blf_0',
+            fact_id: 'fct_1',
+            how: 'told',
+            words: 'Told by Mara Venn',
+            scene_title: 'The Market',
+            when: 'year 12',
+            premises: [],
+          },
+          {
+            belief_id: 'blf_1',
+            how: 'worked_out',
+            words: 'Worked it out',
+            premises: [{ id: 'fct_1', kind: 'fact', sentence: 'Mara Venn is located at Lantern Harbor.' }],
+          },
+        ],
+      },
+      'GET /facts': { items: [truth], limit: 200, offset: 0 },
+      'GET /vocabulary': VOCABULARY,
+      'GET /plan': {
+        items: [{ id: 'pln_docks', kind: 'scene', title: 'The Docks', refs: [], details: {} }],
+        open: [],
+        conditions: [],
+        promises: [],
+        arcs: [],
+      },
+      'POST /knowledge/infer': { revision: 4, event_id: 'evt_9' },
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<KnowledgePanel entity={tobin} />)
+    const panel = await screen.findByRole('region', { name: 'What Tobin Ashe knows' })
+    expect(await within(panel).findByText('Told by Mara Venn · in “The Market” · year 12')).toBeInTheDocument()
+    expect(within(panel).getByText('From: Mara Venn is located at Lantern Harbor.')).toBeInTheDocument()
+    await expectAccessible(container)
+
+    await user.click(within(panel).getByRole('button', { name: 'Tobin Ashe works something out' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Tobin Ashe works something out' })
+    await user.selectOptions(await within(dialog).findByRole('combobox', { name: 'Which fact' }), 'fct_1')
+    await user.click(within(dialog).getByRole('button', { name: 'Save what they worked out' }))
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Choose what Tobin Ashe worked it out from.')
+    const from = within(dialog).getByRole('group', { name: 'From what' })
+    await user.click(within(from).getByRole('checkbox', { name: 'Mara Venn is located at Saltmere' }))
+    await user.selectOptions(await within(dialog).findByRole('combobox', { name: /In which scene/ }), 'pln_docks')
+    await expectAccessible(container)
+    await user.click(within(dialog).getByRole('button', { name: 'Save what they worked out' }))
+
+    await waitFor(() => expect(api.find('POST', '/knowledge/infer')).toHaveLength(1))
+    expect(api.find('POST', '/knowledge/infer')[0].body).toEqual({
+      holder_id: 'ent_tobin',
+      premises: ['blf_1'],
+      confidence: 1,
+      scene_id: 'pln_docks',
+      fact_id: 'fct_1',
+      expected_revision: 3,
+    })
+    expect(await screen.findByRole('dialog', { name: 'Saved' })).toBeInTheDocument()
   })
 
   it('is not shown for anything but a character', () => {

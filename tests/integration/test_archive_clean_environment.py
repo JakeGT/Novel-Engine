@@ -131,7 +131,8 @@ async def test_project_round_trips_into_a_clean_environment(
         assert record.status is ImportStatus.COMPLETED and record.commits_applied == PRIMARY_HEAD
 
         # Same accepted history: every same-scope envelope checksum is preserved and
-        # only the two commits holding project-scoped entity references differ.
+        # only the commits holding project-scoped entity references differ (truths,
+        # beliefs, the fact held for a stretch of story time, and what a claim says).
         source_commits = await source.repo.list_commits(branch_id=source_branch.id, **source_scope)
         target_branch = await target.journal.ensure_root_branch(**target_scope)
         target_commits = await target.repo.list_commits(branch_id=target_branch.id, **target_scope)
@@ -140,7 +141,7 @@ async def test_project_round_trips_into_a_clean_environment(
             s.envelope_checksum == t.envelope_checksum
             for s, t in zip(source_commits, target_commits, strict=True)
         ]
-        assert same == [True, False, False, True, True, True, True]
+        assert same == [True, False, False, True, True, True, True, False, True, True, False]
 
         # Same canonical state, independent of ids' project scope.
         target_report = await target.equivalence.verify(target_ws, target_pr)
@@ -182,7 +183,7 @@ async def test_project_round_trips_into_a_clean_environment(
         # The rebuilt projection answers the same relationship queries.
         source_edges = await source.writer.list_fact_edges(**source_scope)
         target_edges = await target.writer.list_fact_edges(**target_scope)
-        assert target_edges == source_edges and len(target_edges) == 5
+        assert target_edges == source_edges and len(target_edges) == 6
 
         # Nothing from the source tenant's other project came along.
         assert archive["project"]["project_id"] == SEED_PROJECT_ID

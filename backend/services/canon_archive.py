@@ -2,7 +2,7 @@
 
 Exports one project completely — schema versions, the ordered commit envelopes, the
 canon snapshot, tags, media identity/version metadata, project objects (bytes), the
-author's texts, name answers, rules and story-time unit, which text holds each scene,
+author's texts, name answers, rules, story-time unit and "how long things take", which text holds each scene,
 what was read from each scene, the author's voice note, every what-if (where it
 started, its own saved changes and named versions, its scene texts and readings) and
 the conversations with the assistant — as a checksummed, self-contained archive.
@@ -56,6 +56,7 @@ from backend.domain.assist import AssistSession
 from backend.domain.branching import working_in
 from backend.domain.canon.propositions import EntityRefObject
 from backend.domain.canon.revisions import OriginKind
+from backend.domain.continuity import read_how_long
 from backend.domain.dismissals import MAX_NOTE as MAX_DISMISSAL_NOTE
 from backend.domain.dismissals import DismissReason, FindingDismissal, FindingKind
 from backend.domain.errors import NotFoundError
@@ -67,6 +68,7 @@ from backend.domain.operations import (
     AssertBeliefOp,
     AssertFactOp,
     CanonOperation,
+    CreateEventOp,
     canonicalize_operations,
     operations_checksum,
     parse_operation,
@@ -93,6 +95,7 @@ LEFT_OUT = (
     "Drafts waiting for you to keep or discard: they are working material, not the story.",
     "Proposed changes not yet reviewed and saved.",
     "Assistant jobs, usage records, sign-in details and settings.",
+    "The history of checks (what each read and found): a restored story starts with none.",
 )
 MAX_NAME = 120
 MAX_ENTRIES = 100_000
@@ -145,6 +148,16 @@ def _import_id(archive_checksum: str, workspace_id: str, project_id: str) -> str
 
 
 def _remap_operation_scope(operation: CanonOperation, *, target_project_id: str) -> CanonOperation:
+    if isinstance(operation, CreateEventOp) and operation.claim is not None:
+        # What a claim says points at entries too, and must point into the target project.
+        said = operation.claim.proposition
+        if not isinstance(said.object, EntityRefObject):
+            return operation
+        moved = said.model_copy(
+            update={"object": said.object.model_copy(update={"project_id": target_project_id})}
+        )
+        claim = operation.claim.model_copy(update={"proposition": moved})
+        return operation.model_copy(update={"claim": claim})
     if not isinstance(operation, (AssertFactOp, AssertBeliefOp)):
         return operation
     obj = operation.proposition.object
@@ -660,6 +673,13 @@ class CanonArchiveService:
             )
             if unit:
                 body["story_time"] = {"unit": unit}
+            if hasattr(self._clocks, "get_how_long"):
+                # The author's travel times and lengths (CON-003), shared like the unit.
+                table, _version = await self._clocks.get_how_long(
+                    workspace_id=workspace_id, project_id=project_id
+                )
+                if table and (table.get("travel") or table.get("lasting")):
+                    body.setdefault("story_time", {})["how_long"] = table
         # Said in the archive itself, so whoever opens it knows what is not there.
         body["left_out"] = list(LEFT_OUT)
         body["checksum"] = _checksum(body)
@@ -1109,6 +1129,20 @@ class CanonArchiveService:
             if current is None:
                 await self._clocks.set_unit(  # type: ignore[attr-defined]
                     workspace_id=workspace_id, project_id=project_id, unit=unit.strip()[:30]
+                )
+        how_long = (archive.get("story_time") or {}).get("how_long")
+        if how_long and self._clocks is not None and hasattr(self._clocks, "get_how_long"):
+            table = read_how_long(how_long)
+            _, version = await self._clocks.get_how_long(
+                workspace_id=workspace_id, project_id=project_id
+            )
+            # Only into a story with no table of its own; a restore never overwrites one.
+            if version == 0 and (table.travel or table.lasting):
+                await self._clocks.set_how_long(  # type: ignore[attr-defined]
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    table=table.model_dump(mode="json"),
+                    expected_version=0,
                 )
         if self._rules is not None:
             for rule in archive.get("story_rules", []):

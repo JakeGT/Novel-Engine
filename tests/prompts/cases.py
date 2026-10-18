@@ -185,6 +185,16 @@ CASES: dict[str, dict[str, dict[str, Any]]] = {
             "predicates": PREDICATES,
             "entity_types": ENTITY_TYPES,
         },
+        "a scene with the plan's threads": {
+            "about": (
+                "Entries already in the story bible:\n- ent_mara | Character | Mara Voss"
+                "\n\nThreads in the plan:\n- pln_debt | The debt: who Mara owes"
+            ),
+            "passage": "Mara paid the harbourmaster the last of what she owed.",
+            "predicates": PREDICATES,
+            "entity_types": ENTITY_TYPES,
+            "threads": True,
+        },
     },
     "draft-rule": {
         "a rule": {

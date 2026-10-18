@@ -83,6 +83,9 @@ class Container:
     projection_worker: Any = None
     studio_store: Any = None
     studio_service: Any = None
+    # Checks kept as runs (CON-001).
+    consistency_run_store: Any = None
+    consistency_runs: Any = None
     scene_reading: Any = None
     scene_plan_card: Any = None
     media_store: Any = None
@@ -372,6 +375,7 @@ def build_container(settings: Settings | None = None) -> Container:
     from backend.services.what_if_service import WhatIfService
 
     container.story_clocks = PostgresStoryClockStore(database.session_factory)
+    container.plan_service.clocks = container.story_clocks
     container.story_time_service = StoryTimeService(
         reader=container.canon_repository,
         clocks=container.story_clocks,
@@ -387,6 +391,7 @@ def build_container(settings: Settings | None = None) -> Container:
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
         journal=container.journal,
+        clocks=container.story_clocks,
     )
     from backend.adapters.passage_store import PostgresManifestStore, PostgresPassageStore
     from backend.services.context_service import ContextService
@@ -447,6 +452,14 @@ def build_container(settings: Settings | None = None) -> Container:
         local_mode=not resolved.is_hosted,
     )
     container.studio_service.register_jobs()
+    from backend.adapters.consistency_run_store import PostgresConsistencyRunStore
+    from backend.services.consistency_runs import ConsistencyRunService
+
+    container.consistency_run_store = PostgresConsistencyRunStore(database.session_factory)
+    container.consistency_runs = ConsistencyRunService(
+        store=container.consistency_run_store, studio=container.studio_service
+    )
+    container.studio_service.runs = container.consistency_runs
     # Which scene a text holds, so names are read as that scene reads them (CTX-016).
     container.source_service.studio = container.studio_service
     container.what_if_service = WhatIfService(
@@ -516,6 +529,7 @@ def build_container(settings: Settings | None = None) -> Container:
         local_mode=not resolved.is_hosted,
         model=resolved.AI_MODEL,
         clocks=container.story_clocks,
+        passages=container.passage_store,
     )
     from backend.services.scene_reading import SceneReadingService
 

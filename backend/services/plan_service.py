@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 from backend.adapters.system import uuid7
 from backend.domain.arcs import (
@@ -31,10 +32,11 @@ from backend.domain.arcs import (
     with_path,
     without_scenes,
 )
-from backend.domain.canon.assertions import Fact
+from backend.domain.canon.assertions import Belief, Fact
 from backend.domain.canon.entities import CanonEntity
-from backend.domain.canon.events import Event
+from backend.domain.canon.events import CLAIM_KIND, CLAIM_NARRATOR, CLAIM_SPEAKER, Event
 from backend.domain.canon.ids import format_canon_id
+from backend.domain.canon.phrasing import phrase
 from backend.domain.canon.plans import (
     ALLOWED_PARENTS,
     MAX_THREAD_LINKS,
@@ -42,6 +44,7 @@ from backend.domain.canon.plans import (
     PlanKind,
     PlanRef,
 )
+from backend.domain.canon.propositions import Proposition
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.knowledge import (
@@ -87,14 +90,16 @@ from backend.domain.threads import (
     thread_progress,
     with_advances,
 )
-from backend.domain.worldtime import Relative, Truth, true_at
+from backend.domain.worldtime import Relative, Truth, is_unknown, true_at
 from backend.ports import CanonRepositoryPort, SchemaVersionStorePort
+from backend.services.knowledge_timing import plan_signals
 from backend.services.mutation_service import CommitResult, MutationService
 from backend.services.story_time_service import (
     MAX_RECORDS,
     Story,
     event_times,
     fact_span,
+    read_story,
     time_of,
 )
 
@@ -114,6 +119,8 @@ class OpenItem:
     message: str
     # gap: something not filled in yet. problem: out of order, or not ready.
     kind: str = "gap"
+    # The records it comes from, so the author can open them (continuity findings).
+    records: tuple[Any, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -208,9 +215,12 @@ class PlanService:
         schema_store: SchemaVersionStorePort | None = None,
         tenancy: object | None = None,
         local_mode: bool = False,
+        clocks: Any = None,
     ) -> None:
         self._mutation = mutation
         self._reader = reader
+        # Where the story's unit and "how long things take" are kept; set by the container.
+        self.clocks: Any = clocks
         self._schema_store = schema_store
         self._tenancy = tenancy
         self._local_mode = local_mode
@@ -280,6 +290,22 @@ class PlanService:
             for item in order_findings(items)
         ]
         scenes = reading_order(items)
+        # Shown through, or said by, someone before they learn it (CON-006): warnings.
+        found += await self._knowledge_findings(workspace_id, project_id, items)
+        # Continuity across story time and place (CON-003, CON-004): warnings and notes.
+        # It needs the whole story bible, read once here and shared with the checks below.
+        whole_story = (
+            await read_story(self._reader, workspace_id, project_id)
+            if any(
+                item.kind is PlanKind.SCENE
+                and item.is_active
+                and scene_time(item.details) is not None
+                for item in items
+            )
+            else None
+        )
+        if whole_story is not None:
+            found += await self._continuity_findings(workspace_id, project_id, items, whole_story)
         states: list[ConditionState] = []
         promised = promises(items, scenes, [])
         arcs = arcs_with_paths(items)
@@ -296,9 +322,14 @@ class PlanService:
             scene_reveals(scene.details) or scene_conditions(scene.details) for scene in scenes
         )
         if checked or arc_facts:
-            # Only read the part of the story bible a scene or an arc checks against.
-            story = await self._story_for_checks(
-                workspace_id, project_id, scenes, also_facts=arc_facts
+            # Only read the part of the story bible a scene or an arc checks against,
+            # unless the whole of it is already read.
+            story = (
+                whole_story
+                if whole_story is not None
+                else await self._story_for_checks(
+                    workspace_id, project_id, scenes, also_facts=arc_facts
+                )
             )
             names = {entity.id: entity.name for entity in story.entities.values()}
             if arc_facts:
@@ -339,6 +370,121 @@ class PlanService:
         return PlanReading(
             items=items, open=found, conditions=states, promises=promised, arcs=arc_readings
         )
+
+    async def _continuity_findings(
+        self, workspace_id: str, project_id: str, items: list[PlanItem], story: Story
+    ) -> list[OpenItem]:
+        """Continuity findings beside the scenes they are about: a warning is something out
+        of order or not ready, a note is a gap. Only asked for when a scene is placed in
+        story time, since every scene check is about when, with the story already read."""
+        from backend.services.continuity_service import story_continuity
+
+        findings = await story_continuity(
+            self._reader, self.clocks, workspace_id, project_id, story=story, items=items
+        )
+        more: list[OpenItem] = []
+        if findings.not_shown:
+            first = next(
+                (
+                    item
+                    for item in reading_order(items)
+                    if item.kind is PlanKind.SCENE and scene_time(item.details) is not None
+                ),
+                None,
+            )
+            if first is not None:
+                count = findings.not_shown
+                more.append(
+                    OpenItem(
+                        first.id,
+                        "continuity_not_shown",
+                        f"Continuity found more than can be listed: {count} more "
+                        f"{'is' if count == 1 else 'are'} not shown here or on the timeline. "
+                        "Fixing the ones shown brings the rest into view.",
+                        "gap",
+                    )
+                )
+        return more + [
+            OpenItem(
+                scene_id,
+                finding.code,
+                finding.message,
+                "problem" if finding.severity == "warning" else "gap",
+                finding.records,
+            )
+            for finding in findings
+            for scene_id in finding.scene_ids
+        ]
+
+    async def _knowledge_findings(
+        self, workspace_id: str, project_id: str, items: list[PlanItem]
+    ) -> list[OpenItem]:
+        """A reveal shown through a viewpoint character, or a claim said in a scene, before
+        that person learns it (CON-006). Read only when something someone learned is
+        placed in a scene or in story time; otherwise nothing could be found."""
+        scenes = reading_order(items)
+        # A scene that names nobody has no viewpoint or speaker to check: then nothing in
+        # the story bible is read at all.
+        if not any(scene.refs for scene in scenes):
+            return []
+        holders = {pov for scene in scenes for pov in scene.refs_as("point_of_view")}
+        events = [
+            event
+            for event in await self._reader.list_events(
+                workspace_id=workspace_id, project_id=project_id, limit=MAX_RECORDS
+            )
+            if event.retired_revision is None
+        ]
+        for event in events:
+            if event.kind == CLAIM_KIND and event.claim is not None and event.claim.scene_id:
+                holders.update(
+                    p.entity_id
+                    for p in event.participants
+                    if p.role in (CLAIM_SPEAKER, CLAIM_NARRATOR)
+                )
+        placed = {
+            event.id
+            for event in events
+            if event.scene_id
+            or (event.claim is not None and event.claim.scene_id)
+            or not is_unknown(event.when)
+        }
+        if not holders or not placed:
+            return []
+        beliefs: list[Belief] = []
+        for holder in sorted(holders):
+            beliefs += await self._reader.list_beliefs(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                holder_entity_id=holder,
+                limit=MAX_RECORDS,
+            )
+        if not any(belief.source_ref in placed for belief in beliefs):
+            return []
+        facts = list(
+            await self._reader.list_facts(
+                workspace_id=workspace_id, project_id=project_id, limit=MAX_WORLD_FACTS
+            )
+        )
+        names = {
+            entity.id: entity.name
+            for entity in await self._reader.list_entities(
+                workspace_id=workspace_id, project_id=project_id, limit=MAX_RECORDS
+            )
+        }
+
+        def words(proposition: Proposition) -> str:
+            target = names.get(getattr(proposition.object, "entity_id", "") or "")
+            if target is None:
+                value = getattr(proposition.object, "value", None)
+                target = "" if value is None else str(value)
+            subject = names.get(proposition.subject_id, "Someone")
+            return f"{subject} {phrase(proposition.predicate)} {target}".strip()
+
+        return [
+            OpenItem(item.plan_id, item.code, item.message, item.kind)
+            for item in plan_signals(items, facts, events, beliefs, names, words)
+        ]
 
     async def _story_for_checks(
         self,

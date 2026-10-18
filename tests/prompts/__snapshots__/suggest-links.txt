@@ -1,6 +1,6 @@
 # Prompt snapshot. Change it only with: uv run python -m tests.prompts.snapshots --update
 id: suggest-links
-version: 1
+version: 2
 
 ##### case: a small story
 
@@ -11,6 +11,7 @@ You are reading an author's story bible for connections between entries that the
 - LOCATED_AT: subject is one of ['Character', 'Object']; points to ['Location']; only one at a time
 - MEMBER_OF: subject is one of ['Character']; points to ['Faction']
 - do not repeat a fact that is already listed.
+- in a large story the list is in part, the entries whose details name other entries first; a last line says how much is not listed.
 - in `why`, quote or paraphrase the words that imply it.
 - if nothing is missing, return an empty list.
 

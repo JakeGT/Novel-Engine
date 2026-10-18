@@ -79,7 +79,7 @@ test('write a scene, draft it with the assistant, keep the draft, check it and r
   await editor.fill('Wren Hollis swept the floor of The Old Mill. It was a testament to her patience.')
   await shot(page, '02-unsaved')
   await page.getByRole('button', { name: /^Save/ }).first().click()
-  await expect(page.getByText(/stock phrasing/)).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Checks' }).getByText(/stock phrasing/).first()).toBeVisible()
   await shot(page, '03-saved-with-checks')
 
   // Drafting with the assistant: the cost is shown before anything is sent.
@@ -103,7 +103,7 @@ test('write a scene, draft it with the assistant, keep the draft, check it and r
 
   // A check with the assistant keeps only notes that quote the text.
   await page.getByRole('button', { name: /Check with the assistant/ }).first().click()
-  await expect(page.getByText('The scene is set in the morning, but the lamps are lit.')).toBeVisible({
+  await expect(page.getByRole('region', { name: /The assistant.s notes/ }).getByText('The scene is set in the morning, but the lamps are lit.')).toBeVisible({
     timeout: 30_000,
   })
   await expect(page.getByText('This note cannot be pinned to the text.')).toHaveCount(0)
@@ -133,14 +133,15 @@ test('write a scene, draft it with the assistant, keep the draft, check it and r
   await expect(bible.getByText('Not read into the story yet.')).toBeVisible()
   await bible.getByRole('button', { name: 'Update the story from this scene' }).click()
   await expect(page.getByText(/changes? suggested from this scene\./)).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByText('Nothing changes in your story until you review it.')).toBeVisible()
+  // The stand-in suggests a new place and an event, so there is more than one change.
+  await expect(page.getByText(/Nothing changes in your story until you review (it|them)\./)).toBeVisible()
   await expect(bible.getByText(/Read into the story at version 2/)).toBeVisible()
   await expect(bible.getByText('Nothing has changed since it was last read.')).toBeVisible()
   await expect(bible.getByRole('button', { name: 'Update the story from this scene' })).toBeDisabled()
   await shot(page, '10-read')
   await expectAccessible(page)
 
-  await page.getByRole('link', { name: 'Review it' }).click()
+  await page.getByRole('link', { name: /^Review (it|them)$/ }).click()
   await expect(page).toHaveURL(/\/review\/[^/]+$/)
   await expect(page.getByText(/The quay/).first()).toBeVisible()
   await shot(page, '11-read-review')

@@ -122,7 +122,7 @@ test('a scene can be opened, written and saved with the keyboard alone', async (
   await page.goto(`/projects/${PROJECT}/plan`)
   // Tab to the scene's "Write this scene" and open it with Enter.
   const write = page.getByRole('link', { name: 'Write this scene: Keys at Night' })
-  for (let presses = 0; presses < 80; presses += 1) {
+  for (let presses = 0; presses < 400; presses += 1) {
     if (await write.evaluate((node) => node === document.activeElement)) break
     await page.keyboard.press('Tab')
   }

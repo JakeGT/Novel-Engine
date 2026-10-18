@@ -310,7 +310,8 @@ export function Checks({
       </div>
       {stale && <p className="hint">These are about the saved text. Save to check again.</p>}
       <JustDismissed items={dismissed} dismissals={dismissals} />
-      {empty ? (
+      {/* Before any words, only what the plan and story bible say about the scene (continuity). */}
+      {empty && active.length === 0 ? (
         <p className="muted small">Nothing to check until there are some words.</p>
       ) : active.length === 0 ? (
         <p className="muted small">{dismissed.length > 0 ? 'Nothing else to point out.' : 'Nothing to point out.'}</p>

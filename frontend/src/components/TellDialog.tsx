@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { api, type CanonEntity, type Telling } from '../api/client'
 import { useCanonWrite, useEntries, useProject } from '../project'
 import { BeliefProposal } from './BeliefProposal'
+import { useScenePick } from './ScenePick'
 import { useStatement } from './StatementPicker'
 import { Button, Dialog, WriteProblem } from './ui'
 
@@ -18,6 +19,7 @@ export function TellDialog({ speaker, onClose }: { speaker: CanonEntity; onClose
     factLabel: 'Something true in the story',
     otherLabel: 'Something else, which may not be true',
   })
+  const where = useScenePick()
 
   const [tellerId, setTellerId] = useState(speaker.id)
   const [listeners, setListeners] = useState<string[]>([])
@@ -33,6 +35,7 @@ export function TellDialog({ speaker, onClose }: { speaker: CanonEntity; onClose
         listener_ids: listeners,
         overheard_by: overhearers,
         expected_revision: expectedRevision,
+        ...(where.sceneId ? { scene_id: where.sceneId } : {}),
         ...(chosen.fact_id ? { fact_id: chosen.fact_id } : { proposition: chosen.proposition }),
       })
     },
@@ -119,6 +122,7 @@ export function TellDialog({ speaker, onClose }: { speaker: CanonEntity; onClose
           <legend>What {teller} says</legend>
           {picker}
         </fieldset>
+        {where.picker}
         {problem && (
           <p className="error-text" role="alert">
             {problem}

@@ -11,6 +11,8 @@ afterEach(() => vi.unstubAllGlobals())
 const guild = entity({ id: 'ent_guild', type: 'Location', name: 'Lantern Harbor', aliases: [] })
 const mara = entity({ id: 'ent_mara', name: 'Mara', aliases: [] })
 const body: RuleBody = {
+  form: 1,
+  time: 'as_recorded',
   applies_to: { type: 'Character' },
   mode: 'all',
   checks: [{ kind: 'at_most', count: 1, pattern: { predicate: 'LOCATED_AT', direction: 'out' } }],
@@ -29,7 +31,7 @@ const rule: StoryRule = {
     { description: 'Ana in two towns', expect: 'caught', outcome: 'caught', agrees: true },
     { description: 'Ana at home', expect: 'allowed', outcome: 'allowed', agrees: true },
   ],
-  broken_by: [{ entity_id: 'ent_mara', name: 'Mara' }],
+  broken_by: [{ entity_id: 'ent_mara', name: 'Mara', certain: true, when: '' }],
 }
 const checked: RuleCheck = {
   reading: rule.reading,
@@ -208,5 +210,92 @@ describe('RulesPage', () => {
     const heading = await screen.findByRole('heading', { name: 'One place at a time' })
     expect(heading.closest('li')).toHaveTextContent('When a change would break it: the change is blocked.')
     expect(screen.queryByRole('button', { name: 'Block the change' })).not.toBeInTheDocument()
+  })
+
+  it('builds the richer rules by hand: two facts, a range, a belief, exceptions and story time', async () => {
+    const api = mockApi({ ...base, 'GET /rules': { items: [] }, 'POST /rules/check': checked })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<RulesPage />, at)
+    const lastBody = () => (api.find('POST', '/rules/check').at(-1)?.body as { body: RuleBody }).body
+
+    await user.click(await screen.findByRole('button', { name: 'Write your first rule' }))
+    const dialog = screen.getByRole('dialog', { name: 'New story rule' })
+    await user.click(await within(dialog).findByRole('button', { name: 'Build it by hand' }))
+    await user.selectOptions(within(dialog).getByLabelText('Which entries the rule is about'), 'type:Character')
+
+    // If it has one fact, it must also have another.
+    await user.selectOptions(within(dialog).getByLabelText('Must or must not'), 'implies')
+    await user.selectOptions(within(dialog).getByLabelText('If it has: the other entry'), 'one:ent_guild')
+    await waitFor(() =>
+      expect(lastBody().checks[0]).toEqual({
+        kind: 'implies',
+        count: 1,
+        if_has: { predicate: 'LOCATED_AT', direction: 'out', other_id: 'ent_guild', other_type: null },
+        pattern: { predicate: 'LOCATED_AT', direction: 'out' },
+      }),
+    )
+
+    // Cannot have both: the facts already chosen carry over.
+    await user.selectOptions(within(dialog).getByLabelText('Must or must not'), 'not_both')
+    await waitFor(() => expect(lastBody().checks[0].not_with?.other_id).toBe('ent_guild'))
+    expect(lastBody().checks[0].if_has).toBeUndefined()
+
+    // A value within a range, with nothing a range does not use.
+    await user.selectOptions(within(dialog).getByLabelText('Must or must not'), 'between')
+    const high = within(dialog).getByLabelText('to')
+    await user.type(high, '120')
+    await waitFor(() =>
+      expect(lastBody().checks[0]).toEqual({
+        kind: 'between',
+        count: 1,
+        pattern: { predicate: 'LOCATED_AT', direction: 'out' },
+        low: 0,
+        high: 120,
+      }),
+    )
+
+    // A belief about another entry.
+    await user.selectOptions(within(dialog).getByLabelText('Must or must not'), 'believes')
+    await user.selectOptions(within(dialog).getByLabelText('that'), 'ent_guild')
+    await waitFor(() => expect(lastBody().checks[0]).toMatchObject({ kind: 'believes', about_id: 'ent_guild' }))
+    expect(within(dialog).getByLabelText('What it believes: which way round')).toHaveTextContent('Lantern Harbor')
+
+    // Leave out Mara and anything tagged "ghost", at every moment of the story.
+    await user.click(within(dialog).getByLabelText('except some entries…'))
+    await user.selectOptions(within(dialog).getByLabelText('Leave out'), 'ent_mara')
+    await user.type(within(dialog).getByLabelText('and anything tagged'), 'ghost')
+    await user.selectOptions(within(dialog).getByLabelText('It must hold'), 'every_moment')
+    await waitFor(() => {
+      const sent = lastBody()
+      expect(sent.except_for).toEqual({ entity_ids: ['ent_mara'], tag: 'ghost' })
+      expect(sent.time).toBe('every_moment')
+    })
+    expect(within(dialog).getByText(/moving from one place to another is not being in two at once/)).toBeInTheDocument()
+    expect(within(dialog).getByRole('list', { name: 'Left out' })).toHaveTextContent('Mara')
+    await expectAccessible(container)
+
+    await user.click(within(dialog).getByRole('button', { name: 'Stop leaving out Mara' }))
+    await waitFor(() => expect(lastBody().except_for?.entity_ids).toEqual([]))
+    await user.click(within(dialog).getByLabelText('except some entries…'))
+    await waitFor(() => expect(lastBody().except_for).toBeUndefined())
+    expect(api.find('POST', '/assist/rules/draft')).toHaveLength(0)
+  }, 30_000)
+
+  it('says when a rule may not hold because the story times are too loose', async () => {
+    const timed = {
+      ...rule,
+      reading: 'At every moment of the story: Every character can have at most 1 of this: it is located at something.',
+      broken_by: [
+        { entity_id: 'ent_mara', name: 'Mara', certain: false, when: 'around 6 in story time' },
+      ],
+    }
+    mockApi({ ...base, 'GET /rules': { items: [timed] } })
+    const { container } = renderInProject(<RulesPage />, at)
+    const card = (await screen.findByRole('heading', { name: 'One place at a time' })).closest('li') as HTMLElement
+    expect(card).toHaveTextContent('May be broken')
+    expect(card).toHaveTextContent('May not hold for: Mara (around 6 in story time).')
+    expect(card).toHaveTextContent('too loose to be sure, so this only ever warns')
+    expect(card).not.toHaveTextContent('Does not hold for')
+    await expectAccessible(container)
   })
 })

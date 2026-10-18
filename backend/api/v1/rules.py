@@ -43,6 +43,10 @@ router = APIRouter(prefix="/projects/{project_id}", tags=["rules"])
 class BrokenByModel(BaseModel):
     entity_id: str
     name: str
+    # False when the story's times are too loose to tell: it may not hold.
+    certain: bool = True
+    # When it does not hold, in words ("at 12 in story time"); empty when time is not asked.
+    when: str = ""
 
 
 class ExampleResultModel(BaseModel):
@@ -128,7 +132,12 @@ class RuleDraftModel(BaseModel):
 
 
 def _broken(found: list[Violation]) -> list[BrokenByModel]:
-    return [BrokenByModel(entity_id=item.entity_id, name=item.entity_name) for item in found]
+    return [
+        BrokenByModel(
+            entity_id=item.entity_id, name=item.entity_name, certain=item.certain, when=item.when
+        )
+        for item in found
+    ]
 
 
 def _results(found: list[ExampleResult]) -> list[ExampleResultModel]:

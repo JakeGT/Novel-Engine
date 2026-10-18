@@ -10,7 +10,10 @@ from backend.adapters.canon_tables import CANON_PROJECT_TABLES
 from backend.adapters.canon_writer import Neo4jCanonWriter
 from backend.adapters.journal import PostgresCanonJournal
 from backend.adapters.media_store import PostgresMediaStore
+from backend.adapters.passage_store import PostgresManifestStore
 from backend.adapters.schema_store import PostgresSchemaVersionStore
+from backend.adapters.source_store import PostgresSourceStore
+from backend.adapters.studio_store import PostgresStudioStore
 from backend.core.database import create_engine, create_session_factory, session_scope
 from backend.graph.manager import GraphManager
 from backend.seed.apply import SEED_PROJECT_ID, SEED_WORKSPACE_ID
@@ -22,6 +25,7 @@ from backend.seed.canon import (
     apply_canon_seed,
 )
 from backend.seed.schema import apply_schema
+from backend.seed.story import apply_story_seed
 from backend.seed.tenancy import WS_ALT, apply_tenancy, clear_tenancy
 from backend.services.canon_equivalence import CanonEquivalenceService
 from backend.services.projection_service import GraphProjectionService
@@ -49,10 +53,24 @@ async def seeded(disposable_database):
         "objects": InMemoryObjectStore(),
     }
     report = await apply_canon_seed(**stores)
+    # The layers beside canon too, so purging and isolation cover them (QLT-001).
+    story = await apply_story_seed(**_story_stores(stores, factory))
+    assert story.ok, story.problems
     try:
         yield report, stores, factory, dsn
     finally:
         await engine.dispose()
+
+
+def _story_stores(stores: dict, factory) -> dict:
+    return {
+        "journal": stores["journal"],
+        "repository": stores["repository"],
+        "schemas": stores["schemas"],
+        "sources": PostgresSourceStore(factory),
+        "studio": PostgresStudioStore(factory),
+        "manifests": PostgresManifestStore(factory),
+    }
 
 
 async def _row_counts(factory, clause: str, params: dict) -> dict[str, int]:
@@ -73,6 +91,8 @@ async def test_reference_world_seeds_idempotently_on_postgres(seeded) -> None:
 
     again = await apply_canon_seed(**stores)
     assert again.ok and again.heads == report.heads
+    layers = await apply_story_seed(**_story_stores(stores, _factory))
+    assert layers.ok and layers.written == [], layers
 
     for project in SEED_PROJECTS:
         equivalence = await CanonEquivalenceService(
@@ -105,7 +125,8 @@ async def test_seeded_world_projects_and_matches_neo4j(
             assert result.ok, result.problems
         edges = await writer.list_fact_edges(**PRIMARY)
         assert {(edge[2]) for edge in edges} == {"LOCATED_AT", "MEMBER_OF", "OWNS", "KNOWS"}
-        assert len(edges) == 5
+        # Five, and the compass kept at Saltkeep for a stretch of story time.
+        assert len(edges) == 6
         # Identical ids in the other tenant project to their own nodes and edges only.
         assert await writer.list_fact_edges(**ALT) == [
             ("fct_seed_mara_at", "ent_seed_mara", "LOCATED_AT", "ent_seed_saltkeep")

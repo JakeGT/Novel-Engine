@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from backend.adapters.system import uuid7
 from backend.core.logging import log_event
@@ -38,13 +39,16 @@ from backend.domain.rules import (
     apply_operations,
     body_problems,
     changes_world,
+    moves_time,
     read_rule,
     run_examples,
+    uses_beliefs,
     violations,
     world_from_canon,
 )
 from backend.domain.tenancy import Permission
 from backend.domain.validation import RuleEnforcement, RuleEvaluation, ValidationContext
+from backend.domain.worldtime import Relative
 from backend.ports import CanonRepositoryPort, SchemaVersionStorePort
 from backend.services.schema_compiler import compile_definition
 
@@ -52,6 +56,16 @@ logger = logging.getLogger(__name__)
 
 MAX_ENTITIES = 2000
 MAX_FACTS = 10_000
+MAX_BELIEFS = 10_000
+MAX_EVENTS = 10_000
+
+
+def _needs(bodies: Sequence[RuleBody]) -> tuple[bool, bool]:
+    """Whether these rules read beliefs, and whether they read story time."""
+    return (
+        any(uses_beliefs(body) for body in bodies),
+        any(body.time != "as_recorded" for body in bodies),
+    )
 
 
 @dataclass(frozen=True)
@@ -112,14 +126,35 @@ class RuleService:
                 entity_types.update(compiled.entity_types)
         return predicates, entity_types
 
-    async def world(self, workspace_id: str, project_id: str) -> World:
+    async def world(
+        self,
+        workspace_id: str,
+        project_id: str,
+        bodies: Sequence[RuleBody] = (),
+    ) -> World:
+        """The story as these rules see it: beliefs and event times only if they need them."""
+        beliefs_needed, time_needed = _needs(bodies)
         entities = await self._reader.list_entities(
             workspace_id=workspace_id, project_id=project_id, limit=MAX_ENTITIES
         )
         facts = await self._reader.list_facts(
             workspace_id=workspace_id, project_id=project_id, limit=MAX_FACTS
         )
-        return world_from_canon(entities, facts)
+        beliefs = (
+            await self._reader.list_beliefs(
+                workspace_id=workspace_id, project_id=project_id, limit=MAX_BELIEFS
+            )
+            if beliefs_needed
+            else []
+        )
+        events = (
+            await self._reader.list_events(
+                workspace_id=workspace_id, project_id=project_id, limit=MAX_EVENTS
+            )
+            if time_needed
+            else []
+        )
+        return world_from_canon(entities, facts, beliefs, events)
 
     @staticmethod
     def _names(world: World) -> dict[str, str]:
@@ -153,7 +188,7 @@ class RuleService:
         )
         if not rules:
             return []
-        world = await self.world(workspace_id, project_id)
+        world = await self.world(workspace_id, project_id, [rule.body for rule in rules])
         return [self._reading(rule, world) for rule in rules]
 
     async def check(
@@ -175,7 +210,7 @@ class RuleService:
         body: RuleBody,
         examples: Sequence[RuleExample],
     ) -> RuleCheck:
-        world = await self.world(workspace_id, project_id)
+        world = await self.world(workspace_id, project_id, [body])
         predicates, entity_types = await self.vocabulary(workspace_id, project_id)
         problems = body_problems(
             body, predicates=predicates, entity_types=entity_types, entity_ids=set(world.entries)
@@ -249,7 +284,7 @@ class RuleService:
         )
         log_event(logger, "rule.added", rule_id=rule_id, examples=len(examples))
         rule = await self._rule(workspace_id, project_id, rule_id)
-        return self._reading(rule, await self.world(workspace_id, project_id))
+        return self._reading(rule, await self.world(workspace_id, project_id, [rule.body]))
 
     async def change(
         self,
@@ -298,7 +333,7 @@ class RuleService:
         if enforcement is not None and enforcement is not rule.enforcement:
             log_event(logger, "rule.enforcement", rule_id=rule_id, enforcement=enforcement.value)
         rule = await self._rule(workspace_id, project_id, rule_id)
-        return self._reading(rule, await self.world(workspace_id, project_id))
+        return self._reading(rule, await self.world(workspace_id, project_id, [rule.body]))
 
     async def remove(
         self, scope: AccessScope, workspace_id: str, project_id: str, rule_id: str
@@ -311,34 +346,70 @@ class RuleService:
             raise NotFoundError("That rule was not found.")
 
     # ------------------------------------------------- the validation seam
-    async def _world_for(self, context: ValidationContext) -> tuple[World, bool]:
+    async def _world_for(
+        self, context: ValidationContext, rules: Sequence[StoryRule]
+    ) -> tuple[World, bool]:
         """The story as the commit sees it, and whether that is all of it.
 
         Read through the commit's own reader, so a rule sees the line of the story
         being changed exactly as it stands under the commit's lock. If the story is
-        larger than a rule may read, or the reader cannot give the whole story, the
-        result is incomplete and cannot block.
+        larger than a rule may read, or the reader cannot give everything the rules
+        need (beliefs, or event times for facts timed from an event), the result is
+        incomplete and cannot block.
         """
+        beliefs_needed, time_needed = _needs([rule.body for rule in rules])
         reader = context.reader
         entities_of = getattr(reader, "active_entities", None)
         facts_of = getattr(reader, "asserted_facts", None)
         if entities_of is None or facts_of is None:
-            return await self.world(context.workspace_id, context.project_id), False
+            world = await self.world(
+                context.workspace_id, context.project_id, [rule.body for rule in rules]
+            )
+            return world, False
         entities = await entities_of(MAX_ENTITIES + 1)
         facts = await facts_of(MAX_FACTS + 1)
         complete = len(entities) <= MAX_ENTITIES and len(facts) <= MAX_FACTS
-        return world_from_canon(entities[:MAX_ENTITIES], facts[:MAX_FACTS]), complete
+        beliefs: list[Any] = []
+        if beliefs_needed:
+            beliefs_of = getattr(reader, "current_beliefs", None)
+            if beliefs_of is None:
+                complete = False
+            else:
+                beliefs = await beliefs_of(MAX_BELIEFS + 1)
+                complete = complete and len(beliefs) <= MAX_BELIEFS
+        events: list[Any] = []
+        if time_needed:
+            events_of = getattr(reader, "live_events", None)
+            if events_of is not None:
+                events = await events_of(MAX_EVENTS + 1)
+                complete = complete and len(events) <= MAX_EVENTS
+            elif any(
+                isinstance(fact.starts, Relative) or isinstance(fact.ends, Relative)
+                for fact in facts
+            ):
+                # Facts timed from events cannot be placed without them.
+                complete = False
+        world = world_from_canon(
+            entities[:MAX_ENTITIES],
+            facts[:MAX_FACTS],
+            beliefs[:MAX_BELIEFS],
+            events[:MAX_EVENTS],
+        )
+        return world, complete
 
     async def evaluate(
         self, operations: Sequence[CanonOperation], *, context: ValidationContext
     ) -> Sequence[RuleEvaluation]:
         """Rules these changes would newly break: a warning, or a block when set to block.
 
-        A rule the story already breaks is not blamed on an unrelated change: only
-        what is broken afterwards and was not before is reported.
+        A rule the story already breaks (or may break) is not blamed on an unrelated
+        change: only what is broken afterwards and was not before is reported, or is
+        surely broken afterwards and only possibly before. A break that story times
+        are too loose to be sure of only ever warns.
         """
-        # Only adding, changing or removing entries and facts can alter what a rule
-        # sees; anything else (a plan, a picture) leaves every rule as it was.
+        # Only adding, changing or removing entries, facts, beliefs and event times
+        # can alter what a rule sees; anything else (a plan, a picture) leaves every
+        # rule as it was.
         if not changes_world(operations):
             return []
         rules = [
@@ -350,60 +421,73 @@ class RuleService:
         ]
         if not rules:
             return []
-        before, complete = await self._world_for(context)
+        before, complete = await self._world_for(context, rules)
         after = apply_operations(before, operations)
         # Every entry, not a shown handful: a rule blocks only on the whole answer.
         # Entries these changes cannot reach keep their standing, so only the
         # reachable ones are worked out, before and after.
         before_index, after_index = FactIndex(before), FactIndex(after)
         reachable = affected_entries(before, after, operations, indexes=(before_index, after_index))
+        retimed = moves_time(operations)
         found: list[RuleEvaluation] = []
         for rule in rules:
+            # An event's time can move facts about anyone, for a rule in story time.
+            only = None if retimed and rule.body.time != "as_recorded" else reachable
+            # Whether each entry already broken was surely so: a change that makes a
+            # possible break a sure one is still to blame for the sure one.
             already = {
-                item.entity_id
+                item.entity_id: item.certain
                 for item in violations(
-                    rule.id, rule.body, before, limit=None, index=before_index, only=reachable
+                    rule.id, rule.body, before, limit=None, index=before_index, only=only
                 )
             }
-            blocks = rule.enforcement is RuleEnforcement.BLOCKING and complete
             newly = [
                 violation
                 for violation in violations(
-                    rule.id, rule.body, after, limit=None, index=after_index, only=reachable
+                    rule.id, rule.body, after, limit=None, index=after_index, only=only
                 )
                 if violation.entity_id not in already
+                or (violation.certain and not already[violation.entity_id])
             ]
             # All of them decide; only so many are worth saying one by one.
             for violation in newly[:MAX_VIOLATIONS]:
-                if blocks:
-                    message = (
-                        f"This breaks your rule “{rule.title}”, which you set to block: it would "
-                        f"no longer hold for {violation.entity_name}. Skip or change this, or "
-                        "set the rule to warn."
-                    )
-                elif rule.enforcement is RuleEnforcement.BLOCKING:
-                    message = (
-                        f"This may break your rule “{rule.title}”: it would no longer hold for "
-                        f"{violation.entity_name}. The story is too large to check this rule "
-                        "completely, so it warns instead of blocking."
-                    )
-                else:
-                    message = (
-                        f"This would break your rule “{rule.title}”: it would no longer "
-                        f"hold for {violation.entity_name}."
-                    )
+                certain = complete and violation.certain
                 found.append(
                     RuleEvaluation(
                         rule_id=rule.id,
-                        message=message,
+                        message=_message(rule, violation, complete),
                         operation_ordinal=_blamed(operations, violation.entity_id, before),
                         enforcement=rule.enforcement,
                         deterministic=True,
-                        complete=complete,
+                        complete=certain,
                         rule_version=rule.version,
                     )
                 )
         return found
+
+
+def _message(rule: StoryRule, violation: Violation, complete: bool) -> str:
+    """What a change does to a rule, in words, and why it blocks or only warns."""
+    who = violation.entity_name + (f" {violation.when}" if violation.when else "")
+    blocking = rule.enforcement is RuleEnforcement.BLOCKING
+    if not violation.certain:
+        said = (
+            f"This may break your rule “{rule.title}”: it may no longer hold for {who}. "
+            "The story's times are too loose to be sure"
+        )
+        return said + (", so it warns instead of blocking." if blocking else ".")
+    if blocking and complete:
+        return (
+            f"This breaks your rule “{rule.title}”, which you set to block: it would "
+            f"no longer hold for {who}. Skip or change this, or set the rule to warn."
+        )
+    if blocking:
+        return (
+            f"This may break your rule “{rule.title}”: it would no longer hold for "
+            f"{who}. The story could not be read completely for this rule (it may be too "
+            "large), so it warns instead of blocking."
+        )
+    return f"This would break your rule “{rule.title}”: it would no longer hold for {who}."
 
 
 def _blamed(operations: Sequence[CanonOperation], entity_id: str, before: World) -> int | None:

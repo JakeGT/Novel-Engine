@@ -68,3 +68,25 @@ by length and cannot see a rewording of the same length. A kept context is read 
 own scene, and only in the line of the story it was made in, or one a version of the scene's
 prose there still points to (a what-if started after the draft was kept).
 
+
+## Amendment (2026-10-18): listing policies for the other requests (CTX-002)
+
+The God Hand, missing connections and reading a text listed the story bible up to fixed
+counts (200 entries, 300 facts) in name order, so in a larger story the entries a request
+named could be cut. Each now has a versioned listing policy (`backend/domain/bible_listing.py`):
+`change-story/1`, `suggest-links/1`, `read-text/1`, each with a purpose, the sections it lists
+and a word budget. What is listed is chosen without a model, in tiers: the entries the request
+names (by name or alias, accents, case and punctuation ignored; by id; the entry the author is
+looking at; the names found in the passage), then their neighbours (one fact, belief or event
+away, or named in the same passages of the author's writing, from the passage index), then the
+rest by the author's importance mark and how connected an entry is. A record takes the best
+tier of the entries it touches; within a tier, one touching more named entries comes first
+(as graph retrieval ranks edges between two seed entities first: KET-RAG, arXiv 2502.09304;
+Microsoft GraphRAG local search). Named entries are always listed; the rest fill the budget.
+For missing connections, the entries whose own details name another entry count as named.
+
+What was left out is counted per section and said: to the model in the listing's last line,
+to the author in a note and the response's `context`, and the policy, with the counts, is
+recorded in the proposal's submit reason (its review history). Every request still checks
+what the model returns against the whole story (up to 10,000 records of each kind), not only
+what it was shown. Rendering keeps the old line shapes; the prompts were raised a version.

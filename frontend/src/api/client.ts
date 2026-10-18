@@ -88,7 +88,16 @@ export type WhatIfChange = Schemas['ChangeModel']
 export type Timeline = Schemas['TimelineModel']
 export type PlacedEvent = Schemas['PlacedEventModel']
 export type Moment = Schemas['MomentModel']
+export type Continuity = Schemas['ContinuityModel']
+export type ContinuityFinding = Schemas['ContinuityFindingModel']
+export type FindingRecord = Schemas['RecordModel']
+export type HowLong = Schemas['HowLongModel']
+export type HowLongRequest = Schemas['HowLongRequest']
+export type SpannedFact = Schemas['SpannedFactModel']
 export type CharacterKnowledge = Schemas['CharacterKnowledgeModel']
+export type Learned = Schemas['LearnedModel']
+export type CheckRun = Schemas['RunModel']
+export type CheckRunFinding = Schemas['RunFindingModel']
 export type FactKnowledge = Schemas['FactKnowledgeModel']
 export type ReaderJourney = Schemas['JourneyModel']
 export type ReaderStep = Schemas['ReaderStepModel']
@@ -782,6 +791,11 @@ export const api = {
   moment: (scope: Scope, at: number) => get<Moment>(scope, '/timeline/moment', { at }),
   setTimeUnit: (scope: Scope, unit: string) =>
     send<{ unit: string }>(scope, 'PUT', '/timeline/unit', { unit }),
+  /** Continuity across story time and place: warnings and notes, never blocking. */
+  continuity: (scope: Scope) => get<Continuity>(scope, '/timeline/checks'),
+  /** The author's own travel times between places and lengths of events and facts. */
+  howLong: (scope: Scope) => get<HowLong>(scope, '/timeline/how-long'),
+  setHowLong: (scope: Scope, body: HowLongRequest) => send<HowLong>(scope, 'PUT', '/timeline/how-long', body),
 
   // --- who knows what, and what the reader is shown ----------------------------
   characterKnowledge: (scope: Scope, entityId: string) =>
@@ -794,6 +808,9 @@ export const api = {
   /** Propose something seen for review: a belief for each person who notices it (KNW-006). */
   witness: (scope: Scope, body: Schemas['WitnessRequest']) =>
     send<Telling>(scope, 'POST', '/knowledge/witness', body),
+  /** Record that a character worked something out, and from what (KNW-002). Saved at once. */
+  infer: (scope: Scope, body: Schemas['InferRequest']) =>
+    send<Schemas['InferResult']>(scope, 'POST', '/knowledge/infer', body),
   characterTrust: (scope: Scope, entityId: string) =>
     get<Trust>(scope, `/knowledge/characters/${id(entityId)}/trust`),
   setCharacterTrust: (scope: Scope, entityId: string, body: Schemas['TrustRequest']) =>
@@ -841,6 +858,13 @@ export const api = {
 
   // --- the scene studio: a scene's prose, drafts waiting, and checks (ADR-022) -------
   studio: (scope: Scope, planId: string) => get<Studio>(scope, `/plan/${id(planId)}/studio`),
+  // --- checks kept as runs (CON-001) --------------------------------------------
+  sceneCheckRuns: (scope: Scope, planId: string) =>
+    get<Items<CheckRun>>(scope, `/plan/${id(planId)}/checks/runs`),
+  recordSceneChecks: (scope: Scope, planId: string) =>
+    send<CheckRun>(scope, 'POST', `/plan/${id(planId)}/checks/runs`),
+  checkRunForJob: (scope: Scope, jobId: string) =>
+    get<CheckRun>(scope, `/checks/runs/by-job/${id(jobId)}`),
   saveSceneText: (scope: Scope, planId: string, content: string, baseVersionId: string | null) =>
     send<Studio>(scope, 'PUT', `/plan/${id(planId)}/studio/text`, {
       content,

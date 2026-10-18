@@ -13,6 +13,11 @@ resumed by the next one rather than repeated, and nothing it proposed is propose
 A scene with a story time is read with that time (EXT-007): a place or other fact that
 can take a time starts when the scene happens, unless the passage says it was already so.
 The time is the scene's when the reading runs, so a time set while it waited is used.
+
+The threads of the plan the scene moves along or settles are one change, made at the end
+of the reading from the scene's plan as it is then (each passage's own would replace the
+scene's threads as that passage found them, so approving one would refuse the others).
+A reading stopped before its end suggests no thread steps for what it read.
 """
 
 from __future__ import annotations
@@ -34,6 +39,7 @@ from backend.domain.sources import Verdict, find_mentions
 from backend.domain.studio import READ_JOB, SceneReading
 from backend.domain.tenancy import Permission
 from backend.ports import AIUsage
+from backend.services.intake_workflow import EventKey, FoundStep
 from backend.services.job_runner import JobContext, JobSubmission
 from backend.services.provider_route import resolve_provider
 
@@ -296,6 +302,12 @@ class SceneReadingService:
         starts = scene_time(scene.details)
         guesses = 0
         timed = 0
+        # What the whole reading found, so passages do not suggest the same event twice
+        # and the scene's thread steps become one change at the end: suggested passage by
+        # passage, each would replace the scene's threads as it read them and approving
+        # one would refuse the others.
+        events: set[EventKey] = set()
+        steps: list[FoundStep] = []
         for number, passage in enumerate(passages, start=1):
             start = passage.start
             while start < passage.end and version.content[start : passage.end].strip():
@@ -329,6 +341,9 @@ class SceneReadingService:
                         provider_base_url=base_url,
                         usage_sink=recorded,
                         starts=starts,
+                        scene=scene,
+                        steps_later=True,
+                        proposed_events=frozenset(events),
                     )
                     # Recorded at once, inside the lease: whatever happens next, these words
                     # count as read and this proposal is never made again.
@@ -345,6 +360,8 @@ class SceneReadingService:
                     )
                     await self._store.save_reading(mine)
                 timed += result.timed
+                events.update(result.event_keys)
+                steps.extend(result.found_steps)
                 for guess in result.guesses:
                     try:
                         await self._sources.remember(
@@ -365,6 +382,25 @@ class SceneReadingService:
                 if not result.more or result.end <= start:
                     break
                 start = result.end
+        if steps:
+            await ctx.step("Suggesting the threads the scene moves", 96)
+            async with ctx.holding():
+                # The scene as it is now, so the change adds to what the author has.
+                scene = await self._studio._scene(  # noqa: SLF001
+                    scope, workspace_id, project_id, plan_id
+                )
+                proposal, _ = await self._workflow.propose_thread_steps(
+                    scope,
+                    workspace_id,
+                    project_id,
+                    scene=scene,
+                    found=steps,
+                    version_id=version.id,
+                    expected_revision=head,
+                )
+                if proposal is not None:
+                    mine = replace(mine, proposals=(*mine.proposals, proposal.id))
+                    await self._store.save_reading(mine)
         await ctx.step("Recording what was read", 97)
         mine = replace(mine, status="complete")
         await self._store.save_reading(mine)

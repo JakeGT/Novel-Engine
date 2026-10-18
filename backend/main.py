@@ -23,6 +23,7 @@ from backend.api.v1.canon_characters import router as canon_characters_router
 from backend.api.v1.canon_entities import router as canon_entities_router
 from backend.api.v1.canon_history import router as canon_history_router
 from backend.api.v1.canon_mutations import router as canon_mutations_router
+from backend.api.v1.consistency_runs import router as consistency_runs_router
 from backend.api.v1.context import router as context_router
 from backend.api.v1.credentials import router as credentials_router
 from backend.api.v1.delegation import router as delegation_router
@@ -169,6 +170,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.include_router(context_router, prefix="/api/v1")
     app.include_router(studio_router, prefix="/api/v1")
     app.include_router(audits_router, prefix="/api/v1")
+    app.include_router(consistency_runs_router, prefix="/api/v1")
     app.include_router(canon_archive_router, prefix="/api/v1")
     app.include_router(impact_router, prefix="/api/v1")
     app.include_router(delegation_router, prefix="/api/v1")

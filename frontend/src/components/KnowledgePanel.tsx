@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { api, type CanonEntity, type Fact } from '../api/client'
+import { api, type CanonEntity, type Fact, type Learned } from '../api/client'
 import { objectText, plural, predicateLabel } from '../lib/words'
 import { scopedKey, useCanonWrite, useEntries, useProject } from '../project'
+import { InferDialog } from './InferDialog'
 import { TellDialog } from './TellDialog'
 import { WitnessDialog } from './WitnessDialog'
 import { Button, ErrorNotice, Loading, UndoNotice, WriteProblem } from './ui'
@@ -14,6 +15,24 @@ function sentence(
   names: Names,
 ): string {
   return `${names.get(item.subject_id) ?? 'An entry'} ${predicateLabel(item.predicate)} ${objectText(item.object, names)}`
+}
+
+/** How and when they came to hold it (KNW-002): "Told by Mara · in “The Market” · year 12". */
+function LearnedLine({ learned }: { learned?: Learned }) {
+  if (!learned) return null
+  const parts = [learned.words]
+  if (learned.scene_title) parts.push(`in “${learned.scene_title}”`)
+  if (learned.when) parts.push(learned.when)
+  return (
+    <span className="learned muted small">
+      {parts.join(' · ')}
+      {learned.premises && learned.premises.length > 0 && (
+        <span className="learned-from">
+          From: {learned.premises.map((premise) => premise.sentence.replace(/\.$/, '')).join('; ')}.
+        </span>
+      )}
+    </span>
+  )
 }
 
 /**
@@ -29,6 +48,7 @@ export function KnowledgePanel({ entity }: { entity: CanonEntity }) {
   })
   const [telling, setTelling] = useState(false)
   const [witnessing, setWitnessing] = useState(false)
+  const [inferring, setInferring] = useState(false)
   const [madeSecret, setMadeSecret] = useState<Fact | null>(null)
   // Offered where the problem shows: a character believes something the story says is
   // not so. If that is on purpose, the truth may be a secret kept from them.
@@ -49,6 +69,10 @@ export function KnowledgePanel({ entity }: { entity: CanonEntity }) {
   if (entity.type !== 'Character') return null
   const data = known.data
   const names = entries.names
+  const byBelief = new Map((data?.learned ?? []).map((item) => [item.belief_id, item]))
+  const byFact = new Map(
+    (data?.learned ?? []).filter((item) => item.fact_id).map((item) => [item.fact_id as string, item]),
+  )
 
   return (
     <section className="card" aria-labelledby="knowledge-heading">
@@ -68,6 +92,9 @@ export function KnowledgePanel({ entity }: { entity: CanonEntity }) {
             <Button size="sm" variant="ghost" onClick={() => setWitnessing(true)}>
               Someone sees something happen
             </Button>
+            <Button size="sm" variant="ghost" disabled={!data} onClick={() => setInferring(true)}>
+              {entity.name} works something out
+            </Button>
           </div>
         )}
       </div>
@@ -83,7 +110,10 @@ export function KnowledgePanel({ entity }: { entity: CanonEntity }) {
               <ul className="rows">
                 {data.knows.map(({ fact, how }) => (
                   <li className="row" key={fact.id}>
-                    <span className="grow sentence">{sentence(fact, names)}</span>
+                    <span className="grow">
+                      <span className="sentence">{sentence(fact, names)}</span>
+                      {how === 'believes' && <LearnedLine learned={byFact.get(fact.id)} />}
+                    </span>
                     {how === 'everyone' && <span className="knowledge-tag">Everyone knows</span>}
                     {fact.visibility === 'secret' && <span className="knowledge-tag secret">Secret</span>}
                   </li>
@@ -104,6 +134,7 @@ export function KnowledgePanel({ entity }: { entity: CanonEntity }) {
                         In the story: {sentence(fact, names)}
                         {fact.visibility === 'secret' ? ', which is a secret.' : '.'}
                       </span>
+                      <LearnedLine learned={byBelief.get(belief.id)} />
                     </span>
                     {canWrite && fact.visibility !== 'secret' && (
                       <Button
@@ -133,7 +164,10 @@ export function KnowledgePanel({ entity }: { entity: CanonEntity }) {
               <ul className="rows">
                 {data.unconfirmed.map((belief) => (
                   <li className="row" key={belief.id}>
-                    <span className="grow sentence">{sentence(belief, names)}</span>
+                    <span className="grow">
+                      <span className="sentence">{sentence(belief, names)}</span>
+                      <LearnedLine learned={byBelief.get(belief.id)} />
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -171,6 +205,9 @@ export function KnowledgePanel({ entity }: { entity: CanonEntity }) {
       <WriteProblem write={unsecret} scope={scope} />
       {telling && <TellDialog speaker={entity} onClose={() => setTelling(false)} />}
       {witnessing && <WitnessDialog witness={entity} onClose={() => setWitnessing(false)} />}
+      {inferring && data && (
+        <InferDialog thinker={entity} knowledge={data} onClose={() => setInferring(false)} />
+      )}
     </section>
   )
 }

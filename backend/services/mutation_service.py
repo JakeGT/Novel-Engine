@@ -361,6 +361,20 @@ class _RepositoryReader:
             )
         )
 
+    async def current_beliefs(self, limit: int) -> list[Belief]:
+        return list(
+            await self._repository.list_beliefs(
+                workspace_id=self._workspace_id, project_id=self._project_id, limit=limit
+            )
+        )
+
+    async def live_events(self, limit: int) -> list[Event]:
+        return list(
+            await self._repository.list_events(
+                workspace_id=self._workspace_id, project_id=self._project_id, limit=limit
+            )
+        )
+
 
 class MutationService:
     def __init__(

@@ -90,6 +90,19 @@ shared with pasted texts); merging a moved paragraph rather than re-reading it; 
 whole manuscript at once; telling the author when a suggestion from a scene is still waiting while
 its studio is open (the studio shows the outcome of the last run only).
 
+## Amendment (2026-10-18): events and thread steps (EXT-001)
+
+Reading a text or a scene also suggests events: a short name, who takes part (known entries or
+ones the same reading adds; places go with the event's places), and a story time only when the
+passage states one (relative to a known event, at a point, or between two). An event a timed
+scene shows happening there takes the scene's time; one remembered or reported does not. An event
+already in the story bible is not suggested again. Reading a scene also suggests thread steps for
+threads the plan already has: one change to the scene's plan that adds what it moves along
+(`_advances`) or settles (`pays_off`), never a thread it opens. The change is marked
+`only_fills`, now allowed to add those steps and nothing else, so approving it is refused if the
+author has since changed the scene's plan. Both quote the passage, like facts, and wait for review
+in the same set of suggested changes. Pasted text lists no threads and gets no steps.
+
 ## Sources
 
 - Sudowrite feedback, story bible not updating after the first chapter:

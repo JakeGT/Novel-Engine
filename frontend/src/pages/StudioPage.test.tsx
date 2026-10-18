@@ -146,6 +146,7 @@ const base = {
   'GET /ai/usage': { used_tokens: 0, limit_tokens: null, period_hours: 24 },
   'GET /links': { items: [] },
   'GET /pictures': { items: [] },
+  'GET /checks/runs': { items: [] },
 }
 const route = { path: 'plan/:planId/write', at: 'plan/pln_s/write' }
 

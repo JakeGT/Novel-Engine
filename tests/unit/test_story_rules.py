@@ -235,7 +235,7 @@ def _service(world: World, rules):
     class _Service(RuleService):
         reads = 0
 
-        async def _world_for(self, context):
+        async def _world_for(self, context, rules):
             type(self).reads += 1
             return world, True
 

@@ -176,6 +176,38 @@ class StoryTimeService:
         unit = await self.unit(workspace_id, project_id)
         return moment_in(story, unit, at)
 
+    async def continuity(self, scope: AccessScope, workspace_id: str, project_id: str) -> list[Any]:
+        """Continuity across story time and place (CON-003, CON-004): warnings and notes."""
+        from backend.services.continuity_service import story_continuity
+
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        return await story_continuity(self._reader, self._clocks, workspace_id, project_id)
+
+    async def how_long(
+        self, scope: AccessScope, workspace_id: str, project_id: str
+    ) -> tuple[Any, int]:
+        """The author's table of travel times and lengths, and its version."""
+        from backend.services.continuity_service import how_long_of
+
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        return await how_long_of(self._clocks, workspace_id, project_id)
+
+    async def set_how_long(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        table: Any,
+        expected_version: int,
+    ) -> int:
+        """Replace the table; a setting of the story, like its unit, never a change to canon."""
+        from backend.services.continuity_service import save_how_long
+
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        return await save_how_long(
+            self._reader, self._clocks, workspace_id, project_id, table, expected_version
+        )
+
 
 def _place(event: Event, resolved: Resolved, unit: str, names: dict[str, str]) -> PlacedEvent:
     interval = resolved.interval

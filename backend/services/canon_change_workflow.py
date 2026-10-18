@@ -27,10 +27,25 @@ from pydantic import BaseModel, Field, field_validator
 from backend.adapters.system import uuid7
 from backend.core.logging import log_event
 from backend.domain.assist import SchemaSuggestion
+from backend.domain.bible_listing import (
+    CHANGE_POLICY,
+    Line,
+    Listing,
+    ListingPolicy,
+    Names,
+    choose,
+    clip_words,
+    degree,
+    importance_rank,
+    named_in,
+    ranked,
+    tiers,
+)
 from backend.domain.canon.assertions import Belief, Fact, FactVisibility
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.events import Event, EventParticipant
 from backend.domain.canon.ids import format_canon_id
+from backend.domain.canon.marks import MARK_KEYS
 from backend.domain.canon.naming import normalize_name
 from backend.domain.canon.registry import Cardinality, PredicateSpec
 from backend.domain.canon.revisions import OriginKind
@@ -58,7 +73,6 @@ from backend.services.canon_character_workflow import DiscardedItem, UsageSink
 from backend.services.canon_creation_workflow import (
     MAX_ALIASES,
     MAX_ATTRIBUTES,
-    MAX_CONTEXT_ENTITIES,
     MAX_NAME_LENGTH,
     CanonCreationWorkflow,
     CreationBrief,
@@ -82,9 +96,11 @@ logger = logging.getLogger(__name__)
 CHANGE_PROMPT_VERSION = prompt_version("change-by-instruction")
 
 MAX_INSTRUCTION_LENGTH = 4000
-MAX_CONTEXT_FACTS = 300
-MAX_CONTEXT_BELIEFS = 200
-MAX_CONTEXT_EVENTS = 200
+# Everything a request checks against is read, up to this many records of each kind; only
+# what is listed for the model is bounded, by the request's policy (CTX-002).
+MAX_STORY_RECORDS = 10_000
+# Passages of the author's writing read for entries named together with the request's.
+MAX_PASSAGES_READ = 200
 MAX_CHANGES = 80
 MAX_QUESTIONS = 5
 _EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,255}\.[^@\s]{2,}$")
@@ -232,6 +248,8 @@ class ChangeResult:
     back_to_version: int | None = None
     # (role, email or None) for an invitation the author asked for. Nothing is sent or made here.
     invite: tuple[str, str | None] | None = None
+    # What part of the story bible the assistant was shown, by which policy (CTX-002).
+    context: Listing | None = None
 
 
 def _fact_extras(fact: Fact, unit: str, event_names: dict[str, str]) -> str:
@@ -281,6 +299,46 @@ class _Timed:
         return True
 
 
+@dataclass(frozen=True)
+class StoryBible:
+    """What a request reads: the listing it is shown, and the whole story it is checked against."""
+
+    text: str
+    entities: list[CanonEntity]
+    facts: list[Fact]
+    beliefs: list[Belief]
+    events: list[Event]
+    listing: Listing
+
+
+# An event's participants are linked to each other; past this many, only to the first ones.
+MAX_EVENT_LINKS = 20
+
+
+def story_links(
+    facts: Sequence[Fact], beliefs: Sequence[Belief], events: Sequence[Event]
+) -> list[tuple[str, str]]:
+    """Pairs of entries one fact, belief or event apart."""
+    pairs: list[tuple[str, str]] = []
+    for fact in facts:
+        target = getattr(fact.proposition.object, "entity_id", None)
+        if target:
+            pairs.append((fact.proposition.subject_id, target))
+    for belief in beliefs:
+        target = getattr(belief.proposition.object, "entity_id", None)
+        pairs.append((belief.holder_entity_id, belief.proposition.subject_id))
+        if target:
+            pairs.append((belief.holder_entity_id, target))
+            pairs.append((belief.proposition.subject_id, target))
+    for event in events:
+        people = [p.entity_id for p in event.participants][:MAX_EVENT_LINKS]
+        pairs.extend(
+            (left, right) for index, left in enumerate(people) for right in people[index + 1 :]
+        )
+        pairs.extend((person, place) for person in people for place in event.location_ids[:5])
+    return [(left, right) for left, right in pairs if left != right]
+
+
 class CanonChangeWorkflow(CanonCreationWorkflow):
     """Any instruction about the story → one reviewable proposal of everything it implies."""
 
@@ -294,72 +352,211 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
 
     async def _events(self, workspace_id: str, project_id: str) -> list[Event]:
         events = await self._reader.list_events(
-            workspace_id=workspace_id, project_id=project_id, limit=MAX_CONTEXT_EVENTS
+            workspace_id=workspace_id, project_id=project_id, limit=MAX_STORY_RECORDS
         )
         return [event for event in events if event.retired_revision is None]
 
-    async def _story(
-        self, workspace_id: str, project_id: str, focus: CanonEntity | None
-    ) -> tuple[str, list[CanonEntity], list[Fact], list[Belief]]:
-        entities = await self._existing(workspace_id, project_id)
+    async def _written_together(
+        self, workspace_id: str, project_id: str, named: Sequence[str]
+    ) -> list[tuple[str, str]]:
+        """Entries the author's own writing names in the same passages as named ones."""
+        if self._passages is None or not named:
+            return []
+        passages = await self._passages.mentioning(  # type: ignore[attr-defined]
+            workspace_id=workspace_id,
+            project_id=project_id,
+            entity_ids=list(named),
+            limit=MAX_PASSAGES_READ,
+        )
+        wanted = set(named)
+        pairs: list[tuple[str, str]] = []
+        for passage in passages:
+            here = [entity_id for entity_id in passage.entity_ids if entity_id in wanted]
+            for entity_id in passage.entity_ids:
+                pairs.extend((name, entity_id) for name in here if name != entity_id)
+        return pairs
+
+    async def _bible(
+        self,
+        workspace_id: str,
+        project_id: str,
+        focus: CanonEntity | None,
+        *,
+        about: str = "",
+        policy: ListingPolicy = CHANGE_POLICY,
+        also_named: Sequence[str] = (),
+        from_details: bool = False,
+    ) -> StoryBible:
+        """The story bible as one request is shown it, chosen by its policy (CTX-002).
+
+        Everything is read (up to the story's record limit) so that changes are checked
+        against the whole story; only the listing is bounded, by the policy's budget.
+        ``from_details`` also lists near the start the entries whose own details or names
+        name another entry, and the entries they name: where missing connections are
+        written. They are near, not named, so the budget still bounds them.
+        """
+        entities = list(
+            await self._reader.list_entities(
+                workspace_id=workspace_id, project_id=project_id, limit=MAX_STORY_RECORDS
+            )
+        )
         if focus is not None and all(entity.id != focus.id for entity in entities):
             entities.append(focus)
         facts = list(
             await self._reader.list_facts(
-                workspace_id=workspace_id, project_id=project_id, limit=MAX_CONTEXT_FACTS
+                workspace_id=workspace_id, project_id=project_id, limit=MAX_STORY_RECORDS
             )
         )
         beliefs = list(
             await self._reader.list_beliefs(
-                workspace_id=workspace_id, project_id=project_id, limit=MAX_CONTEXT_BELIEFS
+                workspace_id=workspace_id, project_id=project_id, limit=MAX_STORY_RECORDS
             )
         )
+        events = await self._events(workspace_id, project_id)
+        unit = await self._unit(workspace_id, project_id)
         names = {entity.id: entity.name for entity in entities}
-        lines = []
-        if focus is not None:
-            lines.append(f"The author is looking at: {focus.name} ({focus.id}).")
-        lines.append("Entries:" if entities else "There are no entries yet.")
+        event_names = {event.id: event.name for event in events}
+
+        described: list[str] = []
+        if from_details:
+            finder = Names(entities)
+            for entity in entities:
+                if not entity.is_active or not entity.attributes:
+                    continue
+                words = " ".join(
+                    str(value) for key, value in entity.attributes.items() if key not in MARK_KEYS
+                )
+                others = [found for found in finder.find(words) if found != entity.id]
+                if others:
+                    described.extend([entity.id, *others])
+        named = list(
+            dict.fromkeys(
+                [
+                    *([focus.id] if focus is not None else []),
+                    *also_named,
+                    *named_in(about, entities),
+                ]
+            )
+        )
+        links = story_links(facts, beliefs, events)
+        tier_of = tiers(
+            (entity.id for entity in entities),
+            named=named,
+            links=[*links, *await self._written_together(workspace_id, project_id, named)],
+            near=described,
+        )
+        connected = degree(links)
+        by_id = {entity.id: entity for entity in entities}
+
+        def weight(entity_id: str) -> tuple[int, str]:
+            entity = by_id.get(entity_id)
+            if entity is None:
+                return (9, entity_id)
+            return (importance_rank(entity), entity.name.casefold())
+
+        lines: list[Line] = []
         for entity in entities:
+            if not entity.is_active:
+                continue
             parts = [f"- {entity.id}: {entity.name} ({entity.type})"]
             if entity.aliases:
                 parts.append(f"also {', '.join(entity.aliases)}")
             if entity.attributes:
-                parts.append(f"details {entity.attributes}")
-            lines.append("; ".join(parts))
-        unit = await self._unit(workspace_id, project_id)
-        events = await self._events(workspace_id, project_id)
-        event_names = {event.id: event.name for event in events}
-        if facts:
-            lines.append("Facts (true in the story):")
-            lines.extend(
-                f"- {fact.id}: {names.get(fact.proposition.subject_id, fact.proposition.subject_id)}"
-                f" {fact.proposition.predicate} {_value(fact.proposition.object, names)}"
-                + _fact_extras(fact, unit, event_names)
-                for fact in facts
-            )
-        lines.append(f"Story time is counted in {unit}s.")
-        if events:
-            lines.append("Events:")
-            lines.extend(
-                f"- {event.id}: {event.name}"
-                + (
-                    f" (when: {describe(event.when, unit=unit, event_name=event_names.get)})"
-                    if event.when is not None
-                    else ""
+                parts.append(f"details {clip_words(str(entity.attributes), policy.detail_words)}")
+            lines.append(
+                Line(
+                    "entries",
+                    entity.id,
+                    "; ".join(parts),
+                    rank=(
+                        importance_rank(entity),
+                        -connected.get(entity.id, 0),
+                        entity.name.casefold(),
+                    ),
+                    touches=(entity.id,),
                 )
-                for event in events
             )
-        if beliefs:
-            lines.append("Beliefs (what a character thinks, which may be false):")
-            lines.extend(
-                f"- {belief.id}: {names.get(belief.holder_entity_id, belief.holder_entity_id)} believes "
-                f"{names.get(belief.proposition.subject_id, belief.proposition.subject_id)}"
-                f" {belief.proposition.predicate} {_value(belief.proposition.object, names)}"
-                for belief in beliefs
+        for fact in facts:
+            subject = fact.proposition.subject_id
+            target = getattr(fact.proposition.object, "entity_id", None)
+            lines.append(
+                Line(
+                    "facts",
+                    fact.id,
+                    f"- {fact.id}: {names.get(subject, subject)}"
+                    f" {fact.proposition.predicate} {_value(fact.proposition.object, names)}"
+                    + _fact_extras(fact, unit, event_names),
+                    rank=(*weight(subject), fact.proposition.predicate),
+                    touches=(subject, *([target] if target else [])),
+                )
             )
-        if len(entities) >= MAX_CONTEXT_ENTITIES or len(facts) >= MAX_CONTEXT_FACTS:
-            lines.append("(The story is larger than this list; ask if something seems missing.)")
-        return "\n".join(lines), entities, facts, beliefs
+        for event in events:
+            lines.append(
+                Line(
+                    "events",
+                    event.id,
+                    f"- {event.id}: {event.name}"
+                    + (
+                        f" (when: {describe(event.when, unit=unit, event_name=event_names.get)})"
+                        if event.when is not None
+                        else ""
+                    ),
+                    rank=(event.name.casefold(),),
+                    touches=tuple(p.entity_id for p in event.participants),
+                )
+            )
+        for belief in beliefs:
+            subject = belief.proposition.subject_id
+            target = getattr(belief.proposition.object, "entity_id", None)
+            lines.append(
+                Line(
+                    "beliefs",
+                    belief.id,
+                    f"- {belief.id}: "
+                    f"{names.get(belief.holder_entity_id, belief.holder_entity_id)} believes "
+                    f"{names.get(subject, subject)}"
+                    f" {belief.proposition.predicate} {_value(belief.proposition.object, names)}",
+                    rank=weight(belief.holder_entity_id),
+                    touches=(belief.holder_entity_id, subject, *([target] if target else [])),
+                )
+            )
+        listing = choose(policy, ranked(lines, tier_of), named=named)
+
+        out = []
+        if focus is not None:
+            out.append(f"The author is looking at: {focus.name} ({focus.id}).")
+        sections = set(policy.sections)
+        out.append("Entries:" if listing.section("entries") else "There are no entries yet.")
+        out.extend(line.text for line in listing.section("entries"))
+        if listing.section("facts"):
+            out.append("Facts (true in the story):")
+            out.extend(line.text for line in listing.section("facts"))
+        if "events" in sections:
+            out.append(f"Story time is counted in {unit}s.")
+            if listing.section("events"):
+                out.append("Events:")
+                out.extend(line.text for line in listing.section("events"))
+        if listing.section("beliefs"):
+            out.append("Beliefs (what a character thinks, which may be false):")
+            out.extend(line.text for line in listing.section("beliefs"))
+        left_out = listing.left_out_line()
+        if left_out:
+            out.append(left_out)
+        return StoryBible(
+            text="\n".join(out),
+            entities=entities,
+            facts=facts,
+            beliefs=beliefs,
+            events=events,
+            listing=listing,
+        )
+
+    async def _story(
+        self, workspace_id: str, project_id: str, focus: CanonEntity | None
+    ) -> tuple[str, list[CanonEntity], list[Fact], list[Belief]]:
+        """The story bible listed for a request that names nothing in particular."""
+        bible = await self._bible(workspace_id, project_id, focus)
+        return bible.text, bible.entities, bible.facts, bible.beliefs
 
     async def change_by_instruction(
         self,
@@ -386,10 +583,15 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
             _, focus = await self._check_brief(
                 CreationBrief(entity_id=focus_entity_id), entity_types, workspace_id, project_id
             )
-        story, entities, facts, beliefs = await self._story(workspace_id, project_id, focus)
+        bible = await self._bible(
+            workspace_id, project_id, focus, about=instruction, policy=CHANGE_POLICY
+        )
+        listing = bible.listing
 
         plan: ChangePlan = await self._generate(
-            messages=change_messages(story, predicates, entity_types, instruction, recent_versions),
+            messages=change_messages(
+                bible.text, predicates, entity_types, instruction, recent_versions
+            ),
             response_format=ChangePlan,
             prompt_version=CHANGE_PROMPT_VERSION,
             credential=credential,
@@ -402,16 +604,19 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
         questions = [q.strip()[:300] for q in plan.questions if q.strip()][:MAX_QUESTIONS]
         operations, discarded, notes = self._change_operations(
             plan,
-            entities=entities,
-            facts=facts,
-            beliefs=beliefs,
-            events=await self._events(workspace_id, project_id),
+            entities=bible.entities,
+            facts=bible.facts,
+            beliefs=bible.beliefs,
+            events=bible.events,
             predicates=predicates,
             entity_types=entity_types,
             session_id=session_id,
             project_id=project_id,
         )
-        notes = [*notes, *(note.strip()[:400] for note in plan.notes if note.strip())][:12]
+        notes = [*notes, *(note.strip()[:400] for note in plan.notes if note.strip())]
+        # What the assistant was not shown is always said, after what it found.
+        told = listing.note()
+        notes = [*notes[: 11 if told else 12], *([told] if told else [])]
         suggestions = clean_suggestions(
             plan.suggested_types,
             plan.suggested_fact_kinds,
@@ -451,6 +656,7 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
                     elsewhere=elsewhere,
                     back_to_version=back_to,
                     invite=invite,
+                    context=listing,
                 )
             raise ValidationError(
                 "That instruction did not lead to any change. It may already be true, or it "
@@ -473,7 +679,9 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
             project_id=project_id,
         )
         mutation = await self._mutation.submit(
-            review_scope, mutation.id, "change by instruction awaiting review"
+            review_scope,
+            mutation.id,
+            f"change by instruction awaiting review ({listing.provenance()})",
         )
         validation = await self._mutation.validate(review_scope, mutation.id)
         # Kept for the author when they chose to have suggestions like this kept.
@@ -488,6 +696,9 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
             discarded=len(discarded),
             questions=len(questions),
             prompt_version=CHANGE_PROMPT_VERSION,
+            context_policy=listing.policy_version,
+            listed=listing.listed,
+            left_out=listing.left_out,
         )
         return ChangeResult(
             session_id=session_id,
@@ -502,6 +713,7 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
             elsewhere=elsewhere,
             back_to_version=back_to,
             invite=invite,
+            context=listing,
         )
 
     def _change_operations(
@@ -830,6 +1042,8 @@ def change_messages(
         "and you work out every change it implies, and only those. You never decide the "
         "story: do what was asked, and nothing that was not. Rules:\n"
         "- refer to existing records by the exact ids listed. Never invent an id.\n"
+        "- in a large story the list is in part: what the instruction names comes first, "
+        "then what is connected to it, and a last line says how much is not listed.\n"
         "- if the instruction could mean more than one thing, or names something you "
         "cannot find, put short questions in `questions` and propose nothing.\n"
         "- to correct a fact, end the old one (end_facts) and add the right one "
@@ -890,5 +1104,7 @@ __all__ = [
     "ChangeResult",
     "EntityChange",
     "RecordRef",
+    "StoryBible",
     "change_messages",
+    "story_links",
 ]

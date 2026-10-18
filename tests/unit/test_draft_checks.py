@@ -79,3 +79,31 @@ def test_a_marked_new_name_is_a_question_once() -> None:
     ]
     new = [f for f in check_draft(text, BRIEF, mentions) if f.code == "new_name"]
     assert len(new) == 1 and "“Brannoc” is a new name" in new[0].message
+
+
+def test_what_drafting_would_give_is_one_note_and_skips_facts_already_flagged() -> None:
+    from backend.domain.drafting import LaterKnowledge
+
+    def later(sentence: str, **flags) -> LaterKnowledge:
+        return LaterKnowledge(
+            who="Tobin",
+            where="in “The Market”",
+            sentence=sentence,
+            names=("Mara", "the Gull"),
+            **flags,
+        )
+
+    brief = DraftBrief(
+        point_of_view="Tobin",
+        learned_later=[
+            later("Mara owns the Gull", viewpoint=True, in_context=True),
+            later("Mara is at the harbor", viewpoint=False, in_context=True),
+            later("Mara is a guild member", viewpoint=False, in_context=True),
+        ],
+    )
+    findings = check_draft("Tobin saw that Mara and the Gull were one.", brief, [])
+    context = [f for f in findings if f.code == "learned_later_context"]
+    assert len(context) == 1
+    assert "Mara is at the harbor" in context[0].message
+    assert "Mara is a guild member" in context[0].message
+    assert "Mara owns the Gull" not in context[0].message

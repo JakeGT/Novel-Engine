@@ -99,7 +99,7 @@ test('checking on its own after a kept draft, and asking before a large request'
   await page.getByRole('button', { name: 'Read the draft' }).click()
   await page.getByRole('button', { name: /^Keep/ }).first().click()
   await expect(page.getByText(/Checked on its own, as this story is set to\./)).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByText('The scene is set in the morning, but the lamps are lit.')).toBeVisible()
+  await expect(page.getByRole('region', { name: /The assistant.s notes/ }).getByText('The scene is set in the morning, but the lamps are lit.')).toBeVisible()
   await expect(page.getByText(/of 40,000 tokens used for this scene today/)).toBeVisible()
   await shot(page, '02-checked-on-its-own')
   await expectAccessible(page)

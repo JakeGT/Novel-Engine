@@ -14,6 +14,7 @@ CANON_PROJECT_TABLES: tuple[str, ...] = (
     "delegation_settings",
     "story_clocks",
     "assistant_settings",
+    "consistency_runs",
     "finding_dismissals",
     "scene_readings",
     "draft_findings",

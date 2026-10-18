@@ -2577,6 +2577,27 @@ mark {
   border-radius: var(--radius-m);
   padding: 0.75rem 0.9rem 0.9rem;
   margin: 0;
+  /* A fieldset grows to its widest select by default; let it fit a phone instead. */
+  min-inline-size: 0;
+}
+
+/* Grid items size to their content unless told otherwise; a long choice must wrap, not overflow. */
+.rule-builder > *,
+.rule-except > * {
+  min-width: 0;
+}
+
+/* Entries a rule leaves out, set in like a fact so it reads as part of "About". */
+.rule-except {
+  padding-left: 1rem;
+  border-left: 2px solid var(--line-strong);
+}
+
+.rule-lead {
+  font-family: var(--font-ui);
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--ink-2);
 }
 
 .rule-builder legend {
@@ -2606,8 +2627,10 @@ mark {
   border-left: 2px solid var(--line-strong);
 }
 
-.rule-count {
-  width: 5rem;
+.rule-count,
+.rule-line input.rule-count {
+  width: 6rem;
+  flex: 0 0 auto;
 }
 
 /* What the viewpoint character wants in a scene: the question the scene asks. */
@@ -4095,4 +4118,98 @@ textarea.mono {
 
 .kept-item-head > .grow {
   flex: 1 1 18rem;
+}
+
+/* -------------------------------------------- continuity (CON-003, CON-004) --- */
+/* A warning reads apart from a note by its words, its flag and its weight, never by
+   colour alone. */
+.severity-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: none;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-s);
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  color: var(--ink-2);
+}
+.severity-tag.warning {
+  border-color: var(--warn);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-weight: 600;
+}
+.row.continuity-row {
+  align-items: flex-start;
+}
+.continuity-row .severity-tag {
+  margin-top: 0.2rem;
+}
+.continuity-message {
+  display: grid;
+  gap: 0.2rem;
+}
+.record-links a {
+  overflow-wrap: anywhere;
+}
+.continuity-coverage summary {
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 0.9rem;
+}
+.coverage-list {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0.6rem 0;
+}
+.coverage-list dt {
+  font-weight: 600;
+  font-family: var(--font-ui);
+  font-size: 0.9rem;
+}
+.coverage-list dd {
+  margin: 0.1rem 0 0;
+  color: var(--ink-2);
+  max-width: 70ch;
+}
+.how-long fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.how-long legend {
+  font-weight: 600;
+  font-family: var(--font-ui);
+  padding: 0;
+}
+.how-long-row {
+  padding: 0.4rem 0;
+  border-top: 1px solid var(--line);
+}
+.how-long-row select {
+  flex: 1 1 10rem;
+}
+.btn.start {
+  justify-self: start;
+}
+
+/* How a character came to know something (KNW-002), and checks kept as runs (CON-001). */
+.learned,
+.learned-from {
+  display: block;
+}
+.check-run-title {
+  font-weight: 600;
+}
+.run-findings > summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-family: var(--font-ui);
+  font-size: 0.9rem;
+  min-height: 24px;
+}
+.run-findings .findings {
+  margin-top: 0.5rem;
 }
