@@ -337,7 +337,7 @@ class StudioService:
             _, current, versions = await self._sources.version(workspace_id, project_id, text.id)
             state.text, state.current, state.versions = text, current, versions
             state.checks = await self._check(
-                workspace_id, project_id, text.id, current.content, brief
+                workspace_id, project_id, text.id, current.content, brief, scene_id=plan_id
             )
             state.assistant = await self._store.findings(
                 workspace_id=workspace_id,
@@ -364,6 +364,7 @@ class StudioService:
                 draft.content,
                 brief,
                 words_asked,
+                scene_id=plan_id,
             )
             state.draft_assistant[draft.id] = await self._store.findings(
                 workspace_id=workspace_id,
@@ -546,8 +547,10 @@ class StudioService:
         brief = DraftBrief(words_asked=words)
         if pov in first:
             brief.point_of_view, brief.point_of_view_names = first[pov], names_of[pov]
+            brief.ids[first[pov]] = pov
         if place in first:
             brief.place, brief.place_names = first[place], names_of[place]
+            brief.ids[first[place]] = place
 
         def sentence(proposition: Any) -> tuple[str, tuple[str, ...]]:
             subject = first.get(proposition.subject_id, "someone")
@@ -555,6 +558,9 @@ class StudioService:
             value = getattr(proposition.object, "value", None)
             other = first.get(target, "") if target else ("" if value is None else str(value))
             names = (subject, other) if other else (subject,)
+            for entity_id in (proposition.subject_id, target):
+                if entity_id in first:
+                    brief.ids.setdefault(first[entity_id], entity_id)
             return f"{subject} {phrase(proposition.predicate)} {other}".strip(), names
 
         if pov is not None:
@@ -586,16 +592,21 @@ class StudioService:
         content: str,
         brief: DraftBrief,
         words: int | None = None,
+        *,
+        scene_id: str | None = None,
     ) -> list[DraftFinding]:
-        mentions: list[Any] = []
-        if source_id is not None:
-            names, _, _ = await self._sources.index_for(workspace_id, project_id, source_id)
-            mentions = find_mentions(content, names)
-        else:
-            names, _, _ = await self._sources.index_for(workspace_id, project_id, "")
-            mentions = find_mentions(content, names)
+        # Names are read as this scene reads them: its line, its place and its viewpoint.
+        names, _, _ = await self._sources.index_for(
+            workspace_id, project_id, source_id or "", scene_id=scene_id
+        )
+        mentions: list[Any] = find_mentions(content, names)
+        # Other phrases that mean the scene's people and places here, so "the captain"
+        # counts as Roe in the scenes where the author said it does.
+        also = {name: _phrases_meaning(names, entity_id) for name, entity_id in brief.ids.items()}
+        changes: dict[str, Any] = {"also": also}
         if words is not None:
-            brief = DraftBrief(**{**brief.__dict__, "words_asked": words})
+            changes["words_asked"] = words
+        brief = DraftBrief(**{**brief.__dict__, **changes})
         return check_draft(content, brief, mentions)
 
     # ------------------------------------------------------------------ writing
@@ -1476,6 +1487,15 @@ def clean_draft(text: str) -> str:
     if lines and lines[0].lstrip().startswith("#"):
         lines = lines[1:]
     return "\n".join(lines).strip()
+
+
+def _phrases_meaning(index: Any, entity_id: str) -> tuple[str, ...]:
+    """Every phrase that means exactly this entry where the index was built."""
+    return tuple(
+        label
+        for key, label in index.labels.items()
+        if key not in index.ignored and index.resolve(label) == [entity_id]
+    )
 
 
 __all__ = [

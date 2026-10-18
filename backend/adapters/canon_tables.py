@@ -9,6 +9,9 @@ from __future__ import annotations
 
 CANON_PROJECT_TABLES: tuple[str, ...] = (
     "archive_imports",
+    "delegation_seen",
+    "delegation_records",
+    "delegation_settings",
     "story_clocks",
     "assistant_settings",
     "finding_dismissals",

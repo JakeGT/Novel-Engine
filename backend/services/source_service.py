@@ -9,18 +9,25 @@ author keeps makes anything true in the story.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+import re
+from collections.abc import Iterable
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 
 from backend.adapters.system import uuid7
 from backend.core.logging import log_event
+from backend.domain.branching import working_branch_id, working_in
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.ids import format_canon_id
 from backend.domain.canon.naming import normalize_name
+from backend.domain.canon.plans import PlanKind
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
+from backend.domain.knowledge import reading_order
 from backend.domain.operations import EvidenceRef
 from backend.domain.sources import (
+    MAX_EXAMPLE_LENGTH,
+    MAX_EXAMPLES,
     MAX_PHRASE_LENGTH,
     MAX_SOURCE_LENGTH,
     MAX_SOURCES_PER_PROJECT,
@@ -29,7 +36,9 @@ from backend.domain.sources import (
     AliasBinding,
     Excerpt,
     Mention,
+    NameExample,
     NameIndex,
+    NamePlace,
     NameQuestion,
     Section,
     SourceKind,
@@ -37,9 +46,11 @@ from backend.domain.sources import (
     SourceVersion,
     Verdict,
     VersionOrigin,
+    applicable,
     build_index,
     clean_content,
     content_hash,
+    example_holds,
     excerpt,
     find_mentions,
     location_for,
@@ -81,6 +92,135 @@ class EvidenceReading:
     passage: Excerpt | None
 
 
+@dataclass(frozen=True)
+class NameScope:
+    """Where a new answer holds. Every limit is optional; none means everywhere."""
+
+    source_id: str | None = None
+    # None: kept to the what-if being worked in, if any. False: every line of the story.
+    what_if_only: bool | None = None
+    from_scene_id: str | None = None
+    until_scene_id: str | None = None
+    viewpoint_id: str | None = None
+
+
+@dataclass(frozen=True)
+class ExampleRequest:
+    """A passage the author confirms, picked in a text or typed out."""
+
+    # Picked in a text: the words are taken from that version, never from the request.
+    source_id: str | None = None
+    version_id: str | None = None
+    start: int | None = None
+    end: int | None = None
+    # Typed out on the names page; must use the phrase.
+    quote: str | None = None
+    scene_id: str | None = None
+    # Whether the phrase means the answer's entry here; by default what the answer says.
+    means: bool | None = None
+
+
+@dataclass(frozen=True)
+class ExampleCheck:
+    holds: bool
+    # What the phrase resolves to there today.
+    now: list[str]
+
+
+@dataclass
+class NameMemory:
+    bindings: list[AliasBinding]
+    names: dict[str, str]
+    # Titles of the scenes the answers and examples mention, in the line being worked in.
+    scenes: dict[str, str] = field(default_factory=dict)
+    checks: dict[str, ExampleCheck] = field(default_factory=dict)
+
+
+@dataclass
+class LineNames:
+    """Who each phrase means, text by text, in one line of the story (CTX-016).
+
+    Built once for a request that reads many texts (the scene's context), so the story
+    bible, the answers and the plan are loaded once.
+    """
+
+    entities: list[CanonEntity]
+    bindings: list[AliasBinding]
+    branch_id: str | None
+    order: dict[str, int]
+    # Text id → the scene it holds in this line; scene id → whose eyes it is seen through.
+    scene_of: dict[str, str]
+    viewpoints: dict[str, tuple[str, ...]]
+    _cache: dict[str, NameIndex] = field(default_factory=dict)
+
+    def place(self, source_id: str) -> NamePlace:
+        scene_id = self.scene_of.get(source_id)
+        if scene_id not in self.order:
+            scene_id = None
+        return NamePlace(
+            source_id=source_id,
+            branch_id=self.branch_id,
+            scene_id=scene_id,
+            viewpoint_ids=self.viewpoints.get(scene_id, ()) if scene_id else (),
+            order=self.order,
+        )
+
+    def index(self, source_id: str) -> NameIndex:
+        if source_id not in self._cache:
+            self._cache[source_id] = build_index(
+                self.entities, self.bindings, place=self.place(source_id)
+            )
+        return self._cache[source_id]
+
+    def phrases_for(self, entity_ids: Iterable[str]) -> list[str]:
+        """Phrases that mean one of these entries only somewhere: in a what-if, a stretch of
+        scenes or one viewpoint. A shared index cannot know them for every line."""
+        wanted = set(entity_ids)
+        return sorted(
+            {
+                item.phrase
+                for item in self.bindings
+                if item.verdict is Verdict.IS
+                and item.entity_id in wanted
+                and (
+                    item.branch_id or item.from_scene_id or item.until_scene_id or item.viewpoint_id
+                )
+            }
+        )
+
+
+def _limited(bindings: Iterable[AliasBinding]) -> bool:
+    """Whether any answer holds only in a what-if, a stretch of scenes or one viewpoint.
+
+    A model's guess resolves nothing, so one kept in a what-if limits nothing either."""
+    return any(
+        item.verdict is not Verdict.SUGGESTED
+        and (item.branch_id or item.from_scene_id or item.until_scene_id or item.viewpoint_id)
+        for item in bindings
+    )
+
+
+_EXAMPLE_MARGIN = 140
+
+
+def _quote_around(content: str, start: int, end: int) -> tuple[str, tuple[int, int]]:
+    """The words around a phrase, cut at word boundaries, and where the phrase sits in them."""
+    budget = max(0, MAX_EXAMPLE_LENGTH - (end - start)) // 2
+    margin = min(_EXAMPLE_MARGIN, budget)
+    left = max(0, start - margin)
+    right = min(len(content), end + margin)
+    if left > 0:
+        space = content.find(" ", left, start)
+        left = space + 1 if space != -1 else left
+    if right < len(content):
+        space = content.rfind(" ", end, right)
+        right = space if space != -1 else right
+    raw = content[left:right]
+    # Line breaks become spaces, one for one, so the offsets still hold.
+    quote = raw.replace("\r", " ").replace("\n", " ").replace("\t", " ")
+    return quote, (start - left, end - left)
+
+
 class SourceService:
     def __init__(
         self,
@@ -96,6 +236,8 @@ class SourceService:
         self._entities = entities
         # The passage index (ADR-021), attached by the container once both exist.
         self.passages: object | None = None
+        # The studio, attached by the container: which scene a text holds (CTX-016).
+        self.studio: object | None = None
         self._tenancy = tenancy
         self._local_mode = local_mode
 
@@ -398,14 +540,124 @@ class SourceService:
         await self._reindex(workspace_id, project_id, source_id, gone=True)
 
     # ------------------------------------------------------------- reading
-    async def index_for(
-        self, workspace_id: str, project_id: str, source_id: str
-    ) -> tuple[NameIndex, list[CanonEntity], list[AliasBinding]]:
+    async def line_names(self, workspace_id: str, project_id: str) -> LineNames | None:
+        """Names read text by text in the line being worked in; None when no answer is
+        limited to a what-if, scenes or a viewpoint (then the shared index is exact)."""
+        bindings = await self._store.list_bindings(  # type: ignore[attr-defined]
+            workspace_id=workspace_id, project_id=project_id
+        )
+        if not _limited(bindings):
+            return None
+        entities = await self._all_entities(workspace_id, project_id)
+        scenes = reading_order(
+            await self._reader.list_plan_items(workspace_id=workspace_id, project_id=project_id)
+        )
+        links: dict[str, str] = {}
+        if self.studio is not None:
+            links = await self.studio.scene_texts(workspace_id, project_id)  # type: ignore[attr-defined]
+        return LineNames(
+            entities=entities,
+            bindings=bindings,
+            branch_id=working_branch_id(),
+            order={scene.id: number for number, scene in enumerate(scenes, start=1)},
+            scene_of=links,
+            viewpoints={scene.id: tuple(scene.refs_as("point_of_view")) for scene in scenes},
+        )
+
+    async def place_for(
+        self,
+        workspace_id: str,
+        project_id: str,
+        *,
+        source_id: str | None = None,
+        scene_id: str | None = None,
+    ) -> NamePlace:
+        """Where a phrase is read: the line of the story, and the scene a text holds."""
+        if scene_id is None and source_id and self.studio is not None:
+            links = await self.studio.scene_texts(workspace_id, project_id)  # type: ignore[attr-defined]
+            scene_id = links.get(source_id)
+        items = await self._reader.list_plan_items(workspace_id=workspace_id, project_id=project_id)
+        scenes = reading_order(items)
+        order = {scene.id: number for number, scene in enumerate(scenes, start=1)}
+        scene = next((item for item in scenes if item.id == scene_id), None)
+        return NamePlace(
+            source_id=source_id or None,
+            branch_id=working_branch_id(),
+            scene_id=scene_id if scene is not None else None,
+            viewpoint_ids=tuple(scene.refs_as("point_of_view")) if scene is not None else (),
+            order=order,
+        )
+
+    async def _index(
+        self,
+        workspace_id: str,
+        project_id: str,
+        source_id: str | None,
+        *,
+        scene_id: str | None = None,
+        own_line: bool = False,
+    ) -> tuple[NameIndex, list[CanonEntity], list[AliasBinding], NamePlace]:
         entities = await self._all_entities(workspace_id, project_id)
         bindings = await self._store.list_bindings(  # type: ignore[attr-defined]
             workspace_id=workspace_id, project_id=project_id
         )
-        return build_index(entities, bindings, source_id=source_id), entities, bindings
+        place = NamePlace(source_id=source_id or None, branch_id=working_branch_id())
+        # Only an answer limited to some scenes needs to know which scene this is.
+        if any(item.from_scene_id or item.until_scene_id or item.viewpoint_id for item in bindings):
+            if own_line:
+                place = await self._own_line(workspace_id, project_id, source_id or "")
+            else:
+                place = await self.place_for(
+                    workspace_id, project_id, source_id=source_id, scene_id=scene_id
+                )
+        elif own_line:
+            place = await self._own_line(workspace_id, project_id, source_id or "", scenes=False)
+        return build_index(entities, bindings, place=place), entities, bindings, place
+
+    async def _own_line(
+        self, workspace_id: str, project_id: str, source_id: str, *, scenes: bool = True
+    ) -> NamePlace:
+        """The line of the story a text belongs to, for indexes every line shares.
+
+        A text the main story uses is read as the main story reads it; a scene's text
+        that only a what-if holds (it was changed there) is read as that what-if does.
+        """
+        if not scenes:
+            if self.studio is None or working_branch_id() is None:
+                return NamePlace(source_id=source_id)
+            with working_in(None):
+                main = await self.studio.scene_texts(workspace_id, project_id)  # type: ignore[attr-defined]
+            if source_id in main:
+                return NamePlace(source_id=source_id)
+            mine = await self.studio.scene_texts(workspace_id, project_id)  # type: ignore[attr-defined]
+            if source_id in mine:
+                return NamePlace(source_id=source_id, branch_id=working_branch_id())
+            return NamePlace(source_id=source_id)
+        with working_in(None):
+            main = await self.place_for(workspace_id, project_id, source_id=source_id)
+        if main.scene_id is not None or working_branch_id() is None:
+            return main
+        mine = await self.place_for(workspace_id, project_id, source_id=source_id)
+        return mine if mine.scene_id is not None else main
+
+    async def index_for(
+        self,
+        workspace_id: str,
+        project_id: str,
+        source_id: str | None,
+        *,
+        scene_id: str | None = None,
+        own_line: bool = False,
+    ) -> tuple[NameIndex, list[CanonEntity], list[AliasBinding]]:
+        """Who each phrase means where it is read: in this text, scene and line of the story.
+
+        ``own_line`` reads a text as the line of the story it belongs to, for the passage
+        index that every line shares.
+        """
+        index, entities, bindings, _ = await self._index(
+            workspace_id, project_id, source_id, scene_id=scene_id, own_line=own_line
+        )
+        return index, entities, bindings
 
     async def version(
         self,
@@ -428,6 +680,16 @@ class SourceService:
             chosen = matches[0]
         return source, chosen, versions
 
+    async def latest_version(
+        self, workspace_id: str, project_id: str, source: SourceText
+    ) -> SourceVersion | None:
+        """Only a text's newest version, read by the id its listing already carries."""
+        if source.latest_version_id is None:
+            return None
+        return await self._store.get_version(  # type: ignore[attr-defined,no-any-return]
+            workspace_id=workspace_id, project_id=project_id, version_id=source.latest_version_id
+        )
+
     async def read(
         self,
         scope: AccessScope,
@@ -441,9 +703,9 @@ class SourceService:
         source, chosen, versions = await self.version(
             workspace_id, project_id, source_id, version_id
         )
-        index, entities, bindings = await self.index_for(workspace_id, project_id, source_id)
+        index, entities, bindings, place = await self._index(workspace_id, project_id, source_id)
         mentions = find_mentions(chosen.content, index)
-        scoped = [item for item in bindings if item.source_id in (None, source_id)]
+        scoped = applicable(bindings, place)
         questions = name_questions(mentions, scoped, content=chosen.content, index=index)
         wanted = {entity_id for mention in mentions for entity_id in mention.entity_ids}
         wanted.update(candidate for question in questions for candidate in question.candidates)
@@ -487,20 +749,121 @@ class SourceService:
         )
 
     # ---------------------------------------------------------- name memory
-    async def bindings(
-        self, scope: AccessScope, workspace_id: str, project_id: str
-    ) -> tuple[list[AliasBinding], dict[str, str]]:
+    async def bindings(self, scope: AccessScope, workspace_id: str, project_id: str) -> NameMemory:
+        """Everything remembered, with each example checked against today's answers."""
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
-        bindings = [
-            item
-            for item in await self._store.list_bindings(  # type: ignore[attr-defined]
+        everything = await self._store.list_bindings(  # type: ignore[attr-defined]
+            workspace_id=workspace_id, project_id=project_id
+        )
+        bindings = [item for item in everything if item.verdict is not Verdict.SUGGESTED]
+        entities = await self._all_entities(workspace_id, project_id)
+        wanted = {item.entity_id for item in bindings} | {item.viewpoint_id for item in bindings}
+        names = {entity.id: entity.name for entity in entities if entity.id in wanted}
+
+        scene_ids = {
+            value
+            for item in bindings
+            for value in (
+                item.from_scene_id,
+                item.until_scene_id,
+                *(example.scene_id for example in item.examples),
+            )
+            if value
+        }
+        scenes: dict[str, str] = {}
+        if scene_ids:
+            for plan in await self._reader.list_plan_items(
+                workspace_id=workspace_id, project_id=project_id
+            ):
+                if plan.id in scene_ids and plan.kind is PlanKind.SCENE and plan.is_active:
+                    scenes[plan.id] = plan.title
+
+        checks: dict[str, ExampleCheck] = {}
+        places: dict[tuple[str | None, ...], NamePlace] = {}
+        for binding in bindings:
+            for example in binding.examples:
+                place = await self._example_place(
+                    workspace_id, project_id, binding, example, places
+                )
+                index = build_index(entities, everything, place=place)
+                holds, now = example_holds(binding, example, index)
+                checks[example.id] = ExampleCheck(holds=holds, now=now)
+                names.update({entity.id: entity.name for entity in entities if entity.id in now})
+        return NameMemory(bindings=bindings, names=names, scenes=scenes, checks=checks)
+
+    async def _example_place(
+        self,
+        workspace_id: str,
+        project_id: str,
+        binding: AliasBinding,
+        example: NameExample,
+        cache: dict[tuple[str | None, ...], NamePlace],
+    ) -> NamePlace:
+        """Where an example was read; a typed one with no scene is read within its answer's own
+        limits, which checks that no narrower answer has since taken over there."""
+        line = binding.branch_id if binding.branch_id is not None else working_branch_id()
+        if example.source_id is None and example.scene_id is None:
+            within = binding.from_scene_id or binding.until_scene_id
+            key: tuple[str | None, ...] = ("own", binding.id)
+            scene_id = within
+            source_id = binding.source_id
+        else:
+            key = ("at", line, example.source_id, example.scene_id)
+            scene_id = example.scene_id
+            source_id = example.source_id
+        if key not in cache:
+            with working_in(line):
+                place = await self.place_for(
+                    workspace_id, project_id, source_id=source_id, scene_id=scene_id
+                )
+            if key[0] == "own":
+                # Read as if inside every limit the answer sets.
+                place = replace(
+                    place,
+                    source_id=binding.source_id,
+                    viewpoint_ids=(binding.viewpoint_id,)
+                    if binding.viewpoint_id
+                    else place.viewpoint_ids,
+                )
+            cache[key] = place
+        return cache[key]
+
+    async def _scoped(
+        self, workspace_id: str, project_id: str, where: NameScope
+    ) -> dict[str, str | None]:
+        """Check each limit of a new answer and turn it into what is stored."""
+        working = working_branch_id()
+        if where.what_if_only and working is None:
+            raise ValidationError(
+                "You are working in the main story, so there is no what-if to keep this to."
+            )
+        branch_id = working if where.what_if_only in (None, True) else None
+        if where.from_scene_id or where.until_scene_id:
+            items = await self._reader.list_plan_items(
                 workspace_id=workspace_id, project_id=project_id
             )
-            if item.verdict is not Verdict.SUGGESTED
-        ]
-        entities = await self._all_entities(workspace_id, project_id)
-        wanted = {item.entity_id for item in bindings}
-        return bindings, {entity.id: entity.name for entity in entities if entity.id in wanted}
+            order = {scene.id: number for number, scene in enumerate(reading_order(items), start=1)}
+            for scene_id in (where.from_scene_id, where.until_scene_id):
+                if scene_id and scene_id not in order:
+                    raise NotFoundError("That scene is not in the plan.")
+            if (
+                where.from_scene_id
+                and where.until_scene_id
+                and order[where.from_scene_id] > order[where.until_scene_id]
+            ):
+                raise ValidationError("The first scene comes after the last one. Swap them.")
+        if where.viewpoint_id:
+            viewer = await self._reader.get_entity(
+                workspace_id=workspace_id, project_id=project_id, entity_id=where.viewpoint_id
+            )
+            if viewer is None or not viewer.is_active:
+                raise NotFoundError("That character was not found.")
+        return {
+            "branch_id": branch_id,
+            "from_scene_id": where.from_scene_id or None,
+            "until_scene_id": where.until_scene_id or None,
+            "viewpoint_id": where.viewpoint_id or None,
+        }
 
     async def decide(
         self,
@@ -512,20 +875,28 @@ class SourceService:
         verdict: Verdict,
         entity_id: str | None = None,
         source_id: str | None = None,
+        where: NameScope | None = None,
+        example: ExampleRequest | None = None,
     ) -> AliasBinding:
         """Remember an answer: this phrase is that entry, is not, or is not a name."""
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         if verdict is Verdict.SUGGESTED:
             raise ValidationError("Choose who this is, or say it is not a name.")
-        return await self.remember(
+        where = where or NameScope()
+        limits = await self._scoped(workspace_id, project_id, where)
+        binding = await self.remember(
             workspace_id,
             project_id,
             phrase=phrase,
             verdict=verdict,
             entity_id=entity_id,
-            source_id=source_id,
+            source_id=source_id if source_id is not None else where.source_id,
             actor_user_id=scope.actor_user_id,
+            example=example,
+            **limits,
         )
+        await self._reindex_phrase(workspace_id, project_id, binding.normalized)
+        return binding
 
     async def remember(
         self,
@@ -537,6 +908,11 @@ class SourceService:
         entity_id: str | None,
         source_id: str | None,
         actor_user_id: str | None,
+        branch_id: str | None = None,
+        from_scene_id: str | None = None,
+        until_scene_id: str | None = None,
+        viewpoint_id: str | None = None,
+        example: ExampleRequest | None = None,
     ) -> AliasBinding:
         phrase = " ".join(phrase.split())
         normalized = normalize_name(phrase)
@@ -565,19 +941,176 @@ class SourceService:
             source_id=source_id,
             decided_by=actor_user_id,
             decided_at=datetime.now(UTC),
+            branch_id=branch_id,
+            from_scene_id=from_scene_id,
+            until_scene_id=until_scene_id,
+            viewpoint_id=viewpoint_id,
         )
+        # The same answer given again keeps the examples confirmed for it before.
+        kept: tuple[NameExample, ...] = ()
+        if verdict is not Verdict.SUGGESTED:
+            for earlier in await self._store.list_bindings(  # type: ignore[attr-defined]
+                workspace_id=workspace_id, project_id=project_id
+            ):
+                if (
+                    earlier.scope_key == binding.scope_key
+                    and earlier.entity_id == entity_id
+                    and earlier.verdict is verdict
+                ):
+                    kept = earlier.examples
+        if example is not None:
+            made = await self._example(
+                workspace_id, project_id, binding, example, actor_user_id=actor_user_id
+            )
+            kept = _with_example(kept, made)
+        binding = replace(binding, examples=kept)
         await self._store.put_binding(binding)  # type: ignore[attr-defined]
         return binding
+
+    async def _example(
+        self,
+        workspace_id: str,
+        project_id: str,
+        binding: AliasBinding,
+        request: ExampleRequest,
+        *,
+        actor_user_id: str | None,
+    ) -> NameExample:
+        """A confirmed passage, with its words taken from the text or checked to use the phrase."""
+        means = request.means
+        if means is None:
+            means = binding.verdict is Verdict.IS
+        if binding.verdict is Verdict.IGNORE:
+            means = False
+        scene_id = request.scene_id or None
+        if request.source_id is not None:
+            if request.start is None or request.end is None:
+                raise ValidationError("Say where in the text the example is.")
+            _, version, _ = await self.version(
+                workspace_id, project_id, request.source_id, request.version_id
+            )
+            start, end = request.start, request.end
+            if not 0 <= start < end <= len(version.content):
+                raise ValidationError("That place is not in the text.")
+            if binding.normalized not in normalize_name(version.content[start:end]):
+                raise ValidationError(f"Those words do not use “{binding.phrase}”.")
+            quote, at = _quote_around(version.content, start, end)
+            if scene_id is None and self.studio is not None:
+                links = await self.studio.scene_texts(workspace_id, project_id)  # type: ignore[attr-defined]
+                scene_id = links.get(request.source_id)
+            source_id: str | None = request.source_id
+            version_id: str | None = version.id
+        else:
+            quote = " ".join((request.quote or "").split())
+            if not quote:
+                raise ValidationError("Write the passage, or pick it in a text.")
+            if len(quote) > MAX_EXAMPLE_LENGTH:
+                raise ValidationError(
+                    f"Keep an example under {MAX_EXAMPLE_LENGTH} characters; "
+                    "a sentence or two is enough."
+                )
+            found = normalize_name(quote).find(binding.normalized)
+            if found == -1:
+                raise ValidationError(f"The example has to use “{binding.phrase}”.")
+            located = _locate(quote, binding.phrase)
+            at = located if located is not None else (0, 0)
+            source_id = version_id = None
+        if scene_id is not None:
+            items = await self._reader.list_plan_items(
+                workspace_id=workspace_id, project_id=project_id
+            )
+            if not any(
+                item.id == scene_id and item.kind is PlanKind.SCENE and item.is_active
+                for item in items
+            ):
+                raise NotFoundError("That scene is not in the plan.")
+        return NameExample(
+            id=f"nex_{uuid7()}",
+            quote=quote,
+            means=means,
+            source_id=source_id,
+            version_id=version_id,
+            scene_id=scene_id,
+            at=at if at != (0, 0) else None,
+            noted_by=actor_user_id,
+            noted_at=datetime.now(UTC),
+        )
+
+    async def _binding(self, workspace_id: str, project_id: str, binding_id: str) -> AliasBinding:
+        for item in await self._store.list_bindings(  # type: ignore[attr-defined]
+            workspace_id=workspace_id, project_id=project_id
+        ):
+            if item.id == binding_id and item.verdict is not Verdict.SUGGESTED:
+                return item  # type: ignore[no-any-return]
+        raise NotFoundError("That answer was not found.")
+
+    async def add_example(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        binding_id: str,
+        request: ExampleRequest,
+    ) -> AliasBinding:
+        """Keep a passage the author confirms with an answer."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        binding = await self._binding(workspace_id, project_id, binding_id)
+        made = await self._example(
+            workspace_id, project_id, binding, request, actor_user_id=scope.actor_user_id
+        )
+        changed = replace(binding, examples=_with_example(binding.examples, made))
+        if not await self._store.set_examples(changed):  # type: ignore[attr-defined]
+            raise NotFoundError("That answer was not found.")
+        return changed
+
+    async def remove_example(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        binding_id: str,
+        example_id: str,
+    ) -> AliasBinding:
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        binding = await self._binding(workspace_id, project_id, binding_id)
+        left = tuple(item for item in binding.examples if item.id != example_id)
+        if len(left) == len(binding.examples):
+            raise NotFoundError("That example was not found.")
+        changed = replace(binding, examples=left)
+        if not await self._store.set_examples(changed):  # type: ignore[attr-defined]
+            raise NotFoundError("That answer was not found.")
+        return changed
 
     async def forget(
         self, scope: AccessScope, workspace_id: str, project_id: str, binding_id: str
     ) -> None:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        known = await self._store.list_bindings(  # type: ignore[attr-defined]
+            workspace_id=workspace_id, project_id=project_id
+        )
         removed = await self._store.delete_binding(  # type: ignore[attr-defined]
             workspace_id=workspace_id, project_id=project_id, binding_id=binding_id
         )
         if not removed:
             raise NotFoundError("That was not found.")
+        gone = next((item for item in known if item.id == binding_id), None)
+        if gone is not None:
+            await self._reindex_phrase(workspace_id, project_id, gone.normalized)
+
+    async def _reindex_phrase(self, workspace_id: str, project_id: str, normalized: str) -> None:
+        """An answer changed: the passage index is read again for the texts that use the phrase,
+        so the scene context's passages follow the author's answer."""
+        if self.passages is None or not normalized:
+            return
+        for text in await self.all_texts(workspace_id, project_id):
+            if text.removed_at is not None or text.length == 0:
+                continue
+            try:
+                _, version, _ = await self.version(workspace_id, project_id, text.id)
+            except NotFoundError:
+                continue
+            if normalized in normalize_name(version.content):
+                await self._reindex(workspace_id, project_id, text.id)
 
     async def add_entry(
         self,
@@ -626,3 +1159,16 @@ class SourceService:
             evidence=evidence,
         )
         return entity
+
+
+def _with_example(examples: tuple[NameExample, ...], new: NameExample) -> tuple[NameExample, ...]:
+    """Add an example; the same words again replace the earlier one; the oldest go first."""
+    same = normalize_name(new.quote)
+    kept = tuple(item for item in examples if normalize_name(item.quote) != same)
+    return (*kept, new)[-MAX_EXAMPLES:]
+
+
+def _locate(quote: str, phrase: str) -> tuple[int, int] | None:
+    pattern = re.escape(" ".join(phrase.split())).replace(r"\ ", r"\s+")
+    match = re.search(pattern, quote, re.IGNORECASE)
+    return (match.start(), match.end()) if match is not None else None

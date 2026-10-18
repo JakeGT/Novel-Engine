@@ -80,7 +80,11 @@ class PassageIndex:
     async def index_source(self, workspace_id: str, project_id: str, source_id: str) -> int:
         """Index a text's latest version, replacing whatever was indexed for it."""
         _, version, _ = await self._sources.version(workspace_id, project_id, source_id)
-        names, _, _ = await self._sources.index_for(workspace_id, project_id, source_id)
+        # Every line of the story shares this index, so a text is read as its own line reads
+        # it: the main story's, unless only a what-if holds it (CTX-016).
+        names, _, _ = await self._sources.index_for(
+            workspace_id, project_id, source_id, own_line=True
+        )
         mentions = find_mentions(version.content, names)
         head = await self._head(workspace_id, project_id)
         passages = [

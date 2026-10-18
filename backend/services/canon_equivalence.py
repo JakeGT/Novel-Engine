@@ -109,6 +109,7 @@ def _event_view(event: Event) -> dict[str, Any]:
         "outcome_ids": list(event.outcome_ids),
         "world_position": event.world_position,
         "when": _time_view(event.when),
+        "claim": event.claim.model_dump(mode="json") if event.claim is not None else None,
         "created_revision": event.created_revision,
         "retired_revision": event.retired_revision,
     }

@@ -252,12 +252,13 @@ then `pnpm --dir frontend run gen:api`.
 
 ## 10. Data & migrations
 
-- Alembic (PostgreSQL) head: **`0039_check_passes`** (… → `0022_archive_imports` →
+- Alembic (PostgreSQL) head: **`0043_access_keys`** (… → `0022_archive_imports` →
   `0023_session_id_token` → `0024_assist_sessions` → `0025_workspace_ai_settings` →
   `0026_assist_suggestions` → `0027_usage_allowance` → `0028_plan_items` →
   `0029_plan_conversations` → `0030_source_texts` → `0031_story_rules` → `0032_story_time` →
   `0033_context` → `0034_scene_studio` → `0035_scene_readings` → `0036_cached_tokens` →
-  `0037_finding_decisions` → `0038_usage_controls` → `0039_check_passes`).
+  `0037_finding_decisions` → `0038_usage_controls` → `0039_check_passes` → `0040_scoped_names` → `0041_claims` →
+  `0042_delegation` → `0043_access_keys`).
 - Neo4j ordered migrations: `0001_initial_graph_schema`, `0002_entity_scope_identity`,
   `0003_canon_scope_identity`, `0004_canon_projection_labels` (checksums in
   `plan/phase-2-evidence.md`).
@@ -749,4 +750,30 @@ A read-only review found eight medium and many low issues; all were fixed with t
 never carries a secret into drafts or other passes; going back to an earlier place and scenes read
 out of order are timed correctly; only facts shown changing take the scene's time; audits never
 repeat finished passes and the results page polls lightly; impact reads kept contexts in one go).
+
+## Open release-one items, fourth batch (2026-10-18)
+
+- **Scoped name memory** (CTX-016, migration 0040): a name answer can hold everywhere, in one text,
+  in one what-if, from or until a scene, or when seen by one character; the narrowest wins; reviewed
+  examples kept with each answer; every name reader (text reading, scene reading, plan card, studio
+  checks, context) resolves for its scene and line (`/projects/:id/names`, ADR-019 amendment).
+- **Claims, trust and perception** (KNW-005, KNW-006, migration 0041): something said or narrated is
+  recorded as a claim (an event), never a fact, and can be promoted through review; trust per
+  character (and per speaker) and who perceives an event decide which beliefs are proposed, always
+  as one reviewed proposal (`backend/domain/trust.py`).
+- **Keep the safe ones for me** (AST-EXP-015, OSS-007, migration 0042): off by default; only additive,
+  reversible kinds the author approved by hand three times; committed through the normal path with a
+  decision naming the rule; listed with Undo under Review → Kept for you; switching off takes effect at
+  once, including at commit time. Connected assistants' suggestions always wait.
+- **Access keys and read-only MCP** (QRY-003, migration 0043, ADR-024): `nvlpat_` keys shown once,
+  stored as SHA-256 digests, checked on every request (withdrawn when the member is removed), rate
+  limited; `POST /mcp` speaks MCP (2026-07-28 and the 2025 versions) over the same services as the
+  HTTP API; tools read the story (with an optional point of view and what-if); with the suggest scope,
+  one tool creates a reviewed proposal of origin `machine`. Runbook `plan/runbooks/connected-assistants.md`.
+
+A read-only security review found three medium and many low issues; all were fixed with tests
+(removing a member withdraws their keys at once; switching a rule off can no longer race a commit;
+point-of-view reads give only id, type and name; bodies are capped while read; machine origin is
+reserved for the MCP path; malformed messages get proper errors). Migrations 0042/0043 were
+renumbered before commit (no deployed database has them).
 

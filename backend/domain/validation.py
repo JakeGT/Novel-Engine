@@ -21,7 +21,7 @@ from pydantic import ValidationError as PydanticValidationError
 from backend.domain.arcs import PATH_KEY, arc_path, path_problem
 from backend.domain.canon.assertions import Belief, Fact, FactStatus, FactVisibility
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
-from backend.domain.canon.events import Event
+from backend.domain.canon.events import CLAIM_KIND, CLAIM_NARRATOR, CLAIM_SPEAKER, Event
 from backend.domain.canon.marks import details
 from backend.domain.canon.naming import (
     aliases_problem,
@@ -955,6 +955,27 @@ class AuthoritativeValidator:
                         and referenced_event.retired_revision is not None
                     ):
                         blocking(index, "retired_reference", f"event reference {ref!r} is retired")
+                if (operation.claim is not None) != (operation.kind == CLAIM_KIND):
+                    blocking(
+                        index,
+                        "invalid_claim",
+                        "only an event of kind 'claim' says something, and it must say what",
+                    )
+                if operation.claim is not None:
+                    await validate_proposition(index, operation.claim.proposition)
+                    if operation.claim.scene_id is not None:
+                        scene = await plan(operation.claim.scene_id)
+                        if scene is None or not scene.is_active:
+                            blocking(index, "unknown_scene", "the claim's scene is not in the plan")
+                        elif scene.kind is not PlanKind.SCENE:
+                            blocking(index, "invalid_scene", "a claim is said in a scene")
+                    speakers = [
+                        p
+                        for p in operation.participants
+                        if p.role in (CLAIM_SPEAKER, CLAIM_NARRATOR)
+                    ]
+                    if len(speakers) > 1:
+                        blocking(index, "invalid_claim", "a claim has at most one speaker")
                 events[operation.id] = Event(
                     id=operation.id,
                     workspace_id=context.workspace_id,
@@ -968,6 +989,7 @@ class AuthoritativeValidator:
                     outcome_ids=operation.outcome_ids,
                     world_position=operation.world_position,
                     when=operation.when,
+                    claim=operation.claim,
                     provenance_id="pending",
                     created_revision=context.head_revision + 1,
                 )

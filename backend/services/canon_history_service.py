@@ -11,7 +11,7 @@ from typing import Any
 
 from backend.domain.canon.assertions import Belief, Fact, FactStatus, FactVisibility
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
-from backend.domain.canon.events import Event, EventParticipant
+from backend.domain.canon.events import Event, EventClaim, EventParticipant
 from backend.domain.canon.plans import PlanItem, apply_plan_update, plan_item_from_create
 from backend.domain.canon.propositions import Proposition
 from backend.domain.canon.revisions import CanonRevision
@@ -1082,6 +1082,7 @@ def _replay_event(version: RecordVersion, current: Event | None) -> Event | None
             outcome_ids=list(change.get("outcome_ids", [])),
             world_position=change.get("world_position"),
             when=_stored_time(change.get("when")),
+            claim=EventClaim.model_validate(change["claim"]) if change.get("claim") else None,
             provenance_id=f"prov_{version.commit_id}",
             created_revision=version.revision,
         )

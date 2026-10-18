@@ -1,8 +1,11 @@
-"""Who knows what, telling, and what the reader is shown (ADR-020).
+"""Who knows what, telling, claims, trust, and what the reader is shown (ADR-020).
 
 Reads are derived each time from facts, beliefs and the plan, so they cannot
-drift. The one write, telling, is an ordinary reviewed change: an event of one
-character telling others, and a belief for each listener, saved as one version.
+drift. Telling someone something, or seeing something happen, is never written
+straight into the story: the event and a belief for each listener or witness,
+worked out by their trust (``backend/domain/trust.py``), go to review as one
+proposal, each belief with its reason (KNW-006). A claim (KNW-005) records what is
+said without making it true; it becomes a fact only through a reviewed proposal.
 """
 
 from __future__ import annotations
@@ -12,45 +15,104 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 from backend.adapters.system import uuid7
-from backend.domain.canon.assertions import Belief, Fact, FactVisibility
+from backend.domain.canon.assertions import Belief, Fact, FactStatus, FactVisibility
 from backend.domain.canon.entities import CanonEntity
-from backend.domain.canon.events import EventParticipant
+from backend.domain.canon.events import (
+    CLAIM_KIND,
+    CLAIM_NARRATOR,
+    CLAIM_PERCEIVER,
+    CLAIM_SPEAKER,
+    ClaimModality,
+    EventClaim,
+    EventParticipant,
+)
 from backend.domain.canon.ids import format_canon_id
 from backend.domain.canon.phrasing import phrase
 from backend.domain.canon.propositions import Proposition
+from backend.domain.canon.registry import CORE_PREDICATES, Cardinality
+from backend.domain.canon.revisions import OriginKind
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.knowledge import (
     CharacterKnowledge,
+    ClaimRecord,
     FactKnowledge,
     ReaderStep,
+    claim_mentions,
+    claims_of,
     knowledge_of,
     reader_journey,
     reading_order,
     scene_time,
     who_knows,
 )
-from backend.domain.operations import AssertBeliefOp, CanonOperation, CreateEventOp
+from backend.domain.operations import (
+    AssertBeliefOp,
+    AssertFactOp,
+    CanonOperation,
+    CloseFactOp,
+    CreateEventOp,
+    UpdateEntityOp,
+)
 from backend.domain.tenancy import Permission
+from backend.domain.trust import (
+    BELIEVED_MODALITIES,
+    Hearer,
+    ProposedBelief,
+    TrustPolicy,
+    propose_beliefs,
+    suggested,
+    trust_of,
+    with_trust,
+)
 from backend.domain.worldtime import Interval, Order, compare
 from backend.ports import CanonRepositoryPort
 from backend.services.mutation_service import CommitResult, MutationService
+from backend.services.schema_compiler import compile_definition
 from backend.services.story_at_version import StoryAt, story_at
 from backend.services.story_time_service import event_times, fact_span, read_story, time_of
 
 MAX_RECORDS = 10_000
 MAX_LISTENERS = 12
-# Someone who overhears is less sure than someone who was told.
-OVERHEARD_CONFIDENCE = 0.6
+MAX_PERCEIVERS = 12
+MAX_EVENT_NAME = 200
+MODALITY_WORDS: dict[str, str] = {
+    "states": "says",
+    "suggests": "suggests",
+    "wonders": "wonders whether",
+    "denies": "denies that",
+}
 
 
 @dataclass(frozen=True)
 class Telling:
+    """A telling or a witnessed event, proposed for review with a belief for each hearer."""
+
+    mutation_id: str
+    event_id: str
+    # One per hearer or witness, in order: the belief proposed (or why none was).
+    proposals: list[ProposedBelief]
+
+    @property
+    def beliefs(self) -> int:
+        return sum(1 for item in self.proposals if item.confidence is not None)
+
+    @property
+    def already_knew(self) -> list[str]:
+        return [item.holder_id for item in self.proposals if item.already]
+
+
+@dataclass(frozen=True)
+class RecordedClaim:
     result: CommitResult
     event_id: str
-    beliefs: int
-    # Listeners who already believed it, so nothing was added for them.
-    already_knew: list[str]
+    # What its hearers would come to believe, waiting in review, when the author asked.
+    beliefs: Telling | None = None
+
+
+@dataclass(frozen=True)
+class Promotion:
+    mutation_id: str
 
 
 @dataclass(frozen=True)
@@ -409,6 +471,89 @@ class KnowledgeService:
 
     # ---------------------------------------------------------------- telling
 
+    async def _schema_version_id(self, workspace_id: str, project_id: str) -> str | None:
+        if self._schema_store is None:
+            return None
+        published = await self._schema_store.get_published(
+            workspace_id=workspace_id, project_id=project_id
+        )
+        return published.id if published else None
+
+    async def _one_at_a_time(self, workspace_id: str, project_id: str, predicate: str) -> bool:
+        """Whether a kind of fact can hold only one value at a time, by the story's setup."""
+        spec = None
+        if self._schema_store is not None:
+            published = await self._schema_store.get_published(
+                workspace_id=workspace_id, project_id=project_id
+            )
+            if published is not None:
+                compiled = compile_definition(
+                    published.definition, workspace_id=workspace_id, project_id=project_id
+                )
+                spec = compiled.predicate_specs.get(predicate)
+        spec = spec or CORE_PREDICATES.get(predicate)
+        # Compared by value: the setup and the built-in kinds of fact share the words.
+        return spec is not None and spec.cardinality == Cardinality.ONE.value
+
+    async def _names(self, workspace_id: str, project_id: str) -> dict[str, str]:
+        entities = await self._reader.list_entities(
+            workspace_id=workspace_id, project_id=project_id, limit=MAX_RECORDS
+        )
+        return {entity.id: entity.name for entity in entities}
+
+    async def _propose(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        *,
+        event: CreateEventOp | None,
+        event_id: str,
+        proposition: Proposition,
+        proposals: list[ProposedBelief],
+        expected_revision: int,
+    ) -> Telling:
+        """One proposal in review: the event, and a belief for each hearer the policies allow.
+
+        Its origin is ``derived``: worked out by the story's own rules, so it always needs
+        the author's approval and is never committed here (KNW-006). ``event`` is None when
+        the event is already in the story (a claim the author recorded).
+        """
+        operations: list[CanonOperation] = [event] if event is not None else []
+        for item in proposals:
+            if item.confidence is None:
+                continue
+            operations.append(
+                AssertBeliefOp(
+                    id=f"tmp:belief-{item.holder_id.replace(':', '-')}",
+                    holder_entity_id=item.holder_id,
+                    proposition=proposition,
+                    confidence=item.confidence,
+                    source_ref=event_id,
+                    why=item.why[:300],
+                )
+            )
+        mutation = await self._mutation.create_draft(
+            scope,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            operations=operations,
+            expected_head=expected_revision,
+            origin=OriginKind.DERIVED.value,
+            schema_version_id=await self._schema_version_id(workspace_id, project_id),
+        )
+        await self._mutation.submit(scope, mutation.id, reason="beliefs worked out from trust")
+        return Telling(mutation_id=mutation.id, event_id=event_id, proposals=proposals)
+
+    async def _trusts(
+        self, workspace_id: str, project_id: str, ids: list[str]
+    ) -> dict[str, TrustPolicy]:
+        found: dict[str, TrustPolicy] = {}
+        for entity_id in ids:
+            entity = await self._character(workspace_id, project_id, entity_id)
+            found[entity_id] = trust_of(entity.attributes)
+        return found
+
     async def tell(
         self,
         scope: AccessScope,
@@ -421,10 +566,12 @@ class KnowledgeService:
         proposition: Proposition,
         expected_revision: int,
     ) -> Telling:
-        """One character tells others something. Each listener comes to believe it.
+        """One character tells others something. Proposes what each hearer comes to believe.
 
-        Whether it was true is not stored: it is read from the facts, like any belief,
-        so a lie is simply a telling whose listeners now believe something false.
+        Each hearer's belief follows how they take what the speaker says (their trust);
+        someone who overhears is less sure. Nothing is written until the proposal is
+        approved. Whether it was true is not stored: a lie is simply a telling whose
+        listeners come to believe something false.
         """
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         overheard_by = overheard_by or []
@@ -436,63 +583,337 @@ class KnowledgeService:
         if len(set(hearers)) != len(hearers) or speaker_id in hearers:
             raise ValidationError("Each person can be the teller or a hearer, once.")
         speaker = await self._character(workspace_id, project_id, speaker_id)
-        listeners = [await self._character(workspace_id, project_id, i) for i in hearers]
-        beliefs = await self._beliefs(workspace_id, project_id)
+        trust = await self._trusts(workspace_id, project_id, hearers)
+        names = await self._names(workspace_id, project_id)
         event_id = format_canon_id("event", str(uuid7()))
-        names = ", ".join(entity.name for entity in listeners[: len(listener_ids)])
-        operations: list[CanonOperation] = [
-            CreateEventOp(
-                id=event_id,
-                kind="telling",
-                name=f"{speaker.name} tells {names}",
-                participants=[
-                    EventParticipant(entity_id=speaker_id, role="speaker"),
-                    *(EventParticipant(entity_id=i, role="listener") for i in listener_ids),
-                    *(EventParticipant(entity_id=i, role="overheard") for i in overheard_by),
-                ],
-            )
-        ]
-        already: list[str] = []
-        for hearer in hearers:
-            holds = any(
-                belief.holder_entity_id == hearer
-                and belief.closed_revision is None
-                and belief.proposition == proposition
-                for belief in beliefs
-            )
-            if holds:
-                already.append(hearer)
-                continue
-            operations.append(
-                AssertBeliefOp(
-                    id=f"tmp:belief-{hearer}",
-                    holder_entity_id=hearer,
-                    proposition=proposition,
-                    confidence=OVERHEARD_CONFIDENCE if hearer in overheard_by else 1.0,
-                    source_ref=event_id,
+        told = ", ".join(names.get(i, "someone") for i in listener_ids)
+        event = CreateEventOp(
+            id=event_id,
+            kind="telling",
+            name=f"{speaker.name} tells {told}"[:MAX_EVENT_NAME],
+            participants=[
+                EventParticipant(entity_id=speaker_id, role="speaker"),
+                *(EventParticipant(entity_id=i, role="listener") for i in listener_ids),
+                *(EventParticipant(entity_id=i, role="overheard") for i in overheard_by),
+            ],
+        )
+        proposals = propose_beliefs(
+            proposition,
+            [
+                *(Hearer(i, "told") for i in listener_ids),
+                *(Hearer(i, "overheard") for i in overheard_by),
+            ],
+            speaker_id=speaker_id,
+            trust=trust,
+            beliefs=await self._beliefs(workspace_id, project_id),
+            names=names,
+        )
+        return await self._propose(
+            scope,
+            workspace_id,
+            project_id,
+            event=event,
+            event_id=event.id,
+            proposition=proposition,
+            proposals=proposals,
+            expected_revision=expected_revision,
+        )
+
+    async def witness(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        *,
+        name: str,
+        present_ids: list[str],
+        not_noticed: list[str] | None = None,
+        proposition: Proposition,
+        expected_revision: int,
+    ) -> Telling:
+        """Something happens in front of people. Proposes a belief for each who perceives it.
+
+        Everyone present perceives it unless the author says they did not notice; those
+        are kept on the event as present, and given no belief.
+        """
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        not_noticed = not_noticed or []
+        title = " ".join(name.split())
+        if not title:
+            raise ValidationError("Say what happens.")
+        if len(title) > MAX_EVENT_NAME:
+            raise ValidationError(f"Say what happens in at most {MAX_EVENT_NAME} characters.")
+        if not present_ids:
+            raise ValidationError("Say who is there.")
+        if len(present_ids) > MAX_PERCEIVERS:
+            raise ValidationError(f"At most {MAX_PERCEIVERS} people can be there at once.")
+        if len(set(present_ids)) != len(present_ids):
+            raise ValidationError("Each person can be there once.")
+        if not set(not_noticed) <= set(present_ids):
+            raise ValidationError("Only someone who is there can fail to notice.")
+        witnesses = [i for i in present_ids if i not in not_noticed]
+        if not witnesses:
+            raise ValidationError("Someone who is there has to notice it.")
+        for entity_id in present_ids:
+            await self._character(workspace_id, project_id, entity_id)
+        names = await self._names(workspace_id, project_id)
+        event = CreateEventOp(
+            id=format_canon_id("event", str(uuid7())),
+            kind="witnessed",
+            name=title,
+            participants=[
+                *(EventParticipant(entity_id=i, role="witness") for i in witnesses),
+                *(EventParticipant(entity_id=i, role="present") for i in not_noticed),
+            ],
+        )
+        proposals = propose_beliefs(
+            proposition,
+            [Hearer(i, "saw") for i in witnesses],
+            speaker_id=None,
+            trust={},
+            beliefs=await self._beliefs(workspace_id, project_id),
+            names=names,
+        )
+        return await self._propose(
+            scope,
+            workspace_id,
+            project_id,
+            event=event,
+            event_id=event.id,
+            proposition=proposition,
+            proposals=proposals,
+            expected_revision=expected_revision,
+        )
+
+    # ----------------------------------------------------------------- trust
+
+    async def trust(
+        self, scope: AccessScope, workspace_id: str, project_id: str, entity_id: str
+    ) -> TrustPolicy:
+        """How a character takes what others tell them."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        entity = await self._character(workspace_id, project_id, entity_id)
+        return trust_of(entity.attributes)
+
+    async def set_trust(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        entity_id: str,
+        *,
+        policy: TrustPolicy,
+        expected_revision: int,
+    ) -> tuple[CommitResult, TrustPolicy]:
+        """The author says how a character takes what others tell them.
+
+        A setting on the character, saved as an ordinary change to them by the author;
+        it changes nothing anyone believes until a telling is proposed and approved.
+        """
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        entity = await self._character(workspace_id, project_id, entity_id)
+        for speaker_id in policy.speakers:
+            if speaker_id == entity_id:
+                raise ValidationError("A character's trust is about other people.")
+            await self._character(workspace_id, project_id, speaker_id)
+        operation = UpdateEntityOp(id=entity_id, attributes=with_trust(entity.attributes, policy))
+        mutation = await self._mutation.create_draft(
+            scope,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            operations=[operation],
+            expected_head=expected_revision,
+            schema_version_id=await self._schema_version_id(workspace_id, project_id),
+        )
+        result = await self._mutation.commit_author_change(scope, mutation.id)
+        return result, trust_of(operation.attributes)
+
+    # ---------------------------------------------------------------- claims
+
+    async def claims(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        *,
+        entity_id: str | None = None,
+        scene_id: str | None = None,
+    ) -> list[ClaimRecord]:
+        """What is said in the story, never as true, with whether the facts bear it out."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        events = await self._reader.list_events(
+            workspace_id=workspace_id, project_id=project_id, limit=MAX_RECORDS
+        )
+        facts = await self._reader.list_facts(
+            workspace_id=workspace_id, project_id=project_id, limit=MAX_RECORDS
+        )
+        found = claims_of(events, facts)
+        if entity_id is not None:
+            found = [record for record in found if claim_mentions(record, entity_id)]
+        if scene_id is not None:
+            found = [record for record in found if record.claim.scene_id == scene_id]
+        return found
+
+    async def record_claim(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        *,
+        proposition: Proposition,
+        modality: ClaimModality = "states",
+        speaker_id: str | None = None,
+        narrates: bool = False,
+        perceiver_ids: list[str] | None = None,
+        scene_id: str | None = None,
+        hearers_believe: bool = False,
+        expected_revision: int,
+    ) -> RecordedClaim:
+        """The author records something said: by the narration, a character, or a narrator.
+
+        It is kept as a claim, never as a fact. No one comes to believe it unless the author
+        asks (``hearers_believe``): then what each hearer would believe, by their trust in
+        the speaker, goes to review as one proposal. Only a character speaking to others
+        has hearers who can believe it; only what is stated or suggested is believed (a
+        suggestion less firmly); a question or a denial gives no belief.
+        """
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        perceiver_ids = perceiver_ids or []
+        if len(perceiver_ids) > MAX_PERCEIVERS:
+            raise ValidationError(f"At most {MAX_PERCEIVERS} people can hear it at once.")
+        if len(set(perceiver_ids)) != len(perceiver_ids) or (
+            speaker_id is not None and speaker_id in perceiver_ids
+        ):
+            raise ValidationError("Each person can be the one who says it or a hearer, once.")
+        if narrates and speaker_id is None:
+            raise ValidationError("Say which character narrates it.")
+        if hearers_believe and (narrates or speaker_id is None or not perceiver_ids):
+            raise ValidationError("Only a character speaking to others has hearers who believe it.")
+        if hearers_believe and modality not in BELIEVED_MODALITIES:
+            raise ValidationError("A question or a denial gives nobody anything to believe.")
+        names = await self._names(workspace_id, project_id)
+        participants: list[EventParticipant] = []
+        if speaker_id is not None:
+            await self._character(workspace_id, project_id, speaker_id)
+            participants.append(
+                EventParticipant(
+                    entity_id=speaker_id, role=CLAIM_NARRATOR if narrates else CLAIM_SPEAKER
                 )
             )
-        schema_version_id = None
-        if self._schema_store is not None:
-            published = await self._schema_store.get_published(
-                workspace_id=workspace_id, project_id=project_id
+        for perceiver in perceiver_ids:
+            await self._character(workspace_id, project_id, perceiver)
+            participants.append(EventParticipant(entity_id=perceiver, role=CLAIM_PERCEIVER))
+        source = names.get(speaker_id or "", "") or "The narration"
+        sentence = _sentence(proposition, names).rstrip(".")
+        event = CreateEventOp(
+            id=format_canon_id("event", str(uuid7())),
+            kind=CLAIM_KIND,
+            name=f"{source} {MODALITY_WORDS[modality]} {sentence}"[:MAX_EVENT_NAME],
+            participants=participants,
+            claim=EventClaim(proposition=proposition, modality=modality, scene_id=scene_id),
+        )
+        mutation = await self._mutation.create_draft(
+            scope,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            operations=[event],
+            expected_head=expected_revision,
+            schema_version_id=await self._schema_version_id(workspace_id, project_id),
+        )
+        result = await self._mutation.commit_author_change(scope, mutation.id)
+        if not hearers_believe or speaker_id is None:
+            return RecordedClaim(result=result, event_id=event.id)
+        proposals = propose_beliefs(
+            proposition,
+            [Hearer(i, "told") for i in perceiver_ids],
+            speaker_id=speaker_id,
+            trust=await self._trusts(workspace_id, project_id, perceiver_ids),
+            beliefs=await self._beliefs(workspace_id, project_id),
+            names=names,
+        )
+        if modality == "suggests":
+            proposals = [suggested(item) for item in proposals]
+        beliefs = await self._propose(
+            scope,
+            workspace_id,
+            project_id,
+            event=None,
+            event_id=event.id,
+            proposition=proposition,
+            proposals=proposals,
+            expected_revision=result.revision,
+        )
+        return RecordedClaim(result=result, event_id=event.id, beliefs=beliefs)
+
+    async def promote_claim(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        event_id: str,
+        *,
+        expected_revision: int,
+    ) -> Promotion:
+        """Propose making what a claim says a fact. It goes to review; nothing changes yet."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        event = await self._reader.get_event(
+            workspace_id=workspace_id, project_id=project_id, event_id=event_id
+        )
+        if (
+            event is None
+            or event.kind != CLAIM_KIND
+            or event.claim is None
+            or event.retired_revision is not None
+        ):
+            raise NotFoundError("That claim was not found.")
+        if event.claim.modality == "denies":
+            raise ValidationError(
+                "A denial says something is not so, so there is no fact to make from it."
             )
-            schema_version_id = published.id if published else None
+        facts = await self._reader.list_facts(
+            workspace_id=workspace_id, project_id=project_id, limit=MAX_RECORDS
+        )
+        record = claims_of([event], facts)[0]
+        if record.standing == "borne_out":
+            raise ValidationError("Your facts already say this.")
+        names = await self._names(workspace_id, project_id)
+        source = names.get(record.speaker_id or "", "") or "the narration"
+        proposition = event.claim.proposition
+        operations: list[CanonOperation] = []
+        # Something that can be only one thing at a time (where someone is) replaces what
+        # the facts said; the author can skip that in review and keep both apart.
+        if record.standing == "contradicted" and await self._one_at_a_time(
+            workspace_id, project_id, proposition.predicate
+        ):
+            operations.extend(
+                CloseFactOp(
+                    id=fact.id,
+                    why=f"Ended so what {source} says can be true instead."[:300],
+                )
+                for fact in facts
+                if fact.status is FactStatus.ASSERTED
+                and fact.closed_revision is None
+                and fact.proposition.subject_id == proposition.subject_id
+                and fact.proposition.predicate == proposition.predicate
+                and fact.proposition.object != proposition.object
+            )
+        operations.append(
+            AssertFactOp(
+                id="tmp:fact-from-claim",
+                proposition=proposition,
+                why=f"Made a fact from what {source} says (“{event.name}”)."[:300],
+            )
+        )
         mutation = await self._mutation.create_draft(
             scope,
             workspace_id=workspace_id,
             project_id=project_id,
             operations=operations,
             expected_head=expected_revision,
-            schema_version_id=schema_version_id,
+            schema_version_id=await self._schema_version_id(workspace_id, project_id),
         )
-        result = await self._mutation.commit_author_change(scope, mutation.id)
-        return Telling(
-            result=result,
-            event_id=event_id,
-            beliefs=len(operations) - 1,
-            already_knew=already,
-        )
+        await self._mutation.submit(scope, mutation.id, reason="a claim made a fact")
+        return Promotion(mutation_id=mutation.id)
 
 
 def _plural(entity_type: str) -> str:
@@ -513,6 +934,9 @@ def _sentence(proposition: Proposition, names: dict[str, str]) -> str:
 
 
 __all__ = [
+    "MODALITY_WORDS",
+    "Promotion",
+    "RecordedClaim",
     "GUIDE_RULES",
     "Guide",
     "GuideEntry",

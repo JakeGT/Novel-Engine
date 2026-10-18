@@ -2212,6 +2212,7 @@ class InMemoryCanonWriter:
                 "outcome_ids": list(operation.outcome_ids),
                 "world_position": operation.world_position,
                 "when": _stored_time(operation.when),
+                "claim": operation.claim,
                 "provenance_id": f"prov_{commit_id}",
                 "created_revision": revision,
                 "lifecycle": "active",
@@ -2441,6 +2442,7 @@ class InMemoryCanonWriter:
             outcome_ids=list(data["outcome_ids"]),
             world_position=data["world_position"],
             when=data.get("when"),
+            claim=data.get("claim"),
             provenance_id=data["provenance_id"],
             created_revision=data["created_revision"],
             retired_revision=data.get("retired_revision"),
@@ -3005,6 +3007,21 @@ class InMemoryCanonRepository:
             effective_origin = mutation.origin
             intent = mutation.intent
             status = mutation.status
+            delegation = getattr(self, "delegation", None)
+            if delegation is not None:
+                refused = await delegation.rule_off_message(
+                    mutation.workspace_id, mutation.project_id, mutation.id
+                )
+                if refused:
+                    raise CanonValidationError(
+                        DomainValidationReport(
+                            findings=(
+                                ValidationFinding(
+                                    ValidationSeverity.INTEGRITY, "kept_rule_off", refused
+                                ),
+                            )
+                        )
+                    )
         gate = review_gate(
             origin=effective_origin,
             intent=intent,
@@ -3283,6 +3300,7 @@ class InMemoryCanonRepository:
                 outcome_ids=list(operation.outcome_ids),
                 world_position=operation.world_position,
                 when=_stored_time(operation.when),
+                claim=operation.claim,
                 provenance_id=provenance_id,
                 created_revision=revision,
             )
@@ -4239,6 +4257,178 @@ class InMemoryAssistantSettingsStore:
         self.rows[(workspace_id, project_id)] = settings
 
 
+class InMemoryDelegationStore:
+    """Keep the safe ones for me (AST-EXP-015), with the same rules as PostgreSQL."""
+
+    def __init__(self) -> None:
+        self.settings: dict[tuple[str, str], Any] = {}
+        self.records: dict[tuple[str, str, str], Any] = {}
+        self.seen: dict[tuple[str, str, str], Any] = {}
+        self._last: Any = None
+
+    def _now(self) -> Any:
+        from datetime import UTC, datetime, timedelta
+
+        # The real time, but strictly increasing, so "since" comparisons are exact in tests.
+        now = datetime.now(UTC)
+        if self._last is not None and now <= self._last:
+            now = self._last + timedelta(microseconds=1)
+        self._last = now
+        return now
+
+    async def get(self, *, workspace_id: str, project_id: str = "") -> Any:
+        from backend.domain.delegation import DelegationSettings
+
+        return self.settings.get((workspace_id, project_id), DelegationSettings())
+
+    async def set(
+        self, *, workspace_id: str, project_id: str = "", settings: Any, actor_user_id: Any
+    ) -> None:
+        self.settings[(workspace_id, project_id)] = settings
+
+    async def hand_counts(self, *, workspace_id: str, project_id: str) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for record in self.records.values():
+            if (record.workspace_id, record.project_id, record.how) == (
+                workspace_id,
+                project_id,
+                "by_hand",
+            ):
+                for kind in record.kinds:
+                    counts[kind] = counts.get(kind, 0) + 1
+        return counts
+
+    async def get_record(self, *, workspace_id: str, project_id: str, mutation_id: str) -> Any:
+        return self.records.get((workspace_id, project_id, mutation_id))
+
+    async def put_record(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        mutation_id: str,
+        how: str,
+        state: str,
+        kinds: Any,
+        branch_id: str,
+        actor_user_id: Any,
+        via: str = "session",
+        reason_code: Any = None,
+        reason: Any = None,
+    ) -> None:
+        from dataclasses import replace
+
+        from backend.domain.delegation import DelegationRecord
+
+        key = (workspace_id, project_id, mutation_id)
+        existing = self.records.get(key)
+        if existing is not None:
+            self.records[key] = replace(
+                existing,
+                how=how,
+                state=state,
+                kinds=tuple(kinds),
+                branch_id=branch_id,
+                actor_user_id=actor_user_id,
+                via=via,
+                reason_code=reason_code,
+                reason=reason,
+                created_at=self._now() if how == "kept" else existing.created_at,
+            )
+            return
+        self.records[key] = DelegationRecord(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            mutation_id=mutation_id,
+            how=how,
+            state=state,
+            kinds=tuple(kinds),
+            branch_id=branch_id,
+            actor_user_id=actor_user_id,
+            revision=None,
+            undo_mutation_id=None,
+            created_at=self._now(),
+            via=via,
+            reason_code=reason_code,
+            reason=reason,
+        )
+
+    async def update_record(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        mutation_id: str,
+        state: Any = None,
+        revision: Any = None,
+        undo_mutation_id: Any = None,
+    ) -> None:
+        from dataclasses import replace
+
+        key = (workspace_id, project_id, mutation_id)
+        record = self.records.get(key)
+        if record is None:
+            return
+        self.records[key] = replace(
+            record,
+            state=state if state is not None else record.state,
+            revision=revision if revision is not None else record.revision,
+            undo_mutation_id=undo_mutation_id
+            if undo_mutation_id is not None
+            else record.undo_mutation_id,
+        )
+
+    async def list_records(
+        self,
+        *,
+        workspace_id: str,
+        project_id: Any,
+        how: str,
+        states: Any,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[Any]:
+        found = [
+            record
+            for record in self.records.values()
+            if record.workspace_id == workspace_id
+            and (project_id is None or record.project_id == project_id)
+            and record.how == how
+            and record.state in set(states)
+        ]
+        found.sort(key=lambda item: (item.created_at, item.mutation_id), reverse=True)
+        return found[offset : offset + limit]
+
+    async def count_kept_since(self, *, workspace_id: str, project_id: str, since: Any) -> int:
+        return sum(
+            1
+            for record in self.records.values()
+            if (record.workspace_id, record.project_id, record.how, record.state)
+            == (workspace_id, project_id, "kept", "kept")
+            and (since is None or record.created_at > since)
+        )
+
+    async def get_seen(self, *, workspace_id: str, project_id: str, user_id: str) -> Any:
+        return self.seen.get((workspace_id, project_id, user_id))
+
+    async def set_seen(self, *, workspace_id: str, project_id: str, user_id: str) -> None:
+        self.seen[(workspace_id, project_id, user_id)] = self._now()
+
+    async def rule_off_message(self, workspace_id: str, project_id: str, mutation_id: str) -> Any:
+        """What the commit transaction checks for a suggestion being kept (see PostgreSQL)."""
+        from backend.domain.delegation import RULE_OFF_MESSAGE, rule_still_on
+
+        record = self.records.get((workspace_id, project_id, mutation_id))
+        if record is None or (record.how, record.state) != ("kept", "pending"):
+            return None
+        story = self.settings.get((workspace_id, project_id))
+        workspace = self.settings.get((workspace_id, ""))
+        forbidden = bool(workspace is not None and workspace.forbidden)
+        if story is None or not rule_still_on(record.kinds, story, forbidden):
+            return RULE_OFF_MESSAGE
+        return None
+
+
 class InMemorySourceStore:
     """Source texts, versions and name memory, with the same rules as PostgreSQL."""
 
@@ -4394,25 +4584,19 @@ class InMemorySourceStore:
         ]
 
     async def put_binding(self, binding: Any) -> None:
-        verdict = binding.verdict.value
+        from backend.domain.sources import replaces
 
-        def replaced(item: Any) -> bool:
-            if (item.workspace_id, item.project_id, item.normalized, item.source_id) != (
-                binding.workspace_id,
-                binding.project_id,
-                binding.normalized,
-                binding.source_id,
-            ):
-                return False
-            return (
-                item.entity_id == binding.entity_id
-                or item.verdict.value == "ignore"
-                or verdict == "ignore"
-                or (verdict == "is" and item.verdict.value in ("is", "suggested"))
-            )
-
-        self.bindings = {key: item for key, item in self.bindings.items() if not replaced(item)}
+        self.bindings = {
+            key: item for key, item in self.bindings.items() if not replaces(item, binding)
+        }
         self.bindings[(binding.workspace_id, binding.project_id, binding.id)] = binding
+
+    async def set_examples(self, binding: Any) -> bool:
+        key = (binding.workspace_id, binding.project_id, binding.id)
+        if key not in self.bindings:
+            return False
+        self.bindings[key] = binding
+        return True
 
     async def delete_binding(self, *, workspace_id: str, project_id: str, binding_id: str) -> bool:
         return self.bindings.pop((workspace_id, project_id, binding_id), None) is not None
@@ -5007,3 +5191,98 @@ class InMemoryStudioStore:
 
     async def set_voice(self, *, workspace_id, project_id, notes):
         self.voices[(workspace_id, project_id)] = notes
+
+
+class InMemoryAccessKeyStore:
+    """Access keys for other assistants (QRY-003): digests and use counts only."""
+
+    def __init__(self) -> None:
+        self.keys: dict[str, Any] = {}
+        self.counts: dict[tuple[str, str, str], list[int]] = {}
+        self.touches = 0
+
+    async def create(self, key: Any) -> Any:
+        if any(item.token_hash == key.token_hash for item in self.keys.values()):
+            raise ValueError("duplicate key digest")
+        self.keys[key.id] = key.model_copy()
+        return key
+
+    async def get(self, *, workspace_id: str, key_id: str) -> Any | None:
+        key = self.keys.get(key_id)
+        return key.model_copy() if key is not None and key.workspace_id == workspace_id else None
+
+    async def get_by_hash(self, token_hash: str) -> Any | None:
+        for key in self.keys.values():
+            if key.token_hash == token_hash:
+                return key.model_copy()
+        return None
+
+    async def list_keys(self, *, workspace_id: str, user_id: str | None = None) -> list[Any]:
+        found = [
+            key.model_copy()
+            for key in self.keys.values()
+            if key.workspace_id == workspace_id and (user_id is None or key.user_id == user_id)
+        ]
+        return sorted(found, key=lambda key: (key.created_at, key.id), reverse=True)
+
+    async def revoke(self, *, key_id: str, reason: str, at: datetime) -> bool:
+        from backend.domain.access_keys import RevokedBecause
+
+        key = self.keys.get(key_id)
+        if key is None or key.revoked_at is not None:
+            return False
+        key.revoked_at = at
+        key.revoked_reason = RevokedBecause(reason)
+        return True
+
+    async def revoke_for_member(
+        self, *, workspace_id: str, user_id: str, reason: str, at: datetime
+    ) -> list[str]:
+        stopped = []
+        for key in list(self.keys.values()):
+            if key.workspace_id == workspace_id and key.user_id == user_id:
+                if await self.revoke(key_id=key.id, reason=reason, at=at):
+                    stopped.append(key.id)
+        return sorted(stopped)
+
+    async def touch(self, *, key_id: str, at: datetime) -> None:
+        key = self.keys.get(key_id)
+        if key is not None and (
+            key.last_used_at is None or (at - key.last_used_at).total_seconds() >= 60
+        ):
+            key.last_used_at = at
+            self.touches += 1
+
+    async def record_use(
+        self, *, key_id: str, workspace_id: str, day: str, tool: str, refused: bool
+    ) -> None:
+        count = self.counts.setdefault((key_id, day, tool), [0, 0])
+        count[0] += 1
+        count[1] += 1 if refused else 0
+
+    async def uses(self, *, key_id: str, since_day: str) -> list[Any]:
+        from backend.domain.access_keys import AccessKeyUse
+
+        rows = [
+            AccessKeyUse(day=day, tool=tool, calls=calls, refused=refused)
+            for (key, day, tool), (calls, refused) in self.counts.items()
+            if key == key_id and day >= since_day
+        ]
+        rows.sort(key=lambda row: row.tool)
+        return sorted(rows, key=lambda row: row.day, reverse=True)
+
+    async def delete_workspace(self, workspace_id: str) -> int:
+        gone = [key_id for key_id, key in self.keys.items() if key.workspace_id == workspace_id]
+        for key_id in gone:
+            del self.keys[key_id]
+        return len(gone)
+
+    async def delete_project(self, workspace_id: str, project_id: str) -> int:
+        gone = [
+            key_id
+            for key_id, key in self.keys.items()
+            if key.workspace_id == workspace_id and key.project_id == project_id
+        ]
+        for key_id in gone:
+            del self.keys[key_id]
+        return len(gone)

@@ -133,13 +133,101 @@ describe('TextPage', () => {
     expect(within(next).getByRole('button', { name: 'Not Mara' })).toBeInTheDocument()
     await user.click(within(next).getByRole('button', { name: 'It is Mara' }))
     await waitFor(() => expect(api.find('POST', '/names')).toHaveLength(1))
+    // Held everywhere by default, with the words it was answered from kept as an example.
     expect(api.find('POST', '/names')[0].body).toEqual({
       phrase: 'The Fox',
       verdict: 'is',
       entity_id: 'ent_mara',
       source_id: null,
+      what_if_only: false,
+      from_scene_id: null,
+      until_scene_id: null,
+      viewpoint_id: null,
+      example: { source_id: 'src_1', version_id: 'srv_1', ...span('The Fox') },
     })
     await waitFor(() => expect(screen.queryByRole('heading', { name: 'Who is this?' })).not.toBeInTheDocument())
+  })
+
+  it('keeps an answer to part of the story when asked: from this scene on, or when seen by someone', async () => {
+    const scene = (id: string, title: string, position: number, pov?: string) => ({
+      id,
+      kind: 'scene' as const,
+      title,
+      summary: '',
+      parent_id: null,
+      position,
+      refs: pov ? [{ entity_id: pov, role: 'point_of_view' }] : [],
+      sets_up: [],
+      pays_off: [],
+      details: {},
+      conditions: [],
+      created_revision: 1,
+    })
+    const inScene = detail({
+      text: { ...detail().text, kind: 'scene', scene_id: 'pln_2' },
+      questions: detail().questions.slice(1),
+    })
+    const api = mockApi({
+      ...base,
+      'GET /plan': {
+        items: [scene('pln_1', 'Dawn', 0), scene('pln_2', 'Noon', 1, 'ent_tobin'), scene('pln_3', 'Dusk', 2)],
+        open: [],
+        conditions: [],
+      },
+      'GET /texts/src_1': inScene,
+      'POST /names': reply(201, { id: 'alb_1', phrase: 'The Fox', verdict: 'is', entity_id: 'ent_mara', source_id: null, decided_at: '2026-10-11T09:00:00Z' }),
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<TextPage />, at)
+
+    const card = (await screen.findByRole('heading', { name: 'Who is this?' })).closest('section') as HTMLElement
+    const where = within(card).getByLabelText('Where it holds')
+    expect(where).toHaveValue('everywhere')
+    await waitFor(() => expect(within(where).getByRole('option', { name: 'Only from this scene on' })).toBeInTheDocument())
+    await user.selectOptions(where, 'from')
+    // The scene the text belongs to is chosen already.
+    expect(within(card).getByLabelText('From')).toHaveValue('pln_2')
+    expect(within(card).getByRole('option', { name: '2. Noon (this scene)' })).toBeInTheDocument()
+    await expectAccessible(container)
+    await user.click(within(card).getByRole('button', { name: 'It is Mara' }))
+    await waitFor(() => expect(api.find('POST', '/names')).toHaveLength(1))
+    expect(api.find('POST', '/names')[0].body).toMatchObject({
+      phrase: 'The Fox',
+      from_scene_id: 'pln_2',
+      until_scene_id: null,
+      viewpoint_id: null,
+      source_id: null,
+    })
+
+    // When seen by a character offers the scene's own viewpoint first; without one it asks.
+    await user.selectOptions(where, 'seen_by')
+    expect(within(card).getByLabelText('Seen by')).toHaveValue('ent_tobin')
+    await user.selectOptions(within(card).getByLabelText('Seen by'), '')
+    await user.click(within(card).getByRole('button', { name: 'It is Mara' }))
+    expect(within(card).getByRole('alert')).toHaveTextContent('Choose whose eyes the scenes are seen through.')
+    expect(api.find('POST', '/names')).toHaveLength(1)
+    await user.selectOptions(within(card).getByLabelText('Seen by'), 'ent_tobin')
+    await user.click(within(card).getByRole('button', { name: 'It is Mara' }))
+    await waitFor(() => expect(api.find('POST', '/names')).toHaveLength(2))
+    expect(api.find('POST', '/names')[1].body).toMatchObject({ viewpoint_id: 'ent_tobin', from_scene_id: null })
+  })
+
+  it('inside a what-if keeps the answer to it unless told otherwise', async () => {
+    const api = mockApi({
+      ...base,
+      'GET /plan': { items: [], open: [], conditions: [] },
+      'GET /texts/src_1': detail({ questions: detail().questions.slice(1) }),
+      'POST /names': reply(201, { id: 'alb_1', phrase: 'The Fox', verdict: 'is', entity_id: 'ent_mara', source_id: null, decided_at: '2026-10-11T09:00:00Z' }),
+    })
+    const user = userEvent.setup()
+    renderInProject(<TextPage />, { ...at, context: { scope: { workspaceId: 'ws_1', projectId: 'prj_1', branchId: 'br_1' } } })
+
+    const card = (await screen.findByRole('heading', { name: 'Who is this?' })).closest('section') as HTMLElement
+    const only = within(card).getByRole('checkbox', { name: 'Only in this what-if' })
+    expect(only).toBeChecked()
+    await user.click(within(card).getByRole('button', { name: 'It is Mara' }))
+    await waitFor(() => expect(api.find('POST', '/names')).toHaveLength(1))
+    expect(api.find('POST', '/names')[0].body).toMatchObject({ what_if_only: true })
   })
 
   it('has the assistant read a part and says plainly what came of it', async () => {

@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict
 from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import get_canon_assertion_service
 from backend.domain.canon.assertions import Belief, Fact, FactVisibility
-from backend.domain.canon.events import Event, EventParticipant
+from backend.domain.canon.events import Event, EventClaim, EventParticipant
 from backend.domain.canon.propositions import Proposition
 from backend.domain.identity import AccessScope
 from backend.domain.worldtime import WorldTime
@@ -132,6 +132,29 @@ class BeliefModel(BaseModel):
     closed_revision: int | None = None
 
 
+class EventClaimModel(BaseModel):
+    """What a claim says (never a fact), how it is said, and the scene it is said in."""
+
+    subject_id: str
+    predicate: str
+    object: dict
+    # states, suggests, wonders or denies.
+    modality: str
+    scene_id: str | None = None
+
+
+def _claim_model(claim: EventClaim | None) -> EventClaimModel | None:
+    if claim is None:
+        return None
+    return EventClaimModel(
+        subject_id=claim.proposition.subject_id,
+        predicate=claim.proposition.predicate,
+        object=claim.proposition.object.model_dump(mode="json"),
+        modality=claim.modality,
+        scene_id=claim.scene_id,
+    )
+
+
 class EventModel(BaseModel):
     id: str
     kind: str
@@ -142,6 +165,8 @@ class EventModel(BaseModel):
     outcome_ids: list[str]
     world_position: str | None = None
     when: WorldTime | None = None
+    # On an event of kind "claim": what is said, how, and in which scene (KNW-005).
+    claim: EventClaimModel | None = None
     provenance_id: str
     created_revision: int
 
@@ -192,6 +217,7 @@ def _event_model(event: Event) -> EventModel:
         outcome_ids=event.outcome_ids,
         world_position=event.world_position,
         when=event.when,
+        claim=_claim_model(event.claim),
         provenance_id=event.provenance_id,
         created_revision=event.created_revision,
     )

@@ -516,7 +516,12 @@ class StoryAudit:
                     report.current = current.id == version.id
                 brief = await studio.brief(workspace_id, project_id, scene)
                 report.checks = await studio._check(
-                    workspace_id, project_id, report.source_id, version.content, brief
+                    workspace_id,
+                    project_id,
+                    report.source_id,
+                    version.content,
+                    brief,
+                    scene_id=scene.id,
                 )
             scenes.append(report)
         unwritten = [by_id[pid] for pid in payload.get("unwritten") or [] if pid in by_id]

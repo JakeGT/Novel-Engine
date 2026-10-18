@@ -1,5 +1,6 @@
 import { AllowanceCard } from '../components/Allowance'
 import { SpendingCard, WorkspaceLimitsCard } from '../components/AssistantSpending'
+import { WorkspaceKeptCard } from '../components/KeptForYou'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { api, isApiError, type AiChoice, type AiProvider } from '../api/client'
@@ -247,7 +248,8 @@ export function AssistantPage() {
           <p className="lede">
             The assistant asks you about your story and drafts suggestions for you to review. It
             is optional, and it runs on your own key from the AI provider you choose, so you stay
-            in control of the cost. It never changes your story on its own.
+            in control of the cost. It never changes your story on its own, unless you choose to
+            have some kinds of new things kept for you under Review.
           </p>
         </div>
       </div>
@@ -286,6 +288,7 @@ export function AssistantPage() {
 
             {connected.length > 0 && workspaceId && <AllowanceCard workspaceId={workspaceId} />}
             {connected.length > 0 && workspaceId && <WorkspaceLimitsCard workspaceId={workspaceId} />}
+            {connected.length > 0 && workspaceId && <WorkspaceKeptCard workspaceId={workspaceId} />}
 
             <section className="card" aria-labelledby="keys-heading">
               <div className="card-head">

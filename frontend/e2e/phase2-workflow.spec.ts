@@ -312,7 +312,7 @@ test('the core authoring path works with the keyboard alone', async ({ page }) =
   // The search palette opens, finds, and navigates from the keyboard.
   await page.keyboard.press('Control+k')
   await page.keyboard.type('Mara')
-  await expect(page.getByRole('option').first()).toContainText('Mara Venn')
+  await expect(page.getByRole('listbox', { name: 'Results' }).getByRole('option').first()).toContainText('Mara Venn')
   await page.keyboard.press('Enter')
   await expect(page.getByRole('heading', { level: 1, name: 'Mara Venn' })).toBeVisible()
 })

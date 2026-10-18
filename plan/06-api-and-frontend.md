@@ -124,6 +124,10 @@ history, provenance, and visibility operations. Authenticated server context est
 Any write-like MCP operation can create only a mutation/patch proposal and cannot commit or modify
 review and invariant policy.
 
+Built 2026-10-18 (QRY-003, ADR-024): `POST /mcp` in the API app, authenticated by personal access
+keys made under People, with read tools over the same services and response models as the HTTP API
+and one proposal-only `suggest_changes` tool; see `plan/api-surface.md`.
+
 ## Frontend information architecture
 
 Revised 2026-10-10 (ADR-017). The interface is organised by what the author is doing, not by how

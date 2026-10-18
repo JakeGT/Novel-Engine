@@ -42,11 +42,16 @@ class StoreWorkspacePurge:
         self._allowances = allowances
         self._sources = sources
         self._rules = rules
+        self._access_keys: Any = None
 
     def attach_canon(self, *, canon: Any, canon_writer: Any = None) -> None:
         """Late-bind canon stores, which are constructed after the tenancy service."""
         self._canon = canon
         self._canon_writer = canon_writer
+
+    def attach_access_keys(self, access_keys: Any) -> None:
+        """Late-bind the access key store (QRY-003): keys go with their workspace or story."""
+        self._access_keys = access_keys
 
     async def purge_workspace(self, workspace_id: str) -> dict[str, int]:
         canon: dict[str, int] = {}
@@ -66,6 +71,8 @@ class StoreWorkspacePurge:
             canon["source_texts"] = await self._sources.delete_workspace(workspace_id)
         if self._rules is not None:
             canon["story_rules"] = await self._rules.delete_workspace(workspace_id)
+        if self._access_keys is not None:
+            canon["access_keys"] = await self._access_keys.delete_workspace(workspace_id)
         return {
             **canon,
             "graph_nodes": self._graph.delete_workspace_nodes(workspace_id),
@@ -92,6 +99,8 @@ class StoreWorkspacePurge:
             canon["source_texts"] = await self._sources.delete_project(workspace_id, project_id)
         if self._rules is not None:
             canon["story_rules"] = await self._rules.delete_project(workspace_id, project_id)
+        if self._access_keys is not None:
+            canon["access_keys"] = await self._access_keys.delete_project(workspace_id, project_id)
         return {
             **canon,
             "graph_nodes": self._graph.delete_project_nodes(workspace_id, project_id),

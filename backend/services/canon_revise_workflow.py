@@ -367,6 +367,11 @@ class CanonLinkWorkflow(CanonReviseWorkflow):
         mutation = await self._mutation.submit(
             review_scope, mutation.id, "suggested connections awaiting review"
         )
+        validation = await self._mutation.validate(review_scope, mutation.id)
+        # Kept for the author when they chose to have suggestions like this kept.
+        mutation = await self._mutation.keep_if_allowed(
+            review_scope, mutation, validation=validation
+        )
         log_event(
             logger,
             "links.workflow.proposed",
@@ -382,7 +387,7 @@ class CanonLinkWorkflow(CanonReviseWorkflow):
             ),
             mutation=mutation,
             operation_count=len(operations),
-            validation=await self._mutation.validate(review_scope, mutation.id),
+            validation=validation,
             notes=notes[:12],
             discarded=discarded,
         )

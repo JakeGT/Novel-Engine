@@ -1,6 +1,8 @@
-"""Who knows what, telling, and what the reader is shown (ADR-020)."""
+"""Who knows what, telling, claims, trust, and what the reader is shown (ADR-020)."""
 
 from __future__ import annotations
+
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -9,15 +11,18 @@ from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import get_container
 from backend.api.v1.canon_assertions import (
     BeliefModel,
+    EventModel,
     FactModel,
     PropositionRequest,
     _belief_model,
+    _event_model,
     _fact_model,
 )
 from backend.container import Container
 from backend.domain.errors import ValidationError
 from backend.domain.identity import AccessScope
-from backend.services.knowledge_service import KnowledgeService
+from backend.domain.trust import Stance, TrustPolicy
+from backend.services.knowledge_service import KnowledgeService, Telling
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["knowledge"])
 
@@ -64,11 +69,123 @@ class TellRequest(BaseModel):
     expected_revision: int
 
 
+class ProposedBeliefModel(BaseModel):
+    holder_id: str
+    how: Literal["told", "overheard", "saw"]
+    # How firmly they would believe it; null when no belief is proposed.
+    confidence: float | None
+    # Why, in plain words: their trust, or that they saw it.
+    why: str
+    already: bool = False
+
+
 class TellResult(BaseModel):
-    revision: int
+    """A telling or a witnessed event, waiting in review with a belief for each hearer.
+
+    Nothing is in the story until the proposal is approved."""
+
+    mutation_id: str
     event_id: str
     beliefs: int
     already_knew: list[str]
+    proposals: list[ProposedBeliefModel]
+
+
+class WitnessRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # What happens, in the author's words.
+    name: str = Field(min_length=1, max_length=200)
+    # Who is there; each perceives it unless listed in not_noticed.
+    present_ids: list[str] = Field(min_length=1, max_length=12)
+    not_noticed: list[str] = Field(default_factory=list, max_length=12)
+    # What it shows them: an existing fact, or a statement of its own.
+    fact_id: str | None = None
+    proposition: PropositionRequest | None = None
+    expected_revision: int
+
+
+class TrustModel(BaseModel):
+    """How a character takes what others tell them."""
+
+    entity_id: str
+    default: Stance
+    speakers: dict[str, Stance]
+
+
+class TrustRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    default: Stance = "believes"
+    speakers: dict[str, Stance] = Field(default_factory=dict, max_length=50)
+    expected_revision: int
+
+
+class ClaimRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    proposition: PropositionRequest
+    modality: Literal["states", "suggests", "wonders", "denies"] = "states"
+    # Who says it; leave out for the narration itself.
+    speaker_id: str | None = None
+    # The speaker is narrating (perhaps unreliably) rather than speaking in a scene.
+    narrates: bool = False
+    perceiver_ids: list[str] = Field(default_factory=list, max_length=12)
+    scene_id: str | None = Field(default=None, max_length=200)
+    # Propose, for review, what each hearer comes to believe by their trust in the speaker.
+    hearers_believe: bool = False
+    expected_revision: int
+
+
+class ClaimModel(BaseModel):
+    """Something said in the story. Not necessarily true; never counted as a fact."""
+
+    event: EventModel
+    speaker_id: str | None
+    # "speaker" (a character says it) or "narrator" (a character narrates it); null for the
+    # narration itself.
+    speaker_role: Literal["speaker", "narrator"] | None
+    perceiver_ids: list[str]
+    # What the facts say about it.
+    standing: Literal["borne_out", "contradicted", "unconfirmed"]
+
+
+class ClaimList(BaseModel):
+    items: list[ClaimModel]
+
+
+class RecordedClaimModel(BaseModel):
+    revision: int
+    event_id: str
+    # What the hearers would believe, waiting in review; null unless asked for.
+    beliefs: TellResult | None = None
+
+
+class PromoteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int
+
+
+class PromotionModel(BaseModel):
+    """A proposal to make a claim a fact, waiting in review."""
+
+    mutation_id: str
+
+
+def _telling(telling: Telling) -> TellResult:
+    return TellResult(
+        mutation_id=telling.mutation_id,
+        event_id=telling.event_id,
+        beliefs=telling.beliefs,
+        already_knew=telling.already_knew,
+        proposals=[
+            ProposedBeliefModel(
+                holder_id=item.holder_id,
+                how=item.how,
+                confidence=item.confidence,
+                why=item.why,
+                already=item.already,
+            )
+            for item in telling.proposals
+        ],
+    )
 
 
 class ShownModel(BaseModel):
@@ -169,10 +286,12 @@ async def fact_knowledge(
 async def tell(
     project_id: str,
     body: TellRequest,
-    response: Response,
     scope: AccessScope = Depends(require_project_scope),
     service: KnowledgeService = Depends(get_knowledge_service),
 ) -> TellResult:
+    """Propose a telling: the event, and what each hearer comes to believe by their trust.
+
+    It waits in review; nothing is in the story until it is approved."""
     if (body.fact_id is None) == (body.proposition is None):
         raise ValidationError("Say what is told: one fact, or a statement of its own.")
     if body.fact_id is not None:
@@ -191,13 +310,144 @@ async def tell(
         proposition=proposition,
         expected_revision=body.expected_revision,
     )
-    response.headers["ETag"] = f'"{telling.result.revision}"'
-    return TellResult(
-        revision=telling.result.revision,
-        event_id=telling.event_id,
-        beliefs=telling.beliefs,
-        already_knew=telling.already_knew,
+    return _telling(telling)
+
+
+@router.post("/knowledge/witness", status_code=status.HTTP_201_CREATED)
+async def witness(
+    project_id: str,
+    body: WitnessRequest,
+    scope: AccessScope = Depends(require_project_scope),
+    service: KnowledgeService = Depends(get_knowledge_service),
+) -> TellResult:
+    """Propose something seen: the event, and a belief for each person who notices it."""
+    if (body.fact_id is None) == (body.proposition is None):
+        raise ValidationError("Say what they see: one fact, or a statement of its own.")
+    if body.fact_id is not None:
+        known = await service.fact(scope, scope.workspace_id or "", project_id, body.fact_id)
+        proposition = known.fact.proposition
+    else:
+        assert body.proposition is not None
+        proposition = body.proposition.to_proposition()
+    telling = await service.witness(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        name=body.name,
+        present_ids=body.present_ids,
+        not_noticed=body.not_noticed,
+        proposition=proposition,
+        expected_revision=body.expected_revision,
     )
+    return _telling(telling)
+
+
+@router.get("/knowledge/characters/{entity_id}/trust")
+async def character_trust(
+    project_id: str,
+    entity_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    service: KnowledgeService = Depends(get_knowledge_service),
+) -> TrustModel:
+    policy = await service.trust(scope, scope.workspace_id or "", project_id, entity_id)
+    return TrustModel(entity_id=entity_id, default=policy.default, speakers=policy.speakers)
+
+
+@router.put("/knowledge/characters/{entity_id}/trust")
+async def set_character_trust(
+    project_id: str,
+    entity_id: str,
+    body: TrustRequest,
+    response: Response,
+    scope: AccessScope = Depends(require_project_scope),
+    service: KnowledgeService = Depends(get_knowledge_service),
+) -> TrustModel:
+    """Say how a character takes what others tell them, in general and from particular people."""
+    result, policy = await service.set_trust(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        entity_id,
+        policy=TrustPolicy(default=body.default, speakers=dict(body.speakers)),
+        expected_revision=body.expected_revision,
+    )
+    response.headers["ETag"] = f'"{result.revision}"'
+    return TrustModel(entity_id=entity_id, default=policy.default, speakers=policy.speakers)
+
+
+@router.get("/knowledge/claims")
+async def list_claims(
+    project_id: str,
+    entity_id: str | None = Query(default=None, max_length=200),
+    scene_id: str | None = Query(default=None, max_length=200),
+    scope: AccessScope = Depends(get_project_scope),
+    service: KnowledgeService = Depends(get_knowledge_service),
+) -> ClaimList:
+    """What is said in the story: about or by an entry, or in a scene. Never as facts."""
+    found = await service.claims(
+        scope, scope.workspace_id or "", project_id, entity_id=entity_id, scene_id=scene_id
+    )
+    return ClaimList(
+        items=[
+            ClaimModel(
+                event=_event_model(record.event),
+                speaker_id=record.speaker_id,
+                speaker_role=record.speaker_role,
+                perceiver_ids=record.perceiver_ids,
+                standing=record.standing,
+            )
+            for record in found
+        ]
+    )
+
+
+@router.post("/knowledge/claims", status_code=status.HTTP_201_CREATED)
+async def record_claim(
+    project_id: str,
+    body: ClaimRequest,
+    response: Response,
+    scope: AccessScope = Depends(require_project_scope),
+    service: KnowledgeService = Depends(get_knowledge_service),
+) -> RecordedClaimModel:
+    """Record something said, by the narration, a character or a narrator, as a claim."""
+    recorded = await service.record_claim(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        proposition=body.proposition.to_proposition(),
+        modality=body.modality,
+        speaker_id=body.speaker_id,
+        narrates=body.narrates,
+        perceiver_ids=body.perceiver_ids,
+        scene_id=body.scene_id,
+        hearers_believe=body.hearers_believe,
+        expected_revision=body.expected_revision,
+    )
+    response.headers["ETag"] = f'"{recorded.result.revision}"'
+    return RecordedClaimModel(
+        revision=recorded.result.revision,
+        event_id=recorded.event_id,
+        beliefs=_telling(recorded.beliefs) if recorded.beliefs is not None else None,
+    )
+
+
+@router.post("/knowledge/claims/{event_id}/promote", status_code=status.HTTP_201_CREATED)
+async def promote_claim(
+    project_id: str,
+    event_id: str,
+    body: PromoteRequest,
+    scope: AccessScope = Depends(require_project_scope),
+    service: KnowledgeService = Depends(get_knowledge_service),
+) -> PromotionModel:
+    """Propose making what a claim says a fact. It waits in review."""
+    promotion = await service.promote_claim(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        event_id,
+        expected_revision=body.expected_revision,
+    )
+    return PromotionModel(mutation_id=promotion.mutation_id)
 
 
 @router.get("/reader")

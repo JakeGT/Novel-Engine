@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from sqlalchemy import text
@@ -11,11 +12,13 @@ from backend.core.database import session_scope
 from backend.domain.errors import ConflictError
 from backend.domain.sources import (
     AliasBinding,
+    NameExample,
     SourceKind,
     SourceText,
     SourceVersion,
     Verdict,
     VersionOrigin,
+    replaces,
 )
 
 _OWN = "v.workspace_id = s.workspace_id AND v.project_id = s.project_id AND v.source_id = s.id"
@@ -35,7 +38,8 @@ _VERSION_COLUMNS = (
 _VERSION = f"SELECT {_VERSION_COLUMNS} FROM source_versions"
 _BINDING = (
     "SELECT workspace_id, project_id, id, phrase, normalized, verdict, entity_id, source_id, "
-    "decided_by, decided_at FROM alias_bindings"
+    "decided_by, decided_at, branch_id, from_scene_id, until_scene_id, viewpoint_id, examples "
+    "FROM alias_bindings"
 )
 
 
@@ -85,7 +89,23 @@ def _binding(row: Any) -> AliasBinding:
         source_id=row[7],
         decided_by=row[8],
         decided_at=row[9],
+        branch_id=row[10],
+        from_scene_id=row[11],
+        until_scene_id=row[12],
+        viewpoint_id=row[13],
+        examples=_examples(row[14]),
     )
+
+
+def _examples(raw: Any) -> tuple[NameExample, ...]:
+    items = json.loads(raw) if isinstance(raw, str) else raw
+    if not isinstance(items, list):
+        return ()
+    return tuple(NameExample.from_json(item) for item in items if isinstance(item, dict))
+
+
+def _examples_json(binding: AliasBinding) -> str:
+    return json.dumps([example.as_json() for example in binding.examples])
 
 
 class PostgresSourceStore:
@@ -312,44 +332,76 @@ class PostgresSourceStore:
     async def put_binding(self, binding: AliasBinding) -> None:
         """One decision per phrase, entry and scope: a later answer replaces an earlier one."""
         async with session_scope(self._session_factory) as db:
+            params = {
+                "ws": binding.workspace_id,
+                "pj": binding.project_id,
+                "normalized": binding.normalized,
+            }
+            # Serialise answers about one phrase, so two at once cannot both survive.
             await db.execute(
                 text(
-                    """
-                    DELETE FROM alias_bindings
-                    WHERE workspace_id = :ws AND project_id = :pj AND normalized = :normalized
-                      AND source_id IS NOT DISTINCT FROM :source
-                      AND (entity_id IS NOT DISTINCT FROM :entity
-                           OR verdict = 'ignore' OR :verdict = 'ignore'
-                           OR (:verdict = 'is' AND verdict IN ('is', 'suggested')))
-                    """
+                    "SELECT pg_advisory_xact_lock(hashtext(:ws || ':' || :pj || ':' || :normalized))"
                 ),
-                {
-                    "ws": binding.workspace_id,
-                    "pj": binding.project_id,
-                    "normalized": binding.normalized,
-                    "source": binding.source_id,
-                    "entity": binding.entity_id,
-                    "verdict": binding.verdict.value,
-                },
+                params,
             )
+            rows = (
+                await db.execute(
+                    text(
+                        _BINDING + " WHERE workspace_id = :ws AND project_id = :pj "
+                        "AND normalized = :normalized"
+                    ),
+                    params,
+                )
+            ).all()
+            doomed = [item.id for item in map(_binding, rows) if replaces(item, binding)]
+            if doomed:
+                await db.execute(
+                    text(
+                        "DELETE FROM alias_bindings WHERE workspace_id = :ws "
+                        "AND project_id = :pj AND id = ANY(:ids)"
+                    ),
+                    {**params, "ids": doomed},
+                )
             await db.execute(
                 text(
                     "INSERT INTO alias_bindings (workspace_id, project_id, id, phrase, "
-                    "normalized, verdict, entity_id, source_id, decided_by) VALUES "
-                    "(:ws, :pj, :id, :phrase, :normalized, :verdict, :entity, :source, :actor)"
+                    "normalized, verdict, entity_id, source_id, decided_by, branch_id, "
+                    "from_scene_id, until_scene_id, viewpoint_id, examples) VALUES "
+                    "(:ws, :pj, :id, :phrase, :normalized, :verdict, :entity, :source, :actor, "
+                    ":branch, :from_scene, :until_scene, :viewpoint, CAST(:examples AS JSONB))"
+                ),
+                {
+                    **params,
+                    "id": binding.id,
+                    "phrase": binding.phrase,
+                    "verdict": binding.verdict.value,
+                    "entity": binding.entity_id,
+                    "source": binding.source_id,
+                    "actor": binding.decided_by,
+                    "branch": binding.branch_id,
+                    "from_scene": binding.from_scene_id,
+                    "until_scene": binding.until_scene_id,
+                    "viewpoint": binding.viewpoint_id,
+                    "examples": _examples_json(binding),
+                },
+            )
+
+    async def set_examples(self, binding: AliasBinding) -> bool:
+        """Keep a new list of examples on an answer; False when the answer is gone."""
+        async with session_scope(self._session_factory) as db:
+            result = await db.execute(
+                text(
+                    "UPDATE alias_bindings SET examples = CAST(:examples AS JSONB) "
+                    "WHERE workspace_id = :ws AND project_id = :pj AND id = :id"
                 ),
                 {
                     "ws": binding.workspace_id,
                     "pj": binding.project_id,
                     "id": binding.id,
-                    "phrase": binding.phrase,
-                    "normalized": binding.normalized,
-                    "verdict": binding.verdict.value,
-                    "entity": binding.entity_id,
-                    "source": binding.source_id,
-                    "actor": binding.decided_by,
+                    "examples": _examples_json(binding),
                 },
             )
+            return bool(result.rowcount)  # type: ignore[attr-defined]
 
     async def delete_binding(self, *, workspace_id: str, project_id: str, binding_id: str) -> bool:
         async with session_scope(self._session_factory) as db:

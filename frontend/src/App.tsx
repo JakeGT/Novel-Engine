@@ -11,6 +11,7 @@ import { CustomizePage } from './pages/CustomizePage'
 import { EntryPage } from './pages/EntryPage'
 import { HistoryPage } from './pages/HistoryPage'
 import { InvitePage } from './pages/InvitePage'
+import { KeptPage } from './pages/KeptPage'
 import { Home } from './pages/Home'
 import { MediaPage } from './pages/MediaPage'
 import { Overview } from './pages/Overview'
@@ -20,6 +21,7 @@ import { ReaderGuidePage } from './pages/ReaderGuidePage'
 import { RulesPage } from './pages/RulesPage'
 import { StudioPage } from './pages/StudioPage'
 import { TextPage } from './pages/TextPage'
+import { NamesPage } from './pages/NamesPage'
 import { TextsPage } from './pages/TextsPage'
 import { TimelinePage } from './pages/TimelinePage'
 import { WhatIfPage, WhatIfsPage } from './pages/WhatIfsPage'
@@ -54,6 +56,7 @@ export default function App() {
               <Route path="bible" element={<BiblePage />} />
               <Route path="entries/:entityId" element={<EntryPage />} />
               <Route path="review" element={<ReviewQueue />} />
+              <Route path="review/kept" element={<KeptPage />} />
               <Route path="review/:mutationId" element={<ReviewDetail />} />
               <Route path="plan" element={<PlanPage />} />
               <Route path="plan/:planId/write" element={<StudioPage />} />
@@ -65,6 +68,7 @@ export default function App() {
               <Route path="what-ifs/:branchId" element={<WhatIfPage />} />
               <Route path="texts" element={<TextsPage />} />
               <Route path="texts/:sourceId" element={<TextPage />} />
+              <Route path="names" element={<NamesPage />} />
               <Route path="history" element={<HistoryPage />} />
               <Route path="customize" element={<CustomizePage />} />
               <Route path="media" element={<MediaPage />} />

@@ -150,6 +150,18 @@ def _build_fake_container(settings, tmp_path):
     credential_service = CredentialService(
         vault, tenancy=tenancy_service, ai_settings=ai_settings, ai=ai
     )
+    from backend.services.access_key_service import AccessKeyService
+    from tests.doubles import InMemoryAccessKeyStore
+
+    access_keys = InMemoryAccessKeyStore()
+    purger.attach_access_keys(access_keys)
+    access_key_service = AccessKeyService(
+        access_keys,
+        tenancy=tenancy_service,
+        identity_store=identity_store,
+        rate_limiter=rate_limiter,
+        settings=settings,
+    )
     usage_service = ProviderUsageService(
         usage_store,
         allowances=allowances,
@@ -306,6 +318,7 @@ def _build_fake_container(settings, tmp_path):
         local_mode=not settings.is_hosted,
     )
     studio_service.register_jobs()
+    source_service.studio = studio_service
     from backend.services.assistant_settings_service import AssistantSettingsService, AssistBudget
     from tests.doubles import InMemoryAssistantSettingsStore
 
@@ -378,6 +391,21 @@ def _build_fake_container(settings, tmp_path):
         local_mode=not settings.is_hosted,
         mutation=mutation_service,
     )
+    from backend.services.delegation_service import DelegationService
+    from tests.doubles import InMemoryDelegationStore
+
+    delegation_store = InMemoryDelegationStore()
+    delegation_service = DelegationService(
+        delegation_store,
+        mutation=mutation_service,
+        reader=canon_repository,
+        history=canon_history_service,
+        tenancy=tenancy_service,
+        local_mode=not settings.is_hosted,
+    )
+    mutation_service.delegation = delegation_service
+    # The commit transaction checks a rule is still on, as PostgreSQL does.
+    canon_repository.delegation = delegation_store
     from backend.services.media_service import MediaService
 
     media_service = MediaService(
@@ -429,6 +457,8 @@ def _build_fake_container(settings, tmp_path):
         rate_limiter=rate_limiter,
         credentials=vault,
         credential_service=credential_service,
+        access_keys=access_keys,
+        access_key_service=access_key_service,
         usage=usage_store,
         usage_service=usage_service,
         objects=objects,
@@ -475,6 +505,8 @@ def _build_fake_container(settings, tmp_path):
         assistant_settings_store=assistant_settings_store,
         assistant_settings=assistant_settings,
         assist_budget=AssistBudget(assistant_settings, assist_sessions),
+        delegation_store=delegation_store,
+        delegation_service=delegation_service,
     )
 
 

@@ -118,6 +118,67 @@ async def test_a_later_answer_replaces_an_earlier_one(stores) -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_guess_never_takes_the_place_of_the_authors_answer(stores) -> None:
+    """A model's guess saved after the author answered keeps the answer and its examples."""
+    from dataclasses import replace
+
+    from backend.domain.sources import NameExample
+
+    store, _ = stores
+    await _add(store, "src_a", "The Fox waved.")
+    example = NameExample(id="nex_1", quote="The Fox waved.", means=True, at=(0, 7))
+    await store.put_binding(replace(_binding("alb_1", Verdict.IS, "ent_1"), examples=(example,)))
+    await store.put_binding(_binding("alb_2", Verdict.IGNORE, None, source_id="src_a"))
+    await store.put_binding(_binding("alb_3", Verdict.SUGGESTED, "ent_1"))
+    await store.put_binding(_binding("alb_4", Verdict.SUGGESTED, "ent_2", source_id="src_a"))
+    found = {b.id: b for b in await store.list_bindings(**SCOPE)}
+    assert found["alb_1"].examples == (example,)
+    assert found["alb_2"].verdict is Verdict.IGNORE
+
+
+@pytest.mark.asyncio
+async def test_scoped_answers_keep_their_limits_and_examples(stores) -> None:
+    """CTX-016: answers with different limits live side by side; examples are kept."""
+    from dataclasses import replace
+
+    from backend.domain.sources import NameExample
+
+    store, _ = stores
+    everywhere = _binding("alb_1", Verdict.IS, "ent_1")
+    example = NameExample(
+        id="nex_1", quote="The Fox waved.", means=True, scene_id="pln_2", at=(0, 7), noted_at=None
+    )
+    scoped = replace(
+        _binding("alb_2", Verdict.IS, "ent_2"),
+        branch_id="br_1",
+        from_scene_id="pln_2",
+        until_scene_id="pln_3",
+        viewpoint_id="ent_9",
+        examples=(example,),
+    )
+    await store.put_binding(everywhere)
+    await store.put_binding(scoped)
+    found = {b.id: b for b in await store.list_bindings(**SCOPE)}
+    assert set(found) == {"alb_1", "alb_2"}
+    back = found["alb_2"]
+    assert (back.branch_id, back.from_scene_id, back.until_scene_id, back.viewpoint_id) == (
+        "br_1",
+        "pln_2",
+        "pln_3",
+        "ent_9",
+    )
+    assert back.examples == (example,)
+
+    # The same scope answered again replaces only that answer.
+    await store.put_binding(replace(scoped, id="alb_3", entity_id="ent_3", examples=()))
+    assert {b.id for b in await store.list_bindings(**SCOPE)} == {"alb_1", "alb_3"}
+    assert await store.set_examples(replace(scoped, id="alb_3", examples=(example,))) is True
+    assert await store.set_examples(replace(scoped, id="alb_gone")) is False
+    kept = {b.id: b for b in await store.list_bindings(**SCOPE)}
+    assert kept["alb_3"].examples == (example,)
+
+
+@pytest.mark.asyncio
 async def test_deleting_a_story_or_a_workspace_takes_its_texts(stores) -> None:
     store, _ = stores
     await _add(store, "src_a", "Words.")

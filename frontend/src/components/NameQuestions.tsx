@@ -1,13 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api, type CanonEntity, type NameQuestion, type SourceTextDetail } from '../api/client'
+import { defaultLimit, limitBody, limitProblem, type NameLimit } from '../lib/names'
 import { typeLabel } from '../lib/words'
 import { scopedKey, useCanonWrite, useProject } from '../project'
+import { useNameChoices } from '../lib/nameChoices'
+import { NameLimitField } from './NameLimitField'
 import { Button, ErrorNotice, WriteProblem } from './ui'
 
 /**
  * "Who is this?", one phrase at a time. An answer is remembered, so the same
- * question is not asked again in the next text.
+ * question is not asked again in the next text. It can be kept to this text, a
+ * stretch of scenes or one viewpoint, and the passage it was answered from is kept
+ * with it as an example.
  */
 export function NameQuestions({
   detail,
@@ -19,7 +25,11 @@ export function NameQuestions({
   const { scope, canWrite } = useProject()
   const client = useQueryClient()
   const [later, setLater] = useState<string[]>([])
-  const [onlyHere, setOnlyHere] = useState(false)
+  const limits = useNameChoices()
+  const sceneId = detail.text.scene_id ?? null
+  const [limit, setLimit] = useState<NameLimit>(() => defaultLimit(limits.inWhatIf, sceneId))
+  const [tried, setTried] = useState(false)
+  const problem = limitProblem(limit, limits.order)
   const [other, setOther] = useState('')
   const [newType, setNewType] = useState('Character')
   const vocabulary = useQuery({
@@ -32,6 +42,7 @@ export function NameQuestions({
   const question: NameQuestion | undefined = waiting[0]
   const refresh = async () => {
     setOther('')
+    setTried(false)
     await client.invalidateQueries({ queryKey: scopedKey(scope, 'text') })
     await client.invalidateQueries({ queryKey: scopedKey(scope, 'names') })
   }
@@ -42,10 +53,24 @@ export function NameQuestions({
         phrase: question?.phrase ?? '',
         verdict: answer.verdict,
         entity_id: answer.entityId ?? null,
-        source_id: onlyHere && answer.verdict !== 'ignore' ? detail.text.id : null,
+        ...limitBody(limit, { textId: detail.text.id, inWhatIf: limits.inWhatIf }),
+        // The words it was answered from, kept with the answer as an example.
+        example: question
+          ? {
+              source_id: detail.text.id,
+              version_id: detail.version.id,
+              start: question.first_start,
+              end: question.first_end,
+            }
+          : null,
       }),
     onSuccess: refresh,
   })
+  const answer = (verdict: 'is' | 'is_not' | 'ignore', entityId?: string) => {
+    setTried(true)
+    if (problem) return
+    decide.mutate({ verdict, entityId })
+  }
   const addEntry = useCanonWrite(
     (expectedRevision, phrase: string) =>
       api.addEntryFromText(scope, detail.text.id, {
@@ -105,6 +130,24 @@ export function NameQuestions({
 
       {canWrite ? (
         <>
+          <NameLimitField
+            value={limit}
+            onChange={(next) =>
+              // Seen by: the scene's own viewpoint character is the likely one.
+              setLimit(
+                next.only === 'seen_by' && limit.only !== 'seen_by' && !next.viewpoint && sceneId
+                  ? { ...next, viewpoint: limits.viewpoints[sceneId] ?? '' }
+                  : next,
+              )
+            }
+            scenes={limits.scenes}
+            characters={limits.characters}
+            textTitle={detail.text.title}
+            currentSceneId={sceneId}
+            whatIfName={limits.whatIfName}
+            problem={tried ? problem : null}
+            disabled={busy}
+          />
           <div className="actions">
             {question.candidates.map((entityId) => (
               <Button
@@ -112,7 +155,7 @@ export function NameQuestions({
                 size="sm"
                 variant="primary"
                 disabled={busy}
-                onClick={() => decide.mutate({ verdict: 'is', entityId })}
+                onClick={() => answer('is', entityId)}
               >
                 It is {nameOf(entityId)}
               </Button>
@@ -121,7 +164,7 @@ export function NameQuestions({
               <Button
                 size="sm"
                 disabled={busy}
-                onClick={() => decide.mutate({ verdict: 'is_not', entityId: question.candidates[0] })}
+                onClick={() => answer('is_not', question.candidates[0])}
               >
                 Not {nameOf(question.candidates[0])}
               </Button>
@@ -143,7 +186,7 @@ export function NameQuestions({
             <Button
               size="sm"
               disabled={busy || !other}
-              onClick={() => decide.mutate({ verdict: 'is', entityId: other })}
+              onClick={() => answer('is', other)}
             >
               That one
             </Button>
@@ -166,18 +209,17 @@ export function NameQuestions({
           </div>
 
           <div className="actions">
-            <Button size="sm" variant="ghost" disabled={busy} onClick={() => decide.mutate({ verdict: 'ignore' })}>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => answer('ignore')}>
               Not a name
             </Button>
             <Button size="sm" variant="ghost" disabled={busy} onClick={() => setLater([...later, question.phrase])}>
               Ask me later
             </Button>
-            <label className="check small">
-              <input type="checkbox" checked={onlyHere} onChange={(event) => setOnlyHere(event.target.checked)} />
-              Only in this text
-            </label>
           </div>
           <ErrorNotice error={decide.error} prefix="Could not remember that" />
+          <p className="small">
+            <Link to={`/projects/${scope.projectId}/names`}>Every name you have answered</Link>
+          </p>
           <WriteProblem write={addEntry} scope={scope} />
         </>
       ) : (

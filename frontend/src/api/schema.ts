@@ -21,6 +21,82 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/access-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Access Keys */
+        get: operations["list_access_keys_api_v1_access_keys_get"];
+        put?: never;
+        /** Create Access Key */
+        post: operations["create_access_key_api_v1_access_keys_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/access-keys/{key_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke Access Key */
+        post: operations["revoke_access_key_api_v1_access_keys__key_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/access-keys/{key_id}/uses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Access Key Uses */
+        get: operations["access_key_uses_api_v1_access_keys__key_id__uses_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/kept-for-you": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Workspace Kept
+         * @description Whether a workspace owner turned off keeping suggestions for every story.
+         */
+        get: operations["get_workspace_kept_api_v1_ai_kept_for_you_get"];
+        /**
+         * Set Workspace Kept
+         * @description An owner turns keeping suggestions off, or back on, for every story here.
+         */
+        put: operations["set_workspace_kept_api_v1_ai_kept_for_you_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ai/limits": {
         parameters: {
             query?: never;
@@ -1896,6 +1972,111 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/kept-for-you": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Kept
+         * @description What was kept for the author, newest first.
+         */
+        get: operations["list_kept_api_v1_projects__project_id__kept_for_you_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/kept-for-you/decisions/{mutation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Keep Decision
+         * @description Whether a suggestion was kept for the author, approved by hand, or why it waited.
+         */
+        get: operations["get_keep_decision_api_v1_projects__project_id__kept_for_you_decisions__mutation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/kept-for-you/seen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Kept Seen
+         * @description The person has looked at what was kept; the review queue counts from now.
+         */
+        post: operations["mark_kept_seen_api_v1_projects__project_id__kept_for_you_seen_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/kept-for-you/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Kept Settings
+         * @description Which kinds of suggestion are kept without asking in this story.
+         */
+        get: operations["get_kept_settings_api_v1_projects__project_id__kept_for_you_settings_get"];
+        /**
+         * Set Kept Settings
+         * @description Choose the kinds to keep. A kind not yet approved by hand often enough is refused
+         *     (400); switching off is never refused and takes effect at once.
+         */
+        put: operations["set_kept_settings_api_v1_projects__project_id__kept_for_you_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/kept-for-you/{mutation_id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo Kept
+         * @description Suggest undoing something that was kept. The undo waits in the review queue.
+         */
+        post: operations["undo_kept_api_v1_projects__project_id__kept_for_you__mutation_id__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/knowledge/characters/{entity_id}": {
         parameters: {
             query?: never;
@@ -1907,6 +2088,71 @@ export interface paths {
         get: operations["character_knowledge_api_v1_projects__project_id__knowledge_characters__entity_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/knowledge/characters/{entity_id}/trust": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Character Trust */
+        get: operations["character_trust_api_v1_projects__project_id__knowledge_characters__entity_id__trust_get"];
+        /**
+         * Set Character Trust
+         * @description Say how a character takes what others tell them, in general and from particular people.
+         */
+        put: operations["set_character_trust_api_v1_projects__project_id__knowledge_characters__entity_id__trust_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/knowledge/claims": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Claims
+         * @description What is said in the story: about or by an entry, or in a scene. Never as facts.
+         */
+        get: operations["list_claims_api_v1_projects__project_id__knowledge_claims_get"];
+        put?: never;
+        /**
+         * Record Claim
+         * @description Record something said, by the narration, a character or a narrator, as a claim.
+         */
+        post: operations["record_claim_api_v1_projects__project_id__knowledge_claims_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/knowledge/claims/{event_id}/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Promote Claim
+         * @description Propose making what a claim says a fact. It waits in review.
+         */
+        post: operations["promote_claim_api_v1_projects__project_id__knowledge_claims__event_id__promote_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1939,8 +2185,33 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Tell */
+        /**
+         * Tell
+         * @description Propose a telling: the event, and what each hearer comes to believe by their trust.
+         *
+         *     It waits in review; nothing is in the story until it is approved.
+         */
         post: operations["tell_api_v1_projects__project_id__knowledge_tell_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/knowledge/witness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Witness
+         * @description Propose something seen: the event, and a belief for each person who notices it.
+         */
+        post: operations["witness_api_v1_projects__project_id__knowledge_witness_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2231,6 +2502,43 @@ export interface paths {
         post?: never;
         /** Forget Name */
         delete: operations["forget_name_api_v1_projects__project_id__names__binding_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/names/{binding_id}/examples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Name Example
+         * @description Keep a passage with an answer: here the phrase does, or does not, mean its entry.
+         */
+        post: operations["add_name_example_api_v1_projects__project_id__names__binding_id__examples_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/names/{binding_id}/examples/{example_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Name Example */
+        delete: operations["remove_name_example_api_v1_projects__project_id__names__binding_id__examples__example_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3701,6 +4009,52 @@ export interface components {
             /** Token */
             token: string;
         };
+        /** AccessKeyModel */
+        AccessKeyModel: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Hint */
+            hint: string;
+            /** Holder Name */
+            holder_name?: string | null;
+            /** Id */
+            id: string;
+            /** Last Used At */
+            last_used_at: string | null;
+            /** May Suggest */
+            may_suggest: boolean;
+            /** Mine */
+            mine: boolean;
+            /** Name */
+            name: string;
+            /** Project Id */
+            project_id: string | null;
+            /** Revoked At */
+            revoked_at: string | null;
+            /** Revoked Reason */
+            revoked_reason: string | null;
+            /** Status */
+            status: string;
+        };
+        /** AccessKeyUseModel */
+        AccessKeyUseModel: {
+            /** Calls */
+            calls: number;
+            /** Day */
+            day: string;
+            /** Refused */
+            refused: number;
+            /** Tool */
+            tool: string;
+        };
         /** AddEntryFromTextRequest */
         AddEntryFromTextRequest: {
             /** Entity Type */
@@ -3930,6 +4284,8 @@ export interface components {
             proposition: components["schemas"]["Proposition"];
             /** Source Ref */
             source_ref?: string | null;
+            /** Why */
+            why?: string | null;
         };
         /** AssertFactOp */
         AssertFactOp: {
@@ -3957,6 +4313,8 @@ export interface components {
             /** Valid Until */
             valid_until?: string | null;
             visibility?: components["schemas"]["FactVisibility"] | null;
+            /** Why */
+            why?: string | null;
         };
         /** AssertFactRequest */
         AssertFactRequest: {
@@ -4673,6 +5031,57 @@ export interface components {
             /** Expected Revision */
             expected_revision: number;
         };
+        /** ClaimList */
+        ClaimList: {
+            /** Items */
+            items: components["schemas"]["ClaimModel"][];
+        };
+        /**
+         * ClaimModel
+         * @description Something said in the story. Not necessarily true; never counted as a fact.
+         */
+        ClaimModel: {
+            event: components["schemas"]["EventModel"];
+            /** Perceiver Ids */
+            perceiver_ids: string[];
+            /** Speaker Id */
+            speaker_id: string | null;
+            /** Speaker Role */
+            speaker_role: ("speaker" | "narrator") | null;
+            /**
+             * Standing
+             * @enum {string}
+             */
+            standing: "borne_out" | "contradicted" | "unconfirmed";
+        };
+        /** ClaimRequest */
+        ClaimRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+            /**
+             * Hearers Believe
+             * @default false
+             */
+            hearers_believe: boolean;
+            /**
+             * Modality
+             * @default states
+             * @enum {string}
+             */
+            modality: "states" | "suggests" | "wonders" | "denies";
+            /**
+             * Narrates
+             * @default false
+             */
+            narrates: boolean;
+            /** Perceiver Ids */
+            perceiver_ids?: string[];
+            proposition: components["schemas"]["PropositionRequest"];
+            /** Scene Id */
+            scene_id?: string | null;
+            /** Speaker Id */
+            speaker_id?: string | null;
+        };
         /** CloseBeliefOp */
         CloseBeliefOp: {
             /** Evidence */
@@ -4696,6 +5105,8 @@ export interface components {
              * @enum {string}
              */
             op: "close_fact";
+            /** Why */
+            why?: string | null;
         };
         /** CloseRequest */
         CloseRequest: {
@@ -4878,6 +5289,23 @@ export interface components {
             /** Pins */
             pins?: string[];
         };
+        /** CreateAccessKeyRequest */
+        CreateAccessKeyRequest: {
+            /**
+             * Expires In Days
+             * @default 90
+             */
+            expires_in_days: number;
+            /**
+             * May Suggest
+             * @default false
+             */
+            may_suggest: boolean;
+            /** Name */
+            name: string;
+            /** Project Id */
+            project_id?: string | null;
+        };
         /** CreateCredentialRequest */
         CreateCredentialRequest: {
             /** Key */
@@ -4940,6 +5368,7 @@ export interface components {
         CreateEventOp: {
             /** Cause Ids */
             cause_ids?: string[];
+            claim?: components["schemas"]["EventClaim"] | null;
             /** Evidence */
             evidence?: components["schemas"]["EvidenceRef"][];
             /** Id */
@@ -5030,6 +5459,12 @@ export interface components {
              * @example harbor
              */
             slug: string;
+        };
+        /** CreatedAccessKeyModel */
+        CreatedAccessKeyModel: {
+            access_key: components["schemas"]["AccessKeyModel"];
+            /** Key */
+            key: string;
         };
         /** CredentialModel */
         CredentialModel: {
@@ -5484,10 +5919,44 @@ export interface components {
             /** Value */
             value: string;
         };
+        /**
+         * EventClaim
+         * @description What a claim says, how, and where. Never a fact (ADR-020 amendment).
+         */
+        EventClaim: {
+            /**
+             * Modality
+             * @default states
+             * @enum {string}
+             */
+            modality: "states" | "suggests" | "wonders" | "denies";
+            proposition: components["schemas"]["Proposition"];
+            /** Scene Id */
+            scene_id?: string | null;
+        };
+        /**
+         * EventClaimModel
+         * @description What a claim says (never a fact), how it is said, and the scene it is said in.
+         */
+        EventClaimModel: {
+            /** Modality */
+            modality: string;
+            /** Object */
+            object: {
+                [key: string]: unknown;
+            };
+            /** Predicate */
+            predicate: string;
+            /** Scene Id */
+            scene_id?: string | null;
+            /** Subject Id */
+            subject_id: string;
+        };
         /** EventModel */
         EventModel: {
             /** Cause Ids */
             cause_ids: string[];
+            claim?: components["schemas"]["EventClaimModel"] | null;
             /** Created Revision */
             created_revision: number;
             /** Id */
@@ -5842,10 +6311,43 @@ export interface components {
          * @enum {string}
          */
         Keep: "what_if" | "main";
+        /**
+         * KeepDecisionModel
+         * @description How one suggestion was decided, when the rules looked at it.
+         */
+        KeepDecisionModel: {
+            /** How */
+            how?: string | null;
+            /** Kinds */
+            kinds?: string[];
+            /** Mutation Id */
+            mutation_id: string;
+            /** Note */
+            note?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Reason Code */
+            reason_code?: string | null;
+        };
         /** KeepRequest */
         KeepRequest: {
             /** Base Version Id */
             base_version_id?: string | null;
+        };
+        /** KeepRuleModel */
+        KeepRuleModel: {
+            /** Description */
+            description: string;
+            /** Hand Approvals */
+            hand_approvals: number;
+            /** Kind */
+            kind: string;
+            /** Name */
+            name: string;
+            /** On */
+            on: boolean;
+            /** Since */
+            since: string | null;
         };
         /**
          * KeptContextModel
@@ -5865,6 +6367,63 @@ export interface components {
             version_number: number;
             /** Words */
             words: number;
+        };
+        /** KeptItemModel */
+        KeptItemModel: {
+            /**
+             * Kept At
+             * Format: date-time
+             */
+            kept_at: string;
+            /** Kinds */
+            kinds: string[];
+            /** Mutation Id */
+            mutation_id: string;
+            /** Note */
+            note: string;
+            /** Operations */
+            operations: components["schemas"]["KeptOperationModel"][];
+            /** Revision */
+            revision: number | null;
+            /** Undo Mutation Id */
+            undo_mutation_id: string | null;
+            /** Undo Status */
+            undo_status: string | null;
+        };
+        /** KeptListModel */
+        KeptListModel: {
+            /** Items */
+            items: components["schemas"]["KeptItemModel"][];
+        };
+        /** KeptOperationModel */
+        KeptOperationModel: {
+            /** Operation Type */
+            operation_type: string;
+            /** Ordinal */
+            ordinal: number;
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+        };
+        /** KeptSettingsModel */
+        KeptSettingsModel: {
+            /** Allow Clients */
+            allow_clients: boolean;
+            /** Always Waits */
+            always_waits: string[];
+            /** Daily Limit */
+            daily_limit: number;
+            /** Hand Approvals Needed */
+            hand_approvals_needed: number;
+            /** Kept Since Seen */
+            kept_since_seen: number;
+            /** Rules */
+            rules: components["schemas"]["KeepRuleModel"][];
+            /** Size Limit */
+            size_limit: number;
+            /** Workspace Forbidden */
+            workspace_forbidden: boolean;
         };
         /** KnownFactModel */
         KnownFactModel: {
@@ -6151,6 +6710,8 @@ export interface components {
         };
         /** NameDecisionModel */
         NameDecisionModel: {
+            /** Branch Id */
+            branch_id?: string | null;
             /**
              * Decided At
              * Format: date-time
@@ -6158,24 +6719,85 @@ export interface components {
             decided_at: string;
             /** Entity Id */
             entity_id: string | null;
+            /** Examples */
+            examples?: components["schemas"]["NameExampleModel"][];
+            /** From Scene Id */
+            from_scene_id?: string | null;
             /** Id */
             id: string;
             /** Phrase */
             phrase: string;
             /** Source Id */
             source_id: string | null;
+            /** Until Scene Id */
+            until_scene_id?: string | null;
             /** Verdict */
             verdict: string;
+            /** Viewpoint Id */
+            viewpoint_id?: string | null;
         };
         /** NameDecisionRequest */
         NameDecisionRequest: {
             /** Entity Id */
             entity_id?: string | null;
+            example?: components["schemas"]["NameExampleRequest"] | null;
+            /** From Scene Id */
+            from_scene_id?: string | null;
             /** Phrase */
             phrase: string;
             /** Source Id */
             source_id?: string | null;
+            /** Until Scene Id */
+            until_scene_id?: string | null;
             verdict: components["schemas"]["Verdict"];
+            /** Viewpoint Id */
+            viewpoint_id?: string | null;
+            /** What If Only */
+            what_if_only?: boolean | null;
+        };
+        /** NameExampleModel */
+        NameExampleModel: {
+            /** At */
+            at?: number[] | null;
+            /** Holds */
+            holds?: boolean | null;
+            /** Id */
+            id: string;
+            /** Means */
+            means: boolean;
+            /** Noted At */
+            noted_at?: string | null;
+            /** Now */
+            now?: string[];
+            /** Quote */
+            quote: string;
+            /** Scene Id */
+            scene_id?: string | null;
+            /** Source Id */
+            source_id?: string | null;
+            /** Version Id */
+            version_id?: string | null;
+        };
+        /**
+         * NameExampleRequest
+         * @description A passage the author confirms: picked in a text (its words are read from the text)
+         *     or typed out (it must use the phrase).
+         */
+        NameExampleRequest: {
+            /** End */
+            end?: number | null;
+            /** Means */
+            means?: boolean | null;
+            /** Quote */
+            quote?: string | null;
+            /** Scene Id */
+            scene_id?: string | null;
+            /** Source Id */
+            source_id?: string | null;
+            /** Start */
+            start?: number | null;
+            /** Version Id */
+            version_id?: string | null;
         };
         /** NameMemoryModel */
         NameMemoryModel: {
@@ -6183,6 +6805,10 @@ export interface components {
             items: components["schemas"]["NameDecisionModel"][];
             /** Names */
             names: {
+                [key: string]: string;
+            };
+            /** Scenes */
+            scenes?: {
                 [key: string]: string;
             };
         };
@@ -6564,6 +7190,19 @@ export interface components {
             /** Subject Id */
             subject_id: string;
         };
+        /** PromoteRequest */
+        PromoteRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /**
+         * PromotionModel
+         * @description A proposal to make a claim a fact, waiting in review.
+         */
+        PromotionModel: {
+            /** Mutation Id */
+            mutation_id: string;
+        };
         /** ProposalIssueModel */
         ProposalIssueModel: {
             /** Code */
@@ -6591,6 +7230,25 @@ export interface components {
              * @default author
              */
             origin: string;
+        };
+        /** ProposedBeliefModel */
+        ProposedBeliefModel: {
+            /**
+             * Already
+             * @default false
+             */
+            already: boolean;
+            /** Confidence */
+            confidence: number | null;
+            /** Holder Id */
+            holder_id: string;
+            /**
+             * How
+             * @enum {string}
+             */
+            how: "told" | "overheard" | "saw";
+            /** Why */
+            why: string;
         };
         /**
          * Proposition
@@ -6764,6 +7422,14 @@ export interface components {
         RebuildResult: {
             /** Passages */
             passages: number;
+        };
+        /** RecordedClaimModel */
+        RecordedClaimModel: {
+            beliefs?: components["schemas"]["TellResult"] | null;
+            /** Event Id */
+            event_id: string;
+            /** Revision */
+            revision: number;
         };
         /**
          * Relative
@@ -7328,6 +7994,16 @@ export interface components {
             /** Expected Revision */
             expected_revision: number;
         };
+        /** SetKeptSettingsRequest */
+        SetKeptSettingsRequest: {
+            /**
+             * Allow Clients
+             * @default false
+             */
+            allow_clients: boolean;
+            /** Kinds */
+            kinds?: string[];
+        };
         /** SetPathRequest */
         SetPathRequest: {
             /** Expected Revision */
@@ -7352,6 +8028,11 @@ export interface components {
             expected_revision: number;
             /** When */
             when?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
+        };
+        /** SetWorkspaceKeptRequest */
+        SetWorkspaceKeptRequest: {
+            /** Forbidden */
+            forbidden: boolean;
         };
         /** SetWorkspaceLimitsRequest */
         SetWorkspaceLimitsRequest: {
@@ -7477,7 +8158,12 @@ export interface components {
             /** Speaker Id */
             speaker_id: string;
         };
-        /** TellResult */
+        /**
+         * TellResult
+         * @description A telling or a witnessed event, waiting in review with a belief for each hearer.
+         *
+         *     Nothing is in the story until the proposal is approved.
+         */
         TellResult: {
             /** Already Knew */
             already_knew: string[];
@@ -7485,8 +8171,10 @@ export interface components {
             beliefs: number;
             /** Event Id */
             event_id: string;
-            /** Revision */
-            revision: number;
+            /** Mutation Id */
+            mutation_id: string;
+            /** Proposals */
+            proposals: components["schemas"]["ProposedBeliefModel"][];
         };
         /** TextDetailModel */
         TextDetailModel: {
@@ -7580,6 +8268,43 @@ export interface components {
             fact: components["schemas"]["FactModel"];
             /** Truth */
             truth: string;
+        };
+        /**
+         * TrustModel
+         * @description How a character takes what others tell them.
+         */
+        TrustModel: {
+            /**
+             * Default
+             * @enum {string}
+             */
+            default: "believes" | "doubts" | "disbelieves";
+            /** Entity Id */
+            entity_id: string;
+            /** Speakers */
+            speakers: {
+                [key: string]: "believes" | "doubts" | "disbelieves";
+            };
+        };
+        /** TrustRequest */
+        TrustRequest: {
+            /**
+             * Default
+             * @default believes
+             * @enum {string}
+             */
+            default: "believes" | "doubts" | "disbelieves";
+            /** Expected Revision */
+            expected_revision: number;
+            /** Speakers */
+            speakers?: {
+                [key: string]: "believes" | "doubts" | "disbelieves";
+            };
+        };
+        /** UndoModel */
+        UndoModel: {
+            /** Undo Mutation Id */
+            undo_mutation_id: string;
         };
         /** UnitModel */
         UnitModel: {
@@ -7776,6 +8501,25 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** WitnessRequest */
+        WitnessRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+            /** Fact Id */
+            fact_id?: string | null;
+            /** Name */
+            name: string;
+            /** Not Noticed */
+            not_noticed?: string[];
+            /** Present Ids */
+            present_ids: string[];
+            proposition?: components["schemas"]["PropositionRequest"] | null;
+        };
+        /** WorkspaceKeptModel */
+        WorkspaceKeptModel: {
+            /** Forbidden */
+            forbidden: boolean;
+        };
         /** WorkspaceLimitsModel */
         WorkspaceLimitsModel: {
             /** Confirm Above Tokens */
@@ -7900,6 +8644,174 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_access_keys_api_v1_access_keys_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessKeyModel"][];
+                };
+            };
+        };
+    };
+    create_access_key_api_v1_access_keys_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAccessKeyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedAccessKeyModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_access_key_api_v1_access_keys__key_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessKeyModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    access_key_uses_api_v1_access_keys__key_id__uses_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessKeyUseModel"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workspace_kept_api_v1_ai_kept_for_you_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceKeptModel"];
+                };
+            };
+        };
+    };
+    set_workspace_kept_api_v1_ai_kept_for_you_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetWorkspaceKeptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceKeptModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -12098,6 +13010,196 @@ export interface operations {
             };
         };
     };
+    list_kept_api_v1_projects__project_id__kept_for_you_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeptListModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_keep_decision_api_v1_projects__project_id__kept_for_you_decisions__mutation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                mutation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeepDecisionModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_kept_seen_api_v1_projects__project_id__kept_for_you_seen_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_kept_settings_api_v1_projects__project_id__kept_for_you_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeptSettingsModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_kept_settings_api_v1_projects__project_id__kept_for_you_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetKeptSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeptSettingsModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_kept_api_v1_projects__project_id__kept_for_you__mutation_id__undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                mutation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UndoModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     character_knowledge_api_v1_projects__project_id__knowledge_characters__entity_id__get: {
         parameters: {
             query?: never;
@@ -12117,6 +13219,179 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CharacterKnowledgeModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    character_trust_api_v1_projects__project_id__knowledge_characters__entity_id__trust_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrustModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_character_trust_api_v1_projects__project_id__knowledge_characters__entity_id__trust_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrustRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrustModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_claims_api_v1_projects__project_id__knowledge_claims_get: {
+        parameters: {
+            query?: {
+                entity_id?: string | null;
+                scene_id?: string | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaimList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_claim_api_v1_projects__project_id__knowledge_claims_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClaimRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordedClaimModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    promote_claim_api_v1_projects__project_id__knowledge_claims__event_id__promote_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotionModel"];
                 };
             };
             /** @description Validation Error */
@@ -12174,6 +13449,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TellRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TellResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    witness_api_v1_projects__project_id__knowledge_witness_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WitnessRequest"];
             };
         };
         responses: {
@@ -12809,6 +14119,75 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_name_example_api_v1_projects__project_id__names__binding_id__examples_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                binding_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NameExampleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NameDecisionModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_name_example_api_v1_projects__project_id__names__binding_id__examples__example_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                binding_id: string;
+                example_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NameDecisionModel"];
+                };
             };
             /** @description Validation Error */
             422: {

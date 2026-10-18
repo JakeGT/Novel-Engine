@@ -24,6 +24,7 @@ from typing import Any
 
 from backend.adapters.system import uuid7
 from backend.core.logging import log_event
+from backend.domain.branching import working_branch_id
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.jobs import Job, JobStatus
@@ -260,7 +261,10 @@ class SceneReadingService:
             )
             await self._store.save_reading(mine)
         passages = changed_passages(version.content, read.seen)
-        index, entities, _ = await self._sources.index_for(workspace_id, project_id, source_id)
+        # Names are read as this scene reads them (CTX-016).
+        index, entities, _ = await self._sources.index_for(
+            workspace_id, project_id, source_id, scene_id=plan_id
+        )
         mentions = find_mentions(version.content, index)
         first = passages[0].end - passages[0].start if passages else 0
         _, api_key, base_url, sink = await resolve_provider(
@@ -351,6 +355,8 @@ class SceneReadingService:
                             entity_id=guess.entity_id,
                             source_id=source_id,
                             actor_user_id=None,
+                            # A guess made reading a what-if stays in that what-if.
+                            branch_id=working_branch_id(),
                         )
                         guesses += 1
                     except NotFoundError:

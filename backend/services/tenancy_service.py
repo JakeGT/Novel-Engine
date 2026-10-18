@@ -8,6 +8,7 @@ outcomes only (never raw invitation or session tokens).
 from __future__ import annotations
 
 import time
+from typing import Protocol
 
 from backend.core.config import Settings
 from backend.core.security import generate_token, hash_token
@@ -28,6 +29,15 @@ from backend.ports import (
     TenancyStorePort,
     WorkspacePurgePort,
 )
+
+
+class MemberKeys(Protocol):
+    """Access keys a member holds (ADR-024): withdrawn for good when they are removed."""
+
+    async def withdraw_for_member(
+        self, scope: AccessScope, workspace_id: str, user_id: str
+    ) -> list[str]: ...
+
 
 INVITATION_TTL_SECONDS = 60 * 60 * 24 * 7
 ACCEPT_RATE_LIMIT = 10
@@ -58,6 +68,10 @@ class TenancyService:
         self._accept_rate_limit = accept_rate_limit
         self._accept_rate_window_seconds = accept_rate_window_seconds
         self._accept_hits: dict[str, list[float]] = {}
+        self._member_keys: MemberKeys | None = None
+
+    def attach_member_keys(self, keys: MemberKeys) -> None:
+        self._member_keys = keys
 
     async def _revoke_sessions(self, *user_ids: str) -> None:
         """Invalidate active sessions after a privilege change so roles re-evaluate."""
@@ -292,6 +306,9 @@ class TenancyService:
                 target_type="membership",
                 target_id=user_id,
             )
+            if self._member_keys is not None:
+                # For good: coming back later does not bring a key back (ADR-024).
+                await self._member_keys.withdraw_for_member(scope, workspace_id, user_id)
         return removed
 
     async def transfer_ownership(

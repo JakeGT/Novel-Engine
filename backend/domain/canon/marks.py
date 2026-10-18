@@ -8,6 +8,10 @@ Three things are stored under reserved keys in an entry's attributes:
 - needs detail: set when an entry was created from a passing mention, so it is
   offered for filling in later.
 
+A fourth reserved key, ``_trust``, holds how a character takes what others tell them
+(KNW-006, ``backend/domain/trust.py``). It is set aside with the marks for the same
+reason, though it is not a mark.
+
 They are the author's (or the assistant's, subject to review) and are changed like
 any other detail, through reviewed canon operations. The keys start with an
 underscore, which a project-defined field name cannot, so they never collide with
@@ -22,7 +26,9 @@ from typing import Any
 TAGS_KEY = "_tags"
 IMPORTANCE_KEY = "_importance"
 NEEDS_DETAIL_KEY = "_needs_detail"
-MARK_KEYS = frozenset({TAGS_KEY, IMPORTANCE_KEY, NEEDS_DETAIL_KEY})
+TRUST_KEY = "_trust"
+# Every reserved key: set aside before details are checked against their type.
+MARK_KEYS = frozenset({TAGS_KEY, IMPORTANCE_KEY, NEEDS_DETAIL_KEY, TRUST_KEY})
 
 # Most to least central. Lists show entries in this order.
 IMPORTANCE_LEVELS = ("main", "supporting", "minor", "background")

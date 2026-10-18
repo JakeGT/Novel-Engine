@@ -19,7 +19,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from backend.domain.canon.assertions import FactVisibility
-from backend.domain.canon.events import EventParticipant
+from backend.domain.canon.events import EventClaim, EventParticipant
 from backend.domain.canon.plans import PlanKind, PlanRef
 from backend.domain.canon.propositions import EntityRefObject, Proposition
 from backend.domain.canon.revisions import OriginKind
@@ -101,10 +101,14 @@ class AssertFactOp(_Operation):
     ends: WorldTime | None = None
     # Unset is ordinary: known to whoever holds it, with nothing more said.
     visibility: FactVisibility | None = None
+    # Why this fact is proposed, in plain words (a claim made a fact); proposal only.
+    why: str | None = Field(default=None, max_length=300)
 
 
 class CloseFactOp(_Operation):
     op: Literal["close_fact"] = "close_fact"
+    # Why this fact is proposed to end, in plain words (a claim made a fact); proposal only.
+    why: str | None = Field(default=None, max_length=300)
 
 
 class AmendFactOp(_Operation):
@@ -122,6 +126,8 @@ class AssertBeliefOp(_Operation):
     proposition: Proposition
     confidence: float = 1.0
     source_ref: str | None = None
+    # Why this belief is proposed, in plain words (KNW-006); kept with the proposal only.
+    why: str | None = Field(default=None, max_length=300)
 
 
 class CloseBeliefOp(_Operation):
@@ -139,6 +145,8 @@ class CreateEventOp(_Operation):
     world_position: str | None = None
     # Story time (ADR-020). ``world_position`` stays the author's free words.
     when: WorldTime | None = None
+    # What is said, on an event of kind "claim" (KNW-005). Omitted while unset.
+    claim: EventClaim | None = None
 
 
 class AmendEventOp(_Operation):
@@ -252,11 +260,18 @@ def operation_reference_ids(operation: CanonOperation) -> list[str]:
             refs.append(obj.entity_id)
         return refs
     if isinstance(operation, CreateEventOp):
+        claimed: list[str] = []
+        if operation.claim is not None:
+            claimed.append(operation.claim.proposition.subject_id)
+            obj = operation.claim.proposition.object
+            if isinstance(obj, EntityRefObject):
+                claimed.append(obj.entity_id)
         return [
             *(p.entity_id for p in operation.participants),
             *operation.location_ids,
             *operation.cause_ids,
             *operation.outcome_ids,
+            *claimed,
         ]
     if isinstance(operation, LinkAssetOp):
         refs = [operation.asset_id, operation.target_id]
@@ -308,6 +323,17 @@ def _rewrite(operation: CanonOperation, mapping: dict[str, str]) -> CanonOperati
                 "location_ids": [resolve(x) for x in operation.location_ids],
                 "cause_ids": [resolve(x) for x in operation.cause_ids],
                 "outcome_ids": [resolve(x) for x in operation.outcome_ids],
+                "claim": (
+                    operation.claim.model_copy(
+                        update={
+                            "proposition": _rewrite_proposition(
+                                operation.claim.proposition, resolve
+                            )
+                        }
+                    )
+                    if operation.claim is not None
+                    else None
+                ),
             }
         )
     if isinstance(operation, LinkAssetOp):
@@ -395,6 +421,8 @@ _CANONICAL_OMIT_WHEN_UNSET = (
     "ends",
     "visibility",
     "only_fills",
+    "claim",
+    "why",
 )
 
 

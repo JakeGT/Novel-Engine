@@ -22,6 +22,7 @@ from backend.domain.branching import working_branch_id
 from backend.domain.canon.assertions import FactVisibility
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.marks import details as plain_details_of
+from backend.domain.canon.naming import normalize_name
 from backend.domain.canon.phrasing import phrase
 from backend.domain.canon.plans import PlanItem, PlanKind
 from backend.domain.context import (
@@ -44,7 +45,7 @@ from backend.domain.knowledge import scene_time as scene_when
 from backend.domain.rules import RuleStatus, read_rule
 from backend.domain.scene_conditions import condition_reading, plain_details, scene_conditions
 from backend.domain.scene_intent import intent_sentences, scene_intent
-from backend.domain.sources import SourceKind, SourceText
+from backend.domain.sources import SourceKind, SourceText, find_mentions
 from backend.domain.tenancy import Permission
 from backend.domain.threads import thread_advances
 from backend.domain.worldtime import Interval, Order, Truth, compare, describe, true_at
@@ -861,6 +862,16 @@ class ContextService:
             entity_ids=list(cast),
             limit=MAX_PASSAGES * 4,
         )
+        # The shared index reads each text as its own line does. When some answer holds only
+        # in a what-if, a stretch of scenes or one viewpoint, each passage is read again as
+        # this line reads it (CTX-016), and texts using such a phrase are looked at too.
+        line = None
+        if hasattr(self._sources, "line_names"):
+            line = await self._sources.line_names(workspace_id, project_id)
+        if line is not None:
+            passages = await self._with_limited_phrases(
+                workspace_id, project_id, passages, line.phrases_for(cast), usable
+            )
         semantic: dict[str, float] = {}
         if self._passages is not None:
             semantic = await self._passages.semantic_scores(
@@ -882,8 +893,17 @@ class ContextService:
                 continue  # a scene's words from another line of the story
             if version.id != passage.version_id:
                 continue  # an older version's passage; the index is catching up
-            shared = [entity_id for entity_id in passage.entity_ids if entity_id in cast]
             words = version.content[passage.start : passage.end]
+            named_here = passage.entity_ids
+            if line is not None:
+                named_here = tuple(
+                    mention.entity_ids[0]
+                    for mention in find_mentions(words, line.index(passage.source_id))
+                    if len(mention.entity_ids) == 1
+                )
+            shared = list(dict.fromkeys(entity_id for entity_id in named_here if entity_id in cast))
+            if line is not None and not shared:
+                continue  # in this line of the story the passage names nobody in the scene
             named = ", ".join(names.get(entity_id, "") for entity_id in shared[:3])
             out.append(
                 ContextItem(
@@ -907,6 +927,44 @@ class ContextService:
         )
         if sample is not None:
             out.append(sample)
+        return out
+
+    async def _with_limited_phrases(
+        self,
+        workspace_id: str,
+        project_id: str,
+        passages: list[Any],
+        phrases: list[str],
+        usable: set[str],
+    ) -> list[Any]:
+        """Add the passages of texts that use a phrase meaning someone only somewhere."""
+        if not phrases:
+            return passages
+        wanted = [normalize_name(phrase) for phrase in phrases]
+        seen = {passage.key for passage in passages}
+        out = list(passages)
+        for source in await self._sources.all_texts(workspace_id, project_id):
+            if len(out) >= MAX_PASSAGES * 6:
+                break
+            if source.removed_at is not None or not _usable(source, usable):
+                continue
+            # Only the newest version's words are read: every older one would be loaded
+            # whole for nothing, once per text, every time a context is built.
+            version = await self._sources.latest_version(workspace_id, project_id, source)
+            if version is None:
+                continue
+            content = normalize_name(version.content)
+            if not any(phrase in content for phrase in wanted):
+                continue
+            for passage in await self._passage_store.for_source(
+                workspace_id=workspace_id, project_id=project_id, source_id=source.id
+            ):
+                if passage.key in seen:
+                    continue
+                words = normalize_name(version.content[passage.start : passage.end])
+                if any(phrase in words for phrase in wanted):
+                    seen.add(passage.key)
+                    out.append(passage)
         return out
 
     async def _scene_texts(

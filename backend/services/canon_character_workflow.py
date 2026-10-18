@@ -363,6 +363,10 @@ class CanonCharacterWorkflow:
             review_scope, mutation.id, "guided character proposal awaiting review"
         )
         validation = await self._mutation.validate(review_scope, mutation.id)
+        # Kept for the author when they chose to have suggestions like this kept.
+        mutation = await self._mutation.keep_if_allowed(
+            review_scope, mutation, validation=validation
+        )
         log_event(
             logger,
             "character.workflow.proposed",

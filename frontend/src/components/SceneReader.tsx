@@ -15,10 +15,13 @@ export function SceneReaderNotes({
   scene,
   step,
   facts,
+  said = [],
 }: {
   scene: PlanItem
   step?: ReaderStep
   facts: Record<string, FactLike>
+  /** What is said in the scene (KNW-005), as sentences: said, not necessarily true. */
+  said?: string[]
 }) {
   const { scope } = useProject()
   const entries = useEntries(scope)
@@ -58,6 +61,8 @@ export function SceneReaderNotes({
     })
   if (step && step.repeated.length > 0)
     lines.push({ key: 'repeated', label: 'Shown again', text: `${step.repeated.map(say).join('; ')} was already shown in an earlier scene.` })
+  if (said.length > 0)
+    lines.push({ key: 'said', label: 'Said here, not necessarily true', text: said.join('; ') })
   if (lines.length === 0) return null
   return (
     <ul className="plan-conditions" aria-label={`The reader in ${scene.title}`}>

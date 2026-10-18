@@ -11,6 +11,11 @@ shows the reader, plainly or as a hint, and scenes are read in the order of the
 plan. From the two ledgers come dramatic irony (the reader knows what the
 scene's viewpoint character does not), withheld knowledge (the reader has not
 been shown what the viewpoint character knows) and reveals repeated later.
+
+What is *said* is a third thing (KNW-005): a claim is an event of kind ``claim`` that
+records what the text, a character or a narrator says, how, and who could perceive it.
+It is never a fact and never counts as knowledge. Whether the facts bear it out is
+derived each time, like whether a belief is right.
 """
 
 from __future__ import annotations
@@ -23,7 +28,16 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from backend.domain.canon.assertions import Belief, Fact, FactStatus, FactVisibility
+from backend.domain.canon.events import (
+    CLAIM_KIND,
+    CLAIM_NARRATOR,
+    CLAIM_PERCEIVER,
+    CLAIM_SPEAKER,
+    Event,
+    EventClaim,
+)
 from backend.domain.canon.plans import PlanItem, PlanKind
+from backend.domain.canon.propositions import EntityRefObject
 from backend.domain.worldtime import (
     WORLD_TIME,
     At,
@@ -200,6 +214,81 @@ def who_knows(fact: Fact, beliefs: Iterable[Belief]) -> FactKnowledge:
     return result
 
 
+# ------------------------------------------------------------------- claims
+
+# Whether the facts bear a claim out: they say the same, they say otherwise, or they
+# say nothing about it. A denial is borne out when the facts say otherwise.
+Standing = Literal["borne_out", "contradicted", "unconfirmed"]
+
+
+def claim_standing(claim: EventClaim, facts: Iterable[Fact]) -> Standing:
+    covering = [
+        fact
+        for fact in _current(facts)
+        if fact.proposition.subject_id == claim.proposition.subject_id
+        and fact.proposition.predicate == claim.proposition.predicate
+    ]
+    if not covering:
+        return "unconfirmed"
+    agrees_with_fact = any(fact.proposition.object == claim.proposition.object for fact in covering)
+    if claim.modality == "denies":
+        return "contradicted" if agrees_with_fact else "borne_out"
+    return "borne_out" if agrees_with_fact else "contradicted"
+
+
+@dataclass(frozen=True)
+class ClaimRecord:
+    event: Event
+    claim: EventClaim
+    # Who says it: None when it is the narration itself.
+    speaker_id: str | None
+    # "speaker" (a character says it) or "narrator" (a character narrates it).
+    speaker_role: Literal["speaker", "narrator"] | None
+    perceiver_ids: list[str]
+    standing: Standing
+
+
+def claims_of(events: Iterable[Event], facts: Iterable[Fact]) -> list[ClaimRecord]:
+    """Every claim still in the story, oldest first, with whether the facts bear it out."""
+    fact_list = list(facts)
+    found: list[ClaimRecord] = []
+    for event in events:
+        if event.kind != CLAIM_KIND or event.claim is None or event.retired_revision is not None:
+            continue
+        speaker = next(
+            (p for p in event.participants if p.role in (CLAIM_SPEAKER, CLAIM_NARRATOR)), None
+        )
+        found.append(
+            ClaimRecord(
+                event=event,
+                claim=event.claim,
+                speaker_id=speaker.entity_id if speaker else None,
+                speaker_role=(
+                    None
+                    if speaker is None
+                    else "narrator"
+                    if speaker.role == CLAIM_NARRATOR
+                    else "speaker"
+                ),
+                perceiver_ids=[
+                    p.entity_id for p in event.participants if p.role == CLAIM_PERCEIVER
+                ],
+                standing=claim_standing(event.claim, fact_list),
+            )
+        )
+    found.sort(key=lambda record: (record.event.created_revision, record.event.id))
+    return found
+
+
+def claim_mentions(record: ClaimRecord, entity_id: str) -> bool:
+    """Whether a claim is about an entry, or said by them."""
+    proposition = record.claim.proposition
+    target = (
+        proposition.object.entity_id if isinstance(proposition.object, EntityRefObject) else None
+    )
+    return entity_id in (proposition.subject_id, target, record.speaker_id)
+
+
 # ------------------------------------------------------------------ readers
 
 
@@ -298,6 +387,11 @@ def reader_journey(
 
 
 __all__ = [
+    "ClaimRecord",
+    "Standing",
+    "claim_mentions",
+    "claim_standing",
+    "claims_of",
     "MAX_REVEALS",
     "REVEALS_KEY",
     "SCENE_TIME_KEY",

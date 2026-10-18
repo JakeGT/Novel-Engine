@@ -19,6 +19,9 @@ export function HistoryPage() {
   const items = revisions.data?.items ?? []
   const names = useQuery({ queryKey: scopedKey(scope, 'version-names'), queryFn: () => api.versionNames(scope) })
   const namesFor = (revision: number) => (names.data?.items ?? []).filter((item) => item.revision === revision)
+  // Versions the assistant's suggestions became under the author's own rules (AST-EXP-015).
+  const kept = useQuery({ queryKey: scopedKey(scope, 'kept-list'), queryFn: () => api.keptForYou(scope) })
+  const keptNote = new Map((kept.data?.items ?? []).map((item) => [item.mutation_id, item.note]))
   const [naming, setNaming] = useState<number | null>(null)
   const [since, setSince] = useState<number | null>(null)
 
@@ -77,7 +80,12 @@ export function HistoryPage() {
                       ))}
                       <span className="muted small" style={{ display: 'block' }}>
                         {plural(revision.operation_count, 'change')} by {who}
-                        {revision.decision_count > 0 ? ' · reviewed' : ''} ·{' '}
+                        {revision.mutation_id && keptNote.has(revision.mutation_id)
+                          ? ` · ${keptNote.get(revision.mutation_id)?.replace(/\.$/, '').replace(/^K/, 'k')}`
+                          : revision.decision_count > 0
+                            ? ' · reviewed'
+                            : ''}{' '}
+                        ·{' '}
                         <span title={fullDate(revision.created_at)}>
                           {new Date(revision.created_at).toLocaleTimeString(undefined, { timeStyle: 'short' })}
                         </span>

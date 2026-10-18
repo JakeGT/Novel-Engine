@@ -9,13 +9,19 @@ Finding names is deterministic. An explicit mark (``@Mara``, ``@"the Fox"``,
 ``[[the Old Mill]]``) is the strongest signal; a plain occurrence of a known name
 or alias is the next. No model is involved, so the same text and the same story
 bible always give the same answer.
+
+Name memory can be scoped (CTX-016). An answer holds everywhere, or only in one text,
+one what-if, a stretch of scenes in reading order, or scenes seen by one character.
+Where a phrase is read is a :class:`NamePlace`; the answers that apply there are
+folded from least to most specific, so the most specific one decides. Like a
+statement qualified with a start and an end, the scope sits on the answer itself.
 """
 
 from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
@@ -31,6 +37,8 @@ MAX_SECTIONS = 400
 MAX_MENTIONS = 5000
 MAX_PHRASE_LENGTH = 120
 MAX_QUESTIONS = 200
+MAX_EXAMPLES = 20
+MAX_EXAMPLE_LENGTH = 400
 EXCERPT_MARGIN = 80
 
 
@@ -92,6 +100,84 @@ class SourceVersion:
 
 
 @dataclass(frozen=True)
+class NameExample:
+    """A passage the author confirmed: here the phrase does, or does not, mean the entry."""
+
+    id: str
+    quote: str
+    # True: here it means the answer's entry. False: here it does not (or is not a name).
+    means: bool
+    # Where the words were read, so the example can be checked against today's answers.
+    source_id: str | None = None
+    version_id: str | None = None
+    scene_id: str | None = None
+    # Where the phrase sits in ``quote``, when known, for showing it marked.
+    at: tuple[int, int] | None = None
+    noted_by: str | None = None
+    noted_at: datetime | None = None
+
+    def as_json(self) -> dict[str, object]:
+        out: dict[str, object] = {"id": self.id, "quote": self.quote, "means": self.means}
+        for key in ("source_id", "version_id", "scene_id", "noted_by"):
+            value = getattr(self, key)
+            if value is not None:
+                out[key] = value
+        if self.at is not None:
+            out["at"] = list(self.at)
+        if self.noted_at is not None:
+            out["noted_at"] = self.noted_at.isoformat()
+        return out
+
+    @classmethod
+    def from_json(cls, data: Mapping[str, object]) -> NameExample:
+        at = data.get("at")
+        try:
+            span = (
+                (int(at[0]), int(at[1])) if isinstance(at, list | tuple) and len(at) == 2 else None
+            )
+        except (TypeError, ValueError):
+            span = None
+        try:
+            raw_noted = data.get("noted_at")
+            noted_at = datetime.fromisoformat(raw_noted) if isinstance(raw_noted, str) else None
+        except ValueError:
+            noted_at = None
+        return cls(
+            id=str(data.get("id") or ""),
+            quote=str(data.get("quote") or "")[:MAX_EXAMPLE_LENGTH],
+            means=bool(data.get("means")),
+            source_id=_text_or_none(data.get("source_id")),
+            version_id=_text_or_none(data.get("version_id")),
+            scene_id=_text_or_none(data.get("scene_id")),
+            at=span,
+            noted_by=_text_or_none(data.get("noted_by")),
+            noted_at=noted_at,
+        )
+
+
+def _text_or_none(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+@dataclass(frozen=True)
+class NamePlace:
+    """Where a phrase is being read: which text, which line of the story, which scene."""
+
+    source_id: str | None = None
+    # The what-if being read; None for the main story.
+    branch_id: str | None = None
+    scene_id: str | None = None
+    # Whose eyes the scene is seen through.
+    viewpoint_ids: tuple[str, ...] = ()
+    # Scene id → its place in reading order, for answers that hold from or until a scene.
+    order: Mapping[str, int] = field(default_factory=dict)
+
+    @property
+    def position(self) -> int | None:
+        return self.order.get(self.scene_id) if self.scene_id else None
+
+
+@dataclass(frozen=True)
 class AliasBinding:
     """What an author decided a phrase means, or does not mean."""
 
@@ -106,6 +192,85 @@ class AliasBinding:
     source_id: str | None
     decided_by: str | None
     decided_at: datetime
+    # Only in this what-if; None means every line of the story.
+    branch_id: str | None = None
+    # Only from this scene on, and/or only until this scene (both included), in reading order.
+    from_scene_id: str | None = None
+    until_scene_id: str | None = None
+    # Only in scenes seen through this character.
+    viewpoint_id: str | None = None
+    examples: tuple[NameExample, ...] = ()
+
+    @property
+    def scope_key(self) -> tuple[str | None, ...]:
+        """Two answers with the same phrase and scope are the same question answered twice."""
+        return (
+            self.normalized,
+            self.source_id,
+            self.branch_id,
+            self.from_scene_id,
+            self.until_scene_id,
+            self.viewpoint_id,
+        )
+
+    @property
+    def specificity(self) -> int:
+        """How narrowly it is scoped: each limit counts once; the most specific answer wins."""
+        return sum(
+            1
+            for value in (
+                self.source_id,
+                self.branch_id,
+                self.from_scene_id,
+                self.until_scene_id,
+                self.viewpoint_id,
+            )
+            if value is not None
+        )
+
+    @property
+    def everywhere(self) -> bool:
+        return self.specificity == 0
+
+    def applies(self, place: NamePlace) -> bool:
+        """Whether this answer holds where the phrase is being read."""
+        if self.source_id is not None and self.source_id != place.source_id:
+            return False
+        if self.branch_id is not None and self.branch_id != place.branch_id:
+            return False
+        if self.viewpoint_id is not None and self.viewpoint_id not in place.viewpoint_ids:
+            return False
+        if self.from_scene_id is not None or self.until_scene_id is not None:
+            here = place.position
+            if here is None:
+                return False
+            if self.from_scene_id is not None:
+                start = place.order.get(self.from_scene_id)
+                # A scene no longer in this line's plan: the answer has nothing to start from.
+                if start is None or here < start:
+                    return False
+            if self.until_scene_id is not None:
+                end = place.order.get(self.until_scene_id)
+                if end is None or here > end:
+                    return False
+        return True
+
+
+def replaces(existing: AliasBinding, new: AliasBinding) -> bool:
+    """Whether a new answer takes the place of an earlier one (one decision per scope)."""
+    if (existing.workspace_id, existing.project_id) != (new.workspace_id, new.project_id):
+        return False
+    if existing.scope_key != new.scope_key:
+        return False
+    # A model's guess never takes the place of the author's own answer, or its examples.
+    if new.verdict is Verdict.SUGGESTED and existing.verdict is not Verdict.SUGGESTED:
+        return False
+    return (
+        existing.entity_id == new.entity_id
+        or existing.verdict is Verdict.IGNORE
+        or new.verdict is Verdict.IGNORE
+        or (new.verdict is Verdict.IS and existing.verdict in (Verdict.IS, Verdict.SUGGESTED))
+    )
 
 
 @dataclass(frozen=True)
@@ -226,7 +391,8 @@ def build_index(
     entities: Sequence[CanonEntity],
     bindings: Sequence[AliasBinding],
     *,
-    source_id: str | None,
+    source_id: str | None = None,
+    place: NamePlace | None = None,
 ) -> NameIndex:
     answers: dict[str, list[str]] = {}
     labels: dict[str, str] = {}
@@ -249,9 +415,10 @@ def build_index(
         for label in (entity.name, *entity.aliases):
             add(label, entity.id)
 
-    # A decision about one text beats a decision made everywhere.
-    scoped = [item for item in bindings if item.source_id in (None, source_id)]
-    for binding in sorted(scoped, key=lambda item: (item.source_id is not None, item.decided_at)):
+    where = place if place is not None else NamePlace(source_id=source_id)
+    # Folded from least to most specific, so the most specific answer decides; between two
+    # equally specific answers that both apply, the later one does.
+    for binding in sorted(applicable(bindings, where), key=lambda item: item.specificity):
         key = binding.normalized
         if binding.verdict is Verdict.IGNORE:
             ignored.add(key)
@@ -266,6 +433,33 @@ def build_index(
         elif binding.verdict is Verdict.IS_NOT:
             ruled_out.setdefault(key, set()).add(binding.entity_id)
     return NameIndex(answers=answers, ruled_out=ruled_out, ignored=ignored, labels=labels)
+
+
+def applicable(bindings: Iterable[AliasBinding], place: NamePlace) -> list[AliasBinding]:
+    """The answers that hold where the phrase is read, oldest first."""
+    return sorted(
+        (item for item in bindings if item.applies(place)),
+        key=lambda item: (item.decided_at, item.id),
+    )
+
+
+def example_holds(
+    binding: AliasBinding, example: NameExample, index: NameIndex
+) -> tuple[bool, list[str]]:
+    """Whether today's answers still read the example as the author confirmed it.
+
+    Returns the verdict and what the phrase resolves to there now.
+    """
+    key = binding.normalized
+    if key in index.ignored:
+        now: list[str] = []
+        means_it = False
+    else:
+        now = index.resolve(binding.phrase)
+        means_it = binding.entity_id is not None and binding.entity_id in now
+    if binding.verdict is Verdict.IGNORE:
+        return key in index.ignored, now
+    return means_it == example.means, now
 
 
 def _capital_ok(label: str, written: str) -> bool:

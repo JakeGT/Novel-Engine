@@ -476,6 +476,10 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
             review_scope, mutation.id, "change by instruction awaiting review"
         )
         validation = await self._mutation.validate(review_scope, mutation.id)
+        # Kept for the author when they chose to have suggestions like this kept.
+        mutation = await self._mutation.keep_if_allowed(
+            review_scope, mutation, validation=validation
+        )
         log_event(
             logger,
             "change.workflow.proposed",

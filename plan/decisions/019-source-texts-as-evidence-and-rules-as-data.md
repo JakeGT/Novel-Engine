@@ -51,6 +51,25 @@ Publishing a rule as blocking (ADR-013) is not offered in this phase.
 
 - Name memory is scoped to the whole story or to one text. Scoping by world time, narrative
   position, branch or point of view waits for Phase 3, where those exist.
+  *Amended 2026-10-18 (CTX-016):* an answer can now also hold only in one what-if
+  (`branch_id`), from a scene on and/or until a scene in reading order (`from_scene_id`,
+  `until_scene_id`, both included), or in scenes seen by one character (`viewpoint_id`)
+  (migration 0040). The limits sit on the answer, like qualifiers on a statement; a null
+  limit means everywhere, so old answers mean what they meant. Where a phrase is read is a
+  `NamePlace` (text, line of the story, scene, its viewpoint characters, reading order);
+  the answers that apply are folded from least to most specific (each limit counts once,
+  the later answer breaks a tie), so the narrowest decides. Time is reading order, not world
+  time: authors say "from this scene on". Inside a what-if a new answer stays there unless
+  the author says otherwise; `alias_bindings` is not forked, a what-if's answers simply carry
+  its id. A scene that leaves the plan makes an answer limited by it stop applying. Each
+  answer keeps the passages the author confirmed (`examples`: the words, where, and whether
+  the phrase means the entry there), and the names page says when today's answers would read
+  one differently. Every reader of names uses the same resolution for its place: a text's
+  reading, scene reading back, the plan card, the studio's checks (which also count a phrase
+  meaning the viewpoint, place or a secret's people), and the scene's context, which reads
+  each passage again in the working line when any answer is limited. Literary coreference
+  tools still do poorly on novels and worse with length; projects that need precision use
+  hand-made disambiguation rules, which is what these reviewed answers are.
 - A rule sees entries and the facts true of them now. It cannot speak of time, order of
   events, belief or the wording of prose ("nobody dead may speak later"). The assistant is
   told to say so rather than bend such a sentence into something else.

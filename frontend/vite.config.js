@@ -20,6 +20,8 @@ export default defineConfig({
       '/auth': apiTarget,
       '/api': apiTarget,
       '/health': apiTarget,
+      // Other assistants reach the MCP endpoint through the same address (QRY-003).
+      '/mcp': apiTarget,
     },
   },
   test: {

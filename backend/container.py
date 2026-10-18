@@ -98,7 +98,13 @@ class Container:
     assistant_settings_store: Any = None
     assistant_settings: Any = None
     assist_budget: Any = None
+    # Keep the safe ones for me: the author's rules and what was kept (AST-EXP-015).
+    delegation_store: Any = None
+    delegation_service: Any = None
     graph_upgrade_service: Any = None
+    # Personal access keys for other assistants, and the MCP endpoint's check (QRY-003).
+    access_keys: Any = None
+    access_key_service: Any = None
 
     async def aclose(self) -> None:
         if self.job_runner is not None:
@@ -247,6 +253,18 @@ def build_container(settings: Settings | None = None) -> Container:
         rate_limiter=container.rate_limiter,
         settings=resolved,
         purger=purger,
+    )
+    from backend.adapters.access_key_store import PostgresAccessKeyStore
+    from backend.services.access_key_service import AccessKeyService
+
+    container.access_keys = PostgresAccessKeyStore(database.session_factory)
+    purger.attach_access_keys(container.access_keys)
+    container.access_key_service = AccessKeyService(
+        container.access_keys,
+        tenancy=container.tenancy_service,
+        identity_store=identity_store,
+        rate_limiter=container.rate_limiter,
+        settings=resolved,
     )
     container.credential_service = CredentialService(
         container.credentials,
@@ -429,6 +447,8 @@ def build_container(settings: Settings | None = None) -> Container:
         local_mode=not resolved.is_hosted,
     )
     container.studio_service.register_jobs()
+    # Which scene a text holds, so names are read as that scene reads them (CTX-016).
+    container.source_service.studio = container.studio_service
     container.what_if_service = WhatIfService(
         journal=container.journal,
         canon=container.canon_repository,
@@ -461,6 +481,19 @@ def build_container(settings: Settings | None = None) -> Container:
         local_mode=not resolved.is_hosted,
         mutation=container.mutation_service,
     )
+    from backend.adapters.delegation_store import PostgresDelegationStore
+    from backend.services.delegation_service import DelegationService
+
+    container.delegation_store = PostgresDelegationStore(database.session_factory)
+    container.delegation_service = DelegationService(
+        container.delegation_store,
+        mutation=container.mutation_service,
+        reader=container.canon_repository,
+        history=container.canon_history_service,
+        tenancy=container.tenancy_service,
+        local_mode=not resolved.is_hosted,
+    )
+    container.mutation_service.delegation = container.delegation_service
     from backend.services.media_service import MediaService
 
     container.media_service = MediaService(

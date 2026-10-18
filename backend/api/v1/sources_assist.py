@@ -17,6 +17,7 @@ from backend.api.v1.assistant_settings import confirmed_tokens, get_assist_budge
 from backend.api.v1.canon_assist import DiscardedItemModel
 from backend.api.v1.router import _provider_context
 from backend.core.config import Settings
+from backend.domain.branching import working_branch_id
 from backend.domain.identity import AccessScope
 from backend.domain.sources import Verdict, find_mentions
 from backend.services.assistant_settings_service import AssistBudget
@@ -128,6 +129,8 @@ async def read_passage_with_assistant(
             entity_id=guess.entity_id,
             source_id=source_id,
             actor_user_id=None,
+            # A guess made reading in a what-if stays in that what-if.
+            branch_id=working_branch_id(),
         )
     return ReadPassageModel(
         mutation_id=result.mutation.id if result.mutation is not None else None,

@@ -38,7 +38,7 @@
 | Request estimate | `GET /assist/estimate` | About how many tokens a request that reads the whole story bible, or only the names in it, will take in. From the text's length; calls no model. |
 | Story plan | `GET /plan`, `POST /plan`, `PATCH /plan/{id}`, `POST /plan/{id}/move`, `POST /plan/{id}/remove` | The outline (story, arcs, beats, scenes, threads) and what it still needs, in plain words. Intent only: no entry, fact, belief or event endpoint returns a plan item. Writes are ordinary author versions; removing takes everything under an item with it. Needs no provider. |
 | Planning with the assistant | `POST /assist/plan/questions`, `POST /assist/plan/proposals`, `POST /assist/plan/directions`, `POST /assist/plan/directions/choose` | Questions about what the author means to happen; one round of planning as plan items to review, with what was left undecided returned as notes; up to three directions for what could happen next. Offering directions proposes nothing; choosing one re-checks the draft it carries and calls no model. Nothing here changes the plan directly. |
-| The author's writing | `GET/POST /texts`, `GET/PATCH/DELETE /texts/{id}`, `GET /texts/passage`, `POST /texts/{id}/entries`, `GET/POST /names`, `DELETE /names/{id}` | Prose the author brings in, kept as given in immutable versions; the names found in it with no model; the passage a change points back to; answers about what a phrase means, remembered for the story or one text. A text is evidence, never canon. Needs no provider. |
+| The author's writing | `GET/POST /texts`, `GET/PATCH/DELETE /texts/{id}`, `GET /texts/passage`, `POST /texts/{id}/entries`, `GET/POST /names`, `DELETE /names/{id}`, `POST /names/{id}/examples`, `DELETE /names/{id}/examples/{example_id}` | Prose the author brings in, kept as given in immutable versions; the names found in it with no model; the passage a change points back to; answers about what a phrase means, remembered for the story, one text, one what-if (`what_if_only`; the default inside a what-if), from or until a scene, or scenes seen by one character, the narrowest that applies deciding; each answer keeps the passages the author confirmed, and the list says whether today's answers still read them that way (CTX-016). A text is evidence, never canon. Needs no provider. |
 | Reading a text with the assistant | `POST /assist/texts/{id}/read` | One bounded passage read into suggested changes to review. Every item must quote words really in the passage. Guesses about nicknames become questions only. |
 | Story rules | `GET/POST /rules`, `PATCH/DELETE /rules/{id}`, `POST /rules/check`, `POST /assist/rules/draft` | The author's own continuity rules in a fixed vocabulary, with examples they must agree with, read back in words, and the entries that break them now. A change that would newly break one is warned about, or, for a rule the author set to block (`PATCH` with `enforcement: blocking`), refused at approval and at commit until fixed (CON-015). Drafting from a sentence keeps nothing. |
 | Scene conditions | `PUT /plan/{id}/conditions` | What must be true before a planned scene and after it, checked like a story rule and reported with the outline. |
@@ -66,6 +66,22 @@
 - `/api/v1/credentials` (+ `/{id}/rotate`, `/{id}/revoke`): envelope-encrypted OpenRouter BYOK;
   plaintext is never returned.
 - `/auth/login`, `/auth/callback`, `/auth/me`, `/auth/logout`: OIDC (hosted) or local session.
+- `/api/v1/access-keys` (`GET`, `POST`; `/{id}/revoke`, `/{id}/uses`): personal access keys for
+  other assistants (QRY-003, ADR-024). Signed-in session routes; `POST` answers with the key once
+  (`key`), never again. A member sees their own keys; an owner sees and can withdraw everyone's in
+  the workspace. `uses` is counts per day and tool for 30 days, never content.
+
+## MCP endpoint (QRY-003, ADR-024)
+
+`POST /mcp`: Streamable HTTP, one JSON-RPC message per request, one JSON answer, authenticated only
+by `Authorization: Bearer <access key>` (401 with `WWW-Authenticate: Bearer` otherwise; 429 with
+`Retry-After` when busy; 403 for a browser page from another address). MCP 2026-07-28 (stateless,
+`_meta` protocol version, `server/discover`, header checks -32020, unsupported version -32022) and
+2025-11-25/2025-06-18/2025-03-26 (`initialize`, no session id). `GET`/`DELETE` are 405. Not in the
+OpenAPI document. Tools: `list_stories`, `search_entries`, `read_entry` (`as_known_by` keeps to one
+character's knowledge), `list_plan`, `read_scene`, `timeline` (`at`), `record_history`,
+`open_reviews`; with a key that may suggest, `suggest_changes` (one proposal, origin `machine`,
+always reviewed). Every tool takes `story` (narrows a workspace key) and `what_if`.
 
 ## Health and operations
 
@@ -101,7 +117,15 @@ Under `/projects/{project_id}`:
 - `/timeline`, `/timeline/moment?at=`, `PUT /timeline/unit`.
 - `POST /facts/{id}/amend` (when a fact is true; ordinary, common or secret). Facts and events
   accept `starts`/`ends`/`visibility` and `when` on create.
-- `/knowledge/characters/{entity_id}`, `/knowledge/facts/{fact_id}`, `POST /knowledge/tell`.
+- `/knowledge/characters/{entity_id}`, `/knowledge/facts/{fact_id}`.
+- `POST /knowledge/tell` and `POST /knowledge/witness` propose, for review, the event and a belief
+  for each hearer or each person who notices, by their trust (KNW-006); the answer is the
+  `mutation_id` and each person's proposal with its reason. Nothing is written until approved.
+- `GET/PUT /knowledge/characters/{entity_id}/trust` (how a character takes what others say: a
+  stance for anyone and for particular speakers; saved on the character as an author change).
+- `GET /knowledge/claims?entity_id=&scene_id=`, `POST /knowledge/claims` (something said, with
+  modality, speaker or narrator, hearers and scene; `hearers_believe` also proposes beliefs for the
+  hearers), `POST /knowledge/claims/{event_id}/promote` (proposes the fact for review) (KNW-005).
 - `/reader` (the plan's scenes in reading order with what the reader is shown),
   `/reader/guide?scene=&viewpoint=&version=` (the story as it stood at a saved version, the latest
   by default; the answer names the line of the story, version, scene position and viewpoint, gives
@@ -205,6 +229,33 @@ Under `/projects/{project_id}`:
 - `POST /plan/{id}/studio/plan-card` (`202`): suggest the scene's summary, viewpoint, place and who is
   in it from the prose, as one plan change for review. `400` when nothing is written.
 - `GET /texts/passage` also returns `scene_id` when the text is a scene's, for "See it in the scene".
+
+## Keep the safe ones for me (AST-EXP-015, OSS-007)
+
+Off by default. Nothing is kept unless the author switched a kind on; only the assistant's
+suggestions made in the app are considered (`/assist/proposals`, `/changes`, `/links`,
+`/characters/{id}/proposals`); a suggestion made through `POST /mutations` is never looked at.
+
+- `GET/PUT /kept-for-you/settings`: `rules` (`new_entry`, `first_details`, `new_fact`, each with
+  `on`, `hand_approvals` and `since`), `allow_clients` (always false: assistants connected with a key only ever suggest),
+  `workspace_forbidden`, `hand_approvals_needed` (3), `size_limit`, `daily_limit`, `always_waits`
+  (plain lines) and `kept_since_seen`. `PUT {kinds, allow_clients}` switches kinds on or off at once (`allow_clients: true` is refused, `400`);
+  switching one on is refused (`400`) until it has been approved by hand `hand_approvals_needed`
+  times, or while a workspace owner forbids it. Switching off is never refused, and a suggestion
+  approved under a rule but not yet committed goes back to the review queue.
+- `GET /kept-for-you`: what was kept, newest first: `note` ("Kept for you under your rule “New
+  entries”."), `kept_at`, `revision`, `operations`, `undo_mutation_id`, `undo_status`.
+- `POST /kept-for-you/seen` (`204`): the person has looked; `kept_since_seen` counts from now.
+- `GET /kept-for-you/decisions/{mutation_id}`: `how` (`kept`, `waited`, `by_hand`, or null when the
+  rules never looked at it), `kinds`, `note`, `reason_code` and `reason` (plain words) for one
+  suggestion.
+- `POST /kept-for-you/{mutation_id}/undo` (`201`): suggests the revert of a kept suggestion; it waits
+  in the review queue (an undo is never kept). Asked again, the same waiting undo is returned. `404`
+  for something that was not kept; `400` when what it added has changed since.
+- `GET/PUT /ai/kept-for-you` (workspace): `forbidden`; only a workspace owner may change it.
+- A kept suggestion is approved with the decision note above and committed through the ordinary
+  commit; the commit transaction refuses it (`422 kept_rule_off`) if its rule was switched off
+  after it was approved.
 
 ## Cost and automation controls (CON-009, OPS-002, AST-EXP-011)
 

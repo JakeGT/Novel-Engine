@@ -32,13 +32,16 @@ export function TextsPage() {
             straight away, and anything added to your story bible from it points back at your words.
           </p>
         </div>
-        {canWrite && (
-          <div className="actions">
+        <div className="actions">
+          <Link className="btn" to={`/projects/${scope.projectId}/names`}>
+            Names you have answered
+          </Link>
+          {canWrite && (
             <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>
               Bring in a text
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       <div className="section-gap">

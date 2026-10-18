@@ -26,7 +26,7 @@ def test_canon_scope_migration_is_registered() -> None:
 
 
 def test_postgres_head_is_canon_journal() -> None:
-    assert postgres_head_revision() == "0039_check_passes"
+    assert postgres_head_revision() == "0043_access_keys"
 
 
 def test_graph_layer_never_uses_elementid() -> None:

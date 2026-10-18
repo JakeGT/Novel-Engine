@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
+import { KeptSinceNotice } from '../components/KeptForYou'
 import { ChangeStateBadge, EmptyState, ErrorNotice, Loading } from '../components/ui'
 import { fullDate, timeAgo } from '../lib/time'
 import { changeSetTitle, isOpenChange, plural } from '../lib/words'
@@ -38,12 +39,16 @@ export function ReviewQueue() {
           <p className="lede">
             Suggested changes wait here until you decide. Anything from the AI assistant or an
             import, and anything that archives or changes a lot at once, needs your say-so before it
-            becomes part of your story.
+            becomes part of your story, unless you chose to have suggestions like it kept for you.
           </p>
         </div>
+        <Link className="btn" to={`/projects/${scope.projectId}/review/kept`}>
+          Kept for you
+        </Link>
       </div>
 
       <div className="section-gap">
+        <KeptSinceNotice />
         <div className="chips" role="group" aria-label="Show">
           {FILTERS.map((filter) => (
             <button

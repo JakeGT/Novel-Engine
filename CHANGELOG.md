@@ -33,6 +33,14 @@ for authors and for whoever runs an install. Version numbers start when the owne
   with what a kept draft was written from.
 - **Promises to the reader**: what your plan owes the reader and where each promise is kept; a
   reveal that comes too early is flagged; scenes can say what must be true before them.
+- **Names that depend on where you are**: "the captain" can mean one person from a scene on, or
+  only in a what-if, or only through one character's eyes.
+- **Said is not true**: record what someone says or the narration claims without making it a fact;
+  each character's trust and who sees what decide which beliefs are suggested.
+- **Keep the safe ones for me** (off unless you choose it): new things of a kind you have approved
+  three times can be added without asking, each listed with Undo.
+- **Connect another assistant** (Claude, ChatGPT and others) with an access key: it can read your
+  story and, if you allow, suggest changes that wait in Review.
 - **Character arcs**: the stages a character passes through, each placed in a scene, checked
   for order and against the story bible.
 - **What a change touches**, shown before you approve it: scenes, threads, rules, writing and
@@ -50,7 +58,7 @@ for authors and for whoever runs an install. Version numbers start when the owne
 ### For whoever runs it
 
 - **Upgrading:** take a backup first (`deploy/hosted/backup.sh` on the hosted profile). The server
-  applies migrations on start; this release adds migrations up to `0039_check_passes`.
+  applies migrations on start; this release adds migrations up to `0043_access_keys`.
 - **Readiness** now answers `ready`, `degraded` (200) or `unavailable` (503, a required store is
   down); a watcher that looked for `degraded` on a store outage must look for `unavailable`.
 - **Archives** are version 4 and carry what-ifs, conversations and scene readings; version 3

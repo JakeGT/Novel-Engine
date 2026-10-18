@@ -288,6 +288,80 @@ describe('ReviewDetail', () => {
     })
   })
 
+  it('says why each belief is suggested, and reads what is said and trust in words', async () => {
+    const tobin = entity({ id: 'ent_tobin', name: 'Tobin Ashe', aliases: [], attributes: {} })
+    const harbor = entity({ id: 'ent_harbor', name: 'Lantern Harbor', type: 'Location', aliases: [] })
+    const proposition = {
+      subject_id: 'ent_mara',
+      predicate: 'LOCATED_AT',
+      object: { kind: 'entity_ref', entity_id: 'ent_harbor', project_id: 'prj_1' },
+    }
+    mockApi({
+      ...entries,
+      'GET /entities': { items: [entity(), tobin, harbor], limit: 200, offset: 0 },
+      'GET /mutations/mut_1': mutation({
+        origin: 'derived',
+        operations: [
+          operation({
+            ordinal: 0,
+            operation_type: 'create_event',
+            payload: {
+              op: 'create_event',
+              id: 'evt_1',
+              kind: 'claim',
+              name: 'Tobin says so',
+              participants: [{ entity_id: 'ent_tobin', role: 'speaker' }],
+              claim: { proposition, modality: 'suggests' },
+            },
+          }),
+          operation({
+            ordinal: 1,
+            operation_type: 'assert_belief',
+            payload: {
+              op: 'assert_belief',
+              id: 'tmp:belief',
+              holder_entity_id: 'ent_tobin',
+              proposition,
+              confidence: 0.5,
+              source_ref: 'evt_1',
+              why: 'Tobin Ashe was told by Mara Venn; Tobin Ashe doubts what people tell them, so believes it less firmly.',
+            },
+          }),
+          operation({
+            ordinal: 2,
+            operation_type: 'update_entity',
+            payload: {
+              op: 'update_entity',
+              id: 'ent_tobin',
+              attributes: { _trust: { default: 'doubts', speakers: { ent_mara: 'disbelieves' } } },
+            },
+            target_before: { name: 'Tobin Ashe', attributes: {} },
+          }),
+        ],
+      }),
+    })
+    const { container } = renderInProject(<ReviewDetail />, at)
+
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(
+      'Changes from what people were told or saw',
+    )
+    expect(screen.getByText('Why').parentElement).toHaveTextContent(
+      'Why Tobin Ashe was told by Mara Venn; Tobin Ashe doubts what people tell them, so believes it less firmly.',
+    )
+    expect(screen.getByRole('row', { name: /Who takes part/ })).toHaveTextContent('Tobin Ashe (says it)')
+    expect(screen.getByRole('row', { name: /What it is/ })).toHaveTextContent('Something said, not necessarily true')
+    expect(screen.getByRole('row', { name: /How firmly/ })).toHaveTextContent('Believes it, less firmly')
+    expect(screen.getByRole('row', { name: /Where it came from/ })).toHaveTextContent('Tobin says so')
+    expect(screen.getByRole('row', { name: /Who believes it/ })).toHaveTextContent('Tobin Ashe')
+    expect(screen.getByRole('row', { name: /What is said/ })).toHaveTextContent(
+      'Suggests Mara Venn is located at Lantern Harbor (said, not necessarily true)',
+    )
+    expect(screen.getByRole('row', { name: /How they take what others say/ })).toHaveTextContent(
+      'Doubts what people say; does not believe Mara Venn',
+    )
+    await expectAccessible(container)
+  })
+
   it('shows changed details one per row, not as one run-on line', async () => {
     mockApi({
       ...entries,

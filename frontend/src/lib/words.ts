@@ -171,6 +171,9 @@ export const ORIGINS: Record<string, string> = {
   model: 'the AI assistant',
   import: 'an import',
   migration: 'the system',
+  machine: 'a connected assistant',
+  // Worked out by the story's own rules: who believes what they were told or saw (KNW-006).
+  derived: 'what people were told or saw',
 }
 
 export function originLabel(origin: string | null | undefined): string {

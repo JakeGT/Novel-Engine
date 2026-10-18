@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
+import { isKeptNote } from '../lib/kept'
 import { isTextEvidence } from '../lib/texts'
 import { fullDate, timeAgo } from '../lib/time'
 import { originLabel } from '../lib/words'
@@ -66,12 +67,12 @@ export function ActivityPanel({ recordType, recordId }: { recordType: string; re
               </div>
               {entry.decisions.filter(reviewed).map((decision, index) => (
                 <div className="small muted" key={`d${index}`}>
-                  Reviewed: {decision.decision}
+                  {isKeptNote(decision.note) && !entry.redacted ? decision.note : <>Reviewed: {decision.decision}
                   {entry.redacted
                     ? ' (reviewer and note hidden)'
                     : `${decision.actor_user_id ? ` by ${actorLabel(decision.actor_user_id, userId)}` : ''}${
                         decision.note ? ` — “${decision.note}”` : ''
-                      }`}
+                      }`}</>}
                 </div>
               ))}
               <FromText evidence={entry.evidence} />

@@ -4,6 +4,7 @@ import { api, type CanonEntity, type Fact } from '../api/client'
 import { objectText, plural, predicateLabel } from '../lib/words'
 import { scopedKey, useCanonWrite, useEntries, useProject } from '../project'
 import { TellDialog } from './TellDialog'
+import { WitnessDialog } from './WitnessDialog'
 import { Button, ErrorNotice, Loading, UndoNotice, WriteProblem } from './ui'
 
 type Names = Map<string, string>
@@ -27,6 +28,7 @@ export function KnowledgePanel({ entity }: { entity: CanonEntity }) {
     queryFn: () => api.characterKnowledge(scope, entity.id),
   })
   const [telling, setTelling] = useState(false)
+  const [witnessing, setWitnessing] = useState(false)
   const [madeSecret, setMadeSecret] = useState<Fact | null>(null)
   // Offered where the problem shows: a character believes something the story says is
   // not so. If that is on purpose, the truth may be a secret kept from them.
@@ -59,9 +61,14 @@ export function KnowledgePanel({ entity }: { entity: CanonEntity }) {
           </p>
         </div>
         {canWrite && entity.lifecycle === 'active' && (
-          <Button size="sm" icon="chat" onClick={() => setTelling(true)}>
-            Tell someone something
-          </Button>
+          <div className="actions">
+            <Button size="sm" icon="chat" onClick={() => setTelling(true)}>
+              Tell someone something
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setWitnessing(true)}>
+              Someone sees something happen
+            </Button>
+          </div>
         )}
       </div>
       <ErrorNotice error={known.error} prefix="Could not work out what they know" />
@@ -163,6 +170,7 @@ export function KnowledgePanel({ entity }: { entity: CanonEntity }) {
       <WriteProblem write={secret} scope={scope} />
       <WriteProblem write={unsecret} scope={scope} />
       {telling && <TellDialog speaker={entity} onClose={() => setTelling(false)} />}
+      {witnessing && <WitnessDialog witness={entity} onClose={() => setWitnessing(false)} />}
     </section>
   )
 }

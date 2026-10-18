@@ -148,10 +148,12 @@ class ScenePlanCardService:
         self._runner.register(PLAN_CARD_JOB, self.run)
 
     async def _messages(
-        self, workspace_id: str, project_id: str, source_id: str, content: str
+        self, workspace_id: str, project_id: str, source_id: str, content: str, plan_id: str
     ) -> tuple[list[dict[str, str]], list[Any]]:
         """The request, and the entries it lists (those the scene names first)."""
-        index, everything, _ = await self._sources.index_for(workspace_id, project_id, source_id)
+        index, everything, _ = await self._sources.index_for(
+            workspace_id, project_id, source_id, scene_id=plan_id
+        )
         active = [entity for entity in everything if entity.is_active]
         named = {
             entity_id
@@ -197,7 +199,7 @@ class ScenePlanCardService:
         estimated = 0
         if self._studio.controls is not None:
             messages, _ = await self._messages(
-                workspace_id, project_id, text.id, current.content[:MAX_SCENE_CHARACTERS]
+                workspace_id, project_id, text.id, current.content[:MAX_SCENE_CHARACTERS], plan_id
             )
             estimated = self._tokens(messages)
             await self._studio.confirm(
@@ -245,7 +247,7 @@ class ScenePlanCardService:
         if not content.strip():
             raise NotFoundError("There is nothing written for this scene.")
         messages, listed = await self._messages(
-            workspace_id, project_id, payload["source_id"], content
+            workspace_id, project_id, payload["source_id"], content, payload["plan_id"]
         )
         call_key = f"{job.id}:{job.attempts}:plan-card"
         _, api_key, base_url, sink = await resolve_provider(

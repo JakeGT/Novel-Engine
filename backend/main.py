@@ -9,8 +9,10 @@ from backend.api.auth import RotatedSessionCookieMiddleware, project_access
 from backend.api.auth import router as auth_router
 from backend.api.frontend import SecurityHeadersMiddleware, frontend_directory, mount_frontend
 from backend.api.health import router as health_router
+from backend.api.mcp import router as mcp_router
 from backend.api.middleware import CorrelationIdMiddleware
 from backend.api.problems import register_exception_handlers
+from backend.api.v1.access_keys import router as access_keys_router
 from backend.api.v1.ai_settings import router as ai_settings_router
 from backend.api.v1.assistant_settings import router as assistant_settings_router
 from backend.api.v1.audits import router as audits_router
@@ -23,6 +25,7 @@ from backend.api.v1.canon_history import router as canon_history_router
 from backend.api.v1.canon_mutations import router as canon_mutations_router
 from backend.api.v1.context import router as context_router
 from backend.api.v1.credentials import router as credentials_router
+from backend.api.v1.delegation import router as delegation_router
 from backend.api.v1.impact import router as impact_router
 from backend.api.v1.knowledge import router as knowledge_router
 from backend.api.v1.media import router as media_router
@@ -168,6 +171,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.include_router(audits_router, prefix="/api/v1")
     app.include_router(canon_archive_router, prefix="/api/v1")
     app.include_router(impact_router, prefix="/api/v1")
+    app.include_router(delegation_router, prefix="/api/v1")
     app.add_api_route(
         "/api/v1/projects/{project_id}/access",
         project_access,
@@ -177,6 +181,9 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     )
     app.include_router(media_router, prefix="/api/v1")
     app.include_router(projection_router, prefix="/api/v1")
+    app.include_router(access_keys_router, prefix="/api/v1")
+    # Other assistants, with an access key (QRY-003). JSON-RPC, so not in the OpenAPI document.
+    app.include_router(mcp_router)
     app.include_router(health_router)
     app.include_router(auth_router)
 

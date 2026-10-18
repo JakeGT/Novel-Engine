@@ -9,6 +9,7 @@ from backend.adapters.canon_repository import PostgresCanonRepository
 from backend.adapters.canon_writer import Neo4jCanonWriter
 from backend.adapters.journal import PostgresCanonJournal
 from backend.core.database import create_engine, create_session_factory
+from backend.domain.canon.events import EventClaim
 from backend.domain.canon.propositions import EntityRefObject, Proposition, StringObject
 from backend.domain.identity import AccessScope, AuthMode
 from backend.domain.operations import (
@@ -305,6 +306,28 @@ async def test_journal_normalized_canon_and_neo4j_projection_agree(
                 participants=[{"entity_id": "ent_mara", "role": "traveller"}],
                 location_ids=["ent_harbor"],
             ),
+            # Something said, not true (KNW-005): kept on the event, in every store.
+            CreateEventOp(
+                id="evt_claim",
+                kind="claim",
+                name="Iva says Mara is at the Keep",
+                participants=[{"entity_id": "ent_iva", "role": "speaker"}],
+                claim=EventClaim(
+                    proposition=Proposition(
+                        subject_id="ent_mara",
+                        predicate="LOCATED_AT",
+                        object=EntityRefObject(
+                            kind="entity_ref", entity_id="ent_keep", project_id=stack.pr
+                        ),
+                    ),
+                    modality="suggests",
+                ),
+            ),
+        )
+        said = await stack.repo.get_event(event_id="evt_claim", **scope)
+        assert said is not None and said.claim is not None
+        assert said.claim.modality == "suggests" and said.claim.proposition.object.entity_id == (
+            "ent_keep"
         )
         report = await projector.project_pending(branch_id=branch.id, **scope)
         assert report.error is None and report.applied == 2

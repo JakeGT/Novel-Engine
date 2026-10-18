@@ -224,6 +224,12 @@ application contracts stabilize. MCP is another transport, not a second domain l
 - Hosted remote MCP and local/self-hosted MCP document their distinct authentication and network
   boundaries.
 
+Built 2026-10-18 (ADR-024, `backend/api/mcp.py`, `mcp_tools.py`): access keys establish scope; reads
+take a story, a what-if and (for an entry) a point of view, and report the story they read; the one
+write tool makes a reviewed proposal with origin `machine`. Revision and time coordinates are taken
+by the timeline tool (`at`); reading an entry at an earlier version is not offered yet. Boundaries
+are documented in `plan/runbooks/connected-assistants.md`.
+
 This lets authors use assistants they already fund while preserving Novel Engine's review and
 continuity guarantees.
 

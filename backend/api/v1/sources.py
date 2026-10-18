@@ -12,6 +12,7 @@ from backend.api.dependencies import get_container, get_source_service
 from backend.container import Container
 from backend.domain.identity import AccessScope
 from backend.domain.sources import (
+    MAX_EXAMPLE_LENGTH,
     MAX_PHRASE_LENGTH,
     MAX_SOURCE_LENGTH,
     MAX_TITLE_LENGTH,
@@ -20,7 +21,13 @@ from backend.domain.sources import (
     SourceText,
     Verdict,
 )
-from backend.services.source_service import SourceReading, SourceService
+from backend.services.source_service import (
+    ExampleRequest,
+    NameMemory,
+    NameScope,
+    SourceReading,
+    SourceService,
+)
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["texts"])
 
@@ -119,6 +126,26 @@ class PassageModel(BaseModel):
     scene_id: str | None = None
 
 
+class NameExampleRequest(BaseModel):
+    """A passage the author confirms: picked in a text (its words are read from the text)
+    or typed out (it must use the phrase)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: str | None = Field(default=None, max_length=200)
+    version_id: str | None = Field(default=None, max_length=200)
+    start: int | None = Field(default=None, ge=0)
+    end: int | None = Field(default=None, ge=1)
+    quote: str | None = Field(default=None, max_length=MAX_EXAMPLE_LENGTH)
+    # The scene it comes from, when typed out; a text's own scene is found by itself.
+    scene_id: str | None = Field(default=None, max_length=200)
+    # Whether the phrase means the answer's entry here. Leave out for what the answer says.
+    means: bool | None = None
+
+    def request(self) -> ExampleRequest:
+        return ExampleRequest(**self.model_dump())
+
+
 class NameDecisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -128,6 +155,31 @@ class NameDecisionRequest(BaseModel):
     entity_id: str | None = Field(default=None, max_length=200)
     # Set to keep the answer to one text; leave out to remember it everywhere.
     source_id: str | None = Field(default=None, max_length=200)
+    # Keep it to the what-if being worked in. Left out: yes inside a what-if, no otherwise.
+    what_if_only: bool | None = None
+    # Only from this scene on, and/or only until this scene (both included).
+    from_scene_id: str | None = Field(default=None, max_length=200)
+    until_scene_id: str | None = Field(default=None, max_length=200)
+    # Only in scenes seen through this character.
+    viewpoint_id: str | None = Field(default=None, max_length=200)
+    # The passage the question was answered from, kept as an example with the answer.
+    example: NameExampleRequest | None = None
+
+
+class NameExampleModel(BaseModel):
+    id: str
+    quote: str
+    means: bool
+    source_id: str | None = None
+    version_id: str | None = None
+    scene_id: str | None = None
+    # Where the phrase sits in the quote, as [start, end].
+    at: list[int] | None = None
+    noted_at: datetime | None = None
+    # Whether today's answers still read it this way; null when not checked.
+    holds: bool | None = None
+    # What the phrase means there today.
+    now: list[str] = Field(default_factory=list)
 
 
 class NameDecisionModel(BaseModel):
@@ -137,11 +189,18 @@ class NameDecisionModel(BaseModel):
     entity_id: str | None
     source_id: str | None
     decided_at: datetime
+    branch_id: str | None = None
+    from_scene_id: str | None = None
+    until_scene_id: str | None = None
+    viewpoint_id: str | None = None
+    examples: list[NameExampleModel] = Field(default_factory=list)
 
 
 class NameMemoryModel(BaseModel):
     items: list[NameDecisionModel]
     names: dict[str, str]
+    # Titles of the scenes the answers mention; a scene missing here is no longer planned.
+    scenes: dict[str, str] = Field(default_factory=dict)
 
 
 class AddEntryFromTextRequest(BaseModel):
@@ -172,7 +231,8 @@ def _text(source: SourceText, scenes: dict[str, str] | None = None) -> TextModel
     )
 
 
-def _decision(binding: AliasBinding) -> NameDecisionModel:
+def _decision(binding: AliasBinding, memory: NameMemory | None = None) -> NameDecisionModel:
+    checks = memory.checks if memory is not None else {}
     return NameDecisionModel(
         id=binding.id,
         phrase=binding.phrase,
@@ -180,6 +240,25 @@ def _decision(binding: AliasBinding) -> NameDecisionModel:
         entity_id=binding.entity_id,
         source_id=binding.source_id,
         decided_at=binding.decided_at,
+        branch_id=binding.branch_id,
+        from_scene_id=binding.from_scene_id,
+        until_scene_id=binding.until_scene_id,
+        viewpoint_id=binding.viewpoint_id,
+        examples=[
+            NameExampleModel(
+                id=example.id,
+                quote=example.quote,
+                means=example.means,
+                source_id=example.source_id,
+                version_id=example.version_id,
+                scene_id=example.scene_id,
+                at=list(example.at) if example.at is not None else None,
+                noted_at=example.noted_at,
+                holds=checks[example.id].holds if example.id in checks else None,
+                now=checks[example.id].now if example.id in checks else [],
+            )
+            for example in binding.examples
+        ],
     )
 
 
@@ -360,8 +439,12 @@ async def list_name_memory(
     scope: AccessScope = Depends(get_project_scope),
     service: SourceService = Depends(get_source_service),
 ) -> NameMemoryModel:
-    bindings, names = await service.bindings(scope, scope.workspace_id or "", project_id)
-    return NameMemoryModel(items=[_decision(item) for item in bindings], names=names)
+    memory = await service.bindings(scope, scope.workspace_id or "", project_id)
+    return NameMemoryModel(
+        items=[_decision(item, memory) for item in memory.bindings],
+        names=memory.names,
+        scenes=memory.scenes,
+    )
 
 
 @router.post("/names", response_model=NameDecisionModel, status_code=201)
@@ -379,6 +462,42 @@ async def decide_name(
         verdict=body.verdict,
         entity_id=body.entity_id,
         source_id=body.source_id,
+        where=NameScope(
+            what_if_only=body.what_if_only,
+            from_scene_id=body.from_scene_id,
+            until_scene_id=body.until_scene_id,
+            viewpoint_id=body.viewpoint_id,
+        ),
+        example=body.example.request() if body.example is not None else None,
+    )
+    return _decision(binding)
+
+
+@router.post("/names/{binding_id}/examples", response_model=NameDecisionModel, status_code=201)
+async def add_name_example(
+    project_id: str,
+    binding_id: str,
+    body: NameExampleRequest,
+    scope: AccessScope = Depends(require_project_scope),
+    service: SourceService = Depends(get_source_service),
+) -> NameDecisionModel:
+    """Keep a passage with an answer: here the phrase does, or does not, mean its entry."""
+    binding = await service.add_example(
+        scope, scope.workspace_id or "", project_id, binding_id, body.request()
+    )
+    return _decision(binding)
+
+
+@router.delete("/names/{binding_id}/examples/{example_id}", response_model=NameDecisionModel)
+async def remove_name_example(
+    project_id: str,
+    binding_id: str,
+    example_id: str,
+    scope: AccessScope = Depends(require_project_scope),
+    service: SourceService = Depends(get_source_service),
+) -> NameDecisionModel:
+    binding = await service.remove_example(
+        scope, scope.workspace_id or "", project_id, binding_id, example_id
     )
     return _decision(binding)
 

@@ -466,6 +466,15 @@ legend {
   margin-top: 0.2rem;
 }
 
+/* On a narrow screen the heading's words keep a readable line: the actions go below. */
+.card > .card-head {
+  flex-wrap: wrap;
+}
+
+.card > .card-head > :first-child {
+  flex: 1 1 16rem;
+}
+
 .section-gap {
   display: grid;
   gap: 1.25rem;
@@ -3874,4 +3883,216 @@ details.dismissed .findings {
   letter-spacing: 0.01em;
   color: var(--ink-2);
   margin: 0;
+}
+
+/* ------------------------------------------- where a name answer holds (CTX-016) --- */
+.name-limit-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: end;
+}
+
+.name-limit-row > select {
+  width: auto;
+  flex: 1 1 14rem;
+}
+
+.name-limit-part {
+  display: grid;
+  gap: 0.2rem;
+  flex: 1 1 12rem;
+}
+
+.name-limit-part label {
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  color: var(--ink-3);
+}
+
+.name-answer-fields {
+  display: grid;
+  align-items: start;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+}
+
+.name-answer {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.name-answer p {
+  margin: 0;
+}
+
+.name-examples {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.name-example blockquote {
+  margin: 0 0 0.25rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--line-strong);
+  font-family: var(--font-text);
+}
+
+.name-example-form {
+  padding: 0.75rem;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-s);
+}
+
+.choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.warn-text {
+  color: var(--warn);
+  font-family: var(--font-ui);
+}
+
+/* Access keys for other assistants (QRY-003). The key and settings are shown once, in type
+   that tells characters apart; stopped keys step back. */
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+}
+
+textarea.mono {
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
+
+.access-key-made {
+  margin-top: 1rem;
+}
+
+.key-list-heading {
+  margin: 1.5rem 0 0.25rem;
+  font-size: 1rem;
+}
+
+.row.access-key {
+  flex-wrap: wrap;
+}
+
+.row.access-key.stopped strong {
+  color: var(--ink-2, var(--ink));
+  font-weight: 500;
+}
+
+.key-use-wrap {
+  flex-basis: 100%;
+}
+
+.key-use {
+  margin-top: 0.25rem;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.key-use th,
+.key-use td {
+  padding: 0.2rem 0.9rem 0.2rem 0;
+  text-align: left;
+}
+
+.key-use td + td,
+.key-use th + th {
+  text-align: right;
+}
+
+/* ----------------------------------------------- kept for you (AST-EXP-015) --- */
+.notice.kept-note {
+  display: block;
+}
+
+.kept-legend {
+  font-family: var(--font-ui);
+  font-weight: 600;
+}
+
+.kept-rules {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.kept-rule-text {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.kept-rule-name {
+  font-weight: 600;
+}
+
+.kept-subhead {
+  font-size: 0.95rem;
+  margin: 0 0 0.35rem;
+}
+
+.kept-always {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.kept-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.kept-item {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.kept-item:last-child {
+  border-bottom: 0;
+}
+
+.kept-item-head,
+.kept-item-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.5rem 1rem;
+}
+
+.kept-item-foot {
+  align-items: baseline;
+}
+
+.kept-changes {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.kept-rule-text,
+#kept-rules-hint {
+  max-width: 72ch;
+}
+
+.kept-item-head > .grow {
+  flex: 1 1 18rem;
 }

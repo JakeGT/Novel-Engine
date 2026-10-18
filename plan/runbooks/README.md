@@ -16,6 +16,7 @@ the same commands with `uv run --locked` in place of `docker compose exec server
 | [Failed archive import](failed-import.md) | Restoring a story archive stopped part way |
 | [Disk full](disk-full.md) | Saves fail, the database stops, backups fail |
 | [Rotating the credential key](credential-key-rotation.md) | The key that protects stored provider keys must change |
+| [Connected assistants and access keys](connected-assistants.md) | Connecting an assistant through MCP; a key leaked; an assistant is refused |
 
 Every command was checked against the code (2026-10-18). The read-only ones (the migration
 check, the story check, the SQL queries, the retention dry run, diagnostics, the readiness

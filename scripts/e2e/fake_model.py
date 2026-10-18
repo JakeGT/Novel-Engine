@@ -92,6 +92,25 @@ def _plan_card(body: dict[str, Any]) -> dict[str, Any]:
     return card
 
 
+# Asking the assistant for a change (the God Hand): "Add a character called Nell." becomes one
+# new entry of that name, so "keep the safe ones for me" can be driven end to end.
+ASKED_NAME = re.compile(r"[Aa]dd a character called ([A-Z][A-Za-z' -]*[A-Za-z])")
+
+
+def _change(body: dict[str, Any]) -> dict[str, Any]:
+    asked = "\n".join(
+        str(m.get("content", "")) for m in body.get("messages", []) if m.get("role") == "user"
+    )
+    found = ASKED_NAME.findall(asked)
+    if not found:
+        return {"understood": "Nothing to change.", "questions": ["What should change?"]}
+    name = found[-1]
+    return {
+        "understood": f"Add {name} to the story.",
+        "new_entities": [{"ref": "n", "type": "Character", "name": name}],
+    }
+
+
 def _structured(name: str, body: dict[str, Any]) -> dict[str, Any]:
     if name == "CheckNotes":
         return _check(body)
@@ -102,6 +121,8 @@ def _structured(name: str, body: dict[str, Any]) -> dict[str, Any]:
         return READ
     if name == "PlanCardDraft":
         return _plan_card(body)
+    if name == "ChangePlan":
+        return _change(body)
     return {}
 
 

@@ -885,6 +885,22 @@ class CanonArchiveService:
                 "verdict": binding.verdict.value,
                 "entity_id": binding.entity_id,
                 "source_id": binding.source_id,
+                # Limits and examples only when set, so older archives read the same (CTX-016).
+                **{
+                    key: value
+                    for key, value in (
+                        ("branch_id", binding.branch_id),
+                        ("from_scene_id", binding.from_scene_id),
+                        ("until_scene_id", binding.until_scene_id),
+                        ("viewpoint_id", binding.viewpoint_id),
+                    )
+                    if value is not None
+                },
+                **(
+                    {"examples": [example.as_json() for example in binding.examples]}
+                    if binding.examples
+                    else {}
+                ),
             }
             for binding in await self._sources.list_bindings(  # type: ignore[attr-defined]
                 workspace_id=workspace_id, project_id=project_id
@@ -974,7 +990,9 @@ class CanonArchiveService:
         from backend.domain.canon.naming import normalize_name
         from backend.domain.rules import RuleBody, RuleExample, RuleStatus
         from backend.domain.sources import (
+            MAX_EXAMPLES,
             AliasBinding,
+            NameExample,
             SourceKind,
             Verdict,
             VersionOrigin,
@@ -1034,6 +1052,20 @@ class CanonArchiveService:
                         source_id=name.get("source_id"),
                         decided_by=actor_user_id,
                         decided_at=datetime.now(UTC),
+                        # A what-if comes back under a new id; its answers follow it.
+                        branch_id=_dedup_branch_id(
+                            archive["checksum"], name["branch_id"], workspace_id, project_id
+                        )
+                        if name.get("branch_id")
+                        else None,
+                        from_scene_id=name.get("from_scene_id"),
+                        until_scene_id=name.get("until_scene_id"),
+                        viewpoint_id=name.get("viewpoint_id"),
+                        examples=tuple(
+                            NameExample.from_json(example)
+                            for example in name.get("examples") or []
+                            if isinstance(example, dict)
+                        )[:MAX_EXAMPLES],
                     )
                 )
                 restored["names"] += 1
@@ -2251,6 +2283,13 @@ class CanonArchiveService:
                 check_refs([raw["entity_id"]], "name answer")
             if raw.get("source_id") is not None and raw["source_id"] not in text_ids:
                 raise ArchiveError("a name answer points at a text outside the archive")
+            if raw.get("viewpoint_id") is not None:
+                check_refs([raw["viewpoint_id"]], "name answer")
+            examples = raw.get("examples", [])
+            if not isinstance(examples, list) or not all(
+                isinstance(item, dict) and isinstance(item.get("quote"), str) for item in examples
+            ):
+                raise ArchiveError("a name answer's examples are malformed")
         for raw in story_rules:
             claim(raw["id"], kind="story rule")
             if not raw.get("versions"):

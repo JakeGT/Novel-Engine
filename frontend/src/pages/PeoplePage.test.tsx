@@ -115,8 +115,13 @@ describe('PeoplePage', () => {
 
     expect(await screen.findByText('Jake Talling')).toBeInTheDocument()
     expect(screen.getByRole('note')).toHaveTextContent('Only an owner can invite people')
-    expect(screen.queryByRole('button')).not.toBeInTheDocument()
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    const members = screen.getByRole('region', { name: 'Members' })
+    expect(within(members).queryByRole('button')).not.toBeInTheDocument()
+    expect(within(members).queryByRole('combobox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Invite someone' })).not.toBeInTheDocument()
+    // Anyone may connect an assistant of their own, to read only (they cannot write).
+    const keys = screen.getByRole('region', { name: 'Other assistants' })
+    expect(within(keys).getByLabelText(/Read and suggest changes/)).toBeDisabled()
     // The invitation list is an owner's business and is not even requested.
     expect(api.find('GET', '/invitations')).toHaveLength(0)
   })

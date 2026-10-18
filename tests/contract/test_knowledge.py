@@ -79,7 +79,14 @@ def test_only_characters_know_things(auth_client, fake_container):
     assert refused.status_code == 400
 
 
-def test_telling_gives_each_listener_a_belief_and_a_lie_is_simply_false(
+def _approve(client, w, mutation_id: str) -> int:
+    assert client.post(f"{w['base']}/mutations/{mutation_id}/approve", json={}).status_code == 200
+    committed = client.post(f"{w['base']}/mutations/{mutation_id}/commit")
+    assert committed.status_code == 200, committed.text
+    return committed.json()["revision"]
+
+
+def test_telling_proposes_a_belief_for_each_listener_and_a_lie_is_simply_false(
     auth_client, fake_container
 ):
     w = _world(auth_client, fake_container)
@@ -94,11 +101,30 @@ def test_telling_gives_each_listener_a_belief_and_a_lie_is_simply_false(
         },
     )
     assert told.status_code == 201, told.text
-    assert told.json()["beliefs"] == 1 and told.json()["revision"] == head + 1
-    tobin = _knows(auth_client, w, "tobin")
-    assert [b["belief"]["source_ref"] for b in tobin["wrong"]] == [told.json()["event_id"]]
+    body = told.json()
+    assert body["beliefs"] == 1
+    assert body["proposals"] == [
+        {
+            "holder_id": w["tobin"],
+            "how": "told",
+            "confidence": 1.0,
+            "why": "Tobin Ashe was told by Mara; Tobin Ashe believes what people tell them, "
+            "so believes it firmly.",
+            "already": False,
+        }
+    ]
+    # Nothing is in the story until the proposal is approved.
+    assert _knows(auth_client, w, "tobin")["wrong"] == []
+    assert auth_client.get(f"{w['base']}/events/{body['event_id']}").status_code == 404
+    review = auth_client.get(f"{w['base']}/mutations/{body['mutation_id']}").json()
+    assert review["origin"] == "derived" and review["status"] == "needs_review"
+    belief_op = next(o for o in review["operations"] if o["operation_type"] == "assert_belief")
+    assert belief_op["payload"]["why"] == body["proposals"][0]["why"]
 
-    event = auth_client.get(f"{w['base']}/events/{told.json()['event_id']}").json()
+    assert _approve(auth_client, w, body["mutation_id"]) == head + 1
+    tobin = _knows(auth_client, w, "tobin")
+    assert [b["belief"]["source_ref"] for b in tobin["wrong"]] == [body["event_id"]]
+    event = auth_client.get(f"{w['base']}/events/{body['event_id']}").json()
     assert event["kind"] == "telling" and event["name"] == "Mara tells Tobin Ashe"
     assert {(p["entity_id"], p["role"]) for p in event["participants"]} == {
         (w["mara"], "speaker"),
@@ -116,6 +142,9 @@ def test_telling_gives_each_listener_a_belief_and_a_lie_is_simply_false(
         },
     )
     assert again.json()["already_knew"] == [w["tobin"]] and again.json()["beliefs"] == 0
+    assert again.json()["proposals"][0]["why"] == (
+        "Tobin Ashe already believes this, so nothing is added."
+    )
 
 
 def test_overhearing_is_believed_less_firmly(auth_client, fake_container):
@@ -136,6 +165,7 @@ def test_overhearing_is_believed_less_firmly(auth_client, fake_container):
         },
     )
     assert told.status_code == 201, told.text
+    _approve(auth_client, w, told.json()["mutation_id"])
     beliefs = auth_client.get(
         f"{w['base']}/beliefs", params={"holder_entity_id": ines["id"]}
     ).json()["items"]

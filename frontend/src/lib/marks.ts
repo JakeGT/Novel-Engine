@@ -7,7 +7,9 @@ import type { CanonEntity } from '../api/client'
 export const TAGS_KEY = '_tags'
 export const IMPORTANCE_KEY = '_importance'
 export const NEEDS_DETAIL_KEY = '_needs_detail'
-const MARK_KEYS = new Set([TAGS_KEY, IMPORTANCE_KEY, NEEDS_DETAIL_KEY])
+// How a character takes what others tell them (KNW-006) is kept under a reserved name too.
+export const TRUST_KEY = '_trust'
+const MARK_KEYS = new Set([TAGS_KEY, IMPORTANCE_KEY, NEEDS_DETAIL_KEY, TRUST_KEY])
 
 /** Most to least central, with the words an author sees. */
 export const IMPORTANCE: { value: string; label: string; hint: string }[] = [

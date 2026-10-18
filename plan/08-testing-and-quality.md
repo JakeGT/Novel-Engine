@@ -65,7 +65,7 @@ Offline contract tests use recorded or synthetic structured responses. Live-prov
 | Resolution memory | time/POV-scoped aliases, positive/negative correction examples, no historical/global silent remap |
 | Derived views | watermark/lag, duplicate delivery, replay equivalence, dependency coverage, impact preview parity |
 | Suppressions | scope/expiry/dependency staleness, audit, and inability to suppress integrity failures |
-| MCP | authenticated tenant scope, POV filters, read parity, proposal-only writes, no commit/policy bypass |
+| MCP | authenticated tenant scope, POV filters, read parity, proposal-only writes, no commit/policy bypass (built: `tests/contract/test_mcp.py`, `tests/application/test_access_key_service.py`, `tests/unit/test_access_key_format.py`, `tests/integration/test_access_key_store.py`, `frontend/e2e/access-keys.spec.ts`) |
 | Spoiler exports | narrative-position/viewpoint filtering, secret/media leakage, artifact-specific sharing |
 | Export | round trip, schema version, checksum, missing derived data rebuild |
 

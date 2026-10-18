@@ -8,6 +8,8 @@ import { EntryImpact } from '../components/ChangeImpact'
 import { CharacterArcs } from '../components/ArcPath'
 import { EntityForm } from '../components/EntityForm'
 import { BeliefsPanel } from '../components/BeliefsPanel'
+import { ClaimsPanel } from '../components/ClaimsPanel'
+import { TrustPanel } from '../components/TrustPanel'
 import { KnowledgePanel } from '../components/KnowledgePanel'
 import { useStoryClock, whenText } from '../lib/storytime'
 import { FactsPanel } from '../components/FactsPanel'
@@ -264,7 +266,9 @@ export function EntryPage() {
               <Details entity={entity} onEdit={editable ? () => setEditing(true) : undefined} />
               <FactsPanel entity={entity} />
               {entity.type === 'Character' && <BeliefsPanel entity={entity} />}
+              <ClaimsPanel entity={entity} />
               {entity.type === 'Character' && <KnowledgePanel entity={entity} />}
+              {entity.type === 'Character' && <TrustPanel entity={entity} />}
               {entity.type === 'Character' && <CharacterArcs entity={entity} />}
               {entity.type === 'Character' && <Events entity={entity} />}
               {editable && !bare && <Assistant entity={entity} bare={false} />}

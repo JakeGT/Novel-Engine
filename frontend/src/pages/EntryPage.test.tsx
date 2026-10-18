@@ -19,6 +19,8 @@ const base = {
   'GET /links': { items: [] },
   'GET /provenance/entity/ent_mara': { items: [] },
   'GET /knowledge/characters/ent_mara': knowledge('ent_mara'),
+  'GET /knowledge/characters/ent_mara/trust': { entity_id: 'ent_mara', default: 'believes', speakers: {} },
+  'GET /knowledge/claims': { items: [] },
   'GET /timeline': EMPTY_TIMELINE,
   'GET /entities/name-collisions': { items: [], limit: 0, offset: 0 },
   'GET /plan': { items: [], open: [], conditions: [] },

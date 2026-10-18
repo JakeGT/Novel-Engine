@@ -15,6 +15,7 @@ from typing import Any
 from sqlalchemy import text
 
 from backend.adapters.canon_tables import CANON_PROJECT_TABLES
+from backend.adapters.delegation_store import settings_from_row
 from backend.adapters.journal import apply_transition
 from backend.adapters.system import uuid7
 from backend.core.database import session_scope
@@ -22,7 +23,7 @@ from backend.domain.archive import ArchiveImport, ImportStatus
 from backend.domain.branching import working_branch_id
 from backend.domain.canon.assertions import Belief, Fact, FactStatus, FactVisibility
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
-from backend.domain.canon.events import Event, EventParticipant
+from backend.domain.canon.events import Event, EventClaim, EventParticipant
 from backend.domain.canon.ids import format_canon_id
 from backend.domain.canon.naming import normalize_name
 from backend.domain.canon.plans import (
@@ -35,6 +36,7 @@ from backend.domain.canon.plans import (
 from backend.domain.canon.propositions import Proposition
 from backend.domain.canon.registry import CORE_ENTITY_TYPES
 from backend.domain.canon.revisions import CanonRevision, OriginKind, Provenance
+from backend.domain.delegation import RULE_OFF_CODE, RULE_OFF_MESSAGE, rule_still_on
 from backend.domain.history import CanonTag, CanonTagHistoryEntry
 from backend.domain.journal import (
     CommitEnvelope,
@@ -427,6 +429,10 @@ def _belief(row: Any) -> Belief:
     )
 
 
+def _claim(raw: Any) -> EventClaim | None:
+    return EventClaim.model_validate(raw) if raw else None
+
+
 def _event(row: Any) -> Event:
     return Event(
         id=row.id,
@@ -441,6 +447,7 @@ def _event(row: Any) -> Event:
         outcome_ids=list(_load(row.outcome_ids) or []),
         world_position=row.world_position,
         when=parse_world_time(_load(getattr(row, "world_time", None))),
+        claim=_claim(_load(getattr(row, "claim", None))),
         provenance_id=row.provenance_id,
         created_revision=row.created_revision,
         retired_revision=getattr(row, "retired_revision", None),
@@ -715,6 +722,68 @@ class _TxCanonReader:
         return [_fact(row) for row in rows]
 
 
+async def _refuse_if_kept_rule_off(session: Any, mutation: Any, revision: int) -> None:
+    """Inside the commit transaction: a pending "kept for you" needs its rule still on.
+
+    The settings rows are read ``FOR SHARE``, so switching a rule off waits for a commit
+    already past this point, and a commit that comes after the switch sees it. Once the
+    check passes, the record says ``kept`` (with the revision this commit makes) in the
+    same transaction, so a switch-off that was waiting finds nothing left to send back.
+    """
+    kept = (
+        await session.execute(
+            text(
+                "SELECT kinds FROM delegation_records WHERE workspace_id = :w "
+                "AND project_id = :p AND mutation_id = :m AND how = 'kept' AND state = 'pending'"
+            ),
+            {"w": mutation.workspace_id, "p": mutation.project_id, "m": mutation.id},
+        )
+    ).first()
+    if kept is None:
+        return
+    rows = (
+        await session.execute(
+            text(
+                "SELECT project_id, rules, allow_clients, forbidden FROM delegation_settings "
+                "WHERE workspace_id = :w AND project_id IN (:p, '') FOR SHARE"
+            ),
+            {"w": mutation.workspace_id, "p": mutation.project_id},
+        )
+    ).all()
+    story = next(
+        (
+            settings_from_row(row.rules, row.allow_clients, row.forbidden)
+            for row in rows
+            if row.project_id == mutation.project_id
+        ),
+        None,
+    )
+    forbidden = any(row.project_id == "" and row.forbidden for row in rows)
+    if story is None or not rule_still_on(tuple(kept.kinds or ()), story, forbidden):
+        raise CanonValidationError(
+            DomainValidationReport(
+                findings=(
+                    ValidationFinding(
+                        ValidationSeverity.INTEGRITY, RULE_OFF_CODE, RULE_OFF_MESSAGE
+                    ),
+                )
+            )
+        )
+    await session.execute(
+        text(
+            "UPDATE delegation_records SET state = 'kept', revision = :rev, updated_at = now() "
+            "WHERE workspace_id = :w AND project_id = :p AND mutation_id = :m "
+            "AND how = 'kept' AND state = 'pending'"
+        ),
+        {
+            "w": mutation.workspace_id,
+            "p": mutation.project_id,
+            "m": mutation.id,
+            "rev": revision,
+        },
+    )
+
+
 class PostgresCanonRepository:
     def __init__(self, session_factory: Any) -> None:
         self._session_factory = session_factory
@@ -836,6 +905,11 @@ class PostgresCanonRepository:
                 effective_origin = mutation.origin
                 intent = mutation.intent
                 status = MutationStatus(mutation.status)
+                # A suggestion being kept for the author under a rule (AST-EXP-015) commits
+                # only while that rule is still on: switching it off stops it at once.
+                # Nothing else can commit on this line first: the head is checked against
+                # ``expected_head`` under lock below, so this commit's revision is the next.
+                await _refuse_if_kept_rule_off(session, mutation, envelope.expected_head + 1)
 
             # The review gate is evaluated here, inside the commit transaction, so no
             # service, import, or direct repository caller can skip a required approval.
@@ -1366,12 +1440,12 @@ class PostgresCanonRepository:
                     INSERT INTO canon_events (
                         workspace_id, project_id, branch_id, id, kind, name, participants,
                         location_ids, cause_ids, outcome_ids, world_position, provenance_id,
-                        created_revision, world_time
+                        created_revision, world_time, claim
                     )
                     VALUES (:w, :p, :b, :id, :kind, :name, CAST(:participants AS JSONB),
                             CAST(:locations AS JSONB), CAST(:causes AS JSONB),
                             CAST(:outcomes AS JSONB), :world_position, :prov, :rev,
-                            CAST(:world_time AS JSONB))
+                            CAST(:world_time AS JSONB), CAST(:claim AS JSONB))
                     """
                 ),
                 {
@@ -1389,6 +1463,11 @@ class PostgresCanonRepository:
                     "prov": provenance_id,
                     "rev": revision,
                     "world_time": _time_json(operation.when, clear_unknown=True),
+                    "claim": (
+                        json.dumps(operation.claim.model_dump(mode="json"))
+                        if operation.claim is not None
+                        else None
+                    ),
                 },
             )
         elif isinstance(operation, AmendEventOp):

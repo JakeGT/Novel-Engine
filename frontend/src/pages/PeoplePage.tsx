@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { useLocation } from 'react-router-dom'
 import { api, isApiError, type MemberRole } from '../api/client'
+import { AccessKeys } from '../components/AccessKeys'
 import { Badge, Button, ConfirmDialog, EmptyState, ErrorNotice, Field, Loading } from '../components/ui'
 import { fullDate, timeAgo } from '../lib/time'
 import { initial, roleLabel } from '../lib/words'
@@ -21,7 +22,7 @@ const ROLES: { value: MemberRole; label: string; can: string }[] = [
 
 /** Who can see and change this workspace's stories, and a way to invite more people. */
 export function PeoplePage() {
-  const { scope, userId, access } = useProject()
+  const { scope, userId, access, canWrite } = useProject()
   const workspaceId = scope.workspaceId
   const queryClient = useQueryClient()
   const membersKey = ['members', workspaceId]
@@ -103,6 +104,9 @@ export function PeoplePage() {
         <EmptyState icon="user" title="Just you">
           This is a single-user copy of Novel Engine, so there is nobody to invite.
         </EmptyState>
+        <div className="section-gap">
+          <AccessKeys workspaceId={null} projectId={scope.projectId} canWrite={canWrite} hosted={false} />
+        </div>
       </>
     )
   }
@@ -345,6 +349,13 @@ export function PeoplePage() {
             <ErrorNotice error={revoke.error} prefix="Not withdrawn" />
           </section>
         )}
+
+        <AccessKeys
+          workspaceId={workspaceId}
+          projectId={scope.projectId}
+          canWrite={canWrite}
+          hosted={access?.hosted ?? true}
+        />
       </div>
     </>
   )

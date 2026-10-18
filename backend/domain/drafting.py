@@ -87,6 +87,13 @@ class DraftBrief:
     secrets: list[SecretToGuard] = field(default_factory=list)
     reveals: list[PlannedReveal] = field(default_factory=list)
     words_asked: int | None = None
+    # A name shown above → the entry it stands for, and → other phrases that mean that entry
+    # in this scene (its aliases, and the author's answers that hold here; CTX-016).
+    ids: dict[str, str] = field(default_factory=dict)
+    also: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+    def names_for(self, name: str) -> list[str]:
+        return [name, *self.also.get(name, ())]
 
 
 def _paragraphs(text: str) -> list[tuple[int, int]]:
@@ -140,7 +147,7 @@ def check_draft(text: str, brief: DraftBrief, mentions: Sequence[Mention]) -> li
             continue
         for start, end in _paragraphs(text):
             paragraph = text[start:end]
-            if all(_mentions(paragraph, [name]) for name in names):
+            if all(_mentions(paragraph, brief.names_for(name)) for name in names):
                 findings.append(
                     DraftFinding(
                         "secret",
@@ -157,7 +164,7 @@ def check_draft(text: str, brief: DraftBrief, mentions: Sequence[Mention]) -> li
     # A reveal the plan promised, with none of its names on the page.
     for reveal in brief.reveals:
         names = [name for name in reveal.names if name]
-        if names and not all(_mentions(text, [name]) for name in names):
+        if names and not all(_mentions(text, brief.names_for(name)) for name in names):
             findings.append(
                 DraftFinding(
                     "reveal_missing",
@@ -168,7 +175,11 @@ def check_draft(text: str, brief: DraftBrief, mentions: Sequence[Mention]) -> li
             )
 
     # The place and the viewpoint, never mentioned.
-    if brief.place and brief.place_names and not _mentions(text, brief.place_names):
+    if (
+        brief.place
+        and brief.place_names
+        and not _mentions(text, [*brief.place_names, *brief.also.get(brief.place, ())])
+    ):
         findings.append(
             DraftFinding(
                 "place_missing",
@@ -180,7 +191,9 @@ def check_draft(text: str, brief: DraftBrief, mentions: Sequence[Mention]) -> li
     if (
         brief.point_of_view
         and brief.point_of_view_names
-        and not _mentions(text, brief.point_of_view_names)
+        and not _mentions(
+            text, [*brief.point_of_view_names, *brief.also.get(brief.point_of_view, ())]
+        )
         and not _FIRST_PERSON.search(text)
     ):
         findings.append(

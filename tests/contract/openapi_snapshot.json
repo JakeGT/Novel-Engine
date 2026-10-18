@@ -15,6 +15,145 @@
         "title": "AcceptInvitationRequest",
         "type": "object"
       },
+      "AccessKeyModel": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "hint": {
+            "title": "Hint",
+            "type": "string"
+          },
+          "holder_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holder Name"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "may_suggest": {
+            "title": "May Suggest",
+            "type": "boolean"
+          },
+          "mine": {
+            "title": "Mine",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "revoked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked Reason"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "hint",
+          "project_id",
+          "may_suggest",
+          "status",
+          "revoked_reason",
+          "created_at",
+          "expires_at",
+          "last_used_at",
+          "revoked_at",
+          "mine"
+        ],
+        "title": "AccessKeyModel",
+        "type": "object"
+      },
+      "AccessKeyUseModel": {
+        "properties": {
+          "calls": {
+            "title": "Calls",
+            "type": "integer"
+          },
+          "day": {
+            "title": "Day",
+            "type": "string"
+          },
+          "refused": {
+            "title": "Refused",
+            "type": "integer"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "day",
+          "tool",
+          "calls",
+          "refused"
+        ],
+        "title": "AccessKeyUseModel",
+        "type": "object"
+      },
       "AddEntryFromTextRequest": {
         "additionalProperties": false,
         "properties": {
@@ -917,6 +1056,18 @@
               }
             ],
             "title": "Source Ref"
+          },
+          "why": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Why"
           }
         },
         "required": [
@@ -1055,6 +1206,18 @@
                 "type": "null"
               }
             ]
+          },
+          "why": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Why"
           }
         },
         "required": [
@@ -3364,6 +3527,151 @@
         "title": "ChooseDirectionRequest",
         "type": "object"
       },
+      "ClaimList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ClaimModel"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ClaimList",
+        "type": "object"
+      },
+      "ClaimModel": {
+        "description": "Something said in the story. Not necessarily true; never counted as a fact.",
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/EventModel"
+          },
+          "perceiver_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Perceiver Ids",
+            "type": "array"
+          },
+          "speaker_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speaker Id"
+          },
+          "speaker_role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "speaker",
+                  "narrator"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speaker Role"
+          },
+          "standing": {
+            "enum": [
+              "borne_out",
+              "contradicted",
+              "unconfirmed"
+            ],
+            "title": "Standing",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event",
+          "speaker_id",
+          "speaker_role",
+          "perceiver_ids",
+          "standing"
+        ],
+        "title": "ClaimModel",
+        "type": "object"
+      },
+      "ClaimRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "hearers_believe": {
+            "default": false,
+            "title": "Hearers Believe",
+            "type": "boolean"
+          },
+          "modality": {
+            "default": "states",
+            "enum": [
+              "states",
+              "suggests",
+              "wonders",
+              "denies"
+            ],
+            "title": "Modality",
+            "type": "string"
+          },
+          "narrates": {
+            "default": false,
+            "title": "Narrates",
+            "type": "boolean"
+          },
+          "perceiver_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 12,
+            "title": "Perceiver Ids",
+            "type": "array"
+          },
+          "proposition": {
+            "$ref": "#/components/schemas/PropositionRequest"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
+          "speaker_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speaker Id"
+          }
+        },
+        "required": [
+          "proposition",
+          "expected_revision"
+        ],
+        "title": "ClaimRequest",
+        "type": "object"
+      },
       "CloseBeliefOp": {
         "additionalProperties": false,
         "properties": {
@@ -3412,6 +3720,18 @@
             "default": "close_fact",
             "title": "Op",
             "type": "string"
+          },
+          "why": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Why"
           }
         },
         "required": [
@@ -3884,6 +4204,46 @@
         "title": "ContextSettingsRequest",
         "type": "object"
       },
+      "CreateAccessKeyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_in_days": {
+            "default": 90,
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Expires In Days",
+            "type": "integer"
+          },
+          "may_suggest": {
+            "default": false,
+            "title": "May Suggest",
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "CreateAccessKeyRequest",
+        "type": "object"
+      },
       "CreateCredentialRequest": {
         "properties": {
           "key": {
@@ -4040,6 +4400,16 @@
             },
             "title": "Cause Ids",
             "type": "array"
+          },
+          "claim": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventClaim"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "evidence": {
             "items": {
@@ -4295,6 +4665,23 @@
           "name"
         ],
         "title": "CreateWorkspaceRequest",
+        "type": "object"
+      },
+      "CreatedAccessKeyModel": {
+        "properties": {
+          "access_key": {
+            "$ref": "#/components/schemas/AccessKeyModel"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_key",
+          "key"
+        ],
+        "title": "CreatedAccessKeyModel",
         "type": "object"
       },
       "CredentialModel": {
@@ -5348,6 +5735,84 @@
         "title": "EnumObject",
         "type": "object"
       },
+      "EventClaim": {
+        "additionalProperties": false,
+        "description": "What a claim says, how, and where. Never a fact (ADR-020 amendment).",
+        "properties": {
+          "modality": {
+            "default": "states",
+            "enum": [
+              "states",
+              "suggests",
+              "wonders",
+              "denies"
+            ],
+            "title": "Modality",
+            "type": "string"
+          },
+          "proposition": {
+            "$ref": "#/components/schemas/Proposition"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          }
+        },
+        "required": [
+          "proposition"
+        ],
+        "title": "EventClaim",
+        "type": "object"
+      },
+      "EventClaimModel": {
+        "description": "What a claim says (never a fact), how it is said, and the scene it is said in.",
+        "properties": {
+          "modality": {
+            "title": "Modality",
+            "type": "string"
+          },
+          "object": {
+            "additionalProperties": true,
+            "title": "Object",
+            "type": "object"
+          },
+          "predicate": {
+            "title": "Predicate",
+            "type": "string"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
+          "subject_id": {
+            "title": "Subject Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subject_id",
+          "predicate",
+          "object",
+          "modality"
+        ],
+        "title": "EventClaimModel",
+        "type": "object"
+      },
       "EventModel": {
         "properties": {
           "cause_ids": {
@@ -5356,6 +5821,16 @@
             },
             "title": "Cause Ids",
             "type": "array"
+          },
+          "claim": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventClaimModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_revision": {
             "title": "Created Revision",
@@ -6463,6 +6938,71 @@
         "title": "Keep",
         "type": "string"
       },
+      "KeepDecisionModel": {
+        "description": "How one suggestion was decided, when the rules looked at it.",
+        "properties": {
+          "how": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "How"
+          },
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Kinds",
+            "type": "array"
+          },
+          "mutation_id": {
+            "title": "Mutation Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          }
+        },
+        "required": [
+          "mutation_id"
+        ],
+        "title": "KeepDecisionModel",
+        "type": "object"
+      },
       "KeepRequest": {
         "additionalProperties": false,
         "properties": {
@@ -6479,6 +7019,52 @@
           }
         },
         "title": "KeepRequest",
+        "type": "object"
+      },
+      "KeepRuleModel": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "hand_approvals": {
+            "title": "Hand Approvals",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "on": {
+            "title": "On",
+            "type": "boolean"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "description",
+          "on",
+          "hand_approvals",
+          "since"
+        ],
+        "title": "KeepRuleModel",
         "type": "object"
       },
       "KeptContextModel": {
@@ -6514,6 +7100,176 @@
           "words"
         ],
         "title": "KeptContextModel",
+        "type": "object"
+      },
+      "KeptItemModel": {
+        "properties": {
+          "kept_at": {
+            "format": "date-time",
+            "title": "Kept At",
+            "type": "string"
+          },
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Kinds",
+            "type": "array"
+          },
+          "mutation_id": {
+            "title": "Mutation Id",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/KeptOperationModel"
+            },
+            "title": "Operations",
+            "type": "array"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
+          },
+          "undo_mutation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Undo Mutation Id"
+          },
+          "undo_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Undo Status"
+          }
+        },
+        "required": [
+          "mutation_id",
+          "kinds",
+          "note",
+          "kept_at",
+          "revision",
+          "operations",
+          "undo_mutation_id",
+          "undo_status"
+        ],
+        "title": "KeptItemModel",
+        "type": "object"
+      },
+      "KeptListModel": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/KeptItemModel"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "KeptListModel",
+        "type": "object"
+      },
+      "KeptOperationModel": {
+        "properties": {
+          "operation_type": {
+            "title": "Operation Type",
+            "type": "string"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          }
+        },
+        "required": [
+          "ordinal",
+          "operation_type",
+          "payload"
+        ],
+        "title": "KeptOperationModel",
+        "type": "object"
+      },
+      "KeptSettingsModel": {
+        "properties": {
+          "allow_clients": {
+            "title": "Allow Clients",
+            "type": "boolean"
+          },
+          "always_waits": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Always Waits",
+            "type": "array"
+          },
+          "daily_limit": {
+            "title": "Daily Limit",
+            "type": "integer"
+          },
+          "hand_approvals_needed": {
+            "title": "Hand Approvals Needed",
+            "type": "integer"
+          },
+          "kept_since_seen": {
+            "title": "Kept Since Seen",
+            "type": "integer"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/KeepRuleModel"
+            },
+            "title": "Rules",
+            "type": "array"
+          },
+          "size_limit": {
+            "title": "Size Limit",
+            "type": "integer"
+          },
+          "workspace_forbidden": {
+            "title": "Workspace Forbidden",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "rules",
+          "allow_clients",
+          "workspace_forbidden",
+          "hand_approvals_needed",
+          "size_limit",
+          "daily_limit",
+          "always_waits",
+          "kept_since_seen"
+        ],
+        "title": "KeptSettingsModel",
         "type": "object"
       },
       "KnownFactModel": {
@@ -7289,6 +8045,17 @@
       },
       "NameDecisionModel": {
         "properties": {
+          "branch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Id"
+          },
           "decided_at": {
             "format": "date-time",
             "title": "Decided At",
@@ -7304,6 +8071,24 @@
               }
             ],
             "title": "Entity Id"
+          },
+          "examples": {
+            "items": {
+              "$ref": "#/components/schemas/NameExampleModel"
+            },
+            "title": "Examples",
+            "type": "array"
+          },
+          "from_scene_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Scene Id"
           },
           "id": {
             "title": "Id",
@@ -7324,9 +8109,31 @@
             ],
             "title": "Source Id"
           },
+          "until_scene_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until Scene Id"
+          },
           "verdict": {
             "title": "Verdict",
             "type": "string"
+          },
+          "viewpoint_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewpoint Id"
           }
         },
         "required": [
@@ -7355,6 +8162,28 @@
             ],
             "title": "Entity Id"
           },
+          "example": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NameExampleRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "from_scene_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Scene Id"
+          },
           "phrase": {
             "maxLength": 120,
             "minLength": 1,
@@ -7373,8 +8202,43 @@
             ],
             "title": "Source Id"
           },
+          "until_scene_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until Scene Id"
+          },
           "verdict": {
             "$ref": "#/components/schemas/Verdict"
+          },
+          "viewpoint_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewpoint Id"
+          },
+          "what_if_only": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "What If Only"
           }
         },
         "required": [
@@ -7382,6 +8246,197 @@
           "verdict"
         ],
         "title": "NameDecisionRequest",
+        "type": "object"
+      },
+      "NameExampleModel": {
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "holds": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holds"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "means": {
+            "title": "Means",
+            "type": "boolean"
+          },
+          "noted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Noted At"
+          },
+          "now": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Now",
+            "type": "array"
+          },
+          "quote": {
+            "title": "Quote",
+            "type": "string"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          }
+        },
+        "required": [
+          "id",
+          "quote",
+          "means"
+        ],
+        "title": "NameExampleModel",
+        "type": "object"
+      },
+      "NameExampleRequest": {
+        "additionalProperties": false,
+        "description": "A passage the author confirms: picked in a text (its words are read from the text)\nor typed out (it must use the phrase).",
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "means": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Means"
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "maxLength": 400,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          }
+        },
+        "title": "NameExampleRequest",
         "type": "object"
       },
       "NameMemoryModel": {
@@ -7398,6 +8453,13 @@
               "type": "string"
             },
             "title": "Names",
+            "type": "object"
+          },
+          "scenes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Scenes",
             "type": "object"
           }
         },
@@ -8453,6 +9515,34 @@
         "title": "PromiseModel",
         "type": "object"
       },
+      "PromoteRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "title": "PromoteRequest",
+        "type": "object"
+      },
+      "PromotionModel": {
+        "description": "A proposal to make a claim a fact, waiting in review.",
+        "properties": {
+          "mutation_id": {
+            "title": "Mutation Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mutation_id"
+        ],
+        "title": "PromotionModel",
+        "type": "object"
+      },
       "ProposalIssueModel": {
         "properties": {
           "code": {
@@ -8585,6 +9675,51 @@
           "expected_revision"
         ],
         "title": "ProposeMutationRequest",
+        "type": "object"
+      },
+      "ProposedBeliefModel": {
+        "properties": {
+          "already": {
+            "default": false,
+            "title": "Already",
+            "type": "boolean"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "holder_id": {
+            "title": "Holder Id",
+            "type": "string"
+          },
+          "how": {
+            "enum": [
+              "told",
+              "overheard",
+              "saw"
+            ],
+            "title": "How",
+            "type": "string"
+          },
+          "why": {
+            "title": "Why",
+            "type": "string"
+          }
+        },
+        "required": [
+          "holder_id",
+          "how",
+          "confidence",
+          "why"
+        ],
+        "title": "ProposedBeliefModel",
         "type": "object"
       },
       "Proposition": {
@@ -9084,6 +10219,34 @@
           "passages"
         ],
         "title": "RebuildResult",
+        "type": "object"
+      },
+      "RecordedClaimModel": {
+        "properties": {
+          "beliefs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TellResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision",
+          "event_id"
+        ],
+        "title": "RecordedClaimModel",
         "type": "object"
       },
       "Relative": {
@@ -10711,6 +11874,26 @@
         "title": "SetConditionsRequest",
         "type": "object"
       },
+      "SetKeptSettingsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_clients": {
+            "default": false,
+            "title": "Allow Clients",
+            "type": "boolean"
+          },
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Kinds",
+            "type": "array"
+          }
+        },
+        "title": "SetKeptSettingsRequest",
+        "type": "object"
+      },
       "SetPathRequest": {
         "additionalProperties": false,
         "properties": {
@@ -10817,6 +12000,20 @@
           "expected_revision"
         ],
         "title": "SetSceneTimeRequest",
+        "type": "object"
+      },
+      "SetWorkspaceKeptRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "forbidden": {
+            "title": "Forbidden",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "forbidden"
+        ],
+        "title": "SetWorkspaceKeptRequest",
         "type": "object"
       },
       "SetWorkspaceLimitsRequest": {
@@ -11251,6 +12448,7 @@
         "type": "object"
       },
       "TellResult": {
+        "description": "A telling or a witnessed event, waiting in review with a belief for each hearer.\n\nNothing is in the story until the proposal is approved.",
         "properties": {
           "already_knew": {
             "items": {
@@ -11267,16 +12465,24 @@
             "title": "Event Id",
             "type": "string"
           },
-          "revision": {
-            "title": "Revision",
-            "type": "integer"
+          "mutation_id": {
+            "title": "Mutation Id",
+            "type": "string"
+          },
+          "proposals": {
+            "items": {
+              "$ref": "#/components/schemas/ProposedBeliefModel"
+            },
+            "title": "Proposals",
+            "type": "array"
           }
         },
         "required": [
-          "revision",
+          "mutation_id",
           "event_id",
           "beliefs",
-          "already_knew"
+          "already_knew",
+          "proposals"
         ],
         "title": "TellResult",
         "type": "object"
@@ -11559,6 +12765,93 @@
           "truth"
         ],
         "title": "TrueThenModel",
+        "type": "object"
+      },
+      "TrustModel": {
+        "description": "How a character takes what others tell them.",
+        "properties": {
+          "default": {
+            "enum": [
+              "believes",
+              "doubts",
+              "disbelieves"
+            ],
+            "title": "Default",
+            "type": "string"
+          },
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "speakers": {
+            "additionalProperties": {
+              "enum": [
+                "believes",
+                "doubts",
+                "disbelieves"
+              ],
+              "type": "string"
+            },
+            "title": "Speakers",
+            "type": "object"
+          }
+        },
+        "required": [
+          "entity_id",
+          "default",
+          "speakers"
+        ],
+        "title": "TrustModel",
+        "type": "object"
+      },
+      "TrustRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "default": {
+            "default": "believes",
+            "enum": [
+              "believes",
+              "doubts",
+              "disbelieves"
+            ],
+            "title": "Default",
+            "type": "string"
+          },
+          "expected_revision": {
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "speakers": {
+            "additionalProperties": {
+              "enum": [
+                "believes",
+                "doubts",
+                "disbelieves"
+              ],
+              "type": "string"
+            },
+            "maxProperties": 50,
+            "title": "Speakers",
+            "type": "object"
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "title": "TrustRequest",
+        "type": "object"
+      },
+      "UndoModel": {
+        "properties": {
+          "undo_mutation_id": {
+            "title": "Undo Mutation Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "undo_mutation_id"
+        ],
+        "title": "UndoModel",
         "type": "object"
       },
       "UnitModel": {
@@ -12169,6 +13462,79 @@
         "title": "WhatIfModel",
         "type": "object"
       },
+      "WitnessRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "fact_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fact Id"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "not_noticed": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 12,
+            "title": "Not Noticed",
+            "type": "array"
+          },
+          "present_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 12,
+            "minItems": 1,
+            "title": "Present Ids",
+            "type": "array"
+          },
+          "proposition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PropositionRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "present_ids",
+          "expected_revision"
+        ],
+        "title": "WitnessRequest",
+        "type": "object"
+      },
+      "WorkspaceKeptModel": {
+        "properties": {
+          "forbidden": {
+            "title": "Forbidden",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "forbidden"
+        ],
+        "title": "WorkspaceKeptModel",
+        "type": "object"
+      },
       "WorkspaceLimitsModel": {
         "properties": {
           "confirm_above_tokens": {
@@ -12449,6 +13815,220 @@
           }
         },
         "summary": "Read Root"
+      }
+    },
+    "/api/v1/access-keys": {
+      "get": {
+        "operationId": "list_access_keys_api_v1_access_keys_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AccessKeyModel"
+                  },
+                  "title": "Response List Access Keys Api V1 Access Keys Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Access Keys",
+        "tags": [
+          "access-keys"
+        ]
+      },
+      "post": {
+        "operationId": "create_access_key_api_v1_access_keys_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAccessKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedAccessKeyModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Access Key",
+        "tags": [
+          "access-keys"
+        ]
+      }
+    },
+    "/api/v1/access-keys/{key_id}/revoke": {
+      "post": {
+        "operationId": "revoke_access_key_api_v1_access_keys__key_id__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "title": "Key Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessKeyModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Access Key",
+        "tags": [
+          "access-keys"
+        ]
+      }
+    },
+    "/api/v1/access-keys/{key_id}/uses": {
+      "get": {
+        "operationId": "access_key_uses_api_v1_access_keys__key_id__uses_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "title": "Key Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AccessKeyUseModel"
+                  },
+                  "title": "Response Access Key Uses Api V1 Access Keys  Key Id  Uses Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Access Key Uses",
+        "tags": [
+          "access-keys"
+        ]
+      }
+    },
+    "/api/v1/ai/kept-for-you": {
+      "get": {
+        "description": "Whether a workspace owner turned off keeping suggestions for every story.",
+        "operationId": "get_workspace_kept_api_v1_ai_kept_for_you_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceKeptModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Workspace Kept",
+        "tags": [
+          "kept-for-you"
+        ]
+      },
+      "put": {
+        "description": "An owner turns keeping suggestions off, or back on, for every story here.",
+        "operationId": "set_workspace_kept_api_v1_ai_kept_for_you_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetWorkspaceKeptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceKeptModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Workspace Kept",
+        "tags": [
+          "kept-for-you"
+        ]
       }
     },
     "/api/v1/ai/limits": {
@@ -19325,6 +20905,283 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/kept-for-you": {
+      "get": {
+        "description": "What was kept for the author, newest first.",
+        "operationId": "list_kept_api_v1_projects__project_id__kept_for_you_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeptListModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Kept",
+        "tags": [
+          "kept-for-you"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/kept-for-you/decisions/{mutation_id}": {
+      "get": {
+        "description": "Whether a suggestion was kept for the author, approved by hand, or why it waited.",
+        "operationId": "get_keep_decision_api_v1_projects__project_id__kept_for_you_decisions__mutation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mutation_id",
+            "required": true,
+            "schema": {
+              "title": "Mutation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeepDecisionModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Keep Decision",
+        "tags": [
+          "kept-for-you"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/kept-for-you/seen": {
+      "post": {
+        "description": "The person has looked at what was kept; the review queue counts from now.",
+        "operationId": "mark_kept_seen_api_v1_projects__project_id__kept_for_you_seen_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark Kept Seen",
+        "tags": [
+          "kept-for-you"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/kept-for-you/settings": {
+      "get": {
+        "description": "Which kinds of suggestion are kept without asking in this story.",
+        "operationId": "get_kept_settings_api_v1_projects__project_id__kept_for_you_settings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeptSettingsModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Kept Settings",
+        "tags": [
+          "kept-for-you"
+        ]
+      },
+      "put": {
+        "description": "Choose the kinds to keep. A kind not yet approved by hand often enough is refused\n(400); switching off is never refused and takes effect at once.",
+        "operationId": "set_kept_settings_api_v1_projects__project_id__kept_for_you_settings_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetKeptSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeptSettingsModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Kept Settings",
+        "tags": [
+          "kept-for-you"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/kept-for-you/{mutation_id}/undo": {
+      "post": {
+        "description": "Suggest undoing something that was kept. The undo waits in the review queue.",
+        "operationId": "undo_kept_api_v1_projects__project_id__kept_for_you__mutation_id__undo_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mutation_id",
+            "required": true,
+            "schema": {
+              "title": "Mutation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UndoModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Undo Kept",
+        "tags": [
+          "kept-for-you"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/knowledge/characters/{entity_id}": {
       "get": {
         "operationId": "character_knowledge_api_v1_projects__project_id__knowledge_characters__entity_id__get",
@@ -19371,6 +21228,307 @@
           }
         },
         "summary": "Character Knowledge",
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/knowledge/characters/{entity_id}/trust": {
+      "get": {
+        "operationId": "character_trust_api_v1_projects__project_id__knowledge_characters__entity_id__trust_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "entity_id",
+            "required": true,
+            "schema": {
+              "title": "Entity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrustModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Character Trust",
+        "tags": [
+          "knowledge"
+        ]
+      },
+      "put": {
+        "description": "Say how a character takes what others tell them, in general and from particular people.",
+        "operationId": "set_character_trust_api_v1_projects__project_id__knowledge_characters__entity_id__trust_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "entity_id",
+            "required": true,
+            "schema": {
+              "title": "Entity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrustRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrustModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Character Trust",
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/knowledge/claims": {
+      "get": {
+        "description": "What is said in the story: about or by an entry, or in a scene. Never as facts.",
+        "operationId": "list_claims_api_v1_projects__project_id__knowledge_claims_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entity_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Entity Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scene_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scene Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Claims",
+        "tags": [
+          "knowledge"
+        ]
+      },
+      "post": {
+        "description": "Record something said, by the narration, a character or a narrator, as a claim.",
+        "operationId": "record_claim_api_v1_projects__project_id__knowledge_claims_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordedClaimModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Claim",
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/knowledge/claims/{event_id}/promote": {
+      "post": {
+        "description": "Propose making what a claim says a fact. It waits in review.",
+        "operationId": "promote_claim_api_v1_projects__project_id__knowledge_claims__event_id__promote_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Promote Claim",
         "tags": [
           "knowledge"
         ]
@@ -19429,6 +21587,7 @@
     },
     "/api/v1/projects/{project_id}/knowledge/tell": {
       "post": {
+        "description": "Propose a telling: the event, and what each hearer comes to believe by their trust.\n\nIt waits in review; nothing is in the story until it is approved.",
         "operationId": "tell_api_v1_projects__project_id__knowledge_tell_post",
         "parameters": [
           {
@@ -19474,6 +21633,59 @@
           }
         },
         "summary": "Tell",
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/knowledge/witness": {
+      "post": {
+        "description": "Propose something seen: the event, and a belief for each person who notices it.",
+        "operationId": "witness_api_v1_projects__project_id__knowledge_witness_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WitnessRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TellResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Witness",
         "tags": [
           "knowledge"
         ]
@@ -20530,6 +22742,128 @@
           }
         },
         "summary": "Forget Name",
+        "tags": [
+          "texts"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/names/{binding_id}/examples": {
+      "post": {
+        "description": "Keep a passage with an answer: here the phrase does, or does not, mean its entry.",
+        "operationId": "add_name_example_api_v1_projects__project_id__names__binding_id__examples_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "binding_id",
+            "required": true,
+            "schema": {
+              "title": "Binding Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NameExampleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NameDecisionModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Name Example",
+        "tags": [
+          "texts"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/names/{binding_id}/examples/{example_id}": {
+      "delete": {
+        "operationId": "remove_name_example_api_v1_projects__project_id__names__binding_id__examples__example_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "binding_id",
+            "required": true,
+            "schema": {
+              "title": "Binding Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "example_id",
+            "required": true,
+            "schema": {
+              "title": "Example Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NameDecisionModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Name Example",
         "tags": [
           "texts"
         ]

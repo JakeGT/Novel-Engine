@@ -153,8 +153,15 @@ class ReviewRequiredError(CanonValidationError):
 # Origins a client may name on a proposal. Migration/system/derived provenance is
 # reserved for trusted internal writers and can never be claimed over the API.
 PROPOSAL_ORIGINS = frozenset(
-    {OriginKind.AUTHOR.value, OriginKind.MODEL.value, OriginKind.IMPORT.value}
+    {
+        OriginKind.AUTHOR.value,
+        OriginKind.MODEL.value,
+        OriginKind.IMPORT.value,
+    }
 )
+# A connected assistant's suggestion (ADR-024): never a direct-commit origin, so always
+# reviewed, and only the MCP endpoint may make one (``suggest``), never a web client.
+MACHINE_ORIGIN = OriginKind.MACHINE.value
 
 # Operations whose target already exists, so a reviewer can compare before/after.
 _TARGET_RECORD = {
@@ -374,6 +381,9 @@ class MutationService:
         self._local_mode = local_mode
         self._validator = validator or AuthoritativeValidator()
         self._schema_store = schema_store
+        # "Keep the safe ones for me" (AST-EXP-015): told about every commit of the
+        # assistant's work, and asked whether a suggestion may be kept. Set by the container.
+        self.delegation: object | None = None
 
     async def _authorize(
         self, scope: AccessScope, workspace_id: str, project_id: str, permission: Permission
@@ -458,6 +468,46 @@ class MutationService:
         """Create a reviewable proposal bound to the project's published schema version."""
         if origin not in PROPOSAL_ORIGINS:
             raise DomainValidationError(f"Proposals may not use origin {origin!r}.")
+        return await self._propose(
+            scope,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            operations=operations,
+            expected_head=expected_head,
+            origin=origin,
+            idempotency_key=idempotency_key,
+        )
+
+    async def suggest(
+        self,
+        scope: AccessScope,
+        *,
+        workspace_id: str,
+        project_id: str,
+        operations: Sequence[CanonOperation],
+        expected_head: int,
+    ) -> MutationSet:
+        """A connected assistant's proposal (origin ``machine``): the MCP endpoint only."""
+        return await self._propose(
+            scope,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            operations=operations,
+            expected_head=expected_head,
+            origin=MACHINE_ORIGIN,
+        )
+
+    async def _propose(
+        self,
+        scope: AccessScope,
+        *,
+        workspace_id: str,
+        project_id: str,
+        operations: Sequence[CanonOperation],
+        expected_head: int,
+        origin: str,
+        idempotency_key: str = "",
+    ) -> MutationSet:
         if not operations:
             raise DomainValidationError("A proposal needs at least one operation.")
         schema_version_id: str | None = None
@@ -755,6 +805,40 @@ class MutationService:
             correlation_id=scope.correlation_id,
         )
 
+    async def keep_if_allowed(
+        self,
+        scope: AccessScope,
+        mutation: MutationSet,
+        *,
+        validation: ValidationReport | None = None,
+        via: str = "session",
+    ) -> MutationSet:
+        """After the assistant suggested something in the app: keep it for the author if
+        they chose to have suggestions like it kept (AST-EXP-015); otherwise it waits.
+
+        Returns the suggestion as it now is: committed when kept, waiting otherwise.
+        """
+        if self.delegation is None:
+            return mutation
+        considered = await self.delegation.consider(  # type: ignore[attr-defined]
+            scope, mutation.id, via=via, validation=validation
+        )
+        return considered.mutation  # type: ignore[no-any-return]
+
+    async def return_to_review(self, scope: AccessScope, mutation_id: str, reason: str) -> None:
+        """Send an approved suggestion that was not committed back to the review queue."""
+        mutation = await self._require(scope, mutation_id, Permission.PROJECT_WRITE)
+        if mutation.status is not MutationStatus.APPROVED:
+            return
+        await self._journal.transition_mutation(
+            mutation_id=mutation_id,
+            to_status=MutationStatus.NEEDS_REVIEW,
+            actor_user_id=scope.actor_user_id,
+            reason=reason,
+            correlation_id=scope.correlation_id,
+        )
+        _record_transition(MutationStatus.NEEDS_REVIEW, mutation.origin)
+
     async def revise_operation(
         self,
         scope: AccessScope,
@@ -999,6 +1083,17 @@ class MutationService:
             raise
         duration = time.perf_counter() - started
         _record_commit(mutation.origin, "committed", duration, len(resolved))
+        if self.delegation is not None and mutation.status is not MutationStatus.COMMITTED:
+            try:
+                await self.delegation.committed(scope, mutation, accepted, revision)  # type: ignore[attr-defined]
+            except Exception as error:  # noqa: BLE001 - the commit itself has succeeded
+                log_event(
+                    logger,
+                    "delegation.record_failed",
+                    level=logging.WARNING,
+                    mutation_id=mutation_id,
+                    error_type=type(error).__name__,
+                )
         log_event(
             logger,
             "canon.commit",

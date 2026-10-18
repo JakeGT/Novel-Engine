@@ -7,6 +7,10 @@ type Schemas = components['schemas']
 // Contract types come straight from the generated OpenAPI schema. Only endpoints
 // the backend declares as an untyped object are typed locally, next to the call.
 export type CanonEntity = Schemas['CanonEntityModel']
+export type Telling = Schemas['TellResult']
+export type Trust = Schemas['TrustModel']
+export type Stance = Trust['default']
+export type Claim = Schemas['ClaimModel']
 export type CreateEntityRequest = Schemas['CreateEntityRequest']
 export type UpdateEntityRequest = Schemas['UpdateEntityRequest']
 export type Workspace = Schemas['WorkspaceModel']
@@ -31,6 +35,10 @@ export type ImpactDependent = Schemas['DependentModel']
 export type MutationCommit = Schemas['MutationCommitModel']
 export type MutationList = Schemas['MutationListResponse']
 export type ProposeMutationRequest = Schemas['ProposeMutationRequest']
+export type AccessKey = Schemas['AccessKeyModel']
+export type AccessKeyUse = Schemas['AccessKeyUseModel']
+export type CreateAccessKeyRequest = Schemas['CreateAccessKeyRequest']
+export type CreatedAccessKey = Schemas['CreatedAccessKeyModel']
 export type CharacterQuestionSheet = Schemas['CharacterQuestionSheetModel']
 export type CharacterProposal = Schemas['CharacterProposalModel']
 export type CharacterProposalRequest = Schemas['CharacterProposalRequest']
@@ -60,6 +68,9 @@ export type RuleExample = Schemas['RuleExample']
 export type SourceTextDetail = Schemas['TextDetailModel']
 export type TextMention = Schemas['MentionModel']
 export type NameQuestion = Schemas['NameQuestionModel']
+export type NameMemory = Schemas['NameMemoryModel']
+export type NameAnswer = Schemas['NameDecisionModel']
+export type NameExample = Schemas['NameExampleModel']
 export type Passage = Schemas['PassageModel']
 export type PassageRead = Schemas['ReadPassageModel']
 export type ReaderGuide = Schemas['GuideModel']
@@ -104,6 +115,11 @@ export type DraftAsk = Schemas['DraftRequest']
 export type StoryAssistantSettings = Schemas['StoryAssistantSettingsModel']
 export type SetAssistantSettings = Schemas['SetAssistantSettingsRequest']
 export type WorkspaceLimits = Schemas['WorkspaceLimitsModel']
+/** Keep the safe ones for me: which suggestions are kept without asking (AST-EXP-015). */
+export type KeptSettings = Schemas['KeptSettingsModel']
+export type KeepRule = Schemas['KeepRuleModel']
+export type KeptItem = Schemas['KeptItemModel']
+export type KeepDecision = Schemas['KeepDecisionModel']
 export type CheckProfile = Schemas['CheckProfile']
 // Checks with the assistant, one pass each (CON-008), and deep audits (CON-011).
 export type CheckPass = Schemas['CheckPass']
@@ -528,6 +544,24 @@ export const api = {
   workspaceLimits: (workspaceId: string) => request<WorkspaceLimits>('/api/v1/ai/limits', { workspaceId }),
   setWorkspaceLimits: (workspaceId: string, body: Schemas['SetWorkspaceLimitsRequest']) =>
     request<WorkspaceLimits>('/api/v1/ai/limits', { method: 'PUT', workspaceId, json: body }),
+  /** Which of the assistant's suggestions are kept without asking in this story. */
+  keptSettings: (scope: Scope) => get<KeptSettings>(scope, '/kept-for-you/settings'),
+  setKeptSettings: (scope: Scope, body: { kinds: string[]; allow_clients: boolean }) =>
+    send<KeptSettings>(scope, 'PUT', '/kept-for-you/settings', body),
+  keptForYou: (scope: Scope) => get<{ items: KeptItem[] }>(scope, '/kept-for-you'),
+  markKeptSeen: (scope: Scope) => send<void>(scope, 'POST', '/kept-for-you/seen'),
+  keepDecision: (scope: Scope, mutationId: string) =>
+    get<KeepDecision>(scope, `/kept-for-you/decisions/${id(mutationId)}`),
+  undoKept: (scope: Scope, mutationId: string) =>
+    send<{ undo_mutation_id: string }>(scope, 'POST', `/kept-for-you/${id(mutationId)}/undo`),
+  workspaceKept: (workspaceId: string) =>
+    request<{ forbidden: boolean }>('/api/v1/ai/kept-for-you', { workspaceId }),
+  setWorkspaceKept: (workspaceId: string, forbidden: boolean) =>
+    request<{ forbidden: boolean }>('/api/v1/ai/kept-for-you', {
+      method: 'PUT',
+      workspaceId,
+      json: { forbidden },
+    }),
   /** How much the assistant does on its own in this story, and when to ask before spending. */
   assistantSettings: (scope: Scope) => get<StoryAssistantSettings>(scope, '/assistant-settings'),
   setAssistantSettings: (scope: Scope, body: SetAssistantSettings) =>
@@ -543,6 +577,17 @@ export const api = {
       method: 'POST',
       workspaceId,
     }),
+
+  // --- access keys for other assistants (QRY-003; hosted and local) -------------
+  listAccessKeys: (workspaceId?: string | null) =>
+    request<AccessKey[]>('/api/v1/access-keys', { workspaceId }),
+  /** The key in the answer is shown once and cannot be fetched again. */
+  createAccessKey: (workspaceId: string | null | undefined, body: CreateAccessKeyRequest) =>
+    request<CreatedAccessKey>('/api/v1/access-keys', { method: 'POST', workspaceId, json: body }),
+  revokeAccessKey: (workspaceId: string | null | undefined, keyId: string) =>
+    request<AccessKey>(`/api/v1/access-keys/${id(keyId)}/revoke`, { method: 'POST', workspaceId }),
+  accessKeyUses: (workspaceId: string | null | undefined, keyId: string) =>
+    request<AccessKeyUse[]>(`/api/v1/access-keys/${id(keyId)}/uses`, { workspaceId }),
 
   access: (scope: Scope) => get<ProjectAccess>(scope, '/access'),
 
@@ -629,6 +674,11 @@ export const api = {
     send<Schemas['NameDecisionModel']>(scope, 'POST', '/names', body),
   forgetName: (scope: Scope, bindingId: string) =>
     send<void>(scope, 'DELETE', `/names/${id(bindingId)}`),
+  /** Keep a passage with an answer: here the phrase does, or does not, mean its entry. */
+  addNameExample: (scope: Scope, bindingId: string, body: Schemas['NameExampleRequest']) =>
+    send<Schemas['NameDecisionModel']>(scope, 'POST', `/names/${id(bindingId)}/examples`, body),
+  removeNameExample: (scope: Scope, bindingId: string, exampleId: string) =>
+    send<Schemas['NameDecisionModel']>(scope, 'DELETE', `/names/${id(bindingId)}/examples/${id(exampleId)}`),
   /** The assistant reads a passage into suggested changes. Nothing is added by reading. */
   readPassage: (scope: Scope, sourceId: string, body: Schemas['ReadPassageRequest']) =>
     send<PassageRead>(scope, 'POST', `/assist/texts/${id(sourceId)}/read`, body),
@@ -738,8 +788,26 @@ export const api = {
     get<CharacterKnowledge>(scope, `/knowledge/characters/${id(entityId)}`),
   factKnowledge: (scope: Scope, factId: string) =>
     get<FactKnowledge>(scope, `/knowledge/facts/${id(factId)}`),
+  /** Propose a telling for review: the event, and what each hearer comes to believe. */
   tell: (scope: Scope, body: Schemas['TellRequest']) =>
-    send<Schemas['TellResult']>(scope, 'POST', '/knowledge/tell', body),
+    send<Telling>(scope, 'POST', '/knowledge/tell', body),
+  /** Propose something seen for review: a belief for each person who notices it (KNW-006). */
+  witness: (scope: Scope, body: Schemas['WitnessRequest']) =>
+    send<Telling>(scope, 'POST', '/knowledge/witness', body),
+  characterTrust: (scope: Scope, entityId: string) =>
+    get<Trust>(scope, `/knowledge/characters/${id(entityId)}/trust`),
+  setCharacterTrust: (scope: Scope, entityId: string, body: Schemas['TrustRequest']) =>
+    send<Trust>(scope, 'PUT', `/knowledge/characters/${id(entityId)}/trust`, body),
+  /** What is said in the story (KNW-005): about or by an entry, or in a scene. Never facts. */
+  listClaims: (scope: Scope, params: { entity_id?: string; scene_id?: string } = {}) =>
+    get<{ items: Claim[] }>(scope, '/knowledge/claims', params),
+  recordClaim: (scope: Scope, body: Schemas['ClaimRequest']) =>
+    send<Schemas['RecordedClaimModel']>(scope, 'POST', '/knowledge/claims', body),
+  /** Propose making what a claim says a fact; it waits in review. */
+  promoteClaim: (scope: Scope, eventId: string, expectedRevision: number) =>
+    send<{ mutation_id: string }>(scope, 'POST', `/knowledge/claims/${id(eventId)}/promote`, {
+      expected_revision: expectedRevision,
+    }),
   readerJourney: (scope: Scope) => get<ReaderJourney>(scope, '/reader'),
   /** What a reader could know after a scene; at a saved version when one is given. */
   readerGuide: (scope: Scope, sceneId: string, viewpoint?: string, version?: number) =>

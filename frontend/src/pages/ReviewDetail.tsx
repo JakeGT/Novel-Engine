@@ -15,6 +15,7 @@ import { FromText } from '../components/FromText'
 import { ChangeEditor, type Candidate } from '../components/ChangeEditor'
 import { MutationImpact } from '../components/ChangeImpact'
 import { ConversationEvidence, SetupSuggestions } from '../components/Conversations'
+import { KeepDecisionNote } from '../components/KeptForYou'
 import { Icon } from '../components/icons'
 import { RestoreDialog } from '../components/RestoreDialog'
 import {
@@ -30,8 +31,10 @@ import {
   ReadOnlyNotice,
 } from '../components/ui'
 import { useConversationFor } from '../lib/conversations'
+import { isKeptNote } from '../lib/kept'
 import { hasChangeForm } from '../lib/facts'
-import { IMPORTANCE_KEY, NEEDS_DETAIL_KEY, TAGS_KEY } from '../lib/marks'
+import { firmness } from '../lib/knowledge'
+import { IMPORTANCE_KEY, NEEDS_DETAIL_KEY, TAGS_KEY, TRUST_KEY } from '../lib/marks'
 import { useStoryClock, whenText } from '../lib/storytime'
 import { fullDate, timeAgo } from '../lib/time'
 import {
@@ -40,17 +43,20 @@ import {
   changeSetTitle,
   describeOperation,
   namesFromOperations,
+  objectText,
   originLabel,
   PLAN_ROLES,
   planKindLabel,
   plural,
+  predicateLabel,
   valueText,
   words,
 } from '../lib/words'
 import { actorLabel, scopedKey, useEntries, useInvalidateProject, useProject } from '../project'
 
 const OPEN = new Set(['draft', 'validating', 'needs_review', 'approved'])
-const HIDDEN_KEYS = new Set(['op', 'id', 'evidence', 'proposition', 'project_id', 'only_fills'])
+// ``why`` is shown as its own line under the change, not as a field.
+const HIDDEN_KEYS = new Set(['op', 'id', 'evidence', 'proposition', 'project_id', 'only_fills', 'why'])
 
 type Issue = MutationValidation['issues'][number]
 
@@ -92,6 +98,69 @@ const MARK_LABELS: Record<string, string> = {
   [TAGS_KEY]: 'Tags',
   [IMPORTANCE_KEY]: 'Importance',
   [NEEDS_DETAIL_KEY]: 'Marked to fill in later',
+  [TRUST_KEY]: 'How they take what others say',
+}
+
+const STANCE_WORDS: Record<string, string> = {
+  believes: 'believes',
+  doubts: 'doubts',
+  disbelieves: 'does not believe',
+}
+
+/** A character's trust (KNW-006) in words: in general, then particular people. */
+function trustWords(value: unknown, names: Map<string, string>): unknown {
+  if (!isFlat(value)) return value
+  const general = `${STANCE_WORDS[String(value.default)] ?? 'believes'} what people say`
+  const speakers = isFlat(value.speakers) ? Object.entries(value.speakers) : []
+  const particular = speakers.map(
+    ([id, stance]) => `${STANCE_WORDS[String(stance)] ?? String(stance)} ${names.get(id) ?? 'someone'}`,
+  )
+  const text = [general, ...particular].join('; ')
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+// Who takes part in an event, in words (KNW-005, KNW-006); other roles are shown as stored.
+const PARTICIPANT_ROLES: Record<string, string> = {
+  speaker: 'says it',
+  listener: 'is told',
+  overheard: 'overhears it',
+  witness: 'sees it',
+  present: 'is there but does not notice',
+  narrator: 'narrates it',
+  perceiver: 'hears it',
+}
+
+const EVENT_KINDS: Record<string, string> = {
+  telling: 'Someone tells others something',
+  witnessed: 'Something people see happen',
+  claim: 'Something said, not necessarily true',
+}
+
+function participantWords(value: unknown, names: Map<string, string>): unknown {
+  if (!Array.isArray(value)) return value
+  return value
+    .map((item) =>
+      isFlat(item)
+        ? `${names.get(String(item.entity_id)) ?? 'someone'} (${PARTICIPANT_ROLES[String(item.role)] ?? words(String(item.role)).toLowerCase()})`
+        : String(item),
+    )
+    .join(', ')
+}
+
+const CLAIM_WORDS: Record<string, string> = {
+  states: 'Says',
+  suggests: 'Suggests',
+  wonders: 'Wonders whether',
+  denies: 'Says it is not so that',
+}
+
+/** What a claim (KNW-005) says, in words. Said, not necessarily true. */
+function claimWords(value: unknown, names: Map<string, string>): unknown {
+  if (!isFlat(value) || !isFlat(value.proposition)) return value
+  const p = value.proposition
+  const object = isFlat(p.object) ? objectText(p.object, names) : ''
+  const sentence = `${names.get(String(p.subject_id)) ?? 'an entry'} ${predicateLabel(String(p.predicate ?? ''))} ${object}`
+  return `${CLAIM_WORDS[String(value.modality ?? 'states')] ?? 'Says'} ${sentence.trim()} (said, not necessarily true)`
 }
 
 type Row = { key: string; label: string; before?: unknown; after: unknown }
@@ -175,8 +244,8 @@ function fieldRows(
           .map(([name, item]) => ({
             key: `attributes.${name}`,
             label: MARK_LABELS[name] ?? words(name),
-            before: was ? was[name] : undefined,
-            after: item,
+            before: was ? (name === TRUST_KEY ? trustWords(was[name], names) : was[name]) : undefined,
+            after: name === TRUST_KEY ? trustWords(item, names) : item,
           }))
       }
       const was = before && key in before ? before[key] : undefined
@@ -189,6 +258,26 @@ function fieldRows(
             after: describeTime(value as WorldTime),
           },
         ]
+      }
+      if (key === 'holder_entity_id') {
+        return [{ key, label: 'Who believes it', before: was, after: names.get(String(value)) ?? 'someone' }]
+      }
+      if (key === 'source_ref') {
+        // Usually the telling or sighting proposed with it, named by that event.
+        const from = names.get(String(value)) ?? (value === 'author' ? 'Entered by an author' : 'Recorded elsewhere')
+        return [{ key, label: 'Where it came from', before: was, after: from }]
+      }
+      if (key === 'participants') {
+        return [{ key, label: 'Who takes part', before: participantWords(was, names), after: participantWords(value, names) }]
+      }
+      if (key === 'kind' && operation.operation_type === 'create_event' && typeof value === 'string' && value in EVENT_KINDS) {
+        return [{ key, label: 'What it is', before: was, after: EVENT_KINDS[value] }]
+      }
+      if (key === 'claim') {
+        return [{ key, label: 'What is said', before: was, after: claimWords(value, names) }]
+      }
+      if (key === 'confidence' && typeof value === 'number') {
+        return [{ key, label: 'How firmly', before: was, after: firmness(value) }]
       }
       if (key === 'visibility') {
         return [
@@ -296,6 +385,11 @@ function ChangeCard({
           </Badge>
         )}
       </div>
+      {typeof operation.payload.why === 'string' && operation.payload.why && (
+        <p className="small">
+          <span className="eyebrow">Why</span> {operation.payload.why}
+        </p>
+      )}
       {skipped && <p className="muted small">Skipped — this will not be added.</p>}
       {operation.decision?.note && <p className="muted small">Note: “{operation.decision.note}”</p>}
       {gone && (
@@ -590,6 +684,8 @@ export function ReviewDetail() {
       </div>
 
       <div className="section-gap">
+        {/* Kept for the author under one of their rules, or why it waited (AST-EXP-015). */}
+        {change.origin === 'model' && <KeepDecisionNote mutationId={change.id} />}
         {/* One notice says where things stand; the changes themselves come straight after. */}
         {open && (
           <div className="notice" role="status">
@@ -992,13 +1088,20 @@ export function ReviewDetail() {
               </li>
             ))}
           </ol>
-          {change.decisions.map((decision, index) => (
-            <p className="small muted" key={`d${index}`}>
-              {words(decision.decision)}
-              {decision.actor_user_id ? ` by ${actorLabel(decision.actor_user_id, userId)}` : ''}
-              {decision.note ? ` — “${decision.note}”` : ''}
-            </p>
-          ))}
+          {change.decisions.map((decision, index) =>
+            // Kept under the author's own rule: no one approved it by hand, so it says so.
+            isKeptNote(decision.note) ? (
+              <p className="small muted" key={`d${index}`}>
+                {decision.note}
+              </p>
+            ) : (
+              <p className="small muted" key={`d${index}`}>
+                {words(decision.decision)}
+                {decision.actor_user_id ? ` by ${actorLabel(decision.actor_user_id, userId)}` : ''}
+                {decision.note ? ` — “${decision.note}”` : ''}
+              </p>
+            ),
+          )}
         </details>
       </div>
     </>

@@ -20,7 +20,7 @@ from typing import Any
 
 from backend.domain.canon.assertions import Belief, Fact, FactStatus, FactVisibility
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
-from backend.domain.canon.events import Event, EventParticipant
+from backend.domain.canon.events import Event, EventClaim, EventParticipant
 from backend.domain.canon.propositions import EntityRefObject, Proposition
 from backend.domain.commit import ApplyOutcome, CommitMarker
 from backend.domain.journal import RevisionConflict
@@ -330,6 +330,7 @@ class Neo4jCanonWriter:
                     e.participants = $participants,
                     e.locations = $locations, e.causes = $causes, e.outcomes = $outcomes,
                     e.world_position = $world_position, e.world_time = $world_time,
+                    e.claim = $claim,
                     e.provenance_id = $provenance_id,
                     e.commit_id = $commit_id, e.revision = $revision
                 WITH e
@@ -348,6 +349,11 @@ class Neo4jCanonWriter:
                 outcomes=_dumps(operation.outcome_ids),
                 world_position=operation.world_position,
                 world_time=_time(operation.when, clear_unknown=True),
+                claim=(
+                    _dumps(operation.claim.model_dump(mode="json"))
+                    if operation.claim is not None
+                    else None
+                ),
                 **ctx,
             )
         elif isinstance(operation, AmendEventOp):
@@ -765,7 +771,7 @@ class Neo4jCanonWriter:
         "e.branch_id AS branch_id, e.event_kind AS kind, e.name AS name, "
         "e.participants AS participants, e.locations AS locations, e.causes AS causes, "
         "e.outcomes AS outcomes, e.world_position AS world_position, "
-        "e.world_time AS world_time, "
+        "e.world_time AS world_time, e.claim AS claim, "
         "e.provenance_id AS provenance_id, e.created_revision AS created_revision, "
         "e.retired_revision AS retired_revision"
     )
@@ -788,6 +794,11 @@ class Neo4jCanonWriter:
             outcome_ids=_load(record["outcomes"], []),
             world_position=record["world_position"] or None,
             when=parse_world_time(_load(record["world_time"], None)),
+            claim=(
+                EventClaim.model_validate(_load(record["claim"], None))
+                if record.get("claim")
+                else None
+            ),
             provenance_id=record["provenance_id"] or "",
             created_revision=record["created_revision"] or 0,
             retired_revision=record["retired_revision"],

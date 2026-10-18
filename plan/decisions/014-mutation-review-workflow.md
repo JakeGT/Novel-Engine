@@ -44,6 +44,52 @@ record was written after the commit transaction rather than inside it.
 Schema changes are governed separately (immutable schema versions published by a project
 administrator) and are not canon mutations.
 
+## Amendment (2026-10-18): keep the safe ones for me (AST-EXP-015, OSS-007)
+
+The author may let some of the assistant's suggestions be approved for them. Nothing in the
+classification above changes: a model suggestion still needs an explicit approval, and that
+approval is still a decision in the journal. What is new is who records it.
+
+1. **Opt-in, per story, per kind.** Off by default. Three kinds exist, all purely additive: a new
+   entry whose name and nicknames match no existing entry's name or nickname (compared without
+   case or spacing); details for an entry that has none of its own (marks such as tags,
+   importance and trust do not count, and a kept change may not add, change or drop one); a new
+   fact that is not a secret and names no one and nothing a secret is held about. A kind can be
+   switched on only after the author approved suggestions holding it by hand three times
+   (counted when they commit in the story itself; approvals in a what-if do not count). A
+   workspace owner can forbid it for every story. Changing a story's rules and forbidding it for
+   the workspace are written to the workspace audit log (`delegation.rules_changed` with the
+   kinds before and after, `delegation.workspace_forbidden` with who did it).
+2. **Everything else always waits:** removals, replacements, ending or amending anything, beliefs,
+   events, the plan, rules, pictures, anything a check warns about or a blocking rule stops,
+   imports and readings of a text, reverts, suggestions made before the story last changed,
+   anything in a what-if, more than 12 changes at once or more than 50 kept in a day (counting
+   those still on their way in, and counted again after marking, so two decided at once cannot
+   both pass), suggestions through the general API, and other assistants connected with a key —
+   always: they only ever suggest, and a story cannot allow them (the setting is refused). A
+   suggestion is kept whole or not at all. The decision is pure
+   (`backend/domain/delegation.py::decide`) and checks where it came from, then what it changes,
+   then what checks say, so the reason shown is the one that matters most.
+3. **Through the ordinary path.** A kept suggestion is approved with the note "Kept for you under
+   your rule “…”." (the review decision history shows) and committed by `MutationService.commit`.
+   A `pending` record marks it first; the commit transaction reads the story's and workspace's
+   settings rows `FOR SHARE` and refuses it (`kept_rule_off`) unless the rule is still on, so
+   switching off stops one already on its way in. When the check passes, the same transaction marks
+   the record `kept` with its revision, so a switch-off waiting on that lock finds nothing to send
+   back. Switching off also sends anything left approved but uncommitted back to the review queue:
+   the suggestion is moved back first and its record rewritten only after, so a commit that won
+   the race is never relabelled as waiting, and a kept record is never counted as approved by
+   hand. A suggestion that waits keeps its reason
+   (`delegation_records`, migration 0042).
+4. **Listed and reversible.** Every kept suggestion is listed under Review → Kept for you and marked
+   in history; Undo proposes the revert, which waits for review like any other.
+
+Why opt-in by kind after hand approvals rather than a single switch: the research on approval
+fatigue and auto-approve rules (GitHub auto-merge turning itself off when unreviewed changes
+arrive; mail filters stating "when … then …"; agent tools that show the matched rule on the
+decision) points the same way: narrow rules the person has already exercised, the rule named on
+each decision, and limits on what can happen unseen.
+
 ## Alternatives considered
 
 ### Keep origin-only gating

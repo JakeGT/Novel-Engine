@@ -138,6 +138,35 @@ hosted ones; the checks and the review step are the same either way.
 
 For coding-agent conventions and project boundaries, read [AGENTS.md](AGENTS.md). For architecture, scope, roadmap, and open decisions, start with [plan/README.md](plan/README.md).
 
+## Using the story from other assistants (MCP)
+
+Assistants that speak the Model Context Protocol (Claude Desktop, Claude Code, Cursor, ChatGPT and
+others) can read a story through `/mcp`. Under **People → Other assistants**, make an access key
+for one story (or, hosted, every story you can read in the workspace); it is shown once with a
+block of settings to paste into the assistant:
+
+```json
+{
+  "mcpServers": {
+    "novel-engine": {
+      "type": "http",
+      "url": "https://<your site>/mcp",
+      "headers": { "Authorization": "Bearer nvlpat_…" }
+    }
+  }
+}
+```
+
+The assistant can search the story bible, read an entry (or only what one character knows), the
+plan, a scene's plan card and text, the timeline and a record's history, and see what waits for
+review. A key reads only, unless you also let it suggest changes: then its suggestions go to
+Review and change nothing until you keep them. No tool commits, approves or changes rules. Keys
+last 90 days unless chosen (never over a year), are stored only as a digest, are checked on every
+request, stop working when withdrawn or when their holder loses access, and count use by kind,
+never content. It speaks MCP 2026-07-28 and the earlier 2025 versions over Streamable HTTP. On a
+local install keep the API on 127.0.0.1. See ADR-024 and
+[the runbook](plan/runbooks/connected-assistants.md).
+
 ## Deployment, backup, and privacy
 
 Two deployment profiles are selected by `AUTH_MODE`:

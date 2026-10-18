@@ -65,6 +65,31 @@ stale proposal now keeps its approval when none of the records it touches or ref
 between the version it was made on and the new one; otherwise it returns to review and says
 which records changed. The commit still revalidates in its own transaction.
 
+**What is said, and how people take it (amends this ADR; KNW-005, KNW-006, 2026-10-18).** A
+*claim* is an event of kind `claim` whose `claim` holds a proposition, a modality (states,
+suggests, wonders, denies) and optionally the scene it is said in; participants say who says it
+(`speaker`, or `narrator` for a character narrating, perhaps unreliably; none for the narration
+itself) and who hears it (`perceiver`). A claim is never a fact and never counts as knowledge;
+whether the facts bear it out (`borne_out`, `contradicted`, `unconfirmed`) is derived each time,
+like whether a belief is right. Recording one is an ordinary author change. It becomes a fact only
+through a reviewed proposal, which also ends the facts it contradicts when the kind of fact can
+hold only one value at a time; a denial is never made a fact.
+
+Telling and seeing propose beliefs; they never write them. Trust is kept on the listener under the
+reserved `_trust` key of a character's details: a stance for anyone (believes by default, doubts,
+disbelieves) and stances for particular speakers. A telling, something seen, or a claim whose
+author asks for it becomes one proposal of origin `derived` (always reviewed, never kept for the
+author by a delegation rule): the event, and a belief for each hearer the policies allow, each
+with its reason in words. Believes gives confidence 1, doubts 0.5; overhearing multiplies by 0.6,
+a suggestion by 0.5. Disbelief gives *no* belief, not a belief in the opposite: a proposition is
+one value, its opposite is rarely one value ("not in Saltmere" names no place), and trust
+discounting in subjective logic likewise moves distrusted testimony into uncertainty rather than
+into disbelief. Perception: everyone present sees what happens unless the author says they did not
+notice, and what one sees is believed fully whatever one's trust; being in a scene is not taken to
+mean being present, the author confirms who was there (the screen fills it from the scene's people).
+Reading a scene does not propose claims: it shares the text reader with every text, and teaching it
+to tell speech from narration is left for later.
+
 ## Consequences
 
 - Every story read and every repository double filters by the working branch.
@@ -76,4 +101,4 @@ which records changed. The commit still revalidates in its own transaction.
 ## Not decided here
 
 Merging a what-if into another what-if, field-level merges, alias memory scoped by time or
-viewpoint, media applicability by time, and trust between characters.
+viewpoint, and media applicability by time.

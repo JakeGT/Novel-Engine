@@ -4,6 +4,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { api, type AssistSession, type ConditionState, type PlanItem, type PlanKind } from '../api/client'
 import { ArcPathDialog, ArcStages } from '../components/ArcPath'
 import { AuditDialog } from '../components/AuditDialog'
+import { ClaimDialog } from '../components/ClaimDialog'
 import { NextDirections, PlanAssist } from '../components/PlanAssist'
 import { PlanItemForm } from '../components/PlanItemForm'
 import { PlanPromises } from '../components/PlanPromises'
@@ -37,6 +38,7 @@ import {
   type OutlineNode,
 } from '../lib/plan'
 import { factSentence } from '../lib/facts'
+import { claimSentence } from '../lib/knowledge'
 import { planKindLabel, plural } from '../lib/words'
 import { entryPath, scopedKey, useCanonWrite, useEntries, useProject } from '../project'
 
@@ -103,6 +105,21 @@ export function PlanPage() {
     queryFn: () => api.readerJourney(scope),
   })
   const stepFor = (planId: string) => journey.data?.steps.find((step) => step.scene_id === planId)
+  // What is said in each scene (KNW-005): kept apart from what the reader is shown as true.
+  const claims = useQuery({
+    queryKey: scopedKey(scope, 'claims', 'all'),
+    queryFn: () => api.listClaims(scope),
+  })
+  const saidIn = (planId: string) =>
+    (claims.data?.items ?? [])
+      .filter((claim) => claim.event.claim?.scene_id === planId)
+      .map((claim) => claimSentence(claim, entries.names))
+  const [saying, setSaying] = useState<PlanItem | null>(null)
+  const sayingAbout = saying
+    ? (entries.items.find(
+        (entry) => entry.lifecycle === 'active' && saying.refs.some((ref) => ref.entity_id === entry.id),
+      ) ?? entries.items.find((entry) => entry.lifecycle === 'active'))
+    : undefined
 
   const items = outline.data?.items ?? []
   const stillOpen = outline.data?.open ?? []
@@ -317,6 +334,11 @@ export function PlanPage() {
                 When it happens
               </Button>
             )}
+            {item.kind === 'scene' && entries.items.some((entry) => entry.lifecycle === 'active') && (
+              <Button size="sm" variant="ghost" onClick={() => setSaying(item)}>
+                Something said here
+              </Button>
+            )}
             {item.kind === 'scene' && (
               <Button size="sm" variant="ghost" onClick={() => setContexting(item)}>
                 What the assistant would use
@@ -381,7 +403,12 @@ export function PlanPage() {
             </p>
           )}
           {item.kind === 'scene' && (
-            <SceneReaderNotes scene={item} step={stepFor(item.id)} facts={journey.data?.facts ?? {}} />
+            <SceneReaderNotes
+              scene={item}
+              step={stepFor(item.id)}
+              facts={journey.data?.facts ?? {}}
+              said={saidIn(item.id)}
+            />
           )}
           {item.kind === 'scene' && (
             <p className="small">
@@ -626,6 +653,9 @@ export function PlanPage() {
 
       {revealing && <SceneRevealsDialog key={revealing.id} scene={revealing} onClose={() => setRevealing(null)} />}
       {timing && <SceneTimeDialog key={timing.id} scene={timing} onClose={() => setTiming(null)} />}
+      {saying && sayingAbout && (
+        <ClaimDialog key={saying.id} subject={sayingAbout} sceneId={saying.id} onClose={() => setSaying(null)} />
+      )}
       {staging && <ArcPathDialog key={staging.id} arc={staging} onClose={() => setStaging(null)} />}
       {contexting && (
         <SceneContextDialog key={contexting.id} scene={contexting} onClose={() => setContexting(null)} />
