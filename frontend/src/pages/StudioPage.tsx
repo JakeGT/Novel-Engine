@@ -10,8 +10,11 @@ import {
   type Studio,
   type StudioJob,
 } from '../api/client'
+import { CheckingDialog, CheckingStatus } from '../components/AssistantSpending'
 import { SceneContextDialog } from '../components/SceneContext'
 import { Checks, Notes } from '../components/StudioFindings'
+import { MentionTextarea } from '../components/MentionTextarea'
+import { ScenePictureStrip, ScenePicturesPanel } from '../components/ScenePictures'
 import { DraftForm, JobOutcome, JobProgress } from '../components/StudioWork'
 import { VoiceDialog } from '../components/VoiceDialog'
 import {
@@ -86,7 +89,11 @@ export function StudioPage() {
   const [discarding, setDiscarding] = useState<{ draft: SceneDraft; label: string } | null>(null)
   const [reading, setReading] = useState<SceneVersion | null>(null)
   const [voiceOpen, setVoiceOpen] = useState(false)
+  const [checkingOpen, setCheckingOpen] = useState(false)
+  // What the last save or kept draft did about a check on its own (CON-009).
+  const [automatic, setAutomatic] = useState<string | null>(null)
   const [contextOpen, setContextOpen] = useState(false)
+  const [picturesOpen, setPicturesOpen] = useState(false)
   const [notice, setNotice] = useState<ReactNode>(null)
   const area = useRef<HTMLTextAreaElement>(null)
   // Dismissing a check or a note with a reason; each list keeps its own outcome.
@@ -133,6 +140,10 @@ export function StudioPage() {
 
   const afterSave = (next: Studio) => {
     client.setQueryData(studioKey, next)
+    setAutomatic(next.automatic ?? null)
+    // A check the story's profile just started is followed like work started here.
+    const started = next.automatic === 'started' ? next.jobs.find((item) => !isFinished(item)) : undefined
+    if (started) watch(started)
     forgetUnsaved(scope, planId)
     setEditing(null)
     setCameBack(false)
@@ -346,6 +357,13 @@ export function StudioPage() {
               {place && <span>At {nameLink(place)}</span>}
             </p>
           )}
+          <ScenePictureStrip
+            sceneId={planId}
+            title={data.title}
+            open={picturesOpen}
+            canWrite={canWrite}
+            onToggle={() => setPicturesOpen((value) => !value)}
+          />
         </div>
         <div className="actions">
           <Button onClick={() => setVoiceOpen(true)}>
@@ -460,6 +478,10 @@ export function StudioPage() {
         )}
         <ErrorNotice error={job.error} prefix="Could not see how the work is going" />
 
+        {picturesOpen && canWrite && (
+          <ScenePicturesPanel sceneId={planId} title={data.title} onClose={() => setPicturesOpen(false)} />
+        )}
+
         <div id="studio-ask" hidden={!asking || !canWrite}>
           {asking && canWrite && (
             <DraftForm
@@ -524,7 +546,7 @@ export function StudioPage() {
                 <h2 id="writing-heading" className="sr-only">
                   Your text
                 </h2>
-                <textarea
+                <MentionTextarea
                   ref={area}
                   className="studio-surface"
                   aria-label={`The text of “${data.title}”`}
@@ -537,8 +559,8 @@ export function StudioPage() {
                       ? 'Write the scene here, or ask the assistant for a draft to start from.'
                       : 'Nothing has been written for this scene yet.'
                   }
-                  onChange={(event) => {
-                    write(event.target.value)
+                  onValueChange={(text) => {
+                    write(text)
                     save.reset()
                     setCiteClosed(true)
                   }}
@@ -564,7 +586,7 @@ export function StudioPage() {
                   </p>
                   {canWrite && (
                     <span className="actions">
-                      <span className="hint">Ctrl S saves</span>
+                      <span className="hint">Type @ to name an entry · Ctrl S saves</span>
                       <Button variant="primary" disabled={!dirty || save.isPending} onClick={submitSave}>
                         {save.isPending ? 'Saving…' : 'Save'}
                       </Button>
@@ -633,8 +655,15 @@ export function StudioPage() {
                       </span>
                     )}
                     <AssistantStartProblem error={review.error} prefix="Could not start the check" />
+                    <CheckingStatus
+                      checking={data.checking}
+                      automatic={automatic}
+                      onChange={() => setCheckingOpen(true)}
+                    />
                   </div>
-                ) : null
+                ) : (
+                  <CheckingStatus checking={data.checking} automatic={null} />
+                )
               }
             />
             <StoryReading
@@ -666,6 +695,7 @@ export function StudioPage() {
       </div>
 
       {voiceOpen && <VoiceDialog onClose={() => setVoiceOpen(false)} />}
+      {checkingOpen && <CheckingDialog planId={planId} onClose={() => setCheckingOpen(false)} />}
       {contextOpen && scene && <SceneContextDialog scene={scene} onClose={() => setContextOpen(false)} />}
       {reading && data.text_id && (
         <VersionDialog
@@ -707,6 +737,14 @@ export function StudioPage() {
 
 function AssistantStartProblem({ error, prefix }: { error: unknown; prefix: string }) {
   if (!error) return null
+  // The author chose not to send it after being told its size: an answer, not a failure.
+  if (isApiError(error, 'not_confirmed')) {
+    return (
+      <p className="hint" role="status">
+        Not started, as you chose. Nothing was spent.
+      </p>
+    )
+  }
   return <ErrorNotice error={error} prefix={prefix} />
 }
 
@@ -885,8 +923,8 @@ function Versions({ versions, onRead }: { versions: SceneVersion[]; onRead: (ver
                     {version.number}
                     {index === 0 && <span className="muted small"> · current</span>}
                   </td>
-                  <td>{version.words.toLocaleString()}</td>
-                  <td>{WHO[version.origin] ?? 'You'}</td>
+                  <td data-label="Words">{version.words.toLocaleString()}</td>
+                  <td data-label="Written by">{WHO[version.origin] ?? 'You'}</td>
                   <td>
                     <time dateTime={version.created_at} title={fullDate(version.created_at)}>
                       {timeAgo(version.created_at)}

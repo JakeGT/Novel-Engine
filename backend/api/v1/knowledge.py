@@ -74,6 +74,8 @@ class TellResult(BaseModel):
 class ShownModel(BaseModel):
     fact_id: str
     how: str
+    # Whether this is the scene where the fact is meant to come out (STY-007).
+    main_reveal: bool = False
 
 
 class ReaderStepModel(BaseModel):
@@ -193,7 +195,10 @@ async def reader_journey(
                 title=step.scene.title,
                 number=step.number,
                 point_of_view=step.point_of_view,
-                shown=[ShownModel(fact_id=r.fact_id, how=r.how) for r in step.shown],
+                shown=[
+                    ShownModel(fact_id=r.fact_id, how=r.how, main_reveal=r.main_reveal)
+                    for r in step.shown
+                ],
                 irony=step.irony,
                 withheld=step.withheld,
                 repeated=step.repeated,

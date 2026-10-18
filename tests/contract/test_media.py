@@ -266,3 +266,74 @@ def test_a_picture_whose_structure_is_broken_is_refused(auth_client, fake_contai
     assert broken.status_code == 400
     assert "could not be read" in broken.json()["detail"]
     assert auth_client.get(f"{base}/assets").json()["items"] == []
+
+
+def test_a_scene_shows_pictures_uploaded_or_chosen_from_the_library(
+    auth_client, fake_container
+) -> None:
+    project_id = fake_container.settings.AUTH_LOCAL_PROJECT_ID
+    base = f"/api/v1/projects/{project_id}"
+    _publish_schema(auth_client, project_id)
+    entity_id = _entry(auth_client, project_id)
+    scene = auth_client.post(
+        f"{base}/plan", json={"kind": "scene", "title": "Low tide", "expected_revision": 1}
+    )
+    assert scene.status_code == 201, scene.text
+    scene_id = scene.json()["id"]
+
+    upload = auth_client.post(
+        f"{base}/plan/{scene_id}/pictures", params={"expected_revision": 2}, content=PNG
+    )
+    assert upload.status_code == 201, upload.text
+    link = upload.json()["link"]
+    assert (link["role"], link["target_record_type"], link["target_record_id"]) == (
+        "DEPICTS",
+        "plan_item",
+        scene_id,
+    )
+    assert upload.headers["ETag"] == '"3"'
+
+    # A picture on an entry, removed from it: still in the library, shown nowhere.
+    entry_pic = auth_client.post(
+        f"{base}/entities/{entity_id}/pictures",
+        params={"expected_revision": 3, "name": "Mara"},
+        content=JPEG,
+    ).json()["link"]
+    auth_client.post(f"{base}/links/{entry_pic['id']}/retire", json={"expected_revision": 4})
+    library = auth_client.get(f"{base}/pictures").json()["items"]
+    assert {(item["name"], item["shown"]) for item in library} == {
+        ("Picture for Low tide", 1),
+        ("Mara", 0),
+    }
+    mara = next(item for item in library if item["name"] == "Mara")
+    assert mara["content_type"] == "image/jpeg"
+
+    # Chosen for the scene: linked again through the ordinary link route.
+    chosen = auth_client.post(
+        f"{base}/assets/{mara['asset_id']}/links",
+        json={
+            "target_id": scene_id,
+            "target_record_type": "plan_item",
+            "asset_version_id": mara["version_id"],
+            "role": "DEPICTS",
+            "expected_revision": 5,
+        },
+    )
+    assert chosen.status_code == 201, chosen.text
+    shown = auth_client.get(f"{base}/links", params={"target_id": scene_id}).json()["items"]
+    assert len(shown) == 2
+
+    # Only a scene that exists takes a picture.
+    missing = auth_client.post(
+        f"{base}/plan/pln_nope/pictures", params={"expected_revision": 6}, content=PNG
+    )
+    assert missing.status_code == 404
+
+
+def test_the_picture_library_and_scene_uploads_require_a_session(api_client) -> None:
+    base = "/api/v1/projects/local-project"
+    assert api_client.get(f"{base}/pictures").status_code == 401
+    upload = api_client.post(
+        f"{base}/plan/pln_x/pictures", params={"expected_revision": 0}, content=PNG
+    )
+    assert upload.status_code == 401

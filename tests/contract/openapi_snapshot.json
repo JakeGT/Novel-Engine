@@ -265,6 +265,17 @@
       },
       "AllowanceModel": {
         "properties": {
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
           "limit_tokens": {
             "anyOf": [
               {
@@ -2645,6 +2656,55 @@
         "title": "CheckModel",
         "type": "object"
       },
+      "CheckProfile": {
+        "enum": [
+          "on_request",
+          "balanced",
+          "thorough"
+        ],
+        "title": "CheckProfile",
+        "type": "string"
+      },
+      "CheckingModel": {
+        "description": "How much checking runs on its own in this story, and what it has used here.",
+        "properties": {
+          "check_minutes": {
+            "title": "Check Minutes",
+            "type": "integer"
+          },
+          "next_after_save": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next After Save"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/CheckProfile"
+          },
+          "scene_tokens": {
+            "title": "Scene Tokens",
+            "type": "integer"
+          },
+          "spent_tokens": {
+            "title": "Spent Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "profile",
+          "scene_tokens",
+          "spent_tokens",
+          "check_minutes"
+        ],
+        "title": "CheckingModel",
+        "type": "object"
+      },
       "ChooseAiRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2811,12 +2871,43 @@
             ],
             "title": "Holds"
           },
+          "index": {
+            "default": 0,
+            "title": "Index",
+            "type": "integer"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
           "plan_id": {
             "title": "Plan Id",
             "type": "string"
           },
+          "planned_in": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned In"
+          },
           "reading": {
             "title": "Reading",
+            "type": "string"
+          },
+          "status": {
+            "default": "unclear",
+            "title": "Status",
+            "type": "string"
+          },
+          "strength": {
+            "default": "hard",
+            "title": "Strength",
             "type": "string"
           },
           "when": {
@@ -5339,6 +5430,11 @@
       },
       "JobModel": {
         "properties": {
+          "automatic": {
+            "default": false,
+            "title": "Automatic",
+            "type": "boolean"
+          },
           "cached_prompt_tokens": {
             "default": 0,
             "title": "Cached Prompt Tokens",
@@ -5406,6 +5502,17 @@
           "prompt_tokens": {
             "title": "Prompt Tokens",
             "type": "integer"
+          },
+          "provider_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Cost Usd"
           },
           "result": {
             "additionalProperties": true,
@@ -5554,6 +5661,50 @@
           "reason"
         ],
         "title": "LeftOutModel",
+        "type": "object"
+      },
+      "LibraryPictureModel": {
+        "properties": {
+          "asset_id": {
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "byte_length": {
+            "title": "Byte Length",
+            "type": "integer"
+          },
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "shown": {
+            "title": "Shown",
+            "type": "integer"
+          },
+          "version_id": {
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset_id",
+          "name",
+          "version_id",
+          "content_type",
+          "byte_length",
+          "created_at",
+          "shown"
+        ],
+        "title": "LibraryPictureModel",
         "type": "object"
       },
       "LinkAssetOp": {
@@ -6441,6 +6592,11 @@
             "title": "Code",
             "type": "string"
           },
+          "kind": {
+            "default": "gap",
+            "title": "Kind",
+            "type": "string"
+          },
           "message": {
             "title": "Message",
             "type": "string"
@@ -6610,6 +6766,13 @@
             "title": "Open",
             "type": "array"
           },
+          "promises": {
+            "items": {
+              "$ref": "#/components/schemas/PromiseModel"
+            },
+            "title": "Promises",
+            "type": "array"
+          },
           "threads": {
             "items": {
               "$ref": "#/components/schemas/ThreadProgressModel"
@@ -6747,6 +6910,22 @@
           "predicate"
         ],
         "title": "Pattern",
+        "type": "object"
+      },
+      "PictureLibraryModel": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryPictureModel"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PictureLibraryModel",
         "type": "object"
       },
       "PlacedEventModel": {
@@ -7262,6 +7441,77 @@
           "updated_at"
         ],
         "title": "ProjectModel",
+        "type": "object"
+      },
+      "PromiseModel": {
+        "description": "A thread opened or a fact hinted: something the reader is owed (STY-007).",
+        "properties": {
+          "distance": {
+            "title": "Distance",
+            "type": "integer"
+          },
+          "kept_at": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kept At"
+          },
+          "kept_in": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kept In"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "made_at": {
+            "title": "Made At",
+            "type": "integer"
+          },
+          "made_in": {
+            "title": "Made In",
+            "type": "string"
+          },
+          "moved_along": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Moved Along",
+            "type": "array"
+          },
+          "out_of_order": {
+            "title": "Out Of Order",
+            "type": "boolean"
+          },
+          "subject_id": {
+            "title": "Subject Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "subject_id",
+          "made_in",
+          "made_at",
+          "moved_along",
+          "kept_in",
+          "kept_at",
+          "distance",
+          "out_of_order"
+        ],
+        "title": "PromiseModel",
         "type": "object"
       },
       "ProposalIssueModel": {
@@ -8232,6 +8482,11 @@
             ],
             "title": "How",
             "type": "string"
+          },
+          "main_reveal": {
+            "default": false,
+            "title": "Main Reveal",
+            "type": "boolean"
           }
         },
         "required": [
@@ -8949,14 +9204,38 @@
       },
       "SceneCondition": {
         "additionalProperties": false,
+        "description": "One condition: a check on one entry, or a sentence in the author's words.",
         "properties": {
           "check": {
-            "$ref": "#/components/schemas/Check"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Check"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "entity_id": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Entity Id",
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          },
+          "strength": {
+            "default": "hard",
+            "enum": [
+              "hard",
+              "soft"
+            ],
+            "title": "Strength",
             "type": "string"
           },
           "when": {
@@ -8966,12 +9245,22 @@
             ],
             "title": "When",
             "type": "string"
+          },
+          "words": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Words"
           }
         },
         "required": [
-          "when",
-          "entity_id",
-          "check"
+          "when"
         ],
         "title": "SceneCondition",
         "type": "object"
@@ -9393,6 +9682,57 @@
         "title": "SetAsideRequest",
         "type": "object"
       },
+      "SetAssistantSettingsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "check_minutes": {
+            "default": 15,
+            "maximum": 60.0,
+            "minimum": 5.0,
+            "title": "Check Minutes",
+            "type": "integer"
+          },
+          "check_profile": {
+            "$ref": "#/components/schemas/CheckProfile",
+            "default": "on_request"
+          },
+          "confirm_above_tokens": {
+            "anyOf": [
+              {
+                "maximum": 10000000.0,
+                "minimum": 1000.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm Above Tokens"
+          },
+          "conversation_tokens": {
+            "anyOf": [
+              {
+                "maximum": 10000000.0,
+                "minimum": 5000.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Tokens"
+          },
+          "scene_tokens": {
+            "default": 40000,
+            "maximum": 1000000.0,
+            "minimum": 5000.0,
+            "title": "Scene Tokens",
+            "type": "integer"
+          }
+        },
+        "title": "SetAssistantSettingsRequest",
+        "type": "object"
+      },
       "SetConditionsRequest": {
         "additionalProperties": false,
         "properties": {
@@ -9501,6 +9841,39 @@
         "title": "SetSceneTimeRequest",
         "type": "object"
       },
+      "SetWorkspaceLimitsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_above_tokens": {
+            "anyOf": [
+              {
+                "maximum": 10000000.0,
+                "minimum": 1000.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm Above Tokens"
+          },
+          "conversation_tokens": {
+            "anyOf": [
+              {
+                "maximum": 10000000.0,
+                "minimum": 5000.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Tokens"
+          }
+        },
+        "title": "SetWorkspaceLimitsRequest",
+        "type": "object"
+      },
       "ShownModel": {
         "properties": {
           "fact_id": {
@@ -9510,6 +9883,11 @@
           "how": {
             "title": "How",
             "type": "string"
+          },
+          "main_reveal": {
+            "default": false,
+            "title": "Main Reveal",
+            "type": "boolean"
           }
         },
         "required": [
@@ -9590,6 +9968,96 @@
         "title": "StartWhatIfRequest",
         "type": "object"
       },
+      "StoryAssistantSettingsModel": {
+        "properties": {
+          "check_minutes": {
+            "title": "Check Minutes",
+            "type": "integer"
+          },
+          "check_profile": {
+            "$ref": "#/components/schemas/CheckProfile"
+          },
+          "confirm_above_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm Above Tokens"
+          },
+          "conversation_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Tokens"
+          },
+          "effective_confirm_above_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Confirm Above Tokens"
+          },
+          "effective_conversation_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Conversation Tokens"
+          },
+          "scene_tokens": {
+            "title": "Scene Tokens",
+            "type": "integer"
+          },
+          "workspace_confirm_above_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Confirm Above Tokens"
+          },
+          "workspace_conversation_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Conversation Tokens"
+          }
+        },
+        "required": [
+          "check_profile",
+          "scene_tokens",
+          "check_minutes",
+          "confirm_above_tokens",
+          "conversation_tokens"
+        ],
+        "title": "StoryAssistantSettingsModel",
+        "type": "object"
+      },
       "StringObject": {
         "additionalProperties": false,
         "properties": {
@@ -9639,6 +10107,27 @@
             },
             "title": "Assistant",
             "type": "array"
+          },
+          "automatic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Automatic"
+          },
+          "checking": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckingModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "checks": {
             "items": {
@@ -10702,6 +11191,38 @@
         "title": "WhatIfModel",
         "type": "object"
       },
+      "WorkspaceLimitsModel": {
+        "properties": {
+          "confirm_above_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm Above Tokens"
+          },
+          "conversation_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Tokens"
+          }
+        },
+        "required": [
+          "confirm_above_tokens",
+          "conversation_tokens"
+        ],
+        "title": "WorkspaceLimitsModel",
+        "type": "object"
+      },
       "WorkspaceModel": {
         "properties": {
           "created_at": {
@@ -10755,8 +11276,40 @@
       },
       "backend__api__v1__canon_assist__EstimateModel": {
         "properties": {
+          "confirm_above_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm Above Tokens"
+          },
+          "conversation_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Tokens"
+          },
+          "conversation_used_tokens": {
+            "default": 0,
+            "title": "Conversation Used Tokens",
+            "type": "integer"
+          },
           "entry_tokens": {
             "title": "Entry Tokens",
+            "type": "integer"
+          },
+          "reply_tokens": {
+            "default": 2000,
+            "title": "Reply Tokens",
             "type": "integer"
           },
           "story_tokens": {
@@ -10918,6 +11471,68 @@
           }
         },
         "summary": "Read Root"
+      }
+    },
+    "/api/v1/ai/limits": {
+      "get": {
+        "description": "The owner's ceilings for everyone in the workspace.",
+        "operationId": "get_workspace_limits_api_v1_ai_limits_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceLimitsModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Workspace Limits",
+        "tags": [
+          "assistant-settings"
+        ]
+      },
+      "put": {
+        "description": "An owner sets, for everyone, when to ask before a large request and how much one\nconversation may use. A story may choose lower; never higher.",
+        "operationId": "set_workspace_limits_api_v1_ai_limits_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetWorkspaceLimitsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceLimitsModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Workspace Limits",
+        "tags": [
+          "assistant-settings"
+        ]
       }
     },
     "/api/v1/ai/models": {
@@ -11115,6 +11730,26 @@
     "/api/v1/characters/generate-questions": {
       "post": {
         "operationId": "character_generate_questions_api_v1_characters_generate_questions_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -11201,6 +11836,26 @@
       "post": {
         "description": "Legacy graph-backed prototype (local only); it writes model output to the\ngeneric graph, so hosted deployments must use the canonical proposal workflow.",
         "operationId": "character_process_answers_api_v1_characters_process_answers_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -11930,6 +12585,26 @@
     "/api/v1/graph/projects/{project_id}/characters/generate-questions": {
       "post": {
         "operationId": "character_generate_questions_api_v1_graph_projects__project_id__characters_generate_questions_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -12016,6 +12691,26 @@
       "post": {
         "description": "Legacy graph-backed prototype (local only); it writes model output to the\ngeneric graph, so hosted deployments must use the canonical proposal workflow.",
         "operationId": "character_process_answers_api_v1_graph_projects__project_id__characters_process_answers_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -13543,6 +14238,24 @@
               "title": "Project Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
           }
         ],
         "requestBody": {
@@ -13585,7 +14298,7 @@
     },
     "/api/v1/projects/{project_id}/assist/estimate": {
       "get": {
-        "description": "Roughly what the assistant will read, so it can be shown before anything is spent.",
+        "description": "Roughly what the assistant will read and reply, so it can be shown before anything is\nspent, with the limits that apply and what the conversation has used so far.",
         "operationId": "assist_estimate_api_v1_projects__project_id__assist_estimate_get",
         "parameters": [
           {
@@ -13595,6 +14308,23 @@
             "schema": {
               "title": "Project Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 80,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Session Id"
             }
           }
         ],
@@ -13638,6 +14368,24 @@
             "schema": {
               "title": "Project Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
             }
           }
         ],
@@ -13691,6 +14439,24 @@
             "schema": {
               "title": "Project Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
             }
           }
         ],
@@ -13798,6 +14564,24 @@
               "title": "Project Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
           }
         ],
         "requestBody": {
@@ -13849,6 +14633,24 @@
             "schema": {
               "title": "Project Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
             }
           }
         ],
@@ -13902,6 +14704,24 @@
               "title": "Project Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
           }
         ],
         "requestBody": {
@@ -13954,6 +14774,24 @@
               "title": "Project Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
           }
         ],
         "requestBody": {
@@ -13996,7 +14834,7 @@
     },
     "/api/v1/projects/{project_id}/assist/revisions": {
       "post": {
-        "description": "Revise a set of suggested changes by asking. It stays waiting for review.",
+        "description": "Revise a set of suggested changes by asking. It stays waiting for review.\n\nAsking again continues the conversation that proposed them: it counts toward that\nconversation's budget when it is the author's own.",
         "operationId": "assist_revision_api_v1_projects__project_id__assist_revisions_post",
         "parameters": [
           {
@@ -14006,6 +14844,24 @@
             "schema": {
               "title": "Project Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
             }
           }
         ],
@@ -14059,6 +14915,24 @@
             "schema": {
               "title": "Project Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
             }
           }
         ],
@@ -14408,6 +15282,24 @@
               "title": "Source Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
           }
         ],
         "requestBody": {
@@ -14445,6 +15337,99 @@
         "summary": "Read Passage With Assistant",
         "tags": [
           "texts-assist"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/assistant-settings": {
+      "get": {
+        "description": "How much checking runs on its own in this story, and when to ask before spending.",
+        "operationId": "get_story_settings_api_v1_projects__project_id__assistant_settings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoryAssistantSettingsModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Story Settings",
+        "tags": [
+          "assistant-settings"
+        ]
+      },
+      "put": {
+        "operationId": "set_story_settings_api_v1_projects__project_id__assistant_settings_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAssistantSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoryAssistantSettingsModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Story Settings",
+        "tags": [
+          "assistant-settings"
         ]
       }
     },
@@ -14890,6 +15875,24 @@
               "title": "Entity Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
           }
         ],
         "requestBody": {
@@ -14950,6 +15953,24 @@
             "schema": {
               "title": "Entity Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
             }
           }
         ],
@@ -18166,6 +19187,49 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/pictures": {
+      "get": {
+        "description": "Every picture in the story that can be shown, newest first, including those\nshown nowhere now. Choosing one links it again; nothing is copied.",
+        "operationId": "picture_library_api_v1_projects__project_id__pictures_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PictureLibraryModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Picture Library",
+        "tags": [
+          "media"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/plan": {
       "get": {
         "operationId": "get_outline_api_v1_projects__project_id__plan_get",
@@ -18703,6 +19767,87 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/pictures": {
+      "post": {
+        "description": "Add a picture to a scene of the plan. The request body is the image itself.\n\nThe same checks as a picture of an entry; the link points at the scene\n(``target_record_type`` ``plan_item``, role ``DEPICTS``), in one new revision.",
+        "operationId": "add_scene_picture_api_v1_projects__project_id__plan__plan_id__pictures_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expected_revision",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Expected Revision",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Add Scene Picture Api V1 Projects  Project Id  Plan  Plan Id  Pictures Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Scene Picture",
+        "tags": [
+          "media"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/plan/{plan_id}/remove": {
       "post": {
         "operationId": "remove_plan_item_api_v1_projects__project_id__plan__plan_id__remove_post",
@@ -18877,6 +20022,58 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/studio/check-estimate": {
+      "get": {
+        "description": "Roughly what one check with the assistant of this scene's text reads and writes,\nso the cost of each checking profile can be said before choosing. Calls no model.",
+        "operationId": "check_estimate_api_v1_projects__project_id__plan__plan_id__studio_check_estimate_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/backend__api__v1__studio__EstimateModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Check Estimate",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/plan/{plan_id}/studio/dismissals": {
       "post": {
         "description": "Dismiss a check or a note on this scene with a reason. The text is not changed.",
@@ -19038,6 +20235,24 @@
               ],
               "title": "Idempotency-Key"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
           }
         ],
         "requestBody": {
@@ -19161,6 +20376,24 @@
               "title": "Plan Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
           }
         ],
         "responses": {
@@ -19213,6 +20446,24 @@
               "title": "Plan Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
           }
         ],
         "responses": {
@@ -19263,6 +20514,24 @@
             "schema": {
               "title": "Plan Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
             }
           }
         ],

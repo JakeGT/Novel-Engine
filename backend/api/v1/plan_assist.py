@@ -6,6 +6,8 @@ choose between. Nothing is added to the plan, or to the story, by asking.
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -17,9 +19,11 @@ from backend.api.dependencies import (
     get_settings,
     get_usage_service,
 )
+from backend.api.v1.assistant_settings import confirmed_tokens, get_assist_budget
 from backend.api.v1.canon_assist import (
     AssistQuestionSheetModel,
     DiscardedItemModel,
+    reading,
 )
 from backend.api.v1.canon_characters import CharacterAnswerModel, CharacterQuestionModel
 from backend.api.v1.router import _provider_context
@@ -27,6 +31,7 @@ from backend.core.config import Settings
 from backend.domain.assist import AssistAnswer, AssistKind, AssistQuestion
 from backend.domain.identity import AccessScope
 from backend.services.assist_session_service import AssistSessionService
+from backend.services.assistant_settings_service import AssistBudget
 from backend.services.canon_character_workflow import MAX_ANSWERS, CharacterAnswer
 from backend.services.credential_service import CredentialService
 from backend.services.plan_workflow import (
@@ -119,10 +124,21 @@ async def plan_questions(
     usage: ProviderUsageService = Depends(get_usage_service),
     settings: Settings = Depends(get_settings),
     scope: AccessScope = Depends(require_project_scope),
+    budget: AssistBudget = Depends(get_assist_budget),
+    confirmed: int | None = Depends(confirmed_tokens),
 ) -> AssistQuestionSheetModel:
+    guard = await budget.check(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        reads=reading(workflow, scope, project_id, "story"),
+        doing="Asking planning questions",
+        confirmed_tokens=confirmed,
+    )
     credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
         settings=settings, credentials=credentials, usage=usage, scope=scope
     )
+    usage_sink = guard.counting(usage_sink)
     sheet = await workflow.plan_questions(
         scope,
         scope.workspace_id or "",
@@ -147,6 +163,7 @@ async def plan_questions(
             for item in sheet.questions
         ],
     )
+    await guard.record(session.id)
     return AssistQuestionSheetModel(
         session_id=session.id,
         questions=[
@@ -166,8 +183,24 @@ async def plan_proposal(
     usage: ProviderUsageService = Depends(get_usage_service),
     settings: Settings = Depends(get_settings),
     scope: AccessScope = Depends(require_project_scope),
+    budget: AssistBudget = Depends(get_assist_budget),
+    confirmed: int | None = Depends(confirmed_tokens),
 ) -> PlanProposalModel:
     """One round of planning, as plan items to review. The plan itself is not changed."""
+
+    async def guarded() -> Any:
+        return await budget.check(
+            scope,
+            scope.workspace_id or "",
+            project_id,
+            reads=reading(workflow, scope, project_id, "story"),
+            doing="Drafting this part of the plan",
+            confirmed_tokens=confirmed,
+            session_id=body.session_id,
+        )
+
+    # A new conversation is not opened for a request that is then refused.
+    guard = None if body.session_id else await guarded()
     credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
         settings=settings, credentials=credentials, usage=usage, scope=scope
     )
@@ -185,23 +218,28 @@ async def plan_proposal(
         description=body.description,
         answers=answers,
     )
-    result = await workflow.plan_proposal(
-        scope,
-        scope.workspace_id or "",
-        project_id,
-        description=body.description,
-        depth=body.depth,
-        about_id=body.about_id,
-        answers=[
-            CharacterAnswer(question_id=a.question_id, question=a.question, answer=a.answer)
-            for a in body.answers
-        ],
-        expected_revision=body.expected_revision,
-        session_id=session.id,
-        credential=api_key,
-        provider_base_url=provider_base_url,
-        usage_sink=usage_sink,
-    )
+    # Checked once the answers are kept, so a refusal loses nothing the author wrote.
+    guard = guard or await guarded()
+    try:
+        result = await workflow.plan_proposal(
+            scope,
+            scope.workspace_id or "",
+            project_id,
+            description=body.description,
+            depth=body.depth,
+            about_id=body.about_id,
+            answers=[
+                CharacterAnswer(question_id=a.question_id, question=a.question, answer=a.answer)
+                for a in body.answers
+            ],
+            expected_revision=body.expected_revision,
+            session_id=session.id,
+            credential=api_key,
+            provider_base_url=provider_base_url,
+            usage_sink=guard.counting(usage_sink),
+        )
+    finally:
+        await guard.record(session.id)
     if credential_id:
         await credentials.mark_used(scope.workspace_id or "", credential_id)
     await sessions.proposed(
@@ -223,8 +261,18 @@ async def plan_directions(
     usage: ProviderUsageService = Depends(get_usage_service),
     settings: Settings = Depends(get_settings),
     scope: AccessScope = Depends(require_project_scope),
+    budget: AssistBudget = Depends(get_assist_budget),
+    confirmed: int | None = Depends(confirmed_tokens),
 ) -> DirectionsModel:
     """What could happen next: two or three options. Nothing is proposed or changed."""
+    await budget.check(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        reads=reading(workflow, scope, project_id, "story"),
+        doing="Suggesting what could happen next",
+        confirmed_tokens=confirmed,
+    )
     credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
         settings=settings, credentials=credentials, usage=usage, scope=scope
     )

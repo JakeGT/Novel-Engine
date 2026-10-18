@@ -50,6 +50,7 @@ from backend.domain.operations import (
     RetireEntityOp,
     UpdateEntityOp,
 )
+from backend.domain.prompts import Messages, prompt_version
 from backend.domain.tenancy import Permission
 from backend.domain.worldtime import describe, resolve, resolve_all, span_of, spans_overlap
 from backend.services.assist_time import StoryTime, to_world_time
@@ -78,7 +79,7 @@ from backend.services.story_time_service import anchor_lookup
 
 logger = logging.getLogger(__name__)
 
-CHANGE_PROMPT_VERSION = "change-by-instruction/1"
+CHANGE_PROMPT_VERSION = prompt_version("change-by-instruction")
 
 MAX_INSTRUCTION_LENGTH = 4000
 MAX_CONTEXT_FACTS = 300
@@ -387,68 +388,8 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
             )
         story, entities, facts, beliefs = await self._story(workspace_id, project_id, focus)
 
-        predicate_lines = "\n".join(
-            f"- {spec.predicate}: subject is one of {sorted(spec.subject_types)}; object is "
-            f"{spec.object_shape.value}"
-            + (f" of type {sorted(spec.object_types)}" if spec.object_types else "")
-            + ("; only one at a time" if spec.cardinality is Cardinality.ONE else "")
-            for spec in predicates.values()
-        )
         plan: ChangePlan = await self._generate(
-            system=(
-                "You are the editor of an author's story bible. The author gives one instruction "
-                "and you work out every change it implies, and only those. You never decide the "
-                "story: do what was asked, and nothing that was not. Rules:\n"
-                "- refer to existing records by the exact ids listed. Never invent an id.\n"
-                "- if the instruction could mean more than one thing, or names something you "
-                "cannot find, put short questions in `questions` and propose nothing.\n"
-                "- to correct a fact, end the old one (end_facts) and add the right one "
-                "(add_facts). Facts are never edited in place.\n"
-                "- to rename, use entity_changes.new_name; facts follow the entry automatically.\n"
-                "- to merge two entries, move what is known about one onto the other (details, "
-                "names, facts), then archive the one that is no longer needed.\n"
-                "- archive an entry only when the author asks for it to be removed or merged.\n"
-                "- create an entry for anything new the instruction names; give it a short ref.\n"
-                f"- entry types must be one of: {sorted(entity_types)}\n"
-                "- use only these kinds of fact, respecting subject and object types:\n"
-                f"{predicate_lines}\n"
-                "- a belief is what a character thinks and may be false; never mark it true or "
-                "false.\n"
-                "- in `notes`, tell the author about anything else this affects that they did "
-                "not mention: facts that now look wrong, characters whose beliefs no longer "
-                "match. Do not change those things yourself.\n"
-                "- some requests are not changes to the story bible. Do not attempt them; "
-                "list each in `elsewhere` with the place it is done: "
-                + "; ".join(f"{place} ({what})" for place, what in ELSEWHERE.items())
-                + ".\n"
-                "- when the author asks to undo something or go back, also set "
-                "`back_to_version` to the last version to keep, worked out from the list of "
-                "recent versions. If you cannot tell which version they mean, ask.\n"
-                "- when the author asks to invite someone, also set `invite` with the role "
-                "they should have (reader unless the author says they may make changes) and "
-                "an email address only if the author gave one.\n"
-                "- story time: to say when something happened, use new_events (for something "
-                "new that happened) or event_times (for a listed event). A time is at a point, "
-                'between two points, or relative to an event ("three years before the war" is '
-                "relative, anchor the war, offset 3, direction before). Keep the author's words "
-                "in `words`. Never invent a date the author did not give.\n"
-                "- to say when a fact is true, use fact_times for a listed fact, or starts/ends "
-                'on a new fact. When a one-at-a-time fact changes at a stated time ("she moved '
-                'to Saltmere in year 10"), end the old one with fact_times ends and give the '
-                "new one starts, instead of ending the old fact.\n"
-                '- "X doesn\'t know this" or "this is a secret": put the fact in secrecy '
-                'as secret, and end any belief by which X knows it. "Everyone knows": common.\n'
-                "- `understood` restates the change in one plain sentence.\n" + PROMPT_RULE
-            ),
-            user=(
-                f"{story}\n\n"
-                + (
-                    "Recent versions, newest first:\n" + "\n".join(recent_versions) + "\n\n"
-                    if recent_versions
-                    else ""
-                )
-                + f"Instruction:\n{instruction}"
-            ),
+            messages=change_messages(story, predicates, entity_types, instruction, recent_versions),
             response_format=ChangePlan,
             prompt_version=CHANGE_PROMPT_VERSION,
             credential=credential,
@@ -865,6 +806,78 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
         return timed
 
 
+def change_messages(
+    story: str,
+    predicates: dict[str, PredicateSpec],
+    entity_types: set[str],
+    instruction: str,
+    recent_versions: list[str] | None,
+) -> Messages:
+    """The ``change-by-instruction`` prompt: ``story`` is the story bible as listed."""
+    predicate_lines = "\n".join(
+        f"- {spec.predicate}: subject is one of {sorted(spec.subject_types)}; object is "
+        f"{spec.object_shape.value}"
+        + (f" of type {sorted(spec.object_types)}" if spec.object_types else "")
+        + ("; only one at a time" if spec.cardinality is Cardinality.ONE else "")
+        for spec in predicates.values()
+    )
+    system = (
+        "You are the editor of an author's story bible. The author gives one instruction "
+        "and you work out every change it implies, and only those. You never decide the "
+        "story: do what was asked, and nothing that was not. Rules:\n"
+        "- refer to existing records by the exact ids listed. Never invent an id.\n"
+        "- if the instruction could mean more than one thing, or names something you "
+        "cannot find, put short questions in `questions` and propose nothing.\n"
+        "- to correct a fact, end the old one (end_facts) and add the right one "
+        "(add_facts). Facts are never edited in place.\n"
+        "- to rename, use entity_changes.new_name; facts follow the entry automatically.\n"
+        "- to merge two entries, move what is known about one onto the other (details, "
+        "names, facts), then archive the one that is no longer needed.\n"
+        "- archive an entry only when the author asks for it to be removed or merged.\n"
+        "- create an entry for anything new the instruction names; give it a short ref.\n"
+        f"- entry types must be one of: {sorted(entity_types)}\n"
+        "- use only these kinds of fact, respecting subject and object types:\n"
+        f"{predicate_lines}\n"
+        "- a belief is what a character thinks and may be false; never mark it true or "
+        "false.\n"
+        "- in `notes`, tell the author about anything else this affects that they did "
+        "not mention: facts that now look wrong, characters whose beliefs no longer "
+        "match. Do not change those things yourself.\n"
+        "- some requests are not changes to the story bible. Do not attempt them; "
+        "list each in `elsewhere` with the place it is done: "
+        + "; ".join(f"{place} ({what})" for place, what in ELSEWHERE.items())
+        + ".\n"
+        "- when the author asks to undo something or go back, also set "
+        "`back_to_version` to the last version to keep, worked out from the list of "
+        "recent versions. If you cannot tell which version they mean, ask.\n"
+        "- when the author asks to invite someone, also set `invite` with the role "
+        "they should have (reader unless the author says they may make changes) and "
+        "an email address only if the author gave one.\n"
+        "- story time: to say when something happened, use new_events (for something "
+        "new that happened) or event_times (for a listed event). A time is at a point, "
+        'between two points, or relative to an event ("three years before the war" is '
+        "relative, anchor the war, offset 3, direction before). Keep the author's words "
+        "in `words`. Never invent a date the author did not give.\n"
+        "- to say when a fact is true, use fact_times for a listed fact, or starts/ends "
+        'on a new fact. When a one-at-a-time fact changes at a stated time ("she moved '
+        'to Saltmere in year 10"), end the old one with fact_times ends and give the '
+        "new one starts, instead of ending the old fact.\n"
+        '- "X doesn\'t know this" or "this is a secret": put the fact in secrecy '
+        'as secret, and end any belief by which X knows it. "Everyone knows": common.\n'
+        "- `understood` restates the change in one plain sentence.\n" + PROMPT_RULE
+    )
+    user = (
+        f"{story}\n\n"
+        + (
+            "Recent versions, newest first:\n" + "\n".join(recent_versions) + "\n\n"
+            if recent_versions
+            else ""
+        )
+        + f"Instruction:\n{instruction}"
+    )
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
 __all__ = [
     "CHANGE_PROMPT_VERSION",
     "MAX_INSTRUCTION_LENGTH",
@@ -873,4 +886,5 @@ __all__ = [
     "ChangeResult",
     "EntityChange",
     "RecordRef",
+    "change_messages",
 ]

@@ -10,8 +10,11 @@ explicit links (no processing/scanning).
 from __future__ import annotations
 
 import asyncio
+import logging
+from dataclasses import dataclass
 
 from backend.adapters.system import uuid7
+from backend.domain.canon.plans import PlanKind
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.image_metadata import ImageMetadataError, strip_metadata
@@ -31,6 +34,22 @@ from backend.services.mutation_service import CommitResult, MutationService
 
 MAX_PICTURE_BYTES = 8 * 1024 * 1024
 PICTURE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp"})
+# A picture shown on a scene links to the plan item that is the scene.
+SCENE_TARGET = "plan_item"
+MAX_LIBRARY = 200
+MAX_LIBRARY_LINKS = 2000
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class LibraryPicture:
+    """A picture the author can choose: its newest current version, and where it is shown."""
+
+    asset: MediaAsset
+    version: MediaAssetVersion
+    # How many entries and scenes show it now; 0 when it is shown nowhere.
+    shown: int
 
 
 def sniff_image_type(data: bytes) -> str | None:
@@ -235,6 +254,61 @@ class MediaService:
         Nothing is decoded, resized, or sent to a model.
         """
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        data, content_type = await self._checked_picture(data)
+        entity = await self._reader.get_entity(
+            workspace_id=workspace_id, project_id=project_id, entity_id=entity_id
+        )
+        if entity is None or not entity.is_active:
+            raise NotFoundError("Entry not found.")
+        return await self._store_and_link(
+            scope,
+            workspace_id,
+            project_id,
+            data=data,
+            content_type=content_type,
+            label=" ".join((name or "").split())[:120] or f"Picture of {entity.name}",
+            target_record_type="entity",
+            target_id=entity.id,
+            expected_revision=expected_revision,
+        )
+
+    async def add_scene_picture(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        *,
+        scene_id: str,
+        data: bytes,
+        name: str | None,
+        expected_revision: int,
+    ) -> tuple[CommitResult, AssetLink, MediaAssetVersion]:
+        """Store an image and show it on a scene of the plan (AST-EXP-018).
+
+        The same checks as a picture of an entry. The link points at the plan item
+        (``target_record_type="plan_item"``) with the role ``DEPICTS``.
+        """
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        data, content_type = await self._checked_picture(data)
+        scene = await self._reader.get_plan_item(
+            workspace_id=workspace_id, project_id=project_id, plan_id=scene_id
+        )
+        if scene is None or not scene.is_active or scene.kind != PlanKind.SCENE:
+            raise NotFoundError("Scene not found.")
+        return await self._store_and_link(
+            scope,
+            workspace_id,
+            project_id,
+            data=data,
+            content_type=content_type,
+            label=" ".join((name or "").split())[:120] or f"Picture for {scene.title}"[:120],
+            target_record_type=SCENE_TARGET,
+            target_id=scene.id,
+            expected_revision=expected_revision,
+        )
+
+    async def _checked_picture(self, data: bytes) -> tuple[bytes, str]:
+        """The upload as it will be stored, and its type from its own bytes."""
         if not data:
             raise ValidationError("The picture is empty.")
         if len(data) > MAX_PICTURE_BYTES:
@@ -252,16 +326,24 @@ class MediaService:
                 "This picture could not be read. Save it again as a PNG, JPEG, or WebP "
                 "file and add it once more."
             ) from error
-        entity = await self._reader.get_entity(
-            workspace_id=workspace_id, project_id=project_id, entity_id=entity_id
-        )
-        if entity is None or not entity.is_active:
-            raise NotFoundError("Entry not found.")
+        return data, content_type
 
+    async def _store_and_link(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        *,
+        data: bytes,
+        content_type: str,
+        label: str,
+        target_record_type: str,
+        target_id: str,
+        expected_revision: int,
+    ) -> tuple[CommitResult, AssetLink, MediaAssetVersion]:
         stat = self._objects.put(
             data, workspace_id=workspace_id, project_id=project_id, content_type=content_type
         )
-        label = " ".join((name or "").split())[:120] or f"Picture of {entity.name}"
         asset = await self._media.create_asset(
             workspace_id=workspace_id,
             project_id=project_id,
@@ -281,26 +363,109 @@ class MediaService:
             actor_user_id=scope.actor_user_id,
         )
         link_id = format_asset_link_id()
-        result = await self._commit(
-            scope,
-            workspace_id,
-            project_id,
-            LinkAssetOp(
-                id=link_id,
-                asset_id=asset.id,
-                asset_version_id=version.id,
-                target_record_type="entity",
-                target_id=entity.id,
-                role=LinkRole.DEPICTS.value,
-            ),
-            expected_revision,
-            "",
-        )
+        try:
+            result = await self._commit(
+                scope,
+                workspace_id,
+                project_id,
+                LinkAssetOp(
+                    id=link_id,
+                    asset_id=asset.id,
+                    asset_version_id=version.id,
+                    target_record_type=target_record_type,
+                    target_id=target_id,
+                    role=LinkRole.DEPICTS.value,
+                ),
+                expected_revision,
+                "",
+            )
+        except Exception:
+            # The picture never reached the story: leave nothing behind for the
+            # library to offer.
+            await self._discard_upload(workspace_id, project_id, link_id, asset.id, stat.key)
+            raise
         link = await self._reader.get_link(
             workspace_id=workspace_id, project_id=project_id, link_id=link_id
         )
         assert link is not None
         return result, link, version
+
+    async def _discard_upload(
+        self, workspace_id: str, project_id: str, link_id: str, asset_id: str, object_key: str
+    ) -> None:
+        """Remove an upload whose link was refused; a failure here never hides why."""
+        try:
+            # Checked first, in case the commit did land before it failed.
+            if (
+                await self._reader.get_link(
+                    workspace_id=workspace_id, project_id=project_id, link_id=link_id
+                )
+                is not None
+            ):
+                return
+            await self._media.discard_asset(
+                workspace_id=workspace_id, project_id=project_id, asset_id=asset_id
+            )
+            self._objects.delete(object_key, workspace_id=workspace_id, project_id=project_id)
+        except Exception:  # noqa: BLE001 - the refusal is what the author needs to see
+            logger.warning("media.discard_failed", exc_info=True)
+
+    async def picture_library(
+        self, scope: AccessScope, workspace_id: str, project_id: str
+    ) -> list[LibraryPicture]:
+        """Every picture in this line of the story that can still be shown, newest first.
+
+        Pictures no longer shown anywhere are included: removing a picture from an
+        entry or a scene retires the link, never the picture, so it can be used again.
+        Only pictures linked at some time in the line being worked in are offered, so
+        a picture added in a what-if stays out of the main story. A picture on a scene
+        taken out of the plan is not counted as shown. Each picture is its newest
+        version that is still current.
+        """
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        assets = await self._media.list_assets(
+            workspace_id=workspace_id, project_id=project_id, limit=MAX_LIBRARY
+        )
+        links = await self._reader.list_links(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            include_retired=True,
+            limit=MAX_LIBRARY_LINKS,
+        )
+        linked = {link.asset_id for link in links}
+        active = [link for link in links if link.is_active]
+        retired_scenes: set[str] = set()
+        if any(link.target_record_type == SCENE_TARGET for link in active):
+            retired_scenes = {
+                item.id
+                for item in await self._reader.list_plan_items(
+                    workspace_id=workspace_id, project_id=project_id, include_retired=True
+                )
+                if not item.is_active
+            }
+        shown: dict[str, int] = {}
+        for link in active:
+            if link.target_record_type == SCENE_TARGET and link.target_record_id in retired_scenes:
+                continue
+            shown[link.asset_id] = shown.get(link.asset_id, 0) + 1
+        candidates = [asset for asset in assets if asset.is_active and asset.id in linked]
+        versions = await self._media.list_versions_for_assets(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            asset_ids=[asset.id for asset in candidates],
+        )
+        found: list[LibraryPicture] = []
+        for asset in candidates:
+            current = [
+                version
+                for version in versions.get(asset.id, [])
+                if version.retired_revision is None and version.content_type in PICTURE_TYPES
+            ]
+            if not current:
+                continue
+            newest = max(current, key=lambda version: version.version)
+            found.append(LibraryPicture(asset=asset, version=newest, shown=shown.get(asset.id, 0)))
+        return found
 
     async def open_content(
         self,

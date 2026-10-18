@@ -177,7 +177,9 @@ def test_the_reader_is_shown_facts_scene_by_scene_and_irony_is_derived(auth_clie
         json={"reveals": [{"fact_id": w["in_guild"], "how": "shown"}], "expected_revision": head},
     )
     assert shown.status_code == 200, shown.text
-    assert shown.json()["reveals"] == [{"fact_id": w["in_guild"], "how": "shown"}]
+    assert shown.json()["reveals"] == [
+        {"fact_id": w["in_guild"], "how": "shown", "main_reveal": False}
+    ]
     # Plan notes stay out of sight of the reserved keys.
     assert "_reveals" not in shown.json()["details"]
     auth_client.put(

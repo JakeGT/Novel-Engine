@@ -1,0 +1,230 @@
+"""Fixed input for every listed prompt (SCN-003).
+
+The input is made up here and never read from the app's own vocabulary or seed, so a
+snapshot changes only when a prompt does, not when the story bible's kinds of fact grow.
+Each prompt has one or more named cases; a case is the keyword arguments of its builder.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import BaseModel
+
+from backend.domain.canon.entities import CanonEntity, EntityLifecycle
+from backend.domain.canon.propositions import ObjectKind
+from backend.domain.canon.registry import Cardinality, PredicateSpec
+from backend.services.canon_character_workflow import CharacterAnswer
+
+
+def _entity(
+    entity_id: str, kind: str, name: str, *, aliases: list[str] | None = None, active: bool = True
+) -> CanonEntity:
+    return CanonEntity(
+        id=entity_id,
+        workspace_id="ws_prompt",
+        project_id="prj_prompt",
+        branch_id="br_main",
+        type=kind,
+        name=name,
+        schema_version_id="schema_1",
+        created_revision=1,
+        aliases=aliases or [],
+        lifecycle=EntityLifecycle.ACTIVE if active else EntityLifecycle.RETIRED,
+    )
+
+
+ENTITIES = [
+    _entity("ent_mara", "Character", "Mara Voss", aliases=["the Fox"]),
+    _entity("ent_tobin", "Character", "Tobin"),
+    _entity("ent_saltmere", "Location", "Saltmere"),
+    _entity("ent_guild", "Faction", "The Lamplighters"),
+    _entity("ent_old", "Object", "A retired lantern", active=False),
+]
+
+PREDICATES: dict[str, PredicateSpec] = {
+    spec.predicate: spec
+    for spec in (
+        PredicateSpec(
+            "LOCATED_AT",
+            frozenset({"Character", "Object"}),
+            ObjectKind.ENTITY_REF,
+            frozenset({"Location"}),
+        ),
+        PredicateSpec(
+            "MEMBER_OF",
+            frozenset({"Character"}),
+            ObjectKind.ENTITY_REF,
+            frozenset({"Faction"}),
+            cardinality=Cardinality.MANY,
+        ),
+        PredicateSpec("AGE", frozenset({"Character"}), ObjectKind.INTEGER),
+        PredicateSpec("MOTTO", frozenset({"Faction"}), ObjectKind.STRING),
+    )
+}
+LINKING = {
+    name: spec for name, spec in PREDICATES.items() if spec.object_shape is ObjectKind.ENTITY_REF
+}
+ENTITY_TYPES = {"Character", "Location", "Faction", "Object"}
+
+ANSWERS = [
+    CharacterAnswer(question_id="q1", question="Where does Mara live?", answer="In Saltmere."),
+    CharacterAnswer(question_id="q2", question="Who does she work for?", answer="The guild."),
+]
+
+STORY = (
+    "Entries:\n- ent_mara: Mara Voss (Character)\n- ent_saltmere: Saltmere (Location)\n"
+    "Facts (true in the story):\n- fct_1: Mara Voss LOCATED_AT Saltmere\n"
+    "Story time is counted in years."
+)
+CONTEXT = "## The scene\n- Saltmere, at night. Mara waits for Tobin.\n## For the author only\n- Tobin is the informer.\n"
+DRAFT = "Mara waited on the quay. The lamps were out. Tobin came late, and alone."
+
+
+class _Answer(BaseModel):
+    ready: bool
+
+
+CASES: dict[str, dict[str, dict[str, Any]]] = {
+    "character-questions": {
+        "a character": {"context": "Character: Mara Voss (id ent_mara)\nAlso known as: the Fox"},
+    },
+    "character-proposal": {
+        "two answers": {
+            "context": "Character: Mara Voss (id ent_mara)",
+            "predicates": PREDICATES,
+            "entity_types": ENTITY_TYPES,
+            "answers": ANSWERS,
+        },
+    },
+    "creation-questions": {
+        "a new place": {"brief": "The author is adding: Location “The Drowned Bell”"},
+    },
+    "creation-draft": {
+        "with answers": {
+            "brief": "The author is adding: Location “The Drowned Bell”",
+            "predicates": PREDICATES,
+            "entity_types": ENTITY_TYPES,
+            "answers": ANSWERS,
+        },
+        "without answers": {
+            "brief": "Their description:\nA tavern under the sea wall.",
+            "predicates": PREDICATES,
+            "entity_types": ENTITY_TYPES,
+            "answers": [],
+        },
+    },
+    "change-by-instruction": {
+        "with recent versions": {
+            "story": STORY,
+            "predicates": PREDICATES,
+            "entity_types": ENTITY_TYPES,
+            "instruction": "Mara moved to the capital in year 10.",
+            "recent_versions": ["v3: renamed Tobin", "v2: added Saltmere"],
+        },
+        "without recent versions": {
+            "story": STORY,
+            "predicates": PREDICATES,
+            "entity_types": ENTITY_TYPES,
+            "instruction": "Rename Tobin to Tobias.",
+            "recent_versions": None,
+        },
+    },
+    "revise-proposal": {
+        "two changes": {
+            "listing": "1. add Mara Voss (Character)\n2. Mara Voss LOCATED_AT Saltmere",
+            "entities": ENTITIES,
+            "predicates": PREDICATES,
+            "instruction": "Mara should live in the capital, not Saltmere.",
+        },
+    },
+    "suggest-links": {
+        "a small story": {"story": STORY, "linking": LINKING},
+    },
+    "plan-questions": {
+        "arcs": {"context": STORY, "description": "A smuggler's daughter.", "depth": "arcs"},
+        "scenes, nothing said yet": {"context": STORY, "description": "", "depth": "scenes"},
+    },
+    "plan-draft": {
+        "beats with answers": {
+            "context": STORY,
+            "description": "Mara learns who betrayed her father.",
+            "depth": "beats",
+            "entity_types": ENTITY_TYPES,
+            "answered": ANSWERS,
+        },
+    },
+    "plan-next": {
+        "a small story": {"context": STORY, "entity_types": ENTITY_TYPES},
+    },
+    "read-passage": {
+        "a passage": {
+            "about": "Entries already in the story bible:\n- ent_mara | Character | Mara Voss",
+            "passage": "Mara Voss walked the sea wall at Saltmere. The Fox, they called her.",
+            "predicates": PREDICATES,
+            "entity_types": ENTITY_TYPES,
+        },
+    },
+    "draft-rule": {
+        "a rule": {
+            "sentence": "Every faction needs a motto.",
+            "predicates": PREDICATES,
+            "entity_types": ENTITY_TYPES,
+            "entities": ENTITIES[:4],
+        },
+    },
+    "scene-draft": {
+        "with a viewpoint and direction": {
+            "rendered": CONTEXT,
+            "voice": "Short sentences. No adverbs.",
+            "words": 300,
+            "direction": "End on the lamps coming back on.",
+            "pov": "Mara Voss",
+        },
+        "no viewpoint, no notes": {
+            "rendered": CONTEXT,
+            "voice": "",
+            "words": 500,
+            "direction": "",
+            "pov": None,
+        },
+    },
+    "scene-review": {
+        "a draft": {"rendered": CONTEXT, "content": DRAFT},
+    },
+    "scene-plan-card": {
+        "a scene": {"content": DRAFT, "entities": ENTITIES[:4]},
+    },
+    "legacy-character-questions": {
+        "a character": {
+            "character_name": "Mara Voss",
+            "character_id": "character_mara",
+            "bio": "A smuggler's daughter.",
+            "context_str": "No existing relevant Knowledge Graph context found.",
+        },
+    },
+    "legacy-graph-update": {
+        "answers": {
+            "character_name": "Mara Voss",
+            "character_id": "character_mara",
+            "chapter_number": 3,
+            "answers_text": "She lives in Saltmere.",
+            "context_str": "No existing relevant Knowledge Graph context found.",
+            "node_types": ["Character", "Location"],
+            "edge_types": ["LOCATED_AT"],
+        },
+    },
+    "reply-as-json": {
+        "after a system message": {
+            "messages": [
+                {"role": "system", "content": "You check things."},
+                {"role": "user", "content": "Is it ready?"},
+            ],
+            "response_format": _Answer,
+        },
+        "with no system message": {
+            "messages": [{"role": "user", "content": "Is it ready?"}],
+            "response_format": _Answer,
+        },
+    },
+}

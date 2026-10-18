@@ -16,9 +16,20 @@ docker compose exec -T postgres pg_dump -U novel -d novel_engine --format=custom
 docker compose exec -T server tar -C /var/lib/novel-engine -cf - objects \
   >"$target/objects.tar"
 
+# The MANIFEST marks the backup complete, so it is written last, and only once both files
+# are there and checksummed: it goes in under a temporary name and is renamed at the end.
+# prune-backups.sh and restore.sh treat a folder without it as a backup that failed.
+manifest="$target/MANIFEST.tmp"
+: >"$manifest"
 for file in novel_engine.dump objects.tar; do
-  printf 'file=%s sha256=%s bytes=%s\n' "$file" \
-    "$(sha256sum "$target/$file" | cut -d' ' -f1)" "$(wc -c <"$target/$file")"
-done | tee "$target/MANIFEST"
+  [ -s "$target/$file" ] || { echo "$file is empty: the backup failed." >&2; exit 1; }
+  sum="$(sha256sum "$target/$file")" || { echo "Could not checksum $file: the backup failed." >&2; exit 1; }
+  sum="${sum%% *}"
+  [ -n "$sum" ] || { echo "Could not checksum $file: the backup failed." >&2; exit 1; }
+  bytes="$(wc -c <"$target/$file" | tr -d ' ')"
+  printf 'file=%s sha256=%s bytes=%s\n' "$file" "$sum" "$bytes" >>"$manifest"
+done
+mv "$manifest" "$target/MANIFEST"
+cat "$target/MANIFEST"
 printf 'backup written to %s\n' "$target"
 printf '%s\n' 'The credential key (secrets/credential_kek) is not in this backup; keep it in the password manager.'

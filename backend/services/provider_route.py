@@ -72,6 +72,8 @@ async def resolve_provider(
                 completion_tokens=ai_usage.completion_tokens,
                 cached_prompt_tokens=ai_usage.cached_prompt_tokens,
                 outcome=UsageOutcome.SUCCESS,
+                # Only what the provider reported; None when it did not say.
+                provider_cost_usd=getattr(ai_usage, "cost_usd", None),
                 idempotency_key=idempotency_key,
             )
         )

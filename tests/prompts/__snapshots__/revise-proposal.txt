@@ -1,0 +1,237 @@
+# Prompt snapshot. Change it only with: uv run python -m tests.prompts.snapshots --update
+id: revise-proposal
+version: 1
+
+##### case: two changes
+
+=== system ===
+An author is reviewing a numbered list of suggested changes to their story bible and asks for some of them to be different. Answer only with edits to, or skips of, the changes in the list. Rules:
+- refer to a change by its number. Change only what the author asked for.
+- action 'skip' leaves a change out; action 'edit' alters it. Do not mention changes that stay as they are.
+- for an entry, you may set new_name, add or remove aliases, set or remove attributes (short key/value text), replace tags, and set importance.
+- for a fact or belief, you may change what it is about (subject_ref), the kind of fact (predicate) and what it points to (object_ref, an id from the lists) or its value (object_value). Use only these kinds of fact:
+- LOCATED_AT: subject is one of ['Character', 'Object']; object is entity_ref of type ['Location']
+- MEMBER_OF: subject is one of ['Character']; object is entity_ref of type ['Faction']
+- AGE: subject is one of ['Character']; object is integer
+- MOTTO: subject is one of ['Faction']; object is string
+- you cannot add a change. If the author asks for something that needs a new one, say so in `cannot` in plain words.
+- if the request could mean more than one thing, ask in `questions` and change nothing.
+- never invent an id, and never decide the story for the author.
+- `understood` restates the request in one plain sentence.
+
+=== user ===
+Suggested changes:
+1. add Mara Voss (Character)
+2. Mara Voss LOCATED_AT Saltmere
+
+Entries already in the story:
+- ent_mara: Character “Mara Voss”
+- ent_tobin: Character “Tobin”
+- ent_saltmere: Location “Saltmere”
+- ent_guild: Faction “The Lamplighters”
+
+What the author wants different:
+Mara should live in the capital, not Saltmere.
+
+##### answer shape
+{
+  "$defs": {
+    "ChangeEdit": {
+      "properties": {
+        "action": {
+          "description": "'edit' to alter the change, 'skip' to leave it out",
+          "title": "Action",
+          "type": "string"
+        },
+        "add_aliases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Add Aliases",
+          "type": "array"
+        },
+        "importance": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Entries only: main, supporting, minor or background",
+          "title": "Importance"
+        },
+        "new_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Entries only",
+          "title": "New Name"
+        },
+        "number": {
+          "description": "The number of the change, exactly as listed",
+          "title": "Number",
+          "type": "integer"
+        },
+        "object_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The id of the entry pointed to",
+          "title": "Object Ref"
+        },
+        "object_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A plain value, as text",
+          "title": "Object Value"
+        },
+        "predicate": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Facts and beliefs only",
+          "title": "Predicate"
+        },
+        "remove_aliases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Remove Aliases",
+          "type": "array"
+        },
+        "remove_attributes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Remove Attributes",
+          "type": "array"
+        },
+        "set_attributes": {
+          "items": {
+            "$ref": "#/$defs/DraftAttribute"
+          },
+          "title": "Set Attributes",
+          "type": "array"
+        },
+        "subject_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Facts and beliefs only",
+          "title": "Subject Ref"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Entries only. The full new list of tags, when it changes",
+          "title": "Tags"
+        }
+      },
+      "required": [
+        "number",
+        "action"
+      ],
+      "title": "ChangeEdit",
+      "type": "object"
+    },
+    "DraftAttribute": {
+      "description": "One lasting trait. A list of pairs, because providers' strict structured\noutput does not accept free-form objects.",
+      "properties": {
+        "key": {
+          "description": "Short trait name, e.g. role, appearance",
+          "title": "Key",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "title": "DraftAttribute",
+      "type": "object"
+    }
+  },
+  "description": "Structured model output. Untrusted: typed and checked before anything is stored.",
+  "properties": {
+    "cannot": {
+      "description": "Anything asked for that needs a change that is not in the list",
+      "items": {
+        "type": "string"
+      },
+      "title": "Cannot",
+      "type": "array"
+    },
+    "changes": {
+      "items": {
+        "$ref": "#/$defs/ChangeEdit"
+      },
+      "title": "Changes",
+      "type": "array"
+    },
+    "questions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Questions",
+      "type": "array"
+    },
+    "understood": {
+      "description": "One sentence restating what will be different",
+      "title": "Understood",
+      "type": "string"
+    }
+  },
+  "required": [
+    "understood"
+  ],
+  "title": "RevisionPlan",
+  "type": "object"
+}

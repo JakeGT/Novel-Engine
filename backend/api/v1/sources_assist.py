@@ -13,13 +13,16 @@ from backend.api.dependencies import (
     get_source_service,
     get_usage_service,
 )
+from backend.api.v1.assistant_settings import confirmed_tokens, get_assist_budget
 from backend.api.v1.canon_assist import DiscardedItemModel
 from backend.api.v1.router import _provider_context
 from backend.core.config import Settings
 from backend.domain.identity import AccessScope
 from backend.domain.sources import Verdict, find_mentions
+from backend.services.assistant_settings_service import AssistBudget
 from backend.services.credential_service import CredentialService
 from backend.services.intake_workflow import MAX_PASSAGE, IntakeWorkflow
+from backend.services.scene_reading import passage_tokens
 from backend.services.source_service import SourceService
 from backend.services.usage_service import ProviderUsageService
 
@@ -72,6 +75,8 @@ async def read_passage_with_assistant(
     usage: ProviderUsageService = Depends(get_usage_service),
     settings: Settings = Depends(get_settings),
     scope: AccessScope = Depends(require_project_scope),
+    budget: AssistBudget = Depends(get_assist_budget),
+    confirmed: int | None = Depends(confirmed_tokens),
 ) -> ReadPassageModel:
     workspace_id = scope.workspace_id or ""
     # Reading the text is authorized here, before any provider is contacted.
@@ -79,6 +84,20 @@ async def read_passage_with_assistant(
         scope, workspace_id, project_id, source_id, version_id=body.version_id
     )
     index, entities, _ = await sources.index_for(workspace_id, project_id, source_id)
+    length = len(reading.version.content)
+    stretch = max(0, min(body.end or length, length, body.start + MAX_PASSAGE) - body.start)
+
+    async def reads() -> int:
+        return passage_tokens(stretch)
+
+    await budget.check(
+        scope,
+        workspace_id,
+        project_id,
+        reads=reads,
+        doing="Reading this passage",
+        confirmed_tokens=confirmed,
+    )
     credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
         settings=settings, credentials=credentials, usage=usage, scope=scope
     )

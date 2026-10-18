@@ -46,7 +46,7 @@ class OutboxConsumer:
         limit: int = 100,
     ) -> OutboxDrainResult:
         messages = await self._journal.list_outbox(
-            workspace_id=workspace_id, project_id=project_id, limit=limit
+            workspace_id=workspace_id, project_id=project_id, limit=limit, pending_only=True
         )
         pending = sorted(
             (message for message in messages if message.published_at is None),

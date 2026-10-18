@@ -52,3 +52,15 @@ are derived on read in outline order (`backend/domain/threads.py`), never stored
 either to typed operation fields later would need a migration and a replay that reads the
 reserved keys.
 
+## Amendment (2026-10-18): conditions and reveals carry more, still in details
+
+A scene condition (`_conditions`) may be required (`hard`, the default and not stored) or preferred
+(`soft`), and may be a sentence in the author's words instead of a check on an entry (STY-005). A
+reveal (`_reveals`) may mark the scene where a fact comes out (`main_reveal`, stored only when true).
+Both keep earlier stored values readable and unchanged, so saving the same list again is still "no
+change". Conditions are judged where the scene comes: at its story time against facts with time
+spans when it has one, otherwise against the story as it stands, and against the nearest earlier
+scene whose "after" names the same entry and kind of fact (exact match only; no inference). Too-early
+reveals, threads out of order, unmet required conditions and the promises to the reader (opened
+threads and hinted facts, with the reading distance in scenes) are derived on read in
+`backend/domain/plan_checks.py` and `scene_conditions.py`, never stored, and never block.

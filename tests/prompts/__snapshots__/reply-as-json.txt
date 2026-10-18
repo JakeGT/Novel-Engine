@@ -1,0 +1,23 @@
+# Prompt snapshot. Change it only with: uv run python -m tests.prompts.snapshots --update
+id: reply-as-json
+version: 1
+
+##### case: after a system message
+
+=== system ===
+You check things.
+
+Reply with one JSON object and nothing else: no explanation and no code fence. It must be valid against this JSON Schema:
+{"properties": {"ready": {"title": "Ready", "type": "boolean"}}, "required": ["ready"], "title": "_Answer", "type": "object"}
+
+=== user ===
+Is it ready?
+
+##### case: with no system message
+
+=== system ===
+Reply with one JSON object and nothing else: no explanation and no code fence. It must be valid against this JSON Schema:
+{"properties": {"ready": {"title": "Ready", "type": "boolean"}}, "required": ["ready"], "title": "_Answer", "type": "object"}
+
+=== user ===
+Is it ready?

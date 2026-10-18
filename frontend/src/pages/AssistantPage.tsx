@@ -1,4 +1,5 @@
 import { AllowanceCard } from '../components/Allowance'
+import { SpendingCard, WorkspaceLimitsCard } from '../components/AssistantSpending'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { api, isApiError, type AiChoice, type AiProvider } from '../api/client'
@@ -221,10 +222,13 @@ export function AssistantPage() {
             <h1>Assistant</h1>
           </div>
         </div>
-        <EmptyState icon="spark" title="Set up on this computer">
-          On a self-hosted copy, the AI assistant is configured by whoever runs the server, not
-          from this page.
-        </EmptyState>
+        <div className="section-gap">
+          <EmptyState icon="spark" title="Set up on this computer">
+            On a self-hosted copy, the AI assistant is configured by whoever runs the server, not
+            from this page.
+          </EmptyState>
+          <SpendingCard />
+        </div>
       </>
     )
   }
@@ -281,6 +285,7 @@ export function AssistantPage() {
             )}
 
             {connected.length > 0 && workspaceId && <AllowanceCard workspaceId={workspaceId} />}
+            {connected.length > 0 && workspaceId && <WorkspaceLimitsCard workspaceId={workspaceId} />}
 
             <section className="card" aria-labelledby="keys-heading">
               <div className="card-head">
@@ -405,6 +410,7 @@ export function AssistantPage() {
             </section>
           </>
         )}
+        {!credentials.isPending && <SpendingCard />}
       </div>
     </>
   )

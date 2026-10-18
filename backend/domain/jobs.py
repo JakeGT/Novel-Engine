@@ -137,6 +137,8 @@ class Job:
     completion_tokens: int = 0
     # Of the prompt tokens, those the provider read from its cache (CTX-015).
     cached_prompt_tokens: int = 0
+    # What the provider reported the job's calls cost, in US dollars; None when it did not.
+    provider_cost_usd: float | None = None
     created_at: datetime = field(default_factory=utcnow)
     updated_at: datetime = field(default_factory=utcnow)
     finished_at: datetime | None = None

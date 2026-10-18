@@ -305,6 +305,14 @@ def _build_fake_container(settings, tmp_path):
         local_mode=not settings.is_hosted,
     )
     studio_service.register_jobs()
+    from backend.services.assistant_settings_service import AssistantSettingsService, AssistBudget
+    from tests.doubles import InMemoryAssistantSettingsStore
+
+    assistant_settings_store = InMemoryAssistantSettingsStore()
+    assistant_settings = AssistantSettingsService(
+        assistant_settings_store, tenancy=tenancy_service, local_mode=not settings.is_hosted
+    )
+    studio_service.controls = assistant_settings
     what_if_service = WhatIfService(
         journal=journal,
         canon=canon_repository,
@@ -463,6 +471,9 @@ def _build_fake_container(settings, tmp_path):
         assist_session_service=AssistSessionService(
             assist_sessions, tenancy=tenancy_service, local_mode=not settings.is_hosted
         ),
+        assistant_settings_store=assistant_settings_store,
+        assistant_settings=assistant_settings,
+        assist_budget=AssistBudget(assistant_settings, assist_sessions),
     )
 
 

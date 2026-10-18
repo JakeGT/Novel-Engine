@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PlanItem } from '../api/client'
-import { entity, VOCABULARY } from '../test/fixtures'
+import { entity, fact, VOCABULARY } from '../test/fixtures'
 import { expectAccessible, mockApi, renderInProject, reply, VIEWER } from '../test/harness'
 import { PlanPage } from './PlanPage'
 
@@ -46,7 +46,7 @@ const scene = part({
   sets_up: ['pln_t'],
 })
 const outline = {
-  conditions: [] as { plan_id: string; when: string; reading: string; holds: boolean | null }[],
+  conditions: [] as Record<string, unknown>[],
   items: [story, arc, beatOne, beatTwo, scene, thread],
   open: [
     { plan_id: 'pln_s', code: 'needs_place', message: 'This scene needs a place.' },
@@ -273,8 +273,27 @@ describe('PlanPage', () => {
     const withConditions = {
       ...outline,
       conditions: [
-        { plan_id: 'pln_s', when: 'before', reading: 'Ines Varga must have this: it is located at Kestrel Point.', holds: false },
-        { plan_id: 'pln_s', when: 'after', reading: 'Ines Varga must have this: it is named “the Mapmaker”.', holds: true },
+        {
+          plan_id: 'pln_s',
+          when: 'before',
+          reading: 'Ines Varga must have this: it is located at Kestrel Point.',
+          holds: false,
+          strength: 'hard',
+          status: 'not_met',
+          note: 'Not true in the story bible when this scene happens.',
+          index: 0,
+        },
+        {
+          plan_id: 'pln_s',
+          when: 'after',
+          reading: 'Ines Varga must have this: it is named “the Mapmaker”.',
+          holds: true,
+          strength: 'hard',
+          status: 'met',
+          note: '',
+          index: 1,
+        },
+        { plan_id: 'pln_s', when: 'before', reading: 'The storm has broken.', holds: null, strength: 'soft', status: 'unchecked', note: '', index: 2 },
       ],
     }
     const api = mockApi({
@@ -287,9 +306,12 @@ describe('PlanPage', () => {
     const { container } = renderInProject(<PlanPage />, at)
 
     const list = await screen.findByRole('list', { name: 'Before and after The lamp room at night' })
-    const [before, after] = within(list).getAllByRole('listitem')
-    expect(before).toHaveTextContent('Before Ines Varga must have this: it is located at Kestrel Point. Not true yet')
-    expect(after).toHaveTextContent('True now')
+    const [before, after, words] = within(list).getAllByRole('listitem')
+    expect(before).toHaveTextContent(
+      'Before · required Ines Varga must have this: it is located at Kestrel Point. Not true yet Not true in the story bible when this scene happens.',
+    )
+    expect(after).toHaveTextContent('Recorded')
+    expect(words).toHaveTextContent('Before · preferred The storm has broken. Not checked')
     await expectAccessible(container)
 
     await user.click(screen.getByText('Move, plan, remove', {
@@ -307,6 +329,7 @@ describe('PlanPage', () => {
       conditions: [
         {
           when: 'before',
+          strength: 'hard',
           entity_id: 'ent_ines',
           check: {
             kind: 'has',
@@ -315,6 +338,120 @@ describe('PlanPage', () => {
           },
         },
       ],
+      expected_revision: 3,
+    })
+  }, 20_000)
+  it('puts what is out of order first, and lists the promises the reader is owed', async () => {
+    const inPoint = fact({ id: 'fct_in', subject_id: 'ent_ines', object: { kind: 'entity_ref', entity_id: 'ent_point', project_id: 'prj_1' } })
+    const checked = {
+      ...outline,
+      open: [
+        {
+          plan_id: 'pln_s',
+          code: 'reveals_too_early',
+          kind: 'problem',
+          message: 'This shows the reader “Ines Varga is located at Kestrel Point” plainly, before “The end”, where it is meant to come out.',
+        },
+        ...outline.open.map((entry) => ({ ...entry, kind: 'gap' })),
+      ],
+      promises: [
+        { kind: 'thread', subject_id: 'pln_t', made_in: 'pln_s', made_at: 1, moved_along: [], kept_in: null, kept_at: null, distance: 3, out_of_order: false },
+        { kind: 'clue', subject_id: 'fct_in', made_in: 'pln_s', made_at: 1, moved_along: [], kept_in: 'pln_s', kept_at: 1, distance: 0, out_of_order: false },
+      ],
+    }
+    mockApi({ ...everyone, 'GET /plan': checked, 'GET /reader': { steps: [], facts: { fct_in: inPoint } } })
+    const { container } = renderInProject(<PlanPage />, at)
+
+    const problems = await screen.findByRole('list', { name: 'Out of order or not ready' })
+    expect(problems).toHaveTextContent('plainly, before “The end”, where it is meant to come out.')
+    // With something out of order, the list is opened by itself.
+    expect(problems.closest('details')).toHaveAttribute('open')
+    expect(screen.getByRole('list', { name: 'Gaps to fill' })).toHaveTextContent('This beat has no scene yet.')
+    expect(screen.getByText(/1 out of order or not ready, 3 gaps to fill/)).toBeInTheDocument()
+    const inline = screen.getByRole('list', { name: 'Still to do for The lamp room at night' })
+    expect(within(inline).getAllByRole('listitem')[0]).toHaveTextContent('Worth a look: This shows the reader')
+
+    expect(screen.getByRole('link', { name: '1 promise to the reader still owed' })).toHaveAttribute('href', '#promises-heading')
+    const owed = screen.getByRole('list', { name: 'Promises still owed' })
+    expect(owed).toHaveTextContent('Who drew the false chart?')
+    expect(owed).toHaveTextContent('Opened in The lamp room at night (scene 1)')
+    expect(owed).toHaveTextContent('Still owed — 3 scenes since, to the end of the plan')
+    const kept = screen.getByRole('list', { name: 'Promises kept' })
+    await waitFor(() => expect(kept).toHaveTextContent('Clue Ines Varga is located at Kestrel Point'))
+    expect(kept).toHaveTextContent('Shown plainly in The lamp room at night (scene 1) — in the same scene')
+    await expectAccessible(container)
+  })
+
+  it('says when there are no promises yet and how to make one', async () => {
+    mockApi({ ...everyone, 'GET /plan': { ...outline, promises: [] }, 'GET /reader': { steps: [], facts: {} } })
+    renderInProject(<PlanPage />, at)
+    expect(await screen.findByRole('heading', { name: 'Promises to the reader' })).toBeInTheDocument()
+    expect(screen.getByText(/No promises yet/)).toBeInTheDocument()
+  })
+
+  it('takes a condition in the author’s own words, as preferred, and says what is missing', async () => {
+    const api = mockApi({
+      ...everyone,
+      'GET /plan': outline,
+      'GET /vocabulary': VOCABULARY,
+      'GET /facts': { items: [], limit: 200, offset: 0 },
+      'PUT /plan/pln_s/conditions': scene,
+    })
+    const user = userEvent.setup()
+    renderInProject(<PlanPage />, at)
+    await user.click(
+      await screen.findByText('Move, plan, remove', {
+        selector: 'summary[aria-label="Move, plan or remove The lamp room at night"]',
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Before and after' }))
+    const dialog = screen.getByRole('dialog', { name: 'Before and after “The lamp room at night”' })
+    await user.click(within(dialog).getByRole('button', { name: 'Add something that must be true first' }))
+    await user.selectOptions(
+      within(dialog).getByLabelText('How it is said (Before this scene, condition 1)'),
+      'words',
+    )
+    await user.selectOptions(within(dialog).getByLabelText('How much it matters (Before this scene, condition 1)'), 'soft')
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+    // Nothing is sent while the words are empty, and the field says why.
+    expect(within(dialog).getByText('Write what must be true, or remove this one.')).toBeInTheDocument()
+    expect(api.find('PUT', '/conditions')).toHaveLength(0)
+    await expectAccessible(dialog)
+
+    await user.type(within(dialog).getByLabelText('What must be true, in your words'), 'The storm has broken')
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.find('PUT', '/conditions')).toHaveLength(1))
+    expect(api.find('PUT', '/conditions')[0].body).toEqual({
+      conditions: [{ when: 'before', strength: 'soft', words: 'The storm has broken' }],
+      expected_revision: 3,
+    })
+  }, 20_000)
+
+  it('marks the scene where a fact is meant to come out', async () => {
+    const inPoint = fact({ id: 'fct_in', subject_id: 'ent_ines', object: { kind: 'entity_ref', entity_id: 'ent_point', project_id: 'prj_1' } })
+    const api = mockApi({
+      ...everyone,
+      'GET /plan': outline,
+      'GET /reader': { steps: [], facts: {} },
+      'GET /facts': { items: [inPoint], limit: 200, offset: 0 },
+      'PUT /plan/pln_s/reveals': scene,
+    })
+    const user = userEvent.setup()
+    renderInProject(<PlanPage />, at)
+    await user.click(
+      await screen.findByText('Move, plan, remove', {
+        selector: 'summary[aria-label="Move, plan or remove The lamp room at night"]',
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: 'What the reader learns' }))
+    const dialog = screen.getByRole('dialog', { name: 'What the reader learns in “The lamp room at night”' })
+    await user.click(await within(dialog).findByRole('checkbox'))
+    await user.selectOptions(within(dialog).getByRole('combobox', { name: /How the reader learns/ }), 'main')
+    await expectAccessible(dialog)
+    await user.click(within(dialog).getByRole('button', { name: 'Save what the reader learns' }))
+    await waitFor(() => expect(api.find('PUT', '/reveals')).toHaveLength(1))
+    expect(api.find('PUT', '/reveals')[0].body).toEqual({
+      reveals: [{ fact_id: 'fct_in', how: 'shown', main_reveal: true }],
       expected_revision: 3,
     })
   }, 20_000)

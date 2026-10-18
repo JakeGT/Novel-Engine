@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import get_container
+from backend.api.v1.assistant_settings import confirmed_tokens
 from backend.container import Container
 from backend.domain.dismissals import MAX_NOTE, DismissReason, FindingDismissal
 from backend.domain.drafting import DraftFinding, word_count
@@ -25,9 +26,10 @@ from backend.domain.studio import (
     AssistantFinding,
     SceneDraft,
 )
+from backend.domain.usage_controls import CheckProfile
 from backend.services.scene_plan_card import ScenePlanCardService
 from backend.services.scene_reading import ReadingStatus, SceneReadingService
-from backend.services.studio_service import StudioService, StudioState
+from backend.services.studio_service import Checking, StudioService, StudioState
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["studio"])
 
@@ -131,6 +133,10 @@ class JobModel(BaseModel):
     completion_tokens: int
     # Of the prompt tokens, those the provider read back from its cache.
     cached_prompt_tokens: int = 0
+    # What the provider reported the job cost, in US dollars; null when it did not say.
+    provider_cost_usd: float | None = None
+    # True for a check the story's checking profile started after a save or a kept draft.
+    automatic: bool = False
     result: dict
     created_at: datetime
     finished_at: datetime | None = None
@@ -150,6 +156,20 @@ class ReadingModel(BaseModel):
     changed_since: bool
 
 
+class CheckingModel(BaseModel):
+    """How much checking runs on its own in this story, and what it has used here."""
+
+    # on_request, balanced or thorough.
+    profile: CheckProfile
+    # The most automatic checks may use for one scene in a day, and what they used here.
+    scene_tokens: int
+    spent_tokens: int
+    # Thorough: the least time between automatic checks after saving.
+    check_minutes: int
+    # When a check may next run after a save, if not yet.
+    next_after_save: datetime | None = None
+
+
 class StudioModel(BaseModel):
     scene_id: str
     title: str
@@ -163,6 +183,11 @@ class StudioModel(BaseModel):
     drafts: list[DraftModel]
     jobs: list[JobModel]
     reading: ReadingModel
+    checking: CheckingModel | None = None
+    # What saving or keeping just now did about an automatic check: started, busy,
+    # too_soon, scene_allowance, needs_confirmation, allowance, no_provider, job_cap or
+    # not_started. Null when nothing was due.
+    automatic: str | None = None
 
 
 class SaveRequest(BaseModel):
@@ -283,6 +308,8 @@ def _job(job: Job) -> JobModel:
         prompt_tokens=job.prompt_tokens,
         completion_tokens=job.completion_tokens,
         cached_prompt_tokens=job.cached_prompt_tokens,
+        provider_cost_usd=job.provider_cost_usd,
+        automatic=bool(job.payload.get("automatic")),
         result=job.result,
         created_at=job.created_at,
         finished_at=job.finished_at,
@@ -321,6 +348,18 @@ def _reading(status: ReadingStatus) -> ReadingModel:
     )
 
 
+def _checking(found: Checking | None) -> CheckingModel | None:
+    if found is None:
+        return None
+    return CheckingModel(
+        profile=found.settings.check_profile,
+        scene_tokens=found.settings.scene_tokens,
+        spent_tokens=found.spent_tokens,
+        check_minutes=found.settings.check_minutes,
+        next_after_save=found.next_after_save,
+    )
+
+
 def _model(state: StudioState, reading: ReadingStatus) -> StudioModel:
     content = state.current.content if state.current is not None else ""
     return StudioModel(
@@ -336,6 +375,8 @@ def _model(state: StudioState, reading: ReadingStatus) -> StudioModel:
         drafts=[_draft(d, state) for d in state.drafts],
         jobs=[_job(j) for j in state.jobs],
         reading=_reading(reading),
+        checking=_checking(state.checking),
+        automatic=state.automatic,
     )
 
 
@@ -442,6 +483,7 @@ async def start_draft(
     scope: AccessScope = Depends(require_project_scope),
     service: StudioService = Depends(get_studio),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=200),
+    confirmed: int | None = Depends(confirmed_tokens),
 ) -> JobModel:
     job = await service.start_draft(
         scope,
@@ -452,6 +494,7 @@ async def start_draft(
         words=body.words,
         direction=body.direction,
         idempotency_key=idempotency_key or "",
+        confirmed_tokens=confirmed,
     )
     return _job(job)
 
@@ -463,11 +506,35 @@ async def start_review(
     body: ReviewRequest,
     scope: AccessScope = Depends(require_project_scope),
     service: StudioService = Depends(get_studio),
+    confirmed: int | None = Depends(confirmed_tokens),
 ) -> JobModel:
     job = await service.start_review(
-        scope, scope.workspace_id or "", project_id, plan_id, draft_id=body.draft_id
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        plan_id,
+        draft_id=body.draft_id,
+        confirmed_tokens=confirmed,
     )
     return _job(job)
+
+
+@router.get("/plan/{plan_id}/studio/check-estimate")
+async def check_estimate(
+    project_id: str,
+    plan_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    service: StudioService = Depends(get_studio),
+) -> EstimateModel:
+    """Roughly what one check with the assistant of this scene's text reads and writes,
+    so the cost of each checking profile can be said before choosing. Calls no model."""
+    found = await service.review_estimate(scope, scope.workspace_id or "", project_id, plan_id)
+    return EstimateModel(
+        prompt_tokens=found.prompt_tokens,
+        completion_tokens=found.completion_tokens,
+        total_tokens=found.total,
+        context_words=found.context_words,
+    )
 
 
 @router.post("/plan/{plan_id}/studio/readings", status_code=status.HTTP_202_ACCEPTED)
@@ -476,9 +543,12 @@ async def start_reading(
     plan_id: str,
     scope: AccessScope = Depends(require_project_scope),
     reading: SceneReadingService = Depends(get_reading),
+    confirmed: int | None = Depends(confirmed_tokens),
 ) -> JobModel:
     """Read the scene into proposed changes to the story, for review (Phase 6)."""
-    job = await reading.start(scope, scope.workspace_id or "", project_id, plan_id)
+    job = await reading.start(
+        scope, scope.workspace_id or "", project_id, plan_id, confirmed_tokens=confirmed
+    )
     return _job(job)
 
 
@@ -488,9 +558,12 @@ async def start_plan_card(
     plan_id: str,
     scope: AccessScope = Depends(require_project_scope),
     plan_card: ScenePlanCardService = Depends(get_plan_card),
+    confirmed: int | None = Depends(confirmed_tokens),
 ) -> JobModel:
     """Fill in the scene's plan card from its prose, as a plan change for review (Phase 6)."""
-    job = await plan_card.start(scope, scope.workspace_id or "", project_id, plan_id)
+    job = await plan_card.start(
+        scope, scope.workspace_id or "", project_id, plan_id, confirmed_tokens=confirmed
+    )
     return _job(job)
 
 

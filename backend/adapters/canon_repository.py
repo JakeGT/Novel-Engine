@@ -2461,6 +2461,13 @@ class PostgresCanonRepository:
                         status = EXCLUDED.status,
                         last_error = EXCLUDED.last_error,
                         updated_at = now()
+                    -- Only forward: a slower process that applied less never lowers what
+                    -- another has applied. A rebuild, or a new projection layout, starts
+                    -- again from nothing on purpose.
+                    WHERE EXCLUDED.revision >= projection_watermarks.revision
+                       OR EXCLUDED.status = 'rebuilding'
+                       OR EXCLUDED.projection_schema_version
+                          IS DISTINCT FROM projection_watermarks.projection_schema_version
                     """
                 ),
                 {

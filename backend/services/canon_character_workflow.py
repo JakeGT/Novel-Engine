@@ -46,6 +46,7 @@ from backend.domain.operations import (
     EvidenceRef,
     UpdateEntityOp,
 )
+from backend.domain.prompts import Messages, prompt_version
 from backend.domain.tenancy import Permission
 from backend.ports import AIGateway, AIUsage, CanonRepositoryPort, SchemaVersionStorePort
 from backend.services.mutation_service import MutationService, ValidationReport
@@ -55,8 +56,8 @@ logger = logging.getLogger(__name__)
 
 UsageSink = Callable[[AIUsage, str], Awaitable[None]]
 
-QUESTIONS_PROMPT_VERSION = "character-questions/2"
-PROPOSAL_PROMPT_VERSION = "character-proposal/1"
+QUESTIONS_PROMPT_VERSION = prompt_version("character-questions")
+PROPOSAL_PROMPT_VERSION = prompt_version("character-proposal")
 
 MAX_CONTEXT_ENTITIES = 60
 MAX_ANSWERS = 40
@@ -225,8 +226,7 @@ class CanonCharacterWorkflow:
     async def _generate(
         self,
         *,
-        system: str,
-        user: str,
+        messages: Messages,
         response_format: type[BaseModel],
         prompt_version: str,
         credential: str | None,
@@ -238,7 +238,7 @@ class CanonCharacterWorkflow:
         try:
             response = await self._ai.generate_structured(
                 model=self._model,
-                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+                messages=messages,
                 response_format=response_format,
                 api_key=credential,
                 base_url=provider_base_url,
@@ -280,14 +280,7 @@ class CanonCharacterWorkflow:
         character = await self._character(workspace_id, project_id, entity_id)
         context, _ = await self._context(workspace_id, project_id, character)
         sheet: CharacterQuestionSheet = await self._generate(
-            system=(
-                "You help an author develop a character for a novel. Ask specific, concrete "
-                "questions whose answers establish stable facts: appearance, personality, "
-                "relationships, where they are, what they own, what groups they belong to, "
-                "and what they believe (including things they may be wrong about). Do not ask "
-                "about anything the context already settles."
-            ),
-            user=context,
+            messages=character_questions_messages(context),
             response_format=CharacterQuestionSheet,
             prompt_version=QUESTIONS_PROMPT_VERSION,
             credential=credential,
@@ -328,29 +321,8 @@ class CanonCharacterWorkflow:
         predicates, entity_types = await self._vocabulary(workspace_id, project_id)
         context, _ = await self._context(workspace_id, project_id, character)
 
-        predicate_lines = "\n".join(
-            f"- {spec.predicate}: object is {spec.object_shape.value}"
-            + (f" of type {sorted(spec.object_types)}" if spec.object_types else "")
-            for spec in predicates.values()
-            if "Character" in spec.subject_types
-        )
-        interview = "\n\n".join(
-            f"[{answer.question_id}] Q: {answer.question}\nA: {answer.answer}" for answer in answers
-        )
         proposal: CharacterProposal = await self._generate(
-            system=(
-                "Convert an author's answers about one character into structured proposals. "
-                "Only state what the answers actually say. Rules:\n"
-                "- facts are objective truths about the character; beliefs are what the "
-                "character thinks, which may be false. Never mark a belief as true or false.\n"
-                "- use only these predicates for the character:\n"
-                f"{predicate_lines}\n"
-                f"- new entities may only use these types: {sorted(entity_types)}\n"
-                "- reuse an existing entity id when the answer refers to a known entity.\n"
-                "- set question_id to the id of the answer each item came from.\n"
-                "- put stable descriptive traits (appearance, temperament) in attributes."
-            ),
-            user=f"{context}\n\nAnswers:\n{interview}",
+            messages=character_proposal_messages(context, predicates, entity_types, answers),
             response_format=CharacterProposal,
             prompt_version=PROPOSAL_PROMPT_VERSION,
             credential=credential,
@@ -552,6 +524,50 @@ class CanonCharacterWorkflow:
         return operations, discarded
 
 
+def character_questions_messages(context: str) -> Messages:
+    """The ``character-questions`` prompt: ``context`` is the character and the entries."""
+    system = (
+        "You help an author develop a character for a novel. Ask specific, concrete "
+        "questions whose answers establish stable facts: appearance, personality, "
+        "relationships, where they are, what they own, what groups they belong to, "
+        "and what they believe (including things they may be wrong about). Do not ask "
+        "about anything the context already settles."
+    )
+    return [{"role": "system", "content": system}, {"role": "user", "content": context}]
+
+
+def character_proposal_messages(
+    context: str,
+    predicates: dict[str, PredicateSpec],
+    entity_types: set[str],
+    answers: list[CharacterAnswer],
+) -> Messages:
+    """The ``character-proposal`` prompt."""
+    predicate_lines = "\n".join(
+        f"- {spec.predicate}: object is {spec.object_shape.value}"
+        + (f" of type {sorted(spec.object_types)}" if spec.object_types else "")
+        for spec in predicates.values()
+        if "Character" in spec.subject_types
+    )
+    interview = "\n\n".join(
+        f"[{answer.question_id}] Q: {answer.question}\nA: {answer.answer}" for answer in answers
+    )
+    system = (
+        "Convert an author's answers about one character into structured proposals. "
+        "Only state what the answers actually say. Rules:\n"
+        "- facts are objective truths about the character; beliefs are what the "
+        "character thinks, which may be false. Never mark a belief as true or false.\n"
+        "- use only these predicates for the character:\n"
+        f"{predicate_lines}\n"
+        f"- new entities may only use these types: {sorted(entity_types)}\n"
+        "- reuse an existing entity id when the answer refers to a known entity.\n"
+        "- set question_id to the id of the answer each item came from.\n"
+        "- put stable descriptive traits (appearance, temperament) in attributes."
+    )
+    user = f"{context}\n\nAnswers:\n{interview}"
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
 __all__ = [
     "PROPOSAL_PROMPT_VERSION",
     "QUESTIONS_PROMPT_VERSION",
@@ -565,4 +581,6 @@ __all__ = [
     "ProposedBelief",
     "ProposedEntity",
     "ProposedFact",
+    "character_proposal_messages",
+    "character_questions_messages",
 ]

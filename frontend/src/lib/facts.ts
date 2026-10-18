@@ -1,5 +1,6 @@
 // Turning what an author types into a typed fact value, and back.
 import type { VocabularyPredicate } from '../api/client'
+import { objectText, predicateLabel } from './words'
 
 export interface Entered {
   value: string
@@ -73,4 +74,11 @@ export function hasChangeForm(operationType: string): boolean {
 export const JSON_HINTS: Record<string, string> = {
   enum: 'Enter as JSON, for example {"value": "wary", "allowed": ["wary", "open"]}',
   structured: 'Enter as JSON, for example {"value": {"note": "…"}}',
+}
+
+type FactLike = { subject_id: string; predicate: string; object: unknown }
+
+/** A fact as a short sentence in plain words, with entry names. */
+export function factSentence(fact: FactLike, names: Map<string, string>): string {
+  return `${names.get(fact.subject_id) ?? 'An entry'} ${predicateLabel(fact.predicate)} ${objectText(fact.object as Record<string, unknown>, names)}`
 }

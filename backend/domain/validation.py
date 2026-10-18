@@ -1060,7 +1060,28 @@ class AuthoritativeValidator:
                         )
                     elif version.retired_revision is not None:
                         blocking(index, "inactive_asset_version", "asset version is retired")
-                if operation.target_record_type != "entity":
+                if operation.target_record_type == "plan_item":
+                    # A picture shown on a scene (AST-EXP-018); only scenes take pictures.
+                    target_plan = await plan(operation.target_id)
+                    if target_plan is None:
+                        blocking(
+                            index,
+                            "unknown_reference",
+                            f"unknown link target {operation.target_id!r}",
+                        )
+                    elif not target_plan.is_active:
+                        blocking(
+                            index,
+                            "retired_reference",
+                            f"link target {operation.target_id!r} is retired",
+                        )
+                    elif target_plan.kind != PlanKind.SCENE:
+                        blocking(
+                            index,
+                            "unsupported_target",
+                            "only a scene of the plan can show a picture",
+                        )
+                elif operation.target_record_type != "entity":
                     blocking(
                         index,
                         "unsupported_target",

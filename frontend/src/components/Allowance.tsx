@@ -16,15 +16,16 @@ function useAllowance(workspaceId: string | null | undefined) {
 }
 
 /**
- * Said before anything is spent: about how much this request will read, and what is
- * left of the allowance. A warning once most of the allowance has gone.
+ * Said before anything is spent: about how much this request will read and reply, what
+ * is left of the allowance and of the conversation's budget, and whether it will be
+ * confirmed first. A warning once most of the allowance has gone.
  */
-export function AllowanceNote({ reads }: { reads?: 'story' | 'entry' }) {
+export function AllowanceNote({ reads, sessionId }: { reads?: 'story' | 'entry'; sessionId?: string | null }) {
   const { scope } = useProject()
   const usage = useAllowance(scope.workspaceId)
   const estimate = useQuery({
-    queryKey: scopedKey(scope, 'assist-estimate'),
-    queryFn: () => api.assistEstimate(scope),
+    queryKey: scopedKey(scope, 'assist-estimate', sessionId ?? null),
+    queryFn: () => api.assistEstimate(scope, sessionId),
     enabled: Boolean(reads),
     staleTime: 60_000,
   })
@@ -32,6 +33,19 @@ export function AllowanceNote({ reads }: { reads?: 'story' | 'entry' }) {
   const share = found?.limit_tokens ? found.used_tokens / found.limit_tokens : 0
   const tokens = reads && estimate.data ? estimate.data[`${reads}_tokens`] : null
   const left = found?.limit_tokens ? Math.max(found.limit_tokens - found.used_tokens, 0) : null
+  const limits = reads ? estimate.data : undefined
+  const reply = limits?.reply_tokens ?? 0
+  const asksFirst =
+    tokens !== null && limits?.confirm_above_tokens ? tokens + reply > limits.confirm_above_tokens : false
+  const budget = sessionId && limits?.conversation_tokens ? limits.conversation_tokens : null
+  const extra = (
+    <>
+      {asksFirst &&
+        ` That is more than the ${number(limits?.confirm_above_tokens ?? 0)} you asked to be asked about, so you will be asked before it is sent.`}
+      {budget !== null &&
+        ` This conversation has used ${number(limits?.conversation_used_tokens ?? 0)} of the ${number(budget)} tokens it may use.`}
+    </>
+  )
 
   if (share >= 1) {
     return (
@@ -44,12 +58,13 @@ export function AllowanceNote({ reads }: { reads?: 'story' | 'entry' }) {
   return (
     <p className={share >= 0.8 ? 'notice plain' : 'hint'} role="note">
       {tokens !== null &&
-        `This will read about ${number(tokens)} tokens${reads === 'story' ? ' (your whole story bible)' : ''}, plus the reply. `}
+        `This will read about ${number(tokens)} tokens${reads === 'story' ? ' (your whole story bible)' : ''}, ${reply ? `plus up to ${number(reply)} for the reply` : 'plus the reply'}. `}
       {found && left !== null
         ? share >= 0.8
           ? `You have used ${Math.floor(share * 100)}% of your allowance for ${period(found.period_hours)}: ${number(left)} tokens are left.`
           : `${number(left)} tokens of your allowance are left for ${period(found.period_hours)}.`
         : ''}
+      {extra}
     </p>
   )
 }
@@ -105,6 +120,7 @@ export function AllowanceCard({ workspaceId }: { workspaceId: string }) {
         ) : null}{' '}
         tokens in {period(found.period_hours)}, over {number(found.requests)}{' '}
         {found.requests === 1 ? 'request' : 'requests'}.
+        {found.cost_usd ? ` Your provider reported that this cost $${found.cost_usd.toFixed(2)}.` : ''}
       </p>
       {found.limit_tokens ? (
         <progress

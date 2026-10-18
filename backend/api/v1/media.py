@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request, Response
+from pydantic import BaseModel
 
 from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import get_media_service
 from backend.domain.errors import ValidationError
 from backend.domain.identity import AccessScope
-from backend.services.media_service import MAX_PICTURE_BYTES, MediaService
+from backend.services.media_service import MAX_PICTURE_BYTES, LibraryPicture, MediaService
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["media"])
 
@@ -270,6 +272,21 @@ async def add_entity_picture(
     The image is stored as a new media asset and linked to the entry as a picture
     of it, in one new revision. Its type is taken from its bytes, not the request.
     """
+    result, link, version = await media.add_picture(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        entity_id=entity_id,
+        data=await _upload(request),
+        name=name,
+        expected_revision=expected_revision,
+    )
+    response.headers["ETag"] = f'"{result.revision}"'
+    return {"link": _link(link), "version": _version(version)}
+
+
+async def _upload(request: Request) -> bytes:
+    """The request body, refused as soon as it is larger than a picture may be."""
     declared = request.headers.get("content-length")
     if declared is not None and declared.isdigit() and int(declared) > MAX_PICTURE_BYTES:
         raise ValidationError("The picture is too large.")
@@ -279,17 +296,75 @@ async def add_entity_picture(
         if len(data) > MAX_PICTURE_BYTES:
             # Stop reading: never buffer an unbounded upload.
             raise ValidationError("The picture is too large.")
-    result, link, version = await media.add_picture(
+    return bytes(data)
+
+
+@router.post("/plan/{plan_id}/pictures", status_code=201)
+async def add_scene_picture(
+    project_id: str,
+    plan_id: str,
+    request: Request,
+    response: Response,
+    expected_revision: int = Query(ge=0),
+    name: str | None = Query(default=None, max_length=200),
+    scope: AccessScope = Depends(require_project_scope),
+    media: MediaService = Depends(get_media_service),
+) -> dict[str, Any]:
+    """Add a picture to a scene of the plan. The request body is the image itself.
+
+    The same checks as a picture of an entry; the link points at the scene
+    (``target_record_type`` ``plan_item``, role ``DEPICTS``), in one new revision.
+    """
+    result, link, version = await media.add_scene_picture(
         scope,
         scope.workspace_id or "",
         project_id,
-        entity_id=entity_id,
-        data=bytes(data),
+        scene_id=plan_id,
+        data=await _upload(request),
         name=name,
         expected_revision=expected_revision,
     )
     response.headers["ETag"] = f'"{result.revision}"'
     return {"link": _link(link), "version": _version(version)}
+
+
+class LibraryPictureModel(BaseModel):
+    asset_id: str
+    name: str
+    version_id: str
+    content_type: str
+    byte_length: int
+    created_at: datetime
+    # How many entries and scenes show it now; 0 when it is shown nowhere.
+    shown: int
+
+
+class PictureLibraryModel(BaseModel):
+    items: list[LibraryPictureModel]
+
+
+def _library_picture(picture: LibraryPicture) -> LibraryPictureModel:
+    return LibraryPictureModel(
+        asset_id=picture.asset.id,
+        name=picture.asset.name,
+        version_id=picture.version.id,
+        content_type=picture.version.content_type,
+        byte_length=picture.version.byte_length,
+        created_at=picture.asset.created_at,
+        shown=picture.shown,
+    )
+
+
+@router.get("/pictures")
+async def picture_library(
+    project_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    media: MediaService = Depends(get_media_service),
+) -> PictureLibraryModel:
+    """Every picture in the story that can be shown, newest first, including those
+    shown nowhere now. Choosing one links it again; nothing is copied."""
+    pictures = await media.picture_library(scope, scope.workspace_id or "", project_id)
+    return PictureLibraryModel(items=[_library_picture(picture) for picture in pictures])
 
 
 @router.get("/assets/{asset_id}/versions/{version_id}/content")

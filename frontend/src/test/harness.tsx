@@ -12,6 +12,8 @@ export interface RecordedCall {
   path: string
   search: URLSearchParams
   body: unknown
+  /** The request's headers, for checks such as a confirmation being sent. */
+  headers?: Headers
 }
 
 /** An explicit HTTP reply; anything else a handler returns is a 200 JSON body. */
@@ -66,6 +68,7 @@ export function mockApi(routes: Record<string, Handler | Reply | unknown>): Mock
         search: url.searchParams,
         // JSON bodies are parsed for assertions; anything else (an uploaded file) is kept as sent.
         body: typeof init?.body === 'string' ? JSON.parse(init.body) : (init?.body ?? undefined),
+        headers: new Headers(init?.headers),
       }
       calls.push(call)
       const match = entries.find(([key]) => {

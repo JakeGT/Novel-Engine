@@ -252,12 +252,12 @@ then `pnpm --dir frontend run gen:api`.
 
 ## 10. Data & migrations
 
-- Alembic (PostgreSQL) head: **`0037_finding_decisions`** (… → `0022_archive_imports` →
+- Alembic (PostgreSQL) head: **`0038_usage_controls`** (… → `0022_archive_imports` →
   `0023_session_id_token` → `0024_assist_sessions` → `0025_workspace_ai_settings` →
   `0026_assist_suggestions` → `0027_usage_allowance` → `0028_plan_items` →
   `0029_plan_conversations` → `0030_source_texts` → `0031_story_rules` → `0032_story_time` →
   `0033_context` → `0034_scene_studio` → `0035_scene_readings` → `0036_cached_tokens` →
-  `0037_finding_decisions`).
+  `0037_finding_decisions` → `0038_usage_controls`).
 - Neo4j ordered migrations: `0001_initial_graph_schema`, `0002_entity_scope_identity`,
   `0003_canon_scope_identity`, `0004_canon_projection_labels` (checksums in
   `plan/phase-2-evidence.md`).
@@ -694,4 +694,33 @@ readiness numbers need the metrics token on a hosted site). Known limits: a rest
 rebuilt story is checked against the archive's checksums but not compared with its own journal
 (`canon_equivalence.verify` covers the main story only); removing a failed import also clears that
 story's studio work (waiting drafts, voice note, dismissals), as it did before for drafts.
+
+## Open release-one items, second batch (2026-10-18)
+
+- **Story checks** (STY-007, STY-005): a reveal shown too early, a pay-off before its set-up, a reveal
+  with no earlier hint; "Promises to the reader" (still owed / kept); scene conditions, required or
+  preferred, checked against story time (`backend/domain/plan_checks.py`, `scene_conditions.py`).
+- **Writing** (CTX-003, AST-EXP-018): typing @ in the studio and the texts editor offers entries
+  (`components/MentionTextarea.tsx`, `lib/mentions.ts`); scenes show pictures chosen from the story's
+  library (`POST /plan/{id}/pictures`, `GET /pictures`; links target the plan item, ADR-010 amendment).
+- **Spending** (CON-009, AST-EXP-011, OPS-002; migration 0038): checking on its own (only when I ask /
+  balanced / thorough, with a daily token allowance per scene); a budget per assistant conversation;
+  every request that calls a model is estimated and, above the author's or workspace's threshold,
+  refused with `409 needs_confirmation` until confirmed per request (`X-Confirm-Tokens` within 1.5x
+  of the estimate). OpenRouter's reported cost is recorded; no prices are invented.
+- **Operations** (OPS-004, OPS-003, OSS-005, SCN-003): runbooks in `plan/runbooks/`; scheduled backups
+  (`deploy/hosted/prune-backups.sh`, systemd units; a backup counts only with a complete manifest);
+  issue and pull request templates; one registry of every prompt (`backend/domain/prompts.py`) with
+  snapshot tests (`tests/prompts/`, update with `uv run python -m tests.prompts.snapshots --update`,
+  which refuses a changed prompt without a raised version).
+- **The graph follows the story by itself**: `ProjectionWorker` (started with the app) delivers each
+  story's outbox to the graph, with backoff for failing stories, a per-story advisory lock across
+  processes, and a watermark that only moves forward. Found and fixed: the outbox read took the
+  oldest 100 messages whether delivered or not, so a story past 100 commits never projected again.
+  Readiness reports `graph_worker`.
+
+A read-only review found six medium and many low issues; all were fixed with tests (spending checks
+on every model call, one automatic check per save race, the picture library per line of the story
+with no orphan uploads, mention picks that never delete words, manifests written last, and the
+graph worker never starved by failing stories).
 

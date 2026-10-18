@@ -1,4 +1,5 @@
 import { noteSignedIn, shouldHoldFor401, waitForSignIn } from '../lib/reauth'
+import { askToSpend, canAskToSpend, type SpendQuestion } from '../lib/spend'
 import type { components } from './schema'
 
 type Schemas = components['schemas']
@@ -38,6 +39,9 @@ export type ChangeProposal = Schemas['ChangeProposalModel']
 export type PlanItem = Schemas['PlanItemModel']
 export type PlanRef = Schemas['PlanRefModel']
 export type SceneCondition = Schemas['SceneCondition']
+export type ConditionState = Schemas['ConditionStateModel']
+export type PlanPromise = Schemas['PromiseModel']
+export type OpenPlanItem = Schemas['OpenItemModel']
 export type Outline = Schemas['OutlineModel']
 export type PlanKind = Schemas['AddPlanItemRequest']['kind']
 export type AssistSession = Schemas['AssistSessionModel']
@@ -91,6 +95,10 @@ export type SceneVersion = Schemas['backend__api__v1__studio__VersionModel']
 export type StudioJob = Schemas['JobModel']
 export type DraftEstimate = Schemas['backend__api__v1__studio__EstimateModel']
 export type DraftAsk = Schemas['DraftRequest']
+export type StoryAssistantSettings = Schemas['StoryAssistantSettingsModel']
+export type SetAssistantSettings = Schemas['SetAssistantSettingsRequest']
+export type WorkspaceLimits = Schemas['WorkspaceLimitsModel']
+export type CheckProfile = Schemas['CheckProfile']
 
 export interface Scope {
   workspaceId: string | null
@@ -237,6 +245,9 @@ export interface AssetLink {
   retired_revision: number | null
 }
 
+/** A picture the author can choose for an entry or a scene, shown somewhere or nowhere. */
+export type LibraryPicture = Schemas['LibraryPictureModel']
+
 export interface AssetLifecycleEvent {
   action: string
   asset_id: string
@@ -311,10 +322,13 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const { workspaceId, json, ...rest } = options
   const method = (rest.method ?? 'GET').toUpperCase()
 
+  // The size the author agreed to spend, once asked (see lib/spend).
+  let confirmedTokens: string | null = null
   const send = () => {
     const headers = new Headers(rest.headers)
     headers.set('Accept', 'application/json')
     if (workspaceId) headers.set('X-Workspace-Id', workspaceId)
+    if (confirmedTokens) headers.set('X-Confirm-Tokens', confirmedTokens)
     if (json !== undefined) headers.set('Content-Type', 'application/json')
     // Read at the moment of sending: after signing in again the token is a new one.
     if (method !== 'GET' && method !== 'HEAD') headers.set('X-CSRF-Token', readCookie(CSRF_COOKIE))
@@ -333,6 +347,18 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   // and signing out are answered as they are.
   while (response.status === 401 && shouldHoldFor401() && !UNHELD.has(path)) {
     await waitForSignIn()
+    response = await send()
+  }
+  // Larger than the author asked to be asked about: nothing was sent. Ask, and send it
+  // again only if they agree to that size. The story can change between asking and
+  // sending, so a new estimate is asked about once more rather than shown as an error.
+  for (let asks = 0; asks < 2 && response.status === 409 && canAskToSpend(); asks++) {
+    const asked = await spendQuestion(response.clone())
+    if (!asked) break
+    if (!(await askToSpend(asked))) {
+      throw new ApiError(409, 'Not sent: you chose not to go ahead. Nothing was spent.', 'not_confirmed')
+    }
+    confirmedTokens = String(asked.estimatedTokens)
     response = await send()
   }
   if (response.ok) noteSignedIn()
@@ -357,6 +383,23 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
   if (response.status === 204) return undefined as T
   return (await response.json()) as T
+}
+
+/** The question a `needs_confirmation` refusal asks, or null for any other conflict. */
+async function spendQuestion(response: Response): Promise<SpendQuestion | null> {
+  try {
+    const body = (await response.json()) as { code?: string; detail?: string; field_errors?: Record<string, string> }
+    const estimated = Number(body.field_errors?.estimated_tokens)
+    if (body.code !== 'needs_confirmation' || !Number.isFinite(estimated) || estimated <= 0) return null
+    const threshold = Number(body.field_errors?.threshold_tokens)
+    return {
+      detail: body.detail ?? '',
+      estimatedTokens: estimated,
+      thresholdTokens: Number.isFinite(threshold) ? threshold : null,
+    }
+  } catch {
+    return null
+  }
 }
 
 type QueryParams = Record<string, string | number | boolean | undefined | null>
@@ -468,6 +511,14 @@ export const api = {
       workspaceId,
       json: { daily_tokens: dailyTokens },
     }),
+  /** An owner's ceilings for everyone: when to ask first, and how much a conversation may use. */
+  workspaceLimits: (workspaceId: string) => request<WorkspaceLimits>('/api/v1/ai/limits', { workspaceId }),
+  setWorkspaceLimits: (workspaceId: string, body: Schemas['SetWorkspaceLimitsRequest']) =>
+    request<WorkspaceLimits>('/api/v1/ai/limits', { method: 'PUT', workspaceId, json: body }),
+  /** How much the assistant does on its own in this story, and when to ask before spending. */
+  assistantSettings: (scope: Scope) => get<StoryAssistantSettings>(scope, '/assistant-settings'),
+  setAssistantSettings: (scope: Scope, body: SetAssistantSettings) =>
+    send<StoryAssistantSettings>(scope, 'PUT', '/assistant-settings', body),
   /** The models the workspace's key can use, read live from the provider. */
   aiModels: (workspaceId: string, provider: string) =>
     request<Schemas['ModelListModel']>(
@@ -710,6 +761,9 @@ export const api = {
     } satisfies Schemas['SaveRequest']),
   draftEstimate: (scope: Scope, planId: string, ask: DraftAsk) =>
     send<DraftEstimate>(scope, 'POST', `/plan/${id(planId)}/studio/estimate`, ask),
+  /** Roughly what one check with the assistant of the scene's text would use. */
+  checkEstimate: (scope: Scope, planId: string) =>
+    get<DraftEstimate>(scope, `/plan/${id(planId)}/studio/check-estimate`),
   /** Ask for drafts. The key makes a resent request start the same work, not a second one. */
   startDraft: (scope: Scope, planId: string, ask: DraftAsk, key: string) =>
     request<StudioJob>(`${project(scope)}/plan/${id(planId)}/studio/drafts`, {
@@ -775,7 +829,10 @@ export const api = {
   assistChange: (scope: Scope, body: Schemas['ChangeRequest']) =>
     send<ChangeProposal>(scope, 'POST', '/assist/changes', body),
   /** Roughly what the assistant will read, to show before a request is sent. */
-  assistEstimate: (scope: Scope) => get<Schemas['backend__api__v1__canon_assist__EstimateModel']>(scope, '/assist/estimate'),
+  assistEstimate: (scope: Scope, sessionId?: string | null) =>
+    get<Schemas['backend__api__v1__canon_assist__EstimateModel']>(scope, '/assist/estimate', {
+      session_id: sessionId,
+    }),
   /** Connections the entries describe but no fact records, as changes to review. */
   assistLinks: (scope: Scope, expectedRevision: number) =>
     send<ChangeProposal>(scope, 'POST', '/assist/links', {
@@ -937,6 +994,33 @@ export const api = {
       target_record_type: link.target_record_type,
       asset_version_id: link.asset_version_id,
       role: link.role,
+      expected_revision: expectedRevision,
+    }),
+  /** Upload an image (the file itself is the request body) and show it on a scene. */
+  addScenePicture: (scope: Scope, sceneId: string, file: Blob, expectedRevision: number, name?: string) =>
+    request<{ link: AssetLink; version: AssetVersion }>(
+      `${project(scope)}/plan/${id(sceneId)}/pictures${query({ expected_revision: expectedRevision, name })}`,
+      {
+        method: 'POST',
+        workspaceId: scope.workspaceId,
+        body: file,
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      },
+    ),
+  /** Every picture in the story, including those shown nowhere now. */
+  pictureLibrary: (scope: Scope) => get<Schemas['PictureLibraryModel']>(scope, '/pictures'),
+  /** Show a picture from the library on an entry or a scene: a new link, nothing copied. */
+  showPicture: (
+    scope: Scope,
+    picture: Pick<LibraryPicture, 'asset_id' | 'version_id'>,
+    target: { type: 'entity' | 'plan_item'; id: string },
+    expectedRevision: number,
+  ) =>
+    send<AssetLink>(scope, 'POST', `/assets/${id(picture.asset_id)}/links`, {
+      target_id: target.id,
+      target_record_type: target.type,
+      asset_version_id: picture.version_id,
+      role: 'DEPICTS',
       expected_revision: expectedRevision,
     }),
   retireLink: (scope: Scope, linkId: string, expectedRevision: number) =>

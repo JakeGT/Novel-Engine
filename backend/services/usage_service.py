@@ -54,6 +54,7 @@ class ProviderUsageService:
             requests=totals.request_count,
             workspace_limit_tokens=chosen,
             site_limit_tokens=self._limit.period_token_limit or None,
+            cost_usd=totals.provider_cost_usd if totals.provider_cost_usd > 0 else None,
         )
 
     async def set_allowance(

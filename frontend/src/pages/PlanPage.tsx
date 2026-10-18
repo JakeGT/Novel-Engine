@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { api, type AssistSession, type PlanItem, type PlanKind } from '../api/client'
+import { api, type AssistSession, type ConditionState, type PlanItem, type PlanKind } from '../api/client'
 import { NextDirections, PlanAssist } from '../components/PlanAssist'
 import { PlanItemForm } from '../components/PlanItemForm'
+import { PlanPromises } from '../components/PlanPromises'
 import { SceneConditionsDialog } from '../components/SceneConditions'
 import { SceneContextDialog } from '../components/SceneContext'
 import { Icon } from '../components/icons'
@@ -34,10 +35,29 @@ import {
   threadsOf,
   type OutlineNode,
 } from '../lib/plan'
+import { factSentence } from '../lib/facts'
 import { planKindLabel, plural } from '../lib/words'
 import { entryPath, scopedKey, useCanonWrite, useEntries, useProject } from '../project'
 
 type Editing = { item?: PlanItem; kind: PlanKind; parentId: string | null }
+
+/** How a scene's condition stands where the scene comes, in words and a tone. */
+function conditionBadge(state: ConditionState): { label: string; tone: 'ok' | 'warn' | 'info' | 'neutral' } {
+  const before = state.when === 'before'
+  switch (state.status) {
+    case 'met':
+      return { label: before ? 'True by then' : 'Recorded', tone: 'ok' }
+    case 'planned':
+      return { label: 'Planned earlier', tone: 'info' }
+    case 'not_met':
+      if (!before) return { label: 'Not recorded yet', tone: 'neutral' }
+      return state.strength === 'hard' ? { label: 'Not true yet', tone: 'warn' } : { label: 'Not true yet', tone: 'neutral' }
+    case 'unchecked':
+      return { label: 'Not checked', tone: 'neutral' }
+    default:
+      return { label: 'Cannot tell', tone: 'neutral' }
+  }
+}
 
 const addLabel = (kind: PlanKind, under: PlanItem) =>
   `Add ${kind === 'arc' ? 'an' : 'a'} ${planKindLabel(kind).toLowerCase()} under ${under.title}`
@@ -76,6 +96,15 @@ export function PlanPage() {
 
   const items = outline.data?.items ?? []
   const stillOpen = outline.data?.open ?? []
+  // Out of order or not ready where it comes, apart from gaps still to fill in.
+  const problems = stillOpen.filter((entry) => entry.kind === 'problem')
+  const gaps = stillOpen.filter((entry) => entry.kind !== 'problem')
+  const promises = outline.data?.promises ?? []
+  const owed = promises.filter((promise) => !promise.kept_in || promise.out_of_order).length
+  const clueText = (factId: string) => {
+    const fact = journey.data?.facts[factId]
+    return fact ? factSentence(fact, entries.names) : 'a fact no longer in the story'
+  }
   const conditionsFor = (planId: string) =>
     (outline.data?.conditions ?? []).filter((entry) => entry.plan_id === planId)
   const tree = outlineTree(items)
@@ -277,20 +306,18 @@ export function PlanPage() {
           )}
           {conditionsFor(item.id).length > 0 && (
             <ul className="plan-conditions" aria-label={`Before and after ${item.title}`}>
-              {conditionsFor(item.id).map((entry, index) => (
-                <li key={index}>
-                  <span className="eyebrow">{entry.when === 'before' ? 'Before' : 'After'}</span> {entry.reading}{' '}
-                  <Badge tone={entry.holds ? 'ok' : entry.holds === false && entry.when === 'before' ? 'warn' : 'neutral'}>
-                    {entry.holds === null || entry.holds === undefined
-                      ? 'Cannot tell'
-                      : entry.holds
-                        ? 'True now'
-                        : entry.when === 'before'
-                          ? 'Not true yet'
-                          : 'Not yet'}
-                  </Badge>
-                </li>
-              ))}
+              {conditionsFor(item.id).map((entry, index) => {
+                const badge = conditionBadge(entry)
+                return (
+                  <li key={index}>
+                    <span className="eyebrow">
+                      {entry.when === 'before' ? 'Before' : 'After'} · {entry.strength === 'soft' ? 'preferred' : 'required'}
+                    </span>{' '}
+                    {entry.reading} <Badge tone={badge.tone}>{badge.label}</Badge>
+                    {entry.note && <span className="condition-note"> {entry.note}</span>}
+                  </li>
+                )
+              })}
             </ul>
           )}
           {item.kind === 'scene' && (
@@ -305,8 +332,11 @@ export function PlanPage() {
           )}
           {openFor(item.id).length > 0 && (
             <ul className="plan-open" aria-label={`Still to do for ${item.title}`}>
-              {openFor(item.id).map((entry) => (
-                <li key={entry.code}>{entry.message}</li>
+              {openFor(item.id).map((entry, index) => (
+                <li key={index} className={entry.kind === 'problem' ? 'problem' : undefined}>
+                  {entry.kind === 'problem' && <span className="sr-only">Worth a look: </span>}
+                  {entry.message}
+                </li>
               ))}
             </ul>
           )}
@@ -380,22 +410,58 @@ export function PlanPage() {
         {items.length > 0 && (
           <>
             {stillOpen.length > 0 && (
-              <details className="card quiet">
+              // Opened by itself when something is out of order, so it is seen (V1).
+              <details className={`card quiet${problems.length > 0 ? ' has-problems' : ''}`} open={problems.length > 0}>
                 <summary>
                   <strong>{plural(stillOpen.length, 'thing')} the plan still needs</strong>{' '}
-                  <span className="muted">— gaps to fill when you are ready, not mistakes</span>
+                  <span className="muted">
+                    {problems.length > 0
+                      ? `— ${problems.length} out of order or not ready, ${plural(gaps.length, 'gap')} to fill when you are ready`
+                      : '— gaps to fill when you are ready, not mistakes'}
+                  </span>
                 </summary>
-                <ul className="rows">
-                  {stillOpen.map((entry, index) => (
-                    <li className="row" key={index}>
-                      <a className="grow" href={`#plan-${entry.plan_id}`}>
-                        {byId.get(entry.plan_id)?.title}
-                      </a>
-                      <span className="muted">{entry.message}</span>
-                    </li>
-                  ))}
-                </ul>
+                {problems.length > 0 && (
+                  <div className="stack tight">
+                    <h2 className="open-heading">
+                      <Icon name="flag" size={16} /> Out of order or not ready
+                    </h2>
+                    <ul className="rows" aria-label="Out of order or not ready">
+                      {problems.map((entry, index) => (
+                        <li className="row" key={index}>
+                          <a className="grow" href={`#plan-${entry.plan_id}`}>
+                            {byId.get(entry.plan_id)?.title}
+                          </a>
+                          <span>{entry.message}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {gaps.length > 0 && (
+                  <div className="stack tight">
+                    {problems.length > 0 && <h2 className="open-heading">Gaps to fill when you are ready</h2>}
+                    <ul className="rows" aria-label="Gaps to fill">
+                      {gaps.map((entry, index) => (
+                        <li className="row" key={index}>
+                          <a className="grow" href={`#plan-${entry.plan_id}`}>
+                            {byId.get(entry.plan_id)?.title}
+                          </a>
+                          <span className="muted">{entry.message}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </details>
+            )}
+            {promises.length > 0 && (
+              <p className="small">
+                <a href="#promises-heading">
+                  {owed > 0
+                    ? `${plural(owed, 'promise')} to the reader still owed`
+                    : `Every promise to the reader is kept (${promises.length})`}
+                </a>
+              </p>
             )}
 
             <section aria-labelledby="outline-heading" className="stack">
@@ -456,6 +522,8 @@ export function PlanPage() {
                 </ul>
               )}
             </section>
+
+            <PlanPromises promises={promises} byId={byId} clueText={clueText} />
           </>
         )}
       </div>

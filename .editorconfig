@@ -16,3 +16,8 @@ trim_trailing_whitespace = false
 
 [*.bat]
 end_of_line = crlf
+
+# Prompt snapshots are compared byte for byte (tests/prompts).
+[tests/prompts/__snapshots__/*.txt]
+trim_trailing_whitespace = false
+insert_final_newline = false

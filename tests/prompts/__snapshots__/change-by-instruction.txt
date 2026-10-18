@@ -1,0 +1,908 @@
+# Prompt snapshot. Change it only with: uv run python -m tests.prompts.snapshots --update
+id: change-by-instruction
+version: 1
+
+##### case: with recent versions
+
+=== system ===
+You are the editor of an author's story bible. The author gives one instruction and you work out every change it implies, and only those. You never decide the story: do what was asked, and nothing that was not. Rules:
+- refer to existing records by the exact ids listed. Never invent an id.
+- if the instruction could mean more than one thing, or names something you cannot find, put short questions in `questions` and propose nothing.
+- to correct a fact, end the old one (end_facts) and add the right one (add_facts). Facts are never edited in place.
+- to rename, use entity_changes.new_name; facts follow the entry automatically.
+- to merge two entries, move what is known about one onto the other (details, names, facts), then archive the one that is no longer needed.
+- archive an entry only when the author asks for it to be removed or merged.
+- create an entry for anything new the instruction names; give it a short ref.
+- entry types must be one of: ['Character', 'Faction', 'Location', 'Object']
+- use only these kinds of fact, respecting subject and object types:
+- LOCATED_AT: subject is one of ['Character', 'Object']; object is entity_ref of type ['Location']; only one at a time
+- MEMBER_OF: subject is one of ['Character']; object is entity_ref of type ['Faction']
+- AGE: subject is one of ['Character']; object is integer; only one at a time
+- MOTTO: subject is one of ['Faction']; object is string; only one at a time
+- a belief is what a character thinks and may be false; never mark it true or false.
+- in `notes`, tell the author about anything else this affects that they did not mention: facts that now look wrong, characters whose beliefs no longer match. Do not change those things yourself.
+- some requests are not changes to the story bible. Do not attempt them; list each in `elsewhere` with the place it is done: history (undoing changes or going back to an earlier version); people (inviting people, changing what they may do, or removing them); setup (adding or changing types of entry and kinds of fact); assistant (the AI key, the model in use, or the daily allowance); media (pictures and other files).
+- when the author asks to undo something or go back, also set `back_to_version` to the last version to keep, worked out from the list of recent versions. If you cannot tell which version they mean, ask.
+- when the author asks to invite someone, also set `invite` with the role they should have (reader unless the author says they may make changes) and an email address only if the author gave one.
+- story time: to say when something happened, use new_events (for something new that happened) or event_times (for a listed event). A time is at a point, between two points, or relative to an event ("three years before the war" is relative, anchor the war, offset 3, direction before). Keep the author's words in `words`. Never invent a date the author did not give.
+- to say when a fact is true, use fact_times for a listed fact, or starts/ends on a new fact. When a one-at-a-time fact changes at a stated time ("she moved to Saltmere in year 10"), end the old one with fact_times ends and give the new one starts, instead of ending the old fact.
+- "X doesn't know this" or "this is a secret": put the fact in secrecy as secret, and end any belief by which X knows it. "Everyone knows": common.
+- `understood` restates the change in one plain sentence.
+- if the author states something that none of the allowed entry types or kinds of fact can express, do not bend it into the wrong one and never use a kind of fact that is not listed. Leave that statement out of facts and beliefs, and describe what is missing in suggested_types or suggested_fact_kinds: its name, what it means, which entry types it connects, and what the author said that needs it. Suggest only what this text needs, a few at most. Prefer an existing kind of fact whenever one fits.
+
+=== user ===
+Entries:
+- ent_mara: Mara Voss (Character)
+- ent_saltmere: Saltmere (Location)
+Facts (true in the story):
+- fct_1: Mara Voss LOCATED_AT Saltmere
+Story time is counted in years.
+
+Recent versions, newest first:
+v3: renamed Tobin
+v2: added Saltmere
+
+Instruction:
+Mara moved to the capital in year 10.
+
+##### case: without recent versions
+
+=== system ===
+You are the editor of an author's story bible. The author gives one instruction and you work out every change it implies, and only those. You never decide the story: do what was asked, and nothing that was not. Rules:
+- refer to existing records by the exact ids listed. Never invent an id.
+- if the instruction could mean more than one thing, or names something you cannot find, put short questions in `questions` and propose nothing.
+- to correct a fact, end the old one (end_facts) and add the right one (add_facts). Facts are never edited in place.
+- to rename, use entity_changes.new_name; facts follow the entry automatically.
+- to merge two entries, move what is known about one onto the other (details, names, facts), then archive the one that is no longer needed.
+- archive an entry only when the author asks for it to be removed or merged.
+- create an entry for anything new the instruction names; give it a short ref.
+- entry types must be one of: ['Character', 'Faction', 'Location', 'Object']
+- use only these kinds of fact, respecting subject and object types:
+- LOCATED_AT: subject is one of ['Character', 'Object']; object is entity_ref of type ['Location']; only one at a time
+- MEMBER_OF: subject is one of ['Character']; object is entity_ref of type ['Faction']
+- AGE: subject is one of ['Character']; object is integer; only one at a time
+- MOTTO: subject is one of ['Faction']; object is string; only one at a time
+- a belief is what a character thinks and may be false; never mark it true or false.
+- in `notes`, tell the author about anything else this affects that they did not mention: facts that now look wrong, characters whose beliefs no longer match. Do not change those things yourself.
+- some requests are not changes to the story bible. Do not attempt them; list each in `elsewhere` with the place it is done: history (undoing changes or going back to an earlier version); people (inviting people, changing what they may do, or removing them); setup (adding or changing types of entry and kinds of fact); assistant (the AI key, the model in use, or the daily allowance); media (pictures and other files).
+- when the author asks to undo something or go back, also set `back_to_version` to the last version to keep, worked out from the list of recent versions. If you cannot tell which version they mean, ask.
+- when the author asks to invite someone, also set `invite` with the role they should have (reader unless the author says they may make changes) and an email address only if the author gave one.
+- story time: to say when something happened, use new_events (for something new that happened) or event_times (for a listed event). A time is at a point, between two points, or relative to an event ("three years before the war" is relative, anchor the war, offset 3, direction before). Keep the author's words in `words`. Never invent a date the author did not give.
+- to say when a fact is true, use fact_times for a listed fact, or starts/ends on a new fact. When a one-at-a-time fact changes at a stated time ("she moved to Saltmere in year 10"), end the old one with fact_times ends and give the new one starts, instead of ending the old fact.
+- "X doesn't know this" or "this is a secret": put the fact in secrecy as secret, and end any belief by which X knows it. "Everyone knows": common.
+- `understood` restates the change in one plain sentence.
+- if the author states something that none of the allowed entry types or kinds of fact can express, do not bend it into the wrong one and never use a kind of fact that is not listed. Leave that statement out of facts and beliefs, and describe what is missing in suggested_types or suggested_fact_kinds: its name, what it means, which entry types it connects, and what the author said that needs it. Suggest only what this text needs, a few at most. Prefer an existing kind of fact whenever one fits.
+
+=== user ===
+Entries:
+- ent_mara: Mara Voss (Character)
+- ent_saltmere: Saltmere (Location)
+Facts (true in the story):
+- fct_1: Mara Voss LOCATED_AT Saltmere
+Story time is counted in years.
+
+Instruction:
+Rename Tobin to Tobias.
+
+##### answer shape
+{
+  "$defs": {
+    "DraftAttribute": {
+      "description": "One lasting trait. A list of pairs, because providers' strict structured\noutput does not accept free-form objects.",
+      "properties": {
+        "key": {
+          "description": "Short trait name, e.g. role, appearance",
+          "title": "Key",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "title": "DraftAttribute",
+      "type": "object"
+    },
+    "DraftBelief": {
+      "properties": {
+        "about_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Defaults to the holder",
+          "title": "About Ref"
+        },
+        "confidence": {
+          "default": 0.7,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "holder_ref": {
+          "description": "The character who holds the belief",
+          "title": "Holder Ref",
+          "type": "string"
+        },
+        "object_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Object Ref"
+        },
+        "object_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Object Value"
+        },
+        "predicate": {
+          "title": "Predicate",
+          "type": "string"
+        },
+        "question_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Question Id"
+        }
+      },
+      "required": [
+        "holder_ref",
+        "predicate"
+      ],
+      "title": "DraftBelief",
+      "type": "object"
+    },
+    "DraftEntity": {
+      "properties": {
+        "aliases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "attributes": {
+          "description": "Stable descriptive traits, e.g. role, appearance",
+          "items": {
+            "$ref": "#/$defs/DraftAttribute"
+          },
+          "title": "Attributes",
+          "type": "array"
+        },
+        "importance": {
+          "default": "",
+          "description": "main, supporting, minor or background; empty if unclear",
+          "title": "Importance",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "needs_more": {
+          "default": false,
+          "description": "True when the author said little about it so far",
+          "title": "Needs More",
+          "type": "boolean"
+        },
+        "ref": {
+          "description": "Local handle used by facts and beliefs in this draft",
+          "title": "Ref",
+          "type": "string"
+        },
+        "tags": {
+          "description": "Up to three short lower-case phrases that tell it apart at a glance",
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "type": {
+          "description": "One of the allowed entity types",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "type",
+        "name"
+      ],
+      "title": "DraftEntity",
+      "type": "object"
+    },
+    "Elsewhere": {
+      "properties": {
+        "place": {
+          "description": "One of: history, people, setup, assistant, media",
+          "title": "Place",
+          "type": "string"
+        },
+        "what": {
+          "description": "One plain sentence saying what the author wants done there",
+          "title": "What",
+          "type": "string"
+        }
+      },
+      "required": [
+        "place",
+        "what"
+      ],
+      "title": "Elsewhere",
+      "type": "object"
+    },
+    "EntityChange": {
+      "properties": {
+        "add_aliases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Add Aliases",
+          "type": "array"
+        },
+        "new_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Only when the entry is renamed",
+          "title": "New Name"
+        },
+        "ref": {
+          "description": "The id of the existing entry to change",
+          "title": "Ref",
+          "type": "string"
+        },
+        "remove_aliases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Remove Aliases",
+          "type": "array"
+        },
+        "remove_attributes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Remove Attributes",
+          "type": "array"
+        },
+        "set_attributes": {
+          "items": {
+            "$ref": "#/$defs/DraftAttribute"
+          },
+          "title": "Set Attributes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "ref"
+      ],
+      "title": "EntityChange",
+      "type": "object"
+    },
+    "EventTime": {
+      "properties": {
+        "event": {
+          "description": "The id of an existing event, exactly as listed",
+          "title": "Event",
+          "type": "string"
+        },
+        "when": {
+          "$ref": "#/$defs/StoryTime"
+        }
+      },
+      "required": [
+        "event",
+        "when"
+      ],
+      "title": "EventTime",
+      "type": "object"
+    },
+    "FactTime": {
+      "properties": {
+        "ends": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StoryTime"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "fact": {
+          "description": "The id of an existing fact, exactly as listed",
+          "title": "Fact",
+          "type": "string"
+        },
+        "starts": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StoryTime"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "fact"
+      ],
+      "title": "FactTime",
+      "type": "object"
+    },
+    "Invite": {
+      "properties": {
+        "email": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Only if the author gave one",
+          "title": "Email"
+        },
+        "role": {
+          "description": "editor (may change the story) or reader (may only read)",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role"
+      ],
+      "title": "Invite",
+      "type": "object"
+    },
+    "NewEvent": {
+      "properties": {
+        "kind": {
+          "default": "happening",
+          "description": "A word for what kind of event it is",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "participants": {
+          "description": "Ids of existing entries, or refs of new ones",
+          "items": {
+            "type": "string"
+          },
+          "title": "Participants",
+          "type": "array"
+        },
+        "ref": {
+          "description": "A short handle for this event, used by other times",
+          "title": "Ref",
+          "type": "string"
+        },
+        "when": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StoryTime"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ref",
+        "name"
+      ],
+      "title": "NewEvent",
+      "type": "object"
+    },
+    "RecordRef": {
+      "properties": {
+        "id": {
+          "description": "The id of an existing record, exactly as listed",
+          "title": "Id",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "RecordRef",
+      "type": "object"
+    },
+    "Secrecy": {
+      "properties": {
+        "fact": {
+          "description": "The id of an existing fact, exactly as listed",
+          "title": "Fact",
+          "type": "string"
+        },
+        "visibility": {
+          "description": "secret (only those who believe it know), common (everyone knows), or ordinary",
+          "title": "Visibility",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fact",
+        "visibility"
+      ],
+      "title": "Secrecy",
+      "type": "object"
+    },
+    "StoryTime": {
+      "properties": {
+        "about": {
+          "default": false,
+          "description": "True when the author said roughly or about",
+          "title": "About",
+          "type": "boolean"
+        },
+        "anchor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For relative: the id of an existing event, or a new event's ref",
+          "title": "Anchor"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For at: the point in story time",
+          "title": "At"
+        },
+        "direction": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For relative: before or after",
+          "title": "Direction"
+        },
+        "earliest": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For between: the earliest point",
+          "title": "Earliest"
+        },
+        "kind": {
+          "description": "unknown, at, between, or relative",
+          "title": "Kind",
+          "type": "string"
+        },
+        "latest": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For between: the latest point",
+          "title": "Latest"
+        },
+        "offset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For relative: how long before or after",
+          "title": "Offset"
+        },
+        "words": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The author's own words for this time, if they gave any",
+          "title": "Words"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "StoryTime",
+      "type": "object"
+    },
+    "SuggestedFactKind": {
+      "properties": {
+        "description": {
+          "default": "",
+          "description": "What it means, as a phrase",
+          "title": "Description",
+          "type": "string"
+        },
+        "name": {
+          "description": "A short verb phrase, e.g. STUDIED_UNDER",
+          "title": "Name",
+          "type": "string"
+        },
+        "object_types": {
+          "description": "Entry types it can point to, when points_to is entry",
+          "items": {
+            "type": "string"
+          },
+          "title": "Object Types",
+          "type": "array"
+        },
+        "one_at_a_time": {
+          "default": false,
+          "description": "True when an entry can have only one of these at once",
+          "title": "One At A Time",
+          "type": "boolean"
+        },
+        "points_to": {
+          "default": "entry",
+          "description": "One of: entry, text, whole_number, yes_no",
+          "title": "Points To",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "description": "What the author said that needs it",
+          "title": "Reason",
+          "type": "string"
+        },
+        "subject_types": {
+          "description": "Entry types it can be said about",
+          "items": {
+            "type": "string"
+          },
+          "title": "Subject Types",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "SuggestedFactKind",
+      "type": "object"
+    },
+    "SuggestedType": {
+      "properties": {
+        "description": {
+          "default": "",
+          "description": "What this type of entry is",
+          "title": "Description",
+          "type": "string"
+        },
+        "name": {
+          "description": "Singular, e.g. Instrument",
+          "title": "Name",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "description": "What the author said that needs it",
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "SuggestedType",
+      "type": "object"
+    },
+    "TimedFact": {
+      "properties": {
+        "ends": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StoryTime"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "When it stops being true"
+        },
+        "object_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Existing entity id or draft ref, for entity predicates",
+          "title": "Object Ref"
+        },
+        "object_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Value for scalar predicates",
+          "title": "Object Value"
+        },
+        "predicate": {
+          "title": "Predicate",
+          "type": "string"
+        },
+        "question_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Question Id"
+        },
+        "starts": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StoryTime"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "When it starts being true"
+        },
+        "subject_ref": {
+          "description": "An existing entity id or a draft entity ref",
+          "title": "Subject Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "subject_ref",
+        "predicate"
+      ],
+      "title": "TimedFact",
+      "type": "object"
+    }
+  },
+  "description": "Structured model output. Untrusted: resolved and typed before it becomes operations.",
+  "properties": {
+    "add_beliefs": {
+      "items": {
+        "$ref": "#/$defs/DraftBelief"
+      },
+      "title": "Add Beliefs",
+      "type": "array"
+    },
+    "add_facts": {
+      "items": {
+        "$ref": "#/$defs/TimedFact"
+      },
+      "title": "Add Facts",
+      "type": "array"
+    },
+    "archive_entities": {
+      "items": {
+        "$ref": "#/$defs/RecordRef"
+      },
+      "title": "Archive Entities",
+      "type": "array"
+    },
+    "back_to_version": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Only when the author asks to undo or go back: the number of the last version to keep. Everything after it would be undone.",
+      "title": "Back To Version"
+    },
+    "elsewhere": {
+      "description": "Requests that are not changes to the story bible, and where they are done",
+      "items": {
+        "$ref": "#/$defs/Elsewhere"
+      },
+      "title": "Elsewhere",
+      "type": "array"
+    },
+    "end_beliefs": {
+      "items": {
+        "$ref": "#/$defs/RecordRef"
+      },
+      "title": "End Beliefs",
+      "type": "array"
+    },
+    "end_facts": {
+      "items": {
+        "$ref": "#/$defs/RecordRef"
+      },
+      "title": "End Facts",
+      "type": "array"
+    },
+    "entity_changes": {
+      "items": {
+        "$ref": "#/$defs/EntityChange"
+      },
+      "title": "Entity Changes",
+      "type": "array"
+    },
+    "event_times": {
+      "items": {
+        "$ref": "#/$defs/EventTime"
+      },
+      "title": "Event Times",
+      "type": "array"
+    },
+    "fact_times": {
+      "items": {
+        "$ref": "#/$defs/FactTime"
+      },
+      "title": "Fact Times",
+      "type": "array"
+    },
+    "invite": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Invite"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Only when the author asks to invite someone"
+    },
+    "new_entities": {
+      "items": {
+        "$ref": "#/$defs/DraftEntity"
+      },
+      "title": "New Entities",
+      "type": "array"
+    },
+    "new_events": {
+      "items": {
+        "$ref": "#/$defs/NewEvent"
+      },
+      "title": "New Events",
+      "type": "array"
+    },
+    "notes": {
+      "description": "Anything else in the story this affects that the author should know",
+      "items": {
+        "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+    },
+    "questions": {
+      "description": "Asked instead of guessing when the instruction is ambiguous",
+      "items": {
+        "type": "string"
+      },
+      "title": "Questions",
+      "type": "array"
+    },
+    "secrecy": {
+      "items": {
+        "$ref": "#/$defs/Secrecy"
+      },
+      "title": "Secrecy",
+      "type": "array"
+    },
+    "suggested_fact_kinds": {
+      "items": {
+        "$ref": "#/$defs/SuggestedFactKind"
+      },
+      "title": "Suggested Fact Kinds",
+      "type": "array"
+    },
+    "suggested_types": {
+      "items": {
+        "$ref": "#/$defs/SuggestedType"
+      },
+      "title": "Suggested Types",
+      "type": "array"
+    },
+    "understood": {
+      "description": "One sentence restating what will change",
+      "title": "Understood",
+      "type": "string"
+    }
+  },
+  "required": [
+    "understood"
+  ],
+  "title": "ChangePlan",
+  "type": "object"
+}

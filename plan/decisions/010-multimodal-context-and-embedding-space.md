@@ -107,3 +107,15 @@ same privacy and resource budget.
 Model facts used by this decision are recorded in the official
 [EmbeddingGemma 2 model card](https://ai.google.dev/gemma/docs/embeddinggemma/model_card_2); the
 project benchmark, not the published aggregate benchmark, is the acceptance authority.
+
+## Amendment 2026-10-18: pictures on scenes
+
+A picture can be shown on a scene of the plan (AST-EXP-018). The link is the ordinary reviewed
+`link_asset` operation with `target_record_type` `plan_item` and role `DEPICTS`; the commit's
+validator accepts only an active plan item of kind `scene` (anything else stays `entity`). No new
+role was added: the role says what the picture is to its target, and the target type already says
+what the target is, so a `SCENE` role would repeat it and could point at an entry. Old envelopes
+are unchanged (the field existed). The picture library (`GET /pictures`) lists each active
+picture's newest current version, including pictures no link shows now. Pictures are scaled in
+the browser; there are no server-side thumbnails, because that needs image decoding and resizing,
+which this release does not do. Scene pictures are not yet named in the scene's context.

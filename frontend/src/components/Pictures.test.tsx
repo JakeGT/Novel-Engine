@@ -1,7 +1,7 @@
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AssetLink } from '../api/client'
+import type { AssetLink, LibraryPicture } from '../api/client'
 import { mainPicture } from '../lib/pictures'
 import { entity } from '../test/fixtures'
 import { expectAccessible, mockApi, problem, renderInProject, reply, VIEWER, type RecordedCall } from '../test/harness'
@@ -17,6 +17,19 @@ function link(overrides: Partial<AssetLink> = {}): AssetLink {
     target_record_id: 'ent_mara',
     created_revision: 2,
     retired_revision: null,
+    ...overrides,
+  }
+}
+
+function libraryPicture(overrides: Partial<LibraryPicture> = {}): LibraryPicture {
+  return {
+    asset_id: 'ast_1',
+    version_id: 'asv_1',
+    name: 'A picture',
+    content_type: 'image/png',
+    byte_length: 4,
+    created_at: '2026-10-18T09:00:00Z',
+    shown: 1,
     ...overrides,
   }
 }
@@ -46,14 +59,20 @@ describe('PicturesPanel', () => {
     await expectAccessible(container)
   })
 
-  it('makes another picture the main one, and reuses a picture from elsewhere in the project', async () => {
-    const elsewhere = link({ id: 'lnk_9', asset_id: 'ast_9', asset_version_id: 'asv_9', target_record_id: 'ent_tobin' })
+  it('makes another picture the main one, and reuses a picture from the story’s library', async () => {
     const api = mockApi({
       'GET /links': (call: RecordedCall) => ({
         items: call.search.get('target_id')
           ? [link(), link({ id: 'lnk_2', asset_id: 'ast_2', asset_version_id: 'asv_2', created_revision: 5 })]
-          : [link(), elsewhere],
+          : [link()],
       }),
+      // The library includes a picture shown nowhere now, and leaves out the entry's own.
+      'GET /pictures': {
+        items: [
+          libraryPicture({ asset_id: 'ast_1', version_id: 'asv_1', name: 'Mara at the helm', shown: 1 }),
+          libraryPicture({ asset_id: 'ast_9', version_id: 'asv_9', name: 'The quay at dusk', shown: 0 }),
+        ],
+      },
       'GET /content': new Blob(['x']),
       'POST /assets/ast_1/links': reply(201, link({ id: 'lnk_3', created_revision: 6 })),
       'POST /links/lnk_1/retire': {},
@@ -68,8 +87,10 @@ describe('PicturesPanel', () => {
     expect(api.find('POST', '/assets/ast_1/links')[0].body).toMatchObject({ target_id: 'ent_mara', expected_revision: 3 })
     expect(api.find('POST', '/links/lnk_1/retire')[0].body).toEqual({ expected_revision: 4 })
 
-    await user.click(screen.getByText('Use a picture already in your project'))
-    await user.click(await screen.findByRole('button', { name: 'Use picture 1 from your project for Mara Venn' }))
+    await user.click(screen.getByText('Use a picture already in your story'))
+    expect(screen.queryByRole('button', { name: 'Use “Mara at the helm” for Mara Venn' })).not.toBeInTheDocument()
+    expect(screen.getByText('Not shown anywhere')).toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: 'Use “The quay at dusk” for Mara Venn' }))
     await waitFor(() => expect(api.find('POST', '/assets/ast_9/links')).toHaveLength(1))
     expect(api.find('POST', '/assets/ast_9/links')[0].body).toMatchObject({
       target_id: 'ent_mara',

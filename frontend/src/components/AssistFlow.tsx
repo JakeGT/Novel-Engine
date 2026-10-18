@@ -67,6 +67,29 @@ export function AssistantProblem({ error, onManual }: { error: unknown; onManual
       </div>
     )
   }
+  if (isApiError(error, 'not_confirmed')) {
+    // The author chose not to send it: an answer, not a failure.
+    return (
+      <p className="notice plain" role="status">
+        Not sent, as you chose. Nothing was spent and nothing changed.
+      </p>
+    )
+  }
+  if (isApiError(error, 'conversation_budget')) {
+    return (
+      <div className="notice warn" role="alert">
+        <p>
+          <strong>This conversation has reached its limit.</strong> {error.message}
+        </p>
+        <div className="actions">
+          <Link className="btn" to={`/projects/${scope.projectId}/assistant`}>
+            Change the limit
+          </Link>
+          {onManual && <Button onClick={onManual}>Fill it in by hand</Button>}
+        </div>
+      </div>
+    )
+  }
   return <ErrorNotice error={error} prefix="The assistant could not do that" />
 }
 
@@ -202,7 +225,7 @@ export function AssistFlow({ entity, initialType, types, onClose, onManual, resu
               ? 'Answers kept. You can close this and pick it up later from the project’s home page.'
               : 'Your answers are kept as you go, so you can close this and pick it up later.'}
         </p>
-        <AllowanceNote reads="entry" />
+        <AllowanceNote reads="entry" sessionId={sheet?.session_id} />
         <AssistantProblem error={draft.error} onManual={manual} />
         <div className="actions end">
           <Button

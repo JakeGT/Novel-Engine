@@ -1,0 +1,191 @@
+# Prompt snapshot. Change it only with: uv run python -m tests.prompts.snapshots --update
+id: plan-next
+version: 1
+
+##### case: a small story
+
+=== system ===
+An author asks what could happen next in their story. Offer two or three genuinely different directions for them to choose between, edit or turn down. You are offering options, not deciding. Rules:
+- each direction must follow from what the story bible and the plan already hold: name real people and places by their exact ids, and build on threads that are open.
+- say in `what_it_changes` what would be different if the story went this way: who it costs, what it closes off, which thread it answers.
+- give each direction the few plan items it would add (beats and scenes, with parent_ref set to where they belong), the same way a plan is drafted: kinds story, arc, beat, scene, thread; roles point_of_view, place, participant, about.
+- if a direction needs someone or somewhere new, add it to that direction's new_entries with a type from ['Character', 'Faction', 'Location', 'Object'].
+- do not contradict anything recorded as fact.
+
+=== user ===
+Entries:
+- ent_mara: Mara Voss (Character)
+- ent_saltmere: Saltmere (Location)
+Facts (true in the story):
+- fct_1: Mara Voss LOCATED_AT Saltmere
+Story time is counted in years.
+
+##### answer shape
+{
+  "$defs": {
+    "Direction": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/DraftPlanItem"
+          },
+          "title": "Items",
+          "type": "array"
+        },
+        "new_entries": {
+          "items": {
+            "$ref": "#/$defs/DraftPlanEntry"
+          },
+          "title": "New Entries",
+          "type": "array"
+        },
+        "title": {
+          "description": "A few words naming this direction",
+          "title": "Title",
+          "type": "string"
+        },
+        "what_happens": {
+          "description": "Two or three sentences",
+          "title": "What Happens",
+          "type": "string"
+        },
+        "what_it_changes": {
+          "description": "What would be different in the story if it went this way",
+          "items": {
+            "type": "string"
+          },
+          "title": "What It Changes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "title",
+        "what_happens"
+      ],
+      "title": "Direction",
+      "type": "object"
+    },
+    "DraftPlanEntry": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "ref": {
+          "title": "Ref",
+          "type": "string"
+        },
+        "type": {
+          "description": "One of the allowed entry types",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "type",
+        "name"
+      ],
+      "title": "DraftPlanEntry",
+      "type": "object"
+    },
+    "DraftPlanItem": {
+      "properties": {
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/DraftPlanRef"
+          },
+          "title": "Entries",
+          "type": "array"
+        },
+        "kind": {
+          "description": "One of: story, arc, beat, scene, thread",
+          "title": "Kind",
+          "type": "string"
+        },
+        "parent_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The id of an existing plan item, or the ref of a drafted one",
+          "title": "Parent Ref"
+        },
+        "pays_off": {
+          "description": "Threads this resolves",
+          "items": {
+            "type": "string"
+          },
+          "title": "Pays Off",
+          "type": "array"
+        },
+        "ref": {
+          "description": "A short local handle for this item",
+          "title": "Ref",
+          "type": "string"
+        },
+        "sets_up": {
+          "description": "Threads this opens",
+          "items": {
+            "type": "string"
+          },
+          "title": "Sets Up",
+          "type": "array"
+        },
+        "summary": {
+          "default": "",
+          "description": "What is meant to happen, in a sentence or two",
+          "title": "Summary",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "kind",
+        "title"
+      ],
+      "title": "DraftPlanItem",
+      "type": "object"
+    },
+    "DraftPlanRef": {
+      "properties": {
+        "ref": {
+          "description": "The id of an existing entry, or the ref of a new one",
+          "title": "Ref",
+          "type": "string"
+        },
+        "role": {
+          "description": "One of: point_of_view, place, participant, about",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "role"
+      ],
+      "title": "DraftPlanRef",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "directions": {
+      "items": {
+        "$ref": "#/$defs/Direction"
+      },
+      "title": "Directions",
+      "type": "array"
+    }
+  },
+  "title": "DirectionSheet",
+  "type": "object"
+}

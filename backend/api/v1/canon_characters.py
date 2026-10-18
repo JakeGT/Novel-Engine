@@ -7,6 +7,9 @@ changes only when a reviewer commits it through ``/mutations``.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+from typing import Any
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -17,19 +20,35 @@ from backend.api.dependencies import (
     get_settings,
     get_usage_service,
 )
+from backend.api.v1.assistant_settings import confirmed_tokens, get_assist_budget
 from backend.api.v1.router import _provider_context
 from backend.core.config import Settings
 from backend.domain.identity import AccessScope
+from backend.services.assistant_settings_service import AssistBudget
 from backend.services.canon_character_workflow import (
     MAX_ANSWER_LENGTH,
     MAX_ANSWERS,
     CanonCharacterWorkflow,
     CharacterAnswer,
 )
+from backend.services.canon_revise_workflow import estimate_reading
 from backend.services.credential_service import CredentialService
 from backend.services.usage_service import ProviderUsageService
 
 router = APIRouter(prefix="/projects/{project_id}/characters", tags=["canon-characters"])
+
+
+def _reads(
+    workflow: Any, scope: AccessScope, project_id: str, extra: int = 0
+) -> Callable[[], Awaitable[int]]:
+    """What asking about a character reads, worked out only when a limit asks for it: at
+    most the story bible, plus ``extra`` characters the author sent."""
+
+    async def reads() -> int:
+        sizes = await estimate_reading(workflow, scope, scope.workspace_id or "", project_id)
+        return int(sizes["story"]) + extra // 4
+
+    return reads
 
 
 class CharacterQuestionModel(BaseModel):
@@ -92,7 +111,17 @@ async def character_questions(
     usage: ProviderUsageService = Depends(get_usage_service),
     settings: Settings = Depends(get_settings),
     scope: AccessScope = Depends(require_project_scope),
+    budget: AssistBudget = Depends(get_assist_budget),
+    confirmed: int | None = Depends(confirmed_tokens),
 ) -> CharacterQuestionSheetModel:
+    await budget.check(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        reads=_reads(workflow, scope, project_id),
+        doing="Asking about this character",
+        confirmed_tokens=confirmed,
+    )
     credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
         settings=settings, credentials=credentials, usage=usage, scope=scope
     )
@@ -126,7 +155,18 @@ async def character_proposal(
     usage: ProviderUsageService = Depends(get_usage_service),
     settings: Settings = Depends(get_settings),
     scope: AccessScope = Depends(require_project_scope),
+    budget: AssistBudget = Depends(get_assist_budget),
+    confirmed: int | None = Depends(confirmed_tokens),
 ) -> CharacterProposalModel:
+    answered = sum(len(item.question) + len(item.answer) for item in body.answers)
+    await budget.check(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        reads=_reads(workflow, scope, project_id, answered),
+        doing="Suggesting changes from these answers",
+        confirmed_tokens=confirmed,
+    )
     credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
         settings=settings, credentials=credentials, usage=usage, scope=scope
     )

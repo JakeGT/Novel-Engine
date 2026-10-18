@@ -15,6 +15,7 @@ from backend.api.dependencies import (
     get_settings,
     get_usage_service,
 )
+from backend.api.v1.assistant_settings import confirmed_tokens, get_assist_budget
 from backend.api.v1.router import _provider_context
 from backend.core.config import Settings
 from backend.domain.identity import AccessScope
@@ -29,6 +30,8 @@ from backend.domain.rules import (
     Violation,
 )
 from backend.domain.validation import RuleEnforcement
+from backend.services.assistant_settings_service import AssistBudget
+from backend.services.canon_revise_workflow import estimate_reading
 from backend.services.credential_service import CredentialService
 from backend.services.rule_service import RuleCheck, RuleReading, RuleService
 from backend.services.rule_workflow import RuleWorkflow
@@ -252,9 +255,25 @@ async def draft_rule(
     usage: ProviderUsageService = Depends(get_usage_service),
     settings: Settings = Depends(get_settings),
     scope: AccessScope = Depends(require_project_scope),
+    budget: AssistBudget = Depends(get_assist_budget),
+    confirmed: int | None = Depends(confirmed_tokens),
 ) -> RuleDraftModel:
     """Draft a rule from a sentence. Keeps nothing: the author decides whether to add it."""
     workspace_id = scope.workspace_id or ""
+
+    async def reads() -> int:
+        # The sentence, the kinds of fact and the names of what exists.
+        sizes = await estimate_reading(workflow, scope, workspace_id, project_id)
+        return int(sizes["entry"]) + len(body.sentence) // 4
+
+    await budget.check(
+        scope,
+        workspace_id,
+        project_id,
+        reads=reads,
+        doing="Drafting this rule",
+        confirmed_tokens=confirmed,
+    )
     credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
         settings=settings, credentials=credentials, usage=usage, scope=scope
     )

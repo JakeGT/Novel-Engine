@@ -20,7 +20,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from backend.domain.canon.assertions import Belief, Fact, FactStatus, FactVisibility
 from backend.domain.canon.plans import PlanItem, PlanKind
@@ -47,6 +47,15 @@ class Reveal(BaseModel):
 
     fact_id: str = Field(min_length=1, max_length=200)
     how: Literal["shown", "hinted"] = "shown"
+    # The scene where it is meant to come out (STY-007). Showing it plainly in an
+    # earlier scene is then too early; hints before it are clues.
+    main_reveal: bool = False
+
+    @model_validator(mode="after")
+    def _shown_when_it_comes_out(self) -> Reveal:
+        if self.main_reveal and self.how != "shown":
+            raise ValueError("where a fact comes out, it is shown plainly, not hinted")
+        return self
 
 
 def scene_reveals(details: dict[str, str]) -> list[Reveal]:
@@ -69,8 +78,14 @@ def scene_reveals(details: dict[str, str]) -> list[Reveal]:
 def with_reveals(details: dict[str, str], reveals: Sequence[Reveal]) -> dict[str, str]:
     kept = {key: value for key, value in details.items() if key != REVEALS_KEY}
     if reveals:
+        # Stored as before unless it is where the fact comes out, so an unchanged
+        # list still reads as unchanged.
         kept[REVEALS_KEY] = json.dumps(
-            [item.model_dump() for item in reveals], separators=(",", ":")
+            [
+                item.model_dump(exclude={"main_reveal"} if not item.main_reveal else None)
+                for item in reveals
+            ],
+            separators=(",", ":"),
         )
     return kept
 

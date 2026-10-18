@@ -191,6 +191,37 @@ class PostgresAssistSessionStore:
             ).first()
         return _from_row(row) if row is not None else None
 
+    async def tokens_used(self, *, workspace_id: str, project_id: str, session_id: str) -> int:
+        """What a conversation has used so far, as its provider reported (AST-EXP-011)."""
+        async with session_scope(self._session_factory) as db:
+            row = (
+                await db.execute(
+                    text(
+                        "SELECT tokens_used FROM assist_sessions WHERE id = :id "
+                        "AND workspace_id = :ws AND project_id = :project"
+                    ),
+                    {"id": session_id, "ws": workspace_id, "project": project_id},
+                )
+            ).first()
+        return int(row[0]) if row is not None else 0
+
+    async def add_tokens(
+        self, *, workspace_id: str, project_id: str, session_id: str, tokens: int
+    ) -> None:
+        async with session_scope(self._session_factory) as db:
+            await db.execute(
+                text(
+                    "UPDATE assist_sessions SET tokens_used = tokens_used + :tokens "
+                    "WHERE id = :id AND workspace_id = :ws AND project_id = :project"
+                ),
+                {
+                    "tokens": max(0, tokens),
+                    "id": session_id,
+                    "ws": workspace_id,
+                    "project": project_id,
+                },
+            )
+
     async def delete(self, *, workspace_id: str, project_id: str, session_id: str) -> int:
         async with session_scope(self._session_factory) as db:
             result = await db.execute(

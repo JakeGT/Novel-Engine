@@ -10,6 +10,7 @@ from __future__ import annotations
 CANON_PROJECT_TABLES: tuple[str, ...] = (
     "archive_imports",
     "story_clocks",
+    "assistant_settings",
     "finding_dismissals",
     "scene_readings",
     "draft_findings",

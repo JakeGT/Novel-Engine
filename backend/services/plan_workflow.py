@@ -48,6 +48,7 @@ from backend.domain.operations import (
     CreatePlanItemOp,
     EvidenceRef,
 )
+from backend.domain.prompts import Messages, prompt_version
 from backend.domain.tenancy import Permission
 from backend.services.canon_character_workflow import (
     MAX_ANSWERS,
@@ -62,9 +63,9 @@ from backend.services.mutation_service import ValidationReport
 
 logger = logging.getLogger(__name__)
 
-PLAN_QUESTIONS_PROMPT_VERSION = "plan-questions/1"
-PLAN_DRAFT_PROMPT_VERSION = "plan-draft/1"
-PLAN_NEXT_PROMPT_VERSION = "plan-next/1"
+PLAN_QUESTIONS_PROMPT_VERSION = prompt_version("plan-questions")
+PLAN_DRAFT_PROMPT_VERSION = prompt_version("plan-draft")
+PLAN_NEXT_PROMPT_VERSION = prompt_version("plan-next")
 
 MAX_DESCRIPTION_LENGTH = 6000
 MAX_DRAFT_ITEMS = 60
@@ -418,16 +419,7 @@ class PlanWorkflow(CanonLinkWorkflow):
         about = await self._about(workspace_id, project_id, about_id)
         context, _plan, _entities = await self._plan_context(workspace_id, project_id, about)
         sheet: CharacterQuestionSheet = await self._generate(
-            system=(
-                "You help an author plan a novel by asking, never by deciding. Ask four to "
-                "seven short questions whose answers would let this part of the plan be "
-                "written down: what is at stake, whose story each arc is, what turns, what "
-                "is promised to the reader and where it is kept. Name the story's own "
-                "people and places where that helps. Do not ask what the author has already "
-                "said, and do not suggest answers.\n" + DEPTHS[depth]
-            ),
-            user=context
-            + (f"\n\nWhat the author says so far:\n{description}" if description else ""),
+            messages=plan_questions_messages(context, description, depth),
             response_format=CharacterQuestionSheet,
             prompt_version=PLAN_QUESTIONS_PROMPT_VERSION,
             credential=credential,
@@ -526,36 +518,8 @@ class PlanWorkflow(CanonLinkWorkflow):
             raise ValidationError("Say something about the story first, or answer a question.")
         context, plan, entities = await self._plan_context(workspace_id, project_id, about)
         _predicates, entity_types = await self._vocabulary(workspace_id, project_id)
-        interview = "\n".join(f"Q: {a.question}\nA: {a.answer.strip()}" for a in answered)
         draft: PlanDraft = await self._generate(
-            system=(
-                "Turn what an author has said about their story into plan items for them "
-                "to review. A plan is what the author intends, not what is true in the "
-                "story. Rules:\n"
-                "- write down only what the author said or answered. Never invent a turn, "
-                "an ending, a motive or a scene. What they have not decided goes in `gaps`, "
-                "in plain words, and is left out of the plan.\n"
-                "- kinds: story (the premise; at most one), arc (a line of change, usually "
-                "one character's), beat (a turning point in an arc), scene (where a beat "
-                "happens), thread (a question raised or a promise made to the reader).\n"
-                "- an arc sits under the story; a beat under an arc; a scene under a beat. "
-                "Use parent_ref with the id of an existing plan item or the ref of one you "
-                "draft. Do not repeat an item that is already in the plan.\n"
-                "- name the story's own entries by their exact ids, with a role: "
-                "point_of_view and place (a scene, one each, only if the author said so), "
-                "participant (who or what is in a beat or scene), about (whose arc or "
-                "thread it is).\n"
-                "- if the plan needs a person, place or thing that is not in the story "
-                f"bible, add it to new_entries with a type from {sorted(entity_types)} and "
-                "refer to it by its ref. Do not describe it.\n"
-                "- when something sets up a question or a promise, draft a thread for it "
-                "and list it in sets_up; list it in pays_off where it is answered.\n"
-                "- `understood` restates what is being planned in one plain sentence.\n"
-                + DEPTHS[depth]
-            ),
-            user=context
-            + (f"\n\nWhat the author says:\n{description}" if description else "")
-            + (f"\n\nAnswers:\n{interview}" if interview else ""),
+            messages=plan_draft_messages(context, description, depth, entity_types, answered),
             response_format=PlanDraft,
             prompt_version=PLAN_DRAFT_PROMPT_VERSION,
             credential=credential,
@@ -593,24 +557,7 @@ class PlanWorkflow(CanonLinkWorkflow):
             raise ValidationError("There is nothing to go on yet. Describe the story first.")
         _predicates, entity_types = await self._vocabulary(workspace_id, project_id)
         sheet: DirectionSheet = await self._generate(
-            system=(
-                "An author asks what could happen next in their story. Offer two or three "
-                "genuinely different directions for them to choose between, edit or turn "
-                "down. You are offering options, not deciding. Rules:\n"
-                "- each direction must follow from what the story bible and the plan "
-                "already hold: name real people and places by their exact ids, and build "
-                "on threads that are open.\n"
-                "- say in `what_it_changes` what would be different if the story went this "
-                "way: who it costs, what it closes off, which thread it answers.\n"
-                "- give each direction the few plan items it would add (beats and scenes, "
-                "with parent_ref set to where they belong), the same way a plan is "
-                "drafted: kinds story, arc, beat, scene, thread; roles point_of_view, "
-                "place, participant, about.\n"
-                "- if a direction needs someone or somewhere new, add it to that "
-                f"direction's new_entries with a type from {sorted(entity_types)}.\n"
-                "- do not contradict anything recorded as fact."
-            ),
-            user=context,
+            messages=plan_next_messages(context, entity_types),
             response_format=DirectionSheet,
             prompt_version=PLAN_NEXT_PROMPT_VERSION,
             credential=credential,
@@ -684,6 +631,84 @@ class PlanWorkflow(CanonLinkWorkflow):
         )
 
 
+def plan_questions_messages(context: str, description: str, depth: str) -> Messages:
+    """The ``plan-questions`` prompt: ``context`` is the story bible and plan as listed."""
+    system = (
+        "You help an author plan a novel by asking, never by deciding. Ask four to "
+        "seven short questions whose answers would let this part of the plan be "
+        "written down: what is at stake, whose story each arc is, what turns, what "
+        "is promised to the reader and where it is kept. Name the story's own "
+        "people and places where that helps. Do not ask what the author has already "
+        "said, and do not suggest answers.\n" + DEPTHS[depth]
+    )
+    user = context + (f"\n\nWhat the author says so far:\n{description}" if description else "")
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+def plan_draft_messages(
+    context: str,
+    description: str,
+    depth: str,
+    entity_types: set[str],
+    answered: list[CharacterAnswer],
+) -> Messages:
+    """The ``plan-draft`` prompt."""
+    interview = "\n".join(f"Q: {a.question}\nA: {a.answer.strip()}" for a in answered)
+    system = (
+        "Turn what an author has said about their story into plan items for them "
+        "to review. A plan is what the author intends, not what is true in the "
+        "story. Rules:\n"
+        "- write down only what the author said or answered. Never invent a turn, "
+        "an ending, a motive or a scene. What they have not decided goes in `gaps`, "
+        "in plain words, and is left out of the plan.\n"
+        "- kinds: story (the premise; at most one), arc (a line of change, usually "
+        "one character's), beat (a turning point in an arc), scene (where a beat "
+        "happens), thread (a question raised or a promise made to the reader).\n"
+        "- an arc sits under the story; a beat under an arc; a scene under a beat. "
+        "Use parent_ref with the id of an existing plan item or the ref of one you "
+        "draft. Do not repeat an item that is already in the plan.\n"
+        "- name the story's own entries by their exact ids, with a role: "
+        "point_of_view and place (a scene, one each, only if the author said so), "
+        "participant (who or what is in a beat or scene), about (whose arc or "
+        "thread it is).\n"
+        "- if the plan needs a person, place or thing that is not in the story "
+        f"bible, add it to new_entries with a type from {sorted(entity_types)} and "
+        "refer to it by its ref. Do not describe it.\n"
+        "- when something sets up a question or a promise, draft a thread for it "
+        "and list it in sets_up; list it in pays_off where it is answered.\n"
+        "- `understood` restates what is being planned in one plain sentence.\n" + DEPTHS[depth]
+    )
+    user = (
+        context
+        + (f"\n\nWhat the author says:\n{description}" if description else "")
+        + (f"\n\nAnswers:\n{interview}" if interview else "")
+    )
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+def plan_next_messages(context: str, entity_types: set[str]) -> Messages:
+    """The ``plan-next`` prompt."""
+    system = (
+        "An author asks what could happen next in their story. Offer two or three "
+        "genuinely different directions for them to choose between, edit or turn "
+        "down. You are offering options, not deciding. Rules:\n"
+        "- each direction must follow from what the story bible and the plan "
+        "already hold: name real people and places by their exact ids, and build "
+        "on threads that are open.\n"
+        "- say in `what_it_changes` what would be different if the story went this "
+        "way: who it costs, what it closes off, which thread it answers.\n"
+        "- give each direction the few plan items it would add (beats and scenes, "
+        "with parent_ref set to where they belong), the same way a plan is "
+        "drafted: kinds story, arc, beat, scene, thread; roles point_of_view, "
+        "place, participant, about.\n"
+        "- if a direction needs someone or somewhere new, add it to that "
+        f"direction's new_entries with a type from {sorted(entity_types)}.\n"
+        "- do not contradict anything recorded as fact."
+    )
+    user = context
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
 __all__ = [
     "DEPTHS",
     "MAX_DESCRIPTION_LENGTH",
@@ -696,5 +721,8 @@ __all__ = [
     "PlanDraft",
     "PlanProposalResult",
     "PlanWorkflow",
+    "plan_draft_messages",
+    "plan_next_messages",
     "plan_operations",
+    "plan_questions_messages",
 ]

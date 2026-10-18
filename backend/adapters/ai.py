@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time
 from typing import Any
 
@@ -44,6 +45,17 @@ def _reported(usage: Any, name: str) -> Any:
     return found
 
 
+def _cost(value: Any) -> float | None:
+    """A reported cost as a finite, non-negative number of dollars, or None."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        found = float(value)
+    except (TypeError, ValueError):
+        return None
+    return found if math.isfinite(found) and found >= 0 else None
+
+
 def usage_from(usage: Any) -> AIUsage:
     """Token counts from a provider's ``usage``, including prompt tokens read from its cache.
 
@@ -53,7 +65,10 @@ def usage_from(usage: Any) -> AIUsage:
     (``input_tokens`` and ``output_tokens``) counts the tokens read from the cache
     (``cache_read_input_tokens``) and written to it (``cache_creation_input_tokens``)
     apart from ``input_tokens``, so the prompt is all three. Cached tokens never count
-    for more than the prompt."""
+    for more than the prompt.
+
+    OpenRouter also reports what the call cost, in credits worth a US dollar each, as
+    ``usage.cost`` on every response; it is kept when present and never guessed."""
     if _reported(usage, "prompt_tokens") is None and _reported(usage, "input_tokens") is not None:
         cached = _count(_reported(usage, "cache_read_input_tokens"))
         prompt = (
@@ -75,7 +90,26 @@ def usage_from(usage: Any) -> AIUsage:
         prompt_tokens=prompt,
         completion_tokens=completion,
         cached_prompt_tokens=min(cached, prompt),
+        cost_usd=_cost(_reported(usage, "cost")),
     )
+
+
+def prompted_messages(
+    messages: list[dict[str, str]], response_format: type
+) -> list[dict[str, str]]:
+    """The ``reply-as-json`` prompt: the messages with the required shape asked for in words,
+    for a model that cannot be held to a shape by the provider."""
+    schema = json.dumps(response_format.model_json_schema())  # type: ignore[attr-defined]
+    instruction = (
+        "\n\nReply with one JSON object and nothing else: no explanation and no code "
+        f"fence. It must be valid against this JSON Schema:\n{schema}"
+    )
+    shaped = [dict(message) for message in messages]
+    if shaped and shaped[0].get("role") == "system":
+        shaped[0]["content"] = f"{shaped[0]['content']}{instruction}"
+    else:
+        shaped.insert(0, {"role": "system", "content": instruction.strip()})
+    return shaped
 
 
 class OpenAIGateway:
@@ -290,16 +324,7 @@ class OpenAIGateway:
         client: Any, model: str, messages: list[dict[str, str]], response_format: type
     ) -> tuple[Any, Any]:
         """Ask for JSON of the required shape in words, then validate what comes back."""
-        schema = json.dumps(response_format.model_json_schema())  # type: ignore[attr-defined]
-        instruction = (
-            "\n\nReply with one JSON object and nothing else: no explanation and no code "
-            f"fence. It must be valid against this JSON Schema:\n{schema}"
-        )
-        shaped = [dict(message) for message in messages]
-        if shaped and shaped[0].get("role") == "system":
-            shaped[0]["content"] = f"{shaped[0]['content']}{instruction}"
-        else:
-            shaped.insert(0, {"role": "system", "content": instruction.strip()})
+        shaped = prompted_messages(messages, response_format)
         response = await client.chat.completions.create(model=model, messages=shaped)
         text = (response.choices[0].message.content or "").strip()
         start, end = text.find("{"), text.rfind("}")

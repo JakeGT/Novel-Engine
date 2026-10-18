@@ -41,7 +41,7 @@ from backend.domain.identity import AccessScope
 from backend.domain.knowledge import knowledge_of, reader_journey, reading_order, scene_reveals
 from backend.domain.knowledge import scene_time as scene_when
 from backend.domain.rules import RuleStatus, read_rule
-from backend.domain.scene_conditions import plain_details, scene_conditions
+from backend.domain.scene_conditions import condition_reading, plain_details, scene_conditions
 from backend.domain.scene_intent import intent_sentences, scene_intent
 from backend.domain.sources import SourceKind, SourceText
 from backend.domain.tenancy import Permission
@@ -423,22 +423,30 @@ class ContextService:
                 )
             )
         for index, condition in enumerate(scene_conditions(scene.details)):
-            subject = names.get(condition.entity_id, "An entry")
-            phrase = _phrase(condition.check.pattern.predicate)
+            # What must be true first and what the scene should leave true (STY-005):
+            # required ones are never cut for length; preferred ones may be.
+            required = condition.strength == "hard"
+            lead = {
+                ("before", True): "Must be true before this scene",
+                ("before", False): "Better true before this scene, though not needed",
+                ("after", True): "This scene must leave this true",
+                ("after", False): "This scene would ideally leave this true",
+            }[(condition.when, required)]
             out.append(
                 ContextItem(
                     key=f"condition:{scene.id}:{index}",
                     section=ContextSection.SCENE,
-                    text=(
-                        f"{'Before' if condition.when == 'before' else 'By the end'}: "
-                        f"{subject} {condition.check.kind.replace('_', ' ')} “{phrase}”."
+                    text=f"{lead}: {condition_reading(condition, names).rstrip('.')}.",
+                    reason=(
+                        "You said this must hold around the scene."
+                        if required
+                        else "You said you would like this to hold around the scene."
                     ),
-                    reason="You said this must hold around the scene.",
                     authority="plan",
                     record_type="plan_item",
                     record_id=scene.id,
-                    score=90,
-                    hard=True,
+                    score=90 if required else 75,
+                    hard=required,
                 )
             )
         facts_by_id = {fact.id: fact for fact in story.facts}

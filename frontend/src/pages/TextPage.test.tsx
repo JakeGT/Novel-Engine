@@ -195,4 +195,33 @@ describe('TextPage', () => {
     expect(screen.queryByRole('button', { name: 'Have the assistant read it' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Add as a new entry' })).not.toBeInTheDocument()
   })
+
+  it('offers entries after @ while changing the words; Escape closes the list, not the dialog', async () => {
+    const api = mockApi({ ...base, 'GET /texts/src_1': detail(), 'POST /texts/src_1/versions': reply(201, detail().text) })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<TextPage />, at)
+    await screen.findByRole('article', { name: 'The text' })
+    await user.click(screen.getByText('Change or remove'))
+    await user.click(screen.getByRole('button', { name: 'Change the words' }))
+    const dialog = screen.getByRole('dialog', { name: 'Change the words' })
+    const box = within(dialog).getByLabelText(/^The text/) as HTMLTextAreaElement
+    expect(dialog).toHaveTextContent('Type @ to name someone or something from your story bible.')
+
+    await user.click(box)
+    box.setSelectionRange(box.value.length, box.value.length)
+    await user.type(box, 'Then @tob')
+    expect(within(dialog).getByRole('option', { name: /Tobin Ashe/ })).toHaveAttribute('aria-selected', 'true')
+    await expectAccessible(container)
+    await user.keyboard('{Escape}')
+    expect(within(dialog).queryByRole('listbox')).not.toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Change the words' })).toBeInTheDocument()
+
+    await user.type(box, 'i')
+    await user.keyboard('{Enter}')
+    expect(box.value.endsWith('Then @"Tobin Ashe" ')).toBe(true)
+    // With the list closed, Escape closes the dialog as before.
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: 'Change the words' })).not.toBeInTheDocument()
+    expect(api.find('POST', '/versions')).toHaveLength(0)
+  })
 })

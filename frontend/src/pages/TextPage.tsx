@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, type PassageRead, type SourceTextDetail, type TextMention } from '../api/client'
 import { AllowanceNote } from '../components/Allowance'
+import { MentionTextarea } from '../components/MentionTextarea'
 import { NameQuestions } from '../components/NameQuestions'
 import { Icon } from '../components/icons'
 import {
@@ -452,9 +453,9 @@ function ReplaceWords({
         </Field>
         <Field
           label="The text"
-          hint="Saving makes a new version. The earlier one is kept, so anything already taken from it still points at the right words."
+          hint="Type @ to name someone or something from your story bible. Saving makes a new version. The earlier one is kept, so anything already taken from it still points at the right words."
         >
-          {(props) => <textarea {...props} className="text-paste" value={content} onChange={(event) => setContent(event.target.value)} rows={16} />}
+          {(props) => <MentionTextarea {...props} className="text-paste" value={content} onValueChange={setContent} rows={16} />}
         </Field>
         <ErrorNotice error={save.error} prefix="Could not save" />
         <div className="actions end">

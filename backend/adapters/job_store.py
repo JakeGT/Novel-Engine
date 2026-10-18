@@ -27,7 +27,7 @@ _COLUMNS = (
     "workspace_id, project_id, id, kind, status, stage, progress, payload, result, "
     "actor_user_id, auth_mode, policy_version, role, correlation_id, idempotency_key, "
     "cancel_requested, attempts, error_code, error_message, prompt_tokens, completion_tokens, "
-    "cached_prompt_tokens, created_at, updated_at, finished_at"
+    "cached_prompt_tokens, provider_cost_usd, created_at, updated_at, finished_at"
 )
 
 
@@ -61,6 +61,9 @@ def _job(row: Any) -> Job:
         prompt_tokens=int(row.prompt_tokens),
         completion_tokens=int(row.completion_tokens),
         cached_prompt_tokens=int(row.cached_prompt_tokens),
+        provider_cost_usd=(
+            float(row.provider_cost_usd) if row.provider_cost_usd is not None else None
+        ),
         created_at=row.created_at,
         updated_at=row.updated_at,
         finished_at=row.finished_at,
@@ -291,14 +294,19 @@ class PostgresJobStore:
         prompt_tokens: int,
         completion_tokens: int,
         cached_prompt_tokens: int = 0,
+        cost_usd: float | None = None,
     ) -> None:
-        """Add to the job's token counts, only while this worker still holds it."""
+        """Add to the job's token counts (and the cost its provider reported, if any),
+        only while this worker still holds it."""
         async with session_scope(self._session_factory) as db:
             await db.execute(
                 text(
                     "UPDATE jobs SET prompt_tokens = prompt_tokens + :pt, "
                     "completion_tokens = completion_tokens + :ct, "
-                    "cached_prompt_tokens = cached_prompt_tokens + :cached, updated_at = now() "
+                    "cached_prompt_tokens = cached_prompt_tokens + :cached, "
+                    "provider_cost_usd = CASE WHEN CAST(:cost AS DOUBLE PRECISION) IS NULL "
+                    "THEN provider_cost_usd ELSE coalesce(provider_cost_usd, 0) + "
+                    "CAST(:cost AS DOUBLE PRECISION) END, updated_at = now() "
                     "WHERE workspace_id = :w AND project_id = :p AND id = :id "
                     "AND lease_owner = :owner"
                 ),
@@ -306,6 +314,7 @@ class PostgresJobStore:
                     "pt": prompt_tokens,
                     "ct": completion_tokens,
                     "cached": max(0, cached_prompt_tokens),
+                    "cost": cost_usd if cost_usd is not None and cost_usd >= 0 else None,
                     "w": job.workspace_id,
                     "p": job.project_id,
                     "id": job.id,

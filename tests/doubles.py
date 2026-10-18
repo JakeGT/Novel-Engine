@@ -91,7 +91,7 @@ from backend.domain.operations import (
     parse_operation,
     resolve_temporary_ids,
 )
-from backend.domain.projection import EvidenceRecord, RecordVersion
+from backend.domain.projection import EvidenceRecord, ProjectionStatus, RecordVersion
 from backend.domain.providers import request_model
 from backend.domain.review import (
     MutationIntent,
@@ -1965,13 +1965,23 @@ class InMemoryCanonJournal:
         self.outbox.setdefault(message.idempotency_key, message)
 
     async def list_outbox(
-        self, *, workspace_id: str, project_id: str, limit: int = 100
+        self, *, workspace_id: str, project_id: str, limit: int = 100, pending_only: bool = False
     ) -> list[OutboxMessage]:
         return [
             message
             for message in self.outbox.values()
-            if message.workspace_id == workspace_id and message.project_id == project_id
+            if message.workspace_id == workspace_id
+            and message.project_id == project_id
+            and (not pending_only or message.published_at is None)
         ][:limit]
+
+    async def projects_with_pending_outbox(self, *, limit: int = 50) -> list[tuple[str, str]]:
+        seen: list[tuple[str, str]] = []
+        for message in self.outbox.values():
+            pair = (message.workspace_id, message.project_id)
+            if message.published_at is None and pair not in seen:
+                seen.append(pair)
+        return seen[:limit]
 
     async def mark_outbox_published(self, *, message_id: str) -> None:
         for key, message in self.outbox.items():
@@ -3647,14 +3657,22 @@ class InMemoryCanonRepository:
         return self.watermarks.get((projection, workspace_id, project_id, branch_id))
 
     async def set_watermark(self, watermark: Any) -> None:
-        self.watermarks[
-            (
-                watermark.projection,
-                watermark.workspace_id,
-                watermark.project_id,
-                watermark.branch_id,
-            )
-        ] = watermark
+        key = (
+            watermark.projection,
+            watermark.workspace_id,
+            watermark.project_id,
+            watermark.branch_id,
+        )
+        # Like the PostgreSQL adapter: only forward, unless a rebuild or a new layout.
+        previous = self.watermarks.get(key)
+        if (
+            previous is not None
+            and watermark.revision < previous.revision
+            and watermark.status is not ProjectionStatus.REBUILDING
+            and watermark.projection_schema_version == previous.projection_schema_version
+        ):
+            return
+        self.watermarks[key] = watermark
 
     async def create_tag(self, tag: Any) -> Any:
         key = (tag.workspace_id, tag.project_id, tag.branch_id, tag.name)
@@ -3970,6 +3988,34 @@ class InMemoryMediaStore:
         items.sort(key=lambda v: v.version)
         return items
 
+    async def list_versions_for_assets(
+        self, *, workspace_id: str, project_id: str, asset_ids: list[str]
+    ) -> dict[str, list[MediaAssetVersion]]:
+        wanted = set(asset_ids)
+        found: dict[str, list[MediaAssetVersion]] = {}
+        for (w, p, _), v in sorted(self.versions.items(), key=lambda item: item[1].version):
+            if w == workspace_id and p == project_id and v.asset_id in wanted:
+                found.setdefault(v.asset_id, []).append(v)
+        return found
+
+    async def discard_asset(self, *, workspace_id: str, project_id: str, asset_id: str) -> None:
+        self.assets.pop((workspace_id, project_id, asset_id), None)
+        for key in [
+            k
+            for k, v in self.versions.items()
+            if k[0] == workspace_id and k[1] == project_id and v.asset_id == asset_id
+        ]:
+            del self.versions[key]
+        self.events = [
+            e
+            for e in self.events
+            if not (
+                e.workspace_id == workspace_id
+                and e.project_id == project_id
+                and e.asset_id == asset_id
+            )
+        ]
+
     async def health(self) -> bool:
         return True
 
@@ -4107,6 +4153,18 @@ class InMemoryAssistSessionStore:
         found.sort(key=lambda session: session.updated_at, reverse=True)
         return found[0] if found else None
 
+    async def tokens_used(self, *, workspace_id: str, project_id: str, session_id: str) -> int:
+        if await self.get(workspace_id=workspace_id, project_id=project_id, session_id=session_id):
+            return getattr(self, "tokens", {}).get(session_id, 0)  # type: ignore[no-any-return]
+        return 0
+
+    async def add_tokens(
+        self, *, workspace_id: str, project_id: str, session_id: str, tokens: int
+    ) -> None:
+        if await self.get(workspace_id=workspace_id, project_id=project_id, session_id=session_id):
+            counts = self.__dict__.setdefault("tokens", {})
+            counts[session_id] = counts.get(session_id, 0) + max(0, tokens)
+
     async def delete(self, *, workspace_id: str, project_id: str, session_id: str) -> int:
         found = await self.get(
             workspace_id=workspace_id, project_id=project_id, session_id=session_id
@@ -4162,6 +4220,23 @@ class InMemoryAllowanceStore:
 
     async def delete_workspace(self, workspace_id: str) -> int:
         return 1 if self.rows.pop(workspace_id, None) is not None else 0
+
+
+class InMemoryAssistantSettingsStore:
+    """A story's (or, with no story, a workspace's) assistant settings (CON-009, OPS-002)."""
+
+    def __init__(self) -> None:
+        self.rows: dict[tuple[str, str], Any] = {}
+
+    async def get(self, *, workspace_id: str, project_id: str = "") -> Any:
+        from backend.domain.usage_controls import AssistantSettings
+
+        return self.rows.get((workspace_id, project_id), AssistantSettings())
+
+    async def set(
+        self, *, workspace_id: str, project_id: str = "", settings: Any, actor_user_id: Any
+    ) -> None:
+        self.rows[(workspace_id, project_id)] = settings
 
 
 class InMemorySourceStore:
@@ -4635,7 +4710,14 @@ class InMemoryJobStore:
         return current.cancel_requested
 
     async def add_usage(
-        self, job, *, owner, prompt_tokens, completion_tokens, cached_prompt_tokens=0
+        self,
+        job,
+        *,
+        owner,
+        prompt_tokens,
+        completion_tokens,
+        cached_prompt_tokens=0,
+        cost_usd=None,
     ):
         from dataclasses import replace
 
@@ -4643,11 +4725,15 @@ class InMemoryJobStore:
         current = self.jobs[key]
         if self.owners.get(key) != owner:
             return
+        cost = current.provider_cost_usd
+        if cost_usd is not None:
+            cost = (cost or 0.0) + cost_usd
         self.jobs[key] = replace(
             current,
             prompt_tokens=current.prompt_tokens + prompt_tokens,
             completion_tokens=current.completion_tokens + completion_tokens,
             cached_prompt_tokens=current.cached_prompt_tokens + cached_prompt_tokens,
+            provider_cost_usd=cost,
         )
 
     async def requeue(self, job, *, owner):

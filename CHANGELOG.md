@@ -31,6 +31,11 @@ for authors and for whoever runs an install. Version numbers start when the owne
 - **Deeper plans.** Scenes can move a thread along; a scene can say what the viewpoint character
   wants, what stands in the way and how it ends for them; compare what the assistant would use now
   with what a kept draft was written from.
+- **Promises to the reader**: what your plan owes the reader and where each promise is kept; a
+  reveal that comes too early is flagged; scenes can say what must be true before them.
+- **Type @ to name an entry** while writing; **pictures on scenes**.
+- **Spending you control**: how much the assistant checks on its own, a budget per conversation,
+  and being asked first before any request above a size you choose.
 - **Photos lose their hidden details** (location, camera) when uploaded.
 - **Use a model on your own computer** (Ollama, LM Studio) on a self-hosted install, so nothing
   about your story leaves it.
@@ -38,7 +43,7 @@ for authors and for whoever runs an install. Version numbers start when the owne
 ### For whoever runs it
 
 - **Upgrading:** take a backup first (`deploy/hosted/backup.sh` on the hosted profile). The server
-  applies migrations on start; this release adds migrations up to `0037_finding_decisions`.
+  applies migrations on start; this release adds migrations up to `0038_usage_controls`.
 - **Readiness** now answers `ready`, `degraded` (200) or `unavailable` (503, a required store is
   down); a watcher that looked for `degraded` on a store outage must look for `unavailable`.
 - **Archives** are version 4 and carry what-ifs, conversations and scene readings; version 3
@@ -49,7 +54,12 @@ for authors and for whoever runs an install. Version numbers start when the owne
   drop newer information such as who wrote each version.
 - **Background work** (drafting, checking, reading scenes) runs inside the server process from a
   queue in PostgreSQL; no other service is needed. A restart puts unfinished work back in the queue.
+- **The story graph updates by itself** in the background; readiness reports it. Scheduled
+  backups and recovery runbooks are in `deploy/hosted/` and `plan/runbooks/`.
 - **Checking the model route:** `python -m backend.devtools.diagnostics --check-ai`.
+- **Nightly backups:** an example systemd timer and a cron line in `deploy/hosted/README.md`;
+  `deploy/hosted/prune-backups.sh` keeps the newest complete backups. Recovery runbooks for common
+  failures are in `plan/runbooks/`.
 - **Browser tests** come in two sets; `make e2e` runs both (one with no model, one with a local
   stand-in model).
 

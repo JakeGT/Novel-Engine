@@ -160,7 +160,7 @@ export function PlanAssist({
           </fieldset>
         )}
 
-        <AllowanceNote reads="story" />
+        <AllowanceNote reads="story" sessionId={sheet?.session_id} />
         <AssistantProblem error={ask.error ?? draft.error} onManual={onManual} />
         <div className="actions end">
           {onManual && (

@@ -80,6 +80,7 @@ class Container:
     context_service: Any = None
     jobs: Any = None
     job_runner: Any = None
+    projection_worker: Any = None
     studio_store: Any = None
     studio_service: Any = None
     scene_reading: Any = None
@@ -93,11 +94,17 @@ class Container:
     assist_session_service: Any = None
     ai_settings: Any = None
     allowances: Any = None
+    # How much the assistant may do and spend on its own (CON-009, OPS-002, AST-EXP-011).
+    assistant_settings_store: Any = None
+    assistant_settings: Any = None
+    assist_budget: Any = None
     graph_upgrade_service: Any = None
 
     async def aclose(self) -> None:
         if self.job_runner is not None:
             await self.job_runner.stop()
+        if self.projection_worker is not None:
+            await self.projection_worker.stop()
         self.graph.close()
         await self.ai.aclose()
         if self.identity_provider is not None:
@@ -439,6 +446,11 @@ def build_container(settings: Settings | None = None) -> Container:
     container.outbox_consumer = OutboxConsumer(
         journal=container.journal, projector=container.projection_service
     )
+    from backend.services.projection_worker import ProjectionWorker
+
+    container.projection_worker = ProjectionWorker(
+        journal=container.journal, consumer=container.outbox_consumer
+    )
     from backend.services.canon_history_service import CanonHistoryService
 
     container.canon_history_service = CanonHistoryService(
@@ -509,6 +521,17 @@ def build_container(settings: Settings | None = None) -> Container:
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
     )
+    from backend.adapters.assistant_settings_store import PostgresAssistantSettingsStore
+    from backend.services.assistant_settings_service import AssistantSettingsService, AssistBudget
+
+    container.assistant_settings_store = PostgresAssistantSettingsStore(database.session_factory)
+    container.assistant_settings = AssistantSettingsService(
+        container.assistant_settings_store,
+        tenancy=container.tenancy_service,
+        local_mode=not resolved.is_hosted,
+    )
+    container.assist_budget = AssistBudget(container.assistant_settings, container.assist_sessions)
+    container.studio_service.controls = container.assistant_settings
     from backend.services.graph_archive_upgrade import GraphArchiveUpgradeService
 
     container.graph_upgrade_service = GraphArchiveUpgradeService(

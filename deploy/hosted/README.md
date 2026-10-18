@@ -13,7 +13,7 @@ Status: deployed on 2026-10-10. The owner signed in through Authentik and create
 | Stores | This stack's own Postgres 17 + pgvector and Neo4j, on `novel-engine-data` only, no ports |
 | Identity | Authentik application `novel-engine`; callback `https://novel-engine.jaketalling.com/auth/callback`, post-logout `https://novel-engine.jaketalling.com/` |
 | Secrets | `./secrets/` (git-ignored, directory mode 0700), created by `./init-secrets.sh` |
-| Backup | `./backup.sh`: Postgres dump + stored objects. Neo4j is rebuilt from Postgres |
+| Backup | `./backup.sh`: Postgres dump + stored objects. Neo4j is rebuilt from Postgres. Nightly with `systemd/` or cron, old ones removed by `./prune-backups.sh` (see "Scheduled backups") |
 | Restore | `./restore.sh backups/novel-engine-<timestamp>`: checks every file against the manifest first, asks before replacing anything |
 
 ## 1. Build the image
@@ -146,6 +146,49 @@ Do this on a scratch host (or a copy of the stack) before relying on the backups
 
 The credential key is not in the backup. Restoring with a different key keeps everything except
 stored provider keys, which must be entered again.
+
+## Scheduled backups
+
+`./backup.sh` takes one backup when run. To take one every night and keep the last 14:
+
+1. Copy the two example units and change `User=` and the paths in the service to match the host
+   (paths with a space stay in double quotes):
+   ```sh
+   sudo cp systemd/novel-engine-backup.service systemd/novel-engine-backup.timer /etc/systemd/system/
+   sudoedit /etc/systemd/system/novel-engine-backup.service
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now novel-engine-backup.timer
+   ```
+2. Check it once by hand: `sudo systemctl start novel-engine-backup.service`, then
+   `journalctl -u novel-engine-backup.service -n 30` shows the checksums and `kept ...` lines,
+   and `ls backups/` has a new folder.
+3. `systemctl list-timers novel-engine-backup.timer` shows when it runs next.
+
+The service runs `backup.sh` and then `prune-backups.sh`; if the backup fails, nothing is
+removed. `BACKUP_KEEP` in the service sets how many complete backups stay (default 14).
+`backup.sh` writes the `MANIFEST` last, once both files are checksummed, so a complete backup
+is a folder whose `MANIFEST` lists both `novel_engine.dump` and `objects.tar`. Any other folder
+is a backup that failed part way, or one still running: it is removed only once a newer backup
+has succeeded and nothing in it has changed for 6 hours, so a backup taken by hand while the
+nightly one runs is never removed, and the latest failure is always there to look at.
+`restore.sh` refuses a folder whose `MANIFEST` does not list both files. A failed run shows in
+`systemctl --failed`; a run still going after 2 hours is stopped and counts as failed.
+
+Without systemd, the same with cron (`crontab -e` as the user who owns the checkout):
+
+```cron
+30 3 * * * cd "/home/jaket/Projects/Novel Engine/deploy/hosted" && mkdir -p backups && { ./backup.sh && ./prune-backups.sh --keep 14; } >>backups/backup.log 2>&1
+```
+
+(`mkdir -p backups` comes first because the shell opens `backups/backup.log` before
+`backup.sh` runs, and on a fresh host the folder is not there yet.)
+
+To see what would be removed without removing it: `./prune-backups.sh --keep 14 --dry-run`.
+
+These backups sit on the same disk as the data. Copy `backups/` somewhere else as well (another
+machine or storage you trust); a backup on a failed disk is no backup. The credential key is
+never in a backup: keep it in the password manager. The recovery runbooks are in
+`plan/runbooks/`.
 
 ## What an anonymous visitor can reach
 

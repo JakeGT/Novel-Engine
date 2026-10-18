@@ -3191,3 +3191,257 @@ details.dismissed .findings {
   padding: 3rem 0;
 }
 
+
+/* ------------------------------------------------ naming an entry (@) --- */
+/* The list under the @ being typed: a slip laid on the page, so it takes the one
+   raised shadow; the option picked out by the arrows carries the accent rule. */
+.mention-box {
+  position: relative;
+}
+
+.mention-pop {
+  position: absolute;
+  z-index: 20;
+  top: 2.5rem;
+  left: 0;
+  width: min(18rem, 100%);
+  background: var(--surface);
+  border: 1px solid var(--ink);
+  border-radius: var(--radius-s);
+  box-shadow: var(--shadow-3);
+  font-family: var(--font-ui);
+}
+
+.mention-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem 0;
+}
+
+.mention-option {
+  display: grid;
+  gap: 0.05rem;
+  min-height: 2.75rem;
+  align-content: center;
+  padding: 0.3rem 0.75rem;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+}
+
+.mention-option[aria-selected='true'] {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+}
+
+.mention-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.mention-meta {
+  font-size: 0.8rem;
+  color: var(--ink-2);
+}
+
+.mention-none,
+.mention-keys {
+  margin: 0;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.8rem;
+  color: var(--ink-2);
+}
+
+.mention-keys {
+  border-top: 1px solid var(--line);
+}
+
+/* --------------------------------------------------- a scene's pictures --- */
+/* Small in the head of the studio: the browser scales the stored picture (there are
+   no smaller copies), so each keeps one size and is cropped to it. */
+.scene-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.scene-strip-pictures {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.scene-thumb {
+  display: block;
+  width: 3.5rem;
+  height: 3.5rem;
+  object-fit: cover;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-s);
+  background: var(--surface-3);
+}
+
+.scene-thumb.missing {
+  display: grid;
+  place-items: center;
+  font-family: var(--font-ui);
+  font-size: 0.65rem;
+  text-align: center;
+  color: var(--ink-3);
+}
+
+.picture-name {
+  font-family: var(--font-ui);
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+.scene-pictures-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.scene-pictures-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+/* ------------------------------------------------- plan checks and promises --- */
+/* Something out of order in the plan (STY-005/007): filled, heavier and worded as
+   such, so it reads apart from a gap without leaning on colour alone. */
+.plan-open li.problem {
+  background: var(--warn-soft);
+  font-weight: 600;
+  border-radius: var(--radius-s);
+}
+.card.has-problems {
+  border-left-color: var(--warn);
+}
+.open-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.75rem 0 0;
+  font-family: var(--font-ui);
+  font-size: 0.92rem;
+}
+.condition-note {
+  color: var(--ink-3);
+  font-family: var(--font-ui);
+  font-size: 0.86rem;
+}
+
+/* Promises to the reader: each one a line of what, then where it is made and kept. */
+.promise-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.promise {
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--line-strong);
+  background: var(--surface);
+}
+.promise.owed {
+  border-left-color: var(--warn);
+}
+.promise.kept {
+  border-left-color: var(--ok);
+}
+.promise p {
+  margin: 0;
+}
+.promise-kind {
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.promise-path {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 1rem;
+  margin-top: 0.2rem;
+  font-family: var(--font-ui);
+  color: var(--ink-2);
+}
+.promise-status {
+  font-weight: 560;
+}
+
+/* Checking on its own and spending limits (CON-009, OPS-002). */
+.profile-option {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+}
+
+.profile-option.chosen {
+  border-color: var(--accent-solid);
+  box-shadow: inset 3px 0 0 var(--accent-solid);
+}
+
+.profile-option:has(input:disabled) {
+  cursor: default;
+}
+
+.checking-status {
+  font-family: var(--font-ui);
+  border-top: 1px solid var(--line);
+  padding-top: 0.5rem;
+}
+
+/* At phone width the versions are a list, one version per row, with each figure labelled. */
+@media (max-width: 600px) {
+  .studio-versions thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .studio-versions tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 1rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .studio-versions td {
+    display: inline;
+    padding: 0;
+    border: 0;
+    white-space: normal;
+  }
+
+  .studio-versions td[data-label]::before {
+    content: attr(data-label) ' ';
+    color: var(--ink-3);
+    font-size: 0.85em;
+  }
+
+  .studio-versions td:last-child {
+    flex-basis: 100%;
+    text-align: left;
+  }
+}
+

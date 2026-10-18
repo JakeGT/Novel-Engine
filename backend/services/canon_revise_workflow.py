@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from backend.adapters.system import uuid7
 from backend.core.logging import log_event
+from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.marks import (
     IMPORTANCE_KEY,
     MARK_KEYS,
@@ -39,6 +40,7 @@ from backend.domain.operations import (
     UpdateEntityOp,
     parse_operation,
 )
+from backend.domain.prompts import Messages, prompt_version
 from backend.domain.review import is_editable
 from backend.domain.tenancy import Permission
 from backend.services.canon_change_workflow import (
@@ -58,8 +60,8 @@ from backend.services.mutation_service import ValidationReport
 
 logger = logging.getLogger(__name__)
 
-REVISE_PROMPT_VERSION = "revise-proposal/1"
-LINKS_PROMPT_VERSION = "suggest-links/1"
+REVISE_PROMPT_VERSION = prompt_version("revise-proposal")
+LINKS_PROMPT_VERSION = prompt_version("suggest-links")
 MAX_LINKS = 30
 MAX_LISTED_ENTRIES = 200
 
@@ -157,42 +159,8 @@ class CanonReviseWorkflow(CanonChangeWorkflow):
             _line(ordinal + 1, operation, ordinal in skipped)
             for ordinal, operation in sorted(current.items())
         )
-        entries = "\n".join(
-            f"- {entity.id}: {entity.type} “{entity.name}”"
-            for entity in entities[:MAX_LISTED_ENTRIES]
-            if entity.is_active
-        )
-        predicate_lines = "\n".join(
-            f"- {spec.predicate}: subject is one of {sorted(spec.subject_types)}; object is "
-            f"{spec.object_shape.value}"
-            + (f" of type {sorted(spec.object_types)}" if spec.object_types else "")
-            for spec in predicates.values()
-        )
         plan: RevisionPlan = await self._generate(
-            system=(
-                "An author is reviewing a numbered list of suggested changes to their story "
-                "bible and asks for some of them to be different. Answer only with edits to, "
-                "or skips of, the changes in the list. Rules:\n"
-                "- refer to a change by its number. Change only what the author asked for.\n"
-                "- action 'skip' leaves a change out; action 'edit' alters it. Do not mention "
-                "changes that stay as they are.\n"
-                "- for an entry, you may set new_name, add or remove aliases, set or remove "
-                "attributes (short key/value text), replace tags, and set importance.\n"
-                "- for a fact or belief, you may change what it is about (subject_ref), the "
-                "kind of fact (predicate) and what it points to (object_ref, an id from the "
-                "lists) or its value (object_value). Use only these kinds of fact:\n"
-                f"{predicate_lines}\n"
-                "- you cannot add a change. If the author asks for something that needs a new "
-                "one, say so in `cannot` in plain words.\n"
-                "- if the request could mean more than one thing, ask in `questions` and "
-                "change nothing.\n"
-                "- never invent an id, and never decide the story for the author.\n"
-                "- `understood` restates the request in one plain sentence."
-            ),
-            user=(
-                f"Suggested changes:\n{listing}\n\nEntries already in the story:\n"
-                f"{entries or '(none)'}\n\nWhat the author wants different:\n{instruction}"
-            ),
+            messages=revise_messages(listing, entities, predicates, instruction),
             response_format=RevisionPlan,
             prompt_version=REVISE_PROMPT_VERSION,
             credential=credential,
@@ -308,27 +276,8 @@ class CanonLinkWorkflow(CanonReviseWorkflow):
         active = {entity.id: entity for entity in entities if entity.is_active}
         if len(active) < 2 or not linking:
             raise ValidationError("There need to be at least two entries to connect.")
-        predicate_lines = "\n".join(
-            f"- {spec.predicate}: subject is one of {sorted(spec.subject_types)}; points to "
-            f"{sorted(spec.object_types) or 'any entry'}"
-            + ("; only one at a time" if spec.cardinality is Cardinality.ONE else "")
-            for spec in linking.values()
-        )
         plan: LinkPlan = await self._generate(
-            system=(
-                "You are reading an author's story bible for connections between entries "
-                "that the author has written down in an entry's details or names but that "
-                "are not yet recorded as facts. Rules:\n"
-                "- suggest a connection only when the author's own words state or clearly "
-                "imply it. Never guess, and never invent a relationship that would be "
-                "interesting.\n"
-                "- use only the exact ids listed, and only these kinds of fact:\n"
-                f"{predicate_lines}\n"
-                "- do not repeat a fact that is already listed.\n"
-                "- in `why`, quote or paraphrase the words that imply it.\n"
-                "- if nothing is missing, return an empty list."
-            ),
-            user=story,
+            messages=links_messages(story, linking),
             response_format=LinkPlan,
             prompt_version=LINKS_PROMPT_VERSION,
             credential=credential,
@@ -555,6 +504,76 @@ def _edit_statement(
     if proposition == old:
         return None, "nothing about it would be different"
     return operation.model_copy(update={"proposition": proposition}), ""
+
+
+def revise_messages(
+    listing: str,
+    entities: list[CanonEntity],
+    predicates: dict[str, PredicateSpec],
+    instruction: str,
+) -> Messages:
+    """The ``revise-proposal`` prompt: ``listing`` is the numbered list of changes."""
+    entries = "\n".join(
+        f"- {entity.id}: {entity.type} “{entity.name}”"
+        for entity in entities[:MAX_LISTED_ENTRIES]
+        if entity.is_active
+    )
+    predicate_lines = "\n".join(
+        f"- {spec.predicate}: subject is one of {sorted(spec.subject_types)}; object is "
+        f"{spec.object_shape.value}"
+        + (f" of type {sorted(spec.object_types)}" if spec.object_types else "")
+        for spec in predicates.values()
+    )
+    system = (
+        "An author is reviewing a numbered list of suggested changes to their story "
+        "bible and asks for some of them to be different. Answer only with edits to, "
+        "or skips of, the changes in the list. Rules:\n"
+        "- refer to a change by its number. Change only what the author asked for.\n"
+        "- action 'skip' leaves a change out; action 'edit' alters it. Do not mention "
+        "changes that stay as they are.\n"
+        "- for an entry, you may set new_name, add or remove aliases, set or remove "
+        "attributes (short key/value text), replace tags, and set importance.\n"
+        "- for a fact or belief, you may change what it is about (subject_ref), the "
+        "kind of fact (predicate) and what it points to (object_ref, an id from the "
+        "lists) or its value (object_value). Use only these kinds of fact:\n"
+        f"{predicate_lines}\n"
+        "- you cannot add a change. If the author asks for something that needs a new "
+        "one, say so in `cannot` in plain words.\n"
+        "- if the request could mean more than one thing, ask in `questions` and "
+        "change nothing.\n"
+        "- never invent an id, and never decide the story for the author.\n"
+        "- `understood` restates the request in one plain sentence."
+    )
+    user = (
+        f"Suggested changes:\n{listing}\n\nEntries already in the story:\n"
+        f"{entries or '(none)'}\n\nWhat the author wants different:\n{instruction}"
+    )
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+def links_messages(story: str, linking: dict[str, PredicateSpec]) -> Messages:
+    """The ``suggest-links`` prompt: ``linking`` holds the kinds of fact between entries."""
+    predicate_lines = "\n".join(
+        f"- {spec.predicate}: subject is one of {sorted(spec.subject_types)}; points to "
+        f"{sorted(spec.object_types) or 'any entry'}"
+        + ("; only one at a time" if spec.cardinality is Cardinality.ONE else "")
+        for spec in linking.values()
+    )
+    system = (
+        "You are reading an author's story bible for connections between entries "
+        "that the author has written down in an entry's details or names but that "
+        "are not yet recorded as facts. Rules:\n"
+        "- suggest a connection only when the author's own words state or clearly "
+        "imply it. Never guess, and never invent a relationship that would be "
+        "interesting.\n"
+        "- use only the exact ids listed, and only these kinds of fact:\n"
+        f"{predicate_lines}\n"
+        "- do not repeat a fact that is already listed.\n"
+        "- in `why`, quote or paraphrase the words that imply it.\n"
+        "- if nothing is missing, return an empty list."
+    )
+    user = story
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
 
 __all__ = [

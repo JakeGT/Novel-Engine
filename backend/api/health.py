@@ -198,6 +198,19 @@ async def readiness(
         worker_ok, worker_detail, facts, worker_brief = await _job_worker(container)
         record("job_worker", worker_ok, worker_detail, optional=True, brief=worker_brief, **facts)
 
+    worker = getattr(container, "projection_worker", None)
+    if worker is not None:
+        graph_ok = not worker.autostart or worker.running
+        record(
+            "graph_worker",
+            graph_ok,
+            None
+            if graph_ok
+            else "The graph is not kept up to date in the background; it catches up when the "
+            "server restarts or the projection command runs. The story itself is safe.",
+            optional=True,
+        )
+
     if container.vectors is not None:
         vectors_ok, vectors_detail = await _vector_store(container)
         record("vector_store", vectors_ok, vectors_detail, optional=True)

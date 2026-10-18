@@ -154,7 +154,7 @@ While coding:
 - Avoid network calls and persistent database writes at module import time.
 - Use migrations for durable schema or index changes. Keep Alembic revision ids at 32 characters or fewer. A new project-owned table must be added to `backend/adapters/canon_tables.py` so deletion and reset cover it.
 - A field added to a typed operation must be optional and registered in the canonical omit list in `backend/domain/operations.py`, or every earlier envelope checksum changes (ADR-015).
-- Keep prompts versioned and test their structured contracts separately from live quality evaluations.
+- Keep prompts versioned and test their structured contracts separately from live quality evaluations. Every prompt is listed in `backend/domain/prompts.py`; changing its wording or answer shape means raising its version there and running `uv run python -m tests.prompts.snapshots --update` (the snapshot test fails otherwise).
 
 Before handoff:
 

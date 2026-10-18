@@ -147,12 +147,65 @@ rather than a server error.
 - Drafts and assistant notes are working material: not archived, and a discarded draft is gone.
 - Every assistant draft that becomes prose passed through an explicit "keep".
 
+## Amendment 2026-10-18: checking on its own, and asking before a large request
+
+CON-009, OPS-002, AST-EXP-011; migration `0038_usage_controls`.
+
+**A story chooses how much checking runs on its own.** "Only when I ask" stays the default, so no
+story spends anything it did not before. "Balanced" queues a check with the assistant after the
+author keeps a draft; "Thorough" also after a save, at most once every few minutes. A check is a
+`scene_review` job marked `automatic`, submitted as the author who saved or kept, so it is never on a
+reader's behalf and counts against that author's allowance and job cap. It starts only when nothing
+else is under way for the scene, the scene's automatic checks have used less than its daily
+allowance (counted from those jobs' reported tokens), the estimate is under the confirmation
+threshold (nobody is there to confirm), a model is available, the person's allowance has room and
+they have fewer than three jobs. Otherwise the save or keep succeeds and the studio says why. Checks
+without a model are unchanged and always run.
+
+**A request above a size is sent only once confirmed.** Every draft, check, reading, plan card and
+assistant reply is estimated before it is sent (what it reads, plus the longest reply it may write:
+an upper bound, as cost-control practice recommends). Above the threshold the server refuses with
+`409 needs_confirmation` naming the estimate, before anything is queued or sent; the client asks the
+author once, in one place for every request (`lib/spend.ts`), and sends the same request again with
+`X-Confirm-Tokens`. Checking on the server, not only in the page, keeps every client honest. The
+threshold, and a budget per conversation, can be set for a story or by an owner for the workspace;
+the lower applies, as with the daily allowance. A soft threshold asks; the allowance and the
+conversation budget refuse.
+
+**Money only as reported.** OpenRouter reports what each call cost (`usage.cost`, in credits worth a
+dollar) on every response; it is kept on the usage record and summed on the job, and shown. No price
+list is kept, so nothing is estimated in money and thresholds are in tokens.
+
+**Corrections after review (2026-10-18).**
+
+- *A confirmation answers one request.* `X-Confirm-Tokens` counts only when it is at least the
+  server's own estimate for this request and at most half again as large (`CONFIRM_SLACK`). A large
+  value sent up front, without being asked, is refused like no value at all, so the workspace's
+  threshold cannot be bypassed by a client that always sends a big number. If the story changed
+  between asking and sending and the estimate grew, the client asks once more with the new figure.
+- *Every model call is held to the same limits.* Drafting a rule, asking about a character and the
+  answers that follow (both the canon workflow and the older graph routes) are checked against the
+  threshold and the conversation budget before any call, like every other assistant request.
+  Revising suggested changes by asking continues the conversation that proposed them: it counts
+  against that conversation's budget when it is the author's own.
+- *Automatic checks cannot double up.* Two saves at the same moment could each see no check under
+  way. The check is now submitted with a key made from the newest check of the scene that the save
+  saw (`auto:{plan}:{line}:after:{job}`), so the job queue's unique key lets only one start. A check
+  still waiting or under way holds its estimate against the scene's allowance until it reports what
+  it used. Any error while starting one, not only a refusal, leaves the save successful and says the
+  check could not start; only the kind of error is logged.
+- *"Thorough" waits 5 to 60 minutes between checks after saving,* the choices the studio offers; the
+  server refuses anything else.
+- *Prompt versions.* Scene conditions (STY-005) were added to what a draft and a check read, so those
+  prompts are now `scene-draft/3` and `scene-review/3`; a job's recorded version says which it used.
+
 ## Known limits
 
 - The per-job token limit is checked for each call (with the estimate of what remains), not against
   the total the job has used so far.
 - The caps on waiting jobs and drafts are counted, then written, so two requests at the same instant
-  can both pass.
+  can both pass. Automatic checks are the exception for one author (their key is unique per person);
+  two different authors saving the same scene at the same instant could still each start one.
 - A check taken over by a second worker could store its notes twice.
 
 ## Not decided here
@@ -170,3 +223,5 @@ scheduling; notifying the author when a job finishes beyond the studio polling i
 - Postgres as a job queue, limits at scale: <https://peerlist.io/saxenashikhil/articles/potential-consequences-of-using-postgres-as-a-job-queue>; Postgres vs Redis benchmark: <https://levelup.gitconnected.com/postgres-vs-redis-as-a-job-queue-postgres-enqueued-2-5x-faster-redis-drained-2x-faster-ebef92f98aba>; practices: <https://www.dbpro.app/blog/postgresql-skip-locked>
 - Novelcrafter prompts (style guide, removing AI-isms): <https://www.novelcrafter.com/courses/prompts-and-presets>, <https://novelcrafter.com/help/docs/prompts/types-of-prompts-in-novelcrafter>
 - Liu et al., "Lost in the Middle: How Language Models Use Long Contexts", TACL 2024.
+- OpenRouter usage accounting (`usage.cost`, always included): <https://openrouter.ai/docs/use-cases/usage-accounting>
+- Estimating a request before sending it, and asking above a soft threshold: <https://www.yottalabs.ai/post/estimate-llm-request-cost-before-sending>

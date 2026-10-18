@@ -56,6 +56,7 @@ from backend.domain.operations import (
     EvidenceRef,
     UpdateEntityOp,
 )
+from backend.domain.prompts import Messages, prompt_version
 from backend.domain.tenancy import Permission
 from backend.services.canon_character_workflow import (
     MAX_ANSWER_LENGTH,
@@ -77,8 +78,8 @@ from backend.services.schema_suggestions import (
 
 logger = logging.getLogger(__name__)
 
-QUESTIONS_PROMPT_VERSION = "creation-questions/1"
-DRAFT_PROMPT_VERSION = "creation-draft/1"
+QUESTIONS_PROMPT_VERSION = prompt_version("creation-questions")
+DRAFT_PROMPT_VERSION = prompt_version("creation-draft")
 
 MAX_DESCRIPTION_LENGTH = 8000
 MAX_NAME_LENGTH = 200
@@ -328,16 +329,9 @@ class CanonCreationWorkflow(CanonCharacterWorkflow):
         brief, subject = await self._check_brief(brief, entity_types, workspace_id, project_id)
         existing = await self._existing(workspace_id, project_id)
         sheet: CharacterQuestionSheet = await self._generate(
-            system=(
-                "You help an author build the story bible for a novel. They have described "
-                "something they want to add. Ask five to eight short, specific questions whose "
-                "answers would establish lasting facts about it: what it is like, and above all "
-                "how it connects to other things in the story (who knows whom, who belongs to "
-                "what, where things are, who owns what). Ask about connections to the existing "
-                "entries by name where that is plausible. Do not ask about anything the "
-                "description already settles, and do not ask about plot or prose."
+            messages=creation_questions_messages(
+                await self._brief_text(brief, existing, subject, workspace_id, project_id)
             ),
-            user=await self._brief_text(brief, existing, subject, workspace_id, project_id),
             response_format=CharacterQuestionSheet,
             prompt_version=QUESTIONS_PROMPT_VERSION,
             credential=credential,
@@ -383,52 +377,13 @@ class CanonCreationWorkflow(CanonCharacterWorkflow):
         if subject is not None and all(entity.id != subject.id for entity in existing):
             existing.append(subject)
 
-        predicate_lines = "\n".join(
-            f"- {spec.predicate}: subject is one of {sorted(spec.subject_types)}; object is "
-            f"{spec.object_shape.value}"
-            + (f" of type {sorted(spec.object_types)}" if spec.object_types else "")
-            for spec in predicates.values()
-        )
-        interview = "\n\n".join(
-            f"[{answer.question_id}] Q: {answer.question}\nA: {answer.answer}" for answer in answers
-        )
         draft: CreationDraft = await self._generate(
-            system=(
-                "Turn an author's description (and their answers, if any) into structured "
-                "story-bible entries and the connections between them. Only state what the "
-                "author actually wrote; never invent names, events or relationships. Rules:\n"
-                "- create an entity for each distinct person, place, group or thing the author "
-                "mentions that does not already exist, including one referred to only by a "
-                "description (“her professor”, “the old lighthouse”). Name such an entry by "
-                "that description (“Mara’s professor”) so the author can name it properly "
-                "later, and connect it with a fact. Give each a short unique ref.\n"
-                "- when the author refers to an entry that already exists, do not create it: "
-                "use its id directly as the ref in facts.\n"
-                "- when the author is filling in an existing entry, include it once in entities "
-                "with its exact name and type, carrying any new attributes or aliases.\n"
-                "- be generous with entries: anyone or anything the description or an answer "
-                "mentions, even in passing, gets an entity with its name and type, so the "
-                "author can fill it in later. Set needs_more to true on any entity the author "
-                "said little about.\n"
-                "- give each entity up to three short tags, in lower case, that tell it apart "
-                "at a glance: its role in the story (protagonist, antagonist, mentor, rival) "
-                "and how it relates to the main characters (“John’s professor”, “family of "
-                "the protagonist”). Use only what the author’s words support.\n"
-                "- set importance to main (the story is about them), supporting, minor or "
-                "background, when the author’s words make it clear; otherwise leave it empty.\n"
-                f"- entity types must be one of: {sorted(entity_types)}\n"
-                "- put lasting descriptive traits (role, appearance, temperament) in the "
-                "entity's attributes as short key/value text.\n"
-                "- connect things with facts wherever the author states a relationship. Use "
-                "only these predicates, respecting subject and object types:\n"
-                f"{predicate_lines}\n"
-                "- facts are objective truths. A belief is what a character thinks, which may "
-                "be false; never mark a belief as true or false.\n"
-                "- set question_id to the id of the answer an item came from, when it did.\n"
-                + PROMPT_RULE
+            messages=creation_draft_messages(
+                await self._brief_text(brief, existing, subject, workspace_id, project_id),
+                predicates,
+                entity_types,
+                answers,
             ),
-            user=await self._brief_text(brief, existing, subject, workspace_id, project_id)
-            + (f"\n\nAnswers:\n{interview}" if interview else ""),
             response_format=CreationDraft,
             prompt_version=DRAFT_PROMPT_VERSION,
             credential=credential,
@@ -732,6 +687,74 @@ class CanonCreationWorkflow(CanonCharacterWorkflow):
         return operations, discarded
 
 
+def creation_questions_messages(brief: str) -> Messages:
+    """The ``creation-questions`` prompt: ``brief`` is what the author is adding, and the
+    entries that already exist."""
+    system = (
+        "You help an author build the story bible for a novel. They have described "
+        "something they want to add. Ask five to eight short, specific questions whose "
+        "answers would establish lasting facts about it: what it is like, and above all "
+        "how it connects to other things in the story (who knows whom, who belongs to "
+        "what, where things are, who owns what). Ask about connections to the existing "
+        "entries by name where that is plausible. Do not ask about anything the "
+        "description already settles, and do not ask about plot or prose."
+    )
+    return [{"role": "system", "content": system}, {"role": "user", "content": brief}]
+
+
+def creation_draft_messages(
+    brief: str,
+    predicates: dict[str, PredicateSpec],
+    entity_types: set[str],
+    answers: list[CharacterAnswer],
+) -> Messages:
+    """The ``creation-draft`` prompt."""
+    predicate_lines = "\n".join(
+        f"- {spec.predicate}: subject is one of {sorted(spec.subject_types)}; object is "
+        f"{spec.object_shape.value}"
+        + (f" of type {sorted(spec.object_types)}" if spec.object_types else "")
+        for spec in predicates.values()
+    )
+    interview = "\n\n".join(
+        f"[{answer.question_id}] Q: {answer.question}\nA: {answer.answer}" for answer in answers
+    )
+    system = (
+        "Turn an author's description (and their answers, if any) into structured "
+        "story-bible entries and the connections between them. Only state what the "
+        "author actually wrote; never invent names, events or relationships. Rules:\n"
+        "- create an entity for each distinct person, place, group or thing the author "
+        "mentions that does not already exist, including one referred to only by a "
+        "description (“her professor”, “the old lighthouse”). Name such an entry by "
+        "that description (“Mara’s professor”) so the author can name it properly "
+        "later, and connect it with a fact. Give each a short unique ref.\n"
+        "- when the author refers to an entry that already exists, do not create it: "
+        "use its id directly as the ref in facts.\n"
+        "- when the author is filling in an existing entry, include it once in entities "
+        "with its exact name and type, carrying any new attributes or aliases.\n"
+        "- be generous with entries: anyone or anything the description or an answer "
+        "mentions, even in passing, gets an entity with its name and type, so the "
+        "author can fill it in later. Set needs_more to true on any entity the author "
+        "said little about.\n"
+        "- give each entity up to three short tags, in lower case, that tell it apart "
+        "at a glance: its role in the story (protagonist, antagonist, mentor, rival) "
+        "and how it relates to the main characters (“John’s professor”, “family of "
+        "the protagonist”). Use only what the author’s words support.\n"
+        "- set importance to main (the story is about them), supporting, minor or "
+        "background, when the author’s words make it clear; otherwise leave it empty.\n"
+        f"- entity types must be one of: {sorted(entity_types)}\n"
+        "- put lasting descriptive traits (role, appearance, temperament) in the "
+        "entity's attributes as short key/value text.\n"
+        "- connect things with facts wherever the author states a relationship. Use "
+        "only these predicates, respecting subject and object types:\n"
+        f"{predicate_lines}\n"
+        "- facts are objective truths. A belief is what a character thinks, which may "
+        "be false; never mark a belief as true or false.\n"
+        "- set question_id to the id of the answer an item came from, when it did.\n" + PROMPT_RULE
+    )
+    user = brief + (f"\n\nAnswers:\n{interview}" if interview else "")
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
 __all__ = [
     "DRAFT_PROMPT_VERSION",
     "MAX_DESCRIPTION_LENGTH",
@@ -743,4 +766,6 @@ __all__ = [
     "DraftBelief",
     "DraftEntity",
     "DraftFact",
+    "creation_draft_messages",
+    "creation_questions_messages",
 ]

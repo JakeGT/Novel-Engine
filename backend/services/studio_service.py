@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -39,11 +39,18 @@ from backend.domain.drafting import (
     SecretToGuard,
     check_draft,
 )
-from backend.domain.errors import ConflictError, NotFoundError, ValidationError
+from backend.domain.errors import (
+    CapabilityUnavailableError,
+    ConflictError,
+    DomainError,
+    NotFoundError,
+    ValidationError,
+)
 from backend.domain.identity import AccessScope
-from backend.domain.jobs import Job
+from backend.domain.jobs import MAX_ACTIVE_JOBS, Job, JobStatus
 from backend.domain.knowledge import knowledge_of, scene_reveals
 from backend.domain.prompting import fence
+from backend.domain.prompts import prompt_version
 from backend.domain.sources import (
     SourceKind,
     SourceText,
@@ -64,6 +71,11 @@ from backend.domain.studio import (
     SceneDraft,
 )
 from backend.domain.tenancy import Permission
+from backend.domain.usage_controls import (
+    SCENE_ALLOWANCE_SECONDS,
+    AssistantSettings,
+    CheckProfile,
+)
 from backend.ports import AIInvalidOutputError
 from backend.services.job_runner import JobContext, JobSubmission
 from backend.services.provider_route import resolve_provider
@@ -71,8 +83,8 @@ from backend.services.story_time_service import read_story
 
 logger = logging.getLogger(__name__)
 
-DRAFT_PROMPT_VERSION = "scene-draft/2"
-REVIEW_PROMPT_VERSION = "scene-review/2"
+DRAFT_PROMPT_VERSION = prompt_version("scene-draft")
+REVIEW_PROMPT_VERSION = prompt_version("scene-review")
 # English prose runs at roughly four tokens to every three words.
 TOKENS_PER_WORD = 4 / 3
 INSTRUCTION_WORDS = 320
@@ -116,6 +128,10 @@ class StudioState:
     draft_note_keys: dict[str, list[str]] = field(default_factory=dict)
     # Standing, unexpired dismissals of this scene, by fingerprint.
     dismissals: dict[str, FindingDismissal] = field(default_factory=dict)
+    # How much checking runs on its own in this story, and what it has used here (CON-009).
+    checking: Checking | None = None
+    # What saving or keeping just now did about an automatic check (see ``AUTOMATIC``).
+    automatic: str | None = None
 
     def keys(self) -> dict[str, tuple[FindingKind, str]]:
         """Every finding on the page now, by fingerprint: its kind and code."""
@@ -171,6 +187,31 @@ def note_keys(content: str, notes: list[AssistantFinding]) -> list[str]:
     ]
 
 
+# What an automatic check came to after a save or a kept draft, for the author to see.
+AUTOMATIC = (
+    "started",
+    "busy",
+    "too_soon",
+    "scene_allowance",
+    "needs_confirmation",
+    "allowance",
+    "no_provider",
+    "job_cap",
+    "not_started",
+)
+
+
+@dataclass(frozen=True)
+class Checking:
+    """The story's checking profile and what automatic checks have used in this scene."""
+
+    settings: AssistantSettings
+    # Tokens automatic checks of this scene used in the last day, in this line of the story.
+    spent_tokens: int = 0
+    # When a thorough check may next run after a save, if not yet.
+    next_after_save: datetime | None = None
+
+
 @dataclass(frozen=True)
 class Estimate:
     prompt_tokens: int
@@ -201,7 +242,10 @@ class StudioService:
         model: str | None = None,
         tenancy: Any = None,
         local_mode: bool = False,
+        controls: Any = None,
     ) -> None:
+        # The story's assistant settings (CON-009, OPS-002); None checks only on request.
+        self.controls = controls
         self._store = store
         self._sources = sources
         self._plan = plan
@@ -326,6 +370,7 @@ class StudioService:
         ]
         state.jobs.sort(key=lambda job: job.created_at, reverse=True)
         await self._mark_dismissed(workspace_id, project_id, state)
+        state.checking = await self._checking(workspace_id, project_id, plan_id)
         return state
 
     # --------------------------------------------------------------- dismissing
@@ -550,7 +595,10 @@ class StudioService:
         await self._write(
             scope, workspace_id, project_id, scene, content=content, base_version_id=base_version_id
         )
-        return await self.state(scope, workspace_id, project_id, plan_id)
+        automatic = await self._automatic_check(scope, workspace_id, project_id, plan_id, "save")
+        state = await self.state(scope, workspace_id, project_id, plan_id)
+        state.automatic = automatic
+        return state
 
     async def _write(
         self,
@@ -677,7 +725,12 @@ class StudioService:
             draft_id=draft.id,
             version_id=version.id,
         )
-        return await self.state(scope, workspace_id, project_id, draft.plan_id)
+        automatic = await self._automatic_check(
+            scope, workspace_id, project_id, draft.plan_id, "keep"
+        )
+        state = await self.state(scope, workspace_id, project_id, draft.plan_id)
+        state.automatic = automatic
+        return state
 
     async def discard(
         self, scope: AccessScope, workspace_id: str, project_id: str, draft_id: str
@@ -749,6 +802,7 @@ class StudioService:
         words: int,
         direction: str = "",
         idempotency_key: str = "",
+        confirmed_tokens: int | None = None,
     ) -> Job:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         await self._scene(scope, workspace_id, project_id, plan_id)
@@ -798,10 +852,18 @@ class StudioService:
                 f"{' or being written' if coming else ''}, and up to {MAX_WAITING_DRAFTS} can "
                 "wait at once. Keep or discard some first, or ask for fewer."
             )
-        if self._usage is not None:
+        if self._usage is not None or self.controls is not None:
             estimate = await self.estimate(
                 scope, workspace_id, project_id, plan_id, variants=variants, words=words
             )
+            await self.confirm(
+                workspace_id,
+                project_id,
+                estimated_tokens=estimate.total,
+                confirmed_tokens=confirmed_tokens,
+                doing="Writing these drafts" if variants > 1 else "Writing this draft",
+            )
+        if self._usage is not None:
             await self._usage.ensure_within_limits(
                 workspace_id=workspace_id,
                 actor_user_id=scope.actor_user_id,
@@ -832,6 +894,7 @@ class StudioService:
         plan_id: str,
         *,
         draft_id: str | None = None,
+        confirmed_tokens: int | None = None,
     ) -> Job:
         """Ask the assistant to check the scene's current text, or one draft."""
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
@@ -840,10 +903,26 @@ class StudioService:
             await self._draft(workspace_id, project_id, draft_id)
         elif await self._text(workspace_id, project_id, plan_id) is None:
             raise ValidationError("There is nothing written for this scene to check yet.")
+        estimated = 0
+        if self.controls is not None:
+            estimated = (
+                await self.review_estimate(
+                    scope, workspace_id, project_id, plan_id, draft_id=draft_id
+                )
+            ).total
+            await self.confirm(
+                workspace_id,
+                project_id,
+                estimated_tokens=estimated,
+                confirmed_tokens=confirmed_tokens,
+                doing="Checking this draft" if draft_id else "Checking this scene",
+            )
         if self._usage is not None:
             # Refused now rather than queued to fail: the allowance is already used up.
             await self._usage.ensure_within_limits(
-                workspace_id=workspace_id, actor_user_id=scope.actor_user_id
+                workspace_id=workspace_id,
+                actor_user_id=scope.actor_user_id,
+                estimated_tokens=estimated,
             )
         branch = await self._journal.working_branch(
             workspace_id=workspace_id, project_id=project_id
@@ -861,6 +940,210 @@ class StudioService:
                 },
             ),
         )
+
+    async def review_estimate(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        *,
+        draft_id: str | None = None,
+    ) -> Estimate:
+        """Roughly what one check with the assistant reads and writes, before anything is
+        sent: the scene's context, the words checked, the instructions, and a dozen notes."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        await self._scene(scope, workspace_id, project_id, plan_id)
+        context = await self._context.for_scene(scope, workspace_id, project_id, plan_id)
+        content = ""
+        if draft_id is not None:
+            content = (await self._draft(workspace_id, project_id, draft_id)).content
+        else:
+            text = await self._text(workspace_id, project_id, plan_id)
+            if text is not None:
+                _, current, _ = await self._sources.version(workspace_id, project_id, text.id)
+                content = current.content
+        reads = context.manifest.words + len(content.split()) + INSTRUCTION_WORDS
+        return Estimate(
+            prompt_tokens=math.ceil(reads * TOKENS_PER_WORD),
+            completion_tokens=REVIEW_ANSWER_TOKENS,
+            context_words=context.manifest.words,
+        )
+
+    async def confirm(
+        self,
+        workspace_id: str,
+        project_id: str,
+        *,
+        estimated_tokens: int,
+        confirmed_tokens: int | None,
+        doing: str,
+    ) -> None:
+        """Refuse a request above the size the author or workspace asked to confirm, unless
+        the author confirmed it (OPS-002). Shared by every kind of work the studio starts."""
+        if self.controls is None:
+            return
+        await self.controls.confirm(
+            workspace_id,
+            project_id,
+            estimated_tokens=estimated_tokens,
+            confirmed_tokens=confirmed_tokens,
+            doing=doing,
+        )
+
+    # ------------------------------------------------------ checking on its own
+
+    async def _automatic_jobs(
+        self, workspace_id: str, project_id: str, plan_id: str
+    ) -> tuple[list[Job], list[Job]]:
+        """(every recent check of this scene, the automatic ones of the last day)."""
+        line = await self._draft_branch(workspace_id, project_id)
+        checks = await self._jobs.recent(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            kind=REVIEW_JOB,
+            plan_id=plan_id,
+            limit=200,
+            branch_id=line,
+        )
+        since = datetime.now(UTC) - timedelta(seconds=SCENE_ALLOWANCE_SECONDS)
+        # A check stopped before it started used nothing and holds nothing back.
+        automatic = [
+            j
+            for j in checks
+            if j.payload.get("automatic")
+            and j.created_at >= since
+            and not (j.status is JobStatus.CANCELLED and j.attempts == 0)
+        ]
+        return checks, automatic
+
+    async def _checking(self, workspace_id: str, project_id: str, plan_id: str) -> Checking | None:
+        if self.controls is None:
+            return None
+        settings = await self.controls.for_story(workspace_id, project_id)
+        if settings.check_profile is CheckProfile.ON_REQUEST:
+            return Checking(settings=settings)
+        _, automatic = await self._automatic_jobs(workspace_id, project_id, plan_id)
+        spent = sum(job.prompt_tokens + job.completion_tokens for job in automatic)
+        next_after_save = None
+        if settings.check_profile is CheckProfile.THOROUGH and automatic:
+            due = max(job.created_at for job in automatic) + timedelta(
+                minutes=settings.check_minutes
+            )
+            next_after_save = due if due > datetime.now(UTC) else None
+        return Checking(settings=settings, spent_tokens=spent, next_after_save=next_after_save)
+
+    async def _automatic_check(
+        self, scope: AccessScope, workspace_id: str, project_id: str, plan_id: str, trigger: str
+    ) -> str | None:
+        """After keeping a draft (balanced, thorough) or saving (thorough), check the scene
+        with the assistant on the author's behalf: only the author who saved or kept, within
+        the scene's allowance, the confirmation threshold, the person's limits and job cap.
+        A check that cannot start says why and never fails the save."""
+        if self.controls is None:
+            return None
+        settings = await self.controls.for_story(workspace_id, project_id)
+        if settings.check_profile is CheckProfile.ON_REQUEST:
+            return None
+        if trigger == "save" and settings.check_profile is not CheckProfile.THOROUGH:
+            return None
+        try:
+            checks, automatic = await self._automatic_jobs(workspace_id, project_id, plan_id)
+            drafting = await self._jobs.recent(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                kind=DRAFT_JOB,
+                plan_id=plan_id,
+                limit=5,
+                branch_id=await self._draft_branch(workspace_id, project_id),
+            )
+            # One piece of work on a scene at a time: a check waits for the next save.
+            if any(not job.status.finished for job in [*checks, *drafting]):
+                return "busy"
+            now = datetime.now(UTC)
+            if trigger == "save" and automatic:
+                last = max(job.created_at for job in automatic)
+                if now - last < timedelta(minutes=settings.check_minutes):
+                    return "too_soon"
+            estimate = await self.review_estimate(scope, workspace_id, project_id, plan_id)
+            if _held(automatic) + estimate.total > settings.scene_tokens:
+                return "scene_allowance"
+            limits = await self.controls.limits(workspace_id, project_id)
+            if (
+                limits.confirm_above_tokens is not None
+                and estimate.total > limits.confirm_above_tokens
+            ):
+                # Nobody is there to confirm it: it waits for the author to ask.
+                return "needs_confirmation"
+            if not await self._provider_ready(scope, workspace_id):
+                return "no_provider"
+            if self._usage is not None:
+                try:
+                    await self._usage.ensure_within_limits(
+                        workspace_id=workspace_id,
+                        actor_user_id=scope.actor_user_id,
+                        estimated_tokens=estimate.total,
+                    )
+                except DomainError:
+                    return "allowance"
+            active = await self._jobs.count_active(
+                workspace_id=workspace_id, project_id=project_id, actor_user_id=scope.actor_user_id
+            )
+            if active >= MAX_ACTIVE_JOBS:
+                return "job_cap"
+            line = await self._draft_branch(workspace_id, project_id)
+            # Two saves at once both see no check under way; the key, made from the newest
+            # check either of them saw, lets only one of them start one.
+            latest = checks[0].id if checks else "none"
+            await self._runner.submit(
+                scope,
+                workspace_id,
+                project_id,
+                JobSubmission(
+                    kind=REVIEW_JOB,
+                    payload={
+                        "plan_id": plan_id,
+                        "branch_id": line,
+                        "draft_id": None,
+                        "automatic": True,
+                        "trigger": trigger,
+                        "estimated_tokens": estimate.total,
+                    },
+                    idempotency_key=f"auto:{plan_id}:{line or 'main'}:after:{latest}",
+                ),
+            )
+        except Exception as error:
+            # The kind of error only; the save itself already succeeded, and the author is
+            # told the check could not start rather than that saving failed.
+            log_event(
+                logger,
+                "studio.automatic_check_skipped",
+                trigger=trigger,
+                error_type=type(error).__name__,
+            )
+            return "not_started"
+        log_event(
+            logger,
+            "studio.automatic_check",
+            trigger=trigger,
+            profile=settings.check_profile.value,
+            estimated_tokens=estimate.total,
+        )
+        return "started"
+
+    async def _provider_ready(self, scope: AccessScope, workspace_id: str) -> bool:
+        """Whether a model could answer, without spending anything: a workspace key when
+        hosted, the server's own model otherwise."""
+        if getattr(self._settings, "is_hosted", False):
+            if self._credentials is None:
+                return False
+            try:
+                route = await self._credentials.resolve_route_for_use(scope, workspace_id)
+            except (CapabilityUnavailableError, DomainError):
+                return False
+            return route is not None
+        available = getattr(self._ai, "is_available", None)
+        return bool(available()) if callable(available) else True
 
     async def job(self, scope: AccessScope, workspace_id: str, project_id: str, job_id: str) -> Job:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
@@ -964,6 +1247,7 @@ class StudioService:
                 response.usage.prompt_tokens,
                 response.usage.completion_tokens,
                 response.usage.cached_prompt_tokens,
+                response.usage.cost_usd,
             )
             content = clean_draft(response.text)
             if not content:
@@ -1031,6 +1315,7 @@ class StudioService:
             response.usage.prompt_tokens,
             response.usage.completion_tokens,
             response.usage.cached_prompt_tokens,
+            response.usage.cost_usd,
         )
         await ctx.step("Checking what it found against the text", 90)
         kept: list[AssistantFinding] = []
@@ -1074,6 +1359,19 @@ STOCK_TO_AVOID = "delve, tapestry, a testament to, a sense of, couldn't help but
 
 # Kept under its old name for the callers in this package.
 _fence = fence
+
+
+def _held(automatic: list[Job]) -> int:
+    """What automatic checks hold of a scene's allowance: what a finished one used, and
+    what one still waiting or under way was estimated to use."""
+    return sum(
+        job.prompt_tokens + job.completion_tokens
+        if job.status.finished
+        else max(
+            job.prompt_tokens + job.completion_tokens, int(job.payload.get("estimated_tokens") or 0)
+        )
+        for job in automatic
+    )
 
 
 def draft_messages(
@@ -1164,4 +1462,12 @@ def clean_draft(text: str) -> str:
     return "\n".join(lines).strip()
 
 
-__all__ = ["Estimate", "ReviewNote", "ReviewNotes", "StudioService", "StudioState"]
+__all__ = [
+    "AUTOMATIC",
+    "Checking",
+    "Estimate",
+    "ReviewNote",
+    "ReviewNotes",
+    "StudioService",
+    "StudioState",
+]

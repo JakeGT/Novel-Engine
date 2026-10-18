@@ -97,6 +97,9 @@ class Allowance(BaseModel):
     # What a workspace owner chose, if anything, and the site's own ceiling.
     workspace_limit_tokens: int | None
     site_limit_tokens: int | None
+    # What the provider reported this person's calls in the period cost, in US dollars;
+    # None when no provider reported a cost (prices are never worked out here).
+    cost_usd: float | None = None
 
 
 class UsageError(RuntimeError):

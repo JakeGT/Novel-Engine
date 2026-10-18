@@ -116,6 +116,9 @@ class AllowanceModel(BaseModel):
     # What an owner chose for this workspace, if anything, and the site's own ceiling.
     workspace_limit_tokens: int | None
     site_limit_tokens: int | None
+    # What the provider reported the period's calls cost, in US dollars; null when it
+    # reported none (OpenRouter does; prices are never worked out here).
+    cost_usd: float | None = None
 
 
 class SetAllowanceRequest(BaseModel):
@@ -136,6 +139,7 @@ async def _allowance(usage: ProviderUsageService, scope: AccessScope) -> Allowan
         requests=found.requests,
         workspace_limit_tokens=found.workspace_limit_tokens,
         site_limit_tokens=found.site_limit_tokens,
+        cost_usd=found.cost_usd,
     )
 
 

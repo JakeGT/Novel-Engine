@@ -157,7 +157,13 @@ class SceneReadingService:
         return any(job.status in (JobStatus.QUEUED, JobStatus.RUNNING) for job in recent)
 
     async def start(
-        self, scope: AccessScope, workspace_id: str, project_id: str, plan_id: str
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        *,
+        confirmed_tokens: int | None = None,
     ) -> Job:
         await self._studio._authorize(  # noqa: SLF001
             scope, workspace_id, project_id, Permission.PROJECT_WRITE
@@ -171,10 +177,20 @@ class SceneReadingService:
         branch_id = await self._branch_id(workspace_id, project_id)
         read = await self._read(workspace_id, project_id, branch_id, plan_id)
         _, current, _ = await self._sources.version(workspace_id, project_id, text.id)
-        if not changed_passages(current.content, read.seen):
+        passages = changed_passages(current.content, read.seen)
+        if not passages:
             raise ValidationError(
                 "Nothing has changed since this scene was last read into the story."
             )
+        # Each changed passage is read on its own; the estimate is their sum.
+        estimated = sum(passage_tokens(p.end - p.start) for p in passages)
+        await self._studio.confirm(
+            workspace_id,
+            project_id,
+            estimated_tokens=estimated,
+            confirmed_tokens=confirmed_tokens,
+            doing="Reading this scene into the story",
+        )
         if self._usage is not None:
             await self._usage.ensure_within_limits(
                 workspace_id=workspace_id, actor_user_id=scope.actor_user_id
@@ -257,7 +273,10 @@ class SceneReadingService:
             calls += 1
             await sink(ai_usage, model, f"{job.id}:{job.attempts}:{calls}")
             await ctx.used(
-                ai_usage.prompt_tokens, ai_usage.completion_tokens, ai_usage.cached_prompt_tokens
+                ai_usage.prompt_tokens,
+                ai_usage.completion_tokens,
+                ai_usage.cached_prompt_tokens,
+                ai_usage.cost_usd,
             )
 
         head = await self._canon.get_head(

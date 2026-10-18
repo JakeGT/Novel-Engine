@@ -14,6 +14,11 @@ set -eu
 cd "$(dirname "$0")"
 source_dir="${1:?give the backup folder, e.g. backups/novel-engine-<timestamp>}"
 [ -f "$source_dir/MANIFEST" ] || { echo "No MANIFEST in $source_dir: not a backup folder." >&2; exit 1; }
+# A complete backup lists both files; an empty or partial MANIFEST is a backup that failed.
+for file in novel_engine.dump objects.tar; do
+  grep -q "^file=$file sha256=[0-9a-f]\{64\} " "$source_dir/MANIFEST" ||
+    { echo "The MANIFEST in $source_dir does not list $file: the backup is incomplete." >&2; exit 1; }
+done
 
 # 1. Every file is what the backup wrote, before anything is changed.
 while IFS= read -r line; do

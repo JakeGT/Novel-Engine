@@ -140,6 +140,13 @@ If selected, a separately authenticated companion makes outbound connections fro
 - shared IdP outage/key rotation and invitation abuse
 - suspected provider-key or tenant-data exposure
 
+Written so far (2026-10-18, `plan/runbooks/`): backup and restore, stuck jobs, provider outage
+and a revoked key, schema migration failure, a failed project import, credential key rotation,
+the story graph behind or wrong, and a full disk. Not yet written: failed or corrupt commit
+recovery (`backend.devtools.reconcile` exists), vector reindex, media processing, data deletion,
+orphaned objects, spend spikes, the shared identity provider, and suspected exposure of keys or
+tenant data.
+
 ## Revision 2026-10-10: the in-product assistant
 
 Additions to the threat model and operations for ADR-017:

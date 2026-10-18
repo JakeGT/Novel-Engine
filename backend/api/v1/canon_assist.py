@@ -26,6 +26,11 @@ from backend.api.dependencies import (
     get_settings,
     get_usage_service,
 )
+from backend.api.v1.assistant_settings import (
+    confirmed_tokens,
+    get_assist_budget,
+    get_assistant_settings,
+)
 from backend.api.v1.canon_characters import (
     CharacterAnswerModel,
     CharacterProposalModel,
@@ -45,6 +50,11 @@ from backend.domain.assist import (
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.services.assist_session_service import AssistSessionService
+from backend.services.assistant_settings_service import (
+    REPLY_TOKENS,
+    AssistantSettingsService,
+    AssistBudget,
+)
 from backend.services.canon_change_workflow import MAX_INSTRUCTION_LENGTH, CanonChangeWorkflow
 from backend.services.canon_character_workflow import MAX_ANSWERS, CharacterAnswer
 from backend.services.canon_creation_workflow import (
@@ -63,6 +73,17 @@ from backend.services.schema_suggestions import add_to_definition
 from backend.services.usage_service import ProviderUsageService
 
 router = APIRouter(prefix="/projects/{project_id}/assist", tags=["canon-assist"])
+
+
+def reading(workflow: Any, scope: AccessScope, project_id: str, which: str) -> Any:
+    """What a request reads, worked out only when a limit asks for it: ``story`` (the
+    whole story bible) or ``entry`` (the names of what exists)."""
+
+    async def reads() -> int:
+        sizes = await estimate_reading(workflow, scope, scope.workspace_id or "", project_id)
+        return int(sizes[which])
+
+    return reads
 
 
 class AssistBriefRequest(BaseModel):
@@ -133,10 +154,21 @@ async def assist_questions(
     usage: ProviderUsageService = Depends(get_usage_service),
     settings: Settings = Depends(get_settings),
     scope: AccessScope = Depends(require_project_scope),
+    budget: AssistBudget = Depends(get_assist_budget),
+    confirmed: int | None = Depends(confirmed_tokens),
 ) -> AssistQuestionSheetModel:
+    guard = await budget.check(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        reads=reading(workflow, scope, project_id, "entry"),
+        doing="Asking for questions",
+        confirmed_tokens=confirmed,
+    )
     credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
         settings=settings, credentials=credentials, usage=usage, scope=scope
     )
+    usage_sink = guard.counting(usage_sink)
     sheet = await workflow.brief_questions(
         scope,
         scope.workspace_id or "",
@@ -162,6 +194,7 @@ async def assist_questions(
             for item in sheet.questions
         ],
     )
+    await guard.record(session.id)
     return AssistQuestionSheetModel(
         session_id=session.id,
         questions=[
@@ -181,7 +214,23 @@ async def assist_proposal(
     usage: ProviderUsageService = Depends(get_usage_service),
     settings: Settings = Depends(get_settings),
     scope: AccessScope = Depends(require_project_scope),
+    budget: AssistBudget = Depends(get_assist_budget),
+    confirmed: int | None = Depends(confirmed_tokens),
 ) -> AssistProposalModel:
+
+    async def guarded() -> Any:
+        return await budget.check(
+            scope,
+            scope.workspace_id or "",
+            project_id,
+            reads=reading(workflow, scope, project_id, "entry"),
+            doing="Drafting this",
+            confirmed_tokens=confirmed,
+            session_id=body.session_id,
+        )
+
+    # A new conversation is not opened for a request that is then refused.
+    guard = None if body.session_id else await guarded()
     credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
         settings=settings, credentials=credentials, usage=usage, scope=scope
     )
@@ -203,23 +252,30 @@ async def assist_proposal(
             for answer in body.answers
         ],
     )
-    result = await workflow.propose_from_brief(
-        scope,
-        scope.workspace_id or "",
-        project_id,
-        body.brief(),
-        answers=[
-            CharacterAnswer(
-                question_id=answer.question_id, question=answer.question, answer=answer.answer
-            )
-            for answer in body.answers
-        ],
-        expected_revision=body.expected_revision,
-        session_id=session.id,
-        credential=api_key,
-        provider_base_url=provider_base_url,
-        usage_sink=usage_sink,
-    )
+    # Checked once the answers are kept, so a refusal loses nothing the author wrote.
+    guard = guard or await guarded()
+    try:
+        result = await workflow.propose_from_brief(
+            scope,
+            scope.workspace_id or "",
+            project_id,
+            body.brief(),
+            answers=[
+                CharacterAnswer(
+                    question_id=answer.question_id,
+                    question=answer.question,
+                    answer=answer.answer,
+                )
+                for answer in body.answers
+            ],
+            expected_revision=body.expected_revision,
+            session_id=session.id,
+            credential=api_key,
+            provider_base_url=provider_base_url,
+            usage_sink=guard.counting(usage_sink),
+        )
+    finally:
+        await guard.record(session.id)
     if credential_id:
         await credentials.mark_used(scope.workspace_id or "", credential_id)
     await sessions.proposed(
@@ -312,11 +368,23 @@ async def assist_change(
     history: Any = Depends(get_canon_history_service),
     settings: Settings = Depends(get_settings),
     scope: AccessScope = Depends(require_project_scope),
+    budget: AssistBudget = Depends(get_assist_budget),
+    confirmed: int | None = Depends(confirmed_tokens),
 ) -> ChangeProposalModel:
     """The God Hand: one instruction, every change it implies, as a proposal for review."""
+    guard = await budget.check(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        reads=reading(workflow, scope, project_id, "story"),
+        doing="This change",
+        confirmed_tokens=confirmed,
+        session_id=body.session_id,
+    )
     credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
         settings=settings, credentials=credentials, usage=usage, scope=scope
     )
+    usage_sink = guard.counting(usage_sink)
     if body.session_id is not None:
         # Refuses a conversation that is finished or is not this author's.
         await sessions.begin(
@@ -330,24 +398,29 @@ async def assist_change(
         )
     # Enough of the history for "undo that" and "go back to yesterday" to be worked out.
     versions = await history.list_revisions(scope, scope.workspace_id or "", project_id, limit=20)
-    result = await workflow.change_by_instruction(
-        scope,
-        scope.workspace_id or "",
-        project_id,
-        instruction=body.instruction,
-        focus_entity_id=body.entity_id,
-        expected_revision=body.expected_revision,
-        session_id=body.session_id,
-        recent_versions=[
-            f"- version {item.revision}: {item.operation_count} change(s), "
-            f"{item.created_at:%Y-%m-%d %H:%M} UTC, from {item.origin or 'an author'}"
-            + (" (itself an undo)" if item.intent == "revert" else "")
-            for item in versions
-        ],
-        credential=api_key,
-        provider_base_url=provider_base_url,
-        usage_sink=usage_sink,
-    )
+    try:
+        result = await workflow.change_by_instruction(
+            scope,
+            scope.workspace_id or "",
+            project_id,
+            instruction=body.instruction,
+            focus_entity_id=body.entity_id,
+            expected_revision=body.expected_revision,
+            session_id=body.session_id,
+            recent_versions=[
+                f"- version {item.revision}: {item.operation_count} change(s), "
+                f"{item.created_at:%Y-%m-%d %H:%M} UTC, from {item.origin or 'an author'}"
+                + (" (itself an undo)" if item.intent == "revert" else "")
+                for item in versions
+            ],
+            credential=api_key,
+            provider_base_url=provider_base_url,
+            usage_sink=usage_sink,
+        )
+    except BaseException:
+        # What a failed reply used still counts against the conversation it continued.
+        await guard.record(body.session_id)
+        raise
     if credential_id:
         await credentials.mark_used(scope.workspace_id or "", credential_id)
     # Kept either way: with questions it stays open to be picked up again; with a
@@ -368,6 +441,7 @@ async def assist_change(
         notes=result.notes,
         suggestions=result.suggestions,
     )
+    await guard.record(session.id)
     if result.mutation is not None:
         await sessions.proposed(
             scope,
@@ -417,17 +491,38 @@ class EstimateModel(BaseModel):
     story_tokens: int
     # About how many a request that reads only what exists by name takes in.
     entry_tokens: int
+    # The most a reply is expected to take, on top of what is read.
+    reply_tokens: int = REPLY_TOKENS
+    # A request estimated above this is confirmed first; null when nobody set one.
+    confirm_above_tokens: int | None = None
+    # The most one conversation may use, and what the one asked about has used.
+    conversation_tokens: int | None = None
+    conversation_used_tokens: int = 0
 
 
 @router.get("/estimate", response_model=EstimateModel)
 async def assist_estimate(
     project_id: str,
+    session_id: str | None = Query(default=None, max_length=80),
     workflow: CanonLinkWorkflow = Depends(get_canon_character_workflow),
     scope: AccessScope = Depends(get_project_scope),
+    controls: AssistantSettingsService = Depends(get_assistant_settings),
+    budget: AssistBudget = Depends(get_assist_budget),
 ) -> EstimateModel:
-    """Roughly what the assistant will read, so it can be shown before anything is spent."""
-    sizes = await estimate_reading(workflow, scope, scope.workspace_id or "", project_id)
-    return EstimateModel(story_tokens=sizes["story"], entry_tokens=sizes["entry"])
+    """Roughly what the assistant will read and reply, so it can be shown before anything is
+    spent, with the limits that apply and what the conversation has used so far."""
+    workspace_id = scope.workspace_id or ""
+    sizes = await estimate_reading(workflow, scope, workspace_id, project_id)
+    limits = await controls.limits(workspace_id, project_id)
+    return EstimateModel(
+        story_tokens=sizes["story"],
+        entry_tokens=sizes["entry"],
+        confirm_above_tokens=limits.confirm_above_tokens,
+        conversation_tokens=limits.conversation_tokens,
+        conversation_used_tokens=await budget.conversation_used(
+            scope, workspace_id, project_id, session_id
+        ),
+    )
 
 
 class LinkRequest(BaseModel):
@@ -445,8 +540,18 @@ async def assist_links(
     usage: ProviderUsageService = Depends(get_usage_service),
     settings: Settings = Depends(get_settings),
     scope: AccessScope = Depends(require_project_scope),
+    budget: AssistBudget = Depends(get_assist_budget),
+    confirmed: int | None = Depends(confirmed_tokens),
 ) -> ChangeProposalModel:
     """Connections the entries already describe but no fact records, as a proposal for review."""
+    await budget.check(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        reads=reading(workflow, scope, project_id, "story"),
+        doing="Looking for missing connections",
+        confirmed_tokens=confirmed,
+    )
     credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
         settings=settings, credentials=credentials, usage=usage, scope=scope
     )
@@ -511,25 +616,50 @@ async def assist_revision(
     project_id: str,
     body: RevisionRequest,
     workflow: CanonReviseWorkflow = Depends(get_canon_character_workflow),
+    sessions: AssistSessionService = Depends(get_assist_session_service),
     credentials: CredentialService = Depends(get_credential_service),
     usage: ProviderUsageService = Depends(get_usage_service),
     settings: Settings = Depends(get_settings),
     scope: AccessScope = Depends(require_project_scope),
+    budget: AssistBudget = Depends(get_assist_budget),
+    confirmed: int | None = Depends(confirmed_tokens),
 ) -> RevisionModel:
-    """Revise a set of suggested changes by asking. It stays waiting for review."""
-    credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
-        settings=settings, credentials=credentials, usage=usage, scope=scope
+    """Revise a set of suggested changes by asking. It stays waiting for review.
+
+    Asking again continues the conversation that proposed them: it counts toward that
+    conversation's budget when it is the author's own."""
+    found = await sessions.for_mutation(
+        scope, scope.workspace_id or "", project_id, body.mutation_id
     )
-    result = await workflow.revise_by_instruction(
+    session_id = (
+        found.id if found is not None and found.actor_user_id == scope.actor_user_id else None
+    )
+    guard = await budget.check(
         scope,
         scope.workspace_id or "",
         project_id,
-        mutation_id=body.mutation_id,
-        instruction=body.instruction,
-        credential=api_key,
-        provider_base_url=provider_base_url,
-        usage_sink=usage_sink,
+        reads=reading(workflow, scope, project_id, "story"),
+        doing="Revising these changes",
+        confirmed_tokens=confirmed,
+        session_id=session_id,
     )
+    credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
+        settings=settings, credentials=credentials, usage=usage, scope=scope
+    )
+    try:
+        result = await workflow.revise_by_instruction(
+            scope,
+            scope.workspace_id or "",
+            project_id,
+            mutation_id=body.mutation_id,
+            instruction=body.instruction,
+            credential=api_key,
+            provider_base_url=provider_base_url,
+            usage_sink=guard.counting(usage_sink),
+        )
+    finally:
+        # What a reply used counts against the conversation, whether or not it succeeded.
+        await guard.record(session_id)
     if credential_id:
         await credentials.mark_used(scope.workspace_id or "", credential_id)
     return RevisionModel(

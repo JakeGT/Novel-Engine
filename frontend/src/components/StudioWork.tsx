@@ -279,6 +279,7 @@ export function JobOutcome({
         <p>
           <strong>{drafts.length === 1 ? 'A draft is ready.' : `${plural(drafts.length, 'draft')} are ready.`}</strong>{' '}
           Read {drafts.length === 1 ? 'it' : 'them'}, then keep one or discard what you do not want.
+          <Used job={job} />
         </p>
         <div className="actions">
           {drafts[0] && (
@@ -298,6 +299,7 @@ export function JobOutcome({
   return (
     <div className="notice ok" role="status">
       <p>
+        {job.automatic && 'Checked on its own, as this story is set to. '}
         <strong>
           {found === 0 ? 'The assistant found nothing to point out.' : `The assistant made ${plural(found, 'note')}.`}
         </strong>{' '}
@@ -305,9 +307,30 @@ export function JobOutcome({
         {dropped > 0
           ? `${plural(dropped, 'note')} did not quote your words exactly, so ${dropped === 1 ? 'it was' : 'they were'} left out.`
           : ''}
+        <Used job={job} />
       </p>
       <div className="actions">{close}</div>
     </div>
+  )
+}
+
+/**
+ * What finished work used, as the provider reported it (OPS-002): tokens always, and the
+ * cost only when the provider said what it was. No price is ever worked out here.
+ */
+function Used({ job }: { job: StudioJob }) {
+  const tokens = job.prompt_tokens + job.completion_tokens
+  if (tokens <= 0) return null
+  const cost = job.provider_cost_usd
+  return (
+    <span className="muted">
+      {' '}
+      It used {number(tokens)} tokens
+      {cost !== null && cost !== undefined
+        ? ` (${cost < 0.01 ? 'under 1 cent' : `$${cost.toFixed(2)}`}, as your provider reported)`
+        : ''}
+      .
+    </span>
   )
 }
 

@@ -368,8 +368,8 @@ export function Notes({
           The assistant’s notes
         </h2>
         <p className="hint">
-          Only when you ask. It reads for continuity, viewpoint, the plan, your voice and clarity,
-          and every note quotes your words.
+          It reads for continuity, viewpoint, the plan, your voice and clarity, and every note
+          quotes your words.
         </p>
       </div>
       {stale && notes.length > 0 && <p className="hint">These are about the saved text.</p>}

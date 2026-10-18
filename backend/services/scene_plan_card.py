@@ -32,6 +32,7 @@ from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.jobs import Job
 from backend.domain.operations import MAX_EVIDENCE_PER_OPERATION, EvidenceRef, UpdatePlanItemOp
+from backend.domain.prompts import prompt_version
 from backend.domain.sources import find_mentions, find_quote, location_for
 from backend.domain.tenancy import Permission
 from backend.services.job_runner import JobContext, JobSubmission
@@ -41,7 +42,7 @@ from backend.services.studio_service import TOKENS_PER_WORD, _fence
 logger = logging.getLogger(__name__)
 
 PLAN_CARD_JOB = "scene_plan"
-PLAN_CARD_PROMPT_VERSION = "scene-plan-card/1"
+PLAN_CARD_PROMPT_VERSION = prompt_version("scene-plan-card")
 # How much of the scene is read: a long chapter's opening says who and where.
 MAX_SCENE_CHARACTERS = 60_000
 # How many story-bible entries are listed; those the scene names come first.
@@ -146,8 +147,35 @@ class ScenePlanCardService:
     def register_jobs(self) -> None:
         self._runner.register(PLAN_CARD_JOB, self.run)
 
+    async def _messages(
+        self, workspace_id: str, project_id: str, source_id: str, content: str
+    ) -> tuple[list[dict[str, str]], list[Any]]:
+        """The request, and the entries it lists (those the scene names first)."""
+        index, everything, _ = await self._sources.index_for(workspace_id, project_id, source_id)
+        active = [entity for entity in everything if entity.is_active]
+        named = {
+            entity_id
+            for mention in find_mentions(content, index)
+            for entity_id in mention.entity_ids
+        }
+        # Entries the scene names first, so a large story bible still lists them.
+        active.sort(key=lambda entity: (entity.id not in named, entity.name.casefold()))
+        listed = active[:MAX_LISTED]
+        return plan_card_messages(content, listed), listed
+
+    @staticmethod
+    def _tokens(messages: list[dict[str, str]]) -> int:
+        reads = sum(len(message["content"].split()) for message in messages)
+        return math.ceil(reads * TOKENS_PER_WORD) + INSTRUCTION_TOKENS + ANSWER_TOKENS
+
     async def start(
-        self, scope: AccessScope, workspace_id: str, project_id: str, plan_id: str
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        *,
+        confirmed_tokens: int | None = None,
     ) -> Job:
         """Ask the assistant to fill in the scene's plan card from what is written."""
         await self._studio._authorize(  # noqa: SLF001
@@ -166,9 +194,24 @@ class ScenePlanCardService:
                 "There is nothing written for this scene yet, so there is nothing to fill "
                 "the plan card from."
             )
+        estimated = 0
+        if self._studio.controls is not None:
+            messages, _ = await self._messages(
+                workspace_id, project_id, text.id, current.content[:MAX_SCENE_CHARACTERS]
+            )
+            estimated = self._tokens(messages)
+            await self._studio.confirm(
+                workspace_id,
+                project_id,
+                estimated_tokens=estimated,
+                confirmed_tokens=confirmed_tokens,
+                doing="Filling in the plan card",
+            )
         if self._usage is not None:
             await self._usage.ensure_within_limits(
-                workspace_id=workspace_id, actor_user_id=scope.actor_user_id
+                workspace_id=workspace_id,
+                actor_user_id=scope.actor_user_id,
+                estimated_tokens=estimated,
             )
         branch = await self._journal.working_branch(
             workspace_id=workspace_id, project_id=project_id
@@ -201,29 +244,16 @@ class ScenePlanCardService:
         content = version.content[:MAX_SCENE_CHARACTERS]
         if not content.strip():
             raise NotFoundError("There is nothing written for this scene.")
-        index, everything, _ = await self._sources.index_for(
-            workspace_id, project_id, payload["source_id"]
+        messages, listed = await self._messages(
+            workspace_id, project_id, payload["source_id"], content
         )
-        active = [entity for entity in everything if entity.is_active]
-        named = {
-            entity_id
-            for mention in find_mentions(content, index)
-            for entity_id in mention.entity_ids
-        }
-        # Entries the scene names first, so a large story bible still lists them.
-        active.sort(key=lambda entity: (entity.id not in named, entity.name.casefold()))
-        listed = active[:MAX_LISTED]
-        messages = plan_card_messages(content, listed)
         call_key = f"{job.id}:{job.attempts}:plan-card"
-        reads = sum(len(message["content"].split()) for message in messages)
         _, api_key, base_url, sink = await resolve_provider(
             settings=self._settings,
             credentials=self._credentials,
             usage=self._usage,
             scope=scope,
-            estimated_tokens=math.ceil(reads * TOKENS_PER_WORD)
-            + INSTRUCTION_TOKENS
-            + ANSWER_TOKENS,
+            estimated_tokens=self._tokens(messages),
             idempotency_key=call_key,
         )
         await ctx.step("The assistant is reading the scene", 30)
@@ -242,6 +272,7 @@ class ScenePlanCardService:
                 response.usage.prompt_tokens,
                 response.usage.completion_tokens,
                 response.usage.cached_prompt_tokens,
+                response.usage.cost_usd,
             )
 
         await ctx.step("Checking what it suggests against the scene", 85)

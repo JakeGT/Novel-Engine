@@ -2,17 +2,13 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api, type PlanItem, type ReaderStep, type Reveal, type WorldTime } from '../api/client'
 import { useStoryClock, whenText } from '../lib/storytime'
-import { objectText, predicateLabel } from '../lib/words'
+import { factSentence } from '../lib/facts'
 import { scopedKey, useCanonWrite, useEntries, useProject } from '../project'
 import { Button, Dialog, ErrorNotice, Loading, WriteProblem } from './ui'
 import { WhenField } from './WhenField'
 
-type Names = Map<string, string>
 type FactLike = { subject_id: string; predicate: string; object: unknown }
 
-function factSentence(fact: FactLike, names: Names): string {
-  return `${names.get(fact.subject_id) ?? 'An entry'} ${predicateLabel(fact.predicate)} ${objectText(fact.object as Record<string, unknown>, names)}`
-}
 
 /** What the reader learns in a scene, the irony it creates, and when it is set. */
 export function SceneReaderNotes({
@@ -29,7 +25,8 @@ export function SceneReaderNotes({
   const clock = useStoryClock(scope)
   const say = (id: string) => (facts[id] ? factSentence(facts[id], entries.names) : 'something no longer in the story')
   const pov = step?.point_of_view ? entries.names.get(step.point_of_view) : undefined
-  const shown = (step?.shown ?? []).filter((item) => item.how === 'shown')
+  const comesOut = (step?.shown ?? []).filter((item) => item.main_reveal)
+  const shown = (step?.shown ?? []).filter((item) => item.how === 'shown' && !item.main_reveal)
   const hinted = (step?.shown ?? []).filter((item) => item.how === 'hinted')
   const lines: { key: string; label: string; text: string }[] = []
   if (scene.when) {
@@ -41,6 +38,8 @@ export function SceneReaderNotes({
         (step?.flashback ? ' — set earlier than the scene before it, so a flashback' : ''),
     })
   }
+  if (comesOut.length > 0)
+    lines.push({ key: 'out', label: 'Comes out here', text: comesOut.map((item) => say(item.fact_id)).join('; ') })
   if (shown.length > 0)
     lines.push({ key: 'shown', label: 'The reader learns', text: shown.map((item) => say(item.fact_id)).join('; ') })
   if (hinted.length > 0)
@@ -71,7 +70,11 @@ export function SceneReaderNotes({
   )
 }
 
-/** Choose which facts a scene shows the reader, plainly or as a hint. */
+type How = 'shown' | 'hinted' | 'main'
+
+const howOf = (reveal: Reveal): How => (reveal.main_reveal ? 'main' : (reveal.how ?? 'shown'))
+
+/** Choose which facts a scene shows the reader: plainly, as a hint, or as where it comes out. */
 export function SceneRevealsDialog({ scene, onClose }: { scene: PlanItem; onClose: () => void }) {
   const { scope } = useProject()
   const entries = useEntries(scope)
@@ -79,8 +82,8 @@ export function SceneRevealsDialog({ scene, onClose }: { scene: PlanItem; onClos
     queryKey: scopedKey(scope, 'facts', 'all'),
     queryFn: () => api.listFacts(scope, { limit: 200 }),
   })
-  const [chosen, setChosen] = useState<Record<string, Reveal['how']>>(
-    Object.fromEntries((scene.reveals ?? []).map((item) => [item.fact_id, item.how ?? 'shown'])),
+  const [chosen, setChosen] = useState<Record<string, How>>(
+    Object.fromEntries((scene.reveals ?? []).map((item) => [item.fact_id, howOf(item)])),
   )
   const [filter, setFilter] = useState('')
   const save = useCanonWrite<PlanItem>(
@@ -88,7 +91,11 @@ export function SceneRevealsDialog({ scene, onClose }: { scene: PlanItem; onClos
       api.setSceneReveals(
         scope,
         scene.id,
-        Object.entries(chosen).map(([fact_id, how]) => ({ fact_id, how })),
+        Object.entries(chosen).map(([fact_id, how]) => ({
+          fact_id,
+          how: how === 'hinted' ? 'hinted' : 'shown',
+          main_reveal: how === 'main',
+        })),
         expectedRevision,
       ),
     () => onClose(),
@@ -102,7 +109,8 @@ export function SceneRevealsDialog({ scene, onClose }: { scene: PlanItem; onClos
       <div className="stack">
         <p className="muted small">
           Tick the facts this scene shows the reader. A hint counts as a clue, not as telling: the
-          reader is not assumed to know it yet.
+          reader is not assumed to know it yet. Choose “Comes out here” for the scene where a fact is
+          meant to come out: showing it plainly any earlier is then flagged as too early.
         </p>
         <label className="field">
           <span>Find a fact</span>
@@ -132,10 +140,11 @@ export function SceneRevealsDialog({ scene, onClose }: { scene: PlanItem; onClos
                   aria-label={`How the reader learns: ${text}`}
                   style={{ width: 'auto' }}
                   value={chosen[fact.id]}
-                  onChange={(event) => setChosen({ ...chosen, [fact.id]: event.target.value as Reveal['how'] })}
+                  onChange={(event) => setChosen({ ...chosen, [fact.id]: event.target.value as How })}
                 >
                   <option value="shown">Shown plainly</option>
-                  <option value="hinted">Only hinted</option>
+                  <option value="hinted">Only hinted (a clue)</option>
+                  <option value="main">Comes out here (the reveal)</option>
                 </select>
               )}
             </li>

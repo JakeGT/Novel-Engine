@@ -196,29 +196,9 @@ class CharacterService:
                 "established world lore):\n" + "\n".join(context_nodes)
             )
 
-        prompt = (
-            f"Character Name: {character_name} (ID: {character_id})\n"
-            f"Character Bio: {bio}\n\n{context_str}"
-        )
-
         response = await self.ai.generate_structured(
             model=self.model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a character creation assistant. Your goal is to generate deep, specific questions "
-                        "that reveal a character's stable identity, appearance, personality, current state, and beliefs.\n\n"
-                        "Focus on:\n"
-                        "1. Appearance: Physical traits and marks.\n"
-                        "2. Personality: Traits, attachment style, alignment.\n"
-                        "3. State: Current emotions, relationships/trust, chapter context.\n"
-                        "4. Beliefs: Core claims about the world or others.\n"
-                        "5. Backstory: Major events they participated in."
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
+            messages=interview_questions_messages(character_name, character_id, bio, context_str),
             response_format=CharacterQuestionSheet,
             api_key=credential,
             base_url=provider_base_url,
@@ -301,40 +281,18 @@ class CharacterService:
                 "exact ID instead of creating a new node):\n" + "\n".join(context_nodes)
             )
 
-        prompt = (
-            f"Character: {character_name} (ID: {character_id}) Chapter Number: {chapter_number}\n\n"
-            f"User Answers:\n{answers_text}\n\n{context_str}"
-        )
-
-        system_message = (
-            "You are a Knowledge Graph specialist. Your task is to convert character details into a modular Graph format.\n\n"
-            "MANDATORY STRUCTURE:\n"
-            "1. Appearance: (Character)-[:HAS_APPEARANCE]->(:Appearance {build, height, hair, etc}). For example: (Character)-[:HAS_APPEARANCE]->(:Appearance {build: 'athletic', height: '6ft', hair: 'brown'})\n"
-            "2. Personality: (Character)-[:HAS_PERSONALITY]->(:PersonalityProfile {core_trait, attachment_style, alignment}). For example: (Character)-[:HAS_PERSONALITY]->(:PersonalityProfile {core_trait: 'brave', attachment_style: 'avoidant', alignment: 'good'})\n"
-            "3. State: (Character)-[:CURRENT_STATE]->(:State {anger, trust_levels, chapter, etc}). For example: (Character)-[:CURRENT_STATE]->(:State {anger: 0.5, trust_levels: 0.7, trust_character1: 0.4, chapter: 1})\n"
-            "4. Beliefs: (Character)-[:BELIEVES]->(:Belief {about, claim, confidence, is_true}). For example: (Character)-[:BELIEVES]->(:Belief {about: 'The King', claim: 'He is a tyrant', confidence: 0.9, is_true: true})\n"
-            "5. Events/Locations/Factions: (Character)-[:PARTICIPATED_IN|LOCATED_AT|MEMBER_OF]->(Event|Location|Faction). **CRITICAL**: Check the 'Existing Knowledge Graph Entities' in the prompt. If the user mentions an entity that matches an existing one, you MUST reuse exactly that ID. Do NOT create a new node if one already exists. If it is entirely new, generate a new ID.\n\n"
-            "Instructions:\n"
-            "- Ensure the Character node is the anchor.\n"
-            "- Break down details into these specific sub-nodes.\n"
-            "Use the following deterministic ID format for NEW personal nodes:"
-            "- Appearance: appearance"
-            "- Personality: personality"
-            "- State: state"
-            "- Beliefs: belief_{short_slug}\n"
-            "- New Events: event_{short_slug}\n\n"
-            "AVAILABLE TYPES FOR CUSTOM NODES/EDGES:\n"
-            f"Node Types: {', '.join(self.schema_registry.get_all_node_types())}\n"
-            f"Edge Types: {', '.join(self.schema_registry.get_all_edge_types())}\n"
-            "You may ONLY use the types listed above."
-        )
         logger.info("Sending answered questions to LLM for processing")
         response = await self.ai.generate_structured(
             model=self.model,
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": prompt},
-            ],
+            messages=graph_update_messages(
+                character_name,
+                character_id,
+                chapter_number,
+                answers_text,
+                context_str,
+                self.schema_registry.get_all_node_types(),
+                self.schema_registry.get_all_edge_types(),
+            ),
             response_format=GraphUpdate,
             api_key=credential,
             base_url=provider_base_url,
@@ -436,3 +394,66 @@ class CharacterService:
             project_id=project_id,
         )
         return parsed
+
+
+def interview_questions_messages(
+    character_name: str, character_id: str, bio: str, context_str: str
+) -> list[dict[str, str]]:
+    """The ``legacy-character-questions`` prompt (the older graph tools)."""
+    prompt = (
+        f"Character Name: {character_name} (ID: {character_id})\n"
+        f"Character Bio: {bio}\n\n{context_str}"
+    )
+    system = (
+        "You are a character creation assistant. Your goal is to generate deep, specific questions "
+        "that reveal a character's stable identity, appearance, personality, current state, and beliefs.\n\n"
+        "Focus on:\n"
+        "1. Appearance: Physical traits and marks.\n"
+        "2. Personality: Traits, attachment style, alignment.\n"
+        "3. State: Current emotions, relationships/trust, chapter context.\n"
+        "4. Beliefs: Core claims about the world or others.\n"
+        "5. Backstory: Major events they participated in."
+    )
+    return [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
+
+
+def graph_update_messages(
+    character_name: str,
+    character_id: str,
+    chapter_number: int,
+    answers_text: str,
+    context_str: str,
+    node_types: list[str],
+    edge_types: list[str],
+) -> list[dict[str, str]]:
+    """The ``legacy-graph-update`` prompt (the older graph tools)."""
+    prompt = (
+        f"Character: {character_name} (ID: {character_id}) Chapter Number: {chapter_number}\n\n"
+        f"User Answers:\n{answers_text}\n\n{context_str}"
+    )
+    system_message = (
+        "You are a Knowledge Graph specialist. Your task is to convert character details into a modular Graph format.\n\n"
+        "MANDATORY STRUCTURE:\n"
+        "1. Appearance: (Character)-[:HAS_APPEARANCE]->(:Appearance {build, height, hair, etc}). For example: (Character)-[:HAS_APPEARANCE]->(:Appearance {build: 'athletic', height: '6ft', hair: 'brown'})\n"
+        "2. Personality: (Character)-[:HAS_PERSONALITY]->(:PersonalityProfile {core_trait, attachment_style, alignment}). For example: (Character)-[:HAS_PERSONALITY]->(:PersonalityProfile {core_trait: 'brave', attachment_style: 'avoidant', alignment: 'good'})\n"
+        "3. State: (Character)-[:CURRENT_STATE]->(:State {anger, trust_levels, chapter, etc}). For example: (Character)-[:CURRENT_STATE]->(:State {anger: 0.5, trust_levels: 0.7, trust_character1: 0.4, chapter: 1})\n"
+        "4. Beliefs: (Character)-[:BELIEVES]->(:Belief {about, claim, confidence, is_true}). For example: (Character)-[:BELIEVES]->(:Belief {about: 'The King', claim: 'He is a tyrant', confidence: 0.9, is_true: true})\n"
+        "5. Events/Locations/Factions: (Character)-[:PARTICIPATED_IN|LOCATED_AT|MEMBER_OF]->(Event|Location|Faction). **CRITICAL**: Check the 'Existing Knowledge Graph Entities' in the prompt. If the user mentions an entity that matches an existing one, you MUST reuse exactly that ID. Do NOT create a new node if one already exists. If it is entirely new, generate a new ID.\n\n"
+        "Instructions:\n"
+        "- Ensure the Character node is the anchor.\n"
+        "- Break down details into these specific sub-nodes.\n"
+        "Use the following deterministic ID format for NEW personal nodes:"
+        "- Appearance: appearance"
+        "- Personality: personality"
+        "- State: state"
+        "- Beliefs: belief_{short_slug}\n"
+        "- New Events: event_{short_slug}\n\n"
+        "AVAILABLE TYPES FOR CUSTOM NODES/EDGES:\n"
+        f"Node Types: {', '.join(node_types)}\n"
+        f"Edge Types: {', '.join(edge_types)}\n"
+        "You may ONLY use the types listed above."
+    )
+    return [
+        {"role": "system", "content": system_message},
+        {"role": "user", "content": prompt},
+    ]

@@ -1,0 +1,32 @@
+name: An idea
+description: Something Novel Engine could do, or do better.
+labels: ["idea"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas are weighed against the plan in `plan/` (what is built, what is planned, and why).
+        Two things are fixed: the assistant never changes a story without the author's review,
+        and everything works without a model.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The writing problem or the task, rather than the feature you imagine for it.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+    validations:
+      required: true
+  - type: textarea
+    id: without-model
+    attributes:
+      label: Without a model
+      description: How it would work for someone who writes by hand, with no assistant.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do now instead

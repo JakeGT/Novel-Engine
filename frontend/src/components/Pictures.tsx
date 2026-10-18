@@ -1,23 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
 import { useRef, useState, type ChangeEvent } from 'react'
-import { api, type AssetLink, type CanonEntity, type Scope } from '../api/client'
-import { isPicture } from '../lib/pictures'
+import { api, type AssetLink, type CanonEntity, type LibraryPicture, type Scope } from '../api/client'
+import { isPicture, usePictureLibrary, usePictureUrl } from '../lib/pictures'
 import { scopedKey, useCanonWrite, useProject } from '../project'
 import { Badge, Button, ErrorNotice, TypeAvatar, UndoNotice, WriteProblem } from './ui'
 
 const MAX_BYTES = 8 * 1024 * 1024
 const ACCEPT = 'image/png,image/jpeg,image/webp'
 
-function usePictureUrl(scope: Scope, link: AssetLink | undefined) {
-  return useQuery({
-    queryKey: scopedKey(scope, 'picture', link?.asset_id, link?.asset_version_id),
-    queryFn: () => api.pictureUrl(scope, link!.asset_id, link!.asset_version_id as string),
-    enabled: Boolean(link?.asset_version_id),
-    // A stored version never changes.
-    staleTime: Infinity,
-    gcTime: Infinity,
-  })
-}
+const ofLink = (link: AssetLink | undefined) =>
+  link ? { assetId: link.asset_id, versionId: link.asset_version_id } : undefined
 
 /** An entry's seal: its picture when it has one, otherwise its initial. */
 export function Portrait({
@@ -30,7 +22,7 @@ export function Portrait({
   size?: 'sm' | 'lg'
 }) {
   const { scope } = useProject()
-  const picture = usePictureUrl(scope, link)
+  const picture = usePictureUrl(scope, ofLink(link))
   if (!link || !picture.data) return <TypeAvatar type={entity.type} name={entity.name} size={size} />
   return (
     <span className={`avatar portrait ${size ?? ''}`}>
@@ -39,12 +31,78 @@ export function Portrait({
   )
 }
 
-function Thumbnail({ link, label }: { link: AssetLink; label: string }) {
+/**
+ * A stored picture, scaled by the browser to the size its class gives it. There are no
+ * smaller copies on the server (making them needs image resizing, which is not built),
+ * so a small picture still loads the whole file once.
+ */
+export function PictureImage({
+  assetId,
+  versionId,
+  label,
+  className = 'picture',
+}: {
+  assetId: string
+  versionId: string | null
+  label: string
+  className?: string
+}) {
   const { scope } = useProject()
-  const picture = usePictureUrl(scope, link)
-  if (picture.isError) return <span className="picture missing">Could not load</span>
-  if (!picture.data) return <span className="picture loading" role="status" aria-label="Loading picture" />
-  return <img className="picture" src={picture.data} alt={label} />
+  const picture = usePictureUrl(scope, { assetId, versionId })
+  if (picture.isError) return <span className={`${className} missing`}>Could not load</span>
+  if (!picture.data) return <span className={`${className} loading`} role="status" aria-label="Loading picture" />
+  return <img className={className} src={picture.data} alt={label} decoding="async" />
+}
+
+function Thumbnail({ link, label }: { link: AssetLink; label: string }) {
+  return <PictureImage assetId={link.asset_id} versionId={link.asset_version_id} label={label} />
+}
+
+/**
+ * The story's pictures that can be chosen here: every stored picture, including those
+ * shown nowhere now, except the ones already in place.
+ */
+export function PictureLibrary({
+  library,
+  exclude,
+  busy,
+  actionLabel,
+  onChoose,
+}: {
+  library: LibraryPicture[]
+  exclude: Set<string>
+  busy: boolean
+  actionLabel: (picture: LibraryPicture) => string
+  onChoose: (picture: LibraryPicture) => void
+}) {
+  const choices = library.filter((picture) => !exclude.has(picture.version_id))
+  if (choices.length === 0) {
+    return (
+      <p className="muted small">
+        {library.length === 0 ? 'No other pictures in your story yet.' : 'Every picture in your story is already here.'}
+      </p>
+    )
+  }
+  return (
+    <ul className="pictures">
+      {choices.map((picture) => (
+        <li key={picture.asset_id}>
+          <PictureImage assetId={picture.asset_id} versionId={picture.version_id} label={picture.name} />
+          <span className="picture-name small">{picture.name}</span>
+          {picture.shown === 0 && <span className="hint">Not shown anywhere</span>}
+          <button
+            type="button"
+            className="btn ghost sm"
+            aria-label={actionLabel(picture)}
+            disabled={busy}
+            onClick={() => onChoose(picture)}
+          >
+            Use this
+          </button>
+        </li>
+      ))}
+    </ul>
+  )
 }
 
 /** The pictures linked to an entry, with a way to add and remove them. */
@@ -80,22 +138,11 @@ export function PicturesPanel({ entity }: { entity: CanonEntity }) {
     await api.relinkPicture(scope, link, expectedRevision)
     return api.retireLink(scope, link.id, expectedRevision + 1)
   })
-  // Pictures already in the project, on other entries, that this entry does not have.
-  const everywhere = useQuery({
-    queryKey: scopedKey(scope, 'links', 'all'),
-    queryFn: () => api.listLinks(scope, { include_retired: false }),
-    enabled: canWrite && active,
-  })
-  const mine = new Set(pictures.map((link) => link.asset_version_id))
-  const library: AssetLink[] = []
-  for (const link of everywhere.data?.items ?? []) {
-    if (isPicture(link) && !mine.has(link.asset_version_id) && link.target_record_id !== entity.id) {
-      mine.add(link.asset_version_id)
-      library.push(link)
-    }
-  }
-  const reuse = useCanonWrite<unknown, AssetLink>((expectedRevision, link) =>
-    api.relinkPicture(scope, { ...link, target_record_id: entity.id }, expectedRevision),
+  // Every picture in the story, including those shown nowhere now, that this entry does not have.
+  const everywhere = usePictureLibrary(scope, canWrite && active)
+  const mine = new Set(pictures.map((link) => link.asset_version_id ?? ''))
+  const reuse = useCanonWrite<unknown, LibraryPicture>((expectedRevision, picture) =>
+    api.showPicture(scope, picture, { type: 'entity', id: entity.id }, expectedRevision),
   )
 
   const [problem, setProblem] = useState<string | null>(null)
@@ -193,25 +240,16 @@ export function PicturesPanel({ entity }: { entity: CanonEntity }) {
           ))}
         </ul>
       )}
-      {canWrite && active && library.length > 0 && (
+      {canWrite && active && (everywhere.data?.items ?? []).some((picture) => !mine.has(picture.version_id)) && (
         <details className="more">
-          <summary>Use a picture already in your project</summary>
-          <ul className="pictures">
-            {library.map((link, index) => (
-              <li key={link.id}>
-                <Thumbnail link={link} label={`Picture ${index + 1} from your project`} />
-                <button
-                  type="button"
-                  className="btn ghost sm"
-                  aria-label={`Use picture ${index + 1} from your project for ${entity.name}`}
-                  disabled={reuse.pending}
-                  onClick={() => void reuse.submit(link)}
-                >
-                  Use this
-                </button>
-              </li>
-            ))}
-          </ul>
+          <summary>Use a picture already in your story</summary>
+          <PictureLibrary
+            library={everywhere.data?.items ?? []}
+            exclude={mine}
+            busy={reuse.pending}
+            actionLabel={(picture) => `Use “${picture.name}” for ${entity.name}`}
+            onChoose={(picture) => void reuse.submit(picture)}
+          />
         </details>
       )}
       <WriteProblem write={add} scope={scope} />

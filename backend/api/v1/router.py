@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import re
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, status
@@ -23,6 +25,7 @@ from backend.api.dependencies import (
     get_usage_service,
 )
 from backend.api.v1 import schemas as s
+from backend.api.v1.assistant_settings import confirmed_tokens, get_assist_budget
 from backend.container import Container
 from backend.core.config import Settings
 from backend.domain.errors import (
@@ -37,6 +40,7 @@ from backend.graph.resolver import extract_entity_ids
 from backend.graph.schema import Edge, Node
 from backend.graph.summarizer import summarize_context
 from backend.ports import EmbeddingPort, GraphRepository, SchemaRegistryPort
+from backend.services.assistant_settings_service import AssistBudget
 from backend.services.auth_service import AuthenticatedSession
 from backend.services.character_service import CharacterService
 from backend.services.credential_service import CredentialService
@@ -444,6 +448,29 @@ def character_init(
     return s.entity_from_node(node)
 
 
+# What the legacy character prompts read beyond the character: its instructions, and at
+# most this many related entries from the graph.
+_LEGACY_INSTRUCTION_TOKENS = 900
+_LEGACY_CONTEXT_ENTRIES = 15
+
+
+def _legacy_reads(
+    graph: GraphRepository, scope: AccessScope, sent_chars: int
+) -> Callable[[], Awaitable[int]]:
+    """An upper estimate of what a legacy character request reads: what was sent, plus
+    the largest entries in the story's graph, as many as it may include."""
+
+    async def reads() -> int:
+        nodes = graph.get_nodes(
+            workspace_id=scope.workspace_id or "", project_id=scope.project_id or ""
+        )
+        sizes = sorted((len(json.dumps(node.properties)) for node in nodes), reverse=True)
+        chars = sent_chars + sum(sizes[: _LEGACY_CONTEXT_ENTRIES + 1])
+        return _LEGACY_INSTRUCTION_TOKENS + chars // 4
+
+    return reads
+
+
 @project_router.post(
     "/characters/generate-questions", response_model=s.QuestionSheet, tags=["characters"]
 )
@@ -454,7 +481,18 @@ async def character_generate_questions(
     usage: ProviderUsageService = Depends(get_usage_service),
     settings: Settings = Depends(get_settings),
     scope: AccessScope = Depends(require_project_scope),
+    graph: GraphRepository = Depends(get_graph),
+    budget: AssistBudget = Depends(get_assist_budget),
+    confirmed: int | None = Depends(confirmed_tokens),
 ) -> s.QuestionSheet:
+    await budget.check(
+        scope,
+        scope.workspace_id or "",
+        scope.project_id or "",
+        reads=_legacy_reads(graph, scope, 0),
+        doing="Asking about this character",
+        confirmed_tokens=confirmed,
+    )
     credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
         settings=settings, credentials=credentials, usage=usage, scope=scope
     )
@@ -499,11 +537,22 @@ async def character_process_answers(
     settings: Settings = Depends(get_settings),
     scope: AccessScope = Depends(require_project_scope),
     _local: AuthenticatedSession = Depends(require_local_graph_write),
+    budget: AssistBudget = Depends(get_assist_budget),
+    confirmed: int | None = Depends(confirmed_tokens),
 ) -> s.GraphUpdateResponse:
     """Legacy graph-backed prototype (local only); it writes model output to the
     generic graph, so hosted deployments must use the canonical proposal workflow."""
     workspace_id = scope.workspace_id or ""
     project_id = scope.project_id or ""
+    answered = sum(len(question) + len(answer) for question, answer in body.answers.items())
+    await budget.check(
+        scope,
+        workspace_id,
+        project_id,
+        reads=_legacy_reads(container.graph, scope, answered),
+        doing="Turning these answers into changes",
+        confirmed_tokens=confirmed,
+    )
     credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
         settings=settings, credentials=credentials, usage=usage, scope=scope
     )

@@ -292,6 +292,48 @@ class PostgresMediaStore:
             ).all()
         return [_asset_version(row) for row in rows]
 
+    async def list_versions_for_assets(
+        self, *, workspace_id: str, project_id: str, asset_ids: list[str]
+    ) -> dict[str, list[MediaAssetVersion]]:
+        """Every version of each named asset, oldest first, in one query."""
+        if not asset_ids:
+            return {}
+        async with session_scope(self._session_factory) as session:
+            rows = (
+                await session.execute(
+                    text(
+                        "SELECT * FROM media_asset_versions WHERE workspace_id=:w AND "
+                        "project_id=:p AND asset_id = ANY(:ids) ORDER BY asset_id, version"
+                    ),
+                    {"w": workspace_id, "p": project_id, "ids": list(asset_ids)},
+                )
+            ).all()
+        found: dict[str, list[MediaAssetVersion]] = {}
+        for row in rows:
+            found.setdefault(row.asset_id, []).append(_asset_version(row))
+        return found
+
+    async def discard_asset(self, *, workspace_id: str, project_id: str, asset_id: str) -> None:
+        """Remove an asset that never reached the story, with its versions and events.
+
+        Only for an upload whose linking commit failed: nothing in the canon refers
+        to it, so it is removed as if it had never been registered.
+        """
+        scope = {"w": workspace_id, "p": project_id, "a": asset_id}
+        async with session_scope(self._session_factory) as session:
+            for table, column in (
+                ("media_lifecycle_events", "asset_id"),
+                ("media_asset_versions", "asset_id"),
+                ("media_assets", "id"),
+            ):
+                await session.execute(
+                    text(
+                        f"DELETE FROM {table} WHERE workspace_id=:w AND project_id=:p "
+                        f"AND {column}=:a"
+                    ),
+                    scope,
+                )
+
     async def retire_asset(
         self,
         *,

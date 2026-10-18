@@ -138,3 +138,104 @@ async def test_retired_or_foreign_assets_cannot_receive_links(stack) -> None:
         await media.create_link(
             _scope(), WS, PR, asset_id=other_asset.id, target_id="ent_media_2", expected_revision=1
         )
+
+
+@pytest.mark.asyncio
+async def test_a_scene_shows_a_library_picture_and_only_a_scene_can(stack) -> None:
+    from backend.domain.operations import CreatePlanItemOp
+
+    media, mutation, repository, objects = stack
+    draft = await mutation.create_draft(
+        _scope(),
+        workspace_id=WS,
+        project_id=PR,
+        operations=[
+            CreatePlanItemOp(id="pln_scene_it", kind="scene", title="Low tide"),
+            CreatePlanItemOp(id="pln_beat_it", kind="beat", title="The turn"),
+        ],
+        expected_head=0,
+    )
+    await mutation.commit(_scope(), draft.id)
+    asset, version = await _version(media, objects)
+
+    # Never linked in this line of the story: not offered in its library.
+    assert await media.picture_library(_scope(), WS, PR) == []
+
+    result, link = await media.create_link(
+        _scope(),
+        WS,
+        PR,
+        asset_id=asset.id,
+        asset_version_id=version.id,
+        target_id="pln_scene_it",
+        target_record_type="plan_item",
+        role="DEPICTS",
+        expected_revision=1,
+    )
+    assert result.revision == 2
+    stored = await repository.get_link(workspace_id=WS, project_id=PR, link_id=link.id)
+    assert stored is not None
+    assert (stored.target_record_type, stored.target_record_id) == ("plan_item", "pln_scene_it")
+    assert (await media.picture_library(_scope(), WS, PR))[0].shown == 1
+
+    with pytest.raises(CanonValidationError):
+        await media.create_link(
+            _scope(),
+            WS,
+            PR,
+            asset_id=asset.id,
+            asset_version_id=version.id,
+            target_id="pln_beat_it",
+            target_record_type="plan_item",
+            role="DEPICTS",
+            expected_revision=2,
+        )
+
+    # Taken out of the plan: still offered, shown nowhere.
+    from backend.domain.operations import RetirePlanItemOp
+
+    gone = await mutation.create_draft(
+        _scope(),
+        workspace_id=WS,
+        project_id=PR,
+        operations=[RetirePlanItemOp(id="pln_scene_it")],
+        expected_head=2,
+    )
+    await mutation.commit(_scope(), gone.id)
+    library = await media.picture_library(_scope(), WS, PR)
+    assert [(item.asset.id, item.version.id, item.shown) for item in library] == [
+        (asset.id, version.id, 0)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_picture_whose_link_is_refused_leaves_no_asset_behind(stack, monkeypatch) -> None:
+    from backend.domain.journal import HeadConflict
+    from backend.domain.operations import CreatePlanItemOp
+
+    monkeypatch.setattr(
+        "backend.services.media_service.strip_metadata", lambda data, content_type: data
+    )
+    media, mutation, repository, objects = stack
+    draft = await mutation.create_draft(
+        _scope(),
+        workspace_id=WS,
+        project_id=PR,
+        operations=[CreatePlanItemOp(id="pln_scene_orphan", kind="scene", title="Low tide")],
+        expected_head=0,
+    )
+    await mutation.commit(_scope(), draft.id)
+
+    with pytest.raises((HeadConflict, CanonValidationError)):
+        await media.add_scene_picture(
+            _scope(),
+            WS,
+            PR,
+            scene_id="pln_scene_orphan",
+            data=b"\x89PNG\r\n\x1a\n",
+            name=None,
+            expected_revision=0,
+        )
+
+    assert await media.list_assets(_scope(), WS, PR) == []
+    assert objects.list_objects(workspace_id=WS, project_id=PR) == []

@@ -47,6 +47,7 @@ function job(overrides: Partial<StudioJob> = {}): StudioJob {
     prompt_tokens: 0,
     completion_tokens: 0,
     cached_prompt_tokens: 0,
+    automatic: false,
     result: {},
     created_at: '2026-10-17T10:00:00Z',
     finished_at: null,
@@ -119,6 +120,8 @@ const base = {
   },
   'GET /plan': { items: [scene], open: [], conditions: [] },
   'GET /ai/usage': { used_tokens: 0, limit_tokens: null, period_hours: 24 },
+  'GET /links': { items: [] },
+  'GET /pictures': { items: [] },
 }
 const route = { path: 'plan/:planId/write', at: 'plan/pln_s/write' }
 
@@ -741,5 +744,192 @@ describe('StudioPage', () => {
     const box = await screen.findByRole('textbox', { name: /The text of/ })
     expect(box).toHaveAttribute('readonly')
     expect(screen.queryByRole('button', { name: /Save|Draft with|Check with|Keep|Discard|Update the story|Dismiss/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('Naming an entry while writing', () => {
+  it('offers entries by name and alias after @, and writes the chosen one as a mark', async () => {
+    mockApi({
+      ...base,
+      'GET /entities': {
+        items: [
+          entity({ id: 'ent_ines', name: 'Ines Varga', aliases: ['the Keeper'] }),
+          entity({ id: 'ent_point', type: 'Location', name: 'Kestrel Point', aliases: [] }),
+          entity({ id: 'ent_mill', type: 'Location', name: 'Mill', aliases: [] }),
+        ],
+        limit: 200,
+        offset: 0,
+      },
+      'GET /plan/pln_s/studio': studio({ content: '', version_id: null, versions: [], checks: [], assistant: [] }),
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<StudioPage />, route)
+    const box = (await screen.findByRole('textbox', { name: /The text of/ })) as HTMLTextAreaElement
+    expect(screen.getByText(/Type @ to name an entry/)).toBeInTheDocument()
+
+    await user.type(box, 'She climbed to @ke')
+    const list = await screen.findByRole('listbox', { name: 'Entries in your story bible' })
+    const options = within(list).getAllByRole('option')
+    // A name that starts with it, then an alias that does.
+    expect(options.map((option) => option.textContent)).toEqual(['Kestrel PointLocation', 'Ines VargaCharacter · as “the Keeper”'])
+    expect(box).toHaveAttribute('aria-controls', list.id)
+    expect(box).toHaveAttribute('aria-activedescendant', options[0].id)
+    expect(options[0]).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText(/2 entries match/)).toBeInTheDocument()
+    await expectAccessible(container)
+
+    await user.keyboard('{ArrowDown}')
+    expect(box).toHaveAttribute('aria-activedescendant', options[1].id)
+    await user.keyboard('{ArrowDown}')
+    expect(box).toHaveAttribute('aria-activedescendant', options[0].id)
+    await user.keyboard('{Enter}')
+    expect(box).toHaveValue('She climbed to @"Kestrel Point" ')
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(box).not.toHaveAttribute('aria-activedescendant')
+    expect(box.selectionStart).toBe(box.value.length)
+
+    // Tab chooses too; a one-word name is written bare.
+    await user.type(box, 'by the @mi')
+    await screen.findByRole('listbox')
+    await user.keyboard('{Tab}')
+    expect(box).toHaveValue('She climbed to @"Kestrel Point" by the @Mill ')
+    expect(box).toHaveFocus()
+
+    // Escape closes the list and leaves the words as typed; it stays closed for that @.
+    await user.type(box, '@In')
+    await screen.findByRole('listbox')
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(box).toHaveValue('She climbed to @"Kestrel Point" by the @Mill @In')
+    expect(screen.getByText('Not saved yet', { exact: false })).toBeInTheDocument()
+
+    // A name nobody has is said so, without getting in the way of Enter.
+    await user.type(box, ' and @Zed')
+    expect(await screen.findAllByText(/No entry is called “Zed”/)).toHaveLength(2)
+    await user.keyboard('{Enter}')
+    expect(box.value.endsWith('@Zed\n')).toBe(true)
+  })
+
+  it('chooses with the mouse', async () => {
+    mockApi({ ...base, 'GET /plan/pln_s/studio': studio({ content: '', version_id: null, versions: [] }) })
+    const user = userEvent.setup()
+    renderInProject(<StudioPage />, route)
+    const box = await screen.findByRole('textbox', { name: /The text of/ })
+    await user.type(box, '@')
+    // Nothing typed yet: every entry, the most central first.
+    await user.click(await screen.findByRole('option', { name: /Kestrel Point/ }))
+    expect(box).toHaveValue('@"Kestrel Point" ')
+  })
+})
+
+describe('Pictures on a scene', () => {
+  const sceneLink = (overrides: Record<string, unknown> = {}) => ({
+    id: 'lnk_s1',
+    asset_id: 'ast_1',
+    asset_version_id: 'asv_1',
+    role: 'DEPICTS',
+    target_record_type: 'plan_item',
+    target_record_id: 'pln_s',
+    created_revision: 4,
+    retired_revision: null,
+    ...overrides,
+  })
+  const picture = (overrides: Record<string, unknown> = {}) => ({
+    asset_id: 'ast_1',
+    version_id: 'asv_1',
+    name: 'The lamp at night',
+    content_type: 'image/png',
+    byte_length: 4,
+    created_at: '2026-10-17T09:00:00Z',
+    shown: 1,
+    ...overrides,
+  })
+
+  it('shows the scene’s pictures small in the head, and chooses more from the library', async () => {
+    let n = 0
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => `blob:picture-${(n += 1)}`) }))
+    let linked = false
+    const api = mockApi({
+      ...base,
+      'GET /plan/pln_s/studio': studio(),
+      'GET /links': () => ({
+        items: linked ? [sceneLink(), sceneLink({ id: 'lnk_s2', asset_id: 'ast_2', asset_version_id: 'asv_2', created_revision: 5 })] : [sceneLink()],
+      }),
+      'GET /pictures': {
+        items: [picture(), picture({ asset_id: 'ast_2', version_id: 'asv_2', name: 'The chart room', shown: 0 })],
+      },
+      'GET /content': new Blob(['x']),
+      'POST /assets/ast_2/links': () => {
+        linked = true
+        return reply(201, sceneLink({ id: 'lnk_s2', asset_id: 'ast_2', asset_version_id: 'asv_2' }))
+      },
+      'POST /links/lnk_s1/retire': {},
+      'POST /assets/ast_1/links': reply(201, sceneLink({ id: 'lnk_s3' })),
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<StudioPage />, route)
+
+    const strip = await screen.findByRole('list', { name: 'Pictures for “The lamp room at night”' })
+    expect(await within(strip).findByRole('img', { name: 'The lamp at night' })).toHaveClass('scene-thumb')
+    const toggle = screen.getByRole('button', { name: 'Change pictures' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+
+    const panel = screen.getByRole('region', { name: 'Pictures for this scene' })
+    expect(within(panel).getByText('Not shown anywhere')).toBeInTheDocument()
+    // The picture already on the scene is not offered again.
+    expect(within(panel).queryByRole('button', { name: 'Use “The lamp at night” for “The lamp room at night”' })).not.toBeInTheDocument()
+    await expectAccessible(container)
+
+    await user.click(within(panel).getByRole('button', { name: 'Use “The chart room” for “The lamp room at night”' }))
+    await waitFor(() => expect(api.find('POST', '/assets/ast_2/links')).toHaveLength(1))
+    expect(api.find('POST', '/assets/ast_2/links')[0].body).toEqual({
+      target_id: 'pln_s',
+      target_record_type: 'plan_item',
+      asset_version_id: 'asv_2',
+      role: 'DEPICTS',
+      expected_revision: 3,
+    })
+    expect(await within(panel).findByText(/is now shown on this scene/)).toHaveTextContent('“The chart room” is now shown on this scene.')
+
+    // Removing is not asked about first; it can be undone.
+    await user.click(within(panel).getByRole('button', { name: 'Remove “The lamp at night” from “The lamp room at night”' }))
+    await waitFor(() => expect(api.find('POST', '/links/lnk_s1/retire')).toHaveLength(1))
+    await user.click(await within(panel).findByRole('button', { name: 'Undo' }))
+    await waitFor(() => expect(api.find('POST', '/assets/ast_1/links')).toHaveLength(1))
+    expect(api.find('POST', '/assets/ast_1/links')[0].body).toMatchObject({ target_id: 'pln_s', target_record_type: 'plan_item' })
+
+    await user.click(within(panel).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('region', { name: 'Pictures for this scene' })).not.toBeInTheDocument()
+  })
+
+  it('uploads a new picture onto the scene, and shows pictures to a reader without a way to change them', async () => {
+    const api = mockApi({
+      ...base,
+      'GET /plan/pln_s/studio': studio(),
+      'POST /plan/pln_s/pictures': reply(201, { link: sceneLink(), version: { id: 'asv_1' } }),
+    })
+    const user = userEvent.setup()
+    renderInProject(<StudioPage />, route)
+    await user.click(await screen.findByRole('button', { name: 'Add a picture' }))
+    const panel = screen.getByRole('region', { name: 'Pictures for this scene' })
+    expect(within(panel).getByText(/None yet/)).toBeInTheDocument()
+    expect(within(panel).getByText('No other pictures in your story yet.')).toBeInTheDocument()
+    await user.upload(
+      within(panel).getByLabelText('Choose a picture for “The lamp room at night”'),
+      new File([new Uint8Array([137, 80, 78, 71])], 'Lamp room.png', { type: 'image/png' }),
+    )
+    await waitFor(() => expect(api.find('POST', '/plan/pln_s/pictures')).toHaveLength(1))
+    const sent = api.find('POST', '/plan/pln_s/pictures')[0]
+    expect(sent.search.get('expected_revision')).toBe('3')
+    expect(sent.search.get('name')).toBe('Lamp room')
+  })
+
+  it('shows a reader the scene’s pictures and nothing to change them with', async () => {
+    mockApi({ ...base, 'GET /plan/pln_s/studio': studio(), 'GET /links': { items: [sceneLink()] }, 'GET /content': new Blob(['x']) })
+    renderInProject(<StudioPage />, { ...route, context: { access: VIEWER } })
+    expect(await screen.findByRole('list', { name: 'Pictures for “The lamp room at night”' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /pictures|Add a picture/ })).not.toBeInTheDocument()
   })
 })

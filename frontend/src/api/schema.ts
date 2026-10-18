@@ -21,6 +21,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ai/limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Workspace Limits
+         * @description The owner's ceilings for everyone in the workspace.
+         */
+        get: operations["get_workspace_limits_api_v1_ai_limits_get"];
+        /**
+         * Set Workspace Limits
+         * @description An owner sets, for everyone, when to ask before a large request and how much one
+         *     conversation may use. A story may choose lower; never higher.
+         */
+        put: operations["set_workspace_limits_api_v1_ai_limits_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ai/models": {
         parameters: {
             query?: never;
@@ -821,7 +846,8 @@ export interface paths {
         };
         /**
          * Assist Estimate
-         * @description Roughly what the assistant will read, so it can be shown before anything is spent.
+         * @description Roughly what the assistant will read and reply, so it can be shown before anything is
+         *     spent, with the limits that apply and what the conversation has used so far.
          */
         get: operations["assist_estimate_api_v1_projects__project_id__assist_estimate_get"];
         put?: never;
@@ -975,6 +1001,9 @@ export interface paths {
         /**
          * Assist Revision
          * @description Revise a set of suggested changes by asking. It stays waiting for review.
+         *
+         *     Asking again continues the conversation that proposed them: it counts toward that
+         *     conversation's budget when it is the author's own.
          */
         post: operations["assist_revision_api_v1_projects__project_id__assist_revisions_post"];
         delete?: never;
@@ -1115,6 +1144,27 @@ export interface paths {
         put?: never;
         /** Read Passage With Assistant */
         post: operations["read_passage_with_assistant_api_v1_projects__project_id__assist_texts__source_id__read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/assistant-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Story Settings
+         * @description How much checking runs on its own in this story, and when to ask before spending.
+         */
+        get: operations["get_story_settings_api_v1_projects__project_id__assistant_settings_get"];
+        /** Set Story Settings */
+        put: operations["set_story_settings_api_v1_projects__project_id__assistant_settings_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2080,6 +2130,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/pictures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Picture Library
+         * @description Every picture in the story that can be shown, newest first, including those
+         *     shown nowhere now. Choosing one links it again; nothing is copied.
+         */
+        get: operations["picture_library_api_v1_projects__project_id__pictures_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/plan": {
         parameters: {
             query?: never;
@@ -2210,6 +2281,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/pictures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Scene Picture
+         * @description Add a picture to a scene of the plan. The request body is the image itself.
+         *
+         *     The same checks as a picture of an entry; the link points at the scene
+         *     (``target_record_type`` ``plan_item``, role ``DEPICTS``), in one new revision.
+         */
+        post: operations["add_scene_picture_api_v1_projects__project_id__plan__plan_id__pictures_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/plan/{plan_id}/remove": {
         parameters: {
             query?: never;
@@ -2256,6 +2350,27 @@ export interface paths {
         };
         /** Studio */
         get: operations["studio_api_v1_projects__project_id__plan__plan_id__studio_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/studio/check-estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check Estimate
+         * @description Roughly what one check with the assistant of this scene's text reads and writes,
+         *     so the cost of each checking profile can be said before choosing. Calls no model.
+         */
+        get: operations["check_estimate_api_v1_projects__project_id__plan__plan_id__studio_check_estimate_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3535,6 +3650,8 @@ export interface components {
         };
         /** AllowanceModel */
         AllowanceModel: {
+            /** Cost Usd */
+            cost_usd?: number | null;
             /** Limit Tokens */
             limit_tokens: number | null;
             /** Period Hours */
@@ -4192,6 +4309,26 @@ export interface components {
             /** Start */
             start?: number | null;
         };
+        /**
+         * CheckProfile
+         * @enum {string}
+         */
+        CheckProfile: "on_request" | "balanced" | "thorough";
+        /**
+         * CheckingModel
+         * @description How much checking runs on its own in this story, and what it has used here.
+         */
+        CheckingModel: {
+            /** Check Minutes */
+            check_minutes: number;
+            /** Next After Save */
+            next_after_save?: string | null;
+            profile: components["schemas"]["CheckProfile"];
+            /** Scene Tokens */
+            scene_tokens: number;
+            /** Spent Tokens */
+            spent_tokens: number;
+        };
         /** ChooseAiRequest */
         ChooseAiRequest: {
             /** Model */
@@ -4250,10 +4387,32 @@ export interface components {
         ConditionStateModel: {
             /** Holds */
             holds: boolean | null;
+            /**
+             * Index
+             * @default 0
+             */
+            index: number;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
             /** Plan Id */
             plan_id: string;
+            /** Planned In */
+            planned_in?: string | null;
             /** Reading */
             reading: string;
+            /**
+             * Status
+             * @default unclear
+             */
+            status: string;
+            /**
+             * Strength
+             * @default hard
+             */
+            strength: string;
             /** When */
             when: string;
         };
@@ -5204,6 +5363,11 @@ export interface components {
         /** JobModel */
         JobModel: {
             /**
+             * Automatic
+             * @default false
+             */
+            automatic: boolean;
+            /**
              * Cached Prompt Tokens
              * @default 0
              */
@@ -5231,6 +5395,8 @@ export interface components {
             progress: number;
             /** Prompt Tokens */
             prompt_tokens: number;
+            /** Provider Cost Usd */
+            provider_cost_usd?: number | null;
             /** Result */
             result: {
                 [key: string]: unknown;
@@ -5290,6 +5456,26 @@ export interface components {
             item: components["schemas"]["ContextItemModel"];
             /** Reason */
             reason: string;
+        };
+        /** LibraryPictureModel */
+        LibraryPictureModel: {
+            /** Asset Id */
+            asset_id: string;
+            /** Byte Length */
+            byte_length: number;
+            /** Content Type */
+            content_type: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Name */
+            name: string;
+            /** Shown */
+            shown: number;
+            /** Version Id */
+            version_id: string;
         };
         /** LinkAssetOp */
         LinkAssetOp: {
@@ -5609,6 +5795,11 @@ export interface components {
         OpenItemModel: {
             /** Code */
             code: string;
+            /**
+             * Kind
+             * @default gap
+             */
+            kind: string;
             /** Message */
             message: string;
             /** Plan Id */
@@ -5662,6 +5853,8 @@ export interface components {
             items: components["schemas"]["PlanItemModel"][];
             /** Open */
             open: components["schemas"]["OpenItemModel"][];
+            /** Promises */
+            promises?: components["schemas"]["PromiseModel"][];
             /** Threads */
             threads?: components["schemas"]["ThreadProgressModel"][];
         };
@@ -5714,6 +5907,11 @@ export interface components {
              * @description For a fact that holds a value: that value
              */
             value?: string | null;
+        };
+        /** PictureLibraryModel */
+        PictureLibraryModel: {
+            /** Items */
+            items: components["schemas"]["LibraryPictureModel"][];
         };
         /** PlacedEventModel */
         PlacedEventModel: {
@@ -5899,6 +6097,30 @@ export interface components {
             updated_at: string;
             /** Workspace Id */
             workspace_id: string;
+        };
+        /**
+         * PromiseModel
+         * @description A thread opened or a fact hinted: something the reader is owed (STY-007).
+         */
+        PromiseModel: {
+            /** Distance */
+            distance: number;
+            /** Kept At */
+            kept_at: number | null;
+            /** Kept In */
+            kept_in: string | null;
+            /** Kind */
+            kind: string;
+            /** Made At */
+            made_at: number;
+            /** Made In */
+            made_in: string;
+            /** Moved Along */
+            moved_along: string[];
+            /** Out Of Order */
+            out_of_order: boolean;
+            /** Subject Id */
+            subject_id: string;
         };
         /** ProposalIssueModel */
         ProposalIssueModel: {
@@ -6242,6 +6464,11 @@ export interface components {
              * @enum {string}
              */
             how: "shown" | "hinted";
+            /**
+             * Main Reveal
+             * @default false
+             */
+            main_reveal: boolean;
         };
         /** RevertCommitRequest */
         RevertCommitRequest: {
@@ -6454,16 +6681,27 @@ export interface components {
             /** Content */
             content: string;
         };
-        /** SceneCondition */
+        /**
+         * SceneCondition
+         * @description One condition: a check on one entry, or a sentence in the author's words.
+         */
         SceneCondition: {
-            check: components["schemas"]["Check"];
+            check?: components["schemas"]["Check"] | null;
             /** Entity Id */
-            entity_id: string;
+            entity_id?: string | null;
+            /**
+             * Strength
+             * @default hard
+             * @enum {string}
+             */
+            strength: "hard" | "soft";
             /**
              * When
              * @enum {string}
              */
             when: "before" | "after";
+            /** Words */
+            words?: string | null;
         };
         /** SceneContextModel */
         SceneContextModel: {
@@ -6620,6 +6858,25 @@ export interface components {
              */
             aside: boolean;
         };
+        /** SetAssistantSettingsRequest */
+        SetAssistantSettingsRequest: {
+            /**
+             * Check Minutes
+             * @default 15
+             */
+            check_minutes: number;
+            /** @default on_request */
+            check_profile: components["schemas"]["CheckProfile"];
+            /** Confirm Above Tokens */
+            confirm_above_tokens?: number | null;
+            /** Conversation Tokens */
+            conversation_tokens?: number | null;
+            /**
+             * Scene Tokens
+             * @default 40000
+             */
+            scene_tokens: number;
+        };
         /** SetConditionsRequest */
         SetConditionsRequest: {
             /** Conditions */
@@ -6645,12 +6902,24 @@ export interface components {
             /** When */
             when?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
         };
+        /** SetWorkspaceLimitsRequest */
+        SetWorkspaceLimitsRequest: {
+            /** Confirm Above Tokens */
+            confirm_above_tokens?: number | null;
+            /** Conversation Tokens */
+            conversation_tokens?: number | null;
+        };
         /** ShownModel */
         ShownModel: {
             /** Fact Id */
             fact_id: string;
             /** How */
             how: string;
+            /**
+             * Main Reveal
+             * @default false
+             */
+            main_reveal: boolean;
         };
         /**
          * SourceKind
@@ -6671,6 +6940,26 @@ export interface components {
             description?: string | null;
             /** Name */
             name: string;
+        };
+        /** StoryAssistantSettingsModel */
+        StoryAssistantSettingsModel: {
+            /** Check Minutes */
+            check_minutes: number;
+            check_profile: components["schemas"]["CheckProfile"];
+            /** Confirm Above Tokens */
+            confirm_above_tokens: number | null;
+            /** Conversation Tokens */
+            conversation_tokens: number | null;
+            /** Effective Confirm Above Tokens */
+            effective_confirm_above_tokens?: number | null;
+            /** Effective Conversation Tokens */
+            effective_conversation_tokens?: number | null;
+            /** Scene Tokens */
+            scene_tokens: number;
+            /** Workspace Confirm Above Tokens */
+            workspace_confirm_above_tokens?: number | null;
+            /** Workspace Conversation Tokens */
+            workspace_conversation_tokens?: number | null;
         };
         /** StringObject */
         StringObject: {
@@ -6698,6 +6987,9 @@ export interface components {
         StudioModel: {
             /** Assistant */
             assistant: components["schemas"]["AssistantNoteModel"][];
+            /** Automatic */
+            automatic?: string | null;
+            checking?: components["schemas"]["CheckingModel"] | null;
             /** Checks */
             checks: components["schemas"]["CheckModel"][];
             /** Content */
@@ -7033,6 +7325,13 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** WorkspaceLimitsModel */
+        WorkspaceLimitsModel: {
+            /** Confirm Above Tokens */
+            confirm_above_tokens: number | null;
+            /** Conversation Tokens */
+            conversation_tokens: number | null;
+        };
         /** WorkspaceModel */
         WorkspaceModel: {
             /**
@@ -7059,8 +7358,22 @@ export interface components {
         };
         /** EstimateModel */
         backend__api__v1__canon_assist__EstimateModel: {
+            /** Confirm Above Tokens */
+            confirm_above_tokens?: number | null;
+            /** Conversation Tokens */
+            conversation_tokens?: number | null;
+            /**
+             * Conversation Used Tokens
+             * @default 0
+             */
+            conversation_used_tokens: number;
             /** Entry Tokens */
             entry_tokens: number;
+            /**
+             * Reply Tokens
+             * @default 2000
+             */
+            reply_tokens: number;
             /** Story Tokens */
             story_tokens: number;
         };
@@ -7136,6 +7449,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_workspace_limits_api_v1_ai_limits_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceLimitsModel"];
+                };
+            };
+        };
+    };
+    set_workspace_limits_api_v1_ai_limits_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetWorkspaceLimitsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceLimitsModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -7300,7 +7666,9 @@ export interface operations {
     character_generate_questions_api_v1_characters_generate_questions_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -7366,7 +7734,9 @@ export interface operations {
     character_process_answers_api_v1_characters_process_answers_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -7870,7 +8240,9 @@ export interface operations {
     character_generate_questions_api_v1_graph_projects__project_id__characters_generate_questions_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -7936,7 +8308,9 @@ export interface operations {
     character_process_answers_api_v1_graph_projects__project_id__characters_process_answers_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -8973,7 +9347,9 @@ export interface operations {
     assist_change_api_v1_projects__project_id__assist_changes_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
             path: {
                 project_id: string;
             };
@@ -9007,7 +9383,9 @@ export interface operations {
     };
     assist_estimate_api_v1_projects__project_id__assist_estimate_get: {
         parameters: {
-            query?: never;
+            query?: {
+                session_id?: string | null;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -9039,7 +9417,9 @@ export interface operations {
     assist_links_api_v1_projects__project_id__assist_links_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
             path: {
                 project_id: string;
             };
@@ -9074,7 +9454,9 @@ export interface operations {
     plan_directions_api_v1_projects__project_id__assist_plan_directions_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
             path: {
                 project_id: string;
             };
@@ -9144,7 +9526,9 @@ export interface operations {
     plan_proposal_api_v1_projects__project_id__assist_plan_proposals_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
             path: {
                 project_id: string;
             };
@@ -9179,7 +9563,9 @@ export interface operations {
     plan_questions_api_v1_projects__project_id__assist_plan_questions_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
             path: {
                 project_id: string;
             };
@@ -9214,7 +9600,9 @@ export interface operations {
     assist_proposal_api_v1_projects__project_id__assist_proposals_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
             path: {
                 project_id: string;
             };
@@ -9249,7 +9637,9 @@ export interface operations {
     assist_questions_api_v1_projects__project_id__assist_questions_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
             path: {
                 project_id: string;
             };
@@ -9284,7 +9674,9 @@ export interface operations {
     assist_revision_api_v1_projects__project_id__assist_revisions_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
             path: {
                 project_id: string;
             };
@@ -9319,7 +9711,9 @@ export interface operations {
     draft_rule_api_v1_projects__project_id__assist_rules_draft_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
             path: {
                 project_id: string;
             };
@@ -9523,7 +9917,9 @@ export interface operations {
     read_passage_with_assistant_api_v1_projects__project_id__assist_texts__source_id__read_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
             path: {
                 project_id: string;
                 source_id: string;
@@ -9543,6 +9939,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReadPassageModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_story_settings_api_v1_projects__project_id__assistant_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoryAssistantSettingsModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_story_settings_api_v1_projects__project_id__assistant_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAssistantSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoryAssistantSettingsModel"];
                 };
             };
             /** @description Validation Error */
@@ -9803,7 +10265,9 @@ export interface operations {
     character_proposal_api_v1_projects__project_id__characters__entity_id__proposals_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
             path: {
                 project_id: string;
                 entity_id: string;
@@ -9839,7 +10303,9 @@ export interface operations {
     character_questions_api_v1_projects__project_id__characters__entity_id__questions_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
             path: {
                 project_id: string;
                 entity_id: string;
@@ -11703,6 +12169,37 @@ export interface operations {
             };
         };
     };
+    picture_library_api_v1_projects__project_id__pictures_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PictureLibraryModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_outline_api_v1_projects__project_id__plan_get: {
         parameters: {
             query?: never;
@@ -12013,6 +12510,43 @@ export interface operations {
             };
         };
     };
+    add_scene_picture_api_v1_projects__project_id__plan__plan_id__pictures_post: {
+        parameters: {
+            query: {
+                expected_revision: number;
+                name?: string | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     remove_plan_item_api_v1_projects__project_id__plan__plan_id__remove_post: {
         parameters: {
             query?: never;
@@ -12117,6 +12651,38 @@ export interface operations {
             };
         };
     };
+    check_estimate_api_v1_projects__project_id__plan__plan_id__studio_check_estimate_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["backend__api__v1__studio__EstimateModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     dismiss_finding_api_v1_projects__project_id__plan__plan_id__studio_dismissals_post: {
         parameters: {
             query?: never;
@@ -12191,6 +12757,7 @@ export interface operations {
             query?: never;
             header?: {
                 "Idempotency-Key"?: string | null;
+                "X-Confirm-Tokens"?: number | null;
             };
             path: {
                 project_id: string;
@@ -12263,7 +12830,9 @@ export interface operations {
     start_plan_card_api_v1_projects__project_id__plan__plan_id__studio_plan_card_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
             path: {
                 project_id: string;
                 plan_id: string;
@@ -12295,7 +12864,9 @@ export interface operations {
     start_reading_api_v1_projects__project_id__plan__plan_id__studio_readings_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
             path: {
                 project_id: string;
                 plan_id: string;
@@ -12327,7 +12898,9 @@ export interface operations {
     start_review_api_v1_projects__project_id__plan__plan_id__studio_reviews_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
             path: {
                 project_id: string;
                 plan_id: string;

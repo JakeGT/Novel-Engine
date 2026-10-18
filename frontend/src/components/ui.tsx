@@ -244,6 +244,13 @@ export function Dialog({
     const first = node?.querySelector<HTMLElement>('[data-autofocus]') ?? node?.querySelector<HTMLElement>(FOCUSABLE)
     ;(first ?? node)?.focus()
     const onKey = (event: KeyboardEvent) => {
+      // A list of suggestions open in a text box takes Escape for itself, and a plain Tab
+      // while it shows names (Tab puts one in). Every other key keeps focus in the dialog.
+      const suggestions = (event.target as HTMLElement | null)?.closest?.('[data-suggestions-open]')
+      if (suggestions) {
+        const plainTab = event.key === 'Tab' && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey
+        if (event.key === 'Escape' || (plainTab && suggestions.hasAttribute('data-suggestions-showing'))) return
+      }
       if (event.key === 'Escape') {
         event.stopPropagation()
         close.current()

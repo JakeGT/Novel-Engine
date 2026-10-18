@@ -71,6 +71,8 @@ class OpenItemModel(BaseModel):
     code: str
     # In an author's words: "This scene needs a place."
     message: str
+    # gap: not filled in yet. problem: out of order, or not ready where it comes.
+    kind: str = "gap"
 
 
 class ConditionStateModel(BaseModel):
@@ -79,8 +81,40 @@ class ConditionStateModel(BaseModel):
     when: str
     # In ordinary words: "Mara must have this: it is located at Lantern Harbor."
     reading: str
-    # Whether it is true in the story as it stands. Null when its entry is gone.
+    # Whether the story bible says it is true where the scene comes (at the scene's
+    # story time, if it has one). Null when that cannot be told.
     holds: bool | None
+    # hard (required) or soft (preferred).
+    strength: str = "hard"
+    # met, planned, not_met, unclear or unchecked (written in words).
+    status: str = "unclear"
+    # Why, in plain words, when there is more to say than the status.
+    note: str = ""
+    # Its place in the scene's own list of conditions.
+    index: int = 0
+    # The earlier scene meant to bring it about or undo it, if any.
+    planned_in: str | None = None
+
+
+class PromiseModel(BaseModel):
+    """A thread opened or a fact hinted: something the reader is owed (STY-007)."""
+
+    # thread or clue.
+    kind: str
+    # The thread's plan id, or the hinted fact's id.
+    subject_id: str
+    # Where it is first made, and its scene number in reading order.
+    made_in: str
+    made_at: int
+    # Where it is moved along, or hinted again, before it is kept.
+    moved_along: list[str]
+    # Where it is kept; null while it is still owed.
+    kept_in: str | None
+    kept_at: int | None
+    # Scenes between the promise and its keeping; while owed, scenes since it was made.
+    distance: int
+    # Kept before it is made: resolved before it is opened.
+    out_of_order: bool
 
 
 class ThreadStepModel(BaseModel):
@@ -103,6 +137,8 @@ class OutlineModel(BaseModel):
     conditions: list[ConditionStateModel]
     # Each thread's steps through the plan. Derived.
     threads: list[ThreadProgressModel] = Field(default_factory=list)
+    # Threads opened and facts hinted, in the order the reader meets them. Derived.
+    promises: list[PromiseModel] = Field(default_factory=list)
 
 
 class SetConditionsRequest(BaseModel):
@@ -215,19 +251,29 @@ async def get_outline(
     scope: AccessScope = Depends(get_project_scope),
     service: PlanService = Depends(get_plan_service),
 ) -> OutlineModel:
-    items, still_open = await service.outline(scope, scope.workspace_id or "", project_id)
-    states = await service.conditions(scope, scope.workspace_id or "", project_id)
+    reading = await service.outline(scope, scope.workspace_id or "", project_id)
+    items = reading.items
     return OutlineModel(
         items=[_model(item) for item in items],
         open=[
-            OpenItemModel(plan_id=item.plan_id, code=item.code, message=item.message)
-            for item in still_open
+            OpenItemModel(
+                plan_id=item.plan_id, code=item.code, message=item.message, kind=item.kind
+            )
+            for item in reading.open
         ],
         conditions=[
             ConditionStateModel(
-                plan_id=state.plan_id, when=state.when, reading=state.reading, holds=state.holds
+                plan_id=state.plan_id,
+                when=state.when,
+                reading=state.reading,
+                holds=state.holds,
+                strength=state.strength,
+                status=state.status,
+                note=state.note,
+                index=state.index,
+                planned_in=state.planned_in,
             )
-            for state in states
+            for state in reading.conditions
         ],
         threads=[
             ThreadProgressModel(
@@ -235,6 +281,20 @@ async def get_outline(
                 steps=[ThreadStepModel(plan_id=s.plan_id, step=s.step) for s in steps],
             )
             for thread_id, steps in sorted(thread_progress(items).items())
+        ],
+        promises=[
+            PromiseModel(
+                kind=promise.kind,
+                subject_id=promise.subject_id,
+                made_in=promise.made_in,
+                made_at=promise.made_at,
+                moved_along=promise.moved_along,
+                kept_in=promise.kept_in,
+                kept_at=promise.kept_at,
+                distance=promise.distance,
+                out_of_order=promise.out_of_order,
+            )
+            for promise in reading.promises
         ],
     )
 

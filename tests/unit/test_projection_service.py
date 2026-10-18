@@ -7,8 +7,8 @@ from backend.domain.operations import (
     canonicalize_operations,
     operations_checksum,
 )
-from backend.domain.projection import ProjectionStatus
-from backend.services.projection_service import GraphProjectionService
+from backend.domain.projection import ProjectionStatus, ProjectionWatermark
+from backend.services.projection_service import PROJECTION_SCHEMA_VERSION, GraphProjectionService
 from tests.doubles import InMemoryCanonRepository, InMemoryCanonWriter
 
 pytestmark = pytest.mark.unit
@@ -191,3 +191,34 @@ async def test_watermark_from_an_older_projection_layout_forces_a_rebuild() -> N
     watermark = await repo.get_watermark(projection="graph", **target)
     assert watermark.projection_schema_version == PROJECTION_SCHEMA_VERSION
     assert (await service.lag(**target)).current
+
+
+@pytest.mark.asyncio
+async def test_a_watermark_only_moves_forward_unless_rebuilt() -> None:
+    repo = InMemoryCanonRepository()
+    target = {"projection": "graph", "workspace_id": "ws", "project_id": "pr", "branch_id": "br"}
+
+    async def mark(
+        revision: int, status: ProjectionStatus, schema: str = PROJECTION_SCHEMA_VERSION
+    ):
+        await repo.set_watermark(
+            ProjectionWatermark(
+                revision=revision,
+                projection_schema_version=schema,
+                status=status,
+                updated_at=utcnow(),
+                **target,
+            )
+        )
+        stored = await repo.get_watermark(**target)
+        assert stored is not None
+        return stored.revision
+
+    assert await mark(5, ProjectionStatus.CURRENT) == 5
+    # A slower process that applied less does not lower it.
+    assert await mark(3, ProjectionStatus.CURRENT) == 5
+    assert await mark(6, ProjectionStatus.CURRENT) == 6
+    # A rebuild starts again from nothing, and so does a new layout.
+    assert await mark(0, ProjectionStatus.REBUILDING) == 0
+    assert await mark(4, ProjectionStatus.CURRENT) == 4
+    assert await mark(1, ProjectionStatus.CURRENT, schema="other") == 1

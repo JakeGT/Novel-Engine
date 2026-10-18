@@ -6,7 +6,9 @@ whole plan can be built with no provider connected.
 
 What is still open in a plan is *derived*, never stored: a scene with no place, a
 beat with no scene, a thread nothing resolves. These are things to do, not errors;
-a plan with gaps is a valid plan.
+a plan with gaps is a valid plan. So are the checks on its order (a reveal given away
+early, a thread resolved before it opens, a required condition not true where its
+scene comes) and the promises it makes the reader (STY-005, STY-007).
 """
 
 from __future__ import annotations
@@ -15,7 +17,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from backend.adapters.system import uuid7
+from backend.domain.canon.assertions import Fact
 from backend.domain.canon.entities import CanonEntity
+from backend.domain.canon.events import Event
 from backend.domain.canon.ids import format_canon_id
 from backend.domain.canon.plans import (
     ALLOWED_PARENTS,
@@ -26,14 +30,23 @@ from backend.domain.canon.plans import (
 )
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
-from backend.domain.knowledge import MAX_REVEALS, Reveal, with_reveals, with_scene_time
+from backend.domain.knowledge import (
+    MAX_REVEALS,
+    Reveal,
+    reading_order,
+    scene_reveals,
+    scene_time,
+    with_reveals,
+    with_scene_time,
+)
 from backend.domain.operations import (
     CanonOperation,
     CreatePlanItemOp,
     RetirePlanItemOp,
     UpdatePlanItemOp,
 )
-from backend.domain.rules import body_problems, world_from_canon
+from backend.domain.plan_checks import Promise, order_findings, promises, reveal_findings
+from backend.domain.rules import World, body_problems, world_from_canon
 from backend.domain.scene_conditions import (
     MAX_CONDITIONS,
     ConditionState,
@@ -41,6 +54,7 @@ from backend.domain.scene_conditions import (
     condition_body,
     condition_state,
     plain_details,
+    planned_change,
     scene_conditions,
     with_conditions,
 )
@@ -53,13 +67,22 @@ from backend.domain.threads import (
     thread_progress,
     with_advances,
 )
-from backend.domain.worldtime import Relative
+from backend.domain.worldtime import Relative, Truth, true_at
 from backend.ports import CanonRepositoryPort, SchemaVersionStorePort
 from backend.services.mutation_service import CommitResult, MutationService
+from backend.services.story_time_service import (
+    MAX_RECORDS,
+    Story,
+    event_times,
+    fact_span,
+    time_of,
+)
 
 MAX_PLAN_ITEMS = 2000
 MAX_WORLD_ENTITIES = 2000
 MAX_WORLD_FACTS = 10_000
+# Up to this many entries are read one by one for the plan's checks; past it, all at once.
+MAX_ENTRY_LOOKUPS = 200
 
 
 @dataclass(frozen=True)
@@ -69,6 +92,18 @@ class OpenItem:
     plan_id: str
     code: str
     message: str
+    # gap: something not filled in yet. problem: out of order, or not ready.
+    kind: str = "gap"
+
+
+@dataclass(frozen=True)
+class PlanReading:
+    """The plan in outline order, with everything derived from it on read."""
+
+    items: list[PlanItem]
+    open: list[OpenItem]
+    conditions: list[ConditionState]
+    promises: list[Promise]
 
 
 def _label(item: PlanItem) -> str:
@@ -204,10 +239,8 @@ class PlanService:
         )
 
     # ------------------------------------------------------------------ read
-    async def outline(
-        self, scope: AccessScope, workspace_id: str, project_id: str
-    ) -> tuple[list[PlanItem], list[OpenItem]]:
-        """The whole plan in outline order, and what it still needs."""
+    async def outline(self, scope: AccessScope, workspace_id: str, project_id: str) -> PlanReading:
+        """The whole plan, what it still needs, its checks and its promises to the reader."""
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
         items = await self._items(workspace_id, project_id)
         named = {ref.entity_id for item in items for ref in item.refs}
@@ -218,7 +251,117 @@ class PlanService:
             )
             if entity is not None:
                 entities[entity_id] = entity
-        return items, open_items(items, entities)
+        found = open_items(items, entities)
+        found += [
+            OpenItem(item.plan_id, item.code, item.message, item.kind)
+            for item in order_findings(items)
+        ]
+        scenes = reading_order(items)
+        states: list[ConditionState] = []
+        promised = promises(items, scenes, [])
+        if any(scene_reveals(scene.details) or scene_conditions(scene.details) for scene in scenes):
+            # Only read the part of the story bible a scene checks against.
+            story = await self._story_for_checks(workspace_id, project_id, scenes)
+            names = {entity.id: entity.name for entity in story.entities.values()}
+            found += [
+                OpenItem(item.plan_id, item.code, item.message, item.kind)
+                for item in reveal_findings(scenes, story.facts, names)
+            ]
+            states = condition_states(scenes, story)
+            found += [
+                OpenItem(
+                    state.plan_id,
+                    "condition_not_met",
+                    f"This scene needs this first, and it is not true at that point: "
+                    f"{state.reading.rstrip('.')}.",
+                    "problem",
+                )
+                for state in states
+                if state.when == "before" and state.strength == "hard" and state.status == "not_met"
+            ]
+            promised = promises(items, scenes, story.facts)
+        # In outline order, then threads, so the list reads like the page.
+        place = {item.id: index for index, item in enumerate(outline_order(items))}
+        found.sort(key=lambda item: place.get(item.plan_id, len(place)))
+        return PlanReading(items=items, open=found, conditions=states, promises=promised)
+
+    async def _story_for_checks(
+        self, workspace_id: str, project_id: str, scenes: list[PlanItem]
+    ) -> Story:
+        """The part of the story bible the plan's checks look at, and no more.
+
+        A condition about an entry depends only on that entry, the facts about it or
+        pointing at it, and the entries at their other ends; a reveal only on its own
+        fact. Events are read only when a scene with conditions is placed in story
+        time, since only then are times worked out.
+        """
+        about: set[str] = set()
+        named: set[str] = set()
+        fact_ids: set[str] = set()
+        timed = False
+        for scene in scenes:
+            conditions = scene_conditions(scene.details)
+            for condition in conditions:
+                if condition.entity_id is not None:
+                    about.add(condition.entity_id)
+                if condition.check is not None and condition.check.pattern.other_id:
+                    named.add(condition.check.pattern.other_id)
+            if conditions and scene_time(scene.details) is not None:
+                timed = True
+            fact_ids.update(reveal.fact_id for reveal in scene_reveals(scene.details))
+        facts: dict[str, Fact] = {}
+        for entity_id in sorted(about):
+            about_it = await self._reader.list_facts(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                subject_id=entity_id,
+                limit=MAX_WORLD_FACTS,
+            )
+            pointing_at_it = await self._reader.list_facts(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                object_entity_id=entity_id,
+                limit=MAX_WORLD_FACTS,
+            )
+            for fact in [*about_it, *pointing_at_it]:
+                facts[fact.id] = fact
+        for fact_id in sorted(fact_ids - facts.keys()):
+            found = await self._reader.get_fact(
+                workspace_id=workspace_id, project_id=project_id, fact_id=fact_id
+            )
+            if found is not None:
+                facts[fact_id] = found
+        wanted = about | named
+        for fact in facts.values():
+            wanted.add(fact.proposition.subject_id)
+            other = getattr(fact.proposition.object, "entity_id", None)
+            if other:
+                wanted.add(other)
+        entities: dict[str, CanonEntity] = {}
+        if len(wanted) > MAX_ENTRY_LOOKUPS:
+            # Many entries: one read of the bible's entries is cheaper than one each.
+            for entity in await self._reader.list_entities(
+                workspace_id=workspace_id, project_id=project_id, limit=MAX_RECORDS
+            ):
+                if entity.id in wanted:
+                    entities[entity.id] = entity
+        else:
+            for entity_id in sorted(wanted):
+                one = await self._reader.get_entity(
+                    workspace_id=workspace_id, project_id=project_id, entity_id=entity_id
+                )
+                if one is not None and one.is_active:
+                    entities[entity_id] = one
+        events: list[Event] = []
+        if timed:
+            events = [
+                event
+                for event in await self._reader.list_events(
+                    workspace_id=workspace_id, project_id=project_id, limit=MAX_RECORDS
+                )
+                if event.retired_revision is None
+            ]
+        return Story(entities=entities, facts=list(facts.values()), events=events)
 
     async def get(
         self, scope: AccessScope, workspace_id: str, project_id: str, plan_id: str
@@ -230,32 +373,6 @@ class PlanService:
         if item is None:
             raise NotFoundError("That part of the plan was not found.")
         return item
-
-    async def conditions(
-        self, scope: AccessScope, workspace_id: str, project_id: str
-    ) -> list[ConditionState]:
-        """Every scene's conditions, and whether each holds in the story as it stands."""
-        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
-        scenes = [
-            (item, scene_conditions(item.details))
-            for item in await self._items(workspace_id, project_id)
-            if item.is_active and item.kind is PlanKind.SCENE
-        ]
-        if not any(found for _, found in scenes):
-            return []
-        world = world_from_canon(
-            await self._reader.list_entities(
-                workspace_id=workspace_id, project_id=project_id, limit=MAX_WORLD_ENTITIES
-            ),
-            await self._reader.list_facts(
-                workspace_id=workspace_id, project_id=project_id, limit=MAX_WORLD_FACTS
-            ),
-        )
-        return [
-            condition_state(item.id, condition, world)
-            for item, found in scenes
-            for condition in found
-        ]
 
     async def set_conditions(
         self,
@@ -280,6 +397,8 @@ class PlanService:
         )
         entity_ids = {entity.id for entity in entities if entity.is_active}
         for condition in conditions:
+            if condition.words is not None:
+                continue
             problems = body_problems(
                 condition_body(condition),
                 predicates=predicates,
@@ -652,4 +771,68 @@ class PlanService:
         return result, len(doomed)
 
 
-__all__ = ["MAX_PLAN_ITEMS", "OpenItem", "PlanService", "open_items"]
+def _world_at(story: Story, moment: object, times: dict) -> tuple[World, World]:
+    """The story at one moment: facts certainly true then, and those that may be."""
+    sure, maybe = [], []
+    for fact in story.facts:
+        if fact.closed_revision is not None:
+            continue
+        truth = true_at(fact_span(fact, times), moment)  # type: ignore[arg-type]
+        if truth is Truth.TRUE:
+            sure.append(fact)
+        if truth is not Truth.FALSE:
+            maybe.append(fact)
+    entities = list(story.entities.values())
+    return world_from_canon(entities, sure), world_from_canon(entities, maybe)
+
+
+def condition_states(scenes: list[PlanItem], story: Story) -> list[ConditionState]:
+    """Every scene's conditions, judged where the scene comes (reading order).
+
+    A scene placed in story time is judged against the facts true at that moment; one
+    that is not is judged against the story as it stands. Earlier scenes' "after"
+    conditions say what the plan means to change before it.
+    """
+    world = world_from_canon(story.entities.values(), story.facts)
+    # Without a time of its own, a scene may come before or after a fact stops being
+    # true; the story without such facts lets the check say it cannot tell.
+    lasting = [fact for fact in story.facts if fact.ends is None]
+    undated = (
+        world_from_canon(story.entities.values(), lasting)
+        if len(lasting) != len(story.facts)
+        else None
+    )
+    times = event_times(story.events)
+    earlier: list[tuple[str, str, list[SceneCondition]]] = []
+    states: list[ConditionState] = []
+    for scene in scenes:
+        conditions = scene_conditions(scene.details)
+        if conditions:
+            when = scene_time(scene.details)
+            moment = time_of(when, times) if when is not None else None
+            at_time = _world_at(story, moment, times) if moment is not None else None
+            for index, condition in enumerate(conditions):
+                planned = planned_change(condition, earlier) if condition.when == "before" else None
+                states.append(
+                    condition_state(
+                        scene.id,
+                        condition,
+                        world,
+                        index=index,
+                        at_time=at_time,
+                        planned=planned,
+                        undated=undated,
+                    )
+                )
+        earlier.append((scene.id, scene.title, conditions))
+    return states
+
+
+__all__ = [
+    "MAX_PLAN_ITEMS",
+    "OpenItem",
+    "PlanReading",
+    "PlanService",
+    "condition_states",
+    "open_items",
+]

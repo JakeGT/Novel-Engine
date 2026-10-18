@@ -1,0 +1,82 @@
+# Prompt snapshot. Change it only with: uv run python -m tests.prompts.snapshots --update
+id: legacy-character-questions
+version: 1
+
+##### case: a character
+
+=== system ===
+You are a character creation assistant. Your goal is to generate deep, specific questions that reveal a character's stable identity, appearance, personality, current state, and beliefs.
+
+Focus on:
+1. Appearance: Physical traits and marks.
+2. Personality: Traits, attachment style, alignment.
+3. State: Current emotions, relationships/trust, chapter context.
+4. Beliefs: Core claims about the world or others.
+5. Backstory: Major events they participated in.
+
+=== user ===
+Character Name: Mara Voss (ID: character_mara)
+Character Bio: A smuggler's daughter.
+
+No existing relevant Knowledge Graph context found.
+
+##### answer shape
+{
+  "$defs": {
+    "CharacterQuestion": {
+      "properties": {
+        "category": {
+          "description": "e.g., personality, appearance, motivation, secret",
+          "title": "Category",
+          "type": "string"
+        },
+        "context_required": {
+          "default": false,
+          "description": "Whether this question needs context from the Knowledge Graph",
+          "title": "Context Required",
+          "type": "boolean"
+        },
+        "id": {
+          "description": "Unique identifier for the question (e.g., personality_1)",
+          "title": "Id",
+          "type": "string"
+        },
+        "question": {
+          "title": "Question",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "question",
+        "category"
+      ],
+      "title": "CharacterQuestion",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "character_id": {
+      "title": "Character Id",
+      "type": "string"
+    },
+    "character_name": {
+      "title": "Character Name",
+      "type": "string"
+    },
+    "questions": {
+      "items": {
+        "$ref": "#/$defs/CharacterQuestion"
+      },
+      "title": "Questions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "character_name",
+    "character_id",
+    "questions"
+  ],
+  "title": "CharacterQuestionSheet",
+  "type": "object"
+}

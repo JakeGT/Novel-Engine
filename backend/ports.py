@@ -229,6 +229,9 @@ class AIUsage:
     # Of the prompt tokens, how many the provider read back from its cache (CTX-015).
     # Already counted in ``prompt_tokens``; 0 when the provider does not say.
     cached_prompt_tokens: int = 0
+    # What the provider says the call cost, in US dollars (OpenRouter's ``usage.cost``);
+    # None when it does not say. Never worked out here from a price list (OPS-002).
+    cost_usd: float | None = None
 
     @property
     def total_tokens(self) -> int:
@@ -757,8 +760,12 @@ class CanonJournalPort(Protocol):
     async def append_outbox(self, message: OutboxMessage) -> None: ...
 
     async def list_outbox(
-        self, *, workspace_id: str, project_id: str, limit: int = 100
+        self, *, workspace_id: str, project_id: str, limit: int = 100, pending_only: bool = False
     ) -> list[OutboxMessage]: ...
+
+    async def projects_with_pending_outbox(self, *, limit: int = 50) -> list[tuple[str, str]]:
+        """(workspace, project) pairs with messages not yet delivered, oldest first."""
+        ...
 
     async def mark_outbox_published(self, *, message_id: str) -> None: ...
 
@@ -1190,6 +1197,16 @@ class MediaStorePort(Protocol):
     async def list_versions(
         self, *, workspace_id: str, project_id: str, asset_id: str
     ) -> list[MediaAssetVersion]: ...
+
+    async def list_versions_for_assets(
+        self, *, workspace_id: str, project_id: str, asset_ids: list[str]
+    ) -> dict[str, list[MediaAssetVersion]]:
+        """Every version of each named asset, oldest first, keyed by asset."""
+        ...
+
+    async def discard_asset(self, *, workspace_id: str, project_id: str, asset_id: str) -> None:
+        """Remove an asset no canon record refers to, with its versions and events."""
+        ...
 
     async def retire_asset(
         self,

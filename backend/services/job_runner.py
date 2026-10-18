@@ -73,14 +73,20 @@ class JobContext:
             raise JobCancelled(stage)
 
     async def used(
-        self, prompt_tokens: int, completion_tokens: int, cached_prompt_tokens: int = 0
+        self,
+        prompt_tokens: int,
+        completion_tokens: int,
+        cached_prompt_tokens: int = 0,
+        cost_usd: float | None = None,
     ) -> None:
+        extra = {"cost_usd": cost_usd} if cost_usd is not None else {}
         await self._store.add_usage(
             self.job,
             owner=self._owner,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             cached_prompt_tokens=cached_prompt_tokens,
+            **extra,
         )
 
     @asynccontextmanager

@@ -7,7 +7,8 @@ attempts, review decisions, canon revisions, and the transactional outbox.
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from typing import Any
 
 from sqlalchemy import text
@@ -175,6 +176,11 @@ def _envelope(row: Any) -> CommitEnvelope:
         actor_user_id=row.actor_user_id,
         created_at=row.created_at,
     )
+
+
+# The first key of the two-key advisory locks taken by story_lock, so they never meet the
+# single-key locks used elsewhere (credentials, rate limits, the studio).
+_STORY_LOCK_SPACE = 12_012
 
 
 class PostgresCanonJournal:
@@ -1076,14 +1082,17 @@ class PostgresCanonJournal:
             )
 
     async def list_outbox(
-        self, *, workspace_id: str, project_id: str, limit: int = 100
+        self, *, workspace_id: str, project_id: str, limit: int = 100, pending_only: bool = False
     ) -> list[OutboxMessage]:
+        # Pending messages are asked for by themselves: the oldest messages of a long-lived
+        # project are all delivered, so a plain "oldest first" page would never reach the new.
+        pending = " AND published_at IS NULL" if pending_only else ""
         async with session_scope(self._session_factory) as session:
             rows = (
                 await session.execute(
                     text(
-                        "SELECT * FROM outbox_messages WHERE workspace_id = :w AND project_id = :p "
-                        "ORDER BY created_at LIMIT :limit"
+                        "SELECT * FROM outbox_messages WHERE workspace_id = :w AND project_id = :p"
+                        f"{pending} ORDER BY created_at LIMIT :limit"
                     ),
                     {"w": workspace_id, "p": project_id, "limit": limit},
                 )
@@ -1103,6 +1112,37 @@ class PostgresCanonJournal:
             )
             for row in rows
         ]
+
+    async def projects_with_pending_outbox(self, *, limit: int = 50) -> list[tuple[str, str]]:
+        async with session_scope(self._session_factory) as session:
+            rows = (
+                await session.execute(
+                    text(
+                        "SELECT workspace_id, project_id, min(created_at) AS oldest "
+                        "FROM outbox_messages WHERE published_at IS NULL "
+                        "GROUP BY workspace_id, project_id ORDER BY oldest LIMIT :limit"
+                    ),
+                    {"limit": limit},
+                )
+            ).all()
+        return [(str(row.workspace_id), str(row.project_id)) for row in rows]
+
+    @asynccontextmanager
+    async def story_lock(self, *, workspace_id: str, project_id: str) -> AsyncIterator[bool]:
+        """The right to deliver one story's changes to the graph, held while the block runs.
+
+        Yields False at once, without waiting, when another process holds it, so two servers
+        never deliver the same story at the same time. The lock belongs to a transaction kept
+        open for the block, so it is let go however the block ends, even if the process dies.
+        """
+        async with session_scope(self._session_factory) as session:
+            held = (
+                await session.execute(
+                    text("SELECT pg_try_advisory_xact_lock(:space, hashtext(:key))"),
+                    {"space": _STORY_LOCK_SPACE, "key": f"{workspace_id}/{project_id}"},
+                )
+            ).scalar()
+            yield bool(held)
 
     async def mark_outbox_published(self, *, message_id: str) -> None:
         async with session_scope(self._session_factory) as session:
