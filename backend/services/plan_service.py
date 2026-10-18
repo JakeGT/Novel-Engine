@@ -8,15 +8,29 @@ What is still open in a plan is *derived*, never stored: a scene with no place, 
 beat with no scene, a thread nothing resolves. These are things to do, not errors;
 a plan with gaps is a valid plan. So are the checks on its order (a reveal given away
 early, a thread resolved before it opens, a required condition not true where its
-scene comes) and the promises it makes the reader (STY-005, STY-007).
+scene comes), the promises it makes the reader (STY-005, STY-007), and how each
+arc's character changes stage by stage (STY-006).
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from backend.adapters.system import uuid7
+from backend.domain.arcs import (
+    MAX_STAGES,
+    ArcReading,
+    ArcStage,
+    FactStanding,
+    arc_findings,
+    arc_path,
+    arcs_with_paths,
+    path_fits,
+    read_arcs,
+    with_path,
+    without_scenes,
+)
 from backend.domain.canon.assertions import Fact
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.events import Event
@@ -45,7 +59,13 @@ from backend.domain.operations import (
     RetirePlanItemOp,
     UpdatePlanItemOp,
 )
-from backend.domain.plan_checks import Promise, order_findings, promises, reveal_findings
+from backend.domain.plan_checks import (
+    Promise,
+    fact_sentence,
+    order_findings,
+    promises,
+    reveal_findings,
+)
 from backend.domain.rules import World, body_problems, world_from_canon
 from backend.domain.scene_conditions import (
     MAX_CONDITIONS,
@@ -104,6 +124,8 @@ class PlanReading:
     open: list[OpenItem]
     conditions: list[ConditionState]
     promises: list[Promise]
+    # Each arc's stages: where each is reached and whether its fact holds (STY-006).
+    arcs: list[ArcReading] = field(default_factory=list)
 
 
 def _label(item: PlanItem) -> str:
@@ -146,7 +168,8 @@ def open_items(items: list[PlanItem], entities: dict[str, CanonEntity]) -> list[
             if PlanKind.SCENE not in kinds:
                 add(item, "needs_scene", "This beat has no scene yet.")
         elif item.kind is PlanKind.ARC:
-            if not kinds & {PlanKind.BEAT, PlanKind.SCENE}:
+            # An arc told as a path of stages is carried by the scenes it names.
+            if not kinds & {PlanKind.BEAT, PlanKind.SCENE} and not arc_path(item.details):
                 add(item, "needs_beats", "This arc has no beats yet.")
             if not item.refs_as("about"):
                 add(item, "needs_owner", "This arc does not say whose it is.")
@@ -259,46 +282,84 @@ class PlanService:
         scenes = reading_order(items)
         states: list[ConditionState] = []
         promised = promises(items, scenes, [])
-        if any(scene_reveals(scene.details) or scene_conditions(scene.details) for scene in scenes):
-            # Only read the part of the story bible a scene checks against.
-            story = await self._story_for_checks(workspace_id, project_id, scenes)
+        arcs = arcs_with_paths(items)
+        arc_facts = {
+            stage.fact_id
+            for arc in arcs
+            for stage in arc_path(arc.details)
+            if stage.fact_id is not None
+        }
+        titles = {item.id: item.title for item in items}
+        arc_readings = read_arcs(items, scenes)
+        fact_words: Callable[[str], str] | None = None
+        checked = any(
+            scene_reveals(scene.details) or scene_conditions(scene.details) for scene in scenes
+        )
+        if checked or arc_facts:
+            # Only read the part of the story bible a scene or an arc checks against.
+            story = await self._story_for_checks(
+                workspace_id, project_id, scenes, also_facts=arc_facts
+            )
             names = {entity.id: entity.name for entity in story.entities.values()}
-            found += [
-                OpenItem(item.plan_id, item.code, item.message, item.kind)
-                for item in reveal_findings(scenes, story.facts, names)
-            ]
-            states = condition_states(scenes, story)
-            found += [
-                OpenItem(
-                    state.plan_id,
-                    "condition_not_met",
-                    f"This scene needs this first, and it is not true at that point: "
-                    f"{state.reading.rstrip('.')}.",
-                    "problem",
-                )
-                for state in states
-                if state.when == "before" and state.strength == "hard" and state.status == "not_met"
-            ]
-            promised = promises(items, scenes, story.facts)
+            if arc_facts:
+                arc_readings = read_arcs(items, scenes, fact_standing_in(story))
+                facts_by_id = {fact.id: fact for fact in story.facts}
+
+                def fact_words(fact_id: str) -> str:
+                    fact = facts_by_id.get(fact_id)
+                    return fact_sentence(fact, names) if fact is not None else "its fact"
+
+            if checked:
+                found += [
+                    OpenItem(item.plan_id, item.code, item.message, item.kind)
+                    for item in reveal_findings(scenes, story.facts, names)
+                ]
+                states = condition_states(scenes, story)
+                found += [
+                    OpenItem(
+                        state.plan_id,
+                        "condition_not_met",
+                        f"This scene needs this first, and it is not true at that point: "
+                        f"{state.reading.rstrip('.')}.",
+                        "problem",
+                    )
+                    for state in states
+                    if state.when == "before"
+                    and state.strength == "hard"
+                    and state.status == "not_met"
+                ]
+                promised = promises(items, scenes, story.facts)
+        found += [
+            OpenItem(item.plan_id, item.code, item.message, item.kind)
+            for item in arc_findings(arc_readings, scenes, titles, fact_words)
+        ]
         # In outline order, then threads, so the list reads like the page.
         place = {item.id: index for index, item in enumerate(outline_order(items))}
         found.sort(key=lambda item: place.get(item.plan_id, len(place)))
-        return PlanReading(items=items, open=found, conditions=states, promises=promised)
+        return PlanReading(
+            items=items, open=found, conditions=states, promises=promised, arcs=arc_readings
+        )
 
     async def _story_for_checks(
-        self, workspace_id: str, project_id: str, scenes: list[PlanItem]
+        self,
+        workspace_id: str,
+        project_id: str,
+        scenes: list[PlanItem],
+        *,
+        also_facts: set[str] | None = None,
     ) -> Story:
         """The part of the story bible the plan's checks look at, and no more.
 
         A condition about an entry depends only on that entry, the facts about it or
-        pointing at it, and the entries at their other ends; a reveal only on its own
-        fact. Events are read only when a scene with conditions is placed in story
-        time, since only then are times worked out.
+        pointing at it, and the entries at their other ends; a reveal or an arc's stage
+        only on its own fact. Events are read only when a scene with conditions (or
+        with ``also_facts`` to judge) is placed in story time, since only then are
+        times worked out.
         """
         about: set[str] = set()
         named: set[str] = set()
-        fact_ids: set[str] = set()
-        timed = False
+        fact_ids: set[str] = set(also_facts or ())
+        timed = bool(also_facts) and any(scene_time(scene.details) is not None for scene in scenes)
         for scene in scenes:
             conditions = scene_conditions(scene.details)
             for condition in conditions:
@@ -490,6 +551,57 @@ class PlanService:
             expected_revision,
         )
 
+    async def set_path(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        *,
+        stages: list[ArcStage],
+        expected_revision: int,
+    ) -> tuple[CommitResult, PlanItem]:
+        """Replace an arc's stages, in order. Saved as a change to the plan (STY-006)."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        current = await self.get(scope, workspace_id, project_id, plan_id)
+        await self._check_path(current.kind, stages, workspace_id, project_id)
+        details = with_path(current.details, stages)
+        if details == current.details:
+            raise ValidationError("Nothing has changed, so there is nothing to save.")
+        operation = UpdatePlanItemOp(id=plan_id, details=details)
+        result = await self._commit(scope, workspace_id, project_id, [operation], expected_revision)
+        return result, await self.get(scope, workspace_id, project_id, plan_id)
+
+    async def _check_path(
+        self, kind: PlanKind, stages: list[ArcStage], workspace_id: str, project_id: str
+    ) -> None:
+        """Stages belong to an arc, have their own names, and point at what is there."""
+        if kind is not PlanKind.ARC:
+            raise ValidationError("Only an arc can have stages.")
+        if len(stages) > MAX_STAGES:
+            raise ValidationError(f"An arc can have at most {MAX_STAGES} stages.")
+        if len({stage.name.casefold() for stage in stages}) != len(stages):
+            raise ValidationError("Give each stage its own name.")
+        scene_ids = {stage.scene_id for stage in stages if stage.scene_id is not None}
+        if scene_ids:
+            scenes = {
+                item.id
+                for item in await self._items(workspace_id, project_id)
+                if item.is_active and item.kind is PlanKind.SCENE
+            }
+            if scene_ids - scenes:
+                raise ValidationError("A stage can only be reached in a scene of the plan.")
+        for fact_id in sorted({stage.fact_id for stage in stages if stage.fact_id is not None}):
+            fact = await self._reader.get_fact(
+                workspace_id=workspace_id, project_id=project_id, fact_id=fact_id
+            )
+            if fact is None or fact.closed_revision is not None:
+                raise ValidationError("A stage can only be tied to a fact that is in the story.")
+        if not path_fits(stages):
+            raise ValidationError(
+                "That is more than one arc can keep. Shorten the stage names or use fewer stages."
+            )
+
     async def _vocabulary(self, workspace_id: str, project_id: str) -> tuple[set[str], set[str]]:
         from backend.domain.canon.registry import CORE_ENTITY_TYPES, CORE_PREDICATES
         from backend.services.schema_compiler import compile_definition
@@ -560,11 +672,14 @@ class PlanService:
         details: dict[str, str] | None = None,
         advances: list[str] | None = None,
         intent: SceneIntent | None = None,
+        path: list[ArcStage] | None = None,
         expected_revision: int,
     ) -> tuple[CommitResult, PlanItem]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         if not title.strip():
             raise ValidationError("Give it a title.")
+        if path:
+            await self._check_path(kind, path, workspace_id, project_id)
         items = await self._items(workspace_id, project_id)
         siblings = [
             item
@@ -578,6 +693,8 @@ class PlanService:
         if intent is not None:
             self._check_intent(kind)
             kept = with_intent(kept, intent)
+        if path:
+            kept = with_path(kept, path)
         plan_id = format_canon_id("plan_item", str(uuid7()))
         operation = CreatePlanItemOp(
             id=plan_id,
@@ -747,6 +864,13 @@ class PlanService:
         visit(plan_id)
         gone = set(doomed)
         operations: list[CanonOperation] = []
+        # A stage reached in a removed scene goes back to not placed, so nothing dangles.
+        for item in items:
+            if item.id in gone or item.kind is not PlanKind.ARC:
+                continue
+            kept = without_scenes(item.details, gone)
+            if kept != item.details:
+                operations.append(UpdatePlanItemOp(id=item.id, details=kept))
         # A removed thread is taken off whatever opened or resolved it, so nothing dangles.
         for item in items:
             if item.id in gone:
@@ -784,6 +908,28 @@ def _world_at(story: Story, moment: object, times: dict) -> tuple[World, World]:
             maybe.append(fact)
     entities = list(story.entities.values())
     return world_from_canon(entities, sure), world_from_canon(entities, maybe)
+
+
+def fact_standing_in(story: Story) -> Callable[[str, PlanItem | None], FactStanding]:
+    """How a fact stands at a scene: at its story time if it has one, else as it stands."""
+    facts = {fact.id: fact for fact in story.facts}
+    times = event_times(story.events)
+
+    def standing(fact_id: str, scene: PlanItem | None) -> FactStanding:
+        fact = facts.get(fact_id)
+        if fact is None or fact.closed_revision is not None:
+            return "gone"
+        when = scene_time(scene.details) if scene is not None else None
+        moment = time_of(when, times) if when is not None else None
+        if moment is None:
+            # With no time to judge at, only a fact that always holds can be said to.
+            return "holds" if fact.starts is None and fact.ends is None else "unclear"
+        truth = true_at(fact_span(fact, times), moment)
+        if truth is Truth.TRUE:
+            return "holds"
+        return "not_then" if truth is Truth.FALSE else "unclear"
+
+    return standing
 
 
 def condition_states(scenes: list[PlanItem], story: Story) -> list[ConditionState]:
@@ -834,5 +980,6 @@ __all__ = [
     "PlanReading",
     "PlanService",
     "condition_states",
+    "fact_standing_in",
     "open_items",
 ]

@@ -252,12 +252,12 @@ then `pnpm --dir frontend run gen:api`.
 
 ## 10. Data & migrations
 
-- Alembic (PostgreSQL) head: **`0038_usage_controls`** (… → `0022_archive_imports` →
+- Alembic (PostgreSQL) head: **`0039_check_passes`** (… → `0022_archive_imports` →
   `0023_session_id_token` → `0024_assist_sessions` → `0025_workspace_ai_settings` →
   `0026_assist_suggestions` → `0027_usage_allowance` → `0028_plan_items` →
   `0029_plan_conversations` → `0030_source_texts` → `0031_story_rules` → `0032_story_time` →
   `0033_context` → `0034_scene_studio` → `0035_scene_readings` → `0036_cached_tokens` →
-  `0037_finding_decisions` → `0038_usage_controls`).
+  `0037_finding_decisions` → `0038_usage_controls` → `0039_check_passes`).
 - Neo4j ordered migrations: `0001_initial_graph_schema`, `0002_entity_scope_identity`,
   `0003_canon_scope_identity`, `0004_canon_projection_labels` (checksums in
   `plan/phase-2-evidence.md`).
@@ -723,4 +723,30 @@ A read-only review found six medium and many low issues; all were fixed with tes
 on every model call, one automatic check per save race, the picture library per line of the story
 with no orphan uploads, mention picks that never delete words, manifests written last, and the
 graph worker never starved by failing stories).
+
+## Open release-one items, third batch (2026-10-18)
+
+- **Character arcs** (STY-006): an arc plan item holds a path of named stages (`_path` in its
+  details), each placed in a scene and optionally tied to a fact; checked without a model (order,
+  the tied fact at that time, long gaps); shown on the character's page and the plan; the
+  viewpoint's stage goes to drafting (`backend/domain/arcs.py`, `PUT /plan/{id}/path`).
+- **What this change touches** (CON-017, CON-007): computed on read from plan refs, conditions,
+  reveals, threads, rules, kept drafts' contexts and the passage index; affected / may be affected /
+  not checked (`backend/services/impact_service.py`, `GET /mutations/{id}/impact`,
+  `GET /entities/{id}/impact`).
+- **Reader's guide** (QRY-002): a page in the app (`plan/:planId/guide`) that prints, a guide at an
+  earlier version (`backend/services/story_at_version.py` replays history), and a Markdown export
+  whose header binds line, version, position and viewpoint. No public share link.
+- **Scene time** (EXT-007): facts a scene shows starting take its story time (only kinds that can
+  take one); an old value ends at the scene, a later value is kept and bounds the new one
+  (`read-scene` prompt; pasted text unchanged).
+- **Check passes and audits** (CON-008, CON-011; migration 0039): the scene check is five passes
+  (viewpoint and secrets, continuity, the plan, voice, clarity), each its own call and prompt; an
+  audit runs chosen passes over a part of the plan as one job, resumable without re-running what
+  finished (`backend/services/story_audit.py`, `/projects/:id/audits/:jobId`).
+
+A read-only review found eight medium and many low issues; all were fixed with tests (an arc stage
+never carries a secret into drafts or other passes; going back to an earlier place and scenes read
+out of order are timed correctly; only facts shown changing take the scene's time; audits never
+repeat finished passes and the results page polls lightly; impact reads kept contexts in one go).
 

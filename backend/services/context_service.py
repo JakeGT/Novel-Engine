@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from backend.adapters.system import uuid7
+from backend.domain.arcs import moves_in_scene
 from backend.domain.branching import working_branch_id
 from backend.domain.canon.assertions import FactVisibility
 from backend.domain.canon.entities import CanonEntity
@@ -450,6 +451,58 @@ class ContextService:
                 )
             )
         facts_by_id = {fact.id: fact for fact in story.facts}
+        # What the viewpoint character knows: a secret they lack stays the author's alone.
+        known = knowledge_of(pov, story.facts, beliefs) if pov else None
+        known_ids = known.known_ids() if known else set()
+        # The viewpoint character's arc, where this scene moves it (STY-006): the stage
+        # going in and the stage reached, so the change happens on the page.
+        for move in moves_in_scene(items_all, scene.id):
+            if pov is None or pov not in move.about:
+                continue
+            who = names.get(pov, "The viewpoint character")
+            text = f"{who}'s arc “{move.arc_title}”: "
+            if move.current is not None:
+                text += f"going in, {who} is at “{move.current}”; in this scene, "
+            else:
+                text += "in this scene, "
+            text += f"{who} reaches “{move.reached}”."
+            tied = facts_by_id.get(move.fact_id) if move.fact_id else None
+            if tied is not None and tied.closed_revision is not None:
+                tied = None
+            if tied is not None and _hidden(tied, pov, known_ids):
+                # A secret the viewpoint does not know is not an instruction for the page:
+                # it is kept apart, for the author, like any other secret.
+                secret_text, secret_reason = _secret_words(
+                    f"From here on: {_sentence(tied.proposition, names)}", pov, names
+                )
+                out.append(
+                    ContextItem(
+                        key=f"arc:{scene.id}:{move.arc_id}:fact",
+                        section=ContextSection.SECRETS,
+                        text=secret_text,
+                        reason=f"The stage {who} reaches in this scene is tied to it. "
+                        + secret_reason,
+                        authority="plan",
+                        record_type="fact",
+                        record_id=tied.id,
+                        score=5,
+                    )
+                )
+            elif tied is not None:
+                text += f" From here on: {_sentence(tied.proposition, names)}."
+            out.append(
+                ContextItem(
+                    key=f"arc:{scene.id}:{move.arc_id}",
+                    section=ContextSection.SCENE,
+                    text=text,
+                    reason=f"You said this scene moves {who}'s arc.",
+                    authority="plan",
+                    record_type="plan_item",
+                    record_id=move.arc_id,
+                    score=88,
+                    hard=True,
+                )
+            )
         for reveal in scene_reveals(scene.details):
             fact = facts_by_id.get(reveal.fact_id)
             if fact is None:
@@ -493,8 +546,6 @@ class ContextService:
             )
 
         # What is true of them at the scene's time; secrets the viewpoint does not know apart.
-        known = knowledge_of(pov, story.facts, beliefs) if pov else None
-        known_ids = known.known_ids() if known else set()
         linked: dict[str, int] = {}
         for fact in story.facts:
             if fact.closed_revision is not None:

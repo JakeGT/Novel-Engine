@@ -33,6 +33,13 @@ for authors and for whoever runs an install. Version numbers start when the owne
   with what a kept draft was written from.
 - **Promises to the reader**: what your plan owes the reader and where each promise is kept; a
   reveal that comes too early is flagged; scenes can say what must be true before them.
+- **Character arcs**: the stages a character passes through, each placed in a scene, checked
+  for order and against the story bible.
+- **What a change touches**, shown before you approve it: scenes, threads, rules, writing and
+  kept drafts that depend on it, and what could not be checked.
+- **The assistant's check in separate passes** you choose, each with its cost, and **audits** of
+  a whole part of the story.
+- **A reader's guide you can print**, also as of an earlier version of the story.
 - **Type @ to name an entry** while writing; **pictures on scenes**.
 - **Spending you control**: how much the assistant checks on its own, a budget per conversation,
   and being asked first before any request above a size you choose.
@@ -43,7 +50,7 @@ for authors and for whoever runs an install. Version numbers start when the owne
 ### For whoever runs it
 
 - **Upgrading:** take a backup first (`deploy/hosted/backup.sh` on the hosted profile). The server
-  applies migrations on start; this release adds migrations up to `0038_usage_controls`.
+  applies migrations on start; this release adds migrations up to `0039_check_passes`.
 - **Readiness** now answers `ready`, `degraded` (200) or `unavailable` (503, a required store is
   down); a watcher that looked for `degraded` on a store outage must look for `unavailable`.
 - **Archives** are version 4 and carry what-ifs, conversations and scene readings; version 3

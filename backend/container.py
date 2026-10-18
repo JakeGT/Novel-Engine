@@ -368,6 +368,7 @@ def build_container(settings: Settings | None = None) -> Container:
         schema_store=container.schema_versions,
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
+        journal=container.journal,
     )
     from backend.adapters.passage_store import PostgresManifestStore, PostgresPassageStore
     from backend.services.context_service import ContextService

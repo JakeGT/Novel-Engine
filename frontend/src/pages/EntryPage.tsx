@@ -4,6 +4,8 @@ import { Link, useParams } from 'react-router-dom'
 import { api, type CanonEntity } from '../api/client'
 import { ActivityPanel } from '../components/ActivityPanel'
 import { ArchiveEntry } from '../components/ArchiveEntry'
+import { EntryImpact } from '../components/ChangeImpact'
+import { CharacterArcs } from '../components/ArcPath'
 import { EntityForm } from '../components/EntityForm'
 import { BeliefsPanel } from '../components/BeliefsPanel'
 import { KnowledgePanel } from '../components/KnowledgePanel'
@@ -263,6 +265,7 @@ export function EntryPage() {
               <FactsPanel entity={entity} />
               {entity.type === 'Character' && <BeliefsPanel entity={entity} />}
               {entity.type === 'Character' && <KnowledgePanel entity={entity} />}
+              {entity.type === 'Character' && <CharacterArcs entity={entity} />}
               {entity.type === 'Character' && <Events entity={entity} />}
               {editable && !bare && <Assistant entity={entity} bare={false} />}
             </div>
@@ -288,7 +291,11 @@ export function EntryPage() {
 
           {editing && (
             <Dialog title={`Edit ${entity.name}`} onClose={() => setEditing(false)} wide>
-              <EntityForm entity={entity} onSaved={() => setEditing(false)} onCancel={() => setEditing(false)} />
+              <div className="stack">
+                {/* Before saving: what in the story depends on this entry (CON-017). */}
+                <EntryImpact entityId={entity.id} name={entity.name} />
+                <EntityForm entity={entity} onSaved={() => setEditing(false)} onCancel={() => setEditing(false)} />
+              </div>
             </Dialog>
           )}
         </>

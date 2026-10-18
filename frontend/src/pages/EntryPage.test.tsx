@@ -21,6 +21,7 @@ const base = {
   'GET /knowledge/characters/ent_mara': knowledge('ent_mara'),
   'GET /timeline': EMPTY_TIMELINE,
   'GET /entities/name-collisions': { items: [], limit: 0, offset: 0 },
+  'GET /plan': { items: [], open: [], conditions: [] },
 }
 const at = { path: 'entries/:entityId', at: 'entries/ent_mara' }
 
@@ -55,11 +56,23 @@ describe('EntryPage', () => {
   })
 
   it('edits in a dialog and closes it once saved', async () => {
-    const api = mockApi({ ...base, 'PATCH /entities/ent_mara': entity({ name: 'Mara Marsh' }) })
+    const api = mockApi({
+      ...base,
+      'PATCH /entities/ent_mara': entity({ name: 'Mara Marsh' }),
+      'GET /entities/ent_mara/impact': {
+        about: ['Mara Venn is changed'],
+        affected: [],
+        may_be_affected: [],
+        not_checked: ['Checks and notes in the scene studio.'],
+      },
+    })
     const user = userEvent.setup()
     renderInProject(<EntryPage />, at)
 
     await user.click(await screen.findByRole('button', { name: 'Edit entry' }))
+    // What depends on the entry is offered before saving, without taking the form's place.
+    await user.click(await screen.findByText(/What changing Mara Venn touches/))
+    expect(await screen.findByText(/What changing Mara Venn touches/)).toHaveTextContent('nothing found')
     const form = screen.getByRole('form', { name: 'Edit Mara Venn' })
     const name = within(form).getByLabelText('Name')
     await user.clear(name)

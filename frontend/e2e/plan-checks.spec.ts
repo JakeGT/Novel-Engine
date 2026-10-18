@@ -132,7 +132,8 @@ test('the plan flags what comes too early or is not ready, and lists what the re
   await expect(problems).toContainText('This scene needs this first, and it is not true at that point')
 
   // The promises: the ferry is kept two scenes on; whether she leaves is still owed.
-  await expect(page.getByRole('link', { name: '1 promise to the reader still owed' })).toBeVisible()
+  // Other browser tests share this story, so the total owed may include their threads.
+  await expect(page.getByRole('link', { name: /promises? to the reader still owed/ })).toBeVisible()
   const owed = page.getByRole('list', { name: 'Promises still owed' })
   await expect(owed).toContainText('Will Juno leave the island?')
   const kept = page.getByRole('list', { name: 'Promises kept' })

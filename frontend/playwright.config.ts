@@ -27,9 +27,19 @@ export default defineConfig({
     channel: process.env.E2E_BROWSER_CHANNEL || undefined,
   },
   projects: [
-    // The first workflow test needs a brand-new story, so the sweep, which fills the shared
-    // local story with something on every page, runs after everything else.
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: [/.*\.model\.spec\.ts/, /accessibility-sweep/] },
+    // The first workflow test needs a brand-new story, so it runs before everything else;
+    // the sweep, which fills the shared local story with something on every page, runs last.
+    {
+      name: 'first-run',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: /phase2-workflow\.spec\.ts/,
+    },
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+      testIgnore: [/.*\.model\.spec\.ts/, /accessibility-sweep/, /phase2-workflow/],
+      dependencies: ['first-run'],
+    },
     {
       name: 'accessibility-sweep',
       use: { ...devices['Desktop Chrome'] },

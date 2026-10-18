@@ -199,6 +199,29 @@ list is kept, so nothing is estimated in money and thresholds are in tokens.
 - *Prompt versions.* Scene conditions (STY-005) were added to what a draft and a check read, so those
   prompts are now `scene-draft/3` and `scene-review/3`; a job's recorded version says which it used.
 
+## Amendment 2026-10-18: checks one pass at a time, and deep audits (CON-008, CON-011)
+
+- *A check is made of passes.* The one five-category request became five passes the author can
+  choose from (viewpoint and secrets, continuity, the plan, voice, clarity), one model call each with
+  its own prompt (`check-viewpoint/1` … `check-clarity/1`, replacing `scene-review/3`) and only the
+  context sections it needs. A judge asked about several things at once tends to lean the same way
+  on all of them (Multi-Crit, arXiv 2511.21662), and a narrower request per pass is also cheaper to
+  repeat for one kind only. Each pass is estimated on its own; the job's estimate is their sum and
+  limits are checked again before each later call. Automatic checks (CON-009) run every pass.
+- *The viewpoint pass sees the secrets.* It is given what the viewpoint character knows and believes
+  in one block and, apart and labelled "for the author only", the secrets kept from them, even when
+  the author chose not to give secrets to the drafter: a check must know a secret to see it slip, and
+  a check writes nothing into the story. No other pass is given a secret the author left out.
+  It gets secrets left out of drafting (or cut for space) because it needs them to spot a leak,
+  but never an item the author explicitly excluded from the scene's context.
+- *Notes record their pass* (`draft_findings.check_pass`, migration `0039_check_passes`); older notes
+  keep a null pass and show as before. A stop between passes keeps the passes already finished.
+- *Deep audits are one job over a part of the plan.* The exact versions current at the start are
+  read, scene by scene in reading order (at most 60 written scenes); notes are stored against those
+  versions under the audit's job, so they also show in the studio. A stopped or failed job now keeps
+  the partial result its handler recorded (`JobContext.partial`). The checks that need no model are
+  worked out when the results are read, for free; an audit with no passes calls no model at all.
+
 ## Known limits
 
 - The per-job token limit is checked for each call (with the estimate of what remains), not against
@@ -206,7 +229,10 @@ list is kept, so nothing is estimated in money and thresholds are in tokens.
 - The caps on waiting jobs and drafts are counted, then written, so two requests at the same instant
   can both pass. Automatic checks are the exception for one author (their key is unique per person);
   two different authors saving the same scene at the same instant could still each start one.
-- A check taken over by a second worker could store its notes twice.
+- A check taken over by a second worker could store its notes twice; for a check of several passes or
+  an audit, the passes finished before the takeover are run again.
+- An audit's estimate reads each scene's context once per scene, which is slow for a very large
+  part of the story; the 60-scene cap bounds it.
 
 ## Not decided here
 

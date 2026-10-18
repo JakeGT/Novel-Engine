@@ -35,18 +35,20 @@ def test_a_draft_job_and_its_usage_record_show_the_cached_prompt_tokens(
 
 
 def test_a_provider_that_reports_no_cache_leaves_zero(auth_client, fake_container):
-    from backend.services.studio_service import ReviewNotes
+    from backend.services.scene_checks import CheckNotes
 
     w, scene = _scene_world(auth_client, fake_container)
     assert _save(auth_client, w, scene, PROSE, None).status_code == 200
     fake_container.ai.queue(
         StructuredResponse(
-            parsed=ReviewNotes(notes=[]),
+            parsed=CheckNotes(notes=[]),
             model="fake",
             usage=AIUsage(prompt_tokens=800, completion_tokens=12),
         )
     )
-    started = auth_client.post(f"{w['base']}/plan/{scene['id']}/studio/reviews", json={})
+    started = auth_client.post(
+        f"{w['base']}/plan/{scene['id']}/studio/reviews", json={"passes": ["clarity"]}
+    )
     assert started.status_code == 202, started.text
     (done,) = _run(fake_container)
     assert done.status.value == "succeeded", done.error_message

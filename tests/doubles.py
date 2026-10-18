@@ -4886,6 +4886,13 @@ class InMemoryStudioStore:
             == (workspace_id, project_id, target_kind, target_id)
         ]
 
+    async def findings_for_job(self, *, workspace_id, project_id, job_id):
+        return [
+            f
+            for ws, pj, f in self.assistant_findings
+            if (ws, pj, f.job_id) == (workspace_id, project_id, job_id)
+        ]
+
     async def save_reading(self, reading):
         for n, existing in enumerate(self.saved_readings):
             if (existing.workspace_id, existing.project_id, existing.branch_id, existing.id) == (

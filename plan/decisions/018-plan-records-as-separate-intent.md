@@ -64,3 +64,21 @@ scene whose "after" names the same entry and kind of fact (exact match only; no 
 reveals, threads out of order, unmet required conditions and the promises to the reader (opened
 threads and hinted facts, with the reading distance in scenes) are derived on read in
 `backend/domain/plan_checks.py` and `scene_conditions.py`, never stored, and never block.
+
+## Amendment (2026-10-18): an arc's path of stages, in details
+
+An arc may carry a path (`_path`, STY-006): up to nine named stages in order, each with the scene
+where it is reached (or none yet; the first stage is where the character starts) and, optionally,
+a fact that should hold from then on. It is kept in the arc's details like the keys above, so it
+is part of the plan, has history and undo, forks with what-ifs and travels in archives; no table,
+column or operation field was added, and no migration was needed (0039 is `0039_check_passes`,
+for check notes, not arcs). The plan service checks that stages are on an arc, have their own
+names, name active scenes and current facts, and fit in one detail (2,000 characters); the commit
+validator checks a `_path` sent any other way (a raw change for review) the same, looking up only
+the scenes and facts the change adds. Removing a scene puts its stages back to "not placed" in the
+same change. Stages out of order, a fact not true at its scene's story time (or no longer there), a
+long stretch with no stage (more than a quarter of the plan's scenes and at least four) and
+unplaced stages are derived on read in `backend/domain/arcs.py` and never block. Drafting a scene
+that moves its viewpoint character's arc is given the stage going in and the stage reached, as a
+required context item. A stage's fact that is a secret the viewpoint character does not know is
+not part of that item: it is kept apart for the author, like any other secret.

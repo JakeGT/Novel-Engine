@@ -13,6 +13,7 @@ from backend.api.middleware import CorrelationIdMiddleware
 from backend.api.problems import register_exception_handlers
 from backend.api.v1.ai_settings import router as ai_settings_router
 from backend.api.v1.assistant_settings import router as assistant_settings_router
+from backend.api.v1.audits import router as audits_router
 from backend.api.v1.canon_archive import router as canon_archive_router
 from backend.api.v1.canon_assertions import router as canon_assertions_router
 from backend.api.v1.canon_assist import router as canon_assist_router
@@ -22,6 +23,7 @@ from backend.api.v1.canon_history import router as canon_history_router
 from backend.api.v1.canon_mutations import router as canon_mutations_router
 from backend.api.v1.context import router as context_router
 from backend.api.v1.credentials import router as credentials_router
+from backend.api.v1.impact import router as impact_router
 from backend.api.v1.knowledge import router as knowledge_router
 from backend.api.v1.media import router as media_router
 from backend.api.v1.plan import router as plan_router
@@ -163,7 +165,9 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.include_router(knowledge_router, prefix="/api/v1")
     app.include_router(context_router, prefix="/api/v1")
     app.include_router(studio_router, prefix="/api/v1")
+    app.include_router(audits_router, prefix="/api/v1")
     app.include_router(canon_archive_router, prefix="/api/v1")
+    app.include_router(impact_router, prefix="/api/v1")
     app.add_api_route(
         "/api/v1/projects/{project_id}/access",
         project_access,

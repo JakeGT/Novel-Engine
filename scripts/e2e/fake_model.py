@@ -37,6 +37,32 @@ REVIEW = {
     ]
 }
 
+# A check is one call per pass (CON-008): each pass is told what it looks for, and the
+# stand-in answers by that. The continuity pass gives the notes above; the others find
+# nothing, except clarity, which notes one sentence.
+CLARITY = {
+    "notes": [
+        {
+            "quote": "She counted the sacks twice",
+            "problem": "It is not clear whether she counts before or after the wheel turns.",
+            "suggestion": "Say when she counts them.",
+        }
+    ]
+}
+
+
+def _check(body: dict[str, Any]) -> dict[str, Any]:
+    system = next(
+        (str(m.get("content", "")) for m in body.get("messages", []) if m.get("role") == "system"),
+        "",
+    )
+    if "for one thing only: continuity" in system:
+        return REVIEW
+    if "for one thing only: clarity" in system:
+        return CLARITY
+    return {"notes": []}
+
+
 # Reading the kept draft into the story (Phase 6): one new place, quoting the draft.
 READ = {
     "entities": [
@@ -67,9 +93,12 @@ def _plan_card(body: dict[str, Any]) -> dict[str, Any]:
 
 
 def _structured(name: str, body: dict[str, Any]) -> dict[str, Any]:
+    if name == "CheckNotes":
+        return _check(body)
     if "Review" in name:
         return REVIEW
-    if name == "PassageDraft":
+    if name in ("PassageDraft", "SceneDraft"):
+        # A timed scene is read with the same answer: it has no facts, so nothing is timed.
         return READ
     if name == "PlanCardDraft":
         return _plan_card(body)

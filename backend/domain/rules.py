@@ -345,6 +345,13 @@ def _selected(
     return sorted(chosen, key=lambda item: (item.name.casefold(), item.id))
 
 
+def selected_entries(
+    body: RuleBody, world: World, only: Iterable[str], *, index: FactIndex | None = None
+) -> list[WorldEntry]:
+    """Which of ``only`` the rule is about in this world, whether or not it holds for them."""
+    return _selected(world, index if index is not None else FactIndex(world), body.applies_to, only)
+
+
 def _holds(world: World, index: FactIndex, entry_id: str, check: Check) -> bool:
     count = _matches(world, index, entry_id, check.pattern)
     if check.kind == "has":

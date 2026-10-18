@@ -58,6 +58,9 @@ class JobContext:
         self._stage = ""
         self._progress = 0
         self._lost = False
+        # What a job has finished so far, for a job that does many things in turn (a deep
+        # audit): kept as its result when it is stopped or fails part of the way through.
+        self.partial: dict = {}
 
     @property
     def scope(self) -> AccessScope:
@@ -171,13 +174,19 @@ class JobRunner:
         self._tenancy = tenancy
         self._local_mode = local_mode
         self._handlers: dict[str, Handler] = {}
+        # Kinds of work that keep what they finished when they fail part of the way.
+        self._keeps_partial: set[str] = set()
         self._owner = f"worker_{uuid7()}"
         self._wake = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
         self.autostart = autostart
 
-    def register(self, kind: str, handler: Handler) -> None:
+    def register(self, kind: str, handler: Handler, *, keeps_partial: bool = False) -> None:
         self._handlers[kind] = handler
+        if keeps_partial:
+            self._keeps_partial.add(kind)
+        else:
+            self._keeps_partial.discard(kind)
 
     async def submit(
         self, scope: AccessScope, workspace_id: str, project_id: str, submission: JobSubmission
@@ -270,7 +279,9 @@ class JobRunner:
                 job, owner=owner, status=JobStatus.SUCCEEDED, result=result
             )
         except JobCancelled:
-            finished = await self._store.finish(job, owner=owner, status=JobStatus.CANCELLED)
+            finished = await self._store.finish(
+                job, owner=owner, status=JobStatus.CANCELLED, result=context.partial or None
+            )
         except LeaseLost:
             # Another worker holds the job now (or it was given up): its ending is theirs.
             log_event(logger, "job.lease_lost", job_kind=job.kind)
@@ -294,7 +305,14 @@ class JobRunner:
         except BaseException as error:  # noqa: BLE001 - every failure is recorded, never lost
             if isinstance(error, (KeyboardInterrupt, SystemExit)):
                 raise
-            code, message = "internal", "Something went wrong. Nothing was saved from this run."
+            code, message = (
+                "internal",
+                (
+                    "Something went wrong. What it finished is kept."
+                    if job.kind in self._keeps_partial
+                    else "Something went wrong. Nothing was saved from this run."
+                ),
+            )
             for kind, known_code, known_message in _FAILURES:
                 if isinstance(error, kind):
                     code, message = known_code, known_message
@@ -312,7 +330,12 @@ class JobRunner:
                     error_type=type(error).__name__,
                 )
             finished = await self._store.finish(
-                job, owner=owner, status=JobStatus.FAILED, error_code=code, error_message=message
+                job,
+                owner=owner,
+                status=JobStatus.FAILED,
+                error_code=code,
+                error_message=message,
+                result=context.partial or None,
             )
         log_event(
             logger,

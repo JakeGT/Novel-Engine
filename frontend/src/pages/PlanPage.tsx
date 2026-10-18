@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { api, type AssistSession, type ConditionState, type PlanItem, type PlanKind } from '../api/client'
+import { ArcPathDialog, ArcStages } from '../components/ArcPath'
+import { AuditDialog } from '../components/AuditDialog'
 import { NextDirections, PlanAssist } from '../components/PlanAssist'
 import { PlanItemForm } from '../components/PlanItemForm'
 import { PlanPromises } from '../components/PlanPromises'
@@ -9,7 +11,6 @@ import { SceneConditionsDialog } from '../components/SceneConditions'
 import { SceneContextDialog } from '../components/SceneContext'
 import { Icon } from '../components/icons'
 import {
-  ReaderGuideDialog,
   SceneReaderNotes,
   SceneRevealsDialog,
   SceneTimeDialog,
@@ -76,8 +77,16 @@ export function PlanPage() {
   })
   const [editing, setEditing] = useState<Editing | null>(null)
   const [removing, setRemoving] = useState<PlanItem | null>(null)
+  const location = useLocation()
   // Arriving from "Pick up where you left off" carries the unfinished conversation.
-  const arrived = (useLocation().state as { resume?: AssistSession } | null)?.resume
+  const arrived = (location.state as { resume?: AssistSession } | null)?.resume
+  // Arriving at one part of the plan (from a character's arcs) shows that part once it is there.
+  const loaded = outline.isSuccess
+  useEffect(() => {
+    if (loaded && location.hash.startsWith('#plan-')) {
+      document.getElementById(location.hash.slice(1))?.scrollIntoView?.({ block: 'start' })
+    }
+  }, [loaded, location.hash])
   const [assist, setAssist] = useState<{ about?: PlanItem; resume?: AssistSession } | null>(
     arrived ? { resume: arrived } : null,
   )
@@ -85,8 +94,9 @@ export function PlanPage() {
   const [conditioning, setConditioning] = useState<PlanItem | null>(null)
   const [revealing, setRevealing] = useState<PlanItem | null>(null)
   const [timing, setTiming] = useState<PlanItem | null>(null)
-  const [guiding, setGuiding] = useState<PlanItem | null>(null)
   const [contexting, setContexting] = useState<PlanItem | null>(null)
+  const [auditing, setAuditing] = useState<PlanItem | null>(null)
+  const [staging, setStaging] = useState<PlanItem | null>(null)
   // What the reader has been shown, scene by scene, in reading order.
   const journey = useQuery({
     queryKey: scopedKey(scope, 'reader'),
@@ -114,6 +124,14 @@ export function PlanPage() {
   const byId = new Map(items.map((item) => [item.id, item]))
   const openFor = (planId: string) => stillOpen.filter((entry) => entry.plan_id === planId)
   const under = (planId: string) => items.filter((item) => item.parent_id === planId).length
+  const arcReadings = outline.data?.arcs ?? []
+  /** The arcs a scene moves: whose, and the stage reached there. */
+  const arcMoves = (sceneId: string) =>
+    arcReadings.flatMap((reading) =>
+      reading.stages
+        .filter((stage) => stage.scene_id === sceneId)
+        .map((stage) => ({ reading, stage, arc: byId.get(reading.arc_id) })),
+    )
 
   const move = useCanonWrite<PlanItem, { item: PlanItem; before: string | null }>((expectedRevision, target) =>
     api.movePlanItem(scope, target.item.id, {
@@ -164,6 +182,18 @@ export function PlanPage() {
     if ((item.advances ?? []).length > 0)
       parts.push(<span key="advances">Moves along: {titles(item.advances ?? [])}</span>)
     if (item.pays_off.length > 0) parts.push(<span key="resolves">Resolves: {titles(item.pays_off)}</span>)
+    for (const move of item.kind === 'scene' ? arcMoves(item.id) : []) {
+      // The arc's lane crosses this scene: say whose arc moves, and to what.
+      const owner = move.reading.about.map((entityId) => entries.names.get(entityId)).find(Boolean)
+      parts.push(
+        <span key={`arc:${move.reading.arc_id}:${move.stage.index}`}>
+          Arc: {owner ? `${owner} reaches` : 'reaches'} “{move.stage.name}”{' '}
+          <a href={`#plan-${move.reading.arc_id}`} className="muted">
+            ({move.arc?.title ?? 'an arc'})
+          </a>
+        </span>,
+      )
+    }
     return parts.length > 0 ? <p className="plan-about">{parts}</p> : null
   }
 
@@ -257,6 +287,21 @@ export function PlanPage() {
             <Button size="sm" variant="ghost" icon="spark" onClick={() => setNext({ about: item })}>
               What could happen from here?
             </Button>
+            {item.kind !== 'scene' && item.kind !== 'thread' && (
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label={`Audit this part of the story: ${item.title}`}
+                onClick={() => setAuditing(item)}
+              >
+                Audit this part of the story
+              </Button>
+            )}
+            {item.kind === 'arc' && (
+              <Button size="sm" variant="ghost" onClick={() => setStaging(item)}>
+                Stages of the arc
+              </Button>
+            )}
             {item.kind === 'scene' && (
               <Button size="sm" variant="ghost" onClick={() => setConditioning(item)}>
                 Before and after
@@ -320,14 +365,27 @@ export function PlanPage() {
               })}
             </ul>
           )}
+          {item.kind === 'arc' && (
+            <ArcStages
+              arc={item}
+              reading={arcReadings.find((reading) => reading.arc_id === item.id)}
+              sceneLink={(scene) => <a href={`#plan-${scene.id}`}>{scene.title}</a>}
+            />
+          )}
+          {item.kind === 'arc' && canWrite && (item.path ?? []).length === 0 && (
+            <p className="small">
+              <button type="button" className="link-button" onClick={() => setStaging(item)}>
+                Say how {refs(item, 'about').map((entityId) => entries.names.get(entityId)).find(Boolean) ?? 'the character'}{' '}
+                changes, stage by stage
+              </button>
+            </p>
+          )}
           {item.kind === 'scene' && (
             <SceneReaderNotes scene={item} step={stepFor(item.id)} facts={journey.data?.facts ?? {}} />
           )}
           {item.kind === 'scene' && (
             <p className="small">
-              <button type="button" className="link-button" onClick={() => setGuiding(item)}>
-                Reader’s guide up to this scene
-              </button>
+              <Link to={`/projects/${scope.projectId}/plan/${item.id}/guide`}>Reader’s guide up to this scene</Link>
             </p>
           )}
           {openFor(item.id).length > 0 && (
@@ -568,10 +626,11 @@ export function PlanPage() {
 
       {revealing && <SceneRevealsDialog key={revealing.id} scene={revealing} onClose={() => setRevealing(null)} />}
       {timing && <SceneTimeDialog key={timing.id} scene={timing} onClose={() => setTiming(null)} />}
-      {guiding && <ReaderGuideDialog key={guiding.id} scene={guiding} onClose={() => setGuiding(null)} />}
+      {staging && <ArcPathDialog key={staging.id} arc={staging} onClose={() => setStaging(null)} />}
       {contexting && (
         <SceneContextDialog key={contexting.id} scene={contexting} onClose={() => setContexting(null)} />
       )}
+      {auditing && <AuditDialog key={auditing.id} item={auditing} onClose={() => setAuditing(null)} />}
 
       {removing && (
         <ConfirmDialog

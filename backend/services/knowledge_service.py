@@ -7,7 +7,8 @@ character telling others, and a belief for each listener, saved as one version.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from backend.adapters.system import uuid7
@@ -34,6 +35,7 @@ from backend.domain.tenancy import Permission
 from backend.domain.worldtime import Interval, Order, compare
 from backend.ports import CanonRepositoryPort
 from backend.services.mutation_service import CommitResult, MutationService
+from backend.services.story_at_version import StoryAt, story_at
 from backend.services.story_time_service import event_times, fact_span, read_story, time_of
 
 MAX_RECORDS = 10_000
@@ -58,10 +60,110 @@ class Journey:
     facts: dict[str, Fact]
 
 
+# How the line of the story is named when it is not a what-if.
+MAIN_LINE = "the story itself"
+# The rules a guide follows to leave things out. Raised whenever they change, and written
+# into every export, so an old guide can be told apart from one made under new rules.
+GUIDE_RULES = 1
+
+
+@dataclass(frozen=True)
+class GuideEntry:
+    name: str
+    lines: list[str]
+
+
+@dataclass(frozen=True)
+class GuideSection:
+    entity_type: str
+    heading: str
+    entries: list[GuideEntry]
+
+
 @dataclass(frozen=True)
 class Guide:
+    """A spoiler-safe story bible, bound to the line, version, scene and viewpoint it shows."""
+
     title: str
     markdown: str
+    story_line: str = MAIN_LINE
+    version: int = 0
+    scene_id: str = ""
+    scene_title: str = ""
+    scene_number: int = 0
+    scene_count: int = 0
+    viewpoint_id: str | None = None
+    viewpoint_name: str | None = None
+    leaves_out: str = ""
+    sections: list[GuideSection] = field(default_factory=list)
+    rules: int = GUIDE_RULES
+
+    @property
+    def seen_as(self) -> str:
+        return (
+            f"as {self.viewpoint_name} knows it"
+            if self.viewpoint_name
+            else "as the reader knows it"
+        )
+
+    @property
+    def bound_to(self) -> str:
+        """One sentence naming exactly what this guide shows."""
+        line = self.story_line[0].upper() + self.story_line[1:]
+        return (
+            f"{line}, as it stood at version {self.version}; up to scene {self.scene_number} "
+            f"of {self.scene_count}, “{self.scene_title}”; {self.seen_as}."
+        )
+
+
+def _yaml(value: str) -> str:
+    # A JSON string is a valid YAML double-quoted scalar, whatever the title holds.
+    return json.dumps(value, ensure_ascii=False)
+
+
+def guide_markdown(guide: Guide) -> str:
+    """The guide as a Markdown file whose header says exactly what it shows.
+
+    The header is a YAML metadata block, which Markdown tools such as Pandoc, Obsidian
+    and Typora read as the document's title and details; the same binding is repeated
+    in words under the title for anyone reading the file itself.
+    """
+    lines = [
+        "---",
+        f"title: {_yaml(guide.title)}",
+        f"story_line: {_yaml(guide.story_line)}",
+        f"version: {guide.version}",
+        f"up_to_scene: {guide.scene_number}",
+        f"of_scenes: {guide.scene_count}",
+        f"scene: {_yaml(guide.scene_title)}",
+        f"seen_as: {_yaml(guide.viewpoint_name or 'the reader')}",
+        f"guide_rules: {guide.rules}",
+        "---",
+        "",
+        f"# {guide.title}",
+        "",
+        f"*{guide.bound_to}*",
+        "",
+        guide.leaves_out,
+    ]
+    for section in guide.sections:
+        lines += ["", f"## {section.heading}"]
+        for entry in section.entries:
+            lines += ["", f"### {entry.name}"]
+            lines += [f"- {line}" for line in entry.lines]
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _journey_of(state: StoryAt) -> Journey:
+    story = state.story
+    scenes = reading_order(state.plan_items)
+    times = event_times(story.events)
+    moments: dict[str, Interval | None] = {}
+    for scene in scenes:
+        moments[scene.id] = time_of(scene_time(scene.details), times)
+    steps = reader_journey(scenes, story.facts, state.beliefs, moments)
+    names = {entity.id: entity.name for entity in story.entities.values()}
+    return Journey(steps=steps, names=names, facts={fact.id: fact for fact in story.facts})
 
 
 class KnowledgeService:
@@ -73,9 +175,11 @@ class KnowledgeService:
         schema_store: Any = None,
         tenancy: Any = None,
         local_mode: bool = False,
+        journal: Any = None,
     ) -> None:
         self._reader = reader
         self._mutation = mutation
+        self._journal = journal
         self._schema_store = schema_store
         self._tenancy = tenancy
         self._local_mode = local_mode
@@ -132,21 +236,55 @@ class KnowledgeService:
     async def journey(self, scope: AccessScope, workspace_id: str, project_id: str) -> Journey:
         """The plan's scenes in reading order, with what the reader has been shown."""
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        state = await self._live(workspace_id, project_id)
+        return _journey_of(state)
+
+    async def _live(self, workspace_id: str, project_id: str) -> StoryAt:
         story = await read_story(self._reader, workspace_id, project_id)
         items = await self._reader.list_plan_items(  # type: ignore[call-arg]
             workspace_id=workspace_id, project_id=project_id
         )
-        scenes = reading_order(items)
-        times = event_times(story.events)
-        moments: dict[str, Interval | None] = {}
-        for scene in scenes:
-            when = scene_time(scene.details)
-            moments[scene.id] = time_of(when, times)
-        steps = reader_journey(
-            scenes, story.facts, await self._beliefs(workspace_id, project_id), moments
+        return StoryAt(
+            story=story,
+            beliefs=await self._beliefs(workspace_id, project_id),
+            plan_items=list(items),
         )
-        names = {entity.id: entity.name for entity in story.entities.values()}
-        return Journey(steps=steps, names=names, facts={fact.id: fact for fact in story.facts})
+
+    async def _line(self, workspace_id: str, project_id: str) -> tuple[str, int]:
+        """The name of the line of the story being read, and its latest version."""
+        if self._journal is None:
+            return MAIN_LINE, 0
+        branch = await self._journal.working_branch(
+            workspace_id=workspace_id, project_id=project_id
+        )
+        head = await self._reader.get_head(  # type: ignore[attr-defined]
+            workspace_id=workspace_id, project_id=project_id, branch_id=branch.id
+        )
+        return (MAIN_LINE if branch.is_root else f"the what-if “{branch.name}”"), int(head)
+
+    async def _state_at(
+        self, workspace_id: str, project_id: str, version: int | None
+    ) -> tuple[StoryAt, str, int]:
+        """The story at a version (the latest when none is asked for), bound to that version."""
+        line, head = await self._line(workspace_id, project_id)
+        if version is not None:
+            if version < 1 or version > head:
+                raise ValidationError(
+                    f"There is no version {version} of this story; the latest is {head}."
+                )
+            if version < head:
+                return (
+                    await story_at(self._reader, workspace_id, project_id, version),
+                    line,
+                    version,
+                )
+        state = await self._live(workspace_id, project_id)
+        _, after = await self._line(workspace_id, project_id)
+        if after != head:
+            # Something was saved while the story was being read: read the version the
+            # guide will name instead, so its heading never claims more than it shows.
+            state = await story_at(self._reader, workspace_id, project_id, head)
+        return state, line, head
 
     # ----------------------------------------------------------------- guide
 
@@ -158,18 +296,24 @@ class KnowledgeService:
         *,
         up_to_scene: str,
         viewpoint: str | None = None,
+        version: int | None = None,
     ) -> Guide:
         """A story bible a reader could see after a scene, or as one character knows it.
 
         Leaves out secrets the reader has not been shown by then, anything dated after
         the scene, and entries that have not appeared. With a viewpoint, only what that
-        character knows is kept.
+        character knows is kept. With a version, the story is read as it stood then, and
+        the guide names that version, the line of the story, the scene and the viewpoint.
         """
-        journey = await self.journey(scope, workspace_id, project_id)
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        state, line, bound = await self._state_at(workspace_id, project_id, version)
+        story = state.story
+        journey = _journey_of(state)
         step = next((item for item in journey.steps if item.scene.id == up_to_scene), None)
         if step is None:
+            if version is not None:
+                raise NotFoundError(f"That scene was not in the plan at version {bound}.")
             raise NotFoundError("That scene is not in the plan.")
-        story = await read_story(self._reader, workspace_id, project_id)
         times = event_times(story.events)
         scene_moment = None
         when = scene_time(step.scene.details)
@@ -182,10 +326,12 @@ class KnowledgeService:
         shown = step.reader_knows
         known: set[str] | None = None
         if viewpoint is not None:
-            await self._character(workspace_id, project_id, viewpoint)
-            known = knowledge_of(
-                viewpoint, story.facts, await self._beliefs(workspace_id, project_id)
-            ).known_ids()
+            who_entity = story.entities.get(viewpoint)
+            if who_entity is None:
+                raise NotFoundError("That entry was not found.")
+            if who_entity.type != "Character":
+                raise ValidationError("Only a character knows or believes things.")
+            known = knowledge_of(viewpoint, story.facts, state.beliefs).known_ids()
 
         kept: list[Fact] = []
         for fact in story.facts:
@@ -215,13 +361,13 @@ class KnowledgeService:
 
         names = journey.names
         who = names.get(viewpoint or "", "")
+        scene_title = step.scene.title
         title = (
-            f"As {who} knows it, after “{step.scene.title}”"
+            f"As {who} knows it, after “{scene_title}” — version {bound}"
             if viewpoint
-            else f"The story so far, after “{step.scene.title}”"
+            else f"The story so far, after “{scene_title}” — version {bound}"
         )
-        lines = [f"# {title}", ""]
-        lines.append(
+        leaves_out = (
             "Leaves out secrets not yet shown to the reader, anything dated after this "
             "scene, and anyone who has not yet appeared."
             if not viewpoint
@@ -234,17 +380,32 @@ class KnowledgeService:
             (story.entities[entity_id] for entity_id in appeared if entity_id in story.entities),
             key=lambda entity: (entity.type, entity.name.lower()),
         )
-        current_type = None
+        sections: list[GuideSection] = []
         for entity in entries:
-            if entity.type != current_type:
-                current_type = entity.type
-                lines += ["", f"## {_plural(entity.type)}"]
-            lines += ["", f"### {entity.name}"]
-            for fact in sorted(
-                by_subject.get(entity.id, []), key=lambda f: f.proposition.predicate
-            ):
-                lines.append(f"- {_sentence(fact.proposition, names)}")
-        return Guide(title=title, markdown="\n".join(lines).rstrip() + "\n")
+            if not sections or sections[-1].entity_type != entity.type:
+                sections.append(GuideSection(entity.type, _plural(entity.type), []))
+            lines = [
+                _sentence(fact.proposition, names)
+                for fact in sorted(
+                    by_subject.get(entity.id, []), key=lambda f: f.proposition.predicate
+                )
+            ]
+            sections[-1].entries.append(GuideEntry(entity.name, lines))
+        guide = Guide(
+            title=title,
+            markdown="",
+            story_line=line,
+            version=bound,
+            scene_id=step.scene.id,
+            scene_title=scene_title,
+            scene_number=step.number,
+            scene_count=len(journey.steps),
+            viewpoint_id=viewpoint,
+            viewpoint_name=who or None,
+            leaves_out=leaves_out,
+            sections=sections,
+        )
+        return replace(guide, markdown=guide_markdown(guide))
 
     # ---------------------------------------------------------------- telling
 
@@ -351,4 +512,13 @@ def _sentence(proposition: Proposition, names: dict[str, str]) -> str:
     return f"{subject} {verb} {target}".strip() + "."
 
 
-__all__ = ["Guide", "Journey", "KnowledgeService", "Telling"]
+__all__ = [
+    "GUIDE_RULES",
+    "Guide",
+    "GuideEntry",
+    "GuideSection",
+    "Journey",
+    "KnowledgeService",
+    "Telling",
+    "guide_markdown",
+]

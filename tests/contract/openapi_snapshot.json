@@ -92,6 +92,14 @@
             ],
             "title": "Parent Id"
           },
+          "path": {
+            "items": {
+              "$ref": "#/components/schemas/ArcStage"
+            },
+            "maxItems": 9,
+            "title": "Path",
+            "type": "array"
+          },
           "pays_off": {
             "items": {
               "type": "string"
@@ -726,6 +734,144 @@
           "names"
         ],
         "title": "ApplySuggestionsRequest",
+        "type": "object"
+      },
+      "ArcReadingModel": {
+        "properties": {
+          "about": {
+            "items": {
+              "type": "string"
+            },
+            "title": "About",
+            "type": "array"
+          },
+          "arc_id": {
+            "title": "Arc Id",
+            "type": "string"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/ArcStageReadingModel"
+            },
+            "title": "Stages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "arc_id",
+          "about",
+          "stages"
+        ],
+        "title": "ArcReadingModel",
+        "type": "object"
+      },
+      "ArcStage": {
+        "additionalProperties": false,
+        "description": "One stage of an arc: a state, where it is reached, and what should hold from then.",
+        "properties": {
+          "fact_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fact Id"
+          },
+          "name": {
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ArcStage",
+        "type": "object"
+      },
+      "ArcStageReadingModel": {
+        "properties": {
+          "fact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fact"
+          },
+          "fact_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fact Id"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
+          "scene_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Number"
+          }
+        },
+        "required": [
+          "index",
+          "name",
+          "scene_id",
+          "scene_number",
+          "fact_id",
+          "fact"
+        ],
+        "title": "ArcStageReadingModel",
         "type": "object"
       },
       "AssertBeliefOp": {
@@ -1396,6 +1542,16 @@
             "title": "Category",
             "type": "string"
           },
+          "check_pass": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckPass"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "dismissal": {
             "anyOf": [
               {
@@ -1487,6 +1643,421 @@
           "at"
         ],
         "title": "At",
+        "type": "object"
+      },
+      "AuditCheckModel": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "dismissal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DismissalModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "key": {
+            "default": "",
+            "title": "Key",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "quoted": {
+            "default": "",
+            "title": "Quoted",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "message"
+        ],
+        "title": "AuditCheckModel",
+        "type": "object"
+      },
+      "AuditEstimateModel": {
+        "properties": {
+          "max_scenes": {
+            "title": "Max Scenes",
+            "type": "integer"
+          },
+          "passes": {
+            "items": {
+              "$ref": "#/components/schemas/PassEstimateModel"
+            },
+            "title": "Passes",
+            "type": "array"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/components/schemas/AuditSceneEstimateModel"
+            },
+            "title": "Scenes",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          },
+          "written": {
+            "title": "Written",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "plan_id",
+          "title",
+          "scenes",
+          "written",
+          "max_scenes",
+          "passes",
+          "total_tokens"
+        ],
+        "title": "AuditEstimateModel",
+        "type": "object"
+      },
+      "AuditListModel": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JobModel"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AuditListModel",
+        "type": "object"
+      },
+      "AuditModel": {
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/JobModel"
+          },
+          "passes": {
+            "items": {
+              "$ref": "#/components/schemas/CheckPass"
+            },
+            "title": "Passes",
+            "type": "array"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/components/schemas/AuditSceneModel"
+            },
+            "title": "Scenes",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "unwritten": {
+            "items": {
+              "$ref": "#/components/schemas/AuditUnwrittenModel"
+            },
+            "title": "Unwritten",
+            "type": "array"
+          }
+        },
+        "required": [
+          "job",
+          "plan_id",
+          "title",
+          "passes",
+          "scenes",
+          "unwritten"
+        ],
+        "title": "AuditModel",
+        "type": "object"
+      },
+      "AuditNoteModel": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "check_pass": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckPass"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dismissal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DismissalModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "default": "",
+            "title": "Key",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "quoted": {
+            "default": "",
+            "title": "Quoted",
+            "type": "string"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "suggestion": {
+            "title": "Suggestion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "category",
+          "message",
+          "suggestion"
+        ],
+        "title": "AuditNoteModel",
+        "type": "object"
+      },
+      "AuditRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "passes": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CheckPass"
+                },
+                "maxItems": 5,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passes"
+          },
+          "plan_id": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Plan Id",
+            "type": "string"
+          }
+        },
+        "title": "AuditRequest",
+        "type": "object"
+      },
+      "AuditSceneEstimateModel": {
+        "properties": {
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          },
+          "words": {
+            "title": "Words",
+            "type": "integer"
+          },
+          "written": {
+            "title": "Written",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "plan_id",
+          "title",
+          "written",
+          "words",
+          "total_tokens"
+        ],
+        "title": "AuditSceneEstimateModel",
+        "type": "object"
+      },
+      "AuditSceneModel": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/AuditCheckModel"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "current": {
+            "title": "Current",
+            "type": "boolean"
+          },
+          "in_plan": {
+            "title": "In Plan",
+            "type": "boolean"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/AuditNoteModel"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "passes_done": {
+            "items": {
+              "$ref": "#/components/schemas/CheckPass"
+            },
+            "title": "Passes Done",
+            "type": "array"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "story_checks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Story Checks",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version_id": {
+            "title": "Version Id",
+            "type": "string"
+          },
+          "version_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Number"
+          }
+        },
+        "required": [
+          "plan_id",
+          "title",
+          "in_plan",
+          "version_id",
+          "current",
+          "status",
+          "checks",
+          "story_checks",
+          "notes"
+        ],
+        "title": "AuditSceneModel",
+        "type": "object"
+      },
+      "AuditUnwrittenModel": {
+        "properties": {
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_id",
+          "title"
+        ],
+        "title": "AuditUnwrittenModel",
         "type": "object"
       },
       "BeliefModel": {
@@ -2596,6 +3167,41 @@
         "title": "Check",
         "type": "object"
       },
+      "CheckEstimateModel": {
+        "properties": {
+          "completion_tokens": {
+            "title": "Completion Tokens",
+            "type": "integer"
+          },
+          "context_words": {
+            "title": "Context Words",
+            "type": "integer"
+          },
+          "passes": {
+            "items": {
+              "$ref": "#/components/schemas/PassEstimateModel"
+            },
+            "title": "Passes",
+            "type": "array"
+          },
+          "prompt_tokens": {
+            "title": "Prompt Tokens",
+            "type": "integer"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "prompt_tokens",
+          "completion_tokens",
+          "total_tokens",
+          "context_words"
+        ],
+        "title": "CheckEstimateModel",
+        "type": "object"
+      },
       "CheckModel": {
         "properties": {
           "code": {
@@ -2655,6 +3261,17 @@
         ],
         "title": "CheckModel",
         "type": "object"
+      },
+      "CheckPass": {
+        "enum": [
+          "viewpoint",
+          "continuity",
+          "plan",
+          "voice",
+          "clarity"
+        ],
+        "title": "CheckPass",
+        "type": "string"
       },
       "CheckProfile": {
         "enum": [
@@ -3809,6 +4426,115 @@
           "value"
         ],
         "title": "DecimalObject",
+        "type": "object"
+      },
+      "DependentModel": {
+        "properties": {
+          "count": {
+            "default": 0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "scene",
+              "plan",
+              "thread",
+              "rule",
+              "draft",
+              "scene_text",
+              "text"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "level": {
+            "enum": [
+              "affected",
+              "may_be_affected"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          }
+        },
+        "required": [
+          "kind",
+          "level",
+          "id",
+          "title",
+          "reasons"
+        ],
+        "title": "DependentModel",
         "type": "object"
       },
       "Direction": {
@@ -5223,22 +5949,142 @@
         "title": "GraphUpdateResponse",
         "type": "object"
       },
-      "GuideModel": {
+      "GuideEntryModel": {
         "properties": {
+          "lines": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "lines"
+        ],
+        "title": "GuideEntryModel",
+        "type": "object"
+      },
+      "GuideModel": {
+        "description": "A spoiler-safe guide, bound to what it shows: the line of the story, its version,\nthe scene it runs up to and whose knowledge it keeps.",
+        "properties": {
+          "bound_to": {
+            "title": "Bound To",
+            "type": "string"
+          },
+          "leaves_out": {
+            "title": "Leaves Out",
+            "type": "string"
+          },
           "markdown": {
             "title": "Markdown",
+            "type": "string"
+          },
+          "rules": {
+            "title": "Rules",
+            "type": "integer"
+          },
+          "scene_count": {
+            "title": "Scene Count",
+            "type": "integer"
+          },
+          "scene_id": {
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "scene_number": {
+            "title": "Scene Number",
+            "type": "integer"
+          },
+          "scene_title": {
+            "title": "Scene Title",
+            "type": "string"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/GuideSectionModel"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "story_line": {
+            "title": "Story Line",
             "type": "string"
           },
           "title": {
             "title": "Title",
             "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "viewpoint_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewpoint Id"
+          },
+          "viewpoint_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewpoint Name"
           }
         },
         "required": [
           "title",
-          "markdown"
+          "markdown",
+          "story_line",
+          "version",
+          "scene_id",
+          "scene_title",
+          "scene_number",
+          "scene_count",
+          "viewpoint_id",
+          "viewpoint_name",
+          "bound_to",
+          "leaves_out",
+          "sections",
+          "rules"
         ],
         "title": "GuideModel",
+        "type": "object"
+      },
+      "GuideSectionModel": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/GuideEntryModel"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "heading": {
+            "title": "Heading",
+            "type": "string"
+          }
+        },
+        "required": [
+          "heading",
+          "entries"
+        ],
+        "title": "GuideSectionModel",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -5252,6 +6098,47 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ImpactModel": {
+        "description": "What depends on a change: affected, may be affected, and what was not checked.",
+        "properties": {
+          "about": {
+            "items": {
+              "type": "string"
+            },
+            "title": "About",
+            "type": "array"
+          },
+          "affected": {
+            "items": {
+              "$ref": "#/components/schemas/DependentModel"
+            },
+            "title": "Affected",
+            "type": "array"
+          },
+          "may_be_affected": {
+            "items": {
+              "$ref": "#/components/schemas/DependentModel"
+            },
+            "title": "May Be Affected",
+            "type": "array"
+          },
+          "not_checked": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Not Checked",
+            "type": "array"
+          }
+        },
+        "required": [
+          "about",
+          "affected",
+          "may_be_affected",
+          "not_checked"
+        ],
+        "title": "ImpactModel",
         "type": "object"
       },
       "IndexStatusModel": {
@@ -6745,6 +7632,13 @@
       },
       "OutlineModel": {
         "properties": {
+          "arcs": {
+            "items": {
+              "$ref": "#/components/schemas/ArcReadingModel"
+            },
+            "title": "Arcs",
+            "type": "array"
+          },
           "conditions": {
             "items": {
               "$ref": "#/components/schemas/ConditionStateModel"
@@ -6787,6 +7681,44 @@
           "conditions"
         ],
         "title": "OutlineModel",
+        "type": "object"
+      },
+      "PassEstimateModel": {
+        "description": "One pass of a check with the assistant: what it looks at and roughly what it uses.",
+        "properties": {
+          "check_pass": {
+            "$ref": "#/components/schemas/CheckPass"
+          },
+          "completion_tokens": {
+            "title": "Completion Tokens",
+            "type": "integer"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "prompt_tokens": {
+            "title": "Prompt Tokens",
+            "type": "integer"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "check_pass",
+          "label",
+          "description",
+          "prompt_tokens",
+          "completion_tokens",
+          "total_tokens"
+        ],
+        "title": "PassEstimateModel",
         "type": "object"
       },
       "PassageModel": {
@@ -7100,6 +8032,13 @@
               }
             ],
             "title": "Parent Id"
+          },
+          "path": {
+            "items": {
+              "$ref": "#/components/schemas/ArcStage"
+            },
+            "title": "Path",
+            "type": "array"
           },
           "pays_off": {
             "items": {
@@ -8626,6 +9565,21 @@
               }
             ],
             "title": "Draft Id"
+          },
+          "passes": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CheckPass"
+                },
+                "maxItems": 5,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passes"
           }
         },
         "title": "ReviewRequest",
@@ -9755,6 +10709,30 @@
           "expected_revision"
         ],
         "title": "SetConditionsRequest",
+        "type": "object"
+      },
+      "SetPathRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/ArcStage"
+            },
+            "maxItems": 9,
+            "title": "Stages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stages",
+          "expected_revision"
+        ],
+        "title": "SetPathRequest",
         "type": "object"
       },
       "SetRevealsRequest": {
@@ -15433,6 +16411,272 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/audits": {
+      "get": {
+        "description": "The latest audits of this part of the story, newest first.",
+        "operationId": "list_audits_api_v1_projects__project_id__audits_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "plan_id",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 200,
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditListModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Audits",
+        "tags": [
+          "audits"
+        ]
+      },
+      "post": {
+        "description": "Start auditing a part of the story. Above the size the author or workspace asked to\nconfirm, refused with ``409 needs_confirmation`` until confirmed.",
+        "operationId": "start_audit_api_v1_projects__project_id__audits_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuditRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Audit",
+        "tags": [
+          "audits"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/audits/estimate": {
+      "get": {
+        "description": "What auditing this part of the story would read and use, before anything is sent.\nEvery pass when none are named. Calls no model.",
+        "operationId": "audit_estimate_api_v1_projects__project_id__audits_estimate_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "plan_id",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 200,
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "passes",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/CheckPass"
+                  },
+                  "maxItems": 5,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Passes"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditEstimateModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Audit Estimate",
+        "tags": [
+          "audits"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/audits/{job_id}": {
+      "get": {
+        "description": "An audit's results, scene by scene, with the checks that need no model.",
+        "operationId": "audit_api_v1_projects__project_id__audits__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Audit",
+        "tags": [
+          "audits"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/beliefs": {
       "get": {
         "operationId": "list_beliefs_api_v1_projects__project_id__beliefs_get",
@@ -16796,6 +18040,58 @@
         "summary": "Entity History",
         "tags": [
           "canon-history"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/entities/{entity_id}/impact": {
+      "get": {
+        "description": "What depends on one entry, so an edit can be weighed before it is saved.",
+        "operationId": "entry_impact_api_v1_projects__project_id__entities__entity_id__impact_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "entity_id",
+            "required": true,
+            "schema": {
+              "title": "Entity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImpactModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Entry Impact",
+        "tags": [
+          "impact"
         ]
       }
     },
@@ -18613,6 +19909,58 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/impact": {
+      "get": {
+        "description": "What the changes still included in a proposal touch, in the proposal's line of the story.",
+        "operationId": "mutation_impact_api_v1_projects__project_id__mutations__mutation_id__impact_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mutation_id",
+            "required": true,
+            "schema": {
+              "title": "Mutation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImpactModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mutation Impact",
+        "tags": [
+          "impact"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/mutations/{mutation_id}/operations/decisions": {
       "post": {
         "description": "Keep or skip several changes in one request: all are recorded, or none.",
@@ -19767,6 +21115,68 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/path": {
+      "put": {
+        "description": "Say how an arc's character changes: its stages in order, each with its scene.",
+        "operationId": "set_arc_path_api_v1_projects__project_id__plan__plan_id__path_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPathRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanItemModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Arc Path",
+        "tags": [
+          "plan"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/plan/{plan_id}/pictures": {
       "post": {
         "description": "Add a picture to a scene of the plan. The request body is the image itself.\n\nThe same checks as a picture of an entry; the link points at the scene\n(``target_record_type`` ``plan_item``, role ``DEPICTS``), in one new revision.",
@@ -20024,7 +21434,7 @@
     },
     "/api/v1/projects/{project_id}/plan/{plan_id}/studio/check-estimate": {
       "get": {
-        "description": "Roughly what one check with the assistant of this scene's text reads and writes,\nso the cost of each checking profile can be said before choosing. Calls no model.",
+        "description": "Roughly what a check with the assistant of this scene's text (or one draft) reads\nand writes, pass by pass, so its cost can be said before choosing. Every pass when\nnone are named. Calls no model.",
         "operationId": "check_estimate_api_v1_projects__project_id__plan__plan_id__studio_check_estimate_get",
         "parameters": [
           {
@@ -20044,6 +21454,43 @@
               "title": "Plan Id",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "passes",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/CheckPass"
+                  },
+                  "maxItems": 5,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Passes"
+            }
+          },
+          {
+            "in": "query",
+            "name": "draft_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Draft Id"
+            }
           }
         ],
         "responses": {
@@ -20051,7 +21498,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/backend__api__v1__studio__EstimateModel"
+                  "$ref": "#/components/schemas/CheckEstimateModel"
                 }
               }
             },
@@ -20847,6 +22294,7 @@
     },
     "/api/v1/projects/{project_id}/reader/guide": {
       "get": {
+        "description": "The story bible a reader could see after a scene, as the story stood at a version.\n\nWithout ``version`` it is the latest one; the guide always names the version it shows.",
         "operationId": "reader_guide_api_v1_projects__project_id__reader_guide_get",
         "parameters": [
           {
@@ -20884,6 +22332,23 @@
                 }
               ],
               "title": "Viewpoint"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
             }
           }
         ],

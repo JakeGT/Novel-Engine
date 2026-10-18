@@ -717,6 +717,44 @@ describe('ReviewDetail and story time', () => {
     expect(screen.getByRole('link', { name: 'Timeline' })).toHaveAttribute('href', '/projects/prj_1/timeline')
   })
 
+  it('shows what the changes touch before they are added, and not once they are', async () => {
+    mockApi({
+      ...entries,
+      'GET /mutations/mut_1': mutation(),
+      'GET /mutations/mut_1/impact': {
+        about: ['Mara Venn is changed'],
+        affected: [
+          {
+            kind: 'scene',
+            level: 'affected',
+            id: 'pln_1',
+            title: 'The Docks',
+            reasons: ['Mara Venn is in it'],
+            plan_id: 'pln_1',
+            count: 0,
+          },
+        ],
+        may_be_affected: [],
+        not_checked: ['Checks and notes in the scene studio.'],
+      },
+    })
+    renderInProject(<ReviewDetail />, at)
+    const touches = await screen.findByRole('region', { name: 'What this change touches' })
+    expect(await within(touches).findByRole('link', { name: 'The Docks' })).toHaveAttribute(
+      'href',
+      '/projects/prj_1/plan#plan-pln_1',
+    )
+    expect(within(touches).getByText('Mara Venn is in it')).toBeInTheDocument()
+  })
+
+  it('leaves out what the changes touch once they are part of the story', async () => {
+    const api = mockApi({ ...entries, 'GET /mutations/mut_1': mutation({ status: 'committed', committed_revision: 4 }) })
+    renderInProject(<ReviewDetail />, at)
+    expect(await screen.findByText(/Added to your story as version 4/)).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'What this change touches' })).not.toBeInTheDocument()
+    expect(api.find('GET', '/impact')).toHaveLength(0)
+  })
+
   it('says whether a stale change can move on as it is, from what changed since', async () => {
     mockApi({
       ...entries,

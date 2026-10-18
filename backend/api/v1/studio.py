@@ -5,13 +5,19 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, status
+from fastapi import APIRouter, Depends, Header, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import get_container
 from backend.api.v1.assistant_settings import confirmed_tokens
 from backend.container import Container
+from backend.domain.check_passes import (
+    PASS_DESCRIPTIONS,
+    PASS_LABELS,
+    CheckPass,
+    PassEstimate,
+)
 from backend.domain.dismissals import MAX_NOTE, DismissReason, FindingDismissal
 from backend.domain.drafting import DraftFinding, word_count
 from backend.domain.identity import AccessScope
@@ -29,7 +35,7 @@ from backend.domain.studio import (
 from backend.domain.usage_controls import CheckProfile
 from backend.services.scene_plan_card import ScenePlanCardService
 from backend.services.scene_reading import ReadingStatus, SceneReadingService
-from backend.services.studio_service import Checking, StudioService, StudioState
+from backend.services.studio_service import Checking, Estimate, StudioService, StudioState
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["studio"])
 
@@ -85,6 +91,8 @@ class AssistantNoteModel(BaseModel):
     end: int | None = None
     key: str = ""
     dismissal: DismissalModel | None = None
+    # The pass of the check that found it; None for a note from the earlier all-in-one check.
+    check_pass: CheckPass | None = None
 
 
 class DismissRequest(BaseModel):
@@ -206,6 +214,8 @@ class DraftRequest(BaseModel):
 class ReviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     draft_id: str | None = None
+    # What the assistant checks, one pass each; every pass when left out (CON-008).
+    passes: list[CheckPass] | None = Field(default=None, max_length=len(CheckPass))
 
 
 class KeepRequest(BaseModel):
@@ -218,6 +228,43 @@ class EstimateModel(BaseModel):
     completion_tokens: int
     total_tokens: int
     context_words: int
+
+
+class PassEstimateModel(BaseModel):
+    """One pass of a check with the assistant: what it looks at and roughly what it uses."""
+
+    check_pass: CheckPass
+    label: str
+    description: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+
+class CheckEstimateModel(EstimateModel):
+    # Each pass asked about, in the order they run.
+    passes: list[PassEstimateModel] = Field(default_factory=list)
+
+
+def pass_estimate(found: PassEstimate) -> PassEstimateModel:
+    return PassEstimateModel(
+        check_pass=found.check,
+        label=PASS_LABELS[found.check],
+        description=PASS_DESCRIPTIONS[found.check],
+        prompt_tokens=found.prompt_tokens,
+        completion_tokens=found.completion_tokens,
+        total_tokens=found.total,
+    )
+
+
+def check_estimate_model(found: Estimate) -> CheckEstimateModel:
+    return CheckEstimateModel(
+        prompt_tokens=found.prompt_tokens,
+        completion_tokens=found.completion_tokens,
+        total_tokens=found.total,
+        context_words=found.context_words,
+        passes=[pass_estimate(item) for item in found.passes],
+    )
 
 
 class VoiceModel(BaseModel):
@@ -263,7 +310,15 @@ def _note(
         end=finding.end,
         key=key,
         dismissal=_dismissal(dismissal),
+        check_pass=_check_pass(finding.check_pass),
     )
+
+
+def _check_pass(value: str | None) -> CheckPass | None:
+    try:
+        return CheckPass(value) if value else None
+    except ValueError:
+        return None
 
 
 def _checks(findings: list[DraftFinding], keys: list[str], state: StudioState) -> list[CheckModel]:
@@ -514,6 +569,7 @@ async def start_review(
         project_id,
         plan_id,
         draft_id=body.draft_id,
+        passes=body.passes,
         confirmed_tokens=confirmed,
     )
     return _job(job)
@@ -523,18 +579,18 @@ async def start_review(
 async def check_estimate(
     project_id: str,
     plan_id: str,
+    passes: list[CheckPass] | None = Query(default=None, max_length=len(CheckPass)),
+    draft_id: str | None = Query(default=None, max_length=200),
     scope: AccessScope = Depends(get_project_scope),
     service: StudioService = Depends(get_studio),
-) -> EstimateModel:
-    """Roughly what one check with the assistant of this scene's text reads and writes,
-    so the cost of each checking profile can be said before choosing. Calls no model."""
-    found = await service.review_estimate(scope, scope.workspace_id or "", project_id, plan_id)
-    return EstimateModel(
-        prompt_tokens=found.prompt_tokens,
-        completion_tokens=found.completion_tokens,
-        total_tokens=found.total,
-        context_words=found.context_words,
+) -> CheckEstimateModel:
+    """Roughly what a check with the assistant of this scene's text (or one draft) reads
+    and writes, pass by pass, so its cost can be said before choosing. Every pass when
+    none are named. Calls no model."""
+    found = await service.review_estimate(
+        scope, scope.workspace_id or "", project_id, plan_id, draft_id=draft_id, passes=passes
     )
+    return check_estimate_model(found)
 
 
 @router.post("/plan/{plan_id}/studio/readings", status_code=status.HTTP_202_ACCEPTED)

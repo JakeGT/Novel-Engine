@@ -49,7 +49,10 @@ def test_versions_are_written_as_recorded() -> None:
 def test_scene_prompts_name_the_version_that_gives_scene_conditions() -> None:
     """STY-005 changed what a draft and a check send; provenance must tell them apart."""
     assert PROMPTS["scene-draft"].version >= 3
-    assert PROMPTS["scene-review"].version >= 3
+    # The all-in-one check (scene-review, last 3) became one prompt per pass (CON-008).
+    assert "scene-review" not in PROMPTS
+    for name in ("viewpoint", "continuity", "plan", "voice", "clarity"):
+        assert f"check-{name}" in PROMPTS
 
 
 def test_no_service_writes_its_own_prompt_version() -> None:

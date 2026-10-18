@@ -32,6 +32,23 @@ def _moves(w, who: str, quote: str) -> PassageDraft:
     )
 
 
+def _shown_moving(w, who: str, quote: str, place: str = "saltmere"):
+    """A move a timed scene shows happening, so it takes the scene's time."""
+    from backend.services.intake_workflow import SceneDraft, SceneFact
+
+    return SceneDraft(
+        facts=[
+            SceneFact(
+                subject_ref=w[who],
+                predicate="LOCATED_AT",
+                object_ref=w[place],
+                quote=quote,
+                changes_here=True,
+            )
+        ]
+    )
+
+
 def test_a_scene_is_read_into_proposals_that_point_at_its_words(auth_client, fake_container):
     w, scene = _scene_world(auth_client, fake_container)
     never = _studio(auth_client, w, scene)["reading"]
@@ -243,3 +260,246 @@ def test_a_reader_cannot_start_a_reading(hosted_client, hosted_container):
         f"{base}/plan/{scene['id']}/studio/readings", json={}, headers=headers
     )
     assert started.status_code == 403, started.text
+
+
+# ------------------------------------------------- facts take the scene's story time (EXT-007)
+
+
+def _at(client, w, scene, at: float) -> None:
+    from tests.contract.test_context import _head
+
+    timed = client.put(
+        f"{w['base']}/plan/{scene['id']}/when",
+        json={"when": {"kind": "at", "at": at}, "expected_revision": _head(client, w)},
+    )
+    assert timed.status_code == 200, timed.text
+
+
+def _operations(client, w, mutation_id: str) -> list[dict]:
+    detail = client.get(f"{w['base']}/mutations/{mutation_id}").json()
+    return [operation["payload"] for operation in detail["operations"]]
+
+
+def test_facts_read_from_a_timed_scene_start_at_its_time(auth_client, fake_container):
+    from backend.services.intake_workflow import SceneDraft, SceneFact
+
+    w, scene = _scene_world(auth_client, fake_container)
+    _at(auth_client, w, scene, 12)
+    text = "Tobin walked to Saltmere. He had served the Harbor Guild for years."
+    _save(auth_client, w, scene, text, None)
+    fake_container.ai.queue(
+        SceneDraft(
+            facts=[
+                SceneFact(
+                    subject_ref=w["tobin"],
+                    predicate="LOCATED_AT",
+                    object_ref=w["saltmere"],
+                    quote="Tobin walked to Saltmere",
+                    changes_here=True,
+                ),
+                # Membership cannot take a time: the schema refuses a span on it.
+                SceneFact(
+                    subject_ref=w["tobin"],
+                    predicate="MEMBER_OF",
+                    object_ref=w["guild"],
+                    quote="He had served the Harbor Guild for years",
+                    changes_here=True,
+                ),
+            ]
+        )
+    )
+    _read(auth_client, w, scene)
+    (done,) = _run(fake_container)
+    assert done.status.value == "succeeded", done
+    assert done.result["timed"] == 1
+    call = fake_container.ai.calls[-1]
+    assert call["response_format"] is SceneDraft
+    assert "Set changes_here to true only" in call["messages"][0]["content"]
+
+    (proposal,) = done.result["proposals"]
+    operations = _operations(auth_client, w, proposal)
+    facts = {op["proposition"]["predicate"]: op for op in operations if op["op"] == "assert_fact"}
+    assert facts["LOCATED_AT"]["starts"] == {"kind": "at", "at": 12.0, "label": None}
+    assert facts["MEMBER_OF"].get("starts") is None
+    validation = auth_client.get(f"{w['base']}/mutations/{proposal}").json()
+    assert not [i for i in validation.get("validation", {}).get("issues", []) if i.get("blocking")]
+
+
+def test_what_the_scene_does_not_show_starting_takes_no_start(auth_client, fake_container):
+    from backend.services.intake_workflow import SceneDraft, SceneFact
+
+    w, scene = _scene_world(auth_client, fake_container)
+    _at(auth_client, w, scene, 12)
+    _save(auth_client, w, scene, "Tobin had lived at Saltmere all his life.", None)
+    fake_container.ai.queue(
+        SceneDraft(
+            facts=[
+                SceneFact(
+                    subject_ref=w["tobin"],
+                    predicate="LOCATED_AT",
+                    object_ref=w["saltmere"],
+                    quote="Tobin had lived at Saltmere all his life",
+                )
+            ]
+        )
+    )
+    _read(auth_client, w, scene)
+    (done,) = _run(fake_container)
+    assert done.result["timed"] == 0
+    (proposal,) = done.result["proposals"]
+    (fact,) = [op for op in _operations(auth_client, w, proposal) if op["op"] == "assert_fact"]
+    assert fact.get("starts") is None
+
+
+def test_a_new_place_ends_the_old_one_at_the_scenes_time(auth_client, fake_container):
+    w, scene = _scene_world(auth_client, fake_container)
+    _at(auth_client, w, scene, 12)
+    _save(auth_client, w, scene, FIRST, None)
+    # Mara is at Lantern Harbor (no time given); the scene moves her to Saltmere.
+    fake_container.ai.queue(_shown_moving(w, "mara", "Mara tied up at Saltmere"))
+    _read(auth_client, w, scene)
+    (done,) = _run(fake_container)
+    (proposal,) = done.result["proposals"]
+    operations = _operations(auth_client, w, proposal)
+    assert [op["op"] for op in operations] == ["amend_fact", "assert_fact"]
+    assert operations[0]["id"] == w["at_harbor"]
+    assert operations[0]["ends"] == {"kind": "at", "at": 12.0, "label": None}
+    assert operations[1]["starts"] == operations[0]["ends"]
+
+    assert auth_client.post(f"{w['base']}/mutations/{proposal}/approve", json={}).status_code == 200
+    committed = auth_client.post(f"{w['base']}/mutations/{proposal}/commit")
+    assert committed.status_code == 200, committed.text
+    # Both places are kept: the harbor until the scene, Saltmere from it.
+    then = auth_client.get(f"{w['base']}/timeline/moment", params={"at": 5}).json()
+    now = auth_client.get(f"{w['base']}/timeline/moment", params={"at": 20}).json()
+
+    def places(moment):
+        return {
+            item["fact"]["object"]["entity_id"]
+            for item in moment["facts"]
+            if item["fact"]["predicate"] == "LOCATED_AT" and item["fact"]["subject_id"] == w["mara"]
+        }
+
+    assert places(then) == {w["harbor"]} and places(now) == {w["saltmere"]}
+
+
+def test_an_untimed_scene_reads_as_before(auth_client, fake_container):
+    w, scene = _scene_world(auth_client, fake_container)
+    _save(auth_client, w, scene, FIRST, None)
+    fake_container.ai.queue(_moves(w, "mara", "Mara tied up at Saltmere"))
+    _read(auth_client, w, scene)
+    (done,) = _run(fake_container)
+    assert fake_container.ai.calls[-1]["response_format"] is PassageDraft
+    assert "changes_here" not in fake_container.ai.calls[-1]["messages"][0]["content"]
+    (proposal,) = done.result["proposals"]
+    operations = _operations(auth_client, w, proposal)
+    assert [op["op"] for op in operations] == ["close_fact", "assert_fact"]
+    assert operations[1].get("starts") is None
+
+
+def _commit(client, w, proposal: str) -> None:
+    assert client.post(f"{w['base']}/mutations/{proposal}/approve", json={}).status_code == 200
+    committed = client.post(f"{w['base']}/mutations/{proposal}/commit")
+    assert committed.status_code == 200, committed.text
+
+
+def _mara_at(client, w, at: float) -> set[str]:
+    moment = client.get(f"{w['base']}/timeline/moment", params={"at": at}).json()
+    return {
+        item["fact"]["object"]["entity_id"]
+        for item in moment["facts"]
+        if item["fact"]["predicate"] == "LOCATED_AT" and item["fact"]["subject_id"] == w["mara"]
+    }
+
+
+def _read_timed(client, container, w, scene, at: float, text: str, draft) -> list[dict]:
+    """Read a scene set at ``at`` and return the operations of its one proposal."""
+    _at(client, w, scene, at)
+    assert _save(client, w, scene, text, None).status_code == 200
+    container.ai.queue(draft)
+    _read(client, w, scene)
+    (done,) = _run(container)
+    assert done.status.value == "succeeded", done
+    (proposal,) = done.result["proposals"]
+    return [{**op, "_proposal": proposal} for op in _operations(client, w, proposal)]
+
+
+def test_going_back_to_an_earlier_place_ends_the_one_in_between(auth_client, fake_container):
+    from tests.contract.test_context import _scene
+
+    w, first = _scene_world(auth_client, fake_container)
+    moved = _read_timed(
+        auth_client,
+        fake_container,
+        w,
+        first,
+        5,
+        FIRST,
+        _shown_moving(w, "mara", "Mara tied up at Saltmere"),
+    )
+    _commit(auth_client, w, moved[0]["_proposal"])
+    at_saltmere = next(op for op in moved if op["op"] == "assert_fact")
+
+    # A later scene takes her back to the harbor, which she left at scene 5.
+    second = _scene(auth_client, w, [("mara", "participant")], title="Z Home")
+    back = _read_timed(
+        auth_client,
+        fake_container,
+        w,
+        second,
+        9,
+        "Mara sailed home to Lantern Harbor.",
+        _shown_moving(w, "mara", "Mara sailed home to Lantern Harbor", place="harbor"),
+    )
+    assert [op["op"] for op in back] == ["amend_fact", "assert_fact"]
+    assert back[0]["ends"] == {"kind": "at", "at": 9.0, "label": None}
+    assert back[0]["id"] != w["at_harbor"]
+    assert back[1]["proposition"]["object"]["entity_id"] == w["harbor"]
+    assert back[1]["starts"] == back[0]["ends"]
+    assert at_saltmere["proposition"]["object"]["entity_id"] == w["saltmere"]
+    _commit(auth_client, w, back[0]["_proposal"])
+    assert _mara_at(auth_client, w, 3) == {w["harbor"]}
+    assert _mara_at(auth_client, w, 7) == {w["saltmere"]}
+    assert _mara_at(auth_client, w, 12) == {w["harbor"]}
+
+
+def test_a_scene_read_out_of_story_order_keeps_the_later_place(auth_client, fake_container):
+    from tests.contract.test_context import _head, _scene
+
+    w, later = _scene_world(auth_client, fake_container)
+    made = auth_client.post(
+        f"{w['base']}/entities",
+        json={"type": "Location", "name": "Gull Rock", "expected_revision": _head(auth_client, w)},
+    )
+    assert made.status_code == 201, made.text
+    w["rock"] = made.json()["id"]
+    moved = _read_timed(
+        auth_client,
+        fake_container,
+        w,
+        later,
+        20,
+        FIRST,
+        _shown_moving(w, "mara", "Mara tied up at Saltmere"),
+    )
+    _commit(auth_client, w, moved[0]["_proposal"])
+
+    # An earlier scene, read afterwards, puts her on Gull Rock before she reaches Saltmere.
+    earlier = _scene(auth_client, w, [("mara", "participant")], title="A Rock")
+    ops = _read_timed(
+        auth_client,
+        fake_container,
+        w,
+        earlier,
+        10,
+        "Mara climbed onto Gull Rock.",
+        _shown_moving(w, "mara", "Mara climbed onto Gull Rock", place="rock"),
+    )
+    assert [op["op"] for op in ops] == ["amend_fact", "assert_fact"]
+    assert ops[0]["id"] == w["at_harbor"]
+    assert ops[1]["starts"] == {"kind": "at", "at": 10.0, "label": None}
+    assert ops[1]["ends"] == {"kind": "at", "at": 20.0, "label": None}
+    _commit(auth_client, w, ops[0]["_proposal"])
+    assert _mara_at(auth_client, w, 5) == {w["harbor"]}
+    assert _mara_at(auth_client, w, 15) == {w["rock"]}
+    assert _mara_at(auth_client, w, 25) == {w["saltmere"]}

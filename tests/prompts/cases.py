@@ -79,6 +79,19 @@ STORY = (
 )
 CONTEXT = "## The scene\n- Saltmere, at night. Mara waits for Tobin.\n## For the author only\n- Tobin is the informer.\n"
 DRAFT = "Mara waited on the quay. The lamps were out. Tobin came late, and alone."
+VIEWPOINT_STORY = (
+    "## What the viewpoint character knows\n- Mara believes Tobin is loyal.\n"
+    "## The scene\n- Saltmere, at night. Mara waits for Tobin.\n"
+)
+SECRETS = (
+    "## For the author only: secrets the viewpoint character does not know\n"
+    "- Tobin is the informer. Mara Voss does not know this.\n"
+)
+PLAN_STORY = (
+    "## Where the scene sits in the plan\n- This scene opens the thread “Who sold the map?”.\n"
+    "## The scene\n- Saltmere, at night.\n- This scene shows the reader: Tobin is late.\n"
+)
+WRITING = "## From the author's own writing\n- The harbour slept. Nobody counted the boats.\n"
 
 
 class _Answer(BaseModel):
@@ -165,6 +178,14 @@ CASES: dict[str, dict[str, dict[str, Any]]] = {
             "entity_types": ENTITY_TYPES,
         },
     },
+    "read-scene": {
+        "a scene": {
+            "about": "Entries already in the story bible:\n- ent_mara | Character | Mara Voss",
+            "passage": "Mara Voss walked into Saltmere at dusk, as she had every year.",
+            "predicates": PREDICATES,
+            "entity_types": ENTITY_TYPES,
+        },
+    },
     "draft-rule": {
         "a rule": {
             "sentence": "Every faction needs a motto.",
@@ -189,8 +210,39 @@ CASES: dict[str, dict[str, dict[str, Any]]] = {
             "pov": None,
         },
     },
-    "scene-review": {
-        "a draft": {"rendered": CONTEXT, "content": DRAFT},
+    "check-viewpoint": {
+        "with a viewpoint": {
+            "story": VIEWPOINT_STORY,
+            "secrets": SECRETS,
+            "content": DRAFT,
+            "pov": "Mara Voss",
+        },
+        "no viewpoint, no secrets": {
+            "story": VIEWPOINT_STORY,
+            "secrets": "",
+            "content": DRAFT,
+            "pov": None,
+        },
+    },
+    "check-continuity": {
+        "a scene": {"story": CONTEXT, "content": DRAFT},
+    },
+    "check-plan": {
+        "a scene": {"story": PLAN_STORY, "content": DRAFT},
+    },
+    "check-voice": {
+        "with notes": {
+            "story": WRITING,
+            "voice": "Short sentences. Present tense never.",
+            "content": DRAFT,
+        },
+        "no notes": {"story": WRITING, "voice": "", "content": DRAFT},
+    },
+    "check-clarity": {
+        "a scene": {
+            "story": "## Who and what is in the scene\n- Mara Voss (character).\n",
+            "content": DRAFT,
+        },
     },
     "scene-plan-card": {
         "a scene": {"content": DRAFT, "entities": ENTITIES[:4]},

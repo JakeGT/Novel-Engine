@@ -3445,3 +3445,433 @@ details.dismissed .findings {
   }
 }
 
+
+/* ------------------------------------------------------ character arc paths --- */
+/* An arc as a lane: stages left to right in the order the character changes, joined
+   by a rule; the stage name carries the weight, where it is reached is quieter. */
+.arc-path {
+  list-style: none;
+  margin: 0.5rem 0 0.25rem;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.5rem 0;
+  font-size: 0.92rem;
+}
+
+.arc-stage {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 0.1rem;
+  min-width: 8.5rem;
+  max-width: 15rem;
+  padding: 0.15rem 1.6rem 0.15rem 0.65rem;
+  border-left: 3px solid var(--accent);
+}
+
+/* The join to the next stage. */
+.arc-stage:not(:last-child)::after {
+  content: '→' / '';
+  position: absolute;
+  right: 0.45rem;
+  top: 0.1rem;
+  color: var(--ink-3);
+  font-family: var(--font-ui);
+}
+
+.arc-stage.unplaced {
+  border-left-style: dashed;
+  border-left-color: var(--line-strong);
+}
+
+.arc-stage-name {
+  font-weight: 620;
+  color: var(--ink);
+  line-height: 1.3;
+}
+
+.arc-stage-where,
+.arc-stage-fact {
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  color: var(--ink-2);
+  line-height: 1.35;
+}
+
+.arc-stage.unplaced .arc-stage-where { color: var(--ink-3); }
+.arc-stage-fact .badge { margin-left: 0.15rem; }
+
+.arc-list > li + li { border-top: 1px solid var(--line); padding-top: 0.75rem; }
+.arc-entry .arc-title { margin: 0; font-size: 1.02rem; }
+
+/* Editing an arc: one block per stage, numbered by the list itself. */
+.arc-editor {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.arc-editor-row fieldset {
+  margin: 0;
+  padding: 0.6rem 0.8rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+}
+
+.arc-editor-row legend {
+  padding: 0 0.3rem;
+  font-family: var(--font-ui);
+  font-weight: 600;
+}
+
+.arc-editor-pickers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.5rem 0.75rem;
+}
+
+.arc-editor-pickers select { width: 100%; min-width: 0; }
+
+/* On a phone the lane runs down the page, one stage under the next. */
+@media (max-width: 560px) {
+  .arc-path { flex-direction: column; gap: 0.35rem; }
+  .arc-stage { max-width: none; padding-right: 0.5rem; }
+  .arc-stage:not(:last-child)::after { content: none; }
+}
+
+/* What this change touches (CON-017): what depends on a change, before it is added. */
+.impact-body {
+  display: grid;
+  gap: 1.4rem;
+  margin-top: 0.75rem;
+}
+
+.impact-group > .hint {
+  margin: 0.15rem 0 0.6rem;
+}
+
+.impact-title {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 650;
+}
+
+.impact-row {
+  align-items: baseline;
+}
+
+.impact-kind {
+  flex: 0 0 9.5rem;
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  color: var(--ink-3);
+}
+
+.impact-reasons {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--ink-2);
+}
+
+.impact-gaps {
+  margin: 0.3rem 0 0;
+  padding-left: 1.1rem;
+  list-style: disc;
+  color: var(--ink-2);
+}
+
+.impact-gaps li + li {
+  margin-top: 0.3rem;
+}
+
+.impact.compact > summary .muted {
+  font-weight: 400;
+}
+
+@media (max-width: 560px) {
+  .impact-kind {
+    flex-basis: 100%;
+  }
+}
+
+/* ------------------------------------------------- reader's guide (QRY-002) --- */
+/* The guide reads like a page of a printed story bible: serif text, entry names set
+   small, hairline rules between sections. The same sheet is what prints. */
+.guide-controls {
+  display: grid;
+  gap: 0.9rem;
+  max-width: 44rem;
+  margin-bottom: 1.75rem;
+}
+
+.guide-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+}
+
+.guide-choices .field {
+  flex: 1 1 16rem;
+  min-width: 0;
+  /* Each field keeps its own height, so a hint under one does not stretch the other. */
+  align-content: start;
+}
+
+.guide-choices select {
+  width: 100%;
+}
+
+.guide-sheet {
+  max-width: 44rem;
+  font-family: var(--font-text);
+}
+
+.guide-head .guide-title {
+  margin: 0.3rem 0 0.5rem;
+}
+
+.guide-binding {
+  font-family: var(--font-ui);
+  font-size: 0.92rem;
+  color: var(--ink-2);
+  border-left: 2px solid var(--accent);
+  padding-left: 0.7rem;
+  margin: 0 0 0.6rem;
+}
+
+.guide-leaves-out {
+  font-style: italic;
+  color: var(--ink-2);
+  margin: 0 0 1.5rem;
+}
+
+.guide-section {
+  border-top: 1px solid var(--ink);
+  padding-top: 0.9rem;
+  margin-bottom: 1.4rem;
+}
+
+.guide-section h3 {
+  font-size: 1.35rem;
+  margin: 0 0 0.6rem;
+}
+
+.guide-entry {
+  padding: 0.5rem 0 0.7rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.guide-entry:last-child {
+  border-bottom: 0;
+}
+
+.guide-entry h4 {
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin: 0 0 0.3rem;
+}
+
+.guide-entry ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  line-height: 1.45;
+}
+
+.guide-none {
+  margin: 0;
+  color: var(--ink-3);
+  font-style: italic;
+}
+
+/* Printing: only the page's own content, in black on white, with entries kept whole.
+   Flex and grid containers break badly across pages, so the frame becomes plain blocks. */
+@media print {
+  /* Ink on white whatever the theme: a dark theme's light tokens would print pale. */
+  :root,
+  :root[data-theme='dark'] {
+    color-scheme: light;
+    --bg: #fff;
+    --bg-tint: #fff;
+    --surface: #fff;
+    --surface-2: #fff;
+    --surface-3: #f2f2f2;
+    --ink: #000;
+    --ink-2: #222;
+    --ink-3: #444;
+    --line: #bbb;
+    --line-strong: #777;
+    --accent: #9c2419;
+    --ember: #9c2419;
+    --ok: #2c5a37;
+    --warn: #74490a;
+    --danger: #981c1c;
+    --info: #2a4870;
+  }
+
+  .skip,
+  .scrim,
+  .sidebar,
+  .topbar,
+  .what-if-band,
+  .no-print {
+    display: none !important;
+  }
+
+  html,
+  body,
+  .app,
+  .main,
+  .content {
+    display: block !important;
+    background: #fff !important;
+    color: #000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: none !important;
+    overflow: visible !important;
+  }
+
+  @page {
+    margin: 18mm 16mm;
+  }
+
+  .guide-sheet {
+    max-width: none;
+    color: #000;
+  }
+
+  .guide-binding {
+    color: #000;
+    border-left-color: #000;
+  }
+
+  .guide-leaves-out,
+  .guide-none {
+    color: #333;
+  }
+
+  .guide-section h3,
+  .guide-entry h4 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  .guide-entry {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    border-bottom-color: #bbb;
+  }
+}
+
+/* ------------------------------------------- checks one pass each, audits (CON-008/011) --- */
+
+.pass-choices legend {
+  margin-bottom: 0.15rem;
+}
+
+.pass-list {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.pass-list .check {
+  min-height: 24px;
+  align-items: flex-start;
+}
+
+.pass-text {
+  flex: 1;
+  display: grid;
+  gap: 0.05rem;
+  font-family: var(--font-ui);
+}
+
+.pass-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 0.6rem;
+}
+
+/* A long name wraps on its own line; the cost always stays on the right, as on every row. */
+.pass-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+
+.pass-cost {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.pass-about {
+  font-size: 0.78rem;
+  line-height: 1.3;
+  color: var(--ink-3);
+}
+
+.audit-page {
+  max-width: 62rem;
+}
+
+.audit-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.25rem;
+  font-family: var(--font-ui);
+  font-size: 0.88rem;
+  color: var(--ink-2);
+}
+
+.audit-scenes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1.25rem;
+}
+
+.audit-scene {
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.audit-scene-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.audit-scene-head h2 {
+  font-size: 1.15rem;
+  margin: 0;
+}
+
+.audit-group-title {
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--ink-2);
+  margin: 0;
+}

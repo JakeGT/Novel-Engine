@@ -257,6 +257,11 @@ describe('PlanPage', () => {
     expect(screen.getAllByRole('link', { name: /^Write this scene/ })).toHaveLength(1)
     const write = within(lamp).getByRole('link', { name: 'Write this scene: The lamp room at night' })
     expect(write).toHaveTextContent('Write this scene')
+    // The reader's guide up to a scene is a page of its own, to read, print or download.
+    expect(within(lamp).getByRole('link', { name: 'Reader’s guide up to this scene' })).toHaveAttribute(
+      'href',
+      '/projects/prj_1/plan/pln_s/guide',
+    )
     await expectAccessible(first.container)
     await user.click(write)
     expect(screen.getAllByTestId('location')[0]).toHaveTextContent('/projects/prj_1/plan/pln_s/write')
@@ -455,4 +460,94 @@ describe('PlanPage', () => {
       expected_revision: 3,
     })
   }, 20_000)
+
+  it('shows an arc as a lane of stages, and each scene that moves it says so', async () => {
+    const staged = {
+      ...arc,
+      path: [{ name: 'Trusts her father' }, { name: 'Sees the lie', scene_id: 'pln_s' }],
+    }
+    const api = mockApi({
+      ...everyone,
+      'GET /plan': {
+        ...outline,
+        items: [story, staged, beatOne, beatTwo, scene, thread],
+        arcs: [
+          {
+            arc_id: 'pln_arc',
+            about: ['ent_ines'],
+            stages: [
+              { index: 0, name: 'Trusts her father', scene_id: null, scene_number: null, fact_id: null, fact: null },
+              { index: 1, name: 'Sees the lie', scene_id: 'pln_s', scene_number: 1, fact_id: null, fact: null },
+            ],
+          },
+        ],
+      },
+      'GET /reader': { steps: [], facts: {} },
+      'GET /facts': { items: [], limit: 200, offset: 0 },
+      'PUT /plan/pln_arc/path': staged,
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<PlanPage />, at)
+
+    const lane = await screen.findByRole('list', { name: 'Stages of “Ines learns the truth”, in order' })
+    expect(lane).toHaveTextContent('Trusts her fatherWhere it starts')
+    expect(within(lane).getByRole('link', { name: 'The lamp room at night' })).toHaveAttribute('href', '#plan-pln_s')
+    const lamp = screen.getByRole('heading', { name: 'The lamp room at night' }).closest('li') as HTMLElement
+    expect(lamp).toHaveTextContent('Arc: Ines Varga reaches “Sees the lie” (Ines learns the truth)')
+    await expectAccessible(container)
+
+    await user.click(
+      screen.getByText('Move, plan, remove', { selector: 'summary[aria-label="Move, plan or remove Ines learns the truth"]' }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Stages of the arc' }))
+    const dialog = screen.getByRole('dialog', { name: 'Stages of “Ines learns the truth”' })
+    await user.click(within(dialog).getByRole('button', { name: 'Add a stage' }))
+    await user.type(within(dialog).getByRole('group', { name: /Stage 3/ }).querySelector('input') as HTMLElement, 'Forgives him')
+    await user.click(within(dialog).getByRole('button', { name: 'Save the stages' }))
+    await waitFor(() => expect(api.find('PUT', '/plan/pln_arc/path')).toHaveLength(1))
+    expect(api.find('PUT', '/plan/pln_arc/path')[0].body).toEqual({
+      stages: [{ name: 'Trusts her father' }, { name: 'Sees the lie', scene_id: 'pln_s' }, { name: 'Forgives him' }],
+      expected_revision: 3,
+    })
+  }, 20_000)
+
+  it('offers to tell an arc as stages where it has none', async () => {
+    mockApi({ ...everyone, 'GET /plan': outline, 'GET /reader': { steps: [], facts: {} } })
+    renderInProject(<PlanPage />, at)
+    expect(await screen.findByRole('button', { name: 'Say how Ines Varga changes, stage by stage' })).toBeInTheDocument()
+  })
+})
+
+describe('PlanPage audits', () => {
+  it('offers to audit a part of the story from its menu, but not a scene or a thread', async () => {
+    mockApi({
+      ...everyone,
+      'GET /plan': outline,
+      'GET /reader': { steps: [], facts: {} },
+      'GET /audits/estimate': {
+        plan_id: 'pln_b1',
+        title: 'She finds the false chart',
+        scenes: [{ plan_id: 'pln_s', title: 'The lamp room at night', written: true, words: 300, total_tokens: 4000 }],
+        written: 1,
+        max_scenes: 60,
+        passes: [],
+        total_tokens: 4000,
+      },
+      'GET /audits': { items: [] },
+    })
+    const user = userEvent.setup()
+    renderInProject(<PlanPage />, at)
+    await user.click(
+      await screen.findByText('Move, plan, remove', {
+        selector: 'summary[aria-label="Move, plan or remove She finds the false chart"]',
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Audit this part of the story: She finds the false chart' }))
+    expect(screen.getByRole('dialog', { name: 'Audit “She finds the false chart”' })).toBeInTheDocument()
+    const sceneMenu = screen
+      .getByText('Move, plan, remove', { selector: 'summary[aria-label="Move, plan or remove The lamp room at night"]' })
+      .closest('details') as HTMLElement
+    expect(within(sceneMenu).queryByRole('button', { name: /Audit this part of the story/, hidden: true })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Audit this part of the story: Who drew/, hidden: true })).toBeNull()
+  })
 })

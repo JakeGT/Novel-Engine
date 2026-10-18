@@ -13,6 +13,8 @@ MAX_VOICE = 4000
 DRAFT_JOB = "scene_draft"
 REVIEW_JOB = "scene_review"
 READ_JOB = "scene_read"
+# A deep audit of a part of the story, scene by scene (CON-011).
+AUDIT_JOB = "story_audit"
 
 
 @dataclass(frozen=True)
@@ -49,6 +51,9 @@ class AssistantFinding:
     start: int | None
     end: int | None
     created_at: datetime | None = None
+    # The pass of a check that found it (CON-008); None for a note from the earlier
+    # all-in-one check.
+    check_pass: str | None = None
 
 
 @dataclass(frozen=True)
@@ -76,6 +81,7 @@ class SceneReading:
 
 
 __all__ = [
+    "AUDIT_JOB",
     "READ_JOB",
     "SceneReading",
     "DRAFT_JOB",

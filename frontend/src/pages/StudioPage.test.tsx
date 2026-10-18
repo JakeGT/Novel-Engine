@@ -109,7 +109,31 @@ const withOps = (id: string, count: number) =>
   mutation({ id, operations: Array.from({ length: count }, (_, index) => operation({ ordinal: index })) })
 const storyBible = () => screen.getByRole('heading', { name: 'Your story bible' }).closest('section') as HTMLElement
 
+const PASSES = [
+  ['viewpoint', 'Viewpoint and secrets', 1400],
+  ['continuity', 'Continuity with the story bible', 2100],
+  ['plan', 'What the plan asks for', 1100],
+  ['voice', 'Your voice', 1300],
+  ['clarity', 'Clarity', 900],
+] as const
+
+const checkEstimate = {
+  prompt_tokens: 3800,
+  completion_tokens: 3000,
+  total_tokens: 6800,
+  context_words: 400,
+  passes: PASSES.map(([check_pass, label, total]) => ({
+    check_pass,
+    label,
+    description: `What ${label.toLowerCase()} looks at.`,
+    prompt_tokens: total - 600,
+    completion_tokens: 600,
+    total_tokens: total,
+  })),
+}
+
 const base = {
+  'GET /studio/check-estimate': checkEstimate,
   'GET /entities': {
     items: [
       entity({ id: 'ent_ines', name: 'Ines Varga', aliases: [] }),
@@ -343,10 +367,56 @@ describe('StudioPage', () => {
     renderInProject(<StudioPage />, route)
     await user.click(await screen.findByRole('button', { name: 'Check with the assistant' }))
     await waitFor(() => expect(api.find('POST', '/studio/reviews')).toHaveLength(1))
-    expect(api.find('POST', '/studio/reviews')[0].body).toEqual({ draft_id: null })
+    expect(api.find('POST', '/studio/reviews')[0].body).toEqual({
+      draft_id: null,
+      passes: ['viewpoint', 'continuity', 'plan', 'voice', 'clarity'],
+    })
     expect(await screen.findByText('The assistant made 1 note.')).toBeInTheDocument()
     expect(screen.getByText(/1 note did not quote your words exactly, so it was left out/)).toBeInTheDocument()
     expect(await screen.findByText('Ines could not see who waited from the stairs.')).toBeInTheDocument()
+  })
+
+  it('lets the author choose what the assistant checks, each with its cost', async () => {
+    const api = mockApi({
+      ...base,
+      'GET /plan/pln_s/studio': studio({ assistant: [] }),
+      'POST /plan/pln_s/studio/reviews': reply(202, job({ id: 'job_3', kind: 'scene_review', status: 'queued' })),
+      'GET /jobs/job_3': job({ id: 'job_3', kind: 'scene_review', status: 'queued', stage: '' }),
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<StudioPage />, route)
+    const choices = await screen.findByRole('group', { name: 'What the assistant checks' })
+    // Every check is chosen until the author says otherwise, each with what it costs.
+    for (const [, label] of PASSES) expect(within(choices).getByRole('checkbox', { name: new RegExp(label) })).toBeChecked()
+    expect(await within(choices).findByText('about 2,100 tokens')).toBeInTheDocument()
+    expect(screen.getByText('About 6,800 tokens for all five.')).toBeInTheDocument()
+    await expectAccessible(container)
+
+    await user.click(within(choices).getByRole('checkbox', { name: /Your voice/ }))
+    await user.click(within(choices).getByRole('checkbox', { name: /Continuity with the story bible/ }))
+    expect(screen.getByText('About 3,400 tokens for the 3 chosen.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Check with the assistant' }))
+    await waitFor(() => expect(api.find('POST', '/studio/reviews')).toHaveLength(1))
+    expect(api.find('POST', '/studio/reviews')[0].body).toEqual({
+      draft_id: null,
+      passes: ['viewpoint', 'plan', 'clarity'],
+    })
+    // The choice is remembered in this browser for the next check.
+    expect(JSON.parse(window.localStorage.getItem('novel-engine.check-passes.prj_1') ?? 'null')).toEqual([
+      'viewpoint',
+      'plan',
+      'clarity',
+    ])
+  })
+
+  it('needs at least one thing to check', async () => {
+    mockApi({ ...base, 'GET /plan/pln_s/studio': studio({ assistant: [] }) })
+    const user = userEvent.setup()
+    renderInProject(<StudioPage />, route)
+    const choices = await screen.findByRole('group', { name: 'What the assistant checks' })
+    for (const [, label] of PASSES) await user.click(within(choices).getByRole('checkbox', { name: new RegExp(label) }))
+    expect(screen.getByRole('button', { name: 'Check with the assistant' })).toBeDisabled()
+    expect(screen.getByText('Choose at least one thing for the assistant to check.')).toBeInTheDocument()
   })
 
   it('keeps notes on how the author writes, said to guide every draft', async () => {

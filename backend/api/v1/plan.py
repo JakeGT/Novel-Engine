@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import get_plan_service
+from backend.domain.arcs import MAX_STAGES, ArcStage, arc_path
 from backend.domain.canon.plans import (
     MAX_SUMMARY_LENGTH,
     MAX_TITLE_LENGTH,
@@ -63,6 +64,8 @@ class PlanItemModel(BaseModel):
     reveals: list[Reveal] = Field(default_factory=list)
     # For a scene: when in story time it happens, if the author has said.
     when: WorldTime | None = None
+    # For an arc: how its character changes, as stages in order (STY-006).
+    path: list[ArcStage] = Field(default_factory=list)
     created_revision: int
 
 
@@ -129,6 +132,25 @@ class ThreadProgressModel(BaseModel):
     steps: list[ThreadStepModel]
 
 
+class ArcStageReadingModel(BaseModel):
+    # Its place in the arc's own order; the first stage is where the character starts.
+    index: int
+    name: str
+    # The scene where it is reached, and that scene's number in reading order.
+    scene_id: str | None
+    scene_number: int | None
+    fact_id: str | None
+    # How its fact stands where it is reached: holds, not_then, gone or unclear.
+    fact: str | None
+
+
+class ArcReadingModel(BaseModel):
+    arc_id: str
+    # Whose arc it is.
+    about: list[str]
+    stages: list[ArcStageReadingModel]
+
+
 class OutlineModel(BaseModel):
     items: list[PlanItemModel]
     # What the plan still needs. Derived; a plan with gaps is still a valid plan.
@@ -139,6 +161,15 @@ class OutlineModel(BaseModel):
     threads: list[ThreadProgressModel] = Field(default_factory=list)
     # Threads opened and facts hinted, in the order the reader meets them. Derived.
     promises: list[PromiseModel] = Field(default_factory=list)
+    # Each arc's stages, where each is reached and whether its fact holds. Derived.
+    arcs: list[ArcReadingModel] = Field(default_factory=list)
+
+
+class SetPathRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    stages: list[ArcStage] = Field(max_length=MAX_STAGES)
+    expected_revision: int = Field(ge=0)
 
 
 class SetConditionsRequest(BaseModel):
@@ -177,6 +208,8 @@ class AddPlanItemRequest(BaseModel):
     details: dict[str, str] = Field(default_factory=dict)
     # For a scene only.
     intent: SceneIntent | None = None
+    # For an arc only: how its character changes, stage by stage.
+    path: list[ArcStage] = Field(default_factory=list, max_length=MAX_STAGES)
     expected_revision: int = Field(ge=0)
 
 
@@ -235,6 +268,7 @@ def _model(item: PlanItem) -> PlanItemModel:
         conditions=scene_conditions(item.details),
         reveals=scene_reveals(item.details),
         when=scene_time(item.details),  # type: ignore[arg-type]
+        path=arc_path(item.details),
         created_revision=item.created_revision,
     )
 
@@ -296,7 +330,47 @@ async def get_outline(
             )
             for promise in reading.promises
         ],
+        arcs=[
+            ArcReadingModel(
+                arc_id=arc.arc_id,
+                about=arc.about,
+                stages=[
+                    ArcStageReadingModel(
+                        index=stage.index,
+                        name=stage.name,
+                        scene_id=stage.scene_id,
+                        scene_number=stage.scene_number,
+                        fact_id=stage.fact_id,
+                        fact=stage.fact,
+                    )
+                    for stage in arc.stages
+                ],
+            )
+            for arc in reading.arcs
+        ],
     )
+
+
+@router.put("/{plan_id}/path", response_model=PlanItemModel)
+async def set_arc_path(
+    project_id: str,
+    plan_id: str,
+    body: SetPathRequest,
+    response: Response,
+    scope: AccessScope = Depends(require_project_scope),
+    service: PlanService = Depends(get_plan_service),
+) -> PlanItemModel:
+    """Say how an arc's character changes: its stages in order, each with its scene."""
+    result, item = await service.set_path(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        plan_id,
+        stages=body.stages,
+        expected_revision=body.expected_revision,
+    )
+    response.headers["ETag"] = f'"{result.revision}"'
+    return _model(item)
 
 
 @router.put("/{plan_id}/conditions", response_model=PlanItemModel)
@@ -387,6 +461,7 @@ async def add_plan_item(
         details=body.details,
         advances=body.advances,
         intent=body.intent,
+        path=body.path,
         expected_revision=body.expected_revision,
     )
     response.headers["ETag"] = f'"{result.revision}"'

@@ -77,3 +77,32 @@ export const THREAD_STEPS: Record<string, string> = {
   advances: 'Moves along',
   resolves: 'Resolves',
 }
+
+/**
+ * The plan's scenes in the order a reader meets them, numbered from 1. The same walk
+ * as the server's reading order, so a number here matches "scene 3" in its checks.
+ */
+export function readingScenes(items: PlanItem[]): PlanItem[] {
+  const parts = items.filter((item) => item.kind !== 'thread')
+  const known = new Set(parts.map((item) => item.id))
+  const under = new Map<string, PlanItem[]>()
+  for (const item of parts) {
+    const key = item.parent_id && known.has(item.parent_id) ? item.parent_id : ''
+    under.set(key, [...(under.get(key) ?? []), item])
+  }
+  const scenes: PlanItem[] = []
+  const walk = (parent: string) => {
+    const children = [...(under.get(parent) ?? [])].sort(
+      (a, b) =>
+        a.position - b.position ||
+        (a.title.toLowerCase() < b.title.toLowerCase() ? -1 : a.title.toLowerCase() > b.title.toLowerCase() ? 1 : 0) ||
+        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    )
+    for (const item of children) {
+      if (item.kind === 'scene') scenes.push(item)
+      walk(item.id)
+    }
+  }
+  walk('')
+  return scenes
+}

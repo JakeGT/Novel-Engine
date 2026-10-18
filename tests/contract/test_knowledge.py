@@ -266,3 +266,147 @@ def test_the_readers_guide_leaves_out_unshown_secrets_and_the_unmet(auth_client,
     ).json()
     assert as_tobin["title"].startswith("As Tobin Ashe knows it")
     assert "Harbor Guild." not in as_tobin["markdown"]
+
+
+def _guide(client, w, scene: dict, **params):
+    return client.get(f"{w['base']}/reader/guide", params={"scene": scene["id"], **params})
+
+
+def test_a_guide_as_the_story_stood_at_an_earlier_version(auth_client, fake_container):
+    w = _world(auth_client, fake_container)
+    head = int(w["head"])
+    made = auth_client.post(
+        f"{w['base']}/plan",
+        json={
+            "kind": "scene",
+            "title": "The Docks",
+            "refs": [
+                {"entity_id": w["mara"], "role": "point_of_view"},
+                {"entity_id": w["harbor"], "role": "place"},
+                {"entity_id": w["saltmere"], "role": "participant"},
+            ],
+            "expected_revision": head,
+        },
+    )
+    assert made.status_code == 201, made.text
+    scene = made.json()
+    then = head + 1
+    # Afterwards: Mara is renamed, leaves the harbor and goes to Saltmere.
+    renamed = auth_client.patch(
+        f"{w['base']}/entities/{w['mara']}", json={"name": "Mara Venn", "expected_revision": then}
+    )
+    assert renamed.status_code == 200, renamed.text
+    closed = auth_client.post(
+        f"{w['base']}/facts/{w['at_harbor']}/close", json={"expected_revision": then + 1}
+    )
+    assert closed.status_code == 200, closed.text
+    moved = auth_client.post(
+        f"{w['base']}/facts",
+        json={
+            "proposition": _prop(w, "mara", "LOCATED_AT", "saltmere"),
+            "expected_revision": then + 2,
+        },
+    )
+    assert moved.status_code == 201, moved.text
+    latest = then + 3
+
+    now = _guide(auth_client, w, scene).json()
+    assert now["version"] == latest and now["title"].endswith(f"version {latest}")
+    assert "Mara Venn is located at Saltmere." in now["markdown"]
+    assert "Lantern Harbor." not in now["markdown"].split("## ")[-1]
+
+    old = _guide(auth_client, w, scene, version=then)
+    assert old.status_code == 200, old.text
+    guide = old.json()
+    # Read as it stood: the old name, where she was then, nothing added since.
+    assert guide["version"] == then and guide["title"].endswith(f"version {then}")
+    assert "Mara is located at Lantern Harbor." in guide["markdown"]
+    assert "Mara Venn" not in guide["markdown"] and "located at Saltmere" not in guide["markdown"]
+    people = next(s for s in guide["sections"] if s["heading"] == "People")
+    assert people["entries"][0]["name"] == "Mara"
+    assert guide["bound_to"] == (
+        f"The story itself, as it stood at version {then}; up to scene 1 of 1, “The Docks”; "
+        "as the reader knows it."
+    )
+    # The export's header says exactly what it shows.
+    header = guide["markdown"].split("---\n")[1]
+    assert f"version: {then}\n" in header
+    assert 'story_line: "the story itself"\n' in header
+    assert "up_to_scene: 1\nof_scenes: 1\n" in header and 'scene: "The Docks"\n' in header
+    assert 'seen_as: "the reader"\n' in header and "guide_rules: 1\n" in header
+
+
+def test_a_guide_at_a_version_refuses_what_did_not_exist_then(auth_client, fake_container):
+    w = _world(auth_client, fake_container)
+    head = int(w["head"])
+    scene = _scene(auth_client, w, head, "The Docks", pov="mara")
+    later = _guide(auth_client, w, scene, version=head + 2)
+    assert later.status_code == 400 and "no version" in later.json()["detail"]
+    before = _guide(auth_client, w, scene, version=head)
+    assert before.status_code == 404
+    assert f"not in the plan at version {head}" in before.json()["detail"]
+    # Tobin did not exist at version 1, so no guide can be seen through his eyes then.
+    early = auth_client.post(
+        f"{w['base']}/plan", json={"kind": "scene", "title": "Early", "expected_revision": head + 1}
+    )
+    assert early.status_code == 201
+    as_tobin = _guide(auth_client, w, scene, viewpoint=w["tobin"], version=1)
+    assert as_tobin.status_code == 404
+
+
+def test_a_guide_in_a_what_if_names_the_what_if(auth_client, fake_container):
+    w = _world(auth_client, fake_container)
+    head = int(w["head"])
+    scene = _scene(auth_client, w, head, "The Docks", pov="mara")
+    branch = auth_client.post(f"{w['base']}/what-ifs", json={"name": "Storm"}).json()["id"]
+    guide = auth_client.get(
+        f"{w['base']}/reader/guide",
+        params={"scene": scene["id"], "version": head + 1, "viewpoint": w["mara"]},
+        headers={"X-Story-Branch": branch},
+    ).json()
+    assert guide["story_line"] == "the what-if “Storm”"
+    assert guide["viewpoint_name"] == "Mara" and 'seen_as: "Mara"' in guide["markdown"]
+    assert guide["bound_to"].startswith("The what-if “Storm”, as it stood at version")
+
+
+@pytest.mark.parametrize("page", [2, 3, 2000])
+def test_the_story_rebuilt_at_the_latest_version_is_the_story_now(
+    auth_client, fake_container, monkeypatch, page
+):
+    import asyncio
+
+    from backend.services import story_at_version
+    from backend.services.story_time_service import read_story
+
+    w = _world(auth_client, fake_container)
+    head = int(w["head"])
+    _secret(auth_client, w, "in_guild", head)
+    _believe(auth_client, w, "tobin", _prop(w, "mara", "LOCATED_AT", "saltmere"), head + 1)
+    _scene(auth_client, w, head + 2, "The Docks", pov="mara")
+    auth_client.post(f"{w['base']}/facts/{w['knows']}/close", json={"expected_revision": head + 3})
+    # Small pages make the rebuild cross page boundaries mid-way through the history.
+    monkeypatch.setattr(story_at_version, "_PAGE", page)
+    workspace, project = (
+        fake_container.settings.AUTH_LOCAL_WORKSPACE_ID,
+        w["base"].rsplit("/", 1)[1],
+    )
+    canon = fake_container.canon_repository
+
+    rebuilt = asyncio.run(story_at_version.story_at(canon, workspace, project, head + 4))
+    live = asyncio.run(read_story(canon, workspace, project))
+
+    # What a guide reads; which schema and provenance a record came with is not replayed.
+    def entity(e):
+        return (e.id, e.type, e.name, e.aliases, e.attributes, e.lifecycle)
+
+    def fact(f):
+        return (f.id, f.proposition, f.starts, f.ends, f.visibility, f.created_revision)
+
+    assert {k: entity(v) for k, v in rebuilt.story.entities.items()} == {
+        k: entity(v) for k, v in live.entities.items()
+    }
+    assert [fact(f) for f in rebuilt.story.facts] == [fact(f) for f in live.facts]
+    assert [b.id for b in rebuilt.beliefs] == [
+        b.id for b in asyncio.run(canon.list_beliefs(workspace_id=workspace, project_id=project))
+    ]
+    assert [p.title for p in rebuilt.plan_items] == ["The Docks"]

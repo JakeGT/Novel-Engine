@@ -10,11 +10,12 @@ from dataclasses import replace
 
 import pytest
 
+from backend.domain.check_passes import PASS_ORDER
 from backend.domain.jobs import JobStatus
 from backend.domain.usage import UsageRecord
 from backend.ports import AIUsage, StructuredResponse
 from backend.services.canon_change_workflow import ChangePlan
-from backend.services.studio_service import ReviewNotes
+from backend.services.scene_checks import CheckNotes
 from tests.contract.test_god_hand import _world
 from tests.contract.test_studio import PROSE, _draft, _save, _scene_world, _studio
 
@@ -41,12 +42,19 @@ def _keep_a_draft(client, container, w, scene, base: str | None) -> dict:
     return kept.json()
 
 
-def _review(tokens: int = 100) -> StructuredResponse:
-    return StructuredResponse(
-        parsed=ReviewNotes(notes=[]),
-        model="fake",
-        usage=AIUsage(prompt_tokens=tokens, completion_tokens=0),
-    )
+def _queue_check(container, tokens: int = 100) -> None:
+    """Answers for one check with every pass, one call each, using ``tokens`` in all."""
+    share, rest = divmod(tokens, len(PASS_ORDER))
+    for index, _ in enumerate(PASS_ORDER):
+        container.ai.queue(
+            StructuredResponse(
+                parsed=CheckNotes(notes=[]),
+                model="fake",
+                usage=AIUsage(
+                    prompt_tokens=share + (rest if index == 0 else 0), completion_tokens=0
+                ),
+            )
+        )
 
 
 # ------------------------------------------------------------------ the settings
@@ -86,7 +94,7 @@ def test_balanced_checks_a_kept_draft_and_not_a_save(auth_client, fake_container
     check = next(job for job in kept["jobs"] if job["kind"] == "scene_review")
     assert check["automatic"] is True and check["status"] == "queued"
 
-    fake_container.ai.queue(_review(900))
+    _queue_check(fake_container, 900)
     done = _run(fake_container)
     assert [job.status for job in done] == [JobStatus.SUCCEEDED]
     # The check read the kept draft, now the scene's text.
@@ -105,7 +113,7 @@ def test_thorough_checks_after_saving_at_most_once_in_a_while(auth_client, fake_
     # Still running: the next save waits rather than queueing a second check.
     second = _save(auth_client, w, scene, PROSE + " Gulls.", first["version_id"]).json()
     assert second["automatic"] == "busy"
-    fake_container.ai.queue(_review())
+    _queue_check(fake_container)
     _run(fake_container)
 
     third = _save(auth_client, w, scene, PROSE + " Gulls cried.", second["version_id"]).json()
@@ -115,16 +123,16 @@ def test_thorough_checks_after_saving_at_most_once_in_a_while(auth_client, fake_
 
 def test_a_scene_stops_checking_on_its_own_at_its_allowance(auth_client, fake_container):
     w, scene = _scene_world(auth_client, fake_container)
-    _settings(auth_client, w, check_profile="balanced", scene_tokens=5_000)
+    _settings(auth_client, w, check_profile="balanced", scene_tokens=15_000)
     first = _save(auth_client, w, scene, PROSE, None).json()
     kept = _keep_a_draft(auth_client, fake_container, w, scene, first["version_id"])
     assert kept["automatic"] == "started"
-    fake_container.ai.queue(_review(4_900))
+    _queue_check(fake_container, 14_900)
     _run(fake_container)
 
     again = _keep_a_draft(auth_client, fake_container, w, scene, kept["version_id"])
     assert again["automatic"] == "scene_allowance"
-    assert again["checking"]["spent_tokens"] == 4_900
+    assert again["checking"]["spent_tokens"] == 14_900
     # Asking by hand is still the author's choice.
     asked = auth_client.post(f"{w['base']}/plan/{scene['id']}/studio/reviews", json={})
     assert asked.status_code == 202, asked.text

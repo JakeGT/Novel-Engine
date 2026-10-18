@@ -18,6 +18,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
+from backend.domain.arcs import PATH_KEY, arc_path, path_problem
 from backend.domain.canon.assertions import Belief, Fact, FactStatus, FactVisibility
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
 from backend.domain.canon.events import Event
@@ -527,7 +528,45 @@ class AuthoritativeValidator:
                 return None
             return target
 
-        async def validate_plan_item(index: int, item: PlanItem) -> None:
+        async def validate_path(index: int, item: PlanItem, previous: PlanItem | None) -> None:
+            """An arc's stages, however they were written: readable, on an arc, and
+            pointing at scenes and facts that are there. Only what the change adds is
+            looked up, so a stage left pointing at something since removed never blocks
+            an unrelated edit."""
+            raw = item.details.get(PATH_KEY)
+            if raw is None:
+                return
+            if item.kind is not PlanKind.ARC:
+                blocking(index, "invalid_plan_path", "only an arc can have stages")
+                return
+            problem = path_problem(raw)
+            if problem is not None:
+                blocking(index, "invalid_plan_path", problem)
+                return
+            before = arc_path(previous.details) if previous is not None else []
+            old_scenes = {stage.scene_id for stage in before}
+            old_facts = {stage.fact_id for stage in before}
+            for stage in arc_path(item.details):
+                if stage.scene_id is not None and stage.scene_id not in old_scenes:
+                    scene = await plan(stage.scene_id)
+                    if scene is None or not scene.is_active or scene.kind is not PlanKind.SCENE:
+                        blocking(
+                            index,
+                            "invalid_plan_path",
+                            "a stage can only be reached in a scene of the plan",
+                        )
+                if stage.fact_id is not None and stage.fact_id not in old_facts:
+                    tied = await fact(stage.fact_id)
+                    if tied is None or tied.closed_revision is not None:
+                        blocking(
+                            index,
+                            "invalid_plan_path",
+                            "a stage can only be tied to a fact that is in the story",
+                        )
+
+        async def validate_plan_item(
+            index: int, item: PlanItem, previous: PlanItem | None = None
+        ) -> None:
             """A plan item as it would stand: its text, its place in the outline, what it names."""
             if not item.title.strip() or len(item.title) > MAX_TITLE_LENGTH:
                 blocking(
@@ -542,6 +581,7 @@ class AuthoritativeValidator:
                 for key, value in item.details.items()
             ):
                 blocking(index, "invalid_plan_details", "the plan item's details are malformed")
+            await validate_path(index, item, previous)
 
             if item.parent_id is not None:
                 allowed = ALLOWED_PARENTS[item.kind]
@@ -996,7 +1036,7 @@ class AuthoritativeValidator:
                     )
                 else:
                     changed = apply_plan_update(plan_current, operation)
-                    await validate_plan_item(index, changed)
+                    await validate_plan_item(index, changed, plan_current)
                     plans[operation.id] = changed
             elif isinstance(operation, RetirePlanItemOp):
                 plan_current = await plan(operation.id)

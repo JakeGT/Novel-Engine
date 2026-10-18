@@ -32,6 +32,7 @@
 | Link suggestions | `POST /assist/links` | Facts between existing entries that their details imply and no fact records, as a proposal for review. Recorded facts are not repeated; single-valued facts are not corrected; nothing is merged. |
 | Bulk decisions | `POST /mutations/{id}/operations/decisions` | Several keep/skip decisions in one request and one transaction: all are recorded, or none. |
 | Before-review check | `POST /mutations/{id}/validate` | As before, plus advisory findings against current canon (`possible_duplicate`, `archived_twin`, `already_recorded`) worded with names. Common blocking findings are worded for an author. |
+| What a change touches | `GET /mutations/{id}/impact`, `GET /entities/{id}/impact` | CON-017/CON-007, computed on read with no model and no stored index: `affected` (scenes, plan parts and threads whose people, conditions, reveals or thread steps name a changed entry, fact or plan item; story rules about a changed entry before or after the change; kept drafts whose context manifest included it), `may_be_affected` (texts and scene prose whose indexed passages name a changed entry, or a changed scene's own prose), and `not_checked` (never empty: what the index does not cover, texts the index is behind on, limits reached, other lines of the story). A proposal is read in its own line of the story and only its kept changes count; an entry in the request's line. Each dependent carries ids and a passage range to link to. |
 | Assistant allowance | `GET /ai/usage`, `PUT /ai/usage` | What the signed-in person has used of their allowance in the period, and the limit in force (the lower of the site's and the workspace's). An owner sets or clears the workspace's daily allowance. Exceeding it returns 429 `usage_limit` before any provider call. |
 | Sample story | `POST /entities/sample` | Fills a project that has no entries with a short sample story as one author version; 409 otherwise. |
 | Request estimate | `GET /assist/estimate` | About how many tokens a request that reads the whole story bible, or only the names in it, will take in. From the text's length; calls no model. |
@@ -102,7 +103,16 @@ Under `/projects/{project_id}`:
   accept `starts`/`ends`/`visibility` and `when` on create.
 - `/knowledge/characters/{entity_id}`, `/knowledge/facts/{fact_id}`, `POST /knowledge/tell`.
 - `/reader` (the plan's scenes in reading order with what the reader is shown),
-  `/reader/guide?scene=&viewpoint=`; `PUT /plan/{id}/reveals`, `PUT /plan/{id}/when`.
+  `/reader/guide?scene=&viewpoint=&version=` (the story as it stood at a saved version, the latest
+  by default; the answer names the line of the story, version, scene position and viewpoint, gives
+  sections for reading and a Markdown export with that binding in a YAML header; `400` for a version
+  that does not exist, `404` for a scene not in the plan then); `PUT /plan/{id}/reveals`,
+  `PUT /plan/{id}/when`.
+- `PUT /plan/{id}/path` (an arc's stages in order: name, the scene where each is reached, a fact
+  that should hold from then; STY-006). `POST /plan` accepts `path` for a new arc. Plan items
+  carry `path`; `GET /plan` adds `arcs` (each stage's scene number in reading order and whether
+  its fact holds there) and lists arc checks in `open` (`arc_out_of_order`, `arc_fact_not_true`,
+  `arc_fact_gone`, `arc_stage_scene_gone`; notes `arc_long_stretch`, `arc_stage_not_placed`).
 - `/mutations/{id}` reports `changed_since` for a stale proposal.
 
 ## Scene context (Phase 4, ADR-021)
@@ -149,7 +159,12 @@ Under `/projects/{project_id}`:
   150–3,000 words, with an optional direction. Returns a job. Checks the allowance first (`429
   usage_limit`). Changes no text.
 - `POST /plan/{id}/studio/reviews` (`202`): a check with the assistant of the current text or one
-  draft. Returns a job. Every note quotes the text; one that does not is dropped.
+  draft, with `passes` (any of `viewpoint`, `continuity`, `plan`, `voice`, `clarity`; every pass when
+  left out; an empty list is `400`). One model call per pass. Returns a job whose result counts
+  notes per pass. Every note quotes the text; one that does not is dropped. Notes carry
+  `check_pass` (null for a note from the earlier all-in-one check) (CON-008).
+- `GET /plan/{id}/studio/check-estimate` (optional `passes`, `draft_id`): what a check would use,
+  with `passes` giving each pass's label, description and tokens. Calls no model.
 - `POST /drafts/{id}/keep` (`base_version_id`): the draft becomes the scene's newest version and
   remembers the job and context it came from. `DELETE /drafts/{id}`: discard it.
 - `GET /jobs/{id}`: status, stage, progress, tokens used, and a plain-words reason when it failed.
@@ -162,13 +177,31 @@ Under `/projects/{project_id}`:
   /plan/{id}/studio/dismissals/{dismissal_id}` brings it back. Both return the studio. The text is
   never changed (CON-010, CON-016).
 
+## Deep audits (CON-011, ADR-022 amendment)
+
+- `GET /audits/estimate?plan_id=&passes=`: the scenes in a part of the plan (a story, arc, beat or
+  scene; empty for the whole plan) in reading order, which are written, and the tokens each pass
+  would use across them. Calls no model.
+- `POST /audits` (`202`, optional `Idempotency-Key`; `plan_id`, `passes`: every pass when left out,
+  none for only the checks that need no model): a job that runs the passes over every written scene
+  (at most 60), reading the exact versions that were current when it started. Asks first like the
+  studio (`409 needs_confirmation`); `400` when nothing is written or the part is a thread. Followed
+  and stopped with `/jobs/{id}`; a stopped or failed audit keeps the scenes it finished.
+- `GET /audits?plan_id=`: the latest audits of that part. `GET /audits/{job_id}`: the results by
+  scene: status (`checked`, `not_checked`, `waiting`), the version read and whether it is still the
+  newest, the assistant's notes from that audit with `quoted` words, the checks that need no model
+  (worked out on reading, free) and the plan's own order and reveal checks for the scene.
+
 ## Scenes back into the story (Phase 6, ADR-023)
 
 - `GET /plan/{id}/studio` also returns `reading`: the version last read into the story, when, the
   proposals that came of it, and `changed_since`.
 - `POST /plan/{id}/studio/readings` (`202`): read the scene's current version into proposed changes
   for review; only paragraphs changed since the last reading are read. `400` when nothing is written
-  or nothing changed. The job's result lists the proposals.
+  or nothing changed. The job's result lists the proposals. In a scene with a story time, facts
+  of a kind that can take a time start at the scene's time unless the passage says they were
+  already so (`timed` in the result counts them), and a new one-at-a-time value ends the old one
+  at that time instead of removing it.
 - `POST /plan/{id}/studio/plan-card` (`202`): suggest the scene's summary, viewpoint, place and who is
   in it from the prose, as one plan change for review. `400` when nothing is written.
 - `GET /texts/passage` also returns `scene_id` when the text is a scene's, for "See it in the scene".
@@ -184,7 +217,7 @@ Under `/projects/{project_id}`:
   write access.
 - `GET/PUT /ai/limits` (workspace): an owner's `confirm_above_tokens` and `conversation_tokens` for
   every story. A story may choose lower, never higher.
-- Asking first: `/plan/{id}/studio/drafts`, `/reviews`, `/readings`, `/plan-card`, the assistant's
+- Asking first: `/plan/{id}/studio/drafts`, `/reviews`, `/readings`, `/plan-card`, `/audits`, the assistant's
   `/assist/questions`, `/proposals`, `/changes`, `/links`, `/revisions`, `/assist/plan/questions`,
   `/proposals`, `/directions` and `/assist/texts/{id}/read` refuse a request estimated above the
   threshold with `409 needs_confirmation`, `field_errors.estimated_tokens` and
@@ -198,7 +231,7 @@ Under `/projects/{project_id}`:
   `check_minutes`, `next_after_save`); the answer to a save or a kept draft returns `automatic`:
   `started`, or why no check started (`busy`, `too_soon`, `scene_allowance`, `needs_confirmation`,
   `allowance`, `no_provider`, `job_cap`, `not_started`). Jobs return `automatic` and
-  `provider_cost_usd`. `GET /plan/{id}/studio/check-estimate`: what one check of the scene would use.
+  `provider_cost_usd`. `GET /plan/{id}/studio/check-estimate`: what a check of the scene would use, pass by pass.
 - `GET /ai/usage` and jobs return `cost_usd`/`provider_cost_usd` only when the provider reported a
   cost (OpenRouter's `usage.cost`); no price is ever worked out.
 

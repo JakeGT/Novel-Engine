@@ -118,18 +118,18 @@ def test_a_reason_in_the_authors_words_and_how_long_it_lasts(auth_client, fake_c
 def test_a_note_stays_dismissed_when_the_assistant_words_it_differently(
     auth_client, fake_container
 ):
-    from backend.services.studio_service import ReviewNote, ReviewNotes
+    from backend.services.scene_checks import CheckNote, CheckNotes
 
     w, scene = _scene_world(auth_client, fake_container)
     _save(auth_client, w, scene, PROSE, None)
 
     def check_with(problem: str) -> dict:
         fake_container.ai.queue(
-            ReviewNotes(
-                notes=[ReviewNote(quote="Mara did not come", category="plan", problem=problem)]
-            )
+            CheckNotes(notes=[CheckNote(quote="Mara did not come", problem=problem)])
         )
-        started = auth_client.post(f"{w['base']}/plan/{scene['id']}/studio/reviews", json={})
+        started = auth_client.post(
+            f"{w['base']}/plan/{scene['id']}/studio/reviews", json={"passes": ["plan"]}
+        )
         assert started.status_code == 202, started.text
         asyncio.run(fake_container.job_runner.run_pending())
         notes = _studio(auth_client, w, scene)["assistant"]
@@ -157,18 +157,20 @@ def test_a_what_if_starts_with_the_same_dismissals_and_keeps_its_own(auth_client
     assert _stock(_studio(auth_client, w, scene))["dismissal"] is not None
 
 
-def _review(auth_client, fake_container, w, scene, notes) -> list[dict]:
-    from backend.services.studio_service import ReviewNotes
+def _review(auth_client, fake_container, w, scene, notes, check: str = "voice") -> list[dict]:
+    from backend.services.scene_checks import CheckNotes
 
-    fake_container.ai.queue(ReviewNotes(notes=notes))
-    started = auth_client.post(f"{w['base']}/plan/{scene['id']}/studio/reviews", json={})
+    fake_container.ai.queue(CheckNotes(notes=notes))
+    started = auth_client.post(
+        f"{w['base']}/plan/{scene['id']}/studio/reviews", json={"passes": [check]}
+    )
     assert started.status_code == 202, started.text
     asyncio.run(fake_container.job_runner.run_pending())
     return _studio(auth_client, w, scene)["assistant"]
 
 
 def test_two_notes_on_one_sentence_are_dismissed_one_at_a_time(auth_client, fake_container):
-    from backend.services.studio_service import ReviewNote
+    from backend.services.scene_checks import CheckNote
 
     w, scene = _scene_world(auth_client, fake_container)
     _save(auth_client, w, scene, PROSE, None)
@@ -178,8 +180,8 @@ def test_two_notes_on_one_sentence_are_dismissed_one_at_a_time(auth_client, fake
         w,
         scene,
         [
-            ReviewNote(quote="Tobin waited", category="voice", problem="Too flat an opening."),
-            ReviewNote(quote="Lantern Harbor", category="voice", problem="Named twice nearby."),
+            CheckNote(quote="Tobin waited", problem="Too flat an opening."),
+            CheckNote(quote="Lantern Harbor", problem="Named twice nearby."),
         ],
     )
     first, second = notes
@@ -192,7 +194,7 @@ def test_two_notes_on_one_sentence_are_dismissed_one_at_a_time(auth_client, fake
 
 
 def test_two_notes_on_the_same_words_are_told_apart(auth_client, fake_container):
-    from backend.services.studio_service import ReviewNote
+    from backend.services.scene_checks import CheckNote
 
     w, scene = _scene_world(auth_client, fake_container)
     _save(auth_client, w, scene, PROSE, None)
@@ -202,8 +204,8 @@ def test_two_notes_on_the_same_words_are_told_apart(auth_client, fake_container)
         w,
         scene,
         [
-            ReviewNote(quote="Tobin waited", category="voice", problem="Too flat an opening."),
-            ReviewNote(quote="Tobin waited", category="voice", problem="Tense slips here."),
+            CheckNote(quote="Tobin waited", problem="Too flat an opening."),
+            CheckNote(quote="Tobin waited", problem="Tense slips here."),
         ],
     )
     assert first["key"] != second["key"]
@@ -215,7 +217,8 @@ def test_a_note_dismissed_before_quotes_were_fingerprinted_stays_dismissed(
     auth_client, fake_container
 ):
     from backend.domain.studio import AssistantFinding
-    from backend.services.studio_service import ReviewNote, _old_note_key
+    from backend.services.scene_checks import CheckNote
+    from backend.services.studio_service import _old_note_key
 
     w, scene = _scene_world(auth_client, fake_container)
     _save(auth_client, w, scene, PROSE, None)
@@ -224,7 +227,8 @@ def test_a_note_dismissed_before_quotes_were_fingerprinted_stays_dismissed(
         fake_container,
         w,
         scene,
-        [ReviewNote(quote="Mara did not come", category="plan", problem="The plan differs.")],
+        [CheckNote(quote="Mara did not come", problem="The plan differs.")],
+        check="plan",
     )
     start = PROSE.index("Mara did not come")
     old = _old_note_key(

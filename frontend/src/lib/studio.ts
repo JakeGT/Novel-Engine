@@ -4,8 +4,10 @@ import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query'
 import {
   api,
   type AssistantNote,
+  type CheckPass,
   type DismissAsk,
   type DraftCheck,
+  type PassEstimate,
   type PlanItem,
   type Scope,
   type StudioJob,
@@ -94,6 +96,59 @@ export const NOTE_KINDS: Record<string, string> = {
   clarity: 'Clarity',
 }
 
+/** The passes of a check with the assistant, in the order they run (CON-008). */
+export const PASS_ORDER: CheckPass[] = ['viewpoint', 'continuity', 'plan', 'voice', 'clarity']
+
+/** What each pass is called, while the server's own words are on their way. */
+export const PASS_NAMES: Record<CheckPass, string> = {
+  viewpoint: 'Viewpoint and secrets',
+  continuity: 'Continuity with the story bible',
+  plan: 'What the plan asks for',
+  voice: 'Your voice',
+  clarity: 'Clarity',
+}
+
+/** A number of tokens as people read it: 12,400. */
+export const tokenCount = (value: number) => value.toLocaleString('en-GB')
+
+/** What the chosen passes would use in all, from the estimate; null while it loads. */
+export function chosenTokens(passes: PassEstimate[] | undefined, chosen: CheckPass[]): number | null {
+  if (!passes) return null
+  return passes.filter((item) => chosen.includes(item.check_pass)).reduce((sum, item) => sum + item.total_tokens, 0)
+}
+
+/** How an audit stands, in words. */
+export const AUDIT_STATUS: Record<string, string> = {
+  queued: 'Waiting to start',
+  running: 'Under way',
+  succeeded: 'Finished',
+  failed: 'Did not finish',
+  cancelled: 'Stopped',
+}
+
+const passesKey = (scope: Scope) => `novel-engine.check-passes.${scope.projectId}`
+
+/** The passes this person last chose in this story; every pass until they choose. */
+export function readChosenPasses(scope: Scope): CheckPass[] {
+  try {
+    const raw = window.localStorage.getItem(passesKey(scope))
+    if (!raw) return [...PASS_ORDER]
+    const value: unknown = JSON.parse(raw)
+    if (!Array.isArray(value)) return [...PASS_ORDER]
+    return PASS_ORDER.filter((item) => value.includes(item))
+  } catch {
+    return [...PASS_ORDER]
+  }
+}
+
+export function keepChosenPasses(scope: Scope, passes: CheckPass[]): void {
+  try {
+    window.localStorage.setItem(passesKey(scope), JSON.stringify(passes))
+  } catch {
+    // A browser that keeps nothing still checks; the choice just is not remembered.
+  }
+}
+
 /** How long a draft should be, as named choices rather than a number to invent. */
 export const LENGTHS: { value: number; label: string }[] = [
   { value: 400, label: 'Short — about 400 words' },
@@ -143,6 +198,12 @@ export const JOB_DOING: Record<string, string> = {
   scene_review: 'The assistant is reading your text',
   [READ_JOB]: 'The assistant is reading the scene into your story',
   [PLAN_JOB]: 'The assistant is filling in the plan card from the scene',
+  story_audit: 'Auditing this part of the story',
+}
+
+/** Where an audit's results are read (CON-011). */
+export function auditPath(projectId: string, jobId: string): string {
+  return `/projects/${projectId}/audits/${encodeURIComponent(jobId)}`
 }
 
 /**

@@ -95,9 +95,37 @@ class JourneyModel(BaseModel):
     facts: dict[str, FactModel]
 
 
+class GuideEntryModel(BaseModel):
+    name: str
+    lines: list[str]
+
+
+class GuideSectionModel(BaseModel):
+    heading: str
+    entries: list[GuideEntryModel]
+
+
 class GuideModel(BaseModel):
+    """A spoiler-safe guide, bound to what it shows: the line of the story, its version,
+    the scene it runs up to and whose knowledge it keeps."""
+
     title: str
+    # The same guide as a Markdown file, with that binding in its header.
     markdown: str
+    story_line: str
+    version: int
+    scene_id: str
+    scene_title: str
+    scene_number: int
+    scene_count: int
+    viewpoint_id: str | None
+    viewpoint_name: str | None
+    # One sentence naming exactly what the guide shows.
+    bound_to: str
+    leaves_out: str
+    sections: list[GuideSectionModel]
+    # The version of the rules that decided what is left out.
+    rules: int
 
 
 @router.get("/knowledge/characters/{entity_id}")
@@ -219,10 +247,43 @@ async def reader_guide(
     project_id: str,
     scene: str = Query(min_length=1, max_length=200),
     viewpoint: str | None = Query(default=None, max_length=200),
+    version: int | None = Query(default=None, ge=1),
     scope: AccessScope = Depends(get_project_scope),
     service: KnowledgeService = Depends(get_knowledge_service),
 ) -> GuideModel:
+    """The story bible a reader could see after a scene, as the story stood at a version.
+
+    Without ``version`` it is the latest one; the guide always names the version it shows.
+    """
     guide = await service.guide(
-        scope, scope.workspace_id or "", project_id, up_to_scene=scene, viewpoint=viewpoint
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        up_to_scene=scene,
+        viewpoint=viewpoint,
+        version=version,
     )
-    return GuideModel(title=guide.title, markdown=guide.markdown)
+    return GuideModel(
+        title=guide.title,
+        markdown=guide.markdown,
+        story_line=guide.story_line,
+        version=guide.version,
+        scene_id=guide.scene_id,
+        scene_title=guide.scene_title,
+        scene_number=guide.scene_number,
+        scene_count=guide.scene_count,
+        viewpoint_id=guide.viewpoint_id,
+        viewpoint_name=guide.viewpoint_name,
+        bound_to=guide.bound_to,
+        leaves_out=guide.leaves_out,
+        sections=[
+            GuideSectionModel(
+                heading=section.heading,
+                entries=[
+                    GuideEntryModel(name=entry.name, lines=entry.lines) for entry in section.entries
+                ],
+            )
+            for section in guide.sections
+        ],
+        rules=guide.rules,
+    )

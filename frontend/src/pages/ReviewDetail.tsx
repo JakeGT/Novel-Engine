@@ -13,6 +13,7 @@ import {
 import { AskForChanges } from '../components/AskForChanges'
 import { FromText } from '../components/FromText'
 import { ChangeEditor, type Candidate } from '../components/ChangeEditor'
+import { MutationImpact } from '../components/ChangeImpact'
 import { ConversationEvidence, SetupSuggestions } from '../components/Conversations'
 import { Icon } from '../components/icons'
 import { RestoreDialog } from '../components/RestoreDialog'
@@ -863,6 +864,16 @@ export function ReviewDetail() {
             )
           })}
         </section>
+
+        {/* Before the decision: what depends on what these changes touch (CON-017). */}
+        {open && !done && (
+          <MutationImpact
+            mutationId={mutationId}
+            version={change.operations
+              .map((item) => `${item.ordinal}.${item.revision}.${item.decision?.decision ?? ''}`)
+              .join('|')}
+          />
+        )}
 
         {commit.isError &&
           (isStaleHead(commit.error) ? (

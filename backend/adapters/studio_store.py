@@ -19,7 +19,7 @@ _DRAFT = (
 )
 _FINDING = (
     "SELECT id, target_kind, target_id, job_id, category, message, suggestion, start_char, "
-    "end_char, created_at FROM draft_findings"
+    "end_char, created_at, check_pass FROM draft_findings"
 )
 
 
@@ -54,6 +54,7 @@ def _finding(row: Any) -> AssistantFinding:
         start=row[7],
         end=row[8],
         created_at=row[9],
+        check_pass=row[10],
     )
 
 
@@ -285,9 +286,9 @@ class PostgresStudioStore:
                 await db.execute(
                     text(
                         "INSERT INTO draft_findings (workspace_id, project_id, id, target_kind, "
-                        "target_id, job_id, category, message, suggestion, start_char, end_char) "
-                        "VALUES (:w, :p, :id, :kind, :target, :job, :category, :message, "
-                        ":suggestion, :start, :end)"
+                        "target_id, job_id, category, message, suggestion, start_char, end_char, "
+                        "check_pass) VALUES (:w, :p, :id, :kind, :target, :job, :category, "
+                        ":message, :suggestion, :start, :end, :check_pass)"
                     ),
                     {
                         "w": workspace_id,
@@ -301,6 +302,7 @@ class PostgresStudioStore:
                         "suggestion": finding.suggestion,
                         "start": finding.start,
                         "end": finding.end,
+                        "check_pass": finding.check_pass,
                     },
                 )
 
@@ -315,6 +317,22 @@ class PostgresStudioStore:
                         "AND target_kind = :kind AND target_id = :target ORDER BY start_char NULLS LAST"
                     ),
                     {"w": workspace_id, "p": project_id, "kind": target_kind, "target": target_id},
+                )
+            ).all()
+        return [_finding(row) for row in rows]
+
+    async def findings_for_job(
+        self, *, workspace_id: str, project_id: str, job_id: str
+    ) -> list[AssistantFinding]:
+        """Every note one piece of work found (a deep audit's, across its scenes)."""
+        async with session_scope(self._session_factory) as db:
+            rows = (
+                await db.execute(
+                    text(
+                        _FINDING + " WHERE workspace_id = :w AND project_id = :p "
+                        "AND job_id = :job ORDER BY target_id, start_char NULLS LAST"
+                    ),
+                    {"w": workspace_id, "p": project_id, "job": job_id},
                 )
             ).all()
         return [_finding(row) for row in rows]

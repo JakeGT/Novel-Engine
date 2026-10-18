@@ -137,6 +137,16 @@ _SPECS = (
         _S + "intake_workflow:PassageDraft",
     ),
     PromptSpec(
+        "read-scene",
+        # 2: each fact says whether the scene shows it changing or starting there,
+        # instead of whether it was already so; only those take the scene's time.
+        2,
+        "A passage of a written scene set at a known story time, read as changes to review; "
+        "each fact also says whether the scene shows it changing or starting there.",
+        _S + "intake_workflow:read_scene_messages",
+        _S + "intake_workflow:SceneDraft",
+    ),
+    PromptSpec(
         "draft-rule",
         1,
         "A continuity rule the author wrote as a sentence, turned into a checkable rule.",
@@ -150,13 +160,41 @@ _SPECS = (
         "A draft of one scene, in the author's voice, for them to keep or discard.",
         _S + "studio_service:draft_messages",
     ),
+    # A check of a scene, one pass each (CON-008); these replace "scene-review" (3).
     PromptSpec(
-        "scene-review",
-        # 3: the scene's conditions are given with its context (STY-005).
-        3,
-        "Notes on a draft scene that quote it: contradictions, viewpoint slips, gaps.",
-        _S + "studio_service:review_messages",
-        _S + "studio_service:ReviewNotes",
+        "check-viewpoint",
+        1,
+        "Notes quoting a scene where its viewpoint character knows too much or a secret slips.",
+        _S + "scene_checks:viewpoint_messages",
+        _S + "scene_checks:CheckNotes",
+    ),
+    PromptSpec(
+        "check-continuity",
+        1,
+        "Notes quoting a scene where it goes against the story bible, rules or past events.",
+        _S + "scene_checks:continuity_messages",
+        _S + "scene_checks:CheckNotes",
+    ),
+    PromptSpec(
+        "check-plan",
+        1,
+        "Notes quoting a scene where it goes against, or leaves out, what its plan asks for.",
+        _S + "scene_checks:plan_messages",
+        _S + "scene_checks:CheckNotes",
+    ),
+    PromptSpec(
+        "check-voice",
+        1,
+        "Notes quoting a scene where it does not sound like the author's own writing.",
+        _S + "scene_checks:voice_messages",
+        _S + "scene_checks:CheckNotes",
+    ),
+    PromptSpec(
+        "check-clarity",
+        1,
+        "Notes quoting passages of a scene a reader could find hard to follow.",
+        _S + "scene_checks:clarity_messages",
+        _S + "scene_checks:CheckNotes",
     ),
     PromptSpec(
         "scene-plan-card",

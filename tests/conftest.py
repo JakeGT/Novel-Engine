@@ -245,6 +245,7 @@ def _build_fake_container(settings, tmp_path):
         schema_store=schema_versions,
         tenancy=tenancy_service,
         local_mode=not settings.is_hosted,
+        journal=journal,
     )
     from backend.services.context_service import ContextService
     from backend.services.passage_index import PassageIndex

@@ -9,6 +9,10 @@ What counts as read: every line of the version the last complete reading read, a
 line a reading since then got through before it stopped. The reading is recorded as it
 goes, one passage at a time, so a reading that is stopped, fails or is interrupted is
 resumed by the next one rather than repeated, and nothing it proposed is proposed again.
+
+A scene with a story time is read with that time (EXT-007): a place or other fact that
+can take a time starts when the scene happens, unless the passage says it was already so.
+The time is the scene's when the reading runs, so a time set while it waited is used.
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ from backend.core.logging import log_event
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.jobs import Job, JobStatus
+from backend.domain.knowledge import scene_time
 from backend.domain.reading import changed_passages, read_keys
 from backend.domain.sources import Verdict, find_mentions
 from backend.domain.studio import READ_JOB, SceneReading
@@ -282,7 +287,11 @@ class SceneReadingService:
         head = await self._canon.get_head(
             workspace_id=workspace_id, project_id=project_id, branch_id=branch_id
         )
+        scene = await self._studio._scene(scope, workspace_id, project_id, plan_id)  # noqa: SLF001
+        # The scene's story time; facts read from it start then (EXT-007).
+        starts = scene_time(scene.details)
         guesses = 0
+        timed = 0
         for number, passage in enumerate(passages, start=1):
             start = passage.start
             while start < passage.end and version.content[start : passage.end].strip():
@@ -315,6 +324,7 @@ class SceneReadingService:
                         credential=api_key,
                         provider_base_url=base_url,
                         usage_sink=recorded,
+                        starts=starts,
                     )
                     # Recorded at once, inside the lease: whatever happens next, these words
                     # count as read and this proposal is never made again.
@@ -330,6 +340,7 @@ class SceneReadingService:
                         passages=mine.passages + 1,
                     )
                     await self._store.save_reading(mine)
+                timed += result.timed
                 for guess in result.guesses:
                     try:
                         await self._sources.remember(
@@ -363,6 +374,8 @@ class SceneReadingService:
             "proposals": list(mine.proposals),
             "discarded": mine.discarded,
             "guesses": guesses,
+            # Suggested facts that start at the scene's time.
+            "timed": timed,
         }
 
 

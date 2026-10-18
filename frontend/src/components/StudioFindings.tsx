@@ -367,10 +367,7 @@ export function Notes({
         <h2 id="notes-heading" className="studio-side-title">
           The assistant’s notes
         </h2>
-        <p className="hint">
-          It reads for continuity, viewpoint, the plan, your voice and clarity, and every note
-          quotes your words.
-        </p>
+        <p className="hint">Every note quotes your words and says which check found it.</p>
       </div>
       {stale && notes.length > 0 && <p className="hint">These are about the saved text.</p>}
       <JustDismissed items={dismissed} dismissals={dismissals} />

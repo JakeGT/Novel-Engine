@@ -11,6 +11,7 @@ import {
   type StudioJob,
 } from '../api/client'
 import { CheckingDialog, CheckingStatus } from '../components/AssistantSpending'
+import { PassChoices } from '../components/CheckPasses'
 import { SceneContextDialog } from '../components/SceneContext'
 import { Checks, Notes } from '../components/StudioFindings'
 import { MentionTextarea } from '../components/MentionTextarea'
@@ -27,22 +28,26 @@ import {
 } from '../components/ui'
 import {
   DEFAULT_CHOICES,
+  chosenTokens,
   eitherOf,
   forgetUnsaved,
   isFinished,
   isPlanJob,
   isReadJob,
+  keepChosenPasses,
   keepUnsaved,
   locate,
   missingFromCard,
   newRequestKey,
   parseAt,
   planCardProposal,
+  readChosenPasses,
   readUnsaved,
   reviewPath,
   useDismissals,
   useSuggestedChanges,
   scrollAreaTo,
+  tokenCount,
   type DraftChoices,
   type Span,
 } from '../lib/studio'
@@ -90,6 +95,12 @@ export function StudioPage() {
   const [reading, setReading] = useState<SceneVersion | null>(null)
   const [voiceOpen, setVoiceOpen] = useState(false)
   const [checkingOpen, setCheckingOpen] = useState(false)
+  // What a check with the assistant looks at, one pass each (CON-008); remembered here.
+  const [passes, setPasses] = useState(() => readChosenPasses(scope))
+  const choosePasses = (next: typeof passes) => {
+    setPasses(next)
+    keepChosenPasses(scope, next)
+  }
   // What the last save or kept draft did about a check on its own (CON-009).
   const [automatic, setAutomatic] = useState<string | null>(null)
   const [contextOpen, setContextOpen] = useState(false)
@@ -211,7 +222,7 @@ export function StudioPage() {
     },
   })
   const review = useMutation({
-    mutationFn: (draftId: string | null) => api.startReview(scope, planId, draftId),
+    mutationFn: (draftId: string | null) => api.startReview(scope, planId, draftId, passes),
     onSuccess: watch,
   })
   const readIn = useMutation({
@@ -231,6 +242,12 @@ export function StudioPage() {
   const drafts = data?.drafts ?? []
   const labelOf = (draftId: string) => `Draft ${drafts.findIndex((item) => item.id === draftId) + 1}`
   const shown = view === 'text' ? null : (drafts.find((item) => item.id === view) ?? null)
+  // What each pass of a check would use for the text or draft in view; no model is asked.
+  const passCosts = useQuery({
+    queryKey: scopedKey(scope, 'check-estimate', planId, shown?.id ?? 'text', data?.version_id ?? ''),
+    queryFn: () => api.checkEstimate(scope, planId, shown?.id ?? null),
+    enabled: canWrite && Boolean(shown || data?.version_id),
+  })
   const keep = useMutation({
     mutationFn: (chosen: SceneDraft) => api.keepDraft(scope, chosen.id, data?.version_id ?? null),
     onSuccess: (next, chosen) => {
@@ -334,6 +351,8 @@ export function StudioPage() {
       : dirty
         ? 'Save first, so it reads what you have now.'
         : null
+  const passBlocked = passes.length === 0 ? 'Choose at least one thing for the assistant to check.' : null
+  const checkCost = chosenTokens(passCosts.data?.passes, passes)
   const readBlocked = nothingSaved
     ? 'Save some words first, so there is something to read.'
     : dirty
@@ -636,11 +655,13 @@ export function StudioPage() {
               action={
                 canWrite ? (
                   <div className="stack tight">
+                    <PassChoices passes={passCosts.data?.passes} chosen={passes} onChange={choosePasses} />
+                    <ErrorNotice error={passCosts.error} prefix="Could not work out what a check would use" />
                     <Button
                       size="sm"
                       icon="spark"
-                      disabled={working || review.isPending || reviewBlocked !== null}
-                      aria-describedby={reviewBlocked ? 'review-blocked' : undefined}
+                      disabled={working || review.isPending || (reviewBlocked ?? passBlocked) !== null}
+                      aria-describedby={(reviewBlocked ?? passBlocked) ? 'review-blocked' : 'review-cost'}
                       onClick={() => review.mutate(shown?.id ?? null)}
                     >
                       {review.isPending
@@ -649,10 +670,16 @@ export function StudioPage() {
                           ? 'Check again with the assistant'
                           : 'Check with the assistant'}
                     </Button>
-                    {reviewBlocked && (
+                    {(reviewBlocked ?? passBlocked) ? (
                       <span id="review-blocked" className="hint">
-                        {reviewBlocked}
+                        {reviewBlocked ?? passBlocked}
                       </span>
+                    ) : (
+                      checkCost !== null && (
+                        <span id="review-cost" className="hint">
+                          About {tokenCount(checkCost)} tokens for {passes.length === 5 ? 'all five' : passes.length === 1 ? 'the one chosen' : `the ${passes.length} chosen`}.
+                        </span>
+                      )
                     )}
                     <AssistantStartProblem error={review.error} prefix="Could not start the check" />
                     <CheckingStatus

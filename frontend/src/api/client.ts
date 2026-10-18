@@ -25,6 +25,9 @@ export type MutationSummary = Schemas['MutationSummaryModel']
 export type MutationDetail = Schemas['MutationDetailModel']
 export type MutationOperation = Schemas['MutationOperationModel']
 export type MutationValidation = Schemas['MutationValidationModel']
+/** What a change touches: affected, may be affected, and what was not checked (CON-017). */
+export type Impact = Schemas['ImpactModel']
+export type ImpactDependent = Schemas['DependentModel']
 export type MutationCommit = Schemas['MutationCommitModel']
 export type MutationList = Schemas['MutationListResponse']
 export type ProposeMutationRequest = Schemas['ProposeMutationRequest']
@@ -39,6 +42,8 @@ export type ChangeProposal = Schemas['ChangeProposalModel']
 export type PlanItem = Schemas['PlanItemModel']
 export type PlanRef = Schemas['PlanRefModel']
 export type SceneCondition = Schemas['SceneCondition']
+export type ArcStage = Schemas['ArcStage']
+export type ArcReading = Schemas['ArcReadingModel']
 export type ConditionState = Schemas['ConditionStateModel']
 export type PlanPromise = Schemas['PromiseModel']
 export type OpenPlanItem = Schemas['OpenItemModel']
@@ -57,6 +62,7 @@ export type TextMention = Schemas['MentionModel']
 export type NameQuestion = Schemas['NameQuestionModel']
 export type Passage = Schemas['PassageModel']
 export type PassageRead = Schemas['ReadPassageModel']
+export type ReaderGuide = Schemas['GuideModel']
 export type SchemaSuggestion = Schemas['SchemaSuggestionModel']
 export type AiProvider = Schemas['ProviderModel']
 export type AiChoice = Schemas['AiChoiceModel']
@@ -99,6 +105,13 @@ export type StoryAssistantSettings = Schemas['StoryAssistantSettingsModel']
 export type SetAssistantSettings = Schemas['SetAssistantSettingsRequest']
 export type WorkspaceLimits = Schemas['WorkspaceLimitsModel']
 export type CheckProfile = Schemas['CheckProfile']
+// Checks with the assistant, one pass each (CON-008), and deep audits (CON-011).
+export type CheckPass = Schemas['CheckPass']
+export type CheckEstimate = Schemas['CheckEstimateModel']
+export type PassEstimate = Schemas['PassEstimateModel']
+export type AuditEstimate = Schemas['AuditEstimateModel']
+export type Audit = Schemas['AuditModel']
+export type AuditScene = Schemas['AuditSceneModel']
 
 export interface Scope {
   workspaceId: string | null
@@ -575,6 +588,9 @@ export const api = {
     send<PlanItem>(scope, 'POST', `/plan/${id(planId)}/move`, body),
   setSceneConditions: (scope: Scope, planId: string, body: Schemas['SetConditionsRequest']) =>
     send<PlanItem>(scope, 'PUT', `/plan/${id(planId)}/conditions`, body),
+  /** How an arc's character changes: its stages in order, each with the scene it is reached in. */
+  setArcPath: (scope: Scope, planId: string, body: Schemas['SetPathRequest']) =>
+    send<PlanItem>(scope, 'PUT', `/plan/${id(planId)}/path`, body),
   removePlanItem: (scope: Scope, planId: string, expectedRevision: number) =>
     send<Schemas['RemovedModel']>(scope, 'POST', `/plan/${id(planId)}/remove`, {
       expected_revision: expectedRevision,
@@ -674,6 +690,8 @@ export const api = {
       limit?: number
     } = {},
   ) => get<Items<Fact>>(scope, '/facts', params),
+  /** One fact, even one past the first page of a list. */
+  getFact: (scope: Scope, factId: string) => get<Fact>(scope, `/facts/${id(factId)}`),
 
   assertFact: (scope: Scope, body: AssertFactRequest) => send<Fact>(scope, 'POST', '/facts', body),
 
@@ -723,8 +741,9 @@ export const api = {
   tell: (scope: Scope, body: Schemas['TellRequest']) =>
     send<Schemas['TellResult']>(scope, 'POST', '/knowledge/tell', body),
   readerJourney: (scope: Scope) => get<ReaderJourney>(scope, '/reader'),
-  readerGuide: (scope: Scope, sceneId: string, viewpoint?: string) =>
-    get<Schemas['GuideModel']>(scope, '/reader/guide', { scene: sceneId, viewpoint }),
+  /** What a reader could know after a scene; at a saved version when one is given. */
+  readerGuide: (scope: Scope, sceneId: string, viewpoint?: string, version?: number) =>
+    get<Schemas['GuideModel']>(scope, '/reader/guide', { scene: sceneId, viewpoint, version }),
   setSceneReveals: (scope: Scope, planId: string, reveals: Reveal[], expectedRevision: number) =>
     send<PlanItem>(scope, 'PUT', `/plan/${id(planId)}/reveals`, {
       reveals,
@@ -761,9 +780,10 @@ export const api = {
     } satisfies Schemas['SaveRequest']),
   draftEstimate: (scope: Scope, planId: string, ask: DraftAsk) =>
     send<DraftEstimate>(scope, 'POST', `/plan/${id(planId)}/studio/estimate`, ask),
-  /** Roughly what one check with the assistant of the scene's text would use. */
-  checkEstimate: (scope: Scope, planId: string) =>
-    get<DraftEstimate>(scope, `/plan/${id(planId)}/studio/check-estimate`),
+  /** Roughly what a check with the assistant of the scene's text (or a draft) would use,
+   * pass by pass; every pass when none are named. */
+  checkEstimate: (scope: Scope, planId: string, draftId?: string | null) =>
+    get<CheckEstimate>(scope, `/plan/${id(planId)}/studio/check-estimate`, { draft_id: draftId }),
   /** Ask for drafts. The key makes a resent request start the same work, not a second one. */
   startDraft: (scope: Scope, planId: string, ask: DraftAsk, key: string) =>
     request<StudioJob>(`${project(scope)}/plan/${id(planId)}/studio/drafts`, {
@@ -773,10 +793,25 @@ export const api = {
       json: ask,
     }),
   /** Ask the assistant to check the scene's text, or one draft. */
-  startReview: (scope: Scope, planId: string, draftId: string | null) =>
+  startReview: (scope: Scope, planId: string, draftId: string | null, passes?: CheckPass[]) =>
     send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/studio/reviews`, {
       draft_id: draftId,
+      passes,
     } satisfies Schemas['ReviewRequest']),
+  /** What auditing a part of the plan ('' for all of it) would read and use. Calls no model. */
+  auditEstimate: (scope: Scope, planId: string) =>
+    get<AuditEstimate>(scope, '/audits/estimate', { plan_id: planId }),
+  /** Audit a part of the story with the chosen passes; none runs only the free checks. */
+  startAudit: (scope: Scope, planId: string, passes: CheckPass[], key: string) =>
+    request<StudioJob>(`${project(scope)}/audits`, {
+      method: 'POST',
+      workspaceId: scope.workspaceId,
+      headers: { ...branchHeaders(scope), 'Idempotency-Key': key },
+      json: { plan_id: planId, passes } satisfies Schemas['AuditRequest'],
+    }),
+  audits: (scope: Scope, planId: string) =>
+    get<{ items: StudioJob[] }>(scope, '/audits', { plan_id: planId }),
+  audit: (scope: Scope, jobId: string) => get<Audit>(scope, `/audits/${id(jobId)}`),
   /** Read the scene's saved text into suggested changes to the story, for review. */
   startReading: (scope: Scope, planId: string) =>
     send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/studio/readings`),
@@ -880,6 +915,12 @@ export const api = {
 
   getMutation: (scope: Scope, mutationId: string) =>
     get<MutationDetail>(scope, `/mutations/${id(mutationId)}`),
+
+  /** What the changes still included would touch, worked out without a model. */
+  mutationImpact: (scope: Scope, mutationId: string) =>
+    get<Impact>(scope, `/mutations/${id(mutationId)}/impact`),
+  /** What depends on one entry, before it is edited. */
+  entryImpact: (scope: Scope, entityId: string) => get<Impact>(scope, `/entities/${id(entityId)}/impact`),
 
   proposeMutation: (scope: Scope, body: ProposeMutationRequest) =>
     send<MutationDetail>(scope, 'POST', '/mutations', body),

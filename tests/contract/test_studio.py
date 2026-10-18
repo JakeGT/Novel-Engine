@@ -329,37 +329,40 @@ def test_the_estimate_is_positive_and_asks_no_model(auth_client, fake_container)
 # ---------------------------------------------------------------------- checking
 
 
-def test_a_check_keeps_only_notes_that_quote_the_text_in_a_known_category(
-    auth_client, fake_container
-):
-    from backend.services.studio_service import ReviewNote, ReviewNotes
+def test_a_check_keeps_only_notes_that_quote_the_text(auth_client, fake_container):
+    from backend.services.scene_checks import CheckNote, CheckNotes
 
     w, scene = _scene_world(auth_client, fake_container)
     saved = _save(auth_client, w, scene, PROSE, None).json()
     fake_container.ai.queue(
-        ReviewNotes(
+        CheckNotes(
             notes=[
-                ReviewNote(
+                CheckNote(
                     quote="while the tide came in",
-                    category="Continuity",
                     problem="The tide went out in the last scene.",
                     suggestion="Let it go out.",
                 ),
-                ReviewNote(quote="a quote that is not there", category="voice", problem="X."),
-                ReviewNote(quote="Tobin waited", category="spelling", problem="Not a category."),
-                ReviewNote(quote="Lantern Harbor", category="clarity", problem="   "),
-                ReviewNote(quote="", category="plan", problem="No quote at all."),
+                CheckNote(quote="a quote that is not there", problem="X."),
+                CheckNote(quote="Lantern Harbor", problem="   "),
+                CheckNote(quote="", problem="No quote at all."),
             ]
         )
     )
-    started = auth_client.post(f"{w['base']}/plan/{scene['id']}/studio/reviews", json={})
+    started = auth_client.post(
+        f"{w['base']}/plan/{scene['id']}/studio/reviews", json={"passes": ["continuity"]}
+    )
     assert started.status_code == 202, started.text
     (done,) = _run(fake_container)
     assert done.status.value == "succeeded"
-    assert done.result == {"findings": 1, "dropped": 4}
+    assert done.result == {
+        "findings": 1,
+        "dropped": 3,
+        "passes": {"continuity": {"findings": 1, "dropped": 3}},
+    }
     state = _studio(auth_client, w, scene)
     (note,) = state["assistant"]
     assert note["category"] == "continuity" and note["suggestion"] == "Let it go out."
+    assert note["check_pass"] == "continuity"
     assert PROSE[note["start"] : note["end"]] == "while the tide came in"
     # Stored against the version that was checked: a newer version starts clean.
     stored = asyncio.run(
@@ -376,7 +379,7 @@ def test_a_check_keeps_only_notes_that_quote_the_text_in_a_known_category(
 
 
 def test_a_check_of_a_draft_is_kept_with_that_draft_and_goes_with_it(auth_client, fake_container):
-    from backend.services.studio_service import ReviewNote, ReviewNotes
+    from backend.services.scene_checks import CheckNote, CheckNotes
 
     w, scene = _scene_world(auth_client, fake_container)
     fake_container.ai.queue("Tobin watched the grey water. Mara did not come.")
@@ -384,11 +387,10 @@ def test_a_check_of_a_draft_is_kept_with_that_draft_and_goes_with_it(auth_client
     _draft(auth_client, w, scene, variants=2)
     _run(fake_container)
     first, second = _studio(auth_client, w, scene)["drafts"]
-    fake_container.ai.queue(
-        ReviewNotes(notes=[ReviewNote(quote="grey water", category="voice", problem="Too plain.")])
-    )
+    fake_container.ai.queue(CheckNotes(notes=[CheckNote(quote="grey water", problem="Too plain.")]))
     started = auth_client.post(
-        f"{w['base']}/plan/{scene['id']}/studio/reviews", json={"draft_id": first["id"]}
+        f"{w['base']}/plan/{scene['id']}/studio/reviews",
+        json={"draft_id": first["id"], "passes": ["voice"]},
     )
     assert started.status_code == 202, started.text
     _run(fake_container)
@@ -407,6 +409,33 @@ def test_a_check_of_a_draft_is_kept_with_that_draft_and_goes_with_it(auth_client
         f"{w['base']}/plan/{scene['id']}/studio/reviews", json={"draft_id": first["id"]}
     )
     assert missing.status_code == 404
+
+
+def test_a_draft_is_checked_or_estimated_only_through_its_own_scene(auth_client, fake_container):
+    from tests.contract.test_plan_checks import _add
+
+    w, scene = _scene_world(auth_client, fake_container)
+    other = _add(auth_client, w, "scene", "Elsewhere")
+    fake_container.ai.queue("Tobin watched the grey water. Mara did not come.")
+    _draft(auth_client, w, scene)
+    _run(fake_container)
+    [draft] = _studio(auth_client, w, scene)["drafts"]
+    calls = len(fake_container.ai.calls)
+
+    wrong_review = auth_client.post(
+        f"{w['base']}/plan/{other['id']}/studio/reviews", json={"draft_id": draft["id"]}
+    )
+    assert wrong_review.status_code == 404, wrong_review.text
+    wrong_estimate = auth_client.get(
+        f"{w['base']}/plan/{other['id']}/studio/check-estimate", params={"draft_id": draft["id"]}
+    )
+    assert wrong_estimate.status_code == 404, wrong_estimate.text
+    assert len(fake_container.ai.calls) == calls
+
+    right = auth_client.get(
+        f"{w['base']}/plan/{scene['id']}/studio/check-estimate", params={"draft_id": draft["id"]}
+    )
+    assert right.status_code == 200, right.text
 
 
 # ------------------------------------------------------------------------- voice
@@ -803,18 +832,16 @@ def test_a_stop_asked_for_during_the_last_draft_is_honoured(
 def test_a_check_stopped_while_the_assistant_reads_stores_nothing(
     auth_client, fake_container, monkeypatch
 ):
-    from backend.services.studio_service import ReviewNote, ReviewNotes
+    from backend.services.scene_checks import CheckNote, CheckNotes
 
     w, scene = _scene_world(auth_client, fake_container)
     _save(auth_client, w, scene, PROSE, None)
     fake_container.ai.queue(
-        ReviewNotes(
-            notes=[
-                ReviewNote(quote="while the tide came in", category="continuity", problem="Tide.")
-            ]
-        )
+        CheckNotes(notes=[CheckNote(quote="while the tide came in", problem="Tide.")])
     )
-    started = auth_client.post(f"{w['base']}/plan/{scene['id']}/studio/reviews", json={}).json()
+    started = auth_client.post(
+        f"{w['base']}/plan/{scene['id']}/studio/reviews", json={"passes": ["continuity"]}
+    ).json()
     ai = fake_container.ai
     original = ai.generate_structured
 

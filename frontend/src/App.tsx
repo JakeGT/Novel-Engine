@@ -5,6 +5,7 @@ import { PageError } from './components/PageError'
 import { SignedOutOverlay } from './components/SignedOutOverlay'
 import { KeepSignedIn } from './lib/keepalive'
 import { AssistantPage } from './pages/AssistantPage'
+import { AuditPage } from './pages/AuditPage'
 import { BiblePage } from './pages/BiblePage'
 import { CustomizePage } from './pages/CustomizePage'
 import { EntryPage } from './pages/EntryPage'
@@ -15,6 +16,7 @@ import { MediaPage } from './pages/MediaPage'
 import { Overview } from './pages/Overview'
 import { PeoplePage } from './pages/PeoplePage'
 import { PlanPage } from './pages/PlanPage'
+import { ReaderGuidePage } from './pages/ReaderGuidePage'
 import { RulesPage } from './pages/RulesPage'
 import { StudioPage } from './pages/StudioPage'
 import { TextPage } from './pages/TextPage'
@@ -55,6 +57,8 @@ export default function App() {
               <Route path="review/:mutationId" element={<ReviewDetail />} />
               <Route path="plan" element={<PlanPage />} />
               <Route path="plan/:planId/write" element={<StudioPage />} />
+              <Route path="plan/:planId/guide" element={<ReaderGuidePage />} />
+              <Route path="audits/:jobId" element={<AuditPage />} />
               <Route path="rules" element={<RulesPage />} />
               <Route path="timeline" element={<TimelinePage />} />
               <Route path="what-ifs" element={<WhatIfsPage />} />

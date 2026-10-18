@@ -206,6 +206,43 @@ async def test_findings_are_kept_against_what_was_checked(stack) -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_note_keeps_the_pass_that_found_it_and_an_audit_finds_its_notes(stack) -> None:
+    """CON-008 and CON-011: the pass is stored (none for an older note), and one job's notes
+    are found across every version it read."""
+    from dataclasses import replace
+
+    from sqlalchemy.exc import IntegrityError
+
+    studio, _, factory = stack
+    older = _finding("fnd_old", "version", "srv_1", 0)
+    typed = replace(_finding("fnd_view", "version", "srv_1", 4), check_pass="viewpoint")
+    audit = [
+        replace(_finding("fnd_a1", "version", "srv_1", 8), job_id="job_audit", check_pass="plan"),
+        replace(
+            _finding("fnd_a2", "version", "srv_9", 1), job_id="job_audit", check_pass="clarity"
+        ),
+    ]
+    await studio.add_findings(**S, findings=[older, typed, *audit])
+    found = {f.id: f for f in await studio.findings(**S, target_kind="version", target_id="srv_1")}
+    assert found["fnd_old"].check_pass is None and found["fnd_view"].check_pass == "viewpoint"
+    by_job = await studio.findings_for_job(**S, job_id="job_audit")
+    assert [(f.id, f.target_id, f.check_pass) for f in by_job] == [
+        ("fnd_a1", "srv_1", "plan"),
+        ("fnd_a2", "srv_9", "clarity"),
+    ]
+    assert (
+        await studio.findings_for_job(workspace_id="ws_else", project_id=PR, job_id="job_audit")
+        == []
+    )
+    # Only the five passes may be recorded.
+    with pytest.raises(IntegrityError):
+        await studio.add_findings(
+            **S,
+            findings=[replace(_finding("fnd_bad", "version", "srv_1", 0), check_pass="spelling")],
+        )
+
+
+@pytest.mark.asyncio
 async def test_the_last_reading_of_a_scene_is_kept_per_line_of_the_story(stack) -> None:
     studio, _, _ = stack
     assert await studio.last_reading(**S, branch_id="b_main", plan_id="plan_1") is None

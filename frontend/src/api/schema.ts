@@ -1171,6 +1171,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/audits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Audits
+         * @description The latest audits of this part of the story, newest first.
+         */
+        get: operations["list_audits_api_v1_projects__project_id__audits_get"];
+        put?: never;
+        /**
+         * Start Audit
+         * @description Start auditing a part of the story. Above the size the author or workspace asked to
+         *     confirm, refused with ``409 needs_confirmation`` until confirmed.
+         */
+        post: operations["start_audit_api_v1_projects__project_id__audits_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/audits/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Audit Estimate
+         * @description What auditing this part of the story would read and use, before anything is sent.
+         *     Every pass when none are named. Calls no model.
+         */
+        get: operations["audit_estimate_api_v1_projects__project_id__audits_estimate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/audits/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Audit
+         * @description An audit's results, scene by scene, with the checks that need no model.
+         */
+        get: operations["audit_api_v1_projects__project_id__audits__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/beliefs": {
         parameters: {
             query?: never;
@@ -1501,6 +1567,26 @@ export interface paths {
         };
         /** Entity History */
         get: operations["entity_history_api_v1_projects__project_id__entities__entity_id__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/entities/{entity_id}/impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Entry Impact
+         * @description What depends on one entry, so an edit can be weighed before it is saved.
+         */
+        get: operations["entry_impact_api_v1_projects__project_id__entities__entity_id__impact_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1967,6 +2053,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mutation Impact
+         * @description What the changes still included in a proposal touch, in the proposal's line of the story.
+         */
+        get: operations["mutation_impact_api_v1_projects__project_id__mutations__mutation_id__impact_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/mutations/{mutation_id}/operations/decisions": {
         parameters: {
             query?: never;
@@ -2281,6 +2387,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/path": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Arc Path
+         * @description Say how an arc's character changes: its stages in order, each with its scene.
+         */
+        put: operations["set_arc_path_api_v1_projects__project_id__plan__plan_id__path_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/plan/{plan_id}/pictures": {
         parameters: {
             query?: never;
@@ -2367,8 +2493,9 @@ export interface paths {
         };
         /**
          * Check Estimate
-         * @description Roughly what one check with the assistant of this scene's text reads and writes,
-         *     so the cost of each checking profile can be said before choosing. Calls no model.
+         * @description Roughly what a check with the assistant of this scene's text (or one draft) reads
+         *     and writes, pass by pass, so its cost can be said before choosing. Every pass when
+         *     none are named. Calls no model.
          */
         get: operations["check_estimate_api_v1_projects__project_id__plan__plan_id__studio_check_estimate_get"];
         put?: never;
@@ -2611,7 +2738,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Reader Guide */
+        /**
+         * Reader Guide
+         * @description The story bible a reader could see after a scene, as the story stood at a version.
+         *
+         *     Without ``version`` it is the latest one; the guide always names the version it shows.
+         */
         get: operations["reader_guide_api_v1_projects__project_id__reader_guide_get"];
         put?: never;
         post?: never;
@@ -3592,6 +3724,8 @@ export interface components {
             kind: components["schemas"]["PlanKind"];
             /** Parent Id */
             parent_id?: string | null;
+            /** Path */
+            path?: components["schemas"]["ArcStage"][];
             /** Pays Off */
             pays_off?: string[];
             /** Refs */
@@ -3738,6 +3872,42 @@ export interface components {
         ApplySuggestionsRequest: {
             /** Names */
             names: string[];
+        };
+        /** ArcReadingModel */
+        ArcReadingModel: {
+            /** About */
+            about: string[];
+            /** Arc Id */
+            arc_id: string;
+            /** Stages */
+            stages: components["schemas"]["ArcStageReadingModel"][];
+        };
+        /**
+         * ArcStage
+         * @description One stage of an arc: a state, where it is reached, and what should hold from then.
+         */
+        ArcStage: {
+            /** Fact Id */
+            fact_id?: string | null;
+            /** Name */
+            name: string;
+            /** Scene Id */
+            scene_id?: string | null;
+        };
+        /** ArcStageReadingModel */
+        ArcStageReadingModel: {
+            /** Fact */
+            fact: string | null;
+            /** Fact Id */
+            fact_id: string | null;
+            /** Index */
+            index: number;
+            /** Name */
+            name: string;
+            /** Scene Id */
+            scene_id: string | null;
+            /** Scene Number */
+            scene_number: number | null;
         };
         /** AssertBeliefOp */
         AssertBeliefOp: {
@@ -3918,6 +4088,7 @@ export interface components {
         AssistantNoteModel: {
             /** Category */
             category: string;
+            check_pass?: components["schemas"]["CheckPass"] | null;
             dismissal?: components["schemas"]["DismissalModel"] | null;
             /** End */
             end?: number | null;
@@ -3946,6 +4117,148 @@ export interface components {
             kind: "at";
             /** Label */
             label?: string | null;
+        };
+        /** AuditCheckModel */
+        AuditCheckModel: {
+            /** Code */
+            code: string;
+            dismissal?: components["schemas"]["DismissalModel"] | null;
+            /** End */
+            end?: number | null;
+            /**
+             * Key
+             * @default
+             */
+            key: string;
+            /** Message */
+            message: string;
+            /**
+             * Quoted
+             * @default
+             */
+            quoted: string;
+            /** Severity */
+            severity: string;
+            /** Start */
+            start?: number | null;
+        };
+        /** AuditEstimateModel */
+        AuditEstimateModel: {
+            /** Max Scenes */
+            max_scenes: number;
+            /** Passes */
+            passes: components["schemas"]["PassEstimateModel"][];
+            /** Plan Id */
+            plan_id: string;
+            /** Scenes */
+            scenes: components["schemas"]["AuditSceneEstimateModel"][];
+            /** Title */
+            title: string;
+            /** Total Tokens */
+            total_tokens: number;
+            /** Written */
+            written: number;
+        };
+        /** AuditListModel */
+        AuditListModel: {
+            /** Items */
+            items: components["schemas"]["JobModel"][];
+        };
+        /** AuditModel */
+        AuditModel: {
+            job: components["schemas"]["JobModel"];
+            /** Passes */
+            passes: components["schemas"]["CheckPass"][];
+            /** Plan Id */
+            plan_id: string;
+            /** Scenes */
+            scenes: components["schemas"]["AuditSceneModel"][];
+            /** Title */
+            title: string;
+            /** Unwritten */
+            unwritten: components["schemas"]["AuditUnwrittenModel"][];
+        };
+        /** AuditNoteModel */
+        AuditNoteModel: {
+            /** Category */
+            category: string;
+            check_pass?: components["schemas"]["CheckPass"] | null;
+            dismissal?: components["schemas"]["DismissalModel"] | null;
+            /** End */
+            end?: number | null;
+            /** Id */
+            id: string;
+            /**
+             * Key
+             * @default
+             */
+            key: string;
+            /** Message */
+            message: string;
+            /**
+             * Quoted
+             * @default
+             */
+            quoted: string;
+            /** Start */
+            start?: number | null;
+            /** Suggestion */
+            suggestion: string;
+        };
+        /** AuditRequest */
+        AuditRequest: {
+            /** Passes */
+            passes?: components["schemas"]["CheckPass"][] | null;
+            /**
+             * Plan Id
+             * @default
+             */
+            plan_id: string;
+        };
+        /** AuditSceneEstimateModel */
+        AuditSceneEstimateModel: {
+            /** Plan Id */
+            plan_id: string;
+            /** Title */
+            title: string;
+            /** Total Tokens */
+            total_tokens: number;
+            /** Words */
+            words: number;
+            /** Written */
+            written: boolean;
+        };
+        /** AuditSceneModel */
+        AuditSceneModel: {
+            /** Checks */
+            checks: components["schemas"]["AuditCheckModel"][];
+            /** Current */
+            current: boolean;
+            /** In Plan */
+            in_plan: boolean;
+            /** Notes */
+            notes: components["schemas"]["AuditNoteModel"][];
+            /** Passes Done */
+            passes_done?: components["schemas"]["CheckPass"][];
+            /** Plan Id */
+            plan_id: string;
+            /** Status */
+            status: string;
+            /** Story Checks */
+            story_checks: string[];
+            /** Title */
+            title: string;
+            /** Version Id */
+            version_id: string;
+            /** Version Number */
+            version_number?: number | null;
+        };
+        /** AuditUnwrittenModel */
+        AuditUnwrittenModel: {
+            /** Plan Id */
+            plan_id: string;
+            /** Title */
+            title: string;
         };
         /** BeliefModel */
         BeliefModel: {
@@ -4290,6 +4603,19 @@ export interface components {
             kind: "has" | "lacks" | "at_most" | "at_least";
             pattern: components["schemas"]["Pattern"];
         };
+        /** CheckEstimateModel */
+        CheckEstimateModel: {
+            /** Completion Tokens */
+            completion_tokens: number;
+            /** Context Words */
+            context_words: number;
+            /** Passes */
+            passes?: components["schemas"]["PassEstimateModel"][];
+            /** Prompt Tokens */
+            prompt_tokens: number;
+            /** Total Tokens */
+            total_tokens: number;
+        };
         /** CheckModel */
         CheckModel: {
             /** Code */
@@ -4309,6 +4635,11 @@ export interface components {
             /** Start */
             start?: number | null;
         };
+        /**
+         * CheckPass
+         * @enum {string}
+         */
+        CheckPass: "viewpoint" | "continuity" | "plan" | "voice" | "clarity";
         /**
          * CheckProfile
          * @enum {string}
@@ -4744,6 +5075,40 @@ export interface components {
             kind: "decimal";
             /** Value */
             value: number | string;
+        };
+        /** DependentModel */
+        DependentModel: {
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /** End */
+            end?: number | null;
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "scene" | "plan" | "thread" | "rule" | "draft" | "scene_text" | "text";
+            /**
+             * Level
+             * @enum {string}
+             */
+            level: "affected" | "may_be_affected";
+            /** Plan Id */
+            plan_id?: string | null;
+            /** Reasons */
+            reasons: string[];
+            /** Source Id */
+            source_id?: string | null;
+            /** Start */
+            start?: number | null;
+            /** Title */
+            title: string;
+            /** Version Id */
+            version_id?: string | null;
         };
         /**
          * Direction
@@ -5285,17 +5650,73 @@ export interface components {
             /** Nodes */
             nodes: components["schemas"]["NodeUpdateItem"][];
         };
-        /** GuideModel */
+        /** GuideEntryModel */
+        GuideEntryModel: {
+            /** Lines */
+            lines: string[];
+            /** Name */
+            name: string;
+        };
+        /**
+         * GuideModel
+         * @description A spoiler-safe guide, bound to what it shows: the line of the story, its version,
+         *     the scene it runs up to and whose knowledge it keeps.
+         */
         GuideModel: {
+            /** Bound To */
+            bound_to: string;
+            /** Leaves Out */
+            leaves_out: string;
             /** Markdown */
             markdown: string;
+            /** Rules */
+            rules: number;
+            /** Scene Count */
+            scene_count: number;
+            /** Scene Id */
+            scene_id: string;
+            /** Scene Number */
+            scene_number: number;
+            /** Scene Title */
+            scene_title: string;
+            /** Sections */
+            sections: components["schemas"]["GuideSectionModel"][];
+            /** Story Line */
+            story_line: string;
             /** Title */
             title: string;
+            /** Version */
+            version: number;
+            /** Viewpoint Id */
+            viewpoint_id: string | null;
+            /** Viewpoint Name */
+            viewpoint_name: string | null;
+        };
+        /** GuideSectionModel */
+        GuideSectionModel: {
+            /** Entries */
+            entries: components["schemas"]["GuideEntryModel"][];
+            /** Heading */
+            heading: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * ImpactModel
+         * @description What depends on a change: affected, may be affected, and what was not checked.
+         */
+        ImpactModel: {
+            /** About */
+            about: string[];
+            /** Affected */
+            affected: components["schemas"]["DependentModel"][];
+            /** May Be Affected */
+            may_be_affected: components["schemas"]["DependentModel"][];
+            /** Not Checked */
+            not_checked: string[];
         };
         /** IndexStatusModel */
         IndexStatusModel: {
@@ -5847,6 +6268,8 @@ export interface components {
         };
         /** OutlineModel */
         OutlineModel: {
+            /** Arcs */
+            arcs?: components["schemas"]["ArcReadingModel"][];
             /** Conditions */
             conditions: components["schemas"]["ConditionStateModel"][];
             /** Items */
@@ -5857,6 +6280,23 @@ export interface components {
             promises?: components["schemas"]["PromiseModel"][];
             /** Threads */
             threads?: components["schemas"]["ThreadProgressModel"][];
+        };
+        /**
+         * PassEstimateModel
+         * @description One pass of a check with the assistant: what it looks at and roughly what it uses.
+         */
+        PassEstimateModel: {
+            check_pass: components["schemas"]["CheckPass"];
+            /** Completion Tokens */
+            completion_tokens: number;
+            /** Description */
+            description: string;
+            /** Label */
+            label: string;
+            /** Prompt Tokens */
+            prompt_tokens: number;
+            /** Total Tokens */
+            total_tokens: number;
         };
         /** PassageModel */
         PassageModel: {
@@ -5983,6 +6423,8 @@ export interface components {
             kind: string;
             /** Parent Id */
             parent_id: string | null;
+            /** Path */
+            path?: components["schemas"]["ArcStage"][];
             /** Pays Off */
             pays_off: string[];
             /** Position */
@@ -6514,6 +6956,8 @@ export interface components {
         ReviewRequest: {
             /** Draft Id */
             draft_id?: string | null;
+            /** Passes */
+            passes?: components["schemas"]["CheckPass"][] | null;
         };
         /** ReviseOperationRequest */
         ReviseOperationRequest: {
@@ -6883,6 +7327,13 @@ export interface components {
             conditions: components["schemas"]["SceneCondition"][];
             /** Expected Revision */
             expected_revision: number;
+        };
+        /** SetPathRequest */
+        SetPathRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+            /** Stages */
+            stages: components["schemas"]["ArcStage"][];
         };
         /** SetRevealsRequest */
         SetRevealsRequest: {
@@ -10018,6 +10469,143 @@ export interface operations {
             };
         };
     };
+    list_audits_api_v1_projects__project_id__audits_get: {
+        parameters: {
+            query?: {
+                plan_id?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditListModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_audit_api_v1_projects__project_id__audits_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+                "X-Confirm-Tokens"?: number | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuditRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    audit_estimate_api_v1_projects__project_id__audits_estimate_get: {
+        parameters: {
+            query?: {
+                plan_id?: string;
+                passes?: components["schemas"]["CheckPass"][] | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEstimateModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    audit_api_v1_projects__project_id__audits__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_beliefs_api_v1_projects__project_id__beliefs_get: {
         parameters: {
             query?: {
@@ -10767,6 +11355,38 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    entry_impact_api_v1_projects__project_id__entities__entity_id__impact_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImpactModel"];
                 };
             };
             /** @description Validation Error */
@@ -11823,6 +12443,38 @@ export interface operations {
             };
         };
     };
+    mutation_impact_api_v1_projects__project_id__mutations__mutation_id__impact_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                mutation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImpactModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     decide_operations_api_v1_projects__project_id__mutations__mutation_id__operations_decisions_post: {
         parameters: {
             query?: never;
@@ -12510,6 +13162,42 @@ export interface operations {
             };
         };
     };
+    set_arc_path_api_v1_projects__project_id__plan__plan_id__path_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPathRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanItemModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     add_scene_picture_api_v1_projects__project_id__plan__plan_id__pictures_post: {
         parameters: {
             query: {
@@ -12653,7 +13341,10 @@ export interface operations {
     };
     check_estimate_api_v1_projects__project_id__plan__plan_id__studio_check_estimate_get: {
         parameters: {
-            query?: never;
+            query?: {
+                passes?: components["schemas"]["CheckPass"][] | null;
+                draft_id?: string | null;
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -12669,7 +13360,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["backend__api__v1__studio__EstimateModel"];
+                    "application/json": components["schemas"]["CheckEstimateModel"];
                 };
             };
             /** @description Validation Error */
@@ -13109,6 +13800,7 @@ export interface operations {
             query: {
                 scene: string;
                 viewpoint?: string | null;
+                version?: number | null;
             };
             header?: never;
             path: {

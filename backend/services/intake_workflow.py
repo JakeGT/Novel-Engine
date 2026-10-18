@@ -8,6 +8,11 @@ is added to the story by reading.
 
 A phrase the model thinks means an existing entry ("the Fox" is Mara) is never
 acted on: it comes back as a guess for the author to answer.
+
+A written scene that has a story time is read with ``starts`` (EXT-007): what the
+passage shows changing or starting in the scene starts at the scene's time, and only
+for kinds of fact that can take a time; what simply is so stays untimed. Pasted text
+is read without a time.
 """
 
 from __future__ import annotations
@@ -26,7 +31,7 @@ from backend.domain.canon.revisions import OriginKind
 from backend.domain.errors import ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.journal import MutationSet
-from backend.domain.operations import CanonOperation, CreateEntityOp, EvidenceRef
+from backend.domain.operations import AssertFactOp, CanonOperation, CreateEntityOp, EvidenceRef
 from backend.domain.prompting import fence
 from backend.domain.prompts import Messages, prompt_version
 from backend.domain.sources import (
@@ -39,6 +44,7 @@ from backend.domain.sources import (
     passage_bounds,
 )
 from backend.domain.tenancy import Permission
+from backend.domain.worldtime import Unknown, WorldTime
 from backend.services.canon_character_workflow import (
     MAX_PROPOSED_ITEMS,
     DiscardedItem,
@@ -64,6 +70,7 @@ from backend.services.schema_suggestions import (
 logger = logging.getLogger(__name__)
 
 READ_PROMPT_VERSION = prompt_version("read-passage")
+READ_SCENE_PROMPT_VERSION = prompt_version("read-scene")
 # About six thousand words: one long scene. Longer text is read a part at a time.
 MAX_PASSAGE = 24_000
 MAX_GUESSES = 20
@@ -79,6 +86,16 @@ class ReadFact(DraftFact):
     stated: bool = Field(
         default=True,
         description="True when the passage says it outright; false when it only implies it",
+    )
+
+
+class SceneFact(ReadFact):
+    changes_here: bool = Field(
+        default=False,
+        description=(
+            "True only when the passage shows this changing or starting in the scene: "
+            "someone arrives or leaves, a thing breaks, a title passes on"
+        ),
     )
 
 
@@ -103,6 +120,12 @@ class PassageDraft(BaseModel):
     suggested_fact_kinds: list[SuggestedFactKind] = Field(default_factory=list)
 
 
+class SceneDraft(PassageDraft):
+    """A passage of a scene set at a known time: each fact also says if it starts there."""
+
+    facts: list[SceneFact] = Field(default_factory=list)  # type: ignore[assignment]
+
+
 @dataclass(frozen=True)
 class NameGuess:
     phrase: str
@@ -124,6 +147,8 @@ class PassageResult:
     discarded: list[DiscardedItem] = field(default_factory=list)
     guesses: list[NameGuess] = field(default_factory=list)
     suggestions: list[SchemaSuggestion] = field(default_factory=list)
+    # How many suggested facts start at the scene's time.
+    timed: int = 0
 
 
 def _context(
@@ -172,8 +197,17 @@ class IntakeWorkflow(PlanWorkflow):
         credential: str | None = None,
         provider_base_url: str | None = None,
         usage_sink: UsageSink | None = None,
+        starts: WorldTime | None = None,
     ) -> PassageResult:
+        """Read one passage into suggested changes, waiting for review.
+
+        ``starts`` is the story time of the scene the passage belongs to. Given, a fact
+        the passage shows changing or starting in the scene starts then; everything else,
+        and kinds of fact that cannot take a time, are left untimed. Pasted text gives none.
+        """
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        if isinstance(starts, Unknown):
+            starts = None
         content = version.content
         if start < 0 or start >= len(content):
             raise ValidationError("There is nothing to read from there.")
@@ -186,10 +220,13 @@ class IntakeWorkflow(PlanWorkflow):
         predicates, entity_types = await self._vocabulary(workspace_id, project_id)
         about, listed = _context(entities, within, index)
 
+        timed_scene = starts is not None
         draft: PassageDraft = await self._generate(
-            messages=read_passage_messages(about, passage, predicates, entity_types),
-            response_format=PassageDraft,
-            prompt_version=READ_PROMPT_VERSION,
+            messages=(read_scene_messages if timed_scene else read_passage_messages)(
+                about, passage, predicates, entity_types
+            ),
+            response_format=SceneDraft if timed_scene else PassageDraft,
+            prompt_version=READ_SCENE_PROMPT_VERSION if timed_scene else READ_PROMPT_VERSION,
             credential=credential,
             provider_base_url=provider_base_url,
             usage_sink=usage_sink,
@@ -226,12 +263,19 @@ class IntakeWorkflow(PlanWorkflow):
             kept_entities.append(DraftEntity(**item.model_dump(exclude={"quote"})))
 
         kept_facts: list[DraftFact] = []
+        # Facts the passage shows changing or starting in the scene: only they take a start.
+        changing: set[str] = set()
         for number, fact in enumerate(draft.facts[:MAX_PROPOSED_ITEMS]):
             key = f"f{number}"
             if locate("fact", fact.quote, key, stated=fact.stated):
+                if getattr(fact, "changes_here", False):
+                    changing.add(key)
                 kept_facts.append(
                     DraftFact(
-                        **{**fact.model_dump(exclude={"quote", "stated"}), "question_id": key}
+                        **{
+                            **fact.model_dump(exclude={"quote", "stated", "changes_here"}),
+                            "question_id": key,
+                        }
                     )
                 )
         kept_beliefs: list[DraftBelief] = []
@@ -256,11 +300,21 @@ class IntakeWorkflow(PlanWorkflow):
             project_id=project_id,
         )
         discarded.extend(dropped)
+        if starts is not None:
+            operations = [
+                _from_scene_time(operation, starts, predicates, changing)
+                for operation in operations
+            ]
+        timed = sum(
+            1
+            for operation in operations
+            if isinstance(operation, AssertFactOp) and operation.starts is not None
+        )
         operations = [
             self._pointed(operation, version.id, places, named_at) for operation in operations
         ]
         operations = await self._replace_single_valued(
-            operations, predicates, workspace_id, project_id
+            operations, predicates, workspace_id, project_id, starts=starts
         )
         implied = sum(
             1
@@ -305,7 +359,8 @@ class IntakeWorkflow(PlanWorkflow):
             operations=len(operations),
             discarded=len(discarded),
             guesses=len(guesses),
-            prompt_version=READ_PROMPT_VERSION,
+            timed=timed,
+            prompt_version=READ_SCENE_PROMPT_VERSION if timed_scene else READ_PROMPT_VERSION,
         )
         return PassageResult(
             mutation=mutation,
@@ -318,6 +373,7 @@ class IntakeWorkflow(PlanWorkflow):
             discarded=discarded,
             guesses=guesses,
             suggestions=suggestions,
+            timed=timed,
         )
 
     @staticmethod
@@ -367,11 +423,50 @@ class IntakeWorkflow(PlanWorkflow):
         return found
 
 
+def _from_scene_time(
+    operation: CanonOperation,
+    starts: WorldTime,
+    predicates: dict[str, PredicateSpec],
+    changing: set[str],
+) -> CanonOperation:
+    """A fact the passage shows changing or starting in a timed scene starts at its time.
+
+    Left untimed: anything the passage does not show starting there (a castle that
+    stands on its hill is not new in this scene), a fact the author already timed, and
+    kinds of fact that cannot take a time (the schema refuses a span on them).
+    """
+    if not isinstance(operation, AssertFactOp) or operation.starts is not None:
+        return operation
+    spec = predicates.get(operation.proposition.predicate)
+    if spec is None or not spec.temporal_allowed:
+        return operation
+    keys = {
+        ref.location.removeprefix("question:")
+        for ref in operation.evidence
+        if ref.location and ref.location.startswith("question:")
+    }
+    if not keys & changing:
+        return operation
+    return operation.model_copy(update={"starts": starts})
+
+
+def read_scene_messages(
+    about: str,
+    passage: str,
+    predicates: dict[str, PredicateSpec],
+    entity_types: set[str],
+) -> Messages:
+    """The ``read-scene`` prompt: ``read-passage`` for a scene set at a known story time."""
+    return read_passage_messages(about, passage, predicates, entity_types, in_scene=True)
+
+
 def read_passage_messages(
     about: str,
     passage: str,
     predicates: dict[str, PredicateSpec],
     entity_types: set[str],
+    *,
+    in_scene: bool = False,
 ) -> Messages:
     """The ``read-passage`` prompt: ``about`` lists the entries the passage may name."""
     predicate_lines = "\n".join(
@@ -405,7 +500,16 @@ def read_passage_messages(
         "out.\n"
         "- what a narrator states is a fact. What a character says, thinks or assumes "
         "is a belief held by that character, which may be false.\n"
-        f"- entity types must be one of: {sorted(entity_types)}\n"
+        + (
+            "- the passage is a scene set at one moment of the story. Set changes_here to "
+            "true only for a fact the passage shows changing or starting in this scene "
+            "(someone arrives or leaves, a thing breaks, a title passes on). Leave it false "
+            "for what was already so or simply is so (backstory, a memory, a description "
+            "of a place or a person).\n"
+            if in_scene
+            else ""
+        )
+        + f"- entity types must be one of: {sorted(entity_types)}\n"
         "- use only these predicates, respecting subject and object types:\n"
         f"{predicate_lines}\n" + PROMPT_RULE
     )

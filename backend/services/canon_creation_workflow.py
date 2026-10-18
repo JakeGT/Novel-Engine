@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -48,6 +49,7 @@ from backend.domain.canon.revisions import OriginKind
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.operations import (
+    AmendFactOp,
     AssertBeliefOp,
     AssertFactOp,
     CanonOperation,
@@ -58,6 +60,7 @@ from backend.domain.operations import (
 )
 from backend.domain.prompts import Messages, prompt_version
 from backend.domain.tenancy import Permission
+from backend.domain.worldtime import Truth, true_at
 from backend.services.canon_character_workflow import (
     MAX_ANSWER_LENGTH,
     MAX_ANSWERS,
@@ -75,6 +78,7 @@ from backend.services.schema_suggestions import (
     SuggestedType,
     clean_suggestions,
 )
+from backend.services.story_time_service import event_times, fact_span, time_of
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +162,60 @@ class CreationDraft(BaseModel):
     beliefs: list[DraftBelief] = Field(default_factory=list)
     suggested_types: list[SuggestedType] = Field(default_factory=list)
     suggested_fact_kinds: list[SuggestedFactKind] = Field(default_factory=list)
+
+
+MAX_EVENTS = 10_000
+
+
+def _already_so(
+    current: list[Any], operation: AssertFactOp, starts: Any, times: dict[str, Any]
+) -> bool:
+    """Whether the new value is already recorded as true at the scene's time.
+
+    A same value that an earlier timed reading ended before the scene does not count,
+    so going back to it (London, Paris, then London again) is recorded.
+    """
+    moment = time_of(starts, times)
+    return any(
+        fact.proposition.object == operation.proposition.object
+        and (moment is None or true_at(fact_span(fact, times), moment) is not Truth.FALSE)
+        for fact in current
+    )
+
+
+def _until_the_scene(
+    current: list[Any], operation: AssertFactOp, starts: Any, times: dict[str, Any]
+) -> tuple[list[CanonOperation], AssertFactOp]:
+    """What happens to the old values when a new one starts at a scene's time.
+
+    Ended at that time when the scene's time is one moment and the old value began
+    before it; left alone when it had already ended by then; left alone when it only
+    starts after the scene (scenes read out of story order), and the new value then
+    ends where the first such later value starts; otherwise removed, as an untimed
+    reading would, so a reviewer sees the replacement either way. Returns the changes
+    to the old values and the new value, with its end when a later value gives one.
+    """
+    moment = time_of(starts, times)
+    changes: list[CanonOperation] = []
+    later: tuple[float, Any] | None = None
+    for fact in current:
+        span = fact_span(fact, times)
+        if moment is None:
+            changes.append(CloseFactOp(id=fact.id, evidence=operation.evidence))
+        elif span.end is not None and span.end.hi <= moment.lo:
+            continue
+        elif span.start is not None and span.start.lo > moment.hi:
+            if later is None or span.start.lo < later[0]:
+                later = (span.start.lo, fact.starts)
+        elif moment.lo == moment.hi and (
+            span.start is None or (span.start.hi <= moment.lo and span.start.lo < moment.lo)
+        ):
+            changes.append(AmendFactOp(id=fact.id, ends=starts, evidence=operation.evidence))
+        else:
+            changes.append(CloseFactOp(id=fact.id, evidence=operation.evidence))
+    if later is not None and operation.ends is None:
+        operation = operation.model_copy(update={"ends": later[1]})
+    return changes, operation
 
 
 def _typed_object(
@@ -460,12 +518,19 @@ class CanonCreationWorkflow(CanonCharacterWorkflow):
         predicates: dict[str, PredicateSpec],
         workspace_id: str,
         project_id: str,
+        *,
+        starts: Any = None,
     ) -> list[CanonOperation]:
         """A kind of fact that holds one value at a time: a new value replaces the old.
 
         The current fact is ended just before the new one is added, so the reviewer sees
         the replacement. A value that is already recorded is not added again.
+
+        With ``starts`` (a scene's story time), a new value that starts then ends the old
+        one at that time instead of removing it, so the timeline keeps where things were
+        before the scene. An old value that had already ended by then is left alone.
         """
+        times: dict[str, Any] | None = None
         settled: list[CanonOperation] = []
         for operation in operations:
             spec = (
@@ -488,9 +553,23 @@ class CanonCreationWorkflow(CanonCharacterWorkflow):
                 predicate=operation.proposition.predicate,
                 limit=50,
             )
-            if any(fact.proposition.object == operation.proposition.object for fact in current):
+            if starts is None or operation.starts != starts:
+                if any(fact.proposition.object == operation.proposition.object for fact in current):
+                    continue
+                settled.extend(
+                    CloseFactOp(id=fact.id, evidence=operation.evidence) for fact in current
+                )
+                settled.append(operation)
                 continue
-            settled.extend(CloseFactOp(id=fact.id, evidence=operation.evidence) for fact in current)
+            if times is None:
+                events = await self._reader.list_events(
+                    workspace_id=workspace_id, project_id=project_id, limit=MAX_EVENTS
+                )
+                times = event_times([e for e in events if e.retired_revision is None])
+            if _already_so(current, operation, starts, times):
+                continue
+            changes, operation = _until_the_scene(current, operation, starts, times)
+            settled.extend(changes)
             settled.append(operation)
         return settled
 
