@@ -19,6 +19,8 @@ venv/
 
 # Runtime and generated data
 data/
+# Evaluation reports (make eval / make eval-model)
+var/eval/
 backend/debug/
 *.log
 

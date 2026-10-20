@@ -119,3 +119,256 @@ are unchanged (the field existed). The picture library (`GET /pictures`) lists e
 picture's newest current version, including pictures no link shows now. Pictures are scaled in
 the browser; there are no server-side thumbnails, because that needs image decoding and resizing,
 which this release does not do. Scene pictures are not yet named in the scene's context.
+
+## Amendment 2026-10-20: preparing pictures (AST-003, AST-006, AST-008, OPS-007; images only)
+
+Every stored picture version is now prepared once by a `media_process` background job
+(`backend/services/media_service.py`), keyed by the version's checksum and `PROCESSOR_VERSION`
+(`pictures-1`), so running it again for the same bytes changes nothing and raising the version
+makes every picture eligible again. Audio and video are still not processed.
+
+**Decoding happens in a separate, limited process.** The API never decodes a picture. Each
+picture is handed on standard input to `backend/adapters/image_worker.py`, run as a fresh
+`python -I` process with an empty environment (it sees no secret) and `/` as its directory.
+Before Pillow is imported the worker lowers its own limits with `setrlimit`: address space
+(`MEDIA_WORKER_MEMORY_BYTES`, 1 GiB), CPU seconds (`MEDIA_WORKER_CPU_SECONDS`, 20), no file
+writes and no core dumps; the parent kills it after a wall-clock timeout
+(`MEDIA_WORKER_TIMEOUT_SECONDS`, 30) and runs at most `MEDIA_WORKER_CONCURRENCY` at once. The
+answer is the copies or a failure code from a fixed list (`PROCESSING_FAILURES` in
+`backend/domain/media.py`); no decoder message is passed on, shown or logged, because one can
+quote the file. Following the Pillow security handbook, bytes are capped before decoding, only
+PNG, JPEG and WebP are tried (`Image.open(formats=...)`), `MAX_IMAGE_PIXELS` is set
+(`MEDIA_MAX_PIXELS`, 40 million) with `DecompressionBombWarning` raised as an error, each side
+is checked against `MEDIA_MAX_DIMENSION` (12,000) from the header before the pixels are read,
+and a JPEG is decoded at a reduced scale. Pillow ≥ 12.3.0 is a core dependency (the font-loader
+bomb-check bypasses fixed there). A process with resource limits contains runaway memory and
+CPU but is not a filesystem or network sandbox; on a hosted server the container is the outer
+boundary, and seccomp or a separate service remains Phase 7 work.
+
+**Outputs.** A 256px thumbnail and a 1024px copy, WebP (quality 80), never enlarged. The photo's
+orientation is applied, then the copies are written from bare pixels, so no EXIF, XMP, text or
+colour profile reaches them. WebP is supported by every current browser (about 96% of use; not
+Internet Explorer 11). Each version also gets a whole-picture segment (`media_segments`, kind
+`whole`, in pixels of the picture as shown); authors may mark rectangular regions through the API
+(no screen for it yet). Tables: `media_processing` (state, attempts, failure code, size),
+`media_variants`, `media_segments` (migration `0046_media_variants`), all in `canon_tables.py`
+so project deletion covers them. They are not branch-scoped: a picture is the project's, as
+before, so a what-if fork copies nothing.
+
+**Serving.** `GET .../versions/{id}/content?size=thumbnail|web|original` serves the copy to
+project members only (the same checks as the original) and falls back to the original while no
+copy exists, saying which it sent in `X-Picture-Size`; a fallback is not cached as if it were
+the copy. Lists in the app show the thumbnail; an opened picture is the original.
+
+**Failure and retry.** A failure is a state of the picture, not of the job: the job succeeds
+with `outcome: failed` and the picture keeps working (the original is shown). Retry
+(`POST .../processing/retry`) queues it again once; a picture already prepared from these bytes
+by this processor is left alone. A changed original (checksum mismatch) fails as `damaged` and
+is never decoded. Processing jobs never count toward a person's limit of waiting work.
+
+**Lifecycle.** Uploads are refused in plain words (413 `storage_full`) when the workspace would
+go over `MEDIA_WORKSPACE_QUOTA_BYTES` (2 GiB; originals and copies, retired ones included).
+Retention removes stored files no version or copy refers to, only after
+`MEDIA_ORPHAN_GRACE_HOURS` (24) so an upload still on its way is never touched, and the copies of
+retired versions (originals stay for the history). `MediaService.on_versions_removed(callback)`
+tells derived indexes when a version is retired, its picture retired or an upload discarded; a
+failing callback never undoes the removal. Archives leave copies out and say so (`derived`,
+`left_out`); a restore queues the restored pictures as the person restoring; author-marked
+regions travel as `picture_regions`.
+
+**Operations.** Readiness has an optional `media_processing` check (waiting, oldest wait,
+failed; degraded after 15 minutes); `/health/capabilities` and the diagnostics bundle report
+Pillow, its formats, the processor version and limits; `python -m backend.devtools.media`
+(`status`, `backfill`, `reconcile`, `copies`) and `make retention`; runbook
+`plan/runbooks/media-processing.md`.
+
+Verified by tests that run the real worker on pictures made in the test (a decompression bomb, a
+header claiming 100,000 × 100,000, an over-long side, GIF/BMP/SVG, truncated files, the timeout,
+too little memory, idempotent output, orientation and metadata removal), application and
+contract tests with a stand-in decoder, integration tests against PostgreSQL, and a browser test
+against the real decoder. Not measured: throughput or memory on real author photos, and the
+limits on the hosted machine.
+
+Sources: [Pillow security handbook](https://pillow.readthedocs.io/en/latest/handbook/security.html);
+[Python `resource` module](https://docs.python.org/3/library/resource.html);
+[Running untrusted Python code (limits are not a sandbox)](https://healeycodes.com/running-untrusted-python-code);
+[WebP browser support](https://en.wikipedia.org/wiki/WebP) (citing caniuse).
+
+## Amendment 2026-10-20: one embedding port, generations, and the evaluation harness (CTX-011, CTX-012, CTX-014)
+
+**The port.** `MultimodalEmbeddingPort` (`backend/ports.py`) takes typed inputs (`TextInput`,
+`ImageInput`, `AudioInput`, `VideoInput`, `InterleavedInput`, in `backend/domain/embedding.py`)
+and a task (`document`, `query`, `fact_check`, `similarity`), and returns one normalized vector
+per input with its provenance (model, revision, dimension, task, modality, space key, content
+hash). Audio, video and interleaved inputs are part of the contract and refused by every current
+adapter (`UnsupportedInputError`); nothing is dropped or guessed. `health()` never downloads a
+model. The old text-only `EmbeddingPort` stays for the legacy graph store. Adapters:
+
+- `MiniLMTextEmbedding`: the configured MiniLM as a text-only space with no task prompts, so
+  it offers only `document` and `query` and refuses the rest. Its space key is exactly the one
+  migration 0047 gives the moved rows, so an upgraded install keeps searching without
+  re-embedding.
+- `EmbeddingGemmaEmbedding`: `google/embeddinggemma-2`, behind the `embeddings` extra and never
+  imported unless `EMBEDDING_PROVIDER=embeddinggemma`. It is unavailable until
+  `EMBEDDING_GEMMA_REVISION` pins a commit; it loads in bfloat16 where the GPU supports it and
+  float32 otherwise, and refuses float16 outright (the card: float16 "returns NaN or silently
+  degraded embeddings"). Text uses the card's prompts (`task: search result | query: …`,
+  `title: {title|none} | text: …`, `task: fact checking | query: …`,
+  `task: sentence similarity | query: …`); pictures go without a prompt as `<|image|>` with the
+  image, decoded under the Pillow handbook's rules (byte cap before decoding, pixel limit,
+  decompression-bomb warnings as errors). Vectors are made at 768, shortened to the configured
+  Matryoshka size (768/512/256/128) and normalized again, since queries and documents must share
+  the size and the shortened vector must be L2-normalized.
+- `DeterministicEmbedding` (`embedding_fake.py`): text by word directions, pictures by checksum,
+  a test may `describe` a picture in words to build near and far pairs; normalized, truncated
+  the Matryoshka way. It measures plumbing, never a model.
+
+**Generations.** Chosen: one table `embedding_vectors` with an untyped `vector` column, a
+`generation_id`, and one partial HNSW index per generation on `(embedding::vector(N))` `WHERE
+generation_id = '<id>'`; every query names one generation and casts to its size, so the planner
+uses that generation's index. This is the pgvector README's own recipe for vectors of different
+sizes in one table, and it keeps deletion one statement for every generation. Rejected: a table
+per generation (DDL per model change, and every delete, purge and reset must enumerate tables);
+a fixed `vector(N)` (a new model would need a migration). `embedding_generations` holds model,
+revision, dimension, native size, modalities, the task prompts, normalization, a space key and
+a state (`building`/`active`/`retired`; at most one of each of the first two). A trigger
+refuses a row whose size differs from its generation's or that goes into a retired generation;
+the store refuses a row of a modality the generation does not hold, or a query of the wrong
+size (`MixedSpaceError`). Search sets `hnsw.iterative_scan = strict_order` (pgvector 0.8.0)
+because filtering after an approximate scan can otherwise return fewer rows than asked.
+
+Migration 0047 moves `vector_documents` across without embedding again: rows grouped by the
+model and version they recorded each become a generation; the largest named group is active,
+the rest retired (rows with no model form an `unknown` generation), and `vector_documents` is
+dropped so deletion cannot miss a second copy. The downgrade rebuilds it from the 384-dimension
+generation in use.
+
+**Writes and queries never mix spaces.** `PgVectorStore` keeps the `VectorStorePort` contract.
+A document is embedded with the `document` task and written only into the generations whose
+space key is the configured embedder's (the active one, and a build in progress); its row in any
+other live generation is removed, so an older space never answers with words that changed. A
+query is embedded with the `query` task and searches the active generation only when it was
+built by the configured model; otherwise search by meaning is off and health says why. An
+install whose active generation is empty takes the configured model's space on the first write
+(nothing to lose or mix).
+
+**Building, switching, rolling back** (`EmbeddingIndexService`, job kind `embedding_reindex`,
+`python -m backend.devtools.embeddings`, `make reindex*`). A build makes a generation for the
+configured model beside the active one and fills it per project: documents re-embedded from the
+active generation's stored text (or cut again from the texts with `--from-texts`), accepted or
+corrected captions as text, and, only when the model takes images, each picture's web copy
+(made by media processing) as its whole-picture segment. Rows are compared by content hash, so a
+build can stop and resume and a second run does nothing. Cancellation is a flag checked between
+batches; a stopped build is removed. `activate` refuses while the new generation is missing rows
+(the lag) or was made for a different model, unless forced, and switches in one transaction,
+retiring the old one and remembering it; `rollback` switches back. Readiness has an optional
+`search_index` check (active generation, model, size, rows, lag, any build and its lag) and
+`/health/capabilities` a `search_model` entry. Media's `on_versions_removed` hook forgets
+retired or discarded versions in every generation; a picture becomes searchable when its
+preparation finishes (wired at container build). Archives declare the index as derived
+(`derived.search_index`).
+
+**Search for pictures** (`MediaSearchService`). Linked pictures named by the caller come first, in
+its order; then pictures by meaning (the picture itself, or its caption in a text-only space),
+grouped so a picture and its caption are one result. Every gate is applied before ranking, in the
+same SQL as the ordering: project, active and current version, not rejected, whole segment not
+retired, and for a point of view, no secret version and no secret link (in the working line) to a
+record the point of view does not know. Linked pictures pass the same gates.
+
+**Evaluation** (`tests/eval/multimodal`, `make eval-media`, JSON report in `var/eval/`). A
+synthetic corpus drawn with Pillow (12 coloured shapes, 3 redrawn, 5 gated near-duplicates, 12
+prose lines) is built and searched through the real services: words to picture (Recall@5/@10,
+MRR, nDCG@10, beats hard negatives), picture to words, picture to picture, links first, leaks,
+rebuild equivalence, a stopped build leaving nothing, bytes per vector and timings, at 768 and
+512 and for a text-only space using captions. It runs in `make test` with the stand-in and is
+pinned (`baseline.json`); two tests show the numbers can fail (gates broken on purpose leak; an
+uninformed stand-in finds nothing). `--provider embeddinggemma --revision <commit>` runs it
+against the real model, loaded once and measured at each size. Results so far are the stand-in's
+only: every score 1.0, zero leaks, rebuilds equal. That measures the harness and the gates, not
+retrieval quality; no real model has been run, and the 768-versus-512 choice is still open.
+
+Not built: audio and video embedding, region segments, Qwen3 or other comparison models, a
+scheduled catch-up (a missed picture or caption is caught by `make reindex-refresh`), and an API
+or screen for any of this.
+
+Sources: [EmbeddingGemma 2 model card](https://ai.google.dev/gemma/docs/embeddinggemma/model_card_2)
+(prompts, dtype, Matryoshka sizes and re-normalization, shared 8,192-token context);
+[pgvector README](https://github.com/pgvector/pgvector/blob/master/README.md) (expression and
+partial indexes for several dimensions, iterative index scans from 0.8.0, HNSW up to 2,000
+dimensions for `vector`);
+[Pillow security handbook](https://pillow.readthedocs.io/en/latest/handbook/security.html).
+
+## Amendment 2026-10-20: pictures in the assistant's context, reviewed descriptions, and the picture page (batch 6 C)
+
+CTX-013, AST-004, AST-005, AST-007 and the picture part of CON-014. This supersedes the
+2026-10-18 note that scene pictures are not named in the scene's context.
+
+**Typed context.** `backend/domain/context_parts.py` defines `TextPart | ImagePart | AudioPart |
+VideoPart`; a media part names one exact picture version (never bytes, never a lasting address),
+why it is there, its accepted description to use instead, and the author's choice for it. Sound
+and film parts are declared on the same contract and nothing makes them yet.
+
+**Route capabilities are declared, not discovered.** `ProviderCapabilities` gains image input
+and limits (count, bytes, types). The operator declares the server's own route
+(`AI_IMAGE_INPUT`, `AI_IMAGE_MAX_*`) and, for workspaces' own providers, which providers may be
+sent pictures (`AI_IMAGE_PROVIDERS`); everything else is text only. We did not try to read a
+model's modalities from a provider listing at request time: lists differ by provider, change
+without notice, and a wrong "yes" would send a private picture somewhere it should not go.
+Negotiation (`negotiate`) decides per part and records it: the picture itself; else its accepted
+description, marked as a degradation when the picture was wanted; else only its name. Work that
+needs the picture itself raises before anything is loaded, queued or spent, and the gateway
+checks the route's limits again before building a client (`check_images`), so even a caller that
+skipped negotiation cannot get a picture past a text-only route. Pictures go as inline `data:`
+addresses after the last user message's words (OpenRouter recommends text first, then images,
+and takes base64 data URLs for private pictures), read from the 1024px web copy when one was
+made, so the size checked is the size sent.
+
+**The author's choice per picture**, kept on the picture (`media_assets.context_choice`): send
+the picture / use its description (the default) / leave out. A picture to send is kept like a
+pin and costed against the budget as the picture would be (about width × height / 750 tokens,
+capped); one left out is listed as the author's exclusion. The default never sends a picture: a
+remote provider sees one only after the author has said so for that picture.
+
+**Scene context.** One item per picture (a portrait, its description and the scene's own picture
+of the same asset are one piece of evidence): pictures on the scene itself and pictures of its
+cast, each with its reason. A link may now be secret (`visibility`, `known_by`) and apply from a
+story time (`applies_from`), all optional on `link_asset` and omitted while unset (ADR-015). A
+secret picture reaches a viewpoint only when that character is among those who know what it
+shows; otherwise it sits with the author's secrets, with its words, and is never sent as a
+picture. A link that applies only from a later time is left out; one the scene's time cannot
+settle is given with a note. Pictures found by meaning (area B's `MediaSearchService`) come after
+linked ones, behind its gates and this one, and only as their accepted description. Kept
+contexts record each picture's version and choice, and with a request, its `delivery`: version,
+copy, checksum, size and representation per part.
+
+**Descriptions are reviewed observations.** `media_describe` is model work like any other:
+estimated first, asked about above the story's threshold, within the person's limits, usage
+recorded once per call. It proposes a caption and appearance details for one exact version, each
+with an optional region (fractions of the picture, so it holds for every copy), a confidence,
+the model, prompt version (`describe-picture/1`) and job. The author accepts, corrects (their
+words win) or rejects; a new description supersedes only what nobody reviewed. An observation is
+never a fact: an accepted appearance detail is offered as one only through an ordinary proposal
+from the model (`HAS_DETAIL` with `appearance`; joining an existing detail fact by closing it in
+the same proposal, because that predicate is one at a time), secret when the picture is, with
+evidence pointing at the version and region. Reviewed notes and choices are archived; proposals
+nobody reviewed are not, and the archive says so.
+
+**Checking against pictures.** A sixth check pass, "What the pictures show" (`check-pictures/1`),
+is given the scene's usable pictures as the route allows and names the picture and version in
+each note; with nothing usable it makes no call. Accepted details made facts reach the context
+and the continuity pass like any fact. No deterministic prose-versus-picture comparison was
+added: the accepted words are free text, and matching them against prose without a model would
+be guesswork.
+
+**The picture page** (`/projects/:id/pictures/:assetId`, linked from the media page and the
+scene's context) shows the picture, its details, where it is shown with secrecy and time,
+"Describe this picture" with its cost first, the suggestions to review with the region drawn on
+the picture, "Suggest as a detail", and the three-way choice.
+
+Everything here has run against the scripted model and the local stand-in only; no real vision
+model has described a picture, and description quality is unmeasured.
+
+Sources: [OpenRouter image inputs](https://openrouter.ai/docs/features/multimodal/images) (base64
+data URLs for private images; text before images; supported types; per-model image limits);
+[Claude vision](https://platform.claude.com/docs/en/build-with-claude/vision) (tokens ≈ width ×
+height / 750, used for the budget estimate).

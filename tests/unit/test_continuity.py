@@ -478,6 +478,33 @@ def test_a_killing_with_one_person_in_it_is_not_their_death() -> None:
         assert _codes(_run(events=[plain], scenes=[after])) == ["after_death"], kind
 
 
+def test_a_death_by_another_word_is_read_as_a_death() -> None:
+    after = _scene("after", At(at=12), place="keep", who=["mara"])
+    for kind in ("drowned", "perished", "slain", "murdered", "executed", "assassinated"):
+        died = _event("end", At(at=10), kind=kind, who=[("mara", "died")])
+        assert _codes(_run(events=[died], scenes=[after])) == ["after_death"], kind
+        victim = _event("end", At(at=10), kind=kind, who=[("mara", "victim"), "ines"])
+        assert _codes(_run(events=[victim], scenes=[after])) == ["after_death"], kind
+    # Drowned, perished and slain only ever happen to the one in them.
+    for kind in ("drowned", "perished", "slain"):
+        alone = _event("end", At(at=10), kind=kind, who=["mara"])
+        assert _codes(_run(events=[alone], scenes=[after])) == ["after_death"], kind
+    # "Mara murdered the guard" is written with the same word as "Mara was murdered":
+    # with no part saying who died, the one in it may be the one who did it.
+    for kind in ("murdered", "executed", "assassinated", "murder", "assassination"):
+        alone = _event("deed", At(at=10), kind=kind, who=["mara"])
+        assert not _run(events=[alone], scenes=[after]), kind
+    # A part saying they died is a death whatever the event is called.
+    for role in ("died", "dies", "deceased"):
+        flood = _event("flood", At(at=10), kind="flood", who=[("mara", role), "ines"])
+        assert _codes(_run(events=[flood], scenes=[after])) == ["after_death"], role
+    survived = _event("flood", At(at=10), kind="flood", who=[("mara", "victim")])
+    assert not _run(events=[survived], scenes=[after])
+    # A status written with one of these words is a death too.
+    drowned = _fact("f", "mara", "STATUS", {"kind": "string", "value": "drowned"}, starts=At(at=10))
+    assert _codes(_run(facts=[drowned], scenes=[after])) == ["after_death"]
+
+
 def test_a_whole_year_is_not_one_moment() -> None:
     scenes = [
         _scene("a", At(at=5), place="harbor", who=["mara"]),

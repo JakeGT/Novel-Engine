@@ -30,6 +30,7 @@ from backend.api.v1.delegation import router as delegation_router
 from backend.api.v1.impact import router as impact_router
 from backend.api.v1.knowledge import router as knowledge_router
 from backend.api.v1.media import router as media_router
+from backend.api.v1.pictures import router as pictures_router
 from backend.api.v1.plan import router as plan_router
 from backend.api.v1.plan_assist import router as plan_assist_router
 from backend.api.v1.projection import router as projection_router
@@ -182,6 +183,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
         summary="Caller permissions in a project",
     )
     app.include_router(media_router, prefix="/api/v1")
+    app.include_router(pictures_router, prefix="/api/v1")
     app.include_router(projection_router, prefix="/api/v1")
     app.include_router(access_keys_router, prefix="/api/v1")
     # Other assistants, with an access key (QRY-003). JSON-RPC, so not in the OpenAPI document.

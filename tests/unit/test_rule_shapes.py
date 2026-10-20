@@ -96,12 +96,34 @@ def test_a_value_must_be_a_number_inside_its_range() -> None:
         "a3": WorldFact("a3", "rook", "AGE", value="old"),
     }
     # No age at all is fine: a range says what a value may be, not that there is one.
-    assert set(_broken(AGE, world)) == {"ivo", "rook"}
+    # A value that is not a number cannot be judged: it may break the rule, never surely.
+    assert _broken(AGE, world) == {"ivo": (True, ""), "rook": (False, "")}
     assert read_rule(AGE, NAMES) == ("Every character must have a number from 0 to 120 for “age”.")
     only_low = AGE.model_copy(
         update={"checks": [Check(kind="between", pattern=Pattern(predicate="AGE"), low=18)]}
     )
     assert "a number of at least 18" in read_rule(only_low, NAMES)
+
+
+@pytest.mark.parametrize(
+    ("value", "found"),
+    [
+        ("64 years", {}),
+        ("2.5 m", {}),
+        ("300 years", {"mara": (True, "")}),
+        ("1,200 leagues", {"mara": (True, "")}),
+        ("-3", {"mara": (True, "")}),
+        # Not read as a number: it may break the range, never for certain, so never blocks.
+        ("about 64", {"mara": (False, "")}),
+        ("3/4", {"mara": (False, "")}),
+        ("12:30", {"mara": (False, "")}),
+    ],
+)
+def test_a_range_reads_the_number_a_value_starts_with(value: str, found: dict) -> None:
+    """A true age written "64 years" is inside 0 to 120, not a false alarm."""
+    world = _people()
+    world.facts = {"a1": WorldFact("a1", "mara", "AGE", value=value)}
+    assert _broken(AGE, world) == found
 
 
 @pytest.mark.parametrize(

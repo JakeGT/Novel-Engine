@@ -63,6 +63,42 @@ def test_missing_reveal_place_viewpoint_and_length_are_notes() -> None:
 
 def test_first_person_does_not_count_as_a_missing_viewpoint() -> None:
     assert "viewpoint_missing" not in _codes(check_draft("I stood at the harbor.", BRIEF, []))
+    narrated = "\u201cGo,\u201d Mara said, and I stood at the harbor."
+    assert "viewpoint_missing" not in _codes(check_draft(narrated, BRIEF, []))
+
+
+def test_an_i_said_aloud_is_not_first_person_narration() -> None:
+    for text in (
+        '"I will not sail tonight," said Mara at the harbor.',
+        "\u201cI will not sail tonight,\u201d said Mara at the harbor.",
+        "\u2018I can\u2019t sail, not with my hands,\u2019 said Mara at the harbor.",
+    ):
+        assert "viewpoint_missing" in _codes(check_draft(text, BRIEF, [])), text
+
+
+def test_a_secret_named_only_to_deny_it_is_a_note_not_a_warning() -> None:
+    for text in (
+        "Mara had never so much as spoken to the Harbor Guild.",
+        "Mara wasn\u2019t one of the Harbor Guild, Tobin was sure.",
+        "Nothing tied Mara to the Harbor Guild. Not Mara, he thought.",
+    ):
+        (finding,) = [f for f in check_draft(text, BRIEF, []) if f.code.startswith("secret")]
+        assert finding.code == "secret_denied" and finding.severity is Severity.NOTE, text
+        assert finding.message.startswith("This names both sides of a secret Tobin does not know")
+        assert "even to deny it: Mara is a member of the Harbor Guild." in finding.message
+    # A denial beside a sentence that gives it away is still a warning.
+    both = "Mara was no friend of the Harbor Guild. Mara wore the Harbor Guild token."
+    assert "secret" in _codes(check_draft(both, BRIEF, []))
+    assert "secret_denied" not in _codes(check_draft(both, BRIEF, []))
+    # A "not" after both are named is about something else.
+    after = "Mara pinned the Harbor Guild token inside her coat and thought he had not seen."
+    assert "secret" in _codes(check_draft(after, BRIEF, []))
+    # A "no" in another sentence is not a denial of this one.
+    apart = "No bell rang. Mara slipped her Harbor Guild token into her coat."
+    assert "secret" in _codes(check_draft(apart, BRIEF, []))
+    # "Nobody" or "known" are not a not.
+    plain = "Nobody saw Mara take the Harbor Guild oath; it was known."
+    assert "secret" in _codes(check_draft(plain, BRIEF, []))
 
 
 def test_stock_phrasing_is_noted_where_it_occurs() -> None:

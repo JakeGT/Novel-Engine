@@ -269,9 +269,11 @@ COVERAGE: tuple[Coverage, ...] = (
         "life",
         "Before birth or after death",
         "Scenes and events with a character in them before their birth or after their death "
-        "(events of the kind “birth” or “death” with one character in them, or one whose part "
-        "in it is “born” or “died”; a killing, murder or execution only for the one whose part "
-        "in it is “victim”, “killed” or “died”; or a status such as dead, with a start), a "
+        "(events of the kind “birth” or “death”, or drowned, perished or slain, with one "
+        "character in them, or one whose part in it is “born” or “died”; a killing, murder, "
+        "execution or assassination only for the one whose part in it is “victim”, “killed” "
+        "or “died”, since the one person in it may be the one who did it; any event for the "
+        "one whose part is “died” or “deceased”; or a status such as dead, with a start), a "
         "death before a birth, and two deaths.",
     ),
     Coverage(
@@ -298,12 +300,68 @@ ALWAYS_SAID = (
 # ------------------------------------------------------------------ vocabulary
 
 BIRTH_KINDS = frozenset({"birth", "born"})
-DEATH_KINDS = frozenset({"death", "died", "dies", "killed", "killing", "murder", "execution"})
-# Kinds that say whose life it is when only one character is in them. In the others
-# ("Mara killed the guard") the one character may be the one who did it.
-PLAIN_LIFE_KINDS = frozenset({"birth", "born", "death", "died", "dies"})
+DEATH_KINDS = frozenset(
+    {
+        "death",
+        "died",
+        "dies",
+        "drowned",
+        "drowning",
+        "drowns",
+        "perished",
+        "perishes",
+        "slain",
+        "killed",
+        "killing",
+        "murder",
+        "murdered",
+        "execution",
+        "executed",
+        "assassination",
+        "assassinated",
+        "slaying",
+    }
+)
+# Kinds that say whose life it is when only one character is in them: a death no one does
+# to them (drowned, perished) or a word that only ever means the one it happened to (slain).
+# In the others the one character may be the one who did it: "Mara killed the guard",
+# "Mara murdered him", "Mara executed the traitor" are all written with the same word as
+# "Mara was murdered", so a part must say who died.
+PLAIN_LIFE_KINDS = frozenset(
+    {
+        "birth",
+        "born",
+        "death",
+        "died",
+        "dies",
+        "drowned",
+        "drowning",
+        "drowns",
+        "perished",
+        "perishes",
+        "slain",
+    }
+)
 BIRTH_ROLES = frozenset({"born", "child", "subject", "baby"})
-DEATH_ROLES = frozenset({"died", "dies", "deceased", "victim", "killed", "subject"})
+DEATH_ROLES = frozenset(
+    {
+        "died",
+        "dies",
+        "deceased",
+        "victim",
+        "killed",
+        "subject",
+        "drowned",
+        "perished",
+        "slain",
+        "murdered",
+        "executed",
+        "assassinated",
+    }
+)
+# A part that says the person died is their death whatever the event is called
+# ("a duel", "the flood").
+DIED_ROLES = frozenset({"died", "dies", "deceased"})
 FOUNDING_KINDS = frozenset(
     {
         "founding",
@@ -337,7 +395,20 @@ AGE_KINDS = frozenset({"AGE", "HAS_AGE", "AGED"})
 POSSESSION_KINDS = frozenset({"OWNS", "HOLDS", "CARRIES", "POSSESSES", "WIELDS"})
 RELATIONSHIP_KINDS = frozenset({"RELATED_TO", "KNOWS", "MEMBER_OF"})
 GOAL_KINDS = frozenset({"WANTS", "SEEKS", "DESIRES", "HAS_GOAL", "PURSUES"})
-DEAD_WORDS = frozenset({"dead", "deceased", "killed", "died"})
+DEAD_WORDS = frozenset(
+    {
+        "dead",
+        "deceased",
+        "killed",
+        "died",
+        "drowned",
+        "perished",
+        "slain",
+        "murdered",
+        "executed",
+        "assassinated",
+    }
+)
 STATE_WORDS = frozenset(
     {
         "injured",
@@ -664,15 +735,26 @@ class _Checker:
 
     # -------------------------------------------------------------- birth and death
 
-    def life_events(self, kinds: frozenset[str], roles: frozenset[str]) -> list[tuple[str, Event]]:
+    def life_events(
+        self,
+        kinds: frozenset[str],
+        roles: frozenset[str],
+        any_kind_roles: frozenset[str] = frozenset(),
+    ) -> list[tuple[str, Event]]:
         """(character, event) for each birth or death event that says whose it is."""
         found: list[tuple[str, Event]] = []
         for event in self.events:
-            if _word(event.kind) not in kinds:
-                continue
             people = [
                 item for item in event.participants if self.kind_of(item.entity_id) == "Character"
             ]
+            if _word(event.kind) not in kinds:
+                found.extend(
+                    (entity_id, event)
+                    for entity_id in dict.fromkeys(
+                        item.entity_id for item in people if _word(item.role) in any_kind_roles
+                    )
+                )
+                continue
             named = [item.entity_id for item in people if _word(item.role) in roles]
             # Only a plain birth or death is guessed to be its one character's.
             if not named and len(people) == 1 and _word(event.kind) in PLAIN_LIFE_KINDS:
@@ -1124,7 +1206,7 @@ def check_life(c: _Checker) -> None:
             births.setdefault(entity_id, []).append(
                 (moment, c.event_record(event), c.event_when(event))
             )
-    for entity_id, event in c.life_events(DEATH_KINDS, DEATH_ROLES):
+    for entity_id, event in c.life_events(DEATH_KINDS, DEATH_ROLES, DIED_ROLES):
         moment = c.times[event.id].interval
         marking.add(event.id)
         if moment is not None:

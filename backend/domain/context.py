@@ -13,6 +13,7 @@ prefix, and the checksum of the rendering identifies exactly what was given.
 from __future__ import annotations
 
 import hashlib
+import math
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -20,6 +21,15 @@ from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from backend.domain.context_parts import (
+    REPRESENTATION_WORDS,
+    TOKENS_PER_WORD,
+    ContextChoice,
+    Delivery,
+    MediaPart,
+    planned_representation,
+)
 
 
 class ContextSection(StrEnum):
@@ -106,10 +116,19 @@ class ContextItem:
     hard: bool = False
     # A pointer inside the source, such as a passage's character range.
     location: str | None = None
+    # A picture (CTX-013): which exact version, and what the author chose for it. The
+    # item's text is what a model that cannot see it is given; whether the picture itself
+    # went is decided when a request is made, and recorded in its delivery.
+    media: MediaPart | None = None
 
     @property
     def words(self) -> int:
-        return max(1, len(self.text.split()))
+        """Its cost against the budget, in words. A picture the author chose to send
+        costs what the picture would, so the budget holds whichever way it goes."""
+        base = max(1, len(self.text.split()))
+        if self.media is not None and self.media.choice is ContextChoice.SEND:
+            return max(base, math.ceil(self.media.tokens / TOKENS_PER_WORD))
+        return base
 
 
 @dataclass(frozen=True)
@@ -216,14 +235,34 @@ def text_digest(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
-def stored_manifest(manifest: ContextManifest, point_of_view: str | None) -> dict[str, Any]:
+def picture_record(media: MediaPart) -> dict[str, Any]:
+    """What a kept context says of a picture: which version and copy, never its bytes."""
+    planned = planned_representation(media.choice, bool(media.fallback_text.strip()))
+    return {
+        "kind": media.kind,
+        "asset_id": media.asset_id,
+        "version_id": media.version_id,
+        "rendition": media.rendition,
+        "content_type": media.content_type,
+        "checksum": media.checksum,
+        "choice": media.choice.value,
+        "representation": planned.value,
+        "representation_words": REPRESENTATION_WORDS[planned],
+    }
+
+
+def stored_manifest(
+    manifest: ContextManifest, point_of_view: str | None, delivery: Delivery | None = None
+) -> dict[str, Any]:
     """What is kept of a manifest: every item, why it was given, and how to tell it changed.
 
     The words of an item are kept too, except a passage of the author's writing: the
     passage index never holds the author's words (ADR-021), and the manifest does not
     either. A passage is told apart by its fingerprint and where it sits in its text.
+    A picture is kept as the exact version it points at and what the author chose; with
+    ``delivery``, also how each part actually reached the model (CTX-013).
     """
-    return {
+    kept = {
         "items": [
             {
                 "key": item.key,
@@ -237,6 +276,7 @@ def stored_manifest(manifest: ContextManifest, point_of_view: str | None) -> dic
                 "score": item.score,
                 "digest": text_digest(item.text),
                 **({} if item.authority == "writing" else {"text": item.text}),
+                **({"picture": picture_record(item.media)} if item.media is not None else {}),
             }
             for item in manifest.items
         ],
@@ -246,6 +286,9 @@ def stored_manifest(manifest: ContextManifest, point_of_view: str | None) -> dic
         ],
         "point_of_view": point_of_view,
     }
+    if delivery is not None and delivery.parts:
+        kept["delivery"] = delivery.as_dict()
+    return kept
 
 
 @dataclass(frozen=True)
@@ -357,6 +400,7 @@ __all__ = [
     "ContextComparison",
     "KeptItem",
     "compare_contexts",
+    "picture_record",
     "stored_manifest",
     "text_digest",
     "ContextSettings",

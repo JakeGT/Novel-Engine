@@ -1,0 +1,208 @@
+/* The picture page (AST-007): a catalogue entry. The picture sits mounted on the left,
+   like a print on a mat; what is known about it runs down the right in sections ruled
+   off with hairlines. The one mark of colour is the editor's pencil: the cinnabar box
+   that shows which part of the picture a note is about. */
+
+.picture-page {
+  display: grid;
+  gap: 1.75rem;
+}
+
+.picture-head h1 {
+  overflow-wrap: anywhere;
+}
+
+.picture-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.75rem;
+  align-items: start;
+}
+
+@media (min-width: 960px) {
+  .picture-layout {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    gap: 2.5rem;
+  }
+
+  .picture-mat {
+    position: sticky;
+    top: 1.25rem;
+  }
+}
+
+.picture-mat {
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.picture-mat-frame {
+  position: relative;
+  justify-self: start;
+  max-width: 100%;
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-s);
+}
+
+.picture-mat-frame img {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  background: var(--surface-3);
+}
+
+.picture-mat-inner {
+  position: relative;
+}
+
+/* The note's part of the picture, measured on the image itself. */
+.picture-mat-inner .picture-mark {
+  position: absolute;
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 0 1px var(--surface);
+  pointer-events: none;
+}
+
+.picture-column {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+.picture-section {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.25rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.picture-section:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.picture-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.picture-actions .grow {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.picture-describe {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+
+.picture-notes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.picture-note {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.8rem 0.95rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: var(--radius-s);
+}
+
+.picture-note.marked {
+  border-left-color: var(--accent);
+}
+
+.picture-notes.quiet .picture-note {
+  background: transparent;
+  border-left-color: var(--line);
+}
+
+.picture-note-kind {
+  flex: 1 1 auto;
+  font-family: var(--font-ui);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+}
+
+.picture-note-words {
+  font-size: 1.05rem;
+}
+
+.picture-note-fact {
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--line);
+}
+
+.picture-choices {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.picture-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.picture-choice input {
+  margin-top: 0.25rem;
+}
+
+.picture-choice > span {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.picture-choice.chosen {
+  border-color: var(--ink-2);
+  background: var(--surface);
+}
+
+.picture-choices:disabled .picture-choice {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.picture-link {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.picture-link:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.picture-link .row {
+  border: 0;
+  padding: 0;
+}
+
+.picture-link-change {
+  padding: 0.85rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+}

@@ -18,6 +18,7 @@ from backend.domain.jobs import (
     ANY_BRANCH,
     LEASE_SECONDS,
     MAX_ATTEMPTS,
+    UNCOUNTED_KINDS,
     Job,
     JobStatus,
     LeaseLost,
@@ -177,9 +178,15 @@ class PostgresJobStore:
                 await db.execute(
                     text(
                         "SELECT count(*) FROM jobs WHERE workspace_id = :w AND project_id = :p "
-                        "AND actor_user_id = :a AND status IN ('queued', 'running')"
+                        "AND actor_user_id = :a AND status IN ('queued', 'running') "
+                        "AND NOT (kind = ANY(:uncounted))"
                     ),
-                    {"w": workspace_id, "p": project_id, "a": actor_user_id},
+                    {
+                        "w": workspace_id,
+                        "p": project_id,
+                        "a": actor_user_id,
+                        "uncounted": sorted(UNCOUNTED_KINDS),
+                    },
                 )
             ).scalar_one()
         return int(count)

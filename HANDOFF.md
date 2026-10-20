@@ -252,13 +252,14 @@ then `pnpm --dir frontend run gen:api`.
 
 ## 10. Data & migrations
 
-- Alembic (PostgreSQL) head: **`0045_how_long`** (… → `0022_archive_imports` →
+- Alembic (PostgreSQL) head: **`0048_media_observations`** (… → `0022_archive_imports` →
   `0023_session_id_token` → `0024_assist_sessions` → `0025_workspace_ai_settings` →
   `0026_assist_suggestions` → `0027_usage_allowance` → `0028_plan_items` →
   `0029_plan_conversations` → `0030_source_texts` → `0031_story_rules` → `0032_story_time` →
   `0033_context` → `0034_scene_studio` → `0035_scene_readings` → `0036_cached_tokens` →
   `0037_finding_decisions` → `0038_usage_controls` → `0039_check_passes` → `0040_scoped_names` → `0041_claims` →
-  `0042_delegation` → `0043_access_keys` → `0044_consistency_runs` → `0045_how_long`).
+  `0042_delegation` → `0043_access_keys` → `0044_consistency_runs` → `0045_how_long` → `0046_media_variants` →
+  `0047_embedding_generations` → `0048_media_observations`).
 - Neo4j ordered migrations: `0001_initial_graph_schema`, `0002_entity_scope_identity`,
   `0003_canon_scope_identity`, `0004_canon_projection_labels` (checksums in
   `plan/phase-2-evidence.md`).
@@ -800,4 +801,37 @@ renumbered before commit (no deployed database has them).
 
 A read-only review found two high-for-blocking and several medium issues around uncertain times,
 stale plan suggestions and reading; all were fixed with tests.
+
+## Pictures, search generations and evaluations, sixth batch (2026-10-20)
+
+- **Preparing pictures** (AST-003, AST-006, AST-008, OPS-007; migration 0046): each picture is
+  decoded in a separate `python -I` process with memory, CPU and time limits (Pillow >= 12.3,
+  PNG/JPEG/WebP only, header checked before decoding) into a 256 and a 1024 WebP copy with no
+  metadata. A failure says why and can be tried again; a workspace storage limit; `make media`;
+  `make retention` removes stray picture files after a grace period. Runbook
+  `plan/runbooks/media-processing.md`. The limits are not a filesystem or network sandbox.
+- **Search generations** (CTX-004, CTX-011, CTX-012; migration 0047, which moves the old 384-number
+  rows into a legacy generation and drops `vector_documents`): a typed embedding port, a
+  deterministic stand-in, an EmbeddingGemma 2 adapter behind the `embeddings` extra (never loaded
+  here), build beside / switch / roll back (`make reindex*`), picture search with every gate in
+  the same query before ranking. Runbook `plan/runbooks/search-index.md`.
+- **Pictures for the assistant** (CTX-013, AST-004, AST-005, AST-007, CON-014; migration 0048): the
+  picture page (`/pictures/:id`), "Describe this picture" with the cost first, suggestions to
+  accept, correct or reject, "Suggest as a detail" (a reviewed proposal), send / use its
+  description / leave out, secret and story-time picture links, and a "What the pictures show"
+  check pass. Whether a route sees pictures is an operator setting (`AI_IMAGE_INPUT`). Runbook
+  `plan/runbooks/picture-descriptions.md`.
+- **Evaluations** (CON-012, CON-013, CTX-010, CTX-014, EXT-008, QLT-003): `make eval` writes
+  `var/eval/report.md`; `make eval-model` (asks first, refuses in CI) and `make eval-media` with
+  `EVAL_MEDIA_ARGS` are for the owner's real models. Deterministic checks: precision 0.95, recall
+  0.91 on 73 labelled cases (before the fixes below). The review-bundle prototype is
+  `backend/domain/review_bundles.py`.
+
+Everything ran against the scripted model, the local stand-in and the stand-in embedder only. A
+read-only review found five medium issues (pictures found by meaning ignoring "leave out" and
+story time, a picture detail making a secret detail public, captions not reaching the index,
+picture decoding quality) and three check defects the evaluation surfaced ("I" in dialogue, death
+words, "64 years" in a range); all fixed with tests. Known limit: the legacy project transfer
+(`project_transfer.py`, not wired into the app) stores files that picture cleanup would treat as
+strays.
 

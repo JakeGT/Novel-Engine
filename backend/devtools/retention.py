@@ -22,6 +22,10 @@ a note), the story itself, or users and workspaces. ``--dry-run`` only counts.
 
 Each rule runs on its own; a store migrated only part of the way counts what it lacks
 as nothing.
+
+Pictures (AST-008): stored files that no picture refers to, once older than
+``MEDIA_ORPHAN_GRACE_HOURS`` (an upload still on its way is never touched), and the
+smaller copies of retired pictures (the originals stay). ``--skip-media`` leaves them.
 """
 
 from __future__ import annotations
@@ -163,6 +167,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help=f"keep the assistant's leftovers this many days (default {DEFAULT_DAYS})",
     )
     parser.add_argument("--dry-run", action="store_true", help="only count; change nothing")
+    parser.add_argument(
+        "--skip-media",
+        action="store_true",
+        help="leave stored picture files and smaller copies alone",
+    )
     args = parser.parse_args(argv)
     if args.days < 1:
         parser.error("--days must be at least 1")
@@ -172,6 +181,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     verb = "would remove" if args.dry_run else "removed"
     for name, count in counts.items():
         print(f"retention: {LABELS[name]}: {verb} {count}")
+    if not args.skip_media:
+        import asyncio
+
+        from backend.devtools.media import media_maintenance
+
+        media = asyncio.run(media_maintenance(default_settings, dry_run=args.dry_run))
+        found = media["orphans_found"] if args.dry_run else media["orphans_removed"]
+        print(f"retention: stored picture files nothing refers to: {verb} {found}")
+        print(f"retention: smaller copies of retired pictures: {verb} {media['retired_copies']}")
     return 0
 
 

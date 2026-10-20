@@ -89,6 +89,9 @@ RENEW_SECONDS = LEASE_SECONDS // 4
 MAX_ACTIVE_JOBS = 3
 # Passed as ``branch_id`` to a job listing to mean every line of the story.
 ANY_BRANCH = "any"
+# Kinds of work the system queues by itself (preparing an uploaded picture): they are
+# quick, spend nothing, and never count toward a person's limit above.
+UNCOUNTED_KINDS: frozenset[str] = frozenset({"media_process"})
 
 
 class JobStatus(StrEnum):

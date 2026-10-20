@@ -49,6 +49,7 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
+from backend.adapters.system import uuid7
 from backend.core.logging import log_event
 from backend.core.metrics import metrics
 from backend.domain.archive import ArchiveImport, ArchiveImportError, ImportStatus
@@ -61,7 +62,7 @@ from backend.domain.dismissals import MAX_NOTE as MAX_DISMISSAL_NOTE
 from backend.domain.dismissals import DismissReason, FindingDismissal, FindingKind
 from backend.domain.errors import NotFoundError
 from backend.domain.history import CanonTag
-from backend.domain.identity import AccessScope
+from backend.domain.identity import AccessScope, AuthMode
 from backend.domain.journal import CommitEnvelope, MutationOperation, MutationStatus
 from backend.domain.media import MediaAsset, MediaAssetVersion
 from backend.domain.operations import (
@@ -96,7 +97,25 @@ LEFT_OUT = (
     "Proposed changes not yet reviewed and saved.",
     "Assistant jobs, usage records, sign-in details and settings.",
     "The history of checks (what each read and found): a restored story starts with none.",
+    "The smaller copies of pictures: they are made again from the pictures after a restore.",
+    "What the assistant saw in a picture that you had not yet accepted, corrected or rejected.",
 )
+# Rebuildable media an archive leaves out, and how a restore makes it again (ADR-010).
+DERIVED_MEDIA = {
+    "picture_copies": {
+        "included": False,
+        "rebuilt_by": "media_process",
+        "note": "Thumbnails and web copies are remade from each picture after a restore.",
+    },
+    # Search by meaning (CTX-012): vectors of passages, accepted captions and pictures.
+    "search_index": {
+        "included": False,
+        "rebuilt_by": "embedding_reindex",
+        "note": "Finding by meaning is remade from the story and its pictures by bringing "
+        "the search index up to date (make reindex-refresh; make reindex-status shows what "
+        "is missing).",
+    },
+}
 MAX_NAME = 120
 MAX_ENTRIES = 100_000
 MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
@@ -243,6 +262,12 @@ class CanonArchiveService:
         self._local_mode = local_mode
         self._sources = sources
         self._rules = rules
+        # The media service (set by the container): which stored files are smaller copies,
+        # and queuing a restored story's pictures to be prepared again.
+        self.pictures: Any = None
+        # What a model saw in pictures, as the author reviewed it, and each picture's
+        # context choice (AST-005, AST-007); set by the container.
+        self.picture_notes: Any = None
 
     # ----------------------------------------------- authorized entry points
     async def _require_owner(self, scope: AccessScope, workspace_id: str, project_id: str) -> None:
@@ -586,7 +611,15 @@ class CanonArchiveService:
             )
 
         objects: list[dict[str, Any]] = []
+        # Smaller copies of pictures are rebuildable, so they are never exported.
+        copies: set[str] = (
+            await self.pictures.variant_object_keys(workspace_id, project_id)
+            if self.pictures is not None
+            else set()
+        )
         for stat in self._objects.list_objects(workspace_id=workspace_id, project_id=project_id):
+            if stat.key in copies:
+                continue
             payload = self._objects.open(stat.key, workspace_id=workspace_id, project_id=project_id)
             objects.append(
                 {
@@ -645,7 +678,7 @@ class CanonArchiveService:
                 "versions": [version.model_dump(mode="json") for version in versions],
             },
             "objects": objects,
-            "derived": {},
+            "derived": dict(DERIVED_MEDIA) if self.pictures is not None else {},
             "sections": {},
         }
         # The author's own writing and rules: theirs to take away, and never canon.
@@ -680,6 +713,16 @@ class CanonArchiveService:
                 )
                 if table and (table.get("travel") or table.get("lasting")):
                     body.setdefault("story_time", {})["how_long"] = table
+        if self.pictures is not None:
+            # Parts of pictures the author marked; left out when there are none.
+            regions = await self.pictures.export_regions(workspace_id, project_id)
+            if regions:
+                body["picture_regions"] = regions
+        if self.picture_notes is not None:
+            # The author's decisions about what a model saw; left out when there are none.
+            notes = await self.picture_notes.export_notes(workspace_id, project_id)
+            if notes:
+                body["picture_notes"] = notes
         # Said in the archive itself, so whoever opens it knows what is not there.
         body["left_out"] = list(LEFT_OUT)
         body["checksum"] = _checksum(body)
@@ -1526,6 +1569,17 @@ class CanonArchiveService:
             raise
         if record.status is not ImportStatus.COMPLETED:
             await self._canon.finish_import(import_id=import_id, status=ImportStatus.COMPLETED)
+        if self.pictures is not None and archive.get("picture_regions"):
+            result["picture_regions"] = await self.pictures.restore_regions(
+                target_workspace_id, target_project_id, archive["picture_regions"]
+            )
+        if self.picture_notes is not None and archive.get("picture_notes"):
+            result["picture_notes"] = await self.picture_notes.restore_notes(
+                target_workspace_id, target_project_id, archive["picture_notes"]
+            )
+        result["pictures_queued"] = await self._queue_pictures(
+            target_workspace_id, target_project_id, actor_user_id
+        )
         metrics.increment(
             "archive_operations_total",
             "Archive operations by kind and outcome.",
@@ -1533,6 +1587,31 @@ class CanonArchiveService:
             outcome="completed",
         )
         return {**result, "import_id": import_id}
+
+    async def _queue_pictures(
+        self, workspace_id: str, project_id: str, actor_user_id: str | None
+    ) -> int:
+        """Queue a restored story's pictures to have their smaller copies made again.
+        Never fails the restore: a picture not queued now is found by the backfill."""
+        if self.pictures is None or not actor_user_id:
+            return 0
+        scope = AccessScope(
+            actor_user_id=actor_user_id,
+            auth_mode=AuthMode.LOCAL if self._local_mode else AuthMode.HOSTED,
+            correlation_id=f"archive-restore-{uuid7()}",
+            workspace_id=workspace_id,
+            project_id=project_id,
+        )
+        try:
+            return int(await self.pictures.queue_project(scope, workspace_id, project_id))
+        except Exception as error:  # noqa: BLE001 - the story itself is restored
+            log_event(
+                logger,
+                "archive.import.pictures_not_queued",
+                level=logging.WARNING,
+                error_type=type(error).__name__,
+            )
+            return 0
 
     def _replay_plan(
         self, target_workspace_id: str, target_project_id: str, archive: dict[str, Any]

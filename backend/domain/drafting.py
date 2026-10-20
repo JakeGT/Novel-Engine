@@ -43,6 +43,17 @@ _STOCK = re.compile(
 )
 _PARAGRAPH = re.compile(r"\n\s*\n")
 _FIRST_PERSON = re.compile(r"(?<![\w])(I|me|my)(?![\w])")
+# What someone says aloud, between straight or curly double quotes or curly single quotes:
+# an "I" there is the speaker's, not the narrator's. A closing ’ is also an apostrophe
+# ("Wren’s"), so a single-quoted span must end where no letter follows.
+_SPOKEN = re.compile(r"\"[^\"]*\"|“[^”]*”|‘(?:[^’]|’(?=\w))*’(?!\w)")
+_SENTENCE = re.compile(r"[^.!?]+(?:[.!?]+|$)")
+_NEGATION = re.compile(r"(?<![\w])(not|never|no|nothing)(?![\w])|n[’']t(?![\w])", re.IGNORECASE)
+
+
+def _first_person(text: str) -> bool:
+    """The narration says I, me or my (outside anything a character says aloud)."""
+    return bool(_FIRST_PERSON.search(_SPOKEN.sub(" ", text)))
 
 
 class Severity(StrEnum):
@@ -135,6 +146,32 @@ def _mentions(text: str, names: Iterable[str]) -> bool:
     return False
 
 
+def _first_end(text: str, names: Iterable[str]) -> int | None:
+    """Where the first mention of any of the names ends, if one is there."""
+    ends = [
+        match.end()
+        for name in names
+        if name
+        and (match := re.search(rf"(?<![\w]){re.escape(name)}(?![\w])", text, re.IGNORECASE))
+    ]
+    return min(ends) if ends else None
+
+
+def _only_denied(paragraph: str, names: list[list[str]]) -> bool:
+    """Every sentence naming all sides of the secret says not, never, no, nothing or n't
+    before the last of them is named ("Osric had never spoken to the Tidewardens"). A
+    negation after them is about something else ("…and thought she had not seen")."""
+    denied = False
+    for sentence in _SENTENCE.findall(paragraph):
+        ends = [_first_end(sentence, group) for group in names]
+        if any(end is None for end in ends):
+            continue
+        if not _NEGATION.search(sentence[: max(end for end in ends if end is not None)]):
+            return False
+        denied = True
+    return denied
+
+
 def word_count(text: str) -> int:
     return len(text.split())
 
@@ -162,6 +199,8 @@ def check_draft(text: str, brief: DraftBrief, mentions: Sequence[Mention]) -> li
             )
 
     # A secret the viewpoint character does not know, all of whose names share a paragraph.
+    # Named together only to be denied ("Osric had never spoken to the Tidewardens") it
+    # still puts the idea in the reader's head, so it is noted, not warned about.
     for secret in brief.secrets:
         names = [name for name in secret.names if name]
         if len(names) < 2:
@@ -169,17 +208,31 @@ def check_draft(text: str, brief: DraftBrief, mentions: Sequence[Mention]) -> li
         for start, end in _paragraphs(text):
             paragraph = text[start:end]
             if all(_mentions(paragraph, brief.names_for(name)) for name in names):
-                findings.append(
-                    DraftFinding(
-                        "secret",
-                        Severity.WARNING,
-                        f"This may give away a secret {brief.point_of_view or 'the viewpoint character'} "
-                        f"does not know: {secret.sentence}.",
-                        start,
-                        end,
-                        subject=secret.sentence,
+                if _only_denied(paragraph, [brief.names_for(name) for name in names]):
+                    findings.append(
+                        DraftFinding(
+                            "secret_denied",
+                            Severity.NOTE,
+                            "This names both sides of a secret "
+                            f"{brief.point_of_view or 'the viewpoint character'} does not know, "
+                            f"even to deny it: {secret.sentence}.",
+                            start,
+                            end,
+                            subject=secret.sentence,
+                        )
                     )
-                )
+                else:
+                    findings.append(
+                        DraftFinding(
+                            "secret",
+                            Severity.WARNING,
+                            f"This may give away a secret {brief.point_of_view or 'the viewpoint character'} "
+                            f"does not know: {secret.sentence}.",
+                            start,
+                            end,
+                            subject=secret.sentence,
+                        )
+                    )
                 break
 
     # Something a person in the scene only learns later (CON-006). The words on the page
@@ -280,7 +333,7 @@ def check_draft(text: str, brief: DraftBrief, mentions: Sequence[Mention]) -> li
         and not _mentions(
             text, [*brief.point_of_view_names, *brief.also.get(brief.point_of_view, ())]
         )
-        and not _FIRST_PERSON.search(text)
+        and not _first_person(text)
     ):
         findings.append(
             DraftFinding(

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   api,
   type ContextComparison,
@@ -267,6 +268,14 @@ export function SceneContextDialog({ scene, onClose }: { scene: PlanItem; onClos
           {item.reason} · {plural(item.words, 'word')}
           {item.pinned ? ' · always used' : ''}
         </span>
+        {item.picture && (
+          <span className="small context-reason">
+            <Link to={`/projects/${scope.projectId}/pictures/${item.picture.asset_id}`}>
+              Open the picture
+            </Link>{' '}
+            to describe it or change how it is used.
+          </span>
+        )}
       </span>
       {controls(item, left)}
     </li>

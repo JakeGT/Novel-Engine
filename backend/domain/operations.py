@@ -173,6 +173,11 @@ class LinkAssetOp(_Operation):
     target_record_type: str = "entity"
     target_id: str
     role: str = "EVIDENCE_FOR"
+    # AST-004, all optional and omitted while unset (ADR-015): a secret link and who
+    # knows what the picture shows, and a story time from which the link applies.
+    visibility: str | None = None
+    known_by: list[str] = Field(default_factory=list)
+    applies_from: dict[str, Any] | None = None
 
 
 class RetireAssetLinkOp(_Operation):
@@ -309,7 +314,7 @@ def operation_reference_ids(operation: CanonOperation) -> list[str]:
             *claimed,
         ]
     if isinstance(operation, LinkAssetOp):
-        refs = [operation.asset_id, operation.target_id]
+        refs = [operation.asset_id, operation.target_id, *operation.known_by]
         if operation.asset_version_id is not None:
             refs.append(operation.asset_version_id)
         return refs
@@ -383,6 +388,7 @@ def _rewrite(operation: CanonOperation, mapping: dict[str, str]) -> CanonOperati
                     else None
                 ),
                 "target_id": resolve(operation.target_id),
+                "known_by": [resolve(entity_id) for entity_id in operation.known_by],
             }
         )
     if isinstance(operation, CreatePlanItemOp | UpdatePlanItemOp):
@@ -462,6 +468,8 @@ _CANONICAL_OMIT_WHEN_UNSET = (
     "why",
     "scene_id",
     "premises",
+    "known_by",
+    "applies_from",
 )
 
 

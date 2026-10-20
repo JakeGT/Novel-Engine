@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AssetLink, LibraryPicture } from '../api/client'
@@ -30,6 +30,7 @@ function libraryPicture(overrides: Partial<LibraryPicture> = {}): LibraryPicture
     byte_length: 4,
     created_at: '2026-10-18T09:00:00Z',
     shown: 1,
+    has_thumbnail: false,
     ...overrides,
   }
 }
@@ -168,12 +169,32 @@ describe('PicturesPanel', () => {
     mockApi({ 'GET /links': { items: [link()] }, 'GET /content': new Blob(['x']) })
     const first = renderInProject(<PicturesPanel entity={entity()} />, { context: { access: VIEWER } })
     await screen.findByRole('img', { name: 'Picture 1 of Mara Venn' })
-    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    // A reader may open a picture, and do nothing else with it.
+    expect(screen.getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Open Picture 1 of Mara Venn',
+    ])
     first.unmount()
 
     mockApi({ 'GET /links': { items: [] } })
     const { container } = renderInProject(<PicturesPanel entity={entity()} />, { context: { access: VIEWER } })
     await waitFor(() => expect(container.querySelector('section')).toBeNull())
+  })
+
+  it('shows the small copy in the list and opens the full picture', async () => {
+    const api = mockApi({ 'GET /links': { items: [link()] }, 'GET /content': new Blob(['x']) })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<PicturesPanel entity={entity()} />, { context: { access: VIEWER } })
+    await screen.findByRole('img', { name: 'Picture 1 of Mara Venn' })
+    expect(api.find('GET', '/content').map((call) => call.search.get('size'))).toEqual(['thumbnail'])
+
+    await user.click(screen.getByRole('button', { name: 'Open Picture 1 of Mara Venn' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Picture 1 of Mara Venn' })
+    await within(dialog).findByRole('img', { name: 'Picture 1 of Mara Venn' })
+    // The opened picture is the file itself, not the small copy.
+    expect(api.find('GET', '/content').map((call) => call.search.get('size'))).toEqual(['thumbnail', null])
+    await expectAccessible(container)
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('treats only current picture links as pictures', () => {

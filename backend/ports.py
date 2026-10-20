@@ -19,6 +19,19 @@ from backend.domain.canon.plans import PlanItem
 from backend.domain.canon.revisions import CanonRevision, Provenance
 from backend.domain.commit import ApplyOutcome, CommitMarker
 from backend.domain.credentials import Credential, CredentialProvider
+from backend.domain.embedding import (
+    CaptionSource,
+    EmbeddingHealth,
+    EmbeddingInput,
+    EmbeddingSpace,
+    EmbeddingTask,
+    EmbeddingVector,
+    Generation,
+    PictureSource,
+    SearchGate,
+    StoredHit,
+    VectorRow,
+)
 from backend.domain.history import CanonTag, CanonTagHistoryEntry
 from backend.domain.identity import IdentityClaims, LoginAttempt, Role, Session, User
 from backend.domain.journal import (
@@ -168,6 +181,125 @@ class EmbeddingPort(Protocol):
 
 
 @runtime_checkable
+class MultimodalEmbeddingPort(Protocol):
+    """Typed text/image/audio/video embedding with provenance (CTX-011, ADR-010).
+
+    ``embed`` returns one normalized vector per input, each carrying the model,
+    revision, dimension, task and modality it was made with. An adapter refuses an
+    input it cannot embed (``UnsupportedInputError``) rather than dropping or guessing
+    it; audio, video and interleaved inputs are refused by every current adapter.
+    ``health`` never forces a model download.
+    """
+
+    @property
+    def space(self) -> EmbeddingSpace: ...
+
+    def available(self) -> bool: ...
+
+    def loaded(self) -> bool: ...
+
+    def health(self) -> EmbeddingHealth: ...
+
+    def embed(
+        self, inputs: Sequence[EmbeddingInput], *, task: EmbeddingTask
+    ) -> list[EmbeddingVector]: ...
+
+
+@runtime_checkable
+class EmbeddingIndexStore(Protocol):
+    """Generation-versioned vectors (CTX-012). Synchronous; services call it in a thread.
+
+    Every read and write names one generation, and a query never reads two. Deletes by
+    id, asset or scope cover every generation, so a picture or project removed is gone
+    from spaces being built and retired spaces too.
+    """
+
+    def active(self) -> Generation | None: ...
+
+    def building(self) -> Generation | None: ...
+
+    def get(self, generation_id: str) -> Generation | None: ...
+
+    def list_generations(self) -> list[Generation]: ...
+
+    def create_building(self, space: EmbeddingSpace, *, note: str | None = None) -> Generation: ...
+
+    def request_cancel(self, generation_id: str) -> bool: ...
+
+    def activate(self, generation_id: str) -> Generation: ...
+
+    def rollback(self) -> Generation: ...
+
+    def discard(self, generation_id: str) -> int: ...
+
+    def upsert(
+        self, generation_id: str, rows: Sequence[VectorRow], *, workspace_id: str, project_id: str
+    ) -> int: ...
+
+    def hashes(
+        self, generation_id: str, *, workspace_id: str, project_id: str
+    ) -> dict[str, str]: ...
+
+    def text_rows(
+        self, generation_id: str, *, workspace_id: str, project_id: str
+    ) -> list[VectorRow]: ...
+
+    def search(
+        self,
+        generation_id: str,
+        values: Sequence[float],
+        *,
+        workspace_id: str,
+        project_id: str,
+        gate: SearchGate,
+        limit: int,
+    ) -> list[StoredHit]: ...
+
+    def eligible_assets(
+        self, asset_ids: Sequence[str], *, workspace_id: str, project_id: str, gate: SearchGate
+    ) -> set[str]: ...
+
+    def delete_ids(self, ids: Sequence[str], *, workspace_id: str, project_id: str) -> int: ...
+
+    def delete_ids_in(
+        self, generation_id: str, ids: Sequence[str], *, workspace_id: str, project_id: str
+    ) -> int: ...
+
+    def delete_kinds_except(
+        self,
+        generation_id: str,
+        kinds: Sequence[str],
+        keep_ids: Sequence[str],
+        *,
+        workspace_id: str,
+        project_id: str,
+    ) -> int: ...
+
+    def delete_assets(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        asset_ids: Sequence[str] = (),
+        asset_version_ids: Sequence[str] = (),
+    ) -> int: ...
+
+    def delete_project(self, *, workspace_id: str, project_id: str) -> int: ...
+
+    def delete_workspace(self, *, workspace_id: str) -> int: ...
+
+    def pictures_ready(self, *, workspace_id: str, project_id: str) -> list[PictureSource]: ...
+
+    def accepted_captions(self, *, workspace_id: str, project_id: str) -> list[CaptionSource]: ...
+
+    def projects(self) -> list[tuple[str, str]]: ...
+
+    def count(self, generation_id: str, *, workspace_id: str | None = None) -> int: ...
+
+    def ping(self) -> bool: ...
+
+
+@runtime_checkable
 class SchemaRegistryPort(Protocol):
     def is_valid_node_type(self, node_type: str) -> bool: ...
 
@@ -258,10 +390,12 @@ class TextResponse:
 
 @dataclass(frozen=True)
 class ProviderCapabilities:
-    """Typed provider/model capability description (no media transfer).
+    """Typed provider/model capability description (CTX-013).
 
-    Later adapters add image/audio/video modalities and limits without changing
-    configuration or diagnostics again. Multimodal payloads are Phase 4–5.
+    A route that can see pictures lists ``"image"`` among its input modalities and
+    declares how many pictures one request may carry, how large each may be and which
+    types it takes. A route that declares none of this is text only, and the gateway
+    refuses a picture for it before anything is sent.
     """
 
     provider: str
@@ -271,6 +405,30 @@ class ProviderCapabilities:
     structured_output: bool = True
     max_context_tokens: int | None = None
     supports_streaming: bool = False
+    max_images: int = 0
+    max_image_bytes: int = 0
+    image_types: frozenset[str] = frozenset()
+
+    @property
+    def sees_images(self) -> bool:
+        return "image" in self.input_modalities and self.max_images > 0
+
+
+@dataclass(frozen=True)
+class ImageInput:
+    """One picture sent with a request: its exact bytes and where they came from.
+
+    ``ref`` names the picture and version in the request's own words (``picture 1``),
+    so the model can cite it; the bytes are never logged."""
+
+    data: bytes
+    content_type: str
+    ref: str
+    asset_id: str = ""
+    version_id: str = ""
+    # "original" or the smaller copy's kind ("web").
+    rendition: str = "original"
+    checksum: str = ""
 
 
 class AIError(RuntimeError):
@@ -285,11 +443,19 @@ class AIInvalidOutputError(AIError):
     """Provider returned output that could not be parsed into the requested schema."""
 
 
+class AIUnsupportedInputError(AIError):
+    """The route cannot take what was asked to be sent (a picture to a text-only model,
+    too many or too large pictures). Raised before anything is sent or spent."""
+
+
 @runtime_checkable
 class AIGateway(Protocol):
     def is_available(self) -> bool: ...
 
-    def capabilities(self) -> ProviderCapabilities: ...
+    def capabilities(self, *, base_url: str | None = None) -> ProviderCapabilities:
+        """What the route a request will use can take: the configured one, or the
+        workspace's own provider at ``base_url``."""
+        ...
 
     async def generate_structured(
         self,
@@ -299,7 +465,11 @@ class AIGateway(Protocol):
         model: str | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
-    ) -> StructuredResponse: ...
+        images: Sequence[ImageInput] = (),
+    ) -> StructuredResponse:
+        """``images`` go with the last user message; a route that cannot take them
+        raises ``AIUnsupportedInputError`` before anything is sent."""
+        ...
 
     async def generate_text(
         self,
@@ -309,8 +479,10 @@ class AIGateway(Protocol):
         model: str | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
+        images: Sequence[ImageInput] = (),
     ) -> TextResponse:
-        """Prose, not structured output: a scene draft (ADR-022)."""
+        """Prose, not structured output: a scene draft (ADR-022). ``images`` as for
+        ``generate_structured``: refused before sending when the route cannot take them."""
         ...
 
     async def list_models(self, *, api_key: str, base_url: str) -> list[str]: ...
@@ -1237,6 +1409,103 @@ class MediaStorePort(Protocol):
     ) -> list[MediaLifecycleEvent]:
         """Append-only audit of registration, import, and retirement for one asset."""
         ...
+
+    async def health(self) -> bool: ...
+
+
+@runtime_checkable
+class MediaProcessingStorePort(Protocol):
+    """Processing state, rebuildable smaller copies and segments of picture versions
+    (AST-003). Copies live in the object store; these rows say which keys are copies."""
+
+    async def get_processing(
+        self, *, workspace_id: str, project_id: str, version_id: str
+    ) -> Any | None: ...
+
+    async def list_processing(
+        self, *, workspace_id: str, project_id: str, version_ids: list[str]
+    ) -> dict[str, Any]: ...
+
+    async def queue(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        version_id: str,
+        asset_id: str,
+        checksum: str,
+        processor_version: str,
+        job_id: str | None,
+    ) -> Any: ...
+
+    async def start(self, *, workspace_id: str, project_id: str, version_id: str) -> Any | None: ...
+
+    async def fail(
+        self, *, workspace_id: str, project_id: str, version_id: str, failure_code: str
+    ) -> None: ...
+
+    async def complete(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        version_id: str,
+        width: int,
+        height: int,
+        detected_format: str,
+        variants: list[Any],
+        whole: Any,
+    ) -> list[str]:
+        """Record copies, the whole-picture segment and readiness; replaced copies' keys."""
+        ...
+
+    async def get_variant(
+        self, *, workspace_id: str, project_id: str, version_id: str, kind: Any
+    ) -> Any | None: ...
+
+    async def list_variants(
+        self, *, workspace_id: str, project_id: str, version_ids: list[str]
+    ) -> dict[str, list[Any]]: ...
+
+    async def variant_object_keys(self, *, workspace_id: str, project_id: str) -> set[str]: ...
+
+    async def known_object_keys(self, *, workspace_id: str, project_id: str) -> set[str]: ...
+
+    async def remove_variants(
+        self, *, workspace_id: str, project_id: str, version_id: str
+    ) -> list[str]: ...
+
+    async def list_segments(
+        self, *, workspace_id: str, project_id: str, version_id: str
+    ) -> list[Any]: ...
+
+    async def list_regions(self, *, workspace_id: str, project_id: str) -> list[Any]: ...
+
+    async def add_segment(self, segment: Any) -> Any: ...
+
+    async def retire_segment(
+        self, *, workspace_id: str, project_id: str, segment_id: str
+    ) -> Any | None: ...
+
+    async def workspace_bytes(self, *, workspace_id: str) -> int: ...
+
+    async def lag(self) -> dict[str, Any]: ...
+
+    async def pending_versions(
+        self,
+        *,
+        processor_version: str,
+        content_types: list[str],
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        limit: int = 500,
+        include_failed: bool = False,
+        stale_seconds: int = 3600,
+    ) -> list[Any]: ...
+
+    async def retired_with_variants(self, *, limit: int = 1000) -> list[tuple[str, str, str]]: ...
+
+    async def projects_with_media(self) -> list[tuple[str, str]]: ...
 
     async def health(self) -> bool: ...
 

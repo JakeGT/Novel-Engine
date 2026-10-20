@@ -53,6 +53,16 @@ class Settings(BaseSettings):
     # Ollama, llama.cpp, etc.). Empty base URL means the OpenAI default endpoint.
     AI_PROVIDER: str = "openai"
     AI_BASE_URL: str = ""
+    # CTX-013: whether the configured model can see pictures, and its limits. Off by
+    # default: a route is text only until the operator says otherwise, and a picture is
+    # then described in words (recorded as such) or the request is refused before spending.
+    AI_IMAGE_INPUT: bool = False
+    AI_IMAGE_MAX_COUNT: int = 4
+    AI_IMAGE_MAX_BYTES: int = 5 * 1024 * 1024
+    AI_IMAGE_TYPES: str = "image/png,image/jpeg,image/webp"
+    # The same for a workspace's own provider (hosted): which providers' chosen models are
+    # treated as able to see pictures, by provider id ("openrouter,anthropic"); empty is none.
+    AI_IMAGE_PROVIDERS: str = ""
 
     NEO4J_URI: str = "bolt://localhost:7687"
     NEO4J_USER: str = "neo4j"
@@ -70,10 +80,41 @@ class Settings(BaseSettings):
 
     EMBEDDING_MODEL_NAME: str = "all-MiniLM-L6-v2"
     EMBEDDING_DIMENSION: int = 384
+    # Which model makes search vectors (CTX-011): "minilm" (the model above, text only),
+    # "embeddinggemma" (text and pictures in one space; needs the embeddings extra and a
+    # pinned revision), "fake" (deterministic stand-in for tests and evaluations) or
+    # "none". Changing it needs a rebuild: `make reindex`, then `make reindex-activate`.
+    EMBEDDING_PROVIDER: Literal["minilm", "embeddinggemma", "fake", "none"] = "minilm"
+    EMBEDDING_GEMMA_MODEL: str = "google/embeddinggemma-2"
+    # An exact Hugging Face commit; the model is never loaded from a moving branch.
+    EMBEDDING_GEMMA_REVISION: str = ""
+    # Matryoshka size: 768, 512, 256 or 128 (512 is expected to be enough; measure first).
+    EMBEDDING_GEMMA_DIMENSION: int = 512
+    # "auto" picks bfloat16 on a GPU that supports it, else float32. Never float16.
+    EMBEDDING_DTYPE: Literal["auto", "bfloat16", "float32"] = "auto"
+    EMBEDDING_FAKE_DIMENSION: int = 768
     CUSTOM_SCHEMA_PATH: str = "backend/config/custom_schema.json"
     ENABLE_DEBUG_ARTIFACTS: bool = False
     ARTIFACT_STORE_DIR: str = "backend/debug"
     OBJECT_STORE_DIR: str = "data/objects"
+
+    # Picture processing (AST-003/AST-006, OPS-007). Every picture is decoded once in a
+    # separate worker process held to these limits, and turned into smaller copies.
+    MEDIA_PROCESSING_ENABLED: bool = True
+    # Pixel and side ceilings checked from the file's header before any decoding.
+    MEDIA_MAX_PIXELS: int = 40_000_000
+    MEDIA_MAX_DIMENSION: int = 12_000
+    # The worker's address-space and CPU limits, and how long the parent waits for it.
+    MEDIA_WORKER_MEMORY_BYTES: int = 1024 * 1024 * 1024
+    MEDIA_WORKER_CPU_SECONDS: int = 20
+    MEDIA_WORKER_TIMEOUT_SECONDS: float = 30.0
+    # How many pictures are decoded at once in one API/worker process.
+    MEDIA_WORKER_CONCURRENCY: int = 2
+    # Everything a workspace stores (pictures and their smaller copies); 0 means no limit.
+    MEDIA_WORKSPACE_QUOTA_BYTES: int = 2 * 1024 * 1024 * 1024
+    # A stored file with no picture record is removed only after this long, so an
+    # upload still on its way is never mistaken for one left behind.
+    MEDIA_ORPHAN_GRACE_HOURS: int = 24
 
     # Authentication. "local" is the trusted single-user self-hosted mode;
     # "hosted" delegates to a shared OIDC provider (Authentik).

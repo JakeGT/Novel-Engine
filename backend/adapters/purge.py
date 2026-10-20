@@ -76,7 +76,7 @@ class StoreWorkspacePurge:
         return {
             **canon,
             "graph_nodes": self._graph.delete_workspace_nodes(workspace_id),
-            "vector_documents": self._vectors.delete_workspace(workspace_id=workspace_id),
+            "embedding_vectors": self._vectors.delete_workspace(workspace_id=workspace_id),
             "credentials": await self._credentials.delete_workspace(workspace_id),
             "usage_records": await self._usage.delete_workspace(workspace_id),
             "objects": self._objects.delete_workspace(workspace_id=workspace_id),
@@ -104,7 +104,7 @@ class StoreWorkspacePurge:
         return {
             **canon,
             "graph_nodes": self._graph.delete_project_nodes(workspace_id, project_id),
-            "vector_documents": self._vectors.delete_project(
+            "embedding_vectors": self._vectors.delete_project(
                 workspace_id=workspace_id, project_id=project_id
             ),
             "objects": self._objects.delete_project(

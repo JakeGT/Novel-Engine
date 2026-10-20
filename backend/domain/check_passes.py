@@ -28,6 +28,7 @@ from backend.domain.context import (
     LeftOut,
     render,
 )
+from backend.domain.context_parts import ContextChoice, MediaPart
 
 
 class CheckPass(StrEnum):
@@ -36,6 +37,9 @@ class CheckPass(StrEnum):
     PLAN = "plan"
     VOICE = "voice"
     CLARITY = "clarity"
+    # The scene against its pictures (CON-014): only when the scene has pictures the
+    # author chose to send or that have an accepted description.
+    PICTURES = "pictures"
 
 
 # The order passes run and are listed in.
@@ -45,6 +49,7 @@ PASS_ORDER: tuple[CheckPass, ...] = (
     CheckPass.PLAN,
     CheckPass.VOICE,
     CheckPass.CLARITY,
+    CheckPass.PICTURES,
 )
 
 # What each pass is called where the author chooses, in plain words.
@@ -54,6 +59,7 @@ PASS_LABELS: dict[CheckPass, str] = {
     CheckPass.PLAN: "What the plan asks for",
     CheckPass.VOICE: "Your voice",
     CheckPass.CLARITY: "Clarity",
+    CheckPass.PICTURES: "What the pictures show",
 }
 
 PASS_DESCRIPTIONS: dict[CheckPass, str] = {
@@ -70,6 +76,10 @@ PASS_DESCRIPTIONS: dict[CheckPass, str] = {
     ),
     CheckPass.VOICE: "Passages that do not sound like your own writing or your notes on it.",
     CheckPass.CLARITY: "Passages a reader could find hard to follow.",
+    CheckPass.PICTURES: (
+        "Anything the scene says about how someone or somewhere looks that its pictures "
+        "show differently. Only pictures you chose to send, or that have a description."
+    ),
 }
 
 # The sections of the scene's context each pass reads (the scene's own card is in SCENE).
@@ -108,6 +118,9 @@ PASS_SECTIONS: dict[CheckPass, frozenset[ContextSection]] = {
     ),
     CheckPass.VOICE: frozenset({ContextSection.CAST, ContextSection.WRITING}),
     CheckPass.CLARITY: frozenset({ContextSection.CAST, ContextSection.SCENE}),
+    CheckPass.PICTURES: frozenset(
+        {ContextSection.CAST, ContextSection.PICTURES, ContextSection.SCENE}
+    ),
 }
 
 # At most this many notes from one pass; none when the scene is sound in that respect.
@@ -142,10 +155,29 @@ class PassMaterial:
     secrets: str = ""
     # Only for the voice pass: the author's notes on how they write.
     voice: str = ""
+    # Only for the pictures pass: the scene's pictures, each sent as itself or described,
+    # as the route allows when the pass runs (CTX-013).
+    pictures: tuple[MediaPart, ...] = ()
 
     @property
     def words(self) -> int:
         return sum(len(part.split()) for part in (self.story, self.secrets, self.voice))
+
+    @property
+    def has_material(self) -> bool:
+        """Whether there is anything for the pass to look at. Only the pictures pass can
+        have nothing: a scene with no picture it may use is not checked against pictures."""
+        if self.check is not CheckPass.PICTURES:
+            return True
+        return any(
+            part.choice is ContextChoice.SEND or part.fallback_text.strip()
+            for part in self.pictures
+        )
+
+    @property
+    def picture_tokens(self) -> int:
+        """The most the pictures could add: each one to send counted as sent."""
+        return sum(part.tokens for part in self.pictures if part.choice is ContextChoice.SEND)
 
 
 def _secret_items(manifest: ContextManifest) -> list[ContextItem]:
@@ -174,6 +206,15 @@ def pass_material(check: CheckPass, manifest: ContextManifest, voice: str = "") 
     story = render(item for item in manifest.items if item.section in sections)
     if check is CheckPass.VOICE:
         return PassMaterial(check, story=story, voice=voice.strip())
+    if check is CheckPass.PICTURES:
+        pictures = tuple(
+            item.media
+            for item in manifest.items
+            if item.section is ContextSection.PICTURES
+            and item.media is not None
+            and item.media.choice is not ContextChoice.LEAVE_OUT
+        )
+        return PassMaterial(check, story=story, pictures=pictures)
     return PassMaterial(check, story=story)
 
 
@@ -190,10 +231,12 @@ class PassEstimate:
 
 def estimate_pass(material: PassMaterial, content: str) -> PassEstimate:
     """Roughly what one pass reads and writes, before anything is sent."""
+    if not material.has_material:
+        return PassEstimate(check=material.check, prompt_tokens=0, completion_tokens=0)
     reads = material.words + len(content.split()) + PASS_INSTRUCTION_WORDS
     return PassEstimate(
         check=material.check,
-        prompt_tokens=math.ceil(reads * TOKENS_PER_WORD),
+        prompt_tokens=math.ceil(reads * TOKENS_PER_WORD) + material.picture_tokens,
         completion_tokens=PASS_ANSWER_TOKENS,
     )
 

@@ -13,6 +13,7 @@ dependencies = [
   "neo4j>=5.14.0",
   "openai>=1.10.0",
   "pgvector>=0.2",
+  "pillow>=12.3.0",
   "psycopg[binary]>=3.1",
   "pydantic>=2.6.0",
   "pydantic-settings>=2.1.0",
@@ -62,6 +63,7 @@ markers = [
   "integration: requires disposable external services such as PostgreSQL or Neo4j",
   "e2e: complete user workflow against disposable services",
   "llm: makes a live model-provider request",
+  "eval: evaluation case or benchmark (tests/eval); deterministic ones run in make test",
 ]
 
 [tool.ruff]

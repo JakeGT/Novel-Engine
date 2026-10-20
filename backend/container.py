@@ -91,6 +91,12 @@ class Container:
     media_store: Any = None
     archive_service: Any = None
     media_service: Any = None
+    # What a model saw in pictures, reviewed; pictures in context (AST-005, CTX-013).
+    observation_store: Any = None
+    media_observations: Any = None
+    # Picture processing: its state store and the limited decoder (AST-003, AST-006).
+    media_processing: Any = None
+    image_processor: Any = None
     equivalence_service: Any = None
     canon_character_workflow: Any = None
     assist_sessions: Any = None
@@ -108,6 +114,12 @@ class Container:
     # Personal access keys for other assistants, and the MCP endpoint's check (QRY-003).
     access_keys: Any = None
     access_key_service: Any = None
+    # Search by meaning in model generations (CTX-011/CTX-012): the typed embedder, the
+    # generation store, building/switching, and picture search for the context.
+    multimodal_embedder: Any = None
+    embedding_index: Any = None
+    embedding_index_service: Any = None
+    media_search: Any = None
 
     async def aclose(self) -> None:
         if self.job_runner is not None:
@@ -138,6 +150,11 @@ def build_container(settings: Settings | None = None) -> Container:
         model_name=resolved.EMBEDDING_MODEL_NAME,
         dimension=resolved.EMBEDDING_DIMENSION,
     )
+    from backend.adapters.embedding import build_multimodal_embedder
+    from backend.adapters.embedding_generations import PgEmbeddingIndexStore
+
+    multimodal_embedder = build_multimodal_embedder(resolved, embeddings)
+    embedding_index = PgEmbeddingIndexStore(resolved.postgres_dsn_psycopg)
     database = PostgresDatabase(resolved)
     identity_provider = OIDCIdentityProvider(
         issuer=resolved.OIDC_ISSUER,
@@ -151,8 +168,12 @@ def build_container(settings: Settings | None = None) -> Container:
         graph=Neo4jGraphRepository(manager),
         vectors=PgVectorStore(
             resolved.postgres_dsn_psycopg,
-            embeddings,
-            dimension=resolved.EMBEDDING_DIMENSION,
+            multimodal_embedder,
+            # EMBEDDING_DIMENSION describes the MiniLM text model only.
+            dimension=resolved.EMBEDDING_DIMENSION
+            if resolved.EMBEDDING_PROVIDER == "minilm"
+            else None,
+            index=embedding_index,
         ),
         embeddings=embeddings,
         ai=OpenAIGateway(
@@ -160,6 +181,15 @@ def build_container(settings: Settings | None = None) -> Container:
             default_model=resolved.AI_MODEL,
             provider=resolved.AI_PROVIDER,
             base_url=resolved.AI_BASE_URL,
+            image_input=resolved.AI_IMAGE_INPUT,
+            image_max_count=resolved.AI_IMAGE_MAX_COUNT,
+            image_max_bytes=resolved.AI_IMAGE_MAX_BYTES,
+            image_types=frozenset(
+                part.strip() for part in resolved.AI_IMAGE_TYPES.split(",") if part.strip()
+            ),
+            image_providers=frozenset(
+                part.strip() for part in resolved.AI_IMAGE_PROVIDERS.split(",") if part.strip()
+            ),
         ),
         schema_registry=SchemaRegistry(resolved.CUSTOM_SCHEMA_PATH),
         clock=SystemClock(),
@@ -169,6 +199,8 @@ def build_container(settings: Settings | None = None) -> Container:
         neo4j_migrations=Neo4jMigrationVerifier(Neo4jMigrationRunner(manager.driver)),
         database=database,
         identity_provider=identity_provider,
+        multimodal_embedder=multimodal_embedder,
+        embedding_index=embedding_index,
     )
 
     from backend.adapters.identity_store import (
@@ -404,7 +436,8 @@ def build_container(settings: Settings | None = None) -> Container:
         sources=container.source_service,
         reader=container.canon_repository,
         journal=container.journal,
-        embeddings=container.embeddings,
+        # Whether passages are embedded follows the typed embedder (CTX-011).
+        embeddings=container.multimodal_embedder,
         vectors=container.vectors,
     )
     container.source_service.passages = container.passage_index
@@ -507,8 +540,25 @@ def build_container(settings: Settings | None = None) -> Container:
         local_mode=not resolved.is_hosted,
     )
     container.mutation_service.delegation = container.delegation_service
-    from backend.services.media_service import MediaService
+    from datetime import timedelta
 
+    from backend.adapters.image_processor import ProcessorLimits, SubprocessImageProcessor
+    from backend.adapters.media_store import PostgresMediaProcessingStore
+    from backend.services.media_service import MAX_PICTURE_BYTES, MediaService
+
+    container.media_processing = PostgresMediaProcessingStore(database.session_factory)
+    if resolved.MEDIA_PROCESSING_ENABLED:
+        container.image_processor = SubprocessImageProcessor(
+            ProcessorLimits(
+                max_bytes=MAX_PICTURE_BYTES,
+                max_pixels=resolved.MEDIA_MAX_PIXELS,
+                max_dimension=resolved.MEDIA_MAX_DIMENSION,
+                memory_bytes=resolved.MEDIA_WORKER_MEMORY_BYTES,
+                cpu_seconds=resolved.MEDIA_WORKER_CPU_SECONDS,
+                timeout_seconds=resolved.MEDIA_WORKER_TIMEOUT_SECONDS,
+            ),
+            concurrency=resolved.MEDIA_WORKER_CONCURRENCY,
+        )
     container.media_service = MediaService(
         media=container.media_store,
         objects=container.objects,
@@ -517,7 +567,34 @@ def build_container(settings: Settings | None = None) -> Container:
         journal=container.journal,
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
+        processing=container.media_processing,
+        processor=container.image_processor,
+        runner=container.job_runner,
+        quota_bytes=resolved.MEDIA_WORKSPACE_QUOTA_BYTES,
+        orphan_grace=timedelta(hours=max(1, resolved.MEDIA_ORPHAN_GRACE_HOURS)),
     )
+    container.media_service.register_jobs()
+    from backend.adapters.observation_store import PostgresObservationStore
+    from backend.services.media_observations import MediaObservationService
+
+    container.observation_store = PostgresObservationStore(database.session_factory)
+    container.media_observations = MediaObservationService(
+        store=container.observation_store,
+        media=container.media_service,
+        reader=container.canon_repository,
+        mutation=container.mutation_service,
+        journal=container.journal,
+        runner=container.job_runner,
+        ai=container.ai,
+        settings=resolved,
+        credentials=container.credential_service,
+        usage=container.usage_service,
+        studio=container.studio_service,
+        tenancy=container.tenancy_service,
+        local_mode=not resolved.is_hosted,
+    )
+    container.media_observations.register_jobs()
+    container.context_service.pictures = container.media_observations
     from backend.services.rule_workflow import RuleWorkflow
 
     container.canon_character_workflow = RuleWorkflow(
@@ -614,4 +691,30 @@ def build_container(settings: Settings | None = None) -> Container:
         studio=container.studio_store,
         assists=container.assist_sessions,
     )
+    # Smaller copies of pictures stay out of an archive; a restore queues them again.
+    container.archive_service.pictures = container.media_service
+    container.archive_service.picture_notes = container.media_observations
+    from backend.services.embedding_index import (
+        EmbeddingIndexService,
+        wire_media,
+        wire_observations,
+    )
+    from backend.services.media_search import MediaSearchService
+
+    container.embedding_index_service = EmbeddingIndexService(
+        index=container.embedding_index,
+        embedder=container.multimodal_embedder,
+        objects=container.objects,
+        passages=container.passage_index,
+        runner=container.job_runner,
+    )
+    container.embedding_index_service.register_jobs()
+    container.media_search = MediaSearchService(
+        index=container.embedding_index, embedder=container.multimodal_embedder
+    )
+    wire_media(container.media_service, container.embedding_index_service)
+    # Reviewed captions, and notes an archive restores, reach the index at once.
+    wire_observations(container.media_observations, container.embedding_index_service)
+    # Pictures found by meaning join the scene's context after the linked ones (CTX-013).
+    container.context_service.search = container.media_search
     return container

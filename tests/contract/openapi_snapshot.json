@@ -2073,7 +2073,7 @@
                 "items": {
                   "$ref": "#/components/schemas/CheckPass"
                 },
-                "maxItems": 5,
+                "maxItems": 6,
                 "type": "array"
               },
               {
@@ -3528,7 +3528,8 @@
           "continuity",
           "plan",
           "voice",
-          "clarity"
+          "clarity",
+          "pictures"
         ],
         "title": "CheckPass",
         "type": "string"
@@ -3958,6 +3959,51 @@
         "title": "ConditionStateModel",
         "type": "object"
       },
+      "ContextChoice": {
+        "description": "What the author chose for a picture in the assistant's context.",
+        "enum": [
+          "send",
+          "describe",
+          "leave_out"
+        ],
+        "title": "ContextChoice",
+        "type": "string"
+      },
+      "ContextChoiceModel": {
+        "properties": {
+          "asset_id": {
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "choice": {
+            "$ref": "#/components/schemas/ContextChoice"
+          },
+          "words": {
+            "title": "Words",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset_id",
+          "choice",
+          "words"
+        ],
+        "title": "ContextChoiceModel",
+        "type": "object"
+      },
+      "ContextChoiceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "choice": {
+            "$ref": "#/components/schemas/ContextChoice"
+          }
+        },
+        "required": [
+          "choice"
+        ],
+        "title": "ContextChoiceRequest",
+        "type": "object"
+      },
       "ContextComparisonModel": {
         "properties": {
           "added": {
@@ -4060,6 +4106,16 @@
               }
             ],
             "title": "Location"
+          },
+          "picture": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContextPictureModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "pinned": {
             "title": "Pinned",
@@ -4164,6 +4220,40 @@
           "type"
         ],
         "title": "ContextNode",
+        "type": "object"
+      },
+      "ContextPictureModel": {
+        "description": "A picture in the context: which version, and how it is meant to reach the model\n(CTX-013). Whether it actually went as a picture depends on the assistant used, and\nis recorded with each request.",
+        "properties": {
+          "asset_id": {
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "choice": {
+            "title": "Choice",
+            "type": "string"
+          },
+          "representation": {
+            "title": "Representation",
+            "type": "string"
+          },
+          "representation_words": {
+            "title": "Representation Words",
+            "type": "string"
+          },
+          "version_id": {
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset_id",
+          "version_id",
+          "choice",
+          "representation",
+          "representation_words"
+        ],
+        "title": "ContextPictureModel",
         "type": "object"
       },
       "ContextRequest": {
@@ -5170,6 +5260,45 @@
           "reasons"
         ],
         "title": "DependentModel",
+        "type": "object"
+      },
+      "DescribeEstimateModel": {
+        "properties": {
+          "completion_tokens": {
+            "title": "Completion Tokens",
+            "type": "integer"
+          },
+          "prompt_tokens": {
+            "title": "Prompt Tokens",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "sees_pictures": {
+            "title": "Sees Pictures",
+            "type": "boolean"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "prompt_tokens",
+          "completion_tokens",
+          "total_tokens",
+          "sees_pictures"
+        ],
+        "title": "DescribeEstimateModel",
         "type": "object"
       },
       "Direction": {
@@ -8039,9 +8168,42 @@
             "title": "Created At",
             "type": "string"
           },
+          "has_thumbnail": {
+            "default": false,
+            "title": "Has Thumbnail",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "processing": {
+            "anyOf": [
+              {
+                "enum": [
+                  "queued",
+                  "processing",
+                  "ready",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processing"
+          },
+          "processing_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processing Message"
           },
           "shown": {
             "title": "Shown",
@@ -8067,6 +8229,18 @@
       "LinkAssetOp": {
         "additionalProperties": false,
         "properties": {
+          "applies_from": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applies From"
+          },
           "asset_id": {
             "title": "Asset Id",
             "type": "string"
@@ -8094,6 +8268,13 @@
             "title": "Id",
             "type": "string"
           },
+          "known_by": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Known By",
+            "type": "array"
+          },
           "op": {
             "const": "link_asset",
             "default": "link_asset",
@@ -8113,6 +8294,17 @@
             "default": "entity",
             "title": "Target Record Type",
             "type": "string"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visibility"
           }
         },
         "required": [
@@ -8121,6 +8313,46 @@
           "target_id"
         ],
         "title": "LinkAssetOp",
+        "type": "object"
+      },
+      "LinkChangeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "applies_from": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applies From"
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "known_by": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Known By",
+            "type": "array"
+          },
+          "secret": {
+            "default": false,
+            "title": "Secret",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "title": "LinkChangeRequest",
         "type": "object"
       },
       "LinkRequest": {
@@ -9249,6 +9481,237 @@
         "title": "NodeUpdateItem",
         "type": "object"
       },
+      "ObservationModel": {
+        "properties": {
+          "asset_version_id": {
+            "title": "Asset Version Id",
+            "type": "string"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "corrected_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corrected Text"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current": {
+            "title": "Current",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "prompt_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Version"
+          },
+          "proposal_mutation_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Mutation Set Id"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ObservationRegionModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "subject_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Name"
+          },
+          "subject_record_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Record Id"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "words": {
+            "title": "Words",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "asset_version_id",
+          "kind",
+          "text",
+          "words",
+          "state",
+          "created_at",
+          "current"
+        ],
+        "title": "ObservationModel",
+        "type": "object"
+      },
+      "ObservationProposeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "entity_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          }
+        },
+        "title": "ObservationProposeRequest",
+        "type": "object"
+      },
+      "ObservationRegionModel": {
+        "properties": {
+          "height": {
+            "title": "Height",
+            "type": "number"
+          },
+          "width": {
+            "title": "Width",
+            "type": "number"
+          },
+          "x": {
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "width",
+          "height"
+        ],
+        "title": "ObservationRegionModel",
+        "type": "object"
+      },
+      "ObservationReviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "corrected_text": {
+            "anyOf": [
+              {
+                "maxLength": 1200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corrected Text"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/ReviewDecision"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "title": "ObservationReviewRequest",
+        "type": "object"
+      },
       "OpenItemModel": {
         "properties": {
           "code": {
@@ -9635,12 +10098,251 @@
             },
             "title": "Items",
             "type": "array"
+          },
+          "storage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StorageModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "items"
         ],
         "title": "PictureLibraryModel",
+        "type": "object"
+      },
+      "PictureLinkModel": {
+        "properties": {
+          "applies_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applies From"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "known_by": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Known By",
+            "type": "array"
+          },
+          "known_by_names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Known By Names",
+            "type": "array"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "role_words": {
+            "title": "Role Words",
+            "type": "string"
+          },
+          "secret": {
+            "title": "Secret",
+            "type": "boolean"
+          },
+          "target_kind": {
+            "title": "Target Kind",
+            "type": "string"
+          },
+          "target_name": {
+            "title": "Target Name",
+            "type": "string"
+          },
+          "target_record_id": {
+            "title": "Target Record Id",
+            "type": "string"
+          },
+          "target_record_type": {
+            "title": "Target Record Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "role_words",
+          "target_record_type",
+          "target_record_id",
+          "target_name",
+          "target_kind",
+          "secret",
+          "known_by",
+          "known_by_names"
+        ],
+        "title": "PictureLinkModel",
+        "type": "object"
+      },
+      "PictureModel": {
+        "properties": {
+          "asset_id": {
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "context_choice": {
+            "$ref": "#/components/schemas/ContextChoice"
+          },
+          "context_choice_words": {
+            "title": "Context Choice Words",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/PictureLinkModel"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/components/schemas/ObservationModel"
+            },
+            "title": "Observations",
+            "type": "array"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "version": {
+            "$ref": "#/components/schemas/PictureVersionModel"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/PictureVersionModel"
+            },
+            "title": "Versions",
+            "type": "array"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "required": [
+          "asset_id",
+          "name",
+          "version",
+          "versions",
+          "links",
+          "observations",
+          "context_choice",
+          "context_choice_words",
+          "description",
+          "revision"
+        ],
+        "title": "PictureModel",
+        "type": "object"
+      },
+      "PictureVersionModel": {
+        "properties": {
+          "attribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attribution"
+          },
+          "byte_length": {
+            "title": "Byte Length",
+            "type": "integer"
+          },
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "licence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Licence"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "content_type",
+          "byte_length",
+          "created_at"
+        ],
+        "title": "PictureVersionModel",
         "type": "object"
       },
       "PlacedEventModel": {
@@ -10189,6 +10891,104 @@
         "title": "PremiseModel",
         "type": "object"
       },
+      "ProcessingModel": {
+        "description": "How far a picture is in being prepared (its smaller copies), in plain words.",
+        "properties": {
+          "attempts": {
+            "default": 0,
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "copies": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Copies",
+            "type": "array"
+          },
+          "current": {
+            "default": false,
+            "title": "Current",
+            "type": "boolean"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "helps": {
+            "default": false,
+            "title": "Helps",
+            "type": "boolean"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "retryable": {
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "queued",
+                  "processing",
+                  "ready",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "required": [
+          "status",
+          "retryable"
+        ],
+        "title": "ProcessingModel",
+        "type": "object"
+      },
       "ProjectModel": {
         "properties": {
           "created_at": {
@@ -10505,6 +11305,23 @@
           "why"
         ],
         "title": "ProposedBeliefModel",
+        "type": "object"
+      },
+      "ProposedFactModel": {
+        "properties": {
+          "mutation_id": {
+            "title": "Mutation Id",
+            "type": "string"
+          },
+          "observation": {
+            "$ref": "#/components/schemas/ObservationModel"
+          }
+        },
+        "required": [
+          "observation",
+          "mutation_id"
+        ],
+        "title": "ProposedFactModel",
         "type": "object"
       },
       "Proposition": {
@@ -11089,6 +11906,50 @@
         "title": "RecordedClaimModel",
         "type": "object"
       },
+      "RegionRequest": {
+        "properties": {
+          "height": {
+            "minimum": 1.0,
+            "title": "Height",
+            "type": "integer"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "width": {
+            "minimum": 1.0,
+            "title": "Width",
+            "type": "integer"
+          },
+          "x": {
+            "minimum": 0.0,
+            "title": "X",
+            "type": "integer"
+          },
+          "y": {
+            "minimum": 0.0,
+            "title": "Y",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "width",
+          "height"
+        ],
+        "title": "RegionRequest",
+        "type": "object"
+      },
       "Relative": {
         "additionalProperties": false,
         "description": "So long before or after an event: \"three years before the war\".",
@@ -11495,6 +12356,15 @@
         "title": "RevertPreviewRequest",
         "type": "object"
       },
+      "ReviewDecision": {
+        "enum": [
+          "accept",
+          "correct",
+          "reject"
+        ],
+        "title": "ReviewDecision",
+        "type": "string"
+      },
       "ReviewDecisionModel": {
         "properties": {
           "actor_user_id": {
@@ -11575,7 +12445,7 @@
                 "items": {
                   "$ref": "#/components/schemas/CheckPass"
                 },
-                "maxItems": 5,
+                "maxItems": 6,
                 "type": "array"
               },
               {
@@ -12889,6 +13759,81 @@
         "title": "SectionModel",
         "type": "object"
       },
+      "SegmentListModel": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SegmentModel"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SegmentListModel",
+        "type": "object"
+      },
+      "SegmentModel": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "whole",
+              "region"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          },
+          "x": {
+            "title": "X",
+            "type": "integer"
+          },
+          "y": {
+            "title": "Y",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "x",
+          "y",
+          "width",
+          "height",
+          "created_at"
+        ],
+        "title": "SegmentModel",
+        "type": "object"
+      },
       "Selector": {
         "additionalProperties": false,
         "description": "Which entries a rule is about. Every part given must match.",
@@ -13315,6 +14260,24 @@
           "name"
         ],
         "title": "StartWhatIfRequest",
+        "type": "object"
+      },
+      "StorageModel": {
+        "properties": {
+          "quota_bytes": {
+            "title": "Quota Bytes",
+            "type": "integer"
+          },
+          "used_bytes": {
+            "title": "Used Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "used_bytes",
+          "quota_bytes"
+        ],
+        "title": "StorageModel",
         "type": "object"
       },
       "StoryAssistantSettingsModel": {
@@ -17968,8 +18931,82 @@
     },
     "/api/v1/projects/{project_id}/assets/{asset_id}/versions/{version_id}/content": {
       "get": {
-        "description": "The image bytes of one media version, for members of the project.",
+        "description": "The image bytes of one media version, for members of the project.\n\n``size`` asks for a smaller copy (``thumbnail`` 256px, ``web`` 1024px, WebP with no\nmetadata); when that copy is not made yet the original is sent. The\n``X-Picture-Size`` header says which was sent.",
         "operationId": "get_version_content_api_v1_projects__project_id__assets__asset_id__versions__version_id__content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "title": "Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": "original",
+              "enum": [
+                "thumbnail",
+                "web",
+                "original"
+              ],
+              "title": "Size",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Version Content",
+        "tags": [
+          "media"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/assets/{asset_id}/versions/{version_id}/processing": {
+      "get": {
+        "description": "How far this picture is in being prepared, and why it failed if it did.",
+        "operationId": "get_processing_api_v1_projects__project_id__assets__asset_id__versions__version_id__processing_get",
         "parameters": [
           {
             "in": "path",
@@ -18003,7 +19040,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ProcessingModel"
+                }
               }
             },
             "description": "Successful Response"
@@ -18019,7 +19058,68 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Get Version Content",
+        "summary": "Get Processing",
+        "tags": [
+          "media"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/assets/{asset_id}/versions/{version_id}/processing/retry": {
+      "post": {
+        "description": "Prepare this picture again. A picture already prepared from these bytes by the\nprocessor this server runs is left as it is; asking twice queues it once.",
+        "operationId": "retry_processing_api_v1_projects__project_id__assets__asset_id__versions__version_id__processing_retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcessingModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Processing",
         "tags": [
           "media"
         ]
@@ -18082,6 +19182,205 @@
           }
         },
         "summary": "Retire Version",
+        "tags": [
+          "media"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/assets/{asset_id}/versions/{version_id}/segments": {
+      "get": {
+        "description": "The whole picture (once prepared) and the parts of it the author marked.",
+        "operationId": "list_segments_api_v1_projects__project_id__assets__asset_id__versions__version_id__segments_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SegmentListModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Segments",
+        "tags": [
+          "media"
+        ]
+      },
+      "post": {
+        "description": "Mark a rectangle of a prepared picture, in pixels of the picture as shown.",
+        "operationId": "add_region_api_v1_projects__project_id__assets__asset_id__versions__version_id__segments_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SegmentModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Region",
+        "tags": [
+          "media"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/assets/{asset_id}/versions/{version_id}/segments/{segment_id}/retire": {
+      "post": {
+        "operationId": "retire_region_api_v1_projects__project_id__assets__asset_id__versions__version_id__segments__segment_id__retire_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "title": "Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "segment_id",
+            "required": true,
+            "schema": {
+              "title": "Segment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SegmentModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retire Region",
         "tags": [
           "media"
         ]
@@ -19470,7 +20769,7 @@
                   "items": {
                     "$ref": "#/components/schemas/CheckPass"
                   },
-                  "maxItems": 5,
+                  "maxItems": 6,
                   "type": "array"
                 },
                 {
@@ -24329,9 +25628,133 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/observations/{observation_id}/propose": {
+      "post": {
+        "description": "Offer an accepted appearance detail as a fact about its entry. It goes to the\nreview queue as a suggestion from the assistant and changes nothing until approved.",
+        "operationId": "propose_observation_api_v1_projects__project_id__observations__observation_id__propose_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "observation_id",
+            "required": true,
+            "schema": {
+              "title": "Observation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObservationProposeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposedFactModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propose Observation",
+        "tags": [
+          "pictures"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/observations/{observation_id}/review": {
+      "post": {
+        "description": "Accept, correct or reject what a model saw in a picture. The story is unchanged.",
+        "operationId": "review_observation_api_v1_projects__project_id__observations__observation_id__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "observation_id",
+            "required": true,
+            "schema": {
+              "title": "Observation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObservationReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObservationModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review Observation",
+        "tags": [
+          "pictures"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/pictures": {
       "get": {
-        "description": "Every picture in the story that can be shown, newest first, including those\nshown nowhere now. Choosing one links it again; nothing is copied.",
+        "description": "Every picture in the story that can be shown, newest first, including those\nshown nowhere now. Choosing one links it again; nothing is copied. Each says how far\nits preparation is, and the workspace's room for pictures is given once.",
         "operationId": "picture_library_api_v1_projects__project_id__pictures_get",
         "parameters": [
           {
@@ -24369,6 +25792,313 @@
         "summary": "Picture Library",
         "tags": [
           "media"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/pictures/{asset_id}": {
+      "get": {
+        "description": "The picture inspector: details, where it is shown, what a model saw, the choice.",
+        "operationId": "get_picture_api_v1_projects__project_id__pictures__asset_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PictureModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Picture",
+        "tags": [
+          "pictures"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/pictures/{asset_id}/context": {
+      "put": {
+        "description": "Send the picture, use its description, or leave it out of the assistant's context.",
+        "operationId": "set_context_choice_api_v1_projects__project_id__pictures__asset_id__context_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContextChoiceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextChoiceModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Context Choice",
+        "tags": [
+          "pictures"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/pictures/{asset_id}/describe": {
+      "post": {
+        "description": "Ask the assistant to describe the picture, as a background job (``media_describe``).\nWhat it sees comes back as observations to accept, correct or reject.",
+        "operationId": "describe_picture_api_v1_projects__project_id__pictures__asset_id__describe_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Describe Picture",
+        "tags": [
+          "pictures"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/pictures/{asset_id}/describe/estimate": {
+      "get": {
+        "description": "What describing the picture would use, before anything is sent.",
+        "operationId": "describe_estimate_api_v1_projects__project_id__pictures__asset_id__describe_estimate_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DescribeEstimateModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Describe Estimate",
+        "tags": [
+          "pictures"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/pictures/{asset_id}/links/{link_id}": {
+      "put": {
+        "description": "Say who may know what the picture shows here, and from when it applies (AST-004).\nThe link is replaced by a new one in one change; the story's history keeps both.",
+        "operationId": "change_picture_link_api_v1_projects__project_id__pictures__asset_id__links__link_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "link_id",
+            "required": true,
+            "schema": {
+              "title": "Link Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PictureModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Picture Link",
+        "tags": [
+          "pictures"
         ]
       }
     },
@@ -25361,7 +27091,7 @@
                   "items": {
                     "$ref": "#/components/schemas/CheckPass"
                   },
-                  "maxItems": 5,
+                  "maxItems": 6,
                   "type": "array"
                 },
                 {

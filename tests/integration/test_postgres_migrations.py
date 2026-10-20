@@ -28,7 +28,7 @@ def test_upgrade_is_idempotent_and_downgrades(disposable_database, pg_engine) ->
             is not None
         )
         assert (
-            connection.execute(text("SELECT to_regclass('public.vector_documents')")).scalar()
+            connection.execute(text("SELECT to_regclass('public.embedding_vectors')")).scalar()
             is not None
         )
         assert (
@@ -46,7 +46,7 @@ def test_upgrade_is_idempotent_and_downgrades(disposable_database, pg_engine) ->
             is None
         )
         assert (
-            connection.execute(text("SELECT to_regclass('public.vector_documents')")).scalar()
+            connection.execute(text("SELECT to_regclass('public.embedding_vectors')")).scalar()
             is None
         )
 

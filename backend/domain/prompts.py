@@ -165,7 +165,8 @@ _SPECS = (
     PromptSpec(
         "scene-draft",
         # 3: the scene's conditions are given with its context (STY-005).
-        3,
+        # 4: the names of the pictures sent go inside the material's markers (CTX-013).
+        4,
         "A draft of one scene, in the author's voice, for them to keep or discard.",
         _S + "studio_service:draft_messages",
     ),
@@ -204,6 +205,22 @@ _SPECS = (
         "Notes quoting passages of a scene a reader could find hard to follow.",
         _S + "scene_checks:clarity_messages",
         _S + "scene_checks:CheckNotes",
+    ),
+    PromptSpec(
+        "check-pictures",
+        1,
+        "Notes quoting a scene where it describes someone or somewhere differently from "
+        "their pictures, naming the picture; the pictures go with the request.",
+        _S + "scene_checks:pictures_messages",
+        _S + "scene_checks:PictureNotes",
+    ),
+    PromptSpec(
+        "describe-picture",
+        1,
+        "A caption and appearance details of one picture, for the author to review; the "
+        "picture goes with the request.",
+        _S + "media_observations:describe_messages",
+        _S + "media_observations:PictureDescription",
     ),
     PromptSpec(
         "scene-plan-card",

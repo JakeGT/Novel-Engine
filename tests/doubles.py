@@ -517,7 +517,15 @@ class DisabledEmbeddingProvider:
 class ScriptedAIGateway:
     """Application/AI gateway fake. Queue a BaseException to simulate failure."""
 
-    def __init__(self, responses: list[Any] | None = None, available: bool = True) -> None:
+    def __init__(
+        self,
+        responses: list[Any] | None = None,
+        available: bool = True,
+        *,
+        sees_images: bool = False,
+        max_images: int = 4,
+        max_image_bytes: int = 5 * 1024 * 1024,
+    ) -> None:
         self._responses = list(responses or [])
         self._index = 0
         self._available = available
@@ -525,12 +533,27 @@ class ScriptedAIGateway:
         self.closed = False
         self.models: Any = ["model-a", "model-b"]
         self.model_list_calls: list[dict[str, Any]] = []
+        # CTX-013: a scripted route is text only unless a test says it can see pictures.
+        self.sees_images = sees_images
+        self.max_images = max_images
+        self.max_image_bytes = max_image_bytes
+        # Pictures the route refused before anything was "sent" (nothing was spent).
+        self.refused: list[dict[str, Any]] = []
 
     def is_available(self) -> bool:
         return self._available
 
-    def capabilities(self) -> ProviderCapabilities:
-        return ProviderCapabilities(provider="scripted", model="scripted")
+    def capabilities(self, *, base_url: str | None = None) -> ProviderCapabilities:
+        if not self.sees_images:
+            return ProviderCapabilities(provider="scripted", model="scripted")
+        return ProviderCapabilities(
+            provider="scripted",
+            model="scripted",
+            input_modalities=frozenset({"text", "image"}),
+            max_images=self.max_images,
+            max_image_bytes=self.max_image_bytes,
+            image_types=frozenset({"image/png", "image/jpeg", "image/webp"}),
+        )
 
     async def aclose(self) -> None:
         self.closed = True
@@ -546,7 +569,17 @@ class ScriptedAIGateway:
         model: str | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
+        images: Any = (),
     ) -> StructuredResponse:
+        from backend.adapters.ai import check_images
+
+        try:
+            # The real gateway's own check: a picture the route cannot take is refused
+            # before anything is sent.
+            check_images(list(images), self.capabilities(base_url=base_url))
+        except Exception:
+            self.refused.append({"images": list(images), "response_format": response_format})
+            raise
         self.calls.append(
             {
                 "messages": messages,
@@ -556,6 +589,7 @@ class ScriptedAIGateway:
                 "base_url": base_url,
                 # What the real gateway would use: the workspace's choice, when there is one.
                 "route_model": request_model(),
+                "images": list(images),
             }
         )
         if self._index >= len(self._responses):
@@ -577,9 +611,16 @@ class ScriptedAIGateway:
         model: str | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
+        images: Any = (),
     ) -> Any:
+        from backend.adapters.ai import check_images
         from backend.ports import AIUsage, TextResponse
 
+        try:
+            check_images(list(images), self.capabilities(base_url=base_url))
+        except Exception:
+            self.refused.append({"images": list(images), "text": True})
+            raise
         self.calls.append(
             {
                 "messages": messages,
@@ -589,6 +630,7 @@ class ScriptedAIGateway:
                 "base_url": base_url,
                 "route_model": request_model(),
                 "text": True,
+                "images": list(images),
             }
         )
         if self._index >= len(self._responses):
@@ -3368,6 +3410,9 @@ class InMemoryCanonRepository:
                 target_record_id=operation.target_id,
                 provenance_id=provenance_id,
                 created_revision=revision,
+                visibility=operation.visibility or "open",
+                known_by=list(operation.known_by),
+                applies_from=operation.applies_from,
             )
         elif isinstance(operation, RetireAssetLinkOp) and key in self.asset_links:
             self.asset_links[key] = self.asset_links[key].model_copy(
@@ -4886,12 +4931,15 @@ class InMemoryJobStore:
         return None
 
     async def count_active(self, *, workspace_id, project_id, actor_user_id):
+        from backend.domain.jobs import UNCOUNTED_KINDS
+
         return sum(
             1
             for job in self.jobs.values()
             if (job.workspace_id, job.project_id, job.actor_user_id)
             == (workspace_id, project_id, actor_user_id)
             and not job.status.finished
+            and job.kind not in UNCOUNTED_KINDS
         )
 
     async def recent(self, *, workspace_id, project_id, kind, plan_id, limit=10, branch_id="any"):
@@ -5388,3 +5436,429 @@ class InMemoryConsistencyRunStore:
         ]
         found.sort(key=lambda run: (run.created_at, run.id), reverse=True)
         return found[:limit]
+
+
+class InMemoryObservationStore:
+    """What a model saw in pictures (AST-005) and each picture's context choice."""
+
+    def __init__(self) -> None:
+        self.observations: dict[tuple[str, str, str], Any] = {}
+        self.order: list[tuple[str, str, str]] = []
+        self.choices: dict[tuple[str, str, str], Any] = {}
+
+    async def add(self, observations: Any) -> None:
+        for observation in observations:
+            key = (observation.workspace_id, observation.project_id, observation.id)
+            if key in self.observations:
+                continue
+            self.observations[key] = observation
+            self.order.append(key)
+
+    async def save(self, observation: Any) -> None:
+        key = (observation.workspace_id, observation.project_id, observation.id)
+        if key in self.observations:
+            self.observations[key] = observation
+
+    async def get(self, *, workspace_id: str, project_id: str, observation_id: str) -> Any:
+        return self.observations.get((workspace_id, project_id, observation_id))
+
+    async def for_assets(self, *, workspace_id: str, project_id: str, asset_ids: Any) -> list[Any]:
+        wanted = set(asset_ids)
+        return [
+            self.observations[key]
+            for key in self.order
+            if key[:2] == (workspace_id, project_id) and self.observations[key].asset_id in wanted
+        ]
+
+    async def all(self, *, workspace_id: str, project_id: str) -> list[Any]:
+        return [
+            self.observations[key] for key in self.order if key[:2] == (workspace_id, project_id)
+        ]
+
+    async def get_choices(self, *, workspace_id: str, project_id: str, asset_ids: Any) -> dict:
+        return {
+            asset_id: self.choices[(workspace_id, project_id, asset_id)]
+            for asset_id in asset_ids
+            if (workspace_id, project_id, asset_id) in self.choices
+        }
+
+    async def set_choice(
+        self, *, workspace_id: str, project_id: str, asset_id: str, choice: Any
+    ) -> bool:
+        self.choices[(workspace_id, project_id, asset_id)] = choice
+        return True
+
+    async def delete_project(self, *, workspace_id: str, project_id: str) -> int:
+        doomed = [key for key in self.order if key[:2] == (workspace_id, project_id)]
+        for key in doomed:
+            del self.observations[key]
+        self.order = [key for key in self.order if key[:2] != (workspace_id, project_id)]
+        for key in [key for key in self.choices if key[:2] == (workspace_id, project_id)]:
+            del self.choices[key]
+        return len(doomed)
+
+
+# ------------------------------------------------- picture processing (AST-003, area A)
+
+
+class InMemoryMediaProcessingStore:
+    """Processing state, smaller copies and segments of picture versions, in memory.
+
+    Reads picture versions from the ``InMemoryMediaStore`` it is given, as the PostgreSQL
+    store joins ``media_asset_versions``."""
+
+    def __init__(self, media: Any = None) -> None:
+        self.media = media
+        self.states: dict[tuple[str, str, str], Any] = {}
+        self.variants: dict[tuple[str, str, str], dict[str, Any]] = {}
+        self.segments: dict[tuple[str, str, str], Any] = {}
+
+    async def get_processing(self, *, workspace_id, project_id, version_id):
+        return self.states.get((workspace_id, project_id, version_id))
+
+    async def list_processing(self, *, workspace_id, project_id, version_ids):
+        return {
+            vid: self.states[(workspace_id, project_id, vid)]
+            for vid in version_ids
+            if (workspace_id, project_id, vid) in self.states
+        }
+
+    async def queue(
+        self, *, workspace_id, project_id, version_id, asset_id, checksum, processor_version, job_id
+    ):
+        from backend.domain.media import MediaProcessing, ProcessingStatus
+
+        key = (workspace_id, project_id, version_id)
+        old = self.states.get(key)
+        state = MediaProcessing(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            asset_version_id=version_id,
+            asset_id=asset_id,
+            status=ProcessingStatus.QUEUED,
+            processor_version=processor_version,
+            source_checksum=checksum,
+            attempts=old.attempts if old is not None else 0,
+            width=old.width if old is not None else None,
+            height=old.height if old is not None else None,
+            detected_format=old.detected_format if old is not None else None,
+            job_id=job_id,
+            queued_at=datetime.now(UTC),
+        )
+        self.states[key] = state
+        return state
+
+    async def start(self, *, workspace_id, project_id, version_id):
+        from backend.domain.media import ProcessingStatus
+
+        key = (workspace_id, project_id, version_id)
+        state = self.states.get(key)
+        if state is None:
+            return None
+        self.states[key] = state.model_copy(
+            update={
+                "status": ProcessingStatus.PROCESSING,
+                "attempts": state.attempts + 1,
+                "failure_code": None,
+                "started_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
+            }
+        )
+        return self.states[key]
+
+    async def fail(self, *, workspace_id, project_id, version_id, failure_code):
+        from backend.domain.media import ProcessingStatus
+
+        key = (workspace_id, project_id, version_id)
+        if key in self.states:
+            self.states[key] = self.states[key].model_copy(
+                update={
+                    "status": ProcessingStatus.FAILED,
+                    "failure_code": failure_code,
+                    "finished_at": datetime.now(UTC),
+                }
+            )
+
+    async def complete(
+        self,
+        *,
+        workspace_id,
+        project_id,
+        version_id,
+        width,
+        height,
+        detected_format,
+        variants,
+        whole,
+    ):
+        from backend.domain.media import ProcessingStatus
+
+        key = (workspace_id, project_id, version_id)
+        old = self.variants.get(key, {})
+        self.variants[key] = {variant.kind.value: variant for variant in variants}
+        existing = next(
+            (
+                s
+                for s in self.segments.values()
+                if (s.workspace_id, s.project_id, s.asset_version_id) == key
+                and s.kind.value == "whole"
+            ),
+            None,
+        )
+        if existing is not None:
+            self.segments[(workspace_id, project_id, existing.id)] = existing.model_copy(
+                update={"width": whole.width, "height": whole.height, "retired_at": None}
+            )
+        else:
+            self.segments[(workspace_id, project_id, whole.id)] = whole
+        if key in self.states:
+            self.states[key] = self.states[key].model_copy(
+                update={
+                    "status": ProcessingStatus.READY,
+                    "failure_code": None,
+                    "width": width,
+                    "height": height,
+                    "detected_format": detected_format,
+                    "finished_at": datetime.now(UTC),
+                }
+            )
+        kept = {variant.object_key for variant in variants}
+        return [v.object_key for v in old.values() if v.object_key not in kept]
+
+    async def get_variant(self, *, workspace_id, project_id, version_id, kind):
+        return self.variants.get((workspace_id, project_id, version_id), {}).get(kind.value)
+
+    async def list_variants(self, *, workspace_id, project_id, version_ids):
+        return {
+            vid: sorted(
+                self.variants[(workspace_id, project_id, vid)].values(),
+                key=lambda v: v.kind.value,
+            )
+            for vid in version_ids
+            if self.variants.get((workspace_id, project_id, vid))
+        }
+
+    async def variant_object_keys(self, *, workspace_id, project_id):
+        return {
+            variant.object_key
+            for (w, p, _), found in self.variants.items()
+            if (w, p) == (workspace_id, project_id)
+            for variant in found.values()
+        }
+
+    async def known_object_keys(self, *, workspace_id, project_id):
+        keys = await self.variant_object_keys(workspace_id=workspace_id, project_id=project_id)
+        if self.media is not None:
+            keys |= {
+                version.object_key
+                for (w, p, _), version in self.media.versions.items()
+                if (w, p) == (workspace_id, project_id)
+            }
+        return keys
+
+    async def remove_variants(self, *, workspace_id, project_id, version_id):
+        key = (workspace_id, project_id, version_id)
+        removed = [v.object_key for v in self.variants.pop(key, {}).values()]
+        for skey, segment in list(self.segments.items()):
+            if (segment.workspace_id, segment.project_id, segment.asset_version_id) == key:
+                self.segments[skey] = segment.model_copy(
+                    update={"retired_at": segment.retired_at or datetime.now(UTC)}
+                )
+        self.states.pop(key, None)
+        return removed
+
+    async def list_segments(self, *, workspace_id, project_id, version_id):
+        found = [
+            s
+            for s in self.segments.values()
+            if (s.workspace_id, s.project_id, s.asset_version_id)
+            == (workspace_id, project_id, version_id)
+            and s.retired_at is None
+        ]
+        return sorted(found, key=lambda s: (s.kind.value != "whole", s.created_at, s.id))
+
+    async def list_regions(self, *, workspace_id, project_id):
+        return sorted(
+            (
+                s
+                for s in self.segments.values()
+                if (s.workspace_id, s.project_id) == (workspace_id, project_id)
+                and s.kind.value == "region"
+                and s.retired_at is None
+            ),
+            key=lambda s: (s.created_at, s.id),
+        )
+
+    async def add_segment(self, segment):
+        key = (segment.workspace_id, segment.project_id, segment.id)
+        if key in self.segments:
+            self.segments[key] = self.segments[key].model_copy(update={"label": segment.label})
+        else:
+            self.segments[key] = segment
+        return self.segments[key]
+
+    async def retire_segment(self, *, workspace_id, project_id, segment_id):
+        key = (workspace_id, project_id, segment_id)
+        segment = self.segments.get(key)
+        if segment is None or segment.kind.value != "region" or segment.retired_at is not None:
+            return None
+        self.segments[key] = segment.model_copy(update={"retired_at": datetime.now(UTC)})
+        return self.segments[key]
+
+    async def workspace_bytes(self, *, workspace_id):
+        total = sum(
+            variant.byte_length
+            for (w, _, _), found in self.variants.items()
+            if w == workspace_id
+            for variant in found.values()
+        )
+        if self.media is not None:
+            total += sum(
+                version.byte_length
+                for (w, _, _), version in self.media.versions.items()
+                if w == workspace_id
+            )
+        return total
+
+    async def lag(self):
+        now = datetime.now(UTC)
+        waiting = [s for s in self.states.values() if s.status.value in ("queued", "processing")]
+        oldest = max(((now - s.queued_at).total_seconds() for s in waiting), default=None)
+        return {
+            "waiting": len(waiting),
+            "oldest_seconds": oldest,
+            "failed": sum(1 for s in self.states.values() if s.status.value == "failed"),
+        }
+
+    async def pending_versions(
+        self,
+        *,
+        processor_version,
+        content_types,
+        workspace_id=None,
+        project_id=None,
+        limit=500,
+        include_failed=False,
+        stale_seconds=3600,
+    ):
+        from backend.adapters.media_store import PendingVersion
+
+        if self.media is None:
+            return []
+        now = datetime.now(UTC)
+        found = []
+        for (w, p, vid), version in sorted(
+            self.media.versions.items(), key=lambda item: item[1].created_at
+        ):
+            if workspace_id is not None and w != workspace_id:
+                continue
+            if project_id is not None and p != project_id:
+                continue
+            asset = self.media.assets.get((w, p, version.asset_id))
+            if asset is None or asset.lifecycle.value != "active":
+                continue
+            if version.retired_revision is not None or version.content_type not in content_types:
+                continue
+            state = self.states.get((w, p, vid))
+            due = (
+                state is None
+                or (
+                    state.status.value in ("queued", "processing")
+                    and (now - state.updated_at).total_seconds() > stale_seconds
+                )
+                or (
+                    state.status.value in ("ready", "failed")
+                    and (
+                        state.processor_version != processor_version
+                        or state.source_checksum != version.checksum
+                    )
+                )
+                or (include_failed and state.status.value == "failed")
+            )
+            if not due:
+                continue
+            actor = next(
+                (
+                    event.actor_user_id
+                    for event in self.media.events
+                    if event.asset_version_id == vid and event.actor_user_id
+                ),
+                None,
+            )
+            found.append(
+                PendingVersion(
+                    workspace_id=w,
+                    project_id=p,
+                    asset_id=version.asset_id,
+                    asset_version_id=vid,
+                    checksum=version.checksum,
+                    actor_user_id=actor,
+                )
+            )
+        return found[:limit]
+
+    async def retired_with_variants(self, *, limit=1000):
+        found = []
+        for (w, p, vid), copies in self.variants.items():
+            if not copies or self.media is None:
+                continue
+            version = self.media.versions.get((w, p, vid))
+            asset = self.media.assets.get((w, p, version.asset_id)) if version else None
+            if version is None or asset is None:
+                continue
+            if version.retired_revision is not None or asset.lifecycle.value != "active":
+                found.append((w, p, vid))
+        return found[:limit]
+
+    async def projects_with_media(self):
+        if self.media is None:
+            return []
+        return sorted({(w, p) for (w, p, _) in self.media.assets})
+
+    async def health(self):
+        return True
+
+
+class FakeImageProcessor:
+    """Stands in for the separate, limited decoder in service tests: answers from a script
+    (an ``ImageRejected`` code, or a size) without decoding anything."""
+
+    version = "pictures-1"
+
+    def __init__(self) -> None:
+        self.calls = 0
+        # Codes to fail with, in turn; then success.
+        self.failures: list[str] = []
+        self.size = (640, 480)
+
+    def capability(self) -> dict[str, Any]:
+        return {"available": True, "version": "fake", "isolated": False}
+
+    async def process(self, data: bytes) -> Any:
+        from backend.adapters.image_processor import (
+            VARIANT_SIZES,
+            ImageRejected,
+            ProcessedImage,
+            Rendition,
+        )
+
+        self.calls += 1
+        if self.failures:
+            raise ImageRejected(self.failures.pop(0))
+        width, height = self.size
+        renditions = []
+        for kind, side in sorted(VARIANT_SIZES.items(), key=lambda item: item[1]):
+            scale = min(1.0, side / max(width, height))
+            renditions.append(
+                Rendition(
+                    kind=kind,
+                    width=max(1, round(width * scale)),
+                    height=max(1, round(height * scale)),
+                    data=b"RIFF\x00\x00\x00\x00WEBP"
+                    + kind.encode()
+                    + hashlib.sha256(data).digest(),
+                )
+            )
+        return ProcessedImage(
+            width=width, height=height, detected_format="PNG", renditions=tuple(renditions)
+        )

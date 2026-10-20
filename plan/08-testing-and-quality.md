@@ -141,3 +141,33 @@ met; drafted-change quality is at or above its recorded baseline.
 
 Known gap: as of 2026-10-10 no test exercises a real model. The scripted model proves the
 plumbing and the validation, not the quality of what is drafted.
+
+## Evaluation sets (2026-10-20: CON-012, CTX-010, EXT-008, CON-013, QLT-003)
+
+Labelled evaluation sets live in `tests/eval/` under the `eval` marker. The deterministic ones run
+in `make test` (and so `make check`) and their numbers are pinned: a change to a check, a case or
+the context service must move them on purpose. `make eval` runs them again and writes one report,
+`var/eval/report.md` and `report.json` (ignored by git; counts, rates, timings and case ids only,
+never prose, secrets or keys). Every set is original synthetic text from one invented story, the
+Saltglass Ferry.
+
+| Set | What it measures | Needs a model? |
+|---|---|---|
+| `consistency/` (CON-012) | Detection, false positives, precision and leakage recall of the deterministic checks (continuity, story rules, knowledge timing, drafting checks, reveals, thread order, scene conditions) on 73 hand-labelled defects and near misses; latency per call and on a 300-scene story; cost (zero tokens). Every case a check gets wrong carries its reason, a stated limit or a suspected bug (the bug cases are also `xfail`). | No |
+| `consistency/bundles.py` (CON-013) | The deterministic review groups against full-context and vector-only bundling: tokens, groups, secrets shown, and whether each of eight labelled defects has its passages and records shown together. | No (the vector baseline is a word-overlap stand-in) |
+| `retrieval/` (CTX-010) | A scene's context against labels, built through the API: Recall@5/@10, recall, MRR, precision, leaks (secrets, later knowledge, ended facts, another line of the story) by record and in the rendered words, omissions said or silent, what-if correctness, the least budget. | No (search by meaning off) |
+| `extraction/` (EXT-008) | Reading prose into suggested changes, through the API, scored with `intake_eval.score_facts` overall and by kind of reading (name, alias, pronoun, epithet, new entry, narration, speech, disclosure), plus things only said that became facts and items the reading dropped. In CI the scripted model replays hand-written answers (with typical mistakes): this pins the harness and the pipeline's filtering, and **measures no model**. | Only for `make eval-model` |
+| `multimodal/` (area B, `make eval-media`) | Picture and words search on a stand-in embedder. | Only with a real embedder |
+
+What only the owner's real model can measure, and is not measured anywhere yet: how well a model
+reads prose into facts (`make eval-model` runs the four labelled passages against the configured
+provider after saying about how many tokens it takes and waiting for "yes"; it refuses in CI, and
+`EVAL_ARGS=--stand-in` runs the same path against the local stand-in with no spend), how many of
+the defects a model critic finds when shown them and how many false findings it adds, whether
+drafts are better with the chosen context, and the real token cost per finding. Until those exist
+the release gates "AI evaluation metrics meet the approved baseline" and "drafted-change quality is
+at or above its recorded baseline" cannot be met, and no threshold has been approved.
+
+The sets are small and probe each check's edges, so their rates describe the set, not how often a
+real manuscript goes wrong. Add a case for every repaired defect in a check, and a near miss for
+every case a check must leave alone.

@@ -10,7 +10,7 @@ import asyncio
 
 import pytest
 
-from backend.domain.check_passes import PASS_ORDER
+from backend.domain.check_passes import PASS_ORDER, CheckPass
 from backend.domain.studio import AssistantFinding
 from backend.ports import AIUsage, StructuredResponse
 from backend.services.scene_checks import CheckNote, CheckNotes
@@ -19,6 +19,9 @@ from tests.contract.test_studio import PROSE, _ids, _save, _scene_world, _scope_
 pytestmark = pytest.mark.contract
 
 ALL = [item.value for item in PASS_ORDER]
+# The passes that read the scene's words; the pictures pass makes no call on a scene with
+# no pictures it may use (tests/contract/test_picture_context.py).
+TEXT = [item.value for item in PASS_ORDER if item is not CheckPass.PICTURES]
 
 
 def _run(container) -> list:
@@ -47,7 +50,7 @@ def test_every_pass_runs_by_default_one_call_each_and_notes_say_which(auth_clien
         "voice": "the tide came in",
         "clarity": "waited at",
     }
-    for name in ALL:
+    for name in TEXT:
         fake_container.ai.queue(_answer(CheckNote(quote=quotes[name], problem=f"A {name} slip.")))
     started = _check(auth_client, w, scene)
     assert started.status_code == 202, started.text
@@ -59,7 +62,7 @@ def test_every_pass_runs_by_default_one_call_each_and_notes_say_which(auth_clien
     calls = fake_container.ai.calls
     assert len(calls) == 5 and all(call["response_format"] is CheckNotes for call in calls)
     notes = {note["check_pass"]: note for note in _studio(auth_client, w, scene)["assistant"]}
-    assert set(notes) == set(ALL)
+    assert set(notes) == set(TEXT)
     for name, note in notes.items():
         assert note["category"] == name and note["message"] == f"A {name} slip."
         assert PROSE[note["start"] : note["end"]] == quotes[name]

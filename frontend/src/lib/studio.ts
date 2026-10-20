@@ -94,10 +94,18 @@ export const NOTE_KINDS: Record<string, string> = {
   plan: 'Against the plan',
   voice: 'Your voice',
   clarity: 'Clarity',
+  pictures: 'Against its pictures',
 }
 
 /** The passes of a check with the assistant, in the order they run (CON-008). */
 export const PASS_ORDER: CheckPass[] = ['viewpoint', 'continuity', 'plan', 'voice', 'clarity']
+
+/**
+ * Every pass in order, the pictures pass last (CON-014). It is offered only for a scene
+ * with pictures it can use (its estimate is above nothing), and is not chosen unless the
+ * author ticks it.
+ */
+export const ALL_PASSES: CheckPass[] = [...PASS_ORDER, 'pictures']
 
 /** What each pass is called, while the server's own words are on their way. */
 export const PASS_NAMES: Record<CheckPass, string> = {
@@ -106,6 +114,7 @@ export const PASS_NAMES: Record<CheckPass, string> = {
   plan: 'What the plan asks for',
   voice: 'Your voice',
   clarity: 'Clarity',
+  pictures: 'What the pictures show',
 }
 
 /** A number of tokens as people read it: 12,400. */
@@ -199,6 +208,7 @@ export const JOB_DOING: Record<string, string> = {
   [READ_JOB]: 'The assistant is reading the scene into your story',
   [PLAN_JOB]: 'The assistant is filling in the plan card from the scene',
   story_audit: 'Auditing this part of the story',
+  media_describe: 'The assistant is looking at the picture',
 }
 
 /** Where an audit's results are read (CON-011). */

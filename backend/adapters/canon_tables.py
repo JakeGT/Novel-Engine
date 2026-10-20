@@ -8,6 +8,9 @@ table cannot be forgotten by one of them. Each table carries ``workspace_id`` an
 from __future__ import annotations
 
 CANON_PROJECT_TABLES: tuple[str, ...] = (
+    # Derived search vectors of every generation (CTX-012); the generations themselves
+    # are install-wide and hold no project data.
+    "embedding_vectors",
     "archive_imports",
     "delegation_seen",
     "delegation_records",
@@ -24,6 +27,10 @@ CANON_PROJECT_TABLES: tuple[str, ...] = (
     "text_passages",
     "context_manifests",
     "media_lifecycle_events",
+    "media_observations",
+    "media_segments",
+    "media_variants",
+    "media_processing",
     "canon_evidence",
     "canon_entity_external_ids",
     "asset_links",

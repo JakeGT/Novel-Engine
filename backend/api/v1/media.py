@@ -2,17 +2,25 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import get_media_service
 from backend.domain.errors import ValidationError
 from backend.domain.identity import AccessScope
-from backend.services.media_service import MAX_PICTURE_BYTES, LibraryPicture, MediaService
+from backend.domain.media import PROCESSING_FAILURES, MediaSegment, VariantKind
+from backend.services.media_service import (
+    MAX_PICTURE_BYTES,
+    PROCESSOR_VERSION,
+    LibraryPicture,
+    MediaService,
+    ProcessingView,
+)
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["media"])
 
@@ -328,6 +336,44 @@ async def add_scene_picture(
     return {"link": _link(link), "version": _version(version)}
 
 
+ProcessingState = Literal["queued", "processing", "ready", "failed"]
+
+
+class ProcessingModel(BaseModel):
+    """How far a picture is in being prepared (its smaller copies), in plain words."""
+
+    # None: never queued (processing is off, or the picture is older than it).
+    status: ProcessingState | None
+    failure_code: str | None = None
+    # What the author is told when it failed; never a decoder's own words.
+    message: str | None = None
+    # Whether Retry is offered; ``helps`` says whether trying again unchanged may work.
+    retryable: bool
+    helps: bool = False
+    attempts: int = 0
+    width: int | None = None
+    height: int | None = None
+    copies: list[str] = Field(default_factory=list)
+    # Prepared by the processor this server runs now, from the stored bytes.
+    current: bool = False
+
+
+def _processing(view: ProcessingView) -> ProcessingModel:
+    helps = bool(view.failure_code and PROCESSING_FAILURES.get(view.failure_code, ("", True))[1])
+    return ProcessingModel(
+        status=view.status.value if view.status is not None else None,
+        failure_code=view.failure_code,
+        message=view.message,
+        retryable=view.retryable,
+        helps=helps,
+        attempts=view.attempts,
+        width=view.width,
+        height=view.height,
+        copies=list(view.copies),
+        current=view.current,
+    )
+
+
 class LibraryPictureModel(BaseModel):
     asset_id: str
     name: str
@@ -337,13 +383,27 @@ class LibraryPictureModel(BaseModel):
     created_at: datetime
     # How many entries and scenes show it now; 0 when it is shown nowhere.
     shown: int
+    # Where its preparation is; None before it was ever queued.
+    processing: ProcessingState | None = None
+    processing_message: str | None = None
+    # Whether a thumbnail exists to show in lists (else the original is shown).
+    has_thumbnail: bool = False
+
+
+class StorageModel(BaseModel):
+    used_bytes: int
+    # 0 means no limit.
+    quota_bytes: int
 
 
 class PictureLibraryModel(BaseModel):
     items: list[LibraryPictureModel]
+    storage: StorageModel | None = None
 
 
 def _library_picture(picture: LibraryPicture) -> LibraryPictureModel:
+    state = picture.processing
+    failed = state is not None and state.status.value == "failed"
     return LibraryPictureModel(
         asset_id=picture.asset.id,
         name=picture.asset.name,
@@ -352,6 +412,15 @@ def _library_picture(picture: LibraryPicture) -> LibraryPictureModel:
         byte_length=picture.version.byte_length,
         created_at=picture.asset.created_at,
         shown=picture.shown,
+        processing=state.status.value if state is not None else None,
+        processing_message=(
+            PROCESSING_FAILURES.get(
+                state.failure_code or "", PROCESSING_FAILURES["processor_failed"]
+            )[0]
+            if failed and state is not None
+            else None
+        ),
+        has_thumbnail=picture.has_thumbnail,
     )
 
 
@@ -362,9 +431,18 @@ async def picture_library(
     media: MediaService = Depends(get_media_service),
 ) -> PictureLibraryModel:
     """Every picture in the story that can be shown, newest first, including those
-    shown nowhere now. Choosing one links it again; nothing is copied."""
-    pictures = await media.picture_library(scope, scope.workspace_id or "", project_id)
-    return PictureLibraryModel(items=[_library_picture(picture) for picture in pictures])
+    shown nowhere now. Choosing one links it again; nothing is copied. Each says how far
+    its preparation is, and the workspace's room for pictures is given once."""
+    workspace_id = scope.workspace_id or ""
+    pictures = await media.picture_library(scope, workspace_id, project_id)
+    room = await media.storage(scope, workspace_id, project_id)
+    return PictureLibraryModel(
+        items=[_library_picture(picture) for picture in pictures],
+        storage=StorageModel(**room),
+    )
+
+
+PictureSize = Literal["thumbnail", "web", "original"]
 
 
 @router.get("/assets/{asset_id}/versions/{version_id}/content")
@@ -372,22 +450,162 @@ async def get_version_content(
     project_id: str,
     asset_id: str,
     version_id: str,
+    request: Request,
+    size: PictureSize = Query(default="original"),
     scope: AccessScope = Depends(get_project_scope),
     media: MediaService = Depends(get_media_service),
 ) -> Response:
-    """The image bytes of one media version, for members of the project."""
-    data, content_type = await media.open_content(
+    """The image bytes of one media version, for members of the project.
+
+    ``size`` asks for a smaller copy (``thumbnail`` 256px, ``web`` 1024px, WebP with no
+    metadata); when that copy is not made yet the original is sent. The
+    ``X-Picture-Size`` header says which was sent."""
+    copy = None if size == "original" else VariantKind(size)
+    data, content_type, served = await media.open_picture(
+        scope, scope.workspace_id or "", project_id, asset_id, version_id, copy=copy
+    )
+    headers = {
+        "Content-Disposition": "inline",
+        "X-Content-Type-Options": "nosniff",
+        # If opened directly, the file can do nothing but be displayed.
+        "Content-Security-Policy": "default-src 'none'; sandbox",
+        "X-Picture-Size": served,
+    }
+    if served != size:
+        # A fallback must not hide the copy once it is made.
+        headers["Cache-Control"] = "private, no-cache"
+    elif served == "original":
+        # A version's bytes never change.
+        headers["Cache-Control"] = "private, max-age=31536000, immutable"
+    else:
+        # A copy is made again when the processor changes, at the same address: it is
+        # kept an hour, then checked against a tag naming the processor and the bytes.
+        digest = hashlib.sha256(data).hexdigest()[:32]
+        etag = f'"{served}-{PROCESSOR_VERSION}-{digest}"'
+        headers["Cache-Control"] = "private, max-age=3600"
+        headers["ETag"] = etag
+        if etag in {tag.strip() for tag in request.headers.get("if-none-match", "").split(",")}:
+            return Response(status_code=304, headers=headers)
+    return Response(content=data, media_type=content_type, headers=headers)
+
+
+@router.get("/assets/{asset_id}/versions/{version_id}/processing")
+async def get_processing(
+    project_id: str,
+    asset_id: str,
+    version_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    media: MediaService = Depends(get_media_service),
+) -> ProcessingModel:
+    """How far this picture is in being prepared, and why it failed if it did."""
+    view = await media.processing_status(
         scope, scope.workspace_id or "", project_id, asset_id, version_id
     )
-    return Response(
-        content=data,
-        media_type=content_type,
-        headers={
-            # A version never changes, so the reader's own browser may keep it; nothing shared may.
-            "Cache-Control": "private, max-age=31536000, immutable",
-            "Content-Disposition": "inline",
-            "X-Content-Type-Options": "nosniff",
-            # If opened directly, the file can do nothing but be displayed.
-            "Content-Security-Policy": "default-src 'none'; sandbox",
-        },
+    return _processing(view)
+
+
+@router.post("/assets/{asset_id}/versions/{version_id}/processing/retry", status_code=202)
+async def retry_processing(
+    project_id: str,
+    asset_id: str,
+    version_id: str,
+    scope: AccessScope = Depends(require_project_scope),
+    media: MediaService = Depends(get_media_service),
+) -> ProcessingModel:
+    """Prepare this picture again. A picture already prepared from these bytes by the
+    processor this server runs is left as it is; asking twice queues it once."""
+    view = await media.retry_processing(
+        scope, scope.workspace_id or "", project_id, asset_id, version_id
     )
+    return _processing(view)
+
+
+class SegmentModel(BaseModel):
+    id: str
+    kind: Literal["whole", "region"]
+    x: int
+    y: int
+    width: int
+    height: int
+    label: str | None = None
+    created_at: datetime
+
+
+class SegmentListModel(BaseModel):
+    items: list[SegmentModel]
+
+
+class RegionRequest(BaseModel):
+    x: int = Field(ge=0)
+    y: int = Field(ge=0)
+    width: int = Field(ge=1)
+    height: int = Field(ge=1)
+    label: str | None = Field(default=None, max_length=200)
+
+
+def _segment(segment: MediaSegment) -> SegmentModel:
+    return SegmentModel(
+        id=segment.id,
+        kind=segment.kind.value,
+        x=segment.x,
+        y=segment.y,
+        width=segment.width,
+        height=segment.height,
+        label=segment.label,
+        created_at=segment.created_at,
+    )
+
+
+@router.get("/assets/{asset_id}/versions/{version_id}/segments")
+async def list_segments(
+    project_id: str,
+    asset_id: str,
+    version_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    media: MediaService = Depends(get_media_service),
+) -> SegmentListModel:
+    """The whole picture (once prepared) and the parts of it the author marked."""
+    segments = await media.list_segments(
+        scope, scope.workspace_id or "", project_id, asset_id, version_id
+    )
+    return SegmentListModel(items=[_segment(segment) for segment in segments])
+
+
+@router.post("/assets/{asset_id}/versions/{version_id}/segments", status_code=201)
+async def add_region(
+    project_id: str,
+    asset_id: str,
+    version_id: str,
+    payload: RegionRequest,
+    scope: AccessScope = Depends(require_project_scope),
+    media: MediaService = Depends(get_media_service),
+) -> SegmentModel:
+    """Mark a rectangle of a prepared picture, in pixels of the picture as shown."""
+    segment = await media.add_region(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        asset_id,
+        version_id,
+        x=payload.x,
+        y=payload.y,
+        width=payload.width,
+        height=payload.height,
+        label=payload.label,
+    )
+    return _segment(segment)
+
+
+@router.post("/assets/{asset_id}/versions/{version_id}/segments/{segment_id}/retire")
+async def retire_region(
+    project_id: str,
+    asset_id: str,
+    version_id: str,
+    segment_id: str,
+    scope: AccessScope = Depends(require_project_scope),
+    media: MediaService = Depends(get_media_service),
+) -> SegmentModel:
+    segment = await media.retire_region(
+        scope, scope.workspace_id or "", project_id, asset_id, version_id, segment_id
+    )
+    return _segment(segment)

@@ -37,13 +37,13 @@
 | --- | --- | --- |
 | A. Context manifest and versioned policy | CTX-001, CTX-002 | Implemented (`backend/domain/context.py`) |
 | B. Deterministic retrieval scoped by branch, time and viewpoint | CTX-002 | Implemented for scenes (`context_service.py`) |
-| C. Derived memory of the author's writing; rebuild; staleness | CTX-004–CTX-006A | Partly: a passage index, rebuildable, updated inline (not through the outbox); no vector filters or versioned generations; no summary or event-block layers |
+| C. Derived memory of the author's writing; rebuild; staleness | CTX-004–CTX-006A | Partly: a passage index, rebuildable, updated inline (not through the outbox); search vectors in versioned generations with filters before ranking (batch 6); no summary or event-block layers |
 | D. Ranking, budget, deduplication | CTX-007, CTX-008 | Implemented: fixed scores, word budget, hard items first |
 | E. Context preview, pin and exclude | CTX-009 | Implemented; browser tested |
 | F. Stable-to-volatile rendering | CTX-015 | Implemented; recording the provider's cached-token count is backlog work (see CTX-015) |
-| G. Retrieval and leakage evaluation | CTX-010 | Partly: contract tests with leakage cases; no relevance set |
-| H. Media: pictures in context | CTX-013 | Partly: existence and role only |
-| I. Media processing, cross-modal embeddings, EmbeddingGemma | CTX-011, CTX-012, CTX-014, AST-003, AST-005 | Not built |
+| G. Retrieval and leakage evaluation | CTX-010 | Built (batch 6): a labelled synthetic story with relevance, omission, leakage and what-if cases (`tests/eval/retrieval`); search by meaning off in that set |
+| H. Media: pictures in context | CTX-013 | Built for pictures (batch 6): send, describe or leave out; secret and story-time gates; delivery recorded |
+| I. Media processing, cross-modal embeddings, EmbeddingGemma | CTX-011, CTX-012, CTX-014, AST-003, AST-005 | Built for pictures (batch 6) against stand-ins: isolated decoding and copies, generations, descriptions as reviewed suggestions; EmbeddingGemma never loaded here; no audio or video |
 
 ## What is built
 

@@ -1,0 +1,103 @@
+{
+  "configurations": [
+    {
+      "configuration": "stand-in-768",
+      "dimension": 768,
+      "leaked_ids": [],
+      "leaks": 0,
+      "links_first": 1.0,
+      "model": "fake-multimodal",
+      "picture_to_picture": {
+        "mrr": 1.0,
+        "queries": 3,
+        "recall_at_1": 1.0
+      },
+      "picture_to_words": {
+        "mrr": 1.0,
+        "queries": 12,
+        "recall_at_1": 1.0
+      },
+      "reads_pictures": true,
+      "rebuild_equivalent": true,
+      "stopped_build_left_nothing": true,
+      "storage": {
+        "bytes_per_vector": 3072,
+        "rows": 31,
+        "vector_bytes": 95232
+      },
+      "words_to_picture": {
+        "beats_hard_negatives": 1.0,
+        "mrr": 1.0,
+        "ndcg_at_10": 1.0,
+        "queries": 12,
+        "recall_at_10": 1.0,
+        "recall_at_5": 1.0
+      }
+    },
+    {
+      "configuration": "stand-in-512",
+      "dimension": 512,
+      "leaked_ids": [],
+      "leaks": 0,
+      "links_first": 1.0,
+      "model": "fake-multimodal",
+      "picture_to_picture": {
+        "mrr": 1.0,
+        "queries": 3,
+        "recall_at_1": 1.0
+      },
+      "picture_to_words": {
+        "mrr": 1.0,
+        "queries": 12,
+        "recall_at_1": 1.0
+      },
+      "reads_pictures": true,
+      "rebuild_equivalent": true,
+      "stopped_build_left_nothing": true,
+      "storage": {
+        "bytes_per_vector": 2048,
+        "rows": 31,
+        "vector_bytes": 63488
+      },
+      "words_to_picture": {
+        "beats_hard_negatives": 1.0,
+        "mrr": 1.0,
+        "ndcg_at_10": 1.0,
+        "queries": 12,
+        "recall_at_10": 1.0,
+        "recall_at_5": 1.0
+      }
+    },
+    {
+      "configuration": "stand-in-text-only-captions",
+      "dimension": 384,
+      "leaked_ids": [],
+      "leaks": 0,
+      "links_first": 1.0,
+      "model": "fake-multimodal",
+      "picture_to_picture": {},
+      "picture_to_words": {},
+      "reads_pictures": false,
+      "rebuild_equivalent": true,
+      "stopped_build_left_nothing": true,
+      "storage": {
+        "bytes_per_vector": 1536,
+        "rows": 32,
+        "vector_bytes": 49152
+      },
+      "words_to_picture": {
+        "beats_hard_negatives": 1.0,
+        "mrr": 1.0,
+        "ndcg_at_10": 1.0,
+        "queries": 12,
+        "recall_at_10": 1.0,
+        "recall_at_5": 1.0
+      }
+    }
+  ],
+  "note": "Stand-in configurations measure the harness, gates and ranking: pictures are described to the stand-in in words. They say nothing about a real model.",
+  "passages": 12,
+  "pictures": 20,
+  "queries": 12,
+  "set": "shapes-multimodal/1"
+}

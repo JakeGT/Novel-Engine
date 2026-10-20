@@ -30,6 +30,7 @@ means what it meant, and a rule in a form newer than this code reads is refused.
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -721,13 +722,22 @@ def _beliefs(world: World, index: FactIndex, entry_id: str, check: Check) -> int
     return found
 
 
+# A number at the start of a value, with thousands separators and decimals ("64 years",
+# "1,200 leagues", "2.5 m"); not one run on into more digits ("3/4", "12:30", "1,23").
+_LEADING_NUMBER = re.compile(r"[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?![.,/:]?\d)")
+
+
 def _number(value: str | None) -> float | None:
     if value is None:
         return None
+    text = value.strip()
     try:
-        number = float(value.strip())
+        number = float(text)
     except ValueError:
-        return None
+        match = _LEADING_NUMBER.match(text)
+        if match is None:
+            return None
+        number = float(match.group().replace(",", ""))
     return number if math.isfinite(number) else None
 
 
@@ -748,10 +758,14 @@ def _check(world: World, index: FactIndex, entry_id: str, check: Check, weigh: W
             if inside:
                 continue
             truth = weigh(fact)
-            if truth is Truth.TRUE:
-                return False
-            if truth is Truth.MAYBE:
+            if truth is Truth.FALSE:
+                continue
+            # A value that cannot be read as a number may still be inside the range: it
+            # can only make the rule uncertain, never broken for sure.
+            if number is None or truth is Truth.MAYBE:
                 result = None
+                continue
+            return False
         return result
     if kind == "implies":
         assert check.if_has is not None

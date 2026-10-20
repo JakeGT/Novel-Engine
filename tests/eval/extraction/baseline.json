@@ -1,0 +1,180 @@
+{
+  "beliefs": {
+    "correct": 2,
+    "drafted": 2,
+    "expected": 2,
+    "precision": 1.0,
+    "recall": 1.0
+  },
+  "by_kind": {
+    "alias": {
+      "found": 2,
+      "labelled": 2,
+      "recall": 1.0
+    },
+    "disclosure": {
+      "found": 1,
+      "labelled": 1,
+      "recall": 1.0
+    },
+    "epithet": {
+      "found": 2,
+      "labelled": 3,
+      "recall": 0.667
+    },
+    "name": {
+      "found": 2,
+      "labelled": 2,
+      "recall": 1.0
+    },
+    "narration": {
+      "found": 2,
+      "labelled": 2,
+      "recall": 1.0
+    },
+    "new_entry": {
+      "found": 2,
+      "labelled": 2,
+      "recall": 1.0
+    },
+    "pronoun": {
+      "found": 1,
+      "labelled": 1,
+      "recall": 1.0
+    },
+    "speech": {
+      "found": 1,
+      "labelled": 1,
+      "recall": 1.0
+    }
+  },
+  "cases": 4,
+  "discarded_by_reading": 1,
+  "facts": {
+    "correct": 8,
+    "drafted": 10,
+    "expected": 8,
+    "precision": 0.8,
+    "recall": 1.0
+  },
+  "model": "scripted (recorded answers)",
+  "per_case": [
+    {
+      "beliefs": {
+        "correct": 0,
+        "drafted": 0,
+        "expected": 0,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "discarded": 1,
+      "facts": {
+        "correct": 3,
+        "drafted": 3,
+        "expected": 3,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "id": "ferry-house-evening",
+      "not_facts_made_facts": [],
+      "references": {
+        "correct": 1,
+        "drafted": 1,
+        "expected": 1,
+        "precision": 1.0,
+        "recall": 1.0
+      }
+    },
+    {
+      "beliefs": {
+        "correct": 1,
+        "drafted": 1,
+        "expected": 1,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "discarded": 0,
+      "facts": {
+        "correct": 1,
+        "drafted": 2,
+        "expected": 1,
+        "precision": 0.5,
+        "recall": 1.0
+      },
+      "id": "said-is-not-so",
+      "not_facts_made_facts": [
+        "osric pell member_of the tidewardens"
+      ],
+      "references": {
+        "correct": 0,
+        "drafted": 0,
+        "expected": 0,
+        "precision": 1.0,
+        "recall": 1.0
+      }
+    },
+    {
+      "beliefs": {
+        "correct": 0,
+        "drafted": 0,
+        "expected": 0,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "discarded": 0,
+      "facts": {
+        "correct": 2,
+        "drafted": 2,
+        "expected": 2,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "id": "he-and-the-old-keeper",
+      "not_facts_made_facts": [],
+      "references": {
+        "correct": 1,
+        "drafted": 1,
+        "expected": 2,
+        "precision": 1.0,
+        "recall": 0.5
+      }
+    },
+    {
+      "beliefs": {
+        "correct": 1,
+        "drafted": 1,
+        "expected": 1,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "discarded": 0,
+      "facts": {
+        "correct": 2,
+        "drafted": 3,
+        "expected": 2,
+        "precision": 0.667,
+        "recall": 1.0
+      },
+      "id": "told-the-truth",
+      "not_facts_made_facts": [
+        "wren halloway owns the tide ledger"
+      ],
+      "references": {
+        "correct": 0,
+        "drafted": 0,
+        "expected": 0,
+        "precision": 1.0,
+        "recall": 1.0
+      }
+    }
+  ],
+  "references": {
+    "correct": 2,
+    "drafted": 2,
+    "expected": 3,
+    "precision": 1.0,
+    "recall": 0.667
+  },
+  "said_or_near_made_facts": 2,
+  "set": "saltglass-extraction/1"
+}

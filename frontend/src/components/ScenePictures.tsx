@@ -11,8 +11,8 @@ const ACCEPT = 'image/png,image/jpeg,image/webp'
 const IN_HEAD = 5
 
 /**
- * The scene's pictures in the studio head, small: the browser scales each one, since
- * the server keeps no smaller copies. The button opens the place to change them.
+ * The scene's pictures in the studio head, small: each is the picture's small copy once
+ * it has been made. The button opens the place to change them.
  */
 export function ScenePictureStrip({
   sceneId,
@@ -154,7 +154,7 @@ export function ScenePicturesPanel({ sceneId, title, onClose }: { sceneId: strin
           <ul className="pictures">
             {pictures.map((link) => (
               <li key={link.id}>
-                <PictureImage assetId={link.asset_id} versionId={link.asset_version_id} label={nameOf(link)} />
+                <PictureImage assetId={link.asset_id} versionId={link.asset_version_id} label={nameOf(link)} openable />
                 <span className="picture-name small">{nameOf(link)}</span>
                 <button
                   type="button"

@@ -104,7 +104,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             from scripts.e2e.fake_model import start
 
             _server, base_url = start(args.host)
-            env.update({"OPENAI_API_KEY": "e2e-stand-in", "AI_BASE_URL": base_url})
+            env.update(
+                {
+                    "OPENAI_API_KEY": "e2e-stand-in",
+                    "AI_BASE_URL": base_url,
+                    # The stand-in takes pictures (CTX-013), so describing one can be driven.
+                    "AI_IMAGE_INPUT": "true",
+                }
+            )
         process = subprocess.Popen(
             [
                 sys.executable,

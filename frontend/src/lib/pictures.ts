@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { api, type AssetLink, type Scope } from '../api/client'
+import { api, type AssetLink, type PictureSize, type Scope } from '../api/client'
 import { scopedKey } from '../project'
 
 /** A link that shows its target: a current "depicts" link to one stored image. */
@@ -51,13 +51,26 @@ export function usePortraits(scope: Scope): Map<string, AssetLink> {
   return portraits
 }
 
-/** A stored picture as a local address the page can show; a stored version never changes. */
-export function usePictureUrl(scope: Scope, picture: { assetId: string; versionId: string | null } | undefined) {
+// While a small copy is still being made the server sends the full picture; ask again
+// after this long so the small copy takes its place once it exists.
+const FALLBACK_STALE_MS = 20_000
+
+/**
+ * A stored picture as a local address the page can show. Lists ask for the small copy
+ * (``thumbnail``) and an opened picture for the file itself; a stored version and its
+ * copies never change, so each is fetched once.
+ */
+export function usePictureUrl(
+  scope: Scope,
+  picture: { assetId: string; versionId: string | null } | undefined,
+  size: PictureSize = 'original',
+) {
   return useQuery({
-    queryKey: scopedKey(scope, 'picture', picture?.assetId, picture?.versionId),
-    queryFn: () => api.pictureUrl(scope, picture!.assetId, picture!.versionId as string),
+    queryKey: scopedKey(scope, 'picture', picture?.assetId, picture?.versionId, size),
+    queryFn: () => api.pictureUrl(scope, picture!.assetId, picture!.versionId as string, size),
+    select: (fetched) => fetched.url,
     enabled: Boolean(picture?.versionId),
-    staleTime: Infinity,
+    staleTime: (query) => (query.state.data?.served === size ? Infinity : FALLBACK_STALE_MS),
     gcTime: Infinity,
   })
 }

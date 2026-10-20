@@ -1,0 +1,357 @@
+{
+  "budgets": {
+    "floor": {
+      "budget": 1000,
+      "deterministic": {
+        "content_tokens": 3856,
+        "coverage_complete": true,
+        "coverage_of_defects": 0.875,
+        "covered": [
+          "osric-in-two-places",
+          "sextant-cracked-then-flawless",
+          "secret-in-the-viewpoint",
+          "warden-with-a-blade",
+          "kinship-too-early",
+          "sinking-spring-or-autumn",
+          "ledger-not-carried"
+        ],
+        "defects": 8,
+        "defects_covered": 7,
+        "every_passage_read": true,
+        "groups": 20,
+        "groups_showing_a_secret": 4,
+        "largest_group": 926,
+        "omitted": {
+          "unnamed-keeper-at-the-light": [
+            "fact:osric_at_fen"
+          ]
+        },
+        "passages": 20,
+        "passages_read_more_than_once": 18,
+        "readings": 100,
+        "strategy": "deterministic",
+        "tokens": 15856,
+        "warnings": 3
+      },
+      "full_context": {
+        "content_tokens": 2268,
+        "coverage_complete": true,
+        "coverage_of_defects": 0.75,
+        "covered": [
+          "osric-in-two-places",
+          "secret-in-the-viewpoint",
+          "warden-with-a-blade",
+          "kinship-too-early",
+          "unnamed-keeper-at-the-light",
+          "ledger-not-carried"
+        ],
+        "defects": 8,
+        "defects_covered": 6,
+        "every_passage_read": true,
+        "groups": 8,
+        "groups_showing_a_secret": 4,
+        "largest_group": 977,
+        "omitted": {
+          "sextant-cracked-then-flawless": [
+            "(its passages are never shown together)"
+          ],
+          "sinking-spring-or-autumn": [
+            "(its passages are never shown together)"
+          ]
+        },
+        "passages": 20,
+        "passages_read_more_than_once": 20,
+        "readings": 40,
+        "strategy": "full_context",
+        "tokens": 7068,
+        "warnings": 1
+      },
+      "vector_only": {
+        "content_tokens": 1575,
+        "coverage_complete": true,
+        "coverage_of_defects": 0.625,
+        "covered": [
+          "secret-in-the-viewpoint",
+          "warden-with-a-blade",
+          "kinship-too-early",
+          "unnamed-keeper-at-the-light",
+          "ledger-not-carried"
+        ],
+        "defects": 8,
+        "defects_covered": 5,
+        "every_passage_read": true,
+        "groups": 20,
+        "groups_showing_a_secret": 2,
+        "largest_group": 697,
+        "omitted": {
+          "osric-in-two-places": [
+            "fact:osric_at_fen"
+          ],
+          "sextant-cracked-then-flawless": [
+            "(its passages are never shown together)"
+          ],
+          "sinking-spring-or-autumn": [
+            "(its passages are never shown together)"
+          ]
+        },
+        "passages": 20,
+        "passages_read_more_than_once": 0,
+        "readings": 20,
+        "strategy": "vector_only",
+        "tokens": 13575,
+        "warnings": 0
+      }
+    },
+    "roomy": {
+      "budget": 20000,
+      "deterministic": {
+        "content_tokens": 3790,
+        "coverage_complete": true,
+        "coverage_of_defects": 0.875,
+        "covered": [
+          "osric-in-two-places",
+          "sextant-cracked-then-flawless",
+          "secret-in-the-viewpoint",
+          "warden-with-a-blade",
+          "kinship-too-early",
+          "sinking-spring-or-autumn",
+          "ledger-not-carried"
+        ],
+        "defects": 8,
+        "defects_covered": 7,
+        "every_passage_read": true,
+        "groups": 17,
+        "groups_showing_a_secret": 3,
+        "largest_group": 1195,
+        "omitted": {
+          "unnamed-keeper-at-the-light": [
+            "fact:osric_at_fen"
+          ]
+        },
+        "passages": 20,
+        "passages_read_more_than_once": 18,
+        "readings": 100,
+        "strategy": "deterministic",
+        "tokens": 13990,
+        "warnings": 0
+      },
+      "full_context": {
+        "content_tokens": 892,
+        "coverage_complete": true,
+        "coverage_of_defects": 1.0,
+        "covered": [
+          "osric-in-two-places",
+          "sextant-cracked-then-flawless",
+          "secret-in-the-viewpoint",
+          "warden-with-a-blade",
+          "kinship-too-early",
+          "sinking-spring-or-autumn",
+          "unnamed-keeper-at-the-light",
+          "ledger-not-carried"
+        ],
+        "defects": 8,
+        "defects_covered": 8,
+        "every_passage_read": true,
+        "groups": 1,
+        "groups_showing_a_secret": 1,
+        "largest_group": 1492,
+        "omitted": {},
+        "passages": 20,
+        "passages_read_more_than_once": 0,
+        "readings": 20,
+        "strategy": "full_context",
+        "tokens": 1492,
+        "warnings": 0
+      },
+      "vector_only": {
+        "content_tokens": 1575,
+        "coverage_complete": true,
+        "coverage_of_defects": 0.625,
+        "covered": [
+          "secret-in-the-viewpoint",
+          "warden-with-a-blade",
+          "kinship-too-early",
+          "unnamed-keeper-at-the-light",
+          "ledger-not-carried"
+        ],
+        "defects": 8,
+        "defects_covered": 5,
+        "every_passage_read": true,
+        "groups": 20,
+        "groups_showing_a_secret": 2,
+        "largest_group": 697,
+        "omitted": {
+          "osric-in-two-places": [
+            "fact:osric_at_fen"
+          ],
+          "sextant-cracked-then-flawless": [
+            "(its passages are never shown together)"
+          ],
+          "sinking-spring-or-autumn": [
+            "(its passages are never shown together)"
+          ]
+        },
+        "passages": 20,
+        "passages_read_more_than_once": 0,
+        "readings": 20,
+        "strategy": "vector_only",
+        "tokens": 13575,
+        "warnings": 0
+      }
+    },
+    "tight": {
+      "budget": 1400,
+      "deterministic": {
+        "content_tokens": 3790,
+        "coverage_complete": true,
+        "coverage_of_defects": 0.875,
+        "covered": [
+          "osric-in-two-places",
+          "sextant-cracked-then-flawless",
+          "secret-in-the-viewpoint",
+          "warden-with-a-blade",
+          "kinship-too-early",
+          "sinking-spring-or-autumn",
+          "ledger-not-carried"
+        ],
+        "defects": 8,
+        "defects_covered": 7,
+        "every_passage_read": true,
+        "groups": 17,
+        "groups_showing_a_secret": 3,
+        "largest_group": 1195,
+        "omitted": {
+          "unnamed-keeper-at-the-light": [
+            "fact:osric_at_fen"
+          ]
+        },
+        "passages": 20,
+        "passages_read_more_than_once": 18,
+        "readings": 100,
+        "strategy": "deterministic",
+        "tokens": 13990,
+        "warnings": 0
+      },
+      "full_context": {
+        "content_tokens": 1134,
+        "coverage_complete": true,
+        "coverage_of_defects": 0.75,
+        "covered": [
+          "osric-in-two-places",
+          "secret-in-the-viewpoint",
+          "warden-with-a-blade",
+          "kinship-too-early",
+          "unnamed-keeper-at-the-light",
+          "ledger-not-carried"
+        ],
+        "defects": 8,
+        "defects_covered": 6,
+        "every_passage_read": true,
+        "groups": 2,
+        "groups_showing_a_secret": 2,
+        "largest_group": 1330,
+        "omitted": {
+          "sextant-cracked-then-flawless": [
+            "(its passages are never shown together)"
+          ],
+          "sinking-spring-or-autumn": [
+            "(its passages are never shown together)"
+          ]
+        },
+        "passages": 20,
+        "passages_read_more_than_once": 0,
+        "readings": 20,
+        "strategy": "full_context",
+        "tokens": 2334,
+        "warnings": 1
+      },
+      "vector_only": {
+        "content_tokens": 1575,
+        "coverage_complete": true,
+        "coverage_of_defects": 0.625,
+        "covered": [
+          "secret-in-the-viewpoint",
+          "warden-with-a-blade",
+          "kinship-too-early",
+          "unnamed-keeper-at-the-light",
+          "ledger-not-carried"
+        ],
+        "defects": 8,
+        "defects_covered": 5,
+        "every_passage_read": true,
+        "groups": 20,
+        "groups_showing_a_secret": 2,
+        "largest_group": 697,
+        "omitted": {
+          "osric-in-two-places": [
+            "fact:osric_at_fen"
+          ],
+          "sextant-cracked-then-flawless": [
+            "(its passages are never shown together)"
+          ],
+          "sinking-spring-or-autumn": [
+            "(its passages are never shown together)"
+          ]
+        },
+        "passages": 20,
+        "passages_read_more_than_once": 0,
+        "readings": 20,
+        "strategy": "vector_only",
+        "tokens": 13575,
+        "warnings": 0
+      }
+    }
+  },
+  "cost_tokens": 0,
+  "defects": 8,
+  "fallback_without_graph": {
+    "content_tokens": 650,
+    "coverage_complete": false,
+    "coverage_of_defects": 0.0,
+    "covered": [],
+    "defects": 8,
+    "defects_covered": 0,
+    "every_passage_read": true,
+    "groups": 2,
+    "groups_showing_a_secret": 0,
+    "largest_group": 994,
+    "omitted": {
+      "kinship-too-early": [
+        "fact:kin",
+        "reveal:kin"
+      ],
+      "ledger-not-carried": [
+        "condition:s4"
+      ],
+      "osric-in-two-places": [
+        "fact:osric_at_fen"
+      ],
+      "secret-in-the-viewpoint": [
+        "fact:secret"
+      ],
+      "sextant-cracked-then-flawless": [
+        "(its passages are never shown together)"
+      ],
+      "sinking-spring-or-autumn": [
+        "(its passages are never shown together)"
+      ],
+      "unnamed-keeper-at-the-light": [
+        "fact:osric_at_fen"
+      ],
+      "warden-with-a-blade": [
+        "fact:bram_member",
+        "rule:no_blades"
+      ]
+    },
+    "passages": 20,
+    "passages_read_more_than_once": 0,
+    "readings": 20,
+    "strategy": "deterministic",
+    "tokens": 1850,
+    "warnings": 1
+  },
+  "nearest_k": 4,
+  "passages": 20,
+  "records": 19,
+  "set": "saltglass-bundles/1"
+}

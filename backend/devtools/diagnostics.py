@@ -103,6 +103,29 @@ async def check_ai(settings: Settings, gateway: Any = None) -> dict[str, Any]:
     return result
 
 
+def picture_capability(settings: Settings) -> dict[str, Any]:
+    """Whether pictures can be prepared here (OPS-007): Pillow present, its version, the
+    formats it can read and write, the processor version and the worker's limits."""
+    from backend.adapters.image_processor import PROCESSOR_VERSION, pillow_capability
+
+    found = pillow_capability()
+    return {
+        "enabled": settings.MEDIA_PROCESSING_ENABLED,
+        "pillow_available": bool(found.get("available")),
+        "pillow_version": found.get("version"),
+        "formats": {key: bool(found.get(key)) for key in ("png", "jpeg", "webp")},
+        "processor_version": PROCESSOR_VERSION,
+        "limits": {
+            "max_pixels": settings.MEDIA_MAX_PIXELS,
+            "max_dimension": settings.MEDIA_MAX_DIMENSION,
+            "worker_memory_bytes": settings.MEDIA_WORKER_MEMORY_BYTES,
+            "worker_cpu_seconds": settings.MEDIA_WORKER_CPU_SECONDS,
+            "worker_timeout_seconds": settings.MEDIA_WORKER_TIMEOUT_SECONDS,
+            "workspace_quota_bytes": settings.MEDIA_WORKSPACE_QUOTA_BYTES,
+        },
+    }
+
+
 def build_diagnostics(
     settings: Settings,
     *,
@@ -130,6 +153,7 @@ def build_diagnostics(
                 "model": settings.EMBEDDING_MODEL_NAME,
                 "dimension": settings.EMBEDDING_DIMENSION,
             },
+            "pictures": picture_capability(settings),
         },
         "stores": {
             "postgres_host": _safe_dsn_host(settings.POSTGRES_HOST),

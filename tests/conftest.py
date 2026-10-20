@@ -416,7 +416,10 @@ def _build_fake_container(settings, tmp_path):
     # The commit transaction checks a rule is still on, as PostgreSQL does.
     canon_repository.delegation = delegation_store
     from backend.services.media_service import MediaService
+    from tests.doubles import FakeImageProcessor, InMemoryMediaProcessingStore
 
+    media_processing = InMemoryMediaProcessingStore(media_store)
+    image_processor = FakeImageProcessor()
     media_service = MediaService(
         media=media_store,
         objects=objects,
@@ -425,7 +428,33 @@ def _build_fake_container(settings, tmp_path):
         journal=journal,
         tenancy=tenancy_service,
         local_mode=not settings.is_hosted,
+        processing=media_processing,
+        processor=image_processor,
+        runner=job_runner,
+        quota_bytes=settings.MEDIA_WORKSPACE_QUOTA_BYTES,
     )
+    media_service.register_jobs()
+    from backend.services.media_observations import MediaObservationService
+    from tests.doubles import InMemoryObservationStore
+
+    observation_store = InMemoryObservationStore()
+    media_observations = MediaObservationService(
+        store=observation_store,
+        media=media_service,
+        reader=canon_repository,
+        mutation=mutation_service,
+        journal=journal,
+        runner=job_runner,
+        ai=ai,
+        settings=settings,
+        credentials=credential_service,
+        usage=usage_service,
+        studio=studio_service,
+        tenancy=tenancy_service,
+        local_mode=not settings.is_hosted,
+    )
+    media_observations.register_jobs()
+    context_service.pictures = media_observations
     from backend.services.canon_archive import CanonArchiveService
 
     archive_service = CanonArchiveService(
@@ -446,6 +475,8 @@ def _build_fake_container(settings, tmp_path):
         studio=studio_store,
         assists=assist_sessions,
     )
+    archive_service.pictures = media_service
+    archive_service.picture_notes = media_observations
     return Container(
         settings=settings,
         graph=graph,
@@ -478,6 +509,10 @@ def _build_fake_container(settings, tmp_path):
         canon_repository=canon_repository,
         media_store=media_store,
         media_service=media_service,
+        media_processing=media_processing,
+        image_processor=image_processor,
+        observation_store=observation_store,
+        media_observations=media_observations,
         archive_service=archive_service,
         projection_service=projection_service,
         outbox_consumer=outbox_consumer,

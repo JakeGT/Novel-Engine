@@ -10,7 +10,7 @@ from dataclasses import replace
 
 import pytest
 
-from backend.domain.check_passes import PASS_ORDER
+from backend.domain.check_passes import PASS_ORDER, CheckPass
 from backend.domain.jobs import JobStatus
 from backend.domain.usage import UsageRecord
 from backend.ports import AIUsage, StructuredResponse
@@ -43,9 +43,11 @@ def _keep_a_draft(client, container, w, scene, base: str | None) -> dict:
 
 
 def _queue_check(container, tokens: int = 100) -> None:
-    """Answers for one check with every pass, one call each, using ``tokens`` in all."""
-    share, rest = divmod(tokens, len(PASS_ORDER))
-    for index, _ in enumerate(PASS_ORDER):
+    """Answers for one check with every pass, one call each, using ``tokens`` in all.
+    The pictures pass makes no call on a scene without pictures."""
+    calls = [item for item in PASS_ORDER if item is not CheckPass.PICTURES]
+    share, rest = divmod(tokens, len(calls))
+    for index, _ in enumerate(calls):
         container.ai.queue(
             StructuredResponse(
                 parsed=CheckNotes(notes=[]),

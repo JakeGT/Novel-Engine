@@ -1971,6 +1971,70 @@ details.more[open] > summary {
   color: var(--danger);
 }
 
+/* A picture in a list opens the full picture: the image itself is the button. */
+.picture-open {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.picture-open:focus-visible {
+  outline-offset: 2px;
+}
+
+.picture-viewer {
+  display: grid;
+  place-items: center;
+}
+
+.picture-full {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  background: var(--surface-3);
+}
+
+/* A picture opened on the media page: its 1024px copy, and how it is doing. */
+.media-picture {
+  display: grid;
+  gap: 0.6rem;
+  justify-items: start;
+}
+
+.media-picture .picture-open {
+  width: auto;
+}
+
+.media-picture .picture-full {
+  max-height: 22rem;
+  border: 1px solid var(--line-strong);
+}
+
+/* The small copy beside a picture's name on the media page. */
+.media-thumb {
+  display: block;
+  flex: none;
+  width: 2.75rem;
+  height: 2.75rem;
+  object-fit: cover;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-s);
+  background: var(--surface-3);
+}
+
+.media-thumb.missing,
+.media-thumb.loading {
+  display: grid;
+  place-items: center;
+  font-family: var(--font-ui);
+  font-size: 0.6rem;
+  color: var(--ink-3);
+}
+
 /* ---------------------------------------------------------- onboarding --- */
 .onboarding {
   display: grid;

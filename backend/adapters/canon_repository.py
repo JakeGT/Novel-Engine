@@ -142,6 +142,9 @@ def _link(row: Any) -> AssetLink:
         created_revision=row.created_revision,
         retired_revision=row.retired_revision,
         created_at=row.created_at,
+        visibility=getattr(row, "visibility", None) or "open",
+        known_by=list(getattr(row, "known_by", None) or []),
+        applies_from=getattr(row, "applies_from", None),
     )
 
 
@@ -1597,11 +1600,20 @@ class PostgresCanonRepository:
                 text(
                     "INSERT INTO asset_links (workspace_id, project_id, branch_id, id, asset_id, "
                     "asset_version_id, role, target_record_type, target_record_id, provenance_id, "
-                    "created_revision) VALUES (:w, :p, :b, :id, :asset_id, :asset_version_id, :role, "
-                    ":target_record_type, :target_id, :prov, :rev)"
+                    "created_revision, visibility, known_by, applies_from) VALUES (:w, :p, :b, "
+                    ":id, :asset_id, :asset_version_id, :role, :target_record_type, :target_id, "
+                    ":prov, :rev, :visibility, CAST(:known_by AS JSONB), "
+                    "CAST(:applies_from AS JSONB))"
                 ),
                 {
                     **scope,
+                    "visibility": operation.visibility or "open",
+                    "known_by": json.dumps(list(operation.known_by)),
+                    "applies_from": (
+                        json.dumps(operation.applies_from)
+                        if operation.applies_from is not None
+                        else None
+                    ),
                     "id": operation.id,
                     "asset_id": operation.asset_id,
                     "asset_version_id": operation.asset_version_id,

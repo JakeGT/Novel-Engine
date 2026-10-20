@@ -87,6 +87,7 @@ from backend.domain.worldtime import (
     Span,
     TimeProblem,
     is_unknown,
+    parse_world_time,
     resolve,
     span_of,
     spans_overlap,
@@ -1273,6 +1274,27 @@ class AuthoritativeValidator:
                     )
                 else:
                     await require_active_entity(index, operation.target_id, "link target")
+                # AST-004: who knows a secret picture, and from when a link applies.
+                if operation.visibility not in (None, "open", "secret"):
+                    blocking(
+                        index,
+                        "invalid_visibility",
+                        f"unknown link visibility {operation.visibility!r}",
+                    )
+                if operation.known_by and operation.visibility != "secret":
+                    blocking(
+                        index,
+                        "invalid_known_by",
+                        "only a secret picture names who knows what it shows",
+                    )
+                for known in dict.fromkeys(operation.known_by):
+                    await require_active_entity(index, known, "character who knows")
+                if operation.applies_from is not None and (
+                    parse_world_time(operation.applies_from) is None
+                ):
+                    blocking(
+                        index, "invalid_time", "the story time the link applies from is not valid"
+                    )
                 links[operation.id] = AssetLink(
                     id=operation.id,
                     workspace_id=context.workspace_id,
@@ -1285,6 +1307,9 @@ class AuthoritativeValidator:
                     target_record_id=operation.target_id,
                     provenance_id="pending",
                     created_revision=context.head_revision + 1,
+                    visibility=operation.visibility or "open",
+                    known_by=list(operation.known_by),
+                    applies_from=operation.applies_from,
                 )
             elif isinstance(operation, RetireAssetLinkOp):
                 link_current = await link(operation.id)

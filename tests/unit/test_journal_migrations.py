@@ -26,7 +26,7 @@ def test_canon_scope_migration_is_registered() -> None:
 
 
 def test_postgres_head_is_canon_journal() -> None:
-    assert postgres_head_revision() == "0045_how_long"
+    assert postgres_head_revision() == "0048_media_observations"
 
 
 def test_graph_layer_never_uses_elementid() -> None:

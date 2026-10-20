@@ -866,10 +866,55 @@ export interface paths {
         /**
          * Get Version Content
          * @description The image bytes of one media version, for members of the project.
+         *
+         *     ``size`` asks for a smaller copy (``thumbnail`` 256px, ``web`` 1024px, WebP with no
+         *     metadata); when that copy is not made yet the original is sent. The
+         *     ``X-Picture-Size`` header says which was sent.
          */
         get: operations["get_version_content_api_v1_projects__project_id__assets__asset_id__versions__version_id__content_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/assets/{asset_id}/versions/{version_id}/processing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Processing
+         * @description How far this picture is in being prepared, and why it failed if it did.
+         */
+        get: operations["get_processing_api_v1_projects__project_id__assets__asset_id__versions__version_id__processing_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/assets/{asset_id}/versions/{version_id}/processing/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Processing
+         * @description Prepare this picture again. A picture already prepared from these bytes by the
+         *     processor this server runs is left as it is; asking twice queues it once.
+         */
+        post: operations["retry_processing_api_v1_projects__project_id__assets__asset_id__versions__version_id__processing_retry_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -887,6 +932,47 @@ export interface paths {
         put?: never;
         /** Retire Version */
         post: operations["retire_version_api_v1_projects__project_id__assets__asset_id__versions__version_id__retire_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/assets/{asset_id}/versions/{version_id}/segments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Segments
+         * @description The whole picture (once prepared) and the parts of it the author marked.
+         */
+        get: operations["list_segments_api_v1_projects__project_id__assets__asset_id__versions__version_id__segments_get"];
+        put?: never;
+        /**
+         * Add Region
+         * @description Mark a rectangle of a prepared picture, in pixels of the picture as shown.
+         */
+        post: operations["add_region_api_v1_projects__project_id__assets__asset_id__versions__version_id__segments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/assets/{asset_id}/versions/{version_id}/segments/{segment_id}/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retire Region */
+        post: operations["retire_region_api_v1_projects__project_id__assets__asset_id__versions__version_id__segments__segment_id__retire_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2602,6 +2688,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/observations/{observation_id}/propose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose Observation
+         * @description Offer an accepted appearance detail as a fact about its entry. It goes to the
+         *     review queue as a suggestion from the assistant and changes nothing until approved.
+         */
+        post: operations["propose_observation_api_v1_projects__project_id__observations__observation_id__propose_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/observations/{observation_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Review Observation
+         * @description Accept, correct or reject what a model saw in a picture. The story is unchanged.
+         */
+        post: operations["review_observation_api_v1_projects__project_id__observations__observation_id__review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/pictures": {
         parameters: {
             query?: never;
@@ -2612,10 +2739,113 @@ export interface paths {
         /**
          * Picture Library
          * @description Every picture in the story that can be shown, newest first, including those
-         *     shown nowhere now. Choosing one links it again; nothing is copied.
+         *     shown nowhere now. Choosing one links it again; nothing is copied. Each says how far
+         *     its preparation is, and the workspace's room for pictures is given once.
          */
         get: operations["picture_library_api_v1_projects__project_id__pictures_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/pictures/{asset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Picture
+         * @description The picture inspector: details, where it is shown, what a model saw, the choice.
+         */
+        get: operations["get_picture_api_v1_projects__project_id__pictures__asset_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/pictures/{asset_id}/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Context Choice
+         * @description Send the picture, use its description, or leave it out of the assistant's context.
+         */
+        put: operations["set_context_choice_api_v1_projects__project_id__pictures__asset_id__context_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/pictures/{asset_id}/describe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Describe Picture
+         * @description Ask the assistant to describe the picture, as a background job (``media_describe``).
+         *     What it sees comes back as observations to accept, correct or reject.
+         */
+        post: operations["describe_picture_api_v1_projects__project_id__pictures__asset_id__describe_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/pictures/{asset_id}/describe/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Describe Estimate
+         * @description What describing the picture would use, before anything is sent.
+         */
+        get: operations["describe_estimate_api_v1_projects__project_id__pictures__asset_id__describe_estimate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/pictures/{asset_id}/links/{link_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Change Picture Link
+         * @description Say who may know what the picture shows here, and from when it applies (AST-004).
+         *     The link is replaced by a new one in one change; the story's history keeps both.
+         */
+        put: operations["change_picture_link_api_v1_projects__project_id__pictures__asset_id__links__link_id__put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -5166,7 +5396,7 @@ export interface components {
          * CheckPass
          * @enum {string}
          */
-        CheckPass: "viewpoint" | "continuity" | "plan" | "voice" | "clarity";
+        CheckPass: "viewpoint" | "continuity" | "plan" | "voice" | "clarity" | "pictures";
         /**
          * CheckProfile
          * @enum {string}
@@ -5327,6 +5557,24 @@ export interface components {
             /** When */
             when: string;
         };
+        /**
+         * ContextChoice
+         * @description What the author chose for a picture in the assistant's context.
+         * @enum {string}
+         */
+        ContextChoice: "send" | "describe" | "leave_out";
+        /** ContextChoiceModel */
+        ContextChoiceModel: {
+            /** Asset Id */
+            asset_id: string;
+            choice: components["schemas"]["ContextChoice"];
+            /** Words */
+            words: string;
+        };
+        /** ContextChoiceRequest */
+        ContextChoiceRequest: {
+            choice: components["schemas"]["ContextChoice"];
+        };
         /** ContextComparisonModel */
         ContextComparisonModel: {
             /** Added */
@@ -5367,6 +5615,7 @@ export interface components {
             key: string;
             /** Location */
             location?: string | null;
+            picture?: components["schemas"]["ContextPictureModel"] | null;
             /** Pinned */
             pinned: boolean;
             /** Reason */
@@ -5405,6 +5654,24 @@ export interface components {
             relevance_score: number;
             /** Type */
             type: string;
+        };
+        /**
+         * ContextPictureModel
+         * @description A picture in the context: which version, and how it is meant to reach the model
+         *     (CTX-013). Whether it actually went as a picture depends on the assistant used, and
+         *     is recorded with each request.
+         */
+        ContextPictureModel: {
+            /** Asset Id */
+            asset_id: string;
+            /** Choice */
+            choice: string;
+            /** Representation */
+            representation: string;
+            /** Representation Words */
+            representation_words: string;
+            /** Version Id */
+            version_id: string;
         };
         /** ContextRequest */
         ContextRequest: {
@@ -5771,6 +6038,19 @@ export interface components {
             title: string;
             /** Version Id */
             version_id?: string | null;
+        };
+        /** DescribeEstimateModel */
+        DescribeEstimateModel: {
+            /** Completion Tokens */
+            completion_tokens: number;
+            /** Prompt Tokens */
+            prompt_tokens: number;
+            /** Reason */
+            reason?: string | null;
+            /** Sees Pictures */
+            sees_pictures: boolean;
+            /** Total Tokens */
+            total_tokens: number;
         };
         /**
          * Direction
@@ -6823,8 +7103,17 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Has Thumbnail
+             * @default false
+             */
+            has_thumbnail: boolean;
             /** Name */
             name: string;
+            /** Processing */
+            processing?: ("queued" | "processing" | "ready" | "failed") | null;
+            /** Processing Message */
+            processing_message?: string | null;
             /** Shown */
             shown: number;
             /** Version Id */
@@ -6832,6 +7121,10 @@ export interface components {
         };
         /** LinkAssetOp */
         LinkAssetOp: {
+            /** Applies From */
+            applies_from?: {
+                [key: string]: unknown;
+            } | null;
             /** Asset Id */
             asset_id: string;
             /** Asset Version Id */
@@ -6840,6 +7133,8 @@ export interface components {
             evidence?: components["schemas"]["EvidenceRef"][];
             /** Id */
             id: string;
+            /** Known By */
+            known_by?: string[];
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -6857,6 +7152,24 @@ export interface components {
              * @default entity
              */
             target_record_type: string;
+            /** Visibility */
+            visibility?: string | null;
+        };
+        /** LinkChangeRequest */
+        LinkChangeRequest: {
+            /** Applies From */
+            applies_from?: {
+                [key: string]: unknown;
+            } | null;
+            /** Expected Revision */
+            expected_revision: number;
+            /** Known By */
+            known_by?: string[];
+            /**
+             * Secret
+             * @default false
+             */
+            secret: boolean;
         };
         /** LinkRequest */
         LinkRequest: {
@@ -7211,6 +7524,69 @@ export interface components {
             /** Type */
             type: string;
         };
+        /** ObservationModel */
+        ObservationModel: {
+            /** Asset Version Id */
+            asset_version_id: string;
+            /** Confidence */
+            confidence?: number | null;
+            /** Corrected Text */
+            corrected_text?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Current */
+            current: boolean;
+            /** Id */
+            id: string;
+            /** Job Id */
+            job_id?: string | null;
+            /** Kind */
+            kind: string;
+            /** Model */
+            model?: string | null;
+            /** Prompt Version */
+            prompt_version?: string | null;
+            /** Proposal Mutation Set Id */
+            proposal_mutation_set_id?: string | null;
+            region?: components["schemas"]["ObservationRegionModel"] | null;
+            /** Reviewed At */
+            reviewed_at?: string | null;
+            /** State */
+            state: string;
+            /** Subject Name */
+            subject_name?: string | null;
+            /** Subject Record Id */
+            subject_record_id?: string | null;
+            /** Text */
+            text: string;
+            /** Words */
+            words: string;
+        };
+        /** ObservationProposeRequest */
+        ObservationProposeRequest: {
+            /** Entity Id */
+            entity_id?: string | null;
+        };
+        /** ObservationRegionModel */
+        ObservationRegionModel: {
+            /** Height */
+            height: number;
+            /** Width */
+            width: number;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
+        /** ObservationReviewRequest */
+        ObservationReviewRequest: {
+            /** Corrected Text */
+            corrected_text?: string | null;
+            decision: components["schemas"]["ReviewDecision"];
+        };
         /** OpenItemModel */
         OpenItemModel: {
             /** Code */
@@ -7353,6 +7729,79 @@ export interface components {
         PictureLibraryModel: {
             /** Items */
             items: components["schemas"]["LibraryPictureModel"][];
+            storage?: components["schemas"]["StorageModel"] | null;
+        };
+        /** PictureLinkModel */
+        PictureLinkModel: {
+            /** Applies From */
+            applies_from?: string | null;
+            /** Id */
+            id: string;
+            /** Known By */
+            known_by: string[];
+            /** Known By Names */
+            known_by_names: string[];
+            /** Role */
+            role: string;
+            /** Role Words */
+            role_words: string;
+            /** Secret */
+            secret: boolean;
+            /** Target Kind */
+            target_kind: string;
+            /** Target Name */
+            target_name: string;
+            /** Target Record Id */
+            target_record_id: string;
+            /** Target Record Type */
+            target_record_type: string;
+        };
+        /** PictureModel */
+        PictureModel: {
+            /** Asset Id */
+            asset_id: string;
+            context_choice: components["schemas"]["ContextChoice"];
+            /** Context Choice Words */
+            context_choice_words: string;
+            /** Description */
+            description: string;
+            /** Height */
+            height?: number | null;
+            /** Links */
+            links: components["schemas"]["PictureLinkModel"][];
+            /** Name */
+            name: string;
+            /** Observations */
+            observations: components["schemas"]["ObservationModel"][];
+            /** Revision */
+            revision: number;
+            version: components["schemas"]["PictureVersionModel"];
+            /** Versions */
+            versions: components["schemas"]["PictureVersionModel"][];
+            /** Width */
+            width?: number | null;
+        };
+        /** PictureVersionModel */
+        PictureVersionModel: {
+            /** Attribution */
+            attribution?: string | null;
+            /** Byte Length */
+            byte_length: number;
+            /** Content Type */
+            content_type: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Licence */
+            licence?: string | null;
+            /** Source */
+            source?: string | null;
+            /** Version */
+            version: number;
         };
         /** PlacedEventModel */
         PlacedEventModel: {
@@ -7550,6 +7999,41 @@ export interface components {
             /** Sentence */
             sentence: string;
         };
+        /**
+         * ProcessingModel
+         * @description How far a picture is in being prepared (its smaller copies), in plain words.
+         */
+        ProcessingModel: {
+            /**
+             * Attempts
+             * @default 0
+             */
+            attempts: number;
+            /** Copies */
+            copies?: string[];
+            /**
+             * Current
+             * @default false
+             */
+            current: boolean;
+            /** Failure Code */
+            failure_code?: string | null;
+            /** Height */
+            height?: number | null;
+            /**
+             * Helps
+             * @default false
+             */
+            helps: boolean;
+            /** Message */
+            message?: string | null;
+            /** Retryable */
+            retryable: boolean;
+            /** Status */
+            status: ("queued" | "processing" | "ready" | "failed") | null;
+            /** Width */
+            width?: number | null;
+        };
         /** ProjectModel */
         ProjectModel: {
             /**
@@ -7654,6 +8138,12 @@ export interface components {
             how: "told" | "overheard" | "saw";
             /** Why */
             why: string;
+        };
+        /** ProposedFactModel */
+        ProposedFactModel: {
+            /** Mutation Id */
+            mutation_id: string;
+            observation: components["schemas"]["ObservationModel"];
         };
         /**
          * Proposition
@@ -7861,6 +8351,19 @@ export interface components {
             /** Revision */
             revision: number;
         };
+        /** RegionRequest */
+        RegionRequest: {
+            /** Height */
+            height: number;
+            /** Label */
+            label?: string | null;
+            /** Width */
+            width: number;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
         /**
          * Relative
          * @description So long before or after an event: "three years before the war".
@@ -8029,6 +8532,11 @@ export interface components {
             /** To Revision */
             to_revision?: number | null;
         };
+        /**
+         * ReviewDecision
+         * @enum {string}
+         */
+        ReviewDecision: "accept" | "correct" | "reject";
         /** ReviewDecisionModel */
         ReviewDecisionModel: {
             /** Actor User Id */
@@ -8486,6 +8994,36 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** SegmentListModel */
+        SegmentListModel: {
+            /** Items */
+            items: components["schemas"]["SegmentModel"][];
+        };
+        /** SegmentModel */
+        SegmentModel: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Height */
+            height: number;
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "whole" | "region";
+            /** Label */
+            label?: string | null;
+            /** Width */
+            width: number;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
         /**
          * Selector
          * @description Which entries a rule is about. Every part given must match.
@@ -8617,6 +9155,13 @@ export interface components {
             description?: string | null;
             /** Name */
             name: string;
+        };
+        /** StorageModel */
+        StorageModel: {
+            /** Quota Bytes */
+            quota_bytes: number;
+            /** Used Bytes */
+            used_bytes: number;
         };
         /** StoryAssistantSettingsModel */
         StoryAssistantSettingsModel: {
@@ -11204,7 +11749,9 @@ export interface operations {
     };
     get_version_content_api_v1_projects__project_id__assets__asset_id__versions__version_id__content_get: {
         parameters: {
-            query?: never;
+            query?: {
+                size?: "thumbnail" | "web" | "original";
+            };
             header?: never;
             path: {
                 project_id: string;
@@ -11222,6 +11769,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_processing_api_v1_projects__project_id__assets__asset_id__versions__version_id__processing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                asset_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProcessingModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_processing_api_v1_projects__project_id__assets__asset_id__versions__version_id__processing_retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                asset_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProcessingModel"];
                 };
             };
             /** @description Validation Error */
@@ -11257,6 +11870,110 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_segments_api_v1_projects__project_id__assets__asset_id__versions__version_id__segments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                asset_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SegmentListModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_region_api_v1_projects__project_id__assets__asset_id__versions__version_id__segments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                asset_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SegmentModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retire_region_api_v1_projects__project_id__assets__asset_id__versions__version_id__segments__segment_id__retire_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                asset_id: string;
+                version_id: string;
+                segment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SegmentModel"];
                 };
             };
             /** @description Validation Error */
@@ -14862,6 +15579,78 @@ export interface operations {
             };
         };
     };
+    propose_observation_api_v1_projects__project_id__observations__observation_id__propose_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                observation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObservationProposeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposedFactModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_observation_api_v1_projects__project_id__observations__observation_id__review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                observation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObservationReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObservationModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     picture_library_api_v1_projects__project_id__pictures_get: {
         parameters: {
             query?: never;
@@ -14880,6 +15669,177 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PictureLibraryModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_picture_api_v1_projects__project_id__pictures__asset_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PictureModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_context_choice_api_v1_projects__project_id__pictures__asset_id__context_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContextChoiceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextChoiceModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    describe_picture_api_v1_projects__project_id__pictures__asset_id__describe_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
+            path: {
+                project_id: string;
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    describe_estimate_api_v1_projects__project_id__pictures__asset_id__describe_estimate_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DescribeEstimateModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_picture_link_api_v1_projects__project_id__pictures__asset_id__links__link_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                asset_id: string;
+                link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PictureModel"];
                 };
             };
             /** @description Validation Error */

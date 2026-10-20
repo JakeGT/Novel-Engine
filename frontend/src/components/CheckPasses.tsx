@@ -1,6 +1,6 @@
 import { useId } from 'react'
 import type { CheckPass, PassEstimate } from '../api/client'
-import { PASS_NAMES, PASS_ORDER, tokenCount } from '../lib/studio'
+import { ALL_PASSES, PASS_NAMES, PASS_ORDER, tokenCount } from '../lib/studio'
 
 // Choosing what the assistant checks (CON-008): each pass is one request of its own,
 // about one thing, with its cost said beside it before anything is sent.
@@ -24,7 +24,9 @@ export function PassChoices({
   const hintId = useId()
   const byPass = new Map(passes?.map((item) => [item.check_pass, item]))
   const toggle = (item: CheckPass, on: boolean) =>
-    onChange(PASS_ORDER.filter((other) => (other === item ? on : chosen.includes(other))))
+    onChange(ALL_PASSES.filter((other) => (other === item ? on : chosen.includes(other))))
+  // The pictures pass only where the scene has pictures it can use.
+  const offered = (byPass.get('pictures')?.total_tokens ?? 0) > 0 ? ALL_PASSES : PASS_ORDER
   return (
     <fieldset className="pass-choices" aria-describedby={hintId}>
       <legend>{legend}</legend>
@@ -32,7 +34,7 @@ export function PassChoices({
         {hint}
       </p>
       <ul className="pass-list">
-        {PASS_ORDER.map((item) => {
+        {offered.map((item) => {
           const found = byPass.get(item)
           return (
             <li key={item}>

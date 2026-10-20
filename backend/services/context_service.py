@@ -13,7 +13,7 @@ scene and changed through the ordinary reviewed path.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from backend.adapters.system import uuid7
@@ -39,6 +39,13 @@ from backend.domain.context import (
     stored_manifest,
     with_context_settings,
 )
+from backend.domain.context_parts import (
+    REPRESENTATION_WORDS,
+    ContextChoice,
+    Delivery,
+    MediaLimits,
+    planned_representation,
+)
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.knowledge import knowledge_of, reader_journey, reading_order, scene_reveals
@@ -49,10 +56,27 @@ from backend.domain.scene_intent import intent_sentences, scene_intent
 from backend.domain.sources import SourceKind, SourceText, find_mentions
 from backend.domain.tenancy import Permission
 from backend.domain.threads import thread_advances
-from backend.domain.worldtime import Interval, Order, Truth, compare, describe, true_at
+from backend.domain.worldtime import (
+    Interval,
+    Order,
+    Truth,
+    compare,
+    describe,
+    is_unknown,
+    parse_world_time,
+    resolve,
+    span_of,
+    true_at,
+)
 from backend.services.knowledge_timing import StoryOrder
 from backend.services.passage_index import IndexStatus
-from backend.services.story_time_service import event_times, fact_span, read_story, time_of
+from backend.services.story_time_service import (
+    anchor_lookup,
+    event_times,
+    fact_span,
+    read_story,
+    time_of,
+)
 
 MAX_PASSAGES = 40
 MAX_EVENTS = 40
@@ -65,6 +89,17 @@ ROLE_WORDS = {
     "about": "is what the scene is about",
 }
 ROLE_SCORE = {"point_of_view": 10.0, "place": 9.0, "participant": 8.0, "about": 6.0}
+# A picture shown on a scene links to the plan item that is the scene.
+SCENE_TARGET = "plan_item"
+# Pictures found by meaning, at most, after those the author linked.
+MAX_SIMILAR_PICTURES = 3
+
+
+def _listing(names: list[str]) -> str:
+    """ "Mara", "Mara and Tobin", "Mara, Tobin and Saltmere"."""
+    if len(names) <= 1:
+        return "".join(names)
+    return ", ".join(names[:-1]) + " and " + names[-1]
 
 
 @dataclass(frozen=True)
@@ -166,6 +201,12 @@ class ContextService:
         # The scene studio's store: which scene texts belong to which line of the story.
         # Set after construction, because the studio is built after this service.
         self.studio = studio
+        # Pictures: their accepted descriptions, choices and bytes (CTX-013). Set after
+        # construction, because the media services are built after this one.
+        self.pictures: Any = None
+        # Search by meaning for pictures (area B's ``MediaSearchService``); None leaves
+        # the scene's context to explicit links only.
+        self.search: Any = None
         self._local_mode = local_mode
 
     async def _authorize(
@@ -200,12 +241,26 @@ class ContextService:
         scene = await self._scene(scope, workspace_id, project_id, plan_id)
         settings = context_settings(scene.details)
         candidates, pov = await self.candidates(workspace_id, project_id, scene)
+        # A picture's own choice (AST-007): one to send is kept like a pin, one to leave
+        # out is left out like an exclusion; the scene's own pins and exclusions still win.
+        chosen_pins = [
+            item.key
+            for item in candidates
+            if item.media is not None
+            and item.media.choice is ContextChoice.SEND
+            and item.key not in settings.excludes
+        ]
+        chosen_out = [
+            item.key
+            for item in candidates
+            if item.media is not None and item.media.choice is ContextChoice.LEAVE_OUT
+        ]
         manifest = assemble(
             candidates,
             policy=SCENE_DRAFT_POLICY,
             budget=budget if budget is not None else settings.budget,
-            pins=settings.pins,
-            excludes=settings.excludes,
+            pins=[*settings.pins, *chosen_pins],
+            excludes=[*settings.excludes, *chosen_out],
             include_secrets=settings.include_secrets
             if include_secrets is None
             else include_secrets,
@@ -258,8 +313,10 @@ class ContextService:
         context: SceneContext,
         *,
         purpose: str,
+        delivery: Delivery | None = None,
     ) -> str:
-        """Record exactly what was given, so what came of it can be traced back."""
+        """Record exactly what was given, so what came of it can be traced back; with
+        ``delivery``, how each picture reached the model (CTX-013)."""
         if self._manifests is None:
             raise ValidationError("Context cannot be kept here.")
         manifest_id = f"ctx_{uuid7()}"
@@ -275,7 +332,7 @@ class ContextService:
             checksum=manifest.checksum,
             words=manifest.words,
             budget=manifest.budget,
-            manifest=stored_manifest(manifest, context.point_of_view),
+            manifest=stored_manifest(manifest, context.point_of_view, delivery),
             created_by=scope.actor_user_id,
         )
         return manifest_id
@@ -827,29 +884,273 @@ class ContextService:
                     )
                 )
 
-        # Pictures of who and what is in it.
-        links = await self._reader.list_links(
-            workspace_id=workspace_id, project_id=project_id, limit=500
+        # Pictures on the scene and of who and what is in it (AST-004, CTX-013).
+        out.extend(
+            await self._pictures(
+                workspace_id,
+                project_id,
+                scene,
+                cast,
+                names,
+                pov=pov,
+                moment=moment,
+                times=times,
+                unit=unit,
+                event_names=event_names,
+                known_ids=known_ids,
+            )
         )
-        for link in links:
-            if link.target_record_id in cast and link.retired_revision is None:
-                name = names.get(link.target_record_id, "an entry")
-                out.append(
-                    ContextItem(
-                        key=f"picture:{link.id}",
-                        section=ContextSection.PICTURES,
-                        text=f"There is a picture of {name} ({str(link.role).lower().replace('_', ' ')}).",
-                        reason=f"It shows {name}. Only its existence is given, not the image.",
-                        authority="picture",
-                        record_type="asset_link",
-                        record_id=link.id,
-                        score=1.5,
-                    )
-                )
 
         # The author's own writing that names the scene's people and places.
         out.extend(await self._writing(workspace_id, project_id, scene, cast, names))
         return out, pov
+
+    async def _pictures(
+        self,
+        workspace_id: str,
+        project_id: str,
+        scene: PlanItem,
+        cast: dict[str, str],
+        names: dict[str, str],
+        *,
+        pov: str | None,
+        moment: Interval | None,
+        times: dict[str, Any],
+        unit: str,
+        event_names: dict[str, str],
+        known_ids: set[str] | None = None,
+    ) -> list[ContextItem]:
+        """One item per picture: those on the scene, and those of who and what is in it.
+
+        A link that applies only from a later story time is left out; one whose start
+        the scene's time cannot settle is given with a note. A secret picture (AST-004)
+        reaches the page only when the viewpoint character is among those who know what
+        it shows; otherwise it sits with the secrets, for the author, and is never sent
+        as a picture. A picture is one item however many of the scene's people it shows,
+        so a portrait and its description are one piece of evidence, not two."""
+        links = await self._reader.list_links(
+            workspace_id=workspace_id, project_id=project_id, limit=500
+        )
+        found: dict[str, dict[str, Any]] = {}
+        # Pictures of the scene left out by its story time: never brought back by meaning.
+        skipped: set[str] = set()
+        for link in links:
+            if not link.is_active:
+                continue
+            on_scene = link.target_record_type == SCENE_TARGET and link.target_record_id == scene.id
+            of_cast = link.target_record_type != SCENE_TARGET and link.target_record_id in cast
+            if not (on_scene or of_cast):
+                continue
+            note = ""
+            if link.applies_from is not None:
+                start = parse_world_time(link.applies_from)
+                if start is not None and not is_unknown(start):
+                    from_words = describe(start, unit=unit, event_name=event_names.get)
+                    if moment is None:
+                        note = (
+                            f" It applies from {from_words}; the scene has no time, so it may "
+                            "not apply yet."
+                        )
+                    else:
+                        truth = true_at(span_of(resolve(start, anchor_lookup(times)), None), moment)
+                        if truth is Truth.FALSE:
+                            skipped.add(link.asset_id)
+                            continue
+                        if truth is Truth.MAYBE:
+                            note = f" It applies from {from_words}, around the scene's time."
+            entry = found.setdefault(
+                link.asset_id, {"targets": [], "scene": False, "secret": False, "notes": []}
+            )
+            if on_scene:
+                entry["scene"] = True
+            else:
+                entry["targets"].append(names.get(link.target_record_id, "someone in the scene"))
+            if link.is_secret and (pov is None or pov not in link.known_by):
+                entry["secret"] = True
+            if note and note not in entry["notes"]:
+                entry["notes"].append(note)
+        similar = await self._similar_pictures(
+            workspace_id, project_id, scene, pov, set(found) | skipped, known_ids or set(), links
+        )
+        if not found and not similar:
+            return []
+        pictures: dict[str, Any] = {}
+        if self.pictures is not None:
+            pictures = await self.pictures.for_context(workspace_id, project_id, [*found, *similar])
+        out: list[ContextItem] = []
+        for asset_id, entry in found.items():
+            picture = pictures.get(asset_id)
+            if self.pictures is not None and picture is None:
+                # Retired, or no current version: nothing to show or send.
+                continue
+            targets = list(dict.fromkeys(entry["targets"]))
+            shows = _listing(targets) if targets else "this scene"
+            title = f"“{picture.asset.name}”" if picture is not None else "a picture"
+            label = f"{title}, version {picture.version.version}" if picture is not None else title
+            description = picture.description if picture is not None else ""
+            notes = "".join(entry["notes"])
+            if description:
+                text = f"A picture of {shows} ({title}): {description}{notes}"
+            else:
+                text = (
+                    f"There is a picture of {shows} ({title}); it has no accepted "
+                    f"description yet.{notes}"
+                )
+            why = "You put it on this scene." if entry["scene"] else f"It shows {shows}."
+            key = f"picture:{asset_id}"
+            # A version marked secret is kept from every point of view, as search keeps it.
+            secret_version = picture is not None and picture.version.visibility == "secret"
+            if entry["secret"] or secret_version:
+                who = names.get(pov) if pov else None
+                if entry["secret"]:
+                    secret_reason = (
+                        f"It is a secret picture {who or 'the viewpoint character'} does not know."
+                        if pov
+                        else "It is a secret picture, and no point of view is chosen for the scene."
+                    )
+                else:
+                    secret_reason = "This version of the picture is marked secret."
+                out.append(
+                    ContextItem(
+                        key=key,
+                        section=ContextSection.SECRETS,
+                        text=text,
+                        reason=f"{why} {secret_reason} It is never sent as a picture.",
+                        authority="picture",
+                        record_type="asset",
+                        record_id=asset_id,
+                        score=3,
+                    )
+                )
+                continue
+            media = (
+                self.pictures.context_part(picture, label=label, key=key)
+                if picture is not None and self.pictures is not None
+                else None
+            )
+            choice_words = ""
+            if media is not None:
+                choice_words = (
+                    " "
+                    + REPRESENTATION_WORDS[planned_representation(media.choice, bool(description))]
+                )
+            out.append(
+                ContextItem(
+                    key=key,
+                    section=ContextSection.PICTURES,
+                    text=text,
+                    reason=why + choice_words,
+                    authority="picture",
+                    record_type="asset",
+                    record_id=asset_id,
+                    score=(3.0 if entry["scene"] else 1.5) + (0.5 if description else 0),
+                    media=media,
+                )
+            )
+        for asset_id, score in similar.items():
+            picture = pictures.get(asset_id)
+            # Found by meaning: only its accepted words are given, never the picture, and
+            # never above a picture the author linked.
+            if picture is None or not picture.description or self.pictures is None:
+                continue
+            if picture.version.visibility == "secret":
+                continue
+            key = f"picture:{asset_id}"
+            media = self.pictures.context_part(
+                picture,
+                label=f"“{picture.asset.name}”, version {picture.version.version}",
+                key=key,
+            )
+            # One the author chose to leave out stays out; one to send is only described.
+            if media.choice is ContextChoice.LEAVE_OUT:
+                continue
+            if media.choice is ContextChoice.SEND:
+                media = replace(media, choice=ContextChoice.DESCRIBE)
+            out.append(
+                ContextItem(
+                    key=key,
+                    section=ContextSection.PICTURES,
+                    text=f"A picture like this scene (“{picture.asset.name}”): {picture.description}",
+                    reason=(
+                        "It was found by meaning, not linked by you, so only its accepted "
+                        "description is given."
+                    ),
+                    authority="similar picture",
+                    record_type="asset",
+                    record_id=asset_id,
+                    score=0.5 + min(max(score, 0.0), 1.0) * 0.4,
+                    media=media,
+                )
+            )
+        return out
+
+    async def _similar_pictures(
+        self,
+        workspace_id: str,
+        project_id: str,
+        scene: PlanItem,
+        pov: str | None,
+        linked: set[str],
+        known_ids: set[str],
+        links: list[Any],
+    ) -> dict[str, float]:
+        """Pictures found by meaning for the scene (area B's search), behind every gate
+        it applies, and this one too: a picture with a secret link the viewpoint is not
+        among those who know is never suggested. Empty when search is not set up."""
+        if self.search is None or self.pictures is None:
+            return {}
+        query = " ".join(part for part in (scene.title, scene.summary or "") if part).strip()
+        if not query:
+            return {}
+        from backend.domain.embedding import SearchGate
+
+        try:
+            result = await self.search.pictures_for(
+                workspace_id,
+                project_id,
+                query=query,
+                gate=SearchGate(point_of_view=True, point_of_view_id=pov),
+                limit=MAX_SIMILAR_PICTURES + len(linked),
+            )
+        except Exception:  # noqa: BLE001 - search by meaning is extra; links stand alone
+            return {}
+        secret = {
+            link.asset_id
+            for link in links
+            if link.is_active and link.is_secret and (pov is None or pov not in link.known_by)
+        }
+        found: dict[str, float] = {}
+        for candidate in result.pictures:
+            if candidate.reason != "similar" or candidate.asset_id in linked:
+                continue
+            if candidate.asset_id in secret:
+                continue
+            found[candidate.asset_id] = float(candidate.score or 0.0)
+            if len(found) >= MAX_SIMILAR_PICTURES:
+                break
+        return found
+
+    async def deliver(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        context: SceneContext,
+        limits: MediaLimits,
+        *,
+        sections: frozenset[ContextSection] | None = None,
+    ) -> Any:
+        """What a request made from this context carries for its pictures (CTX-013):
+        each picture given, as the picture itself or its description, decided for the
+        route the request uses. None when pictures are not set up here."""
+        if self.pictures is None:
+            return None
+        parts = [
+            item.media
+            for item in context.manifest.items
+            if item.media is not None and (sections is None or item.section in sections)
+        ]
+        return await self.pictures.deliver(scope, workspace_id, project_id, parts, limits)
 
     async def _writing(
         self,

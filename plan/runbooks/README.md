@@ -17,6 +17,9 @@ the same commands with `uv run --locked` in place of `docker compose exec server
 | [Disk full](disk-full.md) | Saves fail, the database stops, backups fail |
 | [Rotating the credential key](credential-key-rotation.md) | The key that protects stored provider keys must change |
 | [Connected assistants and access keys](connected-assistants.md) | Connecting an assistant through MCP; a key leaked; an assistant is refused |
+| [Pictures not prepared, failing, or filling the disk](media-processing.md) | Readiness says pictures have waited too long; "Could not prepare"; "No room left"; files nothing refers to |
+| [Search by meaning off, behind, or changing model](search-index.md) | Readiness says finding by meaning is off; the model setting was changed; pictures or captions not found by meaning |
+| [The assistant and pictures](picture-descriptions.md) | "The assistant you use cannot see pictures"; turning picture input on or off; a description job failing |
 
 Every command was checked against the code (2026-10-18). The read-only ones (the migration
 check, the story check, the SQL queries, the retention dry run, diagnostics, the readiness

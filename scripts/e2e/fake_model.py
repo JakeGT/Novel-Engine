@@ -120,7 +120,77 @@ def _change(body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# Describing a picture (AST-005): pictures come as ``image_url`` parts of the last user
+# message (CTX-013). The stand-in never looks at them; it answers in fixed words, about
+# the first entry listed, so a browser test can accept a detail and offer it as a fact.
+LISTED_ENTRY = re.compile(r"^- (.+) \(([a-z ]+)\)$", re.MULTILINE)
+
+
+def _pictures_in(body: dict[str, Any]) -> int:
+    count = 0
+    for message in body.get("messages", []):
+        content = message.get("content")
+        if isinstance(content, list):
+            count += sum(1 for part in content if part.get("type") == "image_url")
+    return count
+
+
+def _text_of(body: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for message in body.get("messages", []):
+        content = message.get("content")
+        if isinstance(content, list):
+            parts.extend(
+                str(part.get("text", "")) for part in content if part.get("type") == "text"
+            )
+        else:
+            parts.append(str(content or ""))
+    return "\n".join(parts)
+
+
+def _describe(body: dict[str, Any]) -> dict[str, Any]:
+    if not _pictures_in(body):
+        # Never pretend: with no picture sent, there is nothing to describe.
+        return {"caption": "", "confidence": 0, "details": []}
+    asked = _text_of(body)
+    entries = asked.split("ENTRIES-1>>>", 1)[1] if "ENTRIES-1>>>" in asked else ""
+    listed = LISTED_ENTRY.findall(entries)
+    about = listed[0][0] if listed else ""
+    return {
+        "caption": "A woman in a long blue coat stands on a quay at dusk.",
+        "confidence": 0.82,
+        "details": [
+            {
+                "detail": "She wears a long blue coat.",
+                "about": about,
+                "region": {"x": 0.25, "y": 0.2, "width": 0.5, "height": 0.7},
+                "confidence": 0.8,
+            },
+            {"detail": "Her hair is short and grey.", "about": about, "confidence": 0.6},
+        ],
+    }
+
+
+def _picture_check(body: dict[str, Any]) -> dict[str, Any]:
+    if not _pictures_in(body) and "A picture of" not in _text_of(body):
+        return {"notes": []}
+    return {
+        "notes": [
+            {
+                "quote": "Wren Hollis crossed the yard",
+                "problem": "Her picture shows her in a long blue coat; the scene does not.",
+                "suggestion": "Mention the coat.",
+                "picture": "picture 1" if _pictures_in(body) else "",
+            }
+        ]
+    }
+
+
 def _structured(name: str, body: dict[str, Any]) -> dict[str, Any]:
+    if name == "PictureDescription":
+        return _describe(body)
+    if name == "PictureNotes":
+        return _picture_check(body)
     if name == "CheckNotes":
         return _check(body)
     if "Review" in name:

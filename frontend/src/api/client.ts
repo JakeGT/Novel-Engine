@@ -285,6 +285,12 @@ export interface AssetLink {
 
 /** A picture the author can choose for an entry or a scene, shown somewhere or nowhere. */
 export type LibraryPicture = Schemas['LibraryPictureModel']
+export type PictureProcessing = Schemas['ProcessingModel']
+export type PictureStorage = Schemas['StorageModel']
+/** Which copy of a picture to fetch: a 256px thumbnail, a 1024px copy, or the file itself. */
+export type PictureSize = 'thumbnail' | 'web' | 'original'
+/** A fetched picture, and which copy the server sent (the original until a copy is made). */
+export type FetchedPicture = { url: string; served: PictureSize }
 
 export interface AssetLifecycleEvent {
   action: string
@@ -1164,14 +1170,73 @@ export const api = {
    * A picture as a local object address. An <img> cannot send the workspace header
    * the server needs, so the bytes are fetched here and handed to the image.
    */
-  pictureUrl: async (scope: Scope, assetId: string, versionId: string): Promise<string> => {
+  pictureUrl: async (
+    scope: Scope,
+    assetId: string,
+    versionId: string,
+    size: PictureSize = 'original',
+  ): Promise<FetchedPicture> => {
     const headers = new Headers(branchHeaders(scope))
     if (scope.workspaceId) headers.set('X-Workspace-Id', scope.workspaceId)
+    const query = size === 'original' ? '' : `?size=${size}`
     const response = await fetch(
-      `${project(scope)}/assets/${id(assetId)}/versions/${id(versionId)}/content`,
+      `${project(scope)}/assets/${id(assetId)}/versions/${id(versionId)}/content${query}`,
       { credentials: 'include', headers },
     )
     if (!response.ok) throw new ApiError(response.status, 'The picture could not be loaded.')
-    return URL.createObjectURL(await response.blob())
+    const served = (response.headers.get('X-Picture-Size') ?? 'original') as PictureSize
+    return { url: URL.createObjectURL(await response.blob()), served }
   },
+  pictureProcessing: (scope: Scope, assetId: string, versionId: string) =>
+    get<PictureProcessing>(scope, `/assets/${id(assetId)}/versions/${id(versionId)}/processing`),
+  retryPicture: (scope: Scope, assetId: string, versionId: string) =>
+    send<PictureProcessing>(
+      scope,
+      'POST',
+      `/assets/${id(assetId)}/versions/${id(versionId)}/processing/retry`,
+    ),
+}
+
+// ---------------------------------------------------------------------------------
+// One picture: what the assistant saw in it, and how it is used in context
+// (AST-005, AST-007, CTX-013). Kept apart from `api` above so the picture page's calls
+// sit together.
+
+export type Picture = Schemas['PictureModel']
+export type PictureLink = Schemas['PictureLinkModel']
+export type PictureObservation = Schemas['ObservationModel']
+export type DescribeEstimate = Schemas['DescribeEstimateModel']
+export type PictureChoice = Schemas['PictureModel']['context_choice']
+export type ContextPicture = Schemas['ContextPictureModel']
+
+export const pictureApi = {
+  picture: (scope: Scope, assetId: string) => get<Picture>(scope, `/pictures/${id(assetId)}`),
+  describeEstimate: (scope: Scope, assetId: string) =>
+    get<DescribeEstimate>(scope, `/pictures/${id(assetId)}/describe/estimate`),
+  /** Asked about first above the story's threshold (see lib/spend); a job to follow. */
+  describe: (scope: Scope, assetId: string) =>
+    send<StudioJob>(scope, 'POST', `/pictures/${id(assetId)}/describe`),
+  review: (
+    scope: Scope,
+    observationId: string,
+    decision: 'accept' | 'correct' | 'reject',
+    correctedText?: string,
+  ) =>
+    send<PictureObservation>(scope, 'POST', `/observations/${id(observationId)}/review`, {
+      decision,
+      corrected_text: correctedText ?? null,
+    }),
+  /** Offer an accepted detail as a fact: a suggestion in the review queue. */
+  propose: (scope: Scope, observationId: string, entityId?: string) =>
+    send<Schemas['ProposedFactModel']>(scope, 'POST', `/observations/${id(observationId)}/propose`, {
+      entity_id: entityId ?? null,
+    }),
+  setChoice: (scope: Scope, assetId: string, choice: PictureChoice) =>
+    send<Schemas['ContextChoiceModel']>(scope, 'PUT', `/pictures/${id(assetId)}/context`, { choice }),
+  changeLink: (
+    scope: Scope,
+    assetId: string,
+    linkId: string,
+    change: { secret: boolean; known_by: string[]; applies_from: WorldTime | null; expected_revision: number },
+  ) => send<Picture>(scope, 'PUT', `/pictures/${id(assetId)}/links/${id(linkId)}`, change),
 }

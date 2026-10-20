@@ -80,7 +80,10 @@ def test_the_estimate_lists_the_part_scene_by_scene_and_asks_no_model(auth_clien
         "plan",
         "voice",
         "clarity",
+        # No pictures on these scenes: listed, and nothing to spend.
+        "pictures",
     ]
+    assert found["passes"][-1]["total_tokens"] == 0
     assert found["total_tokens"] == sum(item["total_tokens"] for item in found["passes"])
     assert found["total_tokens"] == sum(scene["total_tokens"] for scene in found["scenes"])
 

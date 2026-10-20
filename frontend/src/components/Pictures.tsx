@@ -1,9 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
 import { useRef, useState, type ChangeEvent } from 'react'
-import { api, type AssetLink, type CanonEntity, type LibraryPicture, type Scope } from '../api/client'
+import {
+  api,
+  type AssetLink,
+  type CanonEntity,
+  type LibraryPicture,
+  type PictureSize,
+  type Scope,
+} from '../api/client'
 import { isPicture, usePictureLibrary, usePictureUrl } from '../lib/pictures'
 import { scopedKey, useCanonWrite, useProject } from '../project'
-import { Badge, Button, ErrorNotice, TypeAvatar, UndoNotice, WriteProblem } from './ui'
+import { Badge, Button, Dialog, ErrorNotice, TypeAvatar, UndoNotice, WriteProblem } from './ui'
 
 const MAX_BYTES = 8 * 1024 * 1024
 const ACCEPT = 'image/png,image/jpeg,image/webp'
@@ -22,7 +29,7 @@ export function Portrait({
   size?: 'sm' | 'lg'
 }) {
   const { scope } = useProject()
-  const picture = usePictureUrl(scope, ofLink(link))
+  const picture = usePictureUrl(scope, ofLink(link), 'thumbnail')
   if (!link || !picture.data) return <TypeAvatar type={entity.type} name={entity.name} size={size} />
   return (
     <span className={`avatar portrait ${size ?? ''}`}>
@@ -32,30 +39,65 @@ export function Portrait({
 }
 
 /**
- * A stored picture, scaled by the browser to the size its class gives it. There are no
- * smaller copies on the server (making them needs image resizing, which is not built),
- * so a small picture still loads the whole file once.
+ * A stored picture. Lists show its small copy, made on the server once the picture has
+ * been prepared (the full picture until then); ``openable`` lets the author open the
+ * full picture over the page.
  */
 export function PictureImage({
   assetId,
   versionId,
   label,
   className = 'picture',
+  size = 'thumbnail',
+  openable = false,
 }: {
   assetId: string
   versionId: string | null
   label: string
   className?: string
+  size?: PictureSize
+  openable?: boolean
 }) {
   const { scope } = useProject()
-  const picture = usePictureUrl(scope, { assetId, versionId })
+  const picture = usePictureUrl(scope, { assetId, versionId }, size)
+  const [open, setOpen] = useState(false)
   if (picture.isError) return <span className={`${className} missing`}>Could not load</span>
   if (!picture.data) return <span className={`${className} loading`} role="status" aria-label="Loading picture" />
-  return <img className={className} src={picture.data} alt={label} decoding="async" />
+  const image = <img className={className} src={picture.data} alt={label} decoding="async" />
+  if (!openable) return image
+  return (
+    <>
+      <button type="button" className="picture-open" aria-label={`Open ${label}`} onClick={() => setOpen(true)}>
+        {image}
+      </button>
+      {open && <PictureViewer assetId={assetId} versionId={versionId} label={label} onClose={() => setOpen(false)} />}
+    </>
+  )
+}
+
+/** The full picture, opened over the page; closing returns to where the author was. */
+export function PictureViewer({
+  assetId,
+  versionId,
+  label,
+  onClose,
+}: {
+  assetId: string
+  versionId: string | null
+  label: string
+  onClose: () => void
+}) {
+  return (
+    <Dialog title={label} onClose={onClose} wide>
+      <div className="picture-viewer">
+        <PictureImage assetId={assetId} versionId={versionId} label={label} size="original" className="picture-full" />
+      </div>
+    </Dialog>
+  )
 }
 
 function Thumbnail({ link, label }: { link: AssetLink; label: string }) {
-  return <PictureImage assetId={link.asset_id} versionId={link.asset_version_id} label={label} />
+  return <PictureImage assetId={link.asset_id} versionId={link.asset_version_id} label={label} openable />
 }
 
 /**
@@ -87,7 +129,7 @@ export function PictureLibrary({
     <ul className="pictures">
       {choices.map((picture) => (
         <li key={picture.asset_id}>
-          <PictureImage assetId={picture.asset_id} versionId={picture.version_id} label={picture.name} />
+          <PictureImage assetId={picture.asset_id} versionId={picture.version_id} label={picture.name} openable />
           <span className="picture-name small">{picture.name}</span>
           {picture.shown === 0 && <span className="hint">Not shown anywhere</span>}
           <button

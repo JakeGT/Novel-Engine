@@ -1,0 +1,88 @@
+{
+  "cases": 74,
+  "false_positives": [],
+  "families": {
+    "continuity": {
+      "clean": 12,
+      "defects": 17,
+      "f1": 0.97,
+      "false_negative": 1,
+      "false_positive": 0,
+      "false_positive_rate": 0.0,
+      "precision": 1.0,
+      "recall": 0.941,
+      "true_negative": 12,
+      "true_positive": 16
+    },
+    "drafting": {
+      "clean": 4,
+      "defects": 9,
+      "f1": 0.941,
+      "false_negative": 1,
+      "false_positive": 0,
+      "false_positive_rate": 0.0,
+      "precision": 1.0,
+      "recall": 0.889,
+      "true_negative": 4,
+      "true_positive": 8
+    },
+    "knowledge": {
+      "clean": 5,
+      "defects": 4,
+      "f1": 1.0,
+      "false_negative": 0,
+      "false_positive": 0,
+      "false_positive_rate": 0.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "true_negative": 5,
+      "true_positive": 4
+    },
+    "plan": {
+      "clean": 4,
+      "defects": 5,
+      "f1": 1.0,
+      "false_negative": 0,
+      "false_positive": 0,
+      "false_positive_rate": 0.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "true_negative": 4,
+      "true_positive": 5
+    },
+    "rules": {
+      "clean": 7,
+      "defects": 7,
+      "f1": 1.0,
+      "false_negative": 0,
+      "false_positive": 0,
+      "false_positive_rate": 0.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "true_negative": 7,
+      "true_positive": 7
+    }
+  },
+  "leakage": {
+    "cases": 10,
+    "caught": 9,
+    "recall": 0.9
+  },
+  "missed": [
+    "continuity/two-places-place-only-in-words",
+    "drafting/secret-by-pronoun"
+  ],
+  "overall": {
+    "clean": 32,
+    "defects": 42,
+    "f1": 0.975,
+    "false_negative": 2,
+    "false_positive": 0,
+    "false_positive_rate": 0.0,
+    "precision": 1.0,
+    "recall": 0.952,
+    "true_negative": 32,
+    "true_positive": 40
+  },
+  "set": "saltglass-consistency/1"
+}

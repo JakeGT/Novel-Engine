@@ -99,11 +99,91 @@ async def _vector_store(container: Container) -> tuple[bool, str | None]:
     except Exception:  # noqa: BLE001 - a slow or failing store is simply down
         healthy = False
     if not healthy:
+        index = getattr(container.vectors, "index", None)
+        reachable = False
+        if index is not None and hasattr(index, "ping"):
+            try:
+                reachable = bool(await asyncio.to_thread(index.ping))
+            except Exception:  # noqa: BLE001 - unreachable is simply down
+                reachable = False
+        if reachable:
+            return False, (
+                "The search index in use was built with another model, so finding passages "
+                "by meaning is off until it is rebuilt. Search by name still works."
+            )
         return False, (
             "The search store could not be reached, so finding passages by meaning is off. "
             "Search by name still works."
         )
     return True, None
+
+
+async def _search_index(
+    container: Container,
+) -> tuple[bool, str | None, dict[str, object]] | None:
+    """Which search index is in use, what is being built, and how far behind each is
+    (CTX-012). Counts and model names only, never content."""
+    service = getattr(container, "embedding_index_service", None)
+    if service is None:
+        return None
+    try:
+        status = await asyncio.wait_for(service.status(), timeout=OPTIONAL_CHECK_SECONDS)
+    except TimeoutError:
+        try:
+            status = await asyncio.wait_for(
+                service.status(with_lag=False), timeout=OPTIONAL_CHECK_SECONDS
+            )
+        except Exception:  # noqa: BLE001 - a slow or failing store is simply down
+            return False, "The search index could not be read.", {}
+    except Exception:  # noqa: BLE001 - a slow or failing store is simply down
+        return False, "The search index could not be read.", {}
+    active = status.active or {}
+    building = status.building or {}
+    facts: dict[str, object] = {
+        "active_generation": active.get("id"),
+        "active_model": active.get("model"),
+        "active_dimension": active.get("dimension"),
+        "active_rows": active.get("rows"),
+        "lag": status.lag.get("total") if status.lag else None,
+        "building_generation": building.get("id"),
+        "building_lag": (status.building_lag or {}).get("total") if building else None,
+    }
+    switched_off = service.embedder is None
+    return (status.searchable or switched_off), status.reason, facts
+
+
+# A picture waiting longer than this to be prepared means picture work is stuck or behind.
+STALE_PICTURE_SECONDS = 900
+
+
+async def _picture_processing(
+    container: Container,
+) -> tuple[bool, str | None, dict[str, object]] | None:
+    """Whether pictures are being prepared (OPS-007): how many wait, the oldest wait and
+    how many failed. Counts only; None when this server does not prepare pictures."""
+    media = getattr(container, "media_service", None)
+    if media is None or not getattr(media, "processing_enabled", False):
+        return None
+    try:
+        lag = await asyncio.wait_for(media.processing_lag(), timeout=OPTIONAL_CHECK_SECONDS)
+    except Exception:  # noqa: BLE001 - reported in plain words, never the error text
+        return False, "How far picture preparation has got could not be read.", {}
+    if lag is None:
+        return None
+    oldest = lag.get("oldest_seconds")
+    facts: dict[str, object] = {
+        "waiting": int(lag.get("waiting") or 0),
+        "oldest_waiting_seconds": None if oldest is None else round(float(oldest)),
+        "failed": int(lag.get("failed") or 0),
+    }
+    if oldest is not None and float(oldest) > STALE_PICTURE_SECONDS:
+        return (
+            False,
+            "Pictures have waited too long to be prepared, so lists show the full pictures "
+            "for now. The pictures themselves are safe.",
+            facts,
+        )
+    return True, None, facts
 
 
 # What a failed required check says to a caller who may not see the details.
@@ -215,6 +295,30 @@ async def readiness(
         vectors_ok, vectors_detail = await _vector_store(container)
         record("vector_store", vectors_ok, vectors_detail, optional=True)
 
+    search_index = await _search_index(container)
+    if search_index is not None:
+        index_ok, index_detail, index_facts = search_index
+        record(
+            "search_index",
+            index_ok,
+            index_detail,
+            optional=True,
+            brief="Finding things by meaning is off for now; names and links still work.",
+            **index_facts,
+        )
+
+    pictures = await _picture_processing(container)
+    if pictures is not None:
+        pictures_ok, pictures_detail, picture_facts = pictures
+        record(
+            "media_processing",
+            pictures_ok,
+            pictures_detail,
+            optional=True,
+            brief="Pictures are not being prepared on time; the full pictures are shown instead.",
+            **picture_facts,
+        )
+
     if not ok:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         overall = "unavailable"
@@ -233,6 +337,26 @@ async def readiness(
         str(entry["detail"]) for entry in checks.values() if not entry["ok"] and entry.get("detail")
     ]
     return {"status": overall, "checks": checks, "reasons": reasons}
+
+
+def _search_model(container: Container) -> dict[str, object]:
+    """The typed embedder this server is set up with (CTX-011): what it can read."""
+    embedder = getattr(container, "multimodal_embedder", None)
+    if embedder is None:
+        return {"available": False, "optional": True, "reason": "switched off"}
+    health = embedder.health()
+    space = embedder.space
+    return {
+        "available": health.available,
+        "loaded": health.loaded,
+        "optional": True,
+        "model": space.model,
+        "revision": space.revision,
+        "dimension": space.dimension,
+        "modalities": sorted(m.value for m in space.modalities),
+        "task_set": space.task_set,
+        "reason": health.reason,
+    }
 
 
 @router.get("/health/capabilities")
@@ -282,11 +406,13 @@ def capabilities(container: Container = Depends(get_container)) -> dict[str, obj
                 "optional": True,
                 "reason": None if sentry_ok else "SENTRY_DSN_BACKEND is not configured",
             },
+            "pictures": _picture_capability(container),
             "auth": {
                 "mode": container.settings.AUTH_MODE,
                 "oidc_configured": oidc_configured,
                 "optional": False,
             },
+            "search_model": _search_model(container),
             "vector": {
                 "available": vectors_ok,
                 "optional": True,
@@ -295,9 +421,35 @@ def capabilities(container: Container = Depends(get_container)) -> dict[str, obj
                 "reason": (
                     None
                     if vectors_ok
-                    else "vector_documents is unreachable or the configured embedding "
-                    "dimension does not match the schema"
+                    else "the search index is unreachable, or was built with a different "
+                    "model from the configured one (rebuild it), or the configured embedding "
+                    "dimension does not match the model"
                 ),
             },
         },
+    }
+
+
+def _picture_capability(container: Container) -> dict[str, object]:
+    """Whether this server can prepare pictures (Pillow present and able to read PNG,
+    JPEG and WebP and write WebP), and whether it is switched on. Never breaks startup."""
+    from backend.adapters.image_processor import PROCESSOR_VERSION, pillow_capability
+
+    found = pillow_capability()
+    enabled = bool(container.settings.MEDIA_PROCESSING_ENABLED)
+    available = bool(found.get("available")) and enabled
+    reason = None
+    if not enabled:
+        reason = "picture preparation is switched off (MEDIA_PROCESSING_ENABLED)"
+    elif not found.get("available"):
+        reason = "Pillow is missing or cannot read PNG, JPEG and WebP and write WebP"
+    return {
+        "available": available,
+        "optional": True,
+        "enabled": enabled,
+        "pillow_version": found.get("version"),
+        "formats": {key: bool(found.get(key)) for key in ("png", "jpeg", "webp")},
+        "processor_version": PROCESSOR_VERSION,
+        "isolated": True,
+        "reason": reason,
     }

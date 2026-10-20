@@ -694,6 +694,17 @@ class CanonHistoryService:
                             "target_record_type": link.target_record_type,
                             "target_id": link.target_record_id,
                             "role": link.role.value,
+                            # Its secrecy and story time come back with it (AST-004).
+                            **(
+                                {"visibility": link.visibility, "known_by": link.known_by}
+                                if link.is_secret
+                                else {}
+                            ),
+                            **(
+                                {"applies_from": link.applies_from}
+                                if link.applies_from is not None
+                                else {}
+                            ),
                         },
                     )
             else:

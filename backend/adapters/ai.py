@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import math
 import time
+from collections.abc import Sequence
 from typing import Any
 
 from backend.core.logging import log_event
@@ -11,7 +13,9 @@ from backend.domain.providers import StructuredMode, request_model, spec_for_bas
 from backend.ports import (
     AIInvalidOutputError,
     AIProviderError,
+    AIUnsupportedInputError,
     AIUsage,
+    ImageInput,
     ProviderCapabilities,
     StructuredResponse,
     TextResponse,
@@ -112,6 +116,50 @@ def prompted_messages(
     return shaped
 
 
+def check_images(images: Sequence[ImageInput], capabilities: ProviderCapabilities) -> None:
+    """Refuse, before anything is sent, pictures the route cannot take (CTX-013)."""
+    if not images:
+        return
+    if not capabilities.sees_images:
+        raise AIUnsupportedInputError("the chosen model cannot be sent pictures")
+    if len(images) > capabilities.max_images:
+        raise AIUnsupportedInputError(
+            f"the chosen model takes at most {capabilities.max_images} pictures at once"
+        )
+    for image in images:
+        if capabilities.image_types and image.content_type not in capabilities.image_types:
+            raise AIUnsupportedInputError("the chosen model cannot take this kind of picture")
+        if capabilities.max_image_bytes and len(image.data) > capabilities.max_image_bytes:
+            raise AIUnsupportedInputError("a picture is larger than the chosen model takes")
+
+
+def with_images(messages: list[dict[str, str]], images: Sequence[ImageInput]) -> list[Any]:
+    """The messages in the OpenAI-compatible shape, with the pictures after the last user
+    message's words (text first, then pictures, as OpenRouter recommends). Each picture
+    is an inline ``data:`` address: never a lasting public address."""
+    if not images:
+        return list(messages)
+    shaped: list[Any] = [dict(message) for message in messages]
+    last = max(
+        (index for index, message in enumerate(shaped) if message.get("role") == "user"),
+        default=None,
+    )
+    if last is None:
+        shaped.append({"role": "user", "content": ""})
+        last = len(shaped) - 1
+    parts: list[dict[str, Any]] = [{"type": "text", "text": shaped[last]["content"]}]
+    for image in images:
+        encoded = base64.b64encode(image.data).decode("ascii")
+        parts.append(
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:{image.content_type};base64,{encoded}"},
+            }
+        )
+    shaped[last] = {"role": "user", "content": parts}
+    return shaped
+
+
 class OpenAIGateway:
     """AsyncOpenAI-compatible adapter.
 
@@ -133,12 +181,23 @@ class OpenAIGateway:
         *,
         provider: str = "openai",
         base_url: str = "",
+        image_input: bool = False,
+        image_max_count: int = 4,
+        image_max_bytes: int = 5 * 1024 * 1024,
+        image_types: frozenset[str] = frozenset({"image/png", "image/jpeg", "image/webp"}),
+        image_providers: frozenset[str] = frozenset(),
     ) -> None:
         self._api_key = api_key
         self._default_model = default_model
         self._provider = provider
         self._base_url = base_url
         self._client: Any = None
+        # CTX-013: which routes can see pictures, as the operator declared them.
+        self._image_input = image_input
+        self._image_max_count = max(0, image_max_count)
+        self._image_max_bytes = max(0, image_max_bytes)
+        self._image_types = image_types
+        self._image_providers = image_providers
 
     def _build_client(self, api_key: str | None, base_url: str | None) -> Any:
         from openai import AsyncOpenAI
@@ -160,15 +219,28 @@ class OpenAIGateway:
     def is_available(self) -> bool:
         return bool(self._api_key or self._base_url)
 
-    def capabilities(self) -> ProviderCapabilities:
+    def capabilities(self, *, base_url: str | None = None) -> ProviderCapabilities:
+        """The configured route, or a workspace's own provider at ``base_url``.
+
+        A workspace's provider can see pictures only when the operator listed it in
+        ``AI_IMAGE_PROVIDERS``; otherwise, like an unconfigured route, it is text only."""
+        provider = self._provider
+        sees = self._image_input
+        if base_url and base_url.rstrip("/") != self._base_url.rstrip("/"):
+            spec = spec_for_base_url(base_url)
+            provider = spec.id if spec is not None else "unknown"
+            sees = spec is not None and spec.id in self._image_providers
         return ProviderCapabilities(
-            provider=self._provider,
-            model=self._default_model,
-            input_modalities=frozenset({"text"}),
+            provider=provider,
+            model=request_model() or self._default_model,
+            input_modalities=frozenset({"text", "image"}) if sees else frozenset({"text"}),
             output_modalities=frozenset({"text"}),
             structured_output=True,
             max_context_tokens=None,
             supports_streaming=False,
+            max_images=self._image_max_count if sees else 0,
+            max_image_bytes=self._image_max_bytes if sees else 0,
+            image_types=self._image_types if sees else frozenset(),
         )
 
     async def aclose(self) -> None:
@@ -184,6 +256,7 @@ class OpenAIGateway:
         model: str | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
+        images: Sequence[ImageInput] = (),
     ) -> StructuredResponse:
         from openai import OpenAIError
 
@@ -191,6 +264,8 @@ class OpenAIGateway:
         resolved_model = request_model() or model or self._default_model
         spec = spec_for_base_url(base_url or self._base_url)
         prompted = spec is not None and spec.structured is StructuredMode.PROMPTED
+        # A picture the route cannot take is refused here, before any client is built.
+        check_images(images, self.capabilities(base_url=base_url))
         start = time.perf_counter()
         per_call_client: Any = None
         if api_key or base_url:
@@ -202,7 +277,7 @@ class OpenAIGateway:
         try:
             if prompted:
                 parsed, response = await self._prompted(
-                    client, resolved_model, messages, response_format
+                    client, resolved_model, messages, response_format, images
                 )
             else:
                 from openai import BadRequestError
@@ -210,7 +285,7 @@ class OpenAIGateway:
                 try:
                     response = await client.beta.chat.completions.parse(
                         model=resolved_model,
-                        messages=messages,
+                        messages=with_images(messages, images),
                         response_format=response_format,
                     )
                     parsed = response.choices[0].message.parsed
@@ -224,7 +299,7 @@ class OpenAIGateway:
                         model=resolved_model,
                     )
                     parsed, response = await self._prompted(
-                        client, resolved_model, messages, response_format
+                        client, resolved_model, messages, response_format, images
                     )
         except OpenAIError as error:
             log_event(
@@ -254,6 +329,8 @@ class OpenAIGateway:
             prompt_tokens=usage_model.prompt_tokens,
             completion_tokens=usage_model.completion_tokens,
             cached_prompt_tokens=usage_model.cached_prompt_tokens,
+            # How many pictures went with it; never the pictures.
+            images=len(images),
         )
         return StructuredResponse(
             parsed=parsed,
@@ -269,10 +346,13 @@ class OpenAIGateway:
         model: str | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
+        images: Sequence[ImageInput] = (),
     ) -> TextResponse:
         from openai import OpenAIError
 
         resolved_model = request_model() or model or self._default_model
+        # A picture the route cannot take is refused here, before any client is built.
+        check_images(images, self.capabilities(base_url=base_url))
         start = time.perf_counter()
         per_call_client: Any = None
         if api_key or base_url:
@@ -282,7 +362,9 @@ class OpenAIGateway:
             client = self.client
         try:
             response = await client.chat.completions.create(
-                model=resolved_model, messages=messages, max_tokens=max_tokens
+                model=resolved_model,
+                messages=with_images(messages, images),
+                max_tokens=max_tokens,
             )
         except OpenAIError as error:
             log_event(
@@ -311,6 +393,7 @@ class OpenAIGateway:
             prompt_tokens=usage_model.prompt_tokens,
             completion_tokens=usage_model.completion_tokens,
             cached_prompt_tokens=usage_model.cached_prompt_tokens,
+            images=len(images),
         )
         return TextResponse(
             text=text,
@@ -321,10 +404,14 @@ class OpenAIGateway:
 
     @staticmethod
     async def _prompted(
-        client: Any, model: str, messages: list[dict[str, str]], response_format: type
+        client: Any,
+        model: str,
+        messages: list[dict[str, str]],
+        response_format: type,
+        images: Sequence[ImageInput] = (),
     ) -> tuple[Any, Any]:
         """Ask for JSON of the required shape in words, then validate what comes back."""
-        shaped = prompted_messages(messages, response_format)
+        shaped = with_images(prompted_messages(messages, response_format), images)
         response = await client.chat.completions.create(model=model, messages=shaped)
         text = (response.choices[0].message.content or "").strip()
         start, end = text.find("{"), text.rfind("}")

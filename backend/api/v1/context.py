@@ -15,6 +15,7 @@ from backend.domain.context import (
     ContextComparison,
     ContextItem,
     ContextSettings,
+    picture_record,
 )
 from backend.domain.identity import AccessScope
 from backend.services.context_service import ContextService, SceneContext
@@ -24,6 +25,20 @@ router = APIRouter(prefix="/projects/{project_id}", tags=["context"])
 
 def get_context_service(container: Container = Depends(get_container)) -> ContextService:
     return container.context_service  # type: ignore[no-any-return]
+
+
+class ContextPictureModel(BaseModel):
+    """A picture in the context: which version, and how it is meant to reach the model
+    (CTX-013). Whether it actually went as a picture depends on the assistant used, and
+    is recorded with each request."""
+
+    asset_id: str
+    version_id: str
+    # send, describe or leave_out: the author's choice for the picture.
+    choice: str
+    # picture, description, named or left_out: what the choice means here.
+    representation: str
+    representation_words: str
 
 
 class ContextItemModel(BaseModel):
@@ -40,6 +55,7 @@ class ContextItemModel(BaseModel):
     score: float
     hard: bool
     pinned: bool
+    picture: ContextPictureModel | None = None
 
 
 class LeftOutModel(BaseModel):
@@ -149,6 +165,20 @@ def _item(item: ContextItem, pinned: set[str]) -> ContextItemModel:
         score=round(item.score, 3),
         hard=item.hard,
         pinned=item.key in pinned,
+        picture=_picture(item),
+    )
+
+
+def _picture(item: ContextItem) -> ContextPictureModel | None:
+    if item.media is None:
+        return None
+    record = picture_record(item.media)
+    return ContextPictureModel(
+        asset_id=record["asset_id"],
+        version_id=record["version_id"],
+        choice=record["choice"],
+        representation=record["representation"],
+        representation_words=record["representation_words"],
     )
 
 

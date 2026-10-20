@@ -14,6 +14,7 @@ import { InvitePage } from './pages/InvitePage'
 import { KeptPage } from './pages/KeptPage'
 import { Home } from './pages/Home'
 import { MediaPage } from './pages/MediaPage'
+import { PicturePage } from './pages/PicturePage'
 import { Overview } from './pages/Overview'
 import { PeoplePage } from './pages/PeoplePage'
 import { PlanPage } from './pages/PlanPage'
@@ -72,6 +73,7 @@ export default function App() {
               <Route path="history" element={<HistoryPage />} />
               <Route path="customize" element={<CustomizePage />} />
               <Route path="media" element={<MediaPage />} />
+              <Route path="pictures/:assetId" element={<PicturePage />} />
               <Route path="assistant" element={<AssistantPage />} />
               <Route path="people" element={<PeoplePage />} />
               <Route path="entities/:entityId" element={<Moved to={(p) => `../entries/${p.entityId}`} />} />

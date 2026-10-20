@@ -39,9 +39,10 @@ def reset_neo4j(manager: GraphManager) -> int:
 
 
 def reset_vector_documents(dsn: str) -> int:
+    """Remove every derived search vector, in every generation (the generations stay)."""
     try:
         with psycopg.connect(dsn, autocommit=True) as connection:
-            return connection.execute("DELETE FROM vector_documents").rowcount
+            return connection.execute("DELETE FROM embedding_vectors").rowcount
     except psycopg.errors.UndefinedTable:
         return 0
 
@@ -83,7 +84,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     dsn = settings.postgres_dsn_psycopg
     vector_rows = reset_vector_documents(dsn)
-    print(f"postgres: deleted {vector_rows} vector documents")
+    print(f"postgres: deleted {vector_rows} search vectors")
 
     ledger_rows = clear_seed(dsn)
     print(f"postgres: cleared {ledger_rows} seed ledger rows")
