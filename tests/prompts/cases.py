@@ -289,6 +289,29 @@ CASES: dict[str, dict[str, dict[str, Any]]] = {
             "focus": "Where and when people and things are",
         },
     },
+    "check-part": {
+        "a viewpoint part": {
+            "check_pass": "viewpoint",
+            "story": CONTEXT,
+            "passages": DRAFT,
+            "part": "Part 2 of 3",
+            "secrets": "- Tobin is the harbor-master's son.",
+            "pov": "Mara Voss",
+        },
+        "a voice part": {
+            "check_pass": "voice",
+            "story": WRITING,
+            "passages": DRAFT,
+            "part": "Part 1 of 2",
+            "voice": "Short sentences.",
+        },
+        "a clarity part": {
+            "check_pass": "clarity",
+            "story": "## Who and what is in the scene\n- Mara Voss (character).\n",
+            "passages": DRAFT,
+            "part": "Part 3 of 3",
+        },
+    },
     "check-plan": {
         "a scene": {"story": PLAN_STORY, "content": DRAFT},
     },
@@ -337,6 +360,16 @@ CASES: dict[str, dict[str, dict[str, Any]]] = {
     },
     "scene-summary": {
         "a scene": {"content": DRAFT, "title": "The ledger at dusk"},
+    },
+    "part-summary": {
+        "a beat's scene summaries": {
+            "summaries": [
+                ("The ledger at dusk", "Mara tries to take the ledger from Tobin and fails."),
+                ("The tide turns", "Tobin hides the ledger in the boathouse; Mara watches."),
+            ],
+            "title": "The stolen ledger",
+            "kind": "beat",
+        },
     },
     "scene-intent": {
         "a plan card and its prose": {

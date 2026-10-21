@@ -9,11 +9,19 @@ them ever changes the text.
 from __future__ import annotations
 
 import re
+from bisect import bisect_left, bisect_right
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from backend.domain.appearance import AppearanceDetail, clashes
+from backend.domain.appearance import (
+    NUMBER_PATTERN,
+    AgeKnown,
+    AppearanceDetail,
+    clashes,
+    identity_clashes,
+    number_of,
+)
 from backend.domain.sources import Mention, MentionStatus
 
 # Phrases readers increasingly recognise as machine-written, from writing-tool checklists
@@ -124,12 +132,17 @@ class TimeNeighbour:
     """
 
     title: str
-    days: tuple[float, float]
+    # None in a story whose unit has no length in days ("chapter", "cycle", "turn"):
+    # then only ``apart`` is known, and only "this comes before it" can be said.
+    days: tuple[float, float] | None
     same_day: bool | None = None
     # In the author's terms, for the note: "day 5", "between day 3 and 4" (the
     # scene before, and this one).
     this_when: str = ""
     then_when: str = ""
+    # The least and the most this scene comes after the one before, in the story's own
+    # units (negative: before it).
+    apart: tuple[float, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -144,6 +157,20 @@ class Holding:
     holder: str | None = None
     holder_names: tuple[str, ...] = ()
     gone: str = ""
+
+
+@dataclass(frozen=True)
+class Supply:
+    """How many of a thing there are at the scene's time, from a fact of the story bible
+    (a kind of fact such as "has quantity" or "count" with a number), in the words the
+    prose would count it in: the last word of each of its names ("arrows", "coins")."""
+
+    thing: str
+    names: tuple[str, ...]
+    amount: float
+    # Where the number comes from, said plainly: "the story bible gives 12 from day 3".
+    source: str = "the story bible"
+    key: str = ""
 
 
 @dataclass
@@ -172,7 +199,11 @@ class DraftBrief:
     after: list[AfterShown] = field(default_factory=list)
     previous: TimeNeighbour | None = None
     holdings: list[Holding] = field(default_factory=list)
+    # How many of a thing there are at the scene's time, from the story bible (SCN-007).
+    supplies: list[Supply] = field(default_factory=list)
     appearance: list[AppearanceDetail] = field(default_factory=list)
+    # How old the scene's people can be at its time, from the story bible (CON-004).
+    ages: list[AgeKnown] = field(default_factory=list)
 
     def names_for(self, name: str) -> list[str]:
         return [name, *self.also.get(name, ())]
@@ -459,9 +490,14 @@ DAYS_PER_UNIT: dict[str, float] = {
     "day": 1.0,
     "week": 7.0,
     "month": 30.0,
+    "second": 1 / 86400,
+    "sec": 1 / 86400,
+    "night": 1.0,
+    "fortnight": 14.0,
     "season": 91.0,
     "year": 365.0,
     "decade": 3650.0,
+    "century": 36500.0,
 }
 # Only the opening of a scene says how it follows the one before.
 _OPENING_SENTENCES = 2
@@ -588,6 +624,8 @@ def time_words(text: str, previous: TimeNeighbour) -> list[DraftFinding]:
     opening = _opening(text)
     if not opening.strip():
         return []
+    if previous.days is None:
+        return _order_words(opening, previous)
     lo, hi = previous.days
     whole = previous.same_day
     then = (
@@ -694,6 +732,47 @@ def time_words(text: str, previous: TimeNeighbour) -> list[DraftFinding]:
     return found
 
 
+def _not_denied(opening: str, pattern: re.Pattern[str]) -> list[re.Match[str]]:
+    kept = []
+    for match in pattern.finditer(opening):
+        sentence = next(
+            (s for s in _SENTENCE.finditer(opening) if s.start() <= match.start() < s.end()),
+            None,
+        )
+        if not _NOT_SO.search(opening[sentence.start() if sentence else 0 : match.start()]):
+            kept.append(match)
+    return kept
+
+
+def _order_words(opening: str, previous: TimeNeighbour) -> list[DraftFinding]:
+    """In a story whose unit has no length in days, how far apart two scenes are cannot
+    be told, so "the next morning" and "three days later" are not measured. Only one
+    thing can be said for certain: that this scene comes before the one before it in
+    story time, while its opening says it comes after."""
+    if previous.apart is None or previous.apart[1] >= 0:
+        return []
+    then = (
+        f" (“{previous.title}” is {previous.then_when}; this one is {previous.this_when})"
+        if previous.this_when and previous.then_when
+        else ""
+    )
+    for pattern in (_NEXT_DAY, _SAME_DAY, _AMOUNT):
+        match = next(iter(_not_denied(opening, pattern)), None)
+        if match is not None:
+            return [
+                DraftFinding(
+                    "time_words_before",
+                    Severity.NOTE,
+                    f"This opens “{match.group(0)}”, but in story time it comes before "
+                    f"“{previous.title}”{then}.",
+                    match.start(),
+                    match.end(),
+                    subject=match.group(0).lower(),
+                )
+            ]
+    return []
+
+
 def _spans(text: str, names: Iterable[str]) -> list[tuple[int, int]]:
     found: list[tuple[int, int]] = []
     for name in names:
@@ -774,6 +853,257 @@ def resource_findings(text: str, brief: DraftBrief) -> list[DraftFinding]:
     return found
 
 
+# Words for spending some of a thing: "fired three arrows", "paid ten coins".
+_SPENDS = re.compile(
+    r"(?<![\w])(?:fired|fires|shot|shoots|loosed|looses|spent|spends|paid|pays|drank|drinks|"
+    r"ate|eats|used|uses|threw|throws|burned|burnt|burns|lit|lights|broke|breaks|tossed|"
+    r"tosses|emptied|empties|swallowed|swallows|downed|gave\s+away|gives\s+away|"
+    r"handed\s+over|hands\s+over)(?![\w])",
+    re.IGNORECASE,
+)
+# Words for having some: "had nine arrows", "counted twelve coins".
+_HAS_SOME = re.compile(
+    r"(?<![\w])(?:had|has|carried|carries|counted|counts|held|holds|kept|keeps)(?![\w])",
+    re.IGNORECASE,
+)
+_LEFT_AFTER = re.compile(r"^\s+(?:left|remaining|remained|to\s+spare)(?![\w])", re.IGNORECASE)
+_SUPPLY_HEDGE = re.compile(
+    r"(?<![\w])(?:not|never|no|n[’']t|without|would|could|should|might|must|if|unless|"
+    r"wished|wanted|meant|planned|hoped|remembered|thought|dreamed|dreamt|imagined|once|"
+    r"used\s+to|before|last\s+time|other|others|another|more\s+than|nearly|almost|"
+    r"about|some|over|under)(?![\w])",
+    re.IGNORECASE,
+)
+_ONE = re.compile(r"^(?:a|an|one|single|a\s+single)$", re.IGNORECASE)
+# The verb and the number must be close: "fired three arrows", "drank two of the skins".
+_SPEND_REACH_WORDS = 3
+
+
+def _heads(names: Iterable[str]) -> list[str]:
+    """The words the prose would count a thing in: the last word of each name, with and
+    without a plural ending ("the arrows" → arrows, arrow)."""
+    found: list[str] = []
+    for name in names:
+        words = re.findall(r"[\w-]+", name.lower())
+        if not words:
+            continue
+        head = words[-1]
+        found.append(head)
+        if head.endswith("es") and len(head) > 3:
+            found.extend([head[:-2], head[:-1]])
+        elif head.endswith("s") and len(head) > 2:
+            found.append(head[:-1])
+        else:
+            found.extend([head + "s", head + "es"])
+    return list(dict.fromkeys(found))
+
+
+def _amount_words(value: float) -> str:
+    return f"{value:g}"
+
+
+# Where a clause begins: a stop inside the sentence, or a word that starts another
+# clause ("Wren watched as the guards fired"). The spender is read from that clause.
+_CLAUSE_START = re.compile(
+    r"[,;:—–()]|(?<![\w])(?:as|while|when|whereas|because|that|until|after|who|which|"
+    r"where|whom|whose|so)(?![\w])",
+    re.IGNORECASE,
+)
+_SUBJECT_PRONOUNS = frozenset({"she", "he", "they", "i", "we"})
+_NOT_A_PERSON = frozenset(
+    {
+        "the",
+        "a",
+        "an",
+        "his",
+        "her",
+        "their",
+        "its",
+        "my",
+        "our",
+        "your",
+        "some",
+        "this",
+        "these",
+        "those",
+        "every",
+        "each",
+    }
+)
+# A sentence longer than this is not a sentence a writer meant; it is not read for counts.
+_LONGEST_COUNTED_SENTENCE = 2_000
+
+
+def _supply_holder(supply: Supply, brief: DraftBrief) -> str | None:
+    """Whose the supply is: the holder the story bible gives for the thing, or a scene
+    person named in its own name ("Wren's arrows")."""
+    for holding in brief.holdings:
+        if holding.holder and holding.thing == supply.thing:
+            return holding.holder
+    for person in brief.people:
+        for name in brief.names_for(person):
+            if name and re.match(rf"{re.escape(name)}[’']s(?![\w])", supply.thing, re.IGNORECASE):
+                return person
+    return None
+
+
+def _holds(who: str | None, holder: str | None) -> bool:
+    """Whether the one spending is someone in the scene, and the holder when one is known."""
+    return who is not None and (holder is None or who == holder)
+
+
+def supply_findings(text: str, brief: DraftBrief) -> list[DraftFinding]:
+    """Counting what is spent (SCN-007): where someone in the scene spends a stated
+    number of a thing ("Wren fired three arrows"), the numbers are added up through the
+    scene, and a note says when they come to more than the story bible gives at this
+    time; and a stated count left or had ("nine arrows left") that is more than could be
+    left is a note too. Only numbers next to the thing's own word are read, never "it",
+    "the rest", or what is said aloud. The one spending or having must be the subject of
+    the clause, named or a pronoun for the last person named, and the thing's holder when
+    the story bible says who that is: "the guards fired twenty arrows" is not counted."""
+    if not brief.supplies or not brief.people:
+        return []
+    plain = _without_speech(text)
+    found: list[DraftFinding] = []
+    person_of: dict[str, str] = {}
+    for person in brief.people:
+        for name in brief.names_for(person):
+            if name:
+                person_of.setdefault(name.lower(), person)
+    people = list(person_of)
+    if not people:
+        return []
+    named = sorted(
+        (start, person_of[plain[start:end].lower()])
+        for start, end in _spans(plain, people)
+        if plain[start:end].lower() in person_of
+    )
+    named_at = [start for start, _ in named]
+    reference = re.compile(
+        r"(?<![\w])(?:(?P<owner>[\w-]+[’']s)|"
+        rf"(?P<name>{'|'.join(re.escape(n) for n in sorted(people, key=len, reverse=True))})|"
+        r"(?P<word>[\w-]+))(?![\w])",
+        re.IGNORECASE,
+    )
+
+    def first_person(head: str, at: int) -> tuple[bool, str | None]:
+        """Whether the words name a subject, and the scene person it is if one."""
+        for ref in reference.finditer(head):
+            if ref.group("owner"):
+                return True, None
+            if ref.group("name"):
+                return True, person_of[ref.group("name").lower()]
+            word = ref.group("word").lower()
+            if word in _SUBJECT_PRONOUNS:
+                index = bisect_left(named_at, at + ref.start()) - 1
+                return True, named[index][1] if index >= 0 else None
+            if word in _NOT_A_PERSON:
+                return True, None
+        return False, None
+
+    def subject(words: str, offset: int, verb: int, starts: list[re.Match[str]]) -> str | None:
+        ends = [clause.end() for clause in starts]
+        index = bisect_right(ends, verb) - 1
+        begin = ends[index] if index >= 0 else 0
+        found_one, who = first_person(words[begin:verb], offset + begin)
+        if found_one or index < 0:
+            return who
+        # "Wren turned, fired three arrows": the sentence's own subject.
+        head_end = starts[0].start()
+        return first_person(words[:head_end], offset)[1]
+
+    for supply in brief.supplies:
+        heads = _heads([*supply.names, *brief.also.get(supply.thing, ())])
+        if not heads:
+            continue
+        holder = _supply_holder(supply, brief)
+        counted = re.compile(
+            rf"(?<![\w-])(?P<n>{NUMBER_PATTERN}|a\s+single|single|an?)\s+"
+            rf"(?:(?:more|of\s+(?:the|her|his|their|its|my))\s+)?(?:[\w-]+\s+){{0,2}}?"
+            rf"(?P<noun>{'|'.join(re.escape(head) for head in heads)})(?![\w-])",
+            re.IGNORECASE,
+        )
+
+        spent = 0.0
+        said = False
+        for sentence in _SENTENCE.finditer(plain):
+            words = sentence.group(0)
+            if len(words) > _LONGEST_COUNTED_SENTENCE or _SUPPLY_HEDGE.search(words):
+                continue
+            matches = list(counted.finditer(words))
+            if not matches:
+                continue
+            offset = sentence.start()
+            spends = list(_SPENDS.finditer(words))
+            spend_ends = [verb.end() for verb in spends]
+            haves = list(_HAS_SOME.finditer(words))
+            have_ends = [verb.end() for verb in haves]
+            starts = list(_CLAUSE_START.finditer(words))
+            names_someone = bool(_spans(words, people))
+            for match in matches:
+                raw = " ".join(match.group("n").split())
+                value = 1 if _ONE.match(raw) else number_of(raw)
+                if value is None:
+                    continue
+                start, end = offset + match.start(), offset + match.end()
+                # The nearest word for spending before the number, if close enough.
+                index = bisect_right(spend_ends, match.start()) - 1
+                verb = spends[index] if index >= 0 else None
+                if (
+                    verb is not None
+                    and len(words[verb.end() : match.start()].split()) <= _SPEND_REACH_WORDS
+                ):
+                    if not _holds(subject(words, offset, verb.start(), starts), holder):
+                        continue
+                    spent += value
+                    if spent > supply.amount and not said:
+                        said = True
+                        found.append(
+                            DraftFinding(
+                                "supply_overspent",
+                                Severity.NOTE,
+                                f"By here this scene has used {_amount_words(spent)} of "
+                                f"{supply.thing}, but {supply.source} gives "
+                                f"{_amount_words(supply.amount)} at this time.",
+                                start,
+                                end,
+                                subject=f"{supply.thing}\x1espent",
+                            )
+                        )
+                    continue
+                index = bisect_right(have_ends, match.start()) - 1
+                has = haves[index] if index >= 0 else None
+                if (
+                    has is not None
+                    and len(words[has.end() : match.start()].split()) > _SPEND_REACH_WORDS
+                ):
+                    has = None
+                if has is not None:
+                    if not _holds(subject(words, offset, has.start(), starts), holder):
+                        continue
+                elif not (names_someone and _LEFT_AFTER.match(words[match.end() :])):
+                    continue
+                if value > supply.amount - spent and not said:
+                    said = True
+                    used = (
+                        f", and {_amount_words(spent)} were used earlier in the scene"
+                        if spent
+                        else ""
+                    )
+                    found.append(
+                        DraftFinding(
+                            "supply_count_differs",
+                            Severity.NOTE,
+                            f"Here there are {value} of {supply.thing}, but {supply.source} "
+                            f"gives {_amount_words(supply.amount)} at this time{used}.",
+                            start,
+                            end,
+                            subject=f"{supply.thing}\x1ecount",
+                        )
+                    )
+    return found
+
+
 def after_findings(text: str, brief: DraftBrief) -> list[DraftFinding]:
     """An "after" condition whose names never share a paragraph (STY-005). Naming them
     together is not proof the scene shows it, so only the absence is said, as a note."""
@@ -840,13 +1170,68 @@ def appearance_findings(text: str, brief: DraftBrief) -> list[DraftFinding]:
     return found
 
 
+_IDENTITY_CODES = {"height": "height_differs", "mark": "mark_differs", "age": "age_differs"}
+
+
+def identity_findings(text: str, brief: DraftBrief) -> list[DraftFinding]:
+    """The prose giving someone a height, a scar or mark on the other side, or an age
+    that the story bible says otherwise (CON-004). Notes, quoting both sides."""
+    if not brief.appearance and not brief.ages:
+        return []
+
+    def names(who: str, given: tuple[str, ...]) -> tuple[str, ...]:
+        return tuple(dict.fromkeys([*given, *brief.also.get(who, ())]))
+
+    details = [
+        AppearanceDetail(
+            who=detail.who,
+            names=names(detail.who, detail.names),
+            words=detail.words,
+            source=detail.source,
+            key=detail.key,
+        )
+        for detail in brief.appearance
+    ]
+    ages = [
+        AgeKnown(age.who, names(age.who, age.names), age.lo, age.hi, age.because, age.key)
+        for age in brief.ages
+    ]
+    known = {detail.who for detail in details} | {age.who for age in ages}
+    others = [
+        name for person in brief.people if person not in known for name in brief.names_for(person)
+    ]
+    found: list[DraftFinding] = []
+    for clash in identity_clashes(_without_speech(text), details, ages, others):
+        quote = text[clash.start : clash.end]
+        if clash.kind == "age":
+            message = (
+                f"Here {clash.who} is {clash.said} (“{quote}”), but {clash.source}, "
+                f"so {clash.who} is {clash.against} here."
+            )
+        else:
+            message = f"Here {clash.who} has “{quote}”, but {clash.source} says: “{clash.against}”"
+        found.append(
+            DraftFinding(
+                _IDENTITY_CODES[clash.kind],
+                Severity.NOTE,
+                message,
+                clash.start,
+                clash.end,
+                subject=f"{clash.who}\x1e{clash.kind}\x1e{clash.said}",
+            )
+        )
+    return found
+
+
 def prose_findings(text: str, brief: DraftBrief) -> list[DraftFinding]:
     """Every check against the prose that the brief has something for."""
     found = [*after_findings(text, brief)]
     if brief.previous is not None:
         found.extend(time_words(text, brief.previous))
     found.extend(resource_findings(text, brief))
+    found.extend(supply_findings(text, brief))
     found.extend(appearance_findings(text, brief))
+    found.extend(identity_findings(text, brief))
     return found
 
 
@@ -860,13 +1245,16 @@ __all__ = [
     "PlannedReveal",
     "SecretToGuard",
     "Severity",
+    "Supply",
     "TimeNeighbour",
     "after_findings",
     "appearance_findings",
     "check_draft",
     "days_between",
+    "identity_findings",
     "prose_findings",
     "resource_findings",
+    "supply_findings",
     "time_words",
     "word_count",
 ]

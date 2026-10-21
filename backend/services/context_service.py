@@ -13,8 +13,10 @@ scene and changed through the ordinary reviewed path.
 
 from __future__ import annotations
 
+import math
 import re
 from collections import OrderedDict
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -35,11 +37,14 @@ from backend.domain.context import (
     NEAR_SCENES,
     RULE_BOOST,
     SCENE_DRAFT_POLICY,
+    STORY_TIME_SHARE,
     ContextComparison,
     ContextItem,
     ContextManifest,
+    ContextPolicy,
     ContextSection,
     ContextSettings,
+    LaterInTime,
     Signal,
     assemble,
     compare_contexts,
@@ -48,7 +53,9 @@ from backend.domain.context import (
     distance_signal,
     diversify,
     importance_signal,
+    later_in_time_signal,
     stored_manifest,
+    story_time_signal,
     with_context_settings,
     with_signals,
 )
@@ -63,6 +70,7 @@ from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.knowledge import knowledge_of, reader_journey, reading_order, scene_reveals
 from backend.domain.knowledge import scene_time as scene_when
+from backend.domain.media import link_applies_at, link_window_words
 from backend.domain.rules import RuleStatus, read_rule, violations, world_from_canon
 from backend.domain.scene_conditions import condition_reading, plain_details, scene_conditions
 from backend.domain.scene_intent import intent_sentences, scene_intent
@@ -75,10 +83,6 @@ from backend.domain.worldtime import (
     Truth,
     compare,
     describe,
-    is_unknown,
-    parse_world_time,
-    resolve,
-    span_of,
     true_at,
 )
 from backend.services.knowledge_timing import StoryOrder
@@ -106,6 +110,13 @@ BEFORE_WORDS = 250
 THREAD_PASSAGES = 2
 # Events listed in one scene's event block.
 BLOCK_EVENTS = 8
+# Other recent scenes whose ends are given as written (CTX-006A): at most this many, from
+# this far back in reading order, on the same viewpoint or one of this scene's threads.
+NEARBY_SCENES = 2
+NEARBY_WINDOW = 8
+NEARBY_WORDS = 120
+# Passages from scenes later in the story's time listed as left out, at most (CTX-004).
+LATER_LISTED = 5
 # A continuity warning's words given in a reason, at most.
 FINDING_WORDS = 24
 
@@ -213,6 +224,18 @@ def ranked(item: ContextItem, signals: list[Signal | None]) -> ContextItem:
     )
 
 
+def _latest_in_time(scene_ids: Sequence[str], ranking: _Ranking) -> str | None:
+    """Of a part's scenes, the one that places it in the story's time: one certainly later
+    than the scene being written, else one that may be, else its last in reading order."""
+    if not scene_ids:
+        return None
+    for where in ("later", "maybe"):
+        found = next((s for s in scene_ids if ranking.in_time(s)[0] == where), None)
+        if found is not None:
+            return found
+    return scene_ids[-1]
+
+
 def _tail(text: str, words: int) -> tuple[str, int]:
     """The last ``words`` words of a text, and where they start in it."""
     parts = list(re.finditer(r"\S+", text))
@@ -234,6 +257,54 @@ class _Ranking:
     # Scene id -> its place in reading order.
     place: dict[str, int]
     position: int | None
+    # The second clock (CTX-007): each scene's place in the story's time, this scene's,
+    # how fast prose loses weight going back in it, and in what unit it is counted.
+    times: dict[str, Interval | None] | None = None
+    moment: Interval | None = None
+    half_life: float | None = None
+    unit: str = "year"
+    # What the policy does with material from a scene later in the story's time (CTX-004).
+    later_policy: LaterInTime = LaterInTime.LEAVE_OUT
+
+    def in_time(self, scene_id: str | None) -> tuple[str, float]:
+        """Where a scene sits in the story's time against this one: "later" (certainly),
+        "maybe" (it may be later), "before" with how long before, or "" (not known)."""
+        if scene_id is None or self.times is None or self.moment is None:
+            return "", 0.0
+        other = self.times.get(scene_id)
+        if other is None:
+            return "", 0.0
+        if other.lo > self.moment.hi:
+            return "later", 0.0
+        if other.hi > self.moment.hi:
+            return "maybe", 0.0
+        if other.hi < self.moment.lo and math.isfinite(other.hi) and math.isfinite(self.moment.lo):
+            return "before", self.moment.lo - other.hi
+        return "", 0.0
+
+    def is_later(self, scene_id: str | None) -> bool:
+        return self.in_time(scene_id)[0] == "later"
+
+    def timed(self, item: ContextItem, scene_id: str | None) -> ContextItem:
+        """The item weighed by the story's time as well as reading order (CTX-007), and,
+        from a scene certainly later in the story's time, marked so the policy can leave
+        it out or lower it (CTX-004)."""
+        where, gap = self.in_time(scene_id)
+        if where == "later":
+            if self.later_policy is LaterInTime.LOWER:
+                return replace(
+                    ranked(item, [later_in_time_signal(item.score, certain=True)]), later=True
+                )
+            return replace(
+                item,
+                later=True,
+                reason=f"{item.reason} It happens later in the story's time than this scene.",
+            )
+        if where == "maybe":
+            return ranked(item, [later_in_time_signal(item.score, certain=False)])
+        if where == "before":
+            return ranked(item, [story_time_signal(item.score, gap, self.half_life, self.unit)])
+        return item
 
     def distance(self, scene_id: str) -> int | None:
         """How many scenes back ``scene_id`` is from this one (negative: later)."""
@@ -318,6 +389,8 @@ class ContextService:
         # summaries are built with the studio.
         self.summaries: Any = None
         self._local_mode = local_mode
+        # How a scene's context is put together; tests may give another version of it.
+        self.policy: ContextPolicy = SCENE_DRAFT_POLICY
         # (workspace, project, line, version, clock) -> whole-story ranking inputs.
         self._story_wide: OrderedDict[tuple[Any, ...], _StoryWide] = OrderedDict()
 
@@ -369,7 +442,7 @@ class ContextService:
         ]
         manifest = assemble(
             candidates,
-            policy=SCENE_DRAFT_POLICY,
+            policy=self.policy,
             budget=budget if budget is not None else settings.budget,
             pins=[*settings.pins, *chosen_pins],
             excludes=[*settings.excludes, *chosen_out],
@@ -584,7 +657,24 @@ class ContextService:
             ),
             place={item.id: index for index, item in enumerate(order)},
             position=position,
+            later_policy=self.policy.later_in_story_time,
+            unit=unit,
         )
+        if moment is not None:
+            # The second clock (CTX-007): every scene placed in the story's time; prose
+            # loses half its weight every quarter of the time the placed scenes span.
+            ranking.moment = moment
+            ranking.times = {item.id: time_of(scene_when(item.details), times) for item in order}
+            finite = [
+                interval
+                for interval in ranking.times.values()
+                if interval is not None
+                and math.isfinite(interval.lo)
+                and math.isfinite(interval.hi)
+            ]
+            if len(finite) >= 2:
+                span = max(i.hi for i in finite) - min(i.lo for i in finite)
+                ranking.half_life = span * STORY_TIME_SHARE if span > 0 else None
 
         # The scene itself: always given, last in the rendering.
         when = describe(scene_when(scene.details), unit=unit, event_name=event_names.get)
@@ -1053,7 +1143,16 @@ class ContextService:
         # (CTX-006); the end of the scene before, as written (CTX-006A).
         out.extend(
             await self._earlier(
-                workspace_id, project_id, scene, order, position, story.events, names, pov, ranking
+                workspace_id,
+                project_id,
+                scene,
+                order,
+                position,
+                story.events,
+                names,
+                pov,
+                ranking,
+                items_all,
             )
         )
 
@@ -1067,11 +1166,13 @@ class ContextService:
         out = [self._signals(item, ranking, facts_by_id, cast, names) for item in out]
         # Many near-copies of one passage say one thing many times: each passage of the
         # author's writing is ranked against those above it (CTX-007).
-        # A passage inside the end of the scene before is already given as such.
+        # A passage inside the end of the scene before (or a nearby scene) is already given
+        # as such. When that end is left out for happening later in the story's time, it is
+        # listed once under Left out with its own "Use it"; its passages are not listed again.
         tails = {
             item.record_id: int(item.location.split(":")[1].split("-")[0])
             for item in out
-            if item.section is ContextSection.BEFORE and item.location
+            if item.section in (ContextSection.BEFORE, ContextSection.NEARBY) and item.location
         }
         out = [
             item
@@ -1257,25 +1358,26 @@ class ContextService:
             if not (on_scene or of_cast):
                 continue
             note = ""
-            if link.applies_from is not None:
-                start = parse_world_time(link.applies_from)
-                if start is not None and not is_unknown(start):
-                    from_words = describe(start, unit=unit, event_name=event_names.get)
-                    if moment is None:
-                        note = (
-                            f" It applies from {from_words}; the scene has no time, so it may "
-                            "not apply yet."
-                        )
-                    else:
-                        truth = true_at(span_of(resolve(start, anchor_lookup(times)), None), moment)
-                        if truth is Truth.FALSE:
-                            skipped.add(link.asset_id)
-                            continue
-                        if truth is Truth.MAYBE:
-                            note = f" It applies from {from_words}, around the scene's time."
+            # AST-001: a link applies for a window of story time, from and/or until.
+            truth = link_applies_at(link, moment, anchor_lookup(times))
+            if truth is not None:
+                window = link_window_words(link, unit=unit, event_name=event_names.get)
+                if truth is Truth.FALSE:
+                    skipped.add(link.asset_id)
+                    continue
+                if truth is Truth.MAYBE and window:
+                    note = (
+                        f" It applies {window}; the scene has no time, so it may not apply"
+                        + (" yet." if link.applies_until is None else " then.")
+                        if moment is None
+                        else f" It applies {window}, around the scene's time."
+                    )
             entry = found.setdefault(
-                link.asset_id, {"targets": [], "scene": False, "secret": False, "notes": []}
+                link.asset_id,
+                {"targets": [], "scene": False, "secret": False, "notes": [], "versions": set()},
             )
+            # AST-001: a link may show one version of the picture (None is its newest).
+            entry["versions"].add(link.asset_version_id if link.shows_version else None)
             if on_scene:
                 entry["scene"] = True
             else:
@@ -1291,12 +1393,38 @@ class ContextService:
             return []
         pictures: dict[str, Any] = {}
         if self.pictures is not None:
-            pictures = await self.pictures.for_context(workspace_id, project_id, [*found, *similar])
+            pinned = {
+                asset_id: next(iter(entry["versions"]))
+                for asset_id, entry in found.items()
+                if len(entry["versions"]) == 1 and None not in entry["versions"]
+            }
+            pictures = await self.pictures.for_context(
+                workspace_id, project_id, [*found, *similar], pinned=pinned
+            )
         out: list[ContextItem] = []
+        left_out: dict[str, str] = getattr(pictures, "left_out", {})
         for asset_id, entry in found.items():
             picture = pictures.get(asset_id)
             if self.pictures is not None and picture is None:
-                # Retired, or no current version: nothing to show or send.
+                # Retired, or no current version: nothing to show or send. One whose
+                # chosen version is no longer shown is named, never swapped for another.
+                if asset_id in left_out and not entry["secret"]:
+                    targets = list(dict.fromkeys(entry["targets"]))
+                    out.append(
+                        ContextItem(
+                            key=f"picture:{asset_id}",
+                            section=ContextSection.PICTURES,
+                            text=(
+                                f"A picture of {_listing(targets) if targets else 'this scene'} "
+                                "is left out."
+                            ),
+                            reason=left_out[asset_id],
+                            authority="picture",
+                            record_type="asset",
+                            record_id=asset_id,
+                            score=0.5,
+                        )
+                    )
                 continue
             targets = list(dict.fromkeys(entry["targets"]))
             shows = _listing(targets) if targets else "this scene"
@@ -1497,9 +1625,12 @@ class ContextService:
         names: dict[str, str],
         pov: str | None,
         ranking: _Ranking,
+        items: list[PlanItem] | None = None,
     ) -> list[ContextItem]:
-        """Earlier scenes as summaries and event blocks, this scene's own events, and the
-        end of the scene before as written (CTX-006, CTX-006A)."""
+        """Earlier scenes as summaries and event blocks, earlier arcs and beats as
+        summaries, this scene's own events, the end of the scene before as written, and
+        the ends of a few other recent scenes on the same viewpoint or thread (CTX-006,
+        CTX-006A). Each is weighed by both clocks (CTX-007)."""
         out: list[ContextItem] = []
         by_scene: dict[str, list[Any]] = {}
         for event in events:
@@ -1576,7 +1707,12 @@ class ContextService:
                             "earlier version.",
                         )
                     )
-                out.append(ranked(item, [distance_signal(item.score, distance, ""), *caveat]))
+                out.append(
+                    ranking.timed(
+                        ranked(item, [distance_signal(item.score, distance, ""), *caveat]),
+                        before.id,
+                    )
+                )
             elif distance >= 2:
                 card = plan_card_summary(before, names, seen_by)
                 if card:
@@ -1591,7 +1727,11 @@ class ContextService:
                         record_id=before.id,
                         score=4.0,
                     )
-                    out.append(ranked(item, [distance_signal(item.score, distance, "")]))
+                    out.append(
+                        ranking.timed(
+                            ranked(item, [distance_signal(item.score, distance, "")]), before.id
+                        )
+                    )
             placed = by_scene.get(before.id, [])
             if placed:
                 listed = "; ".join(event.name.rstrip(".") for event in placed[:BLOCK_EVENTS])
@@ -1608,7 +1748,11 @@ class ContextService:
                     record_id=before.id,
                     score=4.5,
                 )
-                out.append(ranked(item, [distance_signal(item.score, distance, "")]))
+                out.append(
+                    ranking.timed(
+                        ranked(item, [distance_signal(item.score, distance, "")]), before.id
+                    )
+                )
         # The end of the scene before, as written: local prose continuity.
         before = earlier[0]
         seen_by = next(iter(before.refs_as("point_of_view")), None)
@@ -1624,20 +1768,209 @@ class ContextService:
             version = await self._latest(workspace_id, project_id, source_id)
             if version is not None and version.content.strip():
                 words, start = _tail(version.content, BEFORE_WORDS)
+                # The scene before in reading order may happen later in the story's time
+                # (a flash-forward): the policy applies to its end as to anything else.
                 out.append(
-                    ContextItem(
-                        key=f"before:{before.id}",
-                        section=ContextSection.BEFORE,
-                        text=f"From the end of “{before.title}”: {words}{eyes}",
-                        reason=f"It is how the scene before, “{before.title}”, ends, as you "
-                        f"wrote it.{other_eyes}",
-                        authority="writing",
-                        record_type="source_version",
-                        record_id=version.id,
-                        location=f"chars:{start}-{len(version.content)}",
-                        score=7.0,
+                    ranking.timed(
+                        ContextItem(
+                            key=f"before:{before.id}",
+                            section=ContextSection.BEFORE,
+                            text=f"From the end of “{before.title}”: {words}{eyes}",
+                            reason=f"It is how the scene before, “{before.title}”, ends, as "
+                            f"you wrote it.{other_eyes}",
+                            authority="writing",
+                            record_type="source_version",
+                            record_id=version.id,
+                            location=f"chars:{start}-{len(version.content)}",
+                            score=7.0,
+                        ),
+                        before.id,
                     )
                 )
+        out.extend(
+            await self._nearby(
+                workspace_id,
+                project_id,
+                scene,
+                order,
+                position,
+                links,
+                names,
+                pov,
+                ranking,
+                {item.id: item for item in items or []},
+            )
+        )
+        if items is not None:
+            out.extend(
+                await self._parts(
+                    workspace_id, project_id, scene, order, position, items, names, pov, ranking
+                )
+            )
+        return out
+
+    async def _nearby(
+        self,
+        workspace_id: str,
+        project_id: str,
+        scene: PlanItem,
+        order: list[PlanItem],
+        position: int,
+        links: dict[str, str],
+        names: dict[str, str],
+        pov: str | None,
+        ranking: _Ranking,
+        plan_by_id: dict[str, PlanItem] | None = None,
+    ) -> list[ContextItem]:
+        """The ends of up to ``NEARBY_SCENES`` other recent scenes, as written (CTX-006A):
+        from two to ``NEARBY_WINDOW`` scenes back, seen through the same eyes or on one of
+        this scene's threads, nearest first. Under the budget like everything else; one
+        later in the story's time is left out or lowered by the policy (CTX-004)."""
+        threads = self._threads_of(scene)
+        own = links.get(scene.id)
+        before = links.get(order[position - 1].id) if position >= 1 else None
+        out: list[ContextItem] = []
+        who = names.get(pov) if pov else None
+        for distance in range(2, NEARBY_WINDOW + 1):
+            if len(out) >= NEARBY_SCENES or position - distance < 0:
+                break
+            other = order[position - distance]
+            source_id = links.get(other.id)
+            if source_id is None or source_id in (own, before):
+                continue
+            seen_by = next(iter(other.refs_as("point_of_view")), None)
+            same_eyes = bool(pov and seen_by == pov)
+            shared = [
+                (thread_id, verb)
+                for thread_id, verb in self._threads_of(other).items()
+                if thread_id in threads
+            ]
+            if not same_eyes and not shared:
+                continue
+            version = await self._latest(workspace_id, project_id, source_id)
+            if version is None or not version.content.strip():
+                continue
+            words, start = _tail(version.content, NEARBY_WORDS)
+            reasons = []
+            if same_eyes:
+                reasons.append(f"It is seen through {who or 'the same eyes'}, like this one.")
+            for thread_id, _verb in shared[:1]:
+                thread = (plan_by_id or {}).get(thread_id)
+                reasons.append(
+                    f"It is on the thread “{thread.title}” too."
+                    if thread is not None
+                    else "It is on one of this scene's threads too."
+                )
+            why = " ".join(reasons)
+            other_eyes = ""
+            if pov and seen_by and seen_by != pov:
+                other_eyes = (
+                    f" It is seen through {names.get(seen_by, 'someone else')}; "
+                    f"{who or 'the viewpoint character'} may not know all of it."
+                )
+            eyes = f" ({other_eyes.strip()})" if other_eyes else ""
+            item = ContextItem(
+                key=f"nearby:{other.id}",
+                section=ContextSection.NEARBY,
+                text=f"From the end of “{other.title}”: {words}{eyes}",
+                # How far back it is, the distance signal says.
+                reason=f"It is how “{other.title}” ends, as you wrote it. {why}{other_eyes}",
+                authority="writing",
+                record_type="source_version",
+                record_id=version.id,
+                location=f"chars:{start}-{len(version.content)}",
+                score=3.5,
+            )
+            out.append(
+                ranking.timed(ranked(item, [distance_signal(item.score, distance, "")]), other.id)
+            )
+        return out
+
+    async def _parts(
+        self,
+        workspace_id: str,
+        project_id: str,
+        scene: PlanItem,
+        order: list[PlanItem],
+        position: int,
+        items: list[PlanItem],
+        names: dict[str, str],
+        pov: str | None,
+        ranking: _Ranking,
+    ) -> list[ContextItem]:
+        """Earlier arcs and beats as summaries (CTX-006): the one the author kept, else
+        one worked out from its scenes' kept summaries. Only parts further back than the
+        scenes given one by one, and never one this scene is in."""
+        parts = getattr(self.summaries, "parts", None)
+        if parts is None:
+            return []
+        found = await parts.for_context(
+            workspace_id, project_id, scene, order, items, position, EARLIER_SCENES
+        )
+        out: list[ContextItem] = []
+        who = names.get(pov) if pov else None
+        for entry in found:
+            part = entry.part
+            last = entry.scene_ids[-1]
+            distance = ranking.distance(last) or 0
+            others = {
+                seen
+                for item in order
+                if item.id in entry.scene_ids
+                for seen in item.refs_as("point_of_view")
+                if pov and seen != pov
+            }
+            other_eyes = (
+                f" Some of it is seen through other eyes; {who or 'the viewpoint character'} "
+                "may not know all of it."
+                if others
+                else ""
+            )
+            eyes = f" ({other_eyes.strip()})" if other_eyes else ""
+            kind = part.kind.value
+            if entry.kept is not None:
+                by = {
+                    "author": "your own summary",
+                    "model": "a summary the assistant suggested and you kept",
+                    "model_corrected": "a summary the assistant suggested and you corrected",
+                }[entry.kept.origin.value]
+                item = ContextItem(
+                    key=f"part:{part.id}",
+                    section=ContextSection.EARLIER,
+                    text=f"The {kind} “{part.title}”, in short: {entry.text}{eyes}",
+                    reason=f"It is {by} of the {kind} “{part.title}”.{other_eyes}",
+                    authority="summary",
+                    record_type="part_summary",
+                    record_id=entry.kept.id,
+                    score=3.5,
+                )
+            else:
+                item = ContextItem(
+                    key=f"part:{part.id}",
+                    section=ContextSection.EARLIER,
+                    text=f"The {kind} “{part.title}”, from its scenes' summaries: "
+                    f"{entry.text}{eyes}",
+                    reason=f"It is worked out from the summaries you kept of the scenes in "
+                    f"the {kind} “{part.title}”.{other_eyes}",
+                    authority="summary",
+                    record_type="plan_item",
+                    record_id=part.id,
+                    score=3.0,
+                )
+            signals: list[Signal | None] = [distance_signal(item.score, distance, "")]
+            if entry.stale:
+                signals.append(
+                    Signal(
+                        "out of date",
+                        -1.0,
+                        f"A summary of a scene in the {kind} has changed since this was written.",
+                    )
+                )
+            # Placed in the story's time by the latest of its scenes there, not the last
+            # one read: a part holding a flash-forward is later material all the same.
+            out.append(
+                ranking.timed(ranked(item, signals), _latest_in_time(entry.scene_ids, ranking))
+            )
         return out
 
     async def _writing(
@@ -1708,6 +2041,14 @@ class ContextService:
         # Search by meaning only among this line's texts (CTX-004): another line's scene
         # prose is never scored, so it never takes a place from this line's.
         allowed = {text.id for text in all_texts if _usable(text, usable)}
+        # Scene texts of scenes certainly later in the story's time (CTX-004): when the
+        # policy leaves them out, search by meaning never scores them either, so they
+        # never take a place from what may be given.
+        later_texts = {
+            source_id for plan_id, source_id in links.items() if ranking.is_later(plan_id)
+        }
+        if self.policy.later_in_story_time is LaterInTime.LEAVE_OUT:
+            allowed -= later_texts
         semantic: dict[str, float] = {}
         if self._passages is not None:
             semantic = await self._passages.semantic_scores(
@@ -1803,9 +2144,17 @@ class ContextService:
                     if plan_by_id and scene_id in plan_by_id
                     else None
                 )
-            out.append(ranked(item, signals))
+            # And by the story's time, the second clock (CTX-007; CTX-004 for later).
+            out.append(ranking.timed(ranked(item, signals), scene_id))
         out.sort(key=lambda item: (-item.score, item.key))
-        out = out[:MAX_PASSAGES]
+        if self.policy.later_in_story_time is LaterInTime.LEAVE_OUT:
+            # Left out by the policy: a few are listed, so the author can still choose
+            # one; they never take a place from what may be given.
+            given = [item for item in out if not item.later]
+            listed = [item for item in out if item.later]
+            out = given[:MAX_PASSAGES] + listed[:LATER_LISTED]
+        else:
+            out = out[:MAX_PASSAGES]
         # A sample of the author's voice, even when it names nobody in the scene: writers
         # report that re-feeding representative passages keeps voice from drifting.
         sample = await self._voice_sample(
@@ -1818,6 +2167,7 @@ class ContextService:
             links,
             order,
             scene.id,
+            later_texts,
         )
         if sample is not None:
             out.append(sample)
@@ -1904,11 +2254,13 @@ class ContextService:
         links: dict[str, str] | None = None,
         order: list[PlanItem] | None = None,
         scene_id: str | None = None,
+        later: set[str] | None = None,
     ) -> ContextItem | None:
+        # A scene later in the story's time is never the voice sample (CTX-004).
         texts = [
             text
             for text in await self._sources.all_texts(workspace_id, project_id)
-            if _usable(text, usable)
+            if _usable(text, usable) and text.id not in (later or set())
         ]
         # Prose from later in the story never reaches an earlier scene's draft: a payoff's
         # words would give away what this scene only sets up. A scene text is used only

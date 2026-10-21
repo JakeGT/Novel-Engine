@@ -135,8 +135,12 @@ def test_earlier_scenes_come_as_summaries_events_and_the_end_of_the_scene_before
     # Kept contexts never hold the author's words, the scene before's included.
     rendered = _context(auth_client, w, third)["rendered"]
     assert rendered.index("## How the scene before ends") < rendered.index("## The scene")
-    assert rendered.index("## What happened in earlier scenes") < rendered.index(
-        "## From the author's own writing"
+    # The scene two back is seen through the same eyes: its end comes as written too
+    # (CTX-006A), after the earlier scenes' summaries and before the scene before's end.
+    assert (
+        rendered.index("## What happened in earlier scenes")
+        < rendered.index("## How other recent scenes end")
+        < rendered.index("## How the scene before ends")
     )
     assert fake_container.ai.calls == []
 
@@ -234,9 +238,15 @@ def test_passages_from_a_scene_on_the_same_thread_are_given_and_say_why(
     opener = _scene(auth_client, w, "A: the debt", sets_up=[thread["id"]])
     _scene(auth_client, w, "B: elsewhere")
     closer = _scene(auth_client, w, "C: the payment", pays_off=[thread["id"]])
+    # Long enough that its end, given as written (CTX-006A), does not reach the ledger.
+    later = " ".join(["The gulls cried over the quay and the tide went out."] * 20)
     assert (
         _save(
-            auth_client, w, opener, "The ledger lay open on the counter, unpaid.", None
+            auth_client,
+            w,
+            opener,
+            "The ledger lay open on the counter, unpaid.\n\n" + later,
+            None,
         ).status_code
         == 200
     )
@@ -492,7 +502,9 @@ def test_a_later_scenes_words_are_never_the_voice_sample_for_an_earlier_one(
     auth_client, fake_container
 ):
     w = _world(auth_client, fake_container)
-    first = _scene(auth_client, w, "A: the arrival")
+    # Seen through other eyes, so its end is not given as a nearby scene's (CTX-006A) and
+    # its words reach the context only as the voice sample.
+    first = _seen_by(auth_client, w, "A: the arrival", "mara")
     _scene(auth_client, w, "B: the wait")
     target = _scene(auth_client, w, "C: the fog")
     last = _scene(auth_client, w, "D: the payment")

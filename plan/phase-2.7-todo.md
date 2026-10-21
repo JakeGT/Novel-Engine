@@ -5,6 +5,16 @@
   `CAN-013`, `CON-015`, `CAN-012`.
 - Governing documents: `19-assistant-first-experience.md`, ADR-013, ADR-015, ADR-019.
 
+**Since this phase (checked 2026-10-21).** The dashboard and checklists below record the state when
+the phase was built. Later work: a rule can block (CON-015) and speak of story time and belief
+(CAN-013, CON-005); a rule set to warn can be dismissed on one proposal (CON-016); reading a text
+asks first when its estimate is above the author's threshold (OPS-002); proposal-only MCP access
+exists (H; QRY-003, ADR-024); scene conditions can be preferred or written in the author's words,
+and are judged at the scene's story time (STY-005). Still open: rules over the order of events,
+comparing two arbitrary versions on screen (CAN-012), a form editor for plan changes on the review
+page (EXT-004), review telemetry, and removing restored texts and rules with a failed import.
+Current status: [`10-backlog.md`](10-backlog.md).
+
 **Standing limitation:** the two assistant workflows here (reading a passage into suggested
 changes, drafting a rule from a sentence) have only run against a scripted model. The owner
 tests real models by hand and reports back (decided 2026-10-10).
@@ -43,7 +53,9 @@ tests real models by hand and reports back (decided 2026-10-10).
       arrive with Phase 3.
 - [ ] A common word that is also a name is still mistaken at the start of a sentence ("Hope
       was all she had"). This is in the recorded baseline.
-- [ ] Only plain text and Markdown. No DOCX, EPUB or Scrivener.
+- [ ] Only plain text and Markdown. No DOCX, EPUB or Scrivener. Google Docs, DOCX and LaTeX import
+      are deferred past release one by owner decision (2026-10-21); pasted text and Markdown stay the
+      ways in.
 - [ ] A text is at most 400,000 characters; longer work is brought in a chapter at a time.
 
 ## D. Reading a passage with the assistant

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 
 from backend.adapters.system import uuid7
 from backend.core.logging import log_event
+from backend.domain.canon.assertions import Fact
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.marks import (
     IMPORTANCE_KEY,
@@ -40,6 +41,7 @@ from backend.domain.canon.naming import normalize_name, slugify
 from backend.domain.canon.propositions import (
     BooleanObject,
     EntityRefObject,
+    EnumObject,
     IntegerObject,
     ObjectKind,
     Proposition,
@@ -263,7 +265,11 @@ def _until_the_scene(
 
 
 def _typed_object(
-    spec: PredicateSpec, target_id: str | None, value: str | None, project_id: str
+    spec: PredicateSpec,
+    target_id: str | None,
+    value: str | None,
+    project_id: str,
+    choices: Mapping[str, tuple[str, ...]] | None = None,
 ) -> tuple[PropositionObject | None, str]:
     if spec.object_shape is ObjectKind.ENTITY_REF:
         if target_id is None:
@@ -285,7 +291,29 @@ def _typed_object(
         if text.lower() in {"false", "no"}:
             return BooleanObject(value=False), ""
         return None, f"{spec.predicate}: {text!r} is not yes or no"
+    allowed = (choices or {}).get(spec.predicate)
+    if spec.object_shape is ObjectKind.ENUM and allowed:
+        # Only a value from the author's own list, in the author's own spelling (EXT-001).
+        match = next((item for item in allowed if item.casefold() == text.casefold()), None)
+        if match is None:
+            return None, f"{spec.predicate}: {text[:40]!r} is not one of your values"
+        return EnumObject(value=match, allowed=allowed), ""
     return None, f"{spec.predicate}: {spec.object_shape.value} values need manual entry"
+
+
+def author_choices(facts: Iterable[Fact]) -> dict[str, tuple[str, ...]]:
+    """The values the author picks by hand for each kind of fact, from the facts that
+    use them: every value any of them allows, in the order first met (EXT-001)."""
+    found: dict[str, list[str]] = {}
+    for fact in facts:
+        obj = fact.proposition.object
+        if not isinstance(obj, EnumObject):
+            continue
+        seen = found.setdefault(fact.proposition.predicate, [])
+        for item in obj.allowed:
+            if item not in seen:
+                seen.append(item)
+    return {predicate: tuple(values) for predicate, values in found.items() if values}
 
 
 def _subject_update(
@@ -811,6 +839,7 @@ class CanonCreationWorkflow(CanonCharacterWorkflow):
         session_id: str,
         answered: set[str],
         project_id: str,
+        choices: Mapping[str, tuple[str, ...]] | None = None,
     ) -> tuple[list[CanonOperation], list[DiscardedItem]]:
         operations: list[CanonOperation] = []
         discarded: list[DiscardedItem] = []
@@ -915,7 +944,9 @@ class CanonCreationWorkflow(CanonCharacterWorkflow):
                     return None, f"{predicate}: cannot point to a {target[1]}"
                 if target[0] == subject[0]:
                     return None, f"{predicate}: an entry cannot point to itself"
-            obj, reason = _typed_object(spec, target[0] if target else None, value, project_id)
+            obj, reason = _typed_object(
+                spec, target[0] if target else None, value, project_id, choices
+            )
             if obj is None:
                 return None, reason
             return Proposition(subject_id=subject[0], predicate=predicate, object=obj), ""

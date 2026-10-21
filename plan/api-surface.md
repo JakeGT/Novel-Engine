@@ -1,7 +1,7 @@
 # API surface
 
-- Status: Phase 6. The committed contract is `tests/contract/openapi_snapshot.json` (228
-  operations), exact-checked by `tests/contract/test_openapi.py`; the frontend client is generated
+- Status: checked 2026-10-21 against the committed contract, `tests/contract/openapi_snapshot.json`
+  (340 operations), exact-checked by `tests/contract/test_openapi.py`; the frontend client is generated
   from it and `make frontend-api-check` fails on drift. This page is a guide to that contract, not a
   second source of truth.
 - Error contract: every failure returns `application/problem+json` with `type`, `title`, `status`,
@@ -24,12 +24,15 @@
 | Facts, beliefs, events | `GET/POST /facts`, `GET /facts/{id}`, `POST /facts/{id}/close`; `GET/POST /beliefs`, `GET /beliefs/{id}`, `POST /beliefs/{id}/close`, `GET /beliefs/{id}/truth-agreement`; `GET/POST /events`, `GET/PATCH /events/{id}`, `POST /events/{id}/retire` | Truth agreement is a derived query result, never a stored field. |
 | Proposals and review | `GET/POST /mutations`, `GET /mutations/{id}`, `POST /mutations/{id}/validate`, `/submit`, `/approve`, `/reject`, `/retarget`, `/commit`; `PUT /mutations/{id}/operations/{ordinal}`; `POST /mutations/{id}/operations/{ordinal}/decision` | Review state machine (ADR-014). Validation is an advisory preview; the commit revalidates in its transaction. A client may propose as `author`, `model`, or `import` only. |
 | Assisted creation | `POST /assist/questions`, `POST /assist/proposals` | Describe one thing or a whole idea (optionally a type and name, or `entity_id` to fill in an existing entry); answers are optional. Drafts new entries, details, and facts linking them to each other and to existing entries; an entry whose name matches an existing one of the same type is linked, not recreated. Spends the workspace's provider budget. Returns a proposal in the review queue; never writes canon. |
-| The God Hand | `POST /assist/changes` | One instruction in plain words → every change it implies (new entries, renames, details, facts added and ended, beliefs, archives) as one proposal, with the assistant's restatement, deterministic and model notes on what else is affected, and discarded items. Returns questions and no proposal when the instruction is ambiguous, and `elsewhere` (a place and a sentence) when what was asked is not a story change, with `back_to_version` (for a restore the author previews) or `invite` (role and address to pre-fill) when it could work those out. Performs none of them. Never writes canon. `context` says which listing policy chose what the assistant read (`change-story/1`: the entries the instruction names, their neighbours, then the rest by importance, within a word budget) and how much of each kind was listed and left out; a note says when something was left out, and the policy is recorded with the proposal (CTX-002). |
+| The God Hand | `POST /assist/changes` | One instruction in plain words → every change it implies (new entries, renames, details, facts added and ended, beliefs, archives) as one proposal, with the assistant's restatement, deterministic and model notes on what else is affected, and discarded items. Returns questions and no proposal when the instruction is ambiguous, and `elsewhere` (a place and a sentence) when what was asked is not a story change, with `back_to_version` (for a restore the author previews) or `invite` (role and address to pre-fill) when it could work those out. Performs none of them. Never writes canon. `context` says which listing policy chose what the assistant read (`change-story/1`: the entries the instruction names, their neighbours, then the rest by importance, within a word budget) and how much of each kind was listed and left out; a note says when something was left out, and the policy is recorded with the proposal (CTX-002). When a model for search is configured, entries close in meaning to the instruction are listed first. It can also merge two entries and change plan records (AST-EXP-017). |
+| Merging entries | `POST /merges/preview`, `POST /merges` | What merging one entry into another would do, in sentences (changes nothing), and the merge sent to review as its own operation: facts, beliefs, names, details, events, plan references and pictures move to the kept entry and the other is retired as merged; undone in one step (`restore_entity`). |
+| Kept conversations and premise | `GET/DELETE /assist/threads/{kind}`, `POST /assist/premise` | The caller's own running conversation with the assistant of one kind, in the line they work in, and "Clear and start again". A premise round returns at most five open questions and the entries, facts and beliefs the words state, as one proposal to review (AST-EXP-005). |
+| Suggestion runs | `GET /assist/runs?kind=&limit=` | Recent runs of link and planning suggestions: how many were suggested, how candidates were found, how many were grounded in the author's words, and how many the author kept (AST-EXP-007, AST-EXP-013). |
 | Conversations | `GET /assist/sessions` (own unfinished ones; or `?mutation_id=` for the one behind a proposal), `GET /assist/sessions/{id}`, `PUT /assist/sessions/{id}/answers`, `POST /assist/sessions/{id}/close` | Each conversation with the assistant is kept: description or instruction, questions, answers, and the proposal it led to. `/assist/questions` and `/assist/changes` return a `session_id`; sending it back continues the same conversation. Unfinished ones are private to their author; a finished one is read-only evidence for any project reader; closing erases it. None of these call a model. |
 | AI provider and model | `GET /ai/providers`, `GET /ai/settings`, `PUT /ai/settings`, `GET /ai/models?provider=` | The providers a workspace can connect a key for; which provider and model the assistant uses (any member who can write may read it; an owner sets it); and the models the workspace's key can use, read live from the provider (`listed: false` when the provider gives no list). Workspace-scoped. Never returns a key or a provider address. |
 | Setup suggestions | `POST /assist/sessions/{id}/suggestions/apply` | `/assist/proposals` and `/assist/changes` return `suggestions`: types of entry and kinds of fact the assistant could not find in the project's setup, cleaned and bounded, also kept on the session. This endpoint adds the named ones to the published setup (additive only; project owner; idempotent). Suggesting changes nothing. |
 | Revise by asking | `POST /assist/revisions` | What should be different about a set of suggested changes, in the author's words. The model may edit or skip changes already in the set; each edit is typed, checked, and stored as a new revision of that change with the request as its reason; a skip is a recorded decision. It cannot add a change or write canon; what needs a new change is returned in `notes`. |
-| Link suggestions | `POST /assist/links` | Facts between existing entries that their details imply and no fact records, as a proposal for review. Recorded facts are not repeated; single-valued facts are not corrected; nothing is merged. `context` as for the God Hand (`suggest-links/1`: entries whose details name other entries first). |
+| Link suggestions | `POST /assist/links` | Facts between existing entries that their details imply and no fact records, as a proposal for review. With a model for search configured, pairs close in meaning that no fact connects are found first; without one, the listing is used and the run says so. Recorded facts are not repeated; single-valued facts are not corrected; nothing is merged. `context` as for the God Hand (`suggest-links/2`). Each run is recorded (`/assist/runs`). |
 | Bulk decisions | `POST /mutations/{id}/operations/decisions` | Several keep/skip decisions in one request and one transaction: all are recorded, or none. |
 | Before-review check | `POST /mutations/{id}/validate` | As before, plus advisory findings against current canon (`possible_duplicate`, `archived_twin`, `already_recorded`) worded with names. Common blocking findings are worded for an author. |
 | What a change touches | `GET /mutations/{id}/impact`, `GET /entities/{id}/impact` | CON-017/CON-007, computed on read with no model and no stored index: `affected` (scenes, plan parts and threads whose people, conditions, reveals or thread steps name a changed entry, fact or plan item; story rules about a changed entry before or after the change; kept drafts whose context manifest included it), `may_be_affected` (texts and scene prose whose indexed passages name a changed entry, or a changed scene's own prose), and `not_checked` (never empty: what the index does not cover, texts the index is behind on, limits reached, other lines of the story). A proposal is read in its own line of the story and only its kept changes count; an entry in the request's line. Each dependent carries ids and a passage range to link to. |
@@ -44,8 +47,9 @@
 | Scene conditions | `PUT /plan/{id}/conditions` | What must be true before a planned scene and after it, checked like a story rule and reported with the outline. |
 | Guided character workflow | `POST /characters/{entity_id}/questions`, `POST /characters/{entity_id}/proposals` | Spends the workspace's provider budget. Returns a proposal in the review queue; never writes canon. |
 | History and provenance | `GET /revisions`, `GET /revisions/{commit_id}`, `GET /revisions/{from}/diff/{to}`, `GET /{entities\|facts\|beliefs\|events}/{id}/history`, `GET /{...}/{id}/at-revision/{revision}`, `GET /provenance/{record_type}/{record_id}`, `GET/POST /tags`, `DELETE /tags/{name}`, `GET /tags/{name}/history`, `POST /reverts/preview`, `POST /reverts` | Provenance withholds reviewer identities and notes from read-only members and says so. A revert is a new commit and needs `acknowledge_high_impact`. |
-| Media | `GET/POST /assets`, `GET /assets/{id}`, `GET /assets/{id}/lifecycle`, `GET/POST /assets/{id}/versions`, `POST /assets/{id}/retire`, `POST /assets/{id}/versions/{vid}/retire`, `GET/POST /assets/{id}/links`, `GET /links`, `POST /links/{id}/retire` | Identity, immutable versions, and explicit links only. No upload, scanning, or processing exists. |
-| Pictures | `POST /entities/{id}/pictures?expected_revision=N[&name=]`, `POST /plan/{id}/pictures?expected_revision=N[&name=]`, `GET /pictures`, `GET /assets/{id}/versions/{vid}/content` | The upload body is the image itself (PNG, JPEG, or WebP by its own bytes, 8 MB limit). It is stored as a media version and linked to the entry, or to a scene of the plan (`target_record_type` `plan_item`, scenes only), as `DEPICTS` in one revision. `GET /pictures` is the picture library: each active picture's newest current version and how many entries and scenes show it (0 = shown nowhere); choosing one is `POST /assets/{id}/links`. Content is served to project members only. No processing, resizing, scanning, or model use. |
+| Media | `GET/POST /assets`, `GET /assets/{id}`, `GET /assets/{id}/lifecycle`, `GET/POST /assets/{id}/versions`, `POST /assets/{id}/retire`, `POST /assets/{id}/versions/{vid}/retire`, `POST /assets/{id}/delete`, `GET/POST /assets/{id}/links`, `GET /links`, `POST /links/{id}/retire`, `GET /assets/{id}/versions/{vid}/processing`, `POST …/processing/retry`, `GET/POST /assets/{id}/versions/{vid}/segments`, `POST …/segments/{sid}/retire` | Identity, immutable versions and explicit links. Each picture version is prepared by a background job (thumbnail, web copy, size, whole-picture segment); `processing` says how far it is or why it failed, and `retry` asks again. Segments are author-marked rectangles (API only). `delete` removes a picture's files once it is shown nowhere, keeping the version rows as a tombstone (owners and administrators; AST-008). No hosted malware scanning. |
+| Pictures | `POST /entities/{id}/pictures?expected_revision=N[&name=]`, `POST /plan/{id}/pictures?expected_revision=N[&name=]`, `GET /pictures`, `GET /assets/{id}/versions/{vid}/content` | The upload body is the image itself (PNG, JPEG, or WebP by its own bytes, 8 MB limit). It is stored as a media version and linked to the entry, or to a scene of the plan (`target_record_type` `plan_item`, scenes only), as `DEPICTS` in one revision. `GET /pictures` is the picture library: each active picture's newest current version and how many entries and scenes show it (0 = shown nowhere); choosing one is `POST /assets/{id}/links`. Content is served to project members only (`?size=original|web|thumbnail`). The upload is read in chunks: a declared length over the limit is refused before reading, and a `Content-Digest`/`Repr-Digest` is checked when sent (AST-002). |
+| A picture's page | `GET /pictures/{id}`, `GET /pictures/search`, `PUT /pictures/{id}/links/{link_id}`, `PUT /pictures/{id}/context`, `GET /pictures/{id}/describe/estimate`, `POST /pictures/{id}/describe`, `POST /observations/{id}/review`, `POST /observations/{id}/propose` | A picture with where it is shown; search by name and accepted descriptions, then by meaning when set up. Changing a link sets who may know what it shows and the story time it applies from (one reviewed change). The context choice is send the picture, use its accepted description, or leave it out. "Describe this picture" is a `media_describe` job, estimated first; what the model saw is accepted, corrected or rejected, and an accepted appearance detail can be proposed as a fact for review (AST-005, CTX-013). |
 | Projection | `GET /projection` | Graph projection head, applied revision, lag, last error, and the latest archive import. |
 | Archive | `POST /archive/export`, `GET /imports`, `DELETE /imports/{import_id}` | Export and import removal need project administration and are audited. Import itself is an operator CLI (`make archive`), not an HTTP route. |
 
@@ -63,13 +67,24 @@
 - `/api/v1/workspaces` and `/workspaces/{id}/members|projects|invitations|ownership`,
   `/api/v1/invitations/accept`: invite-only tenancy (Phase 1). The member list includes a display
   name for every member and the email address for callers who can invite.
-- `/api/v1/credentials` (+ `/{id}/rotate`, `/{id}/revoke`): envelope-encrypted OpenRouter BYOK;
-  plaintext is never returned.
+- `/api/v1/credentials` (+ `DELETE /{id}`, `/{id}/rotate`, `/{id}/revoke`): envelope-encrypted
+  provider keys (OpenRouter and six other providers); plaintext is never returned.
+- `/api/v1/ai/connector/codes/check`, `/codes/decide`, `/devices`, `/devices/{id}/use`,
+  `/devices/{id}/disconnect`, `DELETE /ai/connector/use`: a workspace owner confirms a computer's
+  connection code, lists connected computers, chooses one of their models for the assistant, stops
+  using it, or disconnects it (SCN-002A, ADR-025).
 - `/auth/login`, `/auth/callback`, `/auth/me`, `/auth/logout`: OIDC (hosted) or local session.
 - `/api/v1/access-keys` (`GET`, `POST`; `/{id}/revoke`, `/{id}/uses`): personal access keys for
   other assistants (QRY-003, ADR-024). Signed-in session routes; `POST` answers with the key once
   (`key`), never again. A member sees their own keys; an owner sees and can withdraw everyone's in
   the workspace. `uses` is counts per day and tool for 30 days, never content.
+
+## Local connector (SCN-002A, ADR-025)
+
+`/api/v1/connector/codes`, `/token` (the OAuth device grant, RFC 8628), `/rotate`, `/poll` (long
+poll for work), `/requests/{id}/answer` and `GET /connector/version` are for the connector program
+on an author's computer, authenticated by its own credential (`nvldev_`), never a session. They
+relay only listing models and chat completions. See `plan/runbooks/local-connector.md`.
 
 ## MCP endpoint (QRY-003, ADR-024)
 
@@ -87,9 +102,11 @@ always reviewed). Every tool takes `story` (narrows a workspace key) and `what_i
 
 - `/health/live`, `/health/ready` (store connectivity and read-only migration verification;
   `unavailable` and 503 when a required store is down; `degraded` but 200 when an optional part
-  — the job worker, waiting work older than five minutes, or the search store — is down, with
-  plain `reasons`; never addresses or credentials), `/health/capabilities` (no secrets, no model
-  load, no writes).
+  — the job worker (or waiting work older than five minutes), the graph worker, the search store,
+  the search index, or picture preparation — is down or behind, with plain `reasons`; counts only
+  with the metrics token on a hosted site; never addresses or credentials),
+  `/health/capabilities` (embeddings, provider, telemetry, pictures and their decoding sandbox; no
+  secrets, no model load, no writes).
 - `/health/metrics`: Prometheus text format, counts and timings only. Off unless
   `METRICS_ENABLED`; requires `METRICS_TOKEN` as a bearer token when set, and is never served
   unauthenticated in production. Deliberately not part of the OpenAPI contract.
@@ -141,10 +158,11 @@ Under `/projects/{project_id}`:
   modality, speaker or narrator, hearers and scene; `hearers_believe` also proposes beliefs for the
   hearers), `POST /knowledge/claims/{event_id}/promote` (proposes the fact for review) (KNW-005).
 - `/reader` (the plan's scenes in reading order with what the reader is shown),
-  `/reader/guide?scene=&viewpoint=&version=` (the story as it stood at a saved version, the latest
-  by default; the answer names the line of the story, version, scene position and viewpoint, gives
-  sections for reading and a Markdown export with that binding in a YAML header; `400` for a version
-  that does not exist, `404` for a scene not in the plan then); `PUT /plan/{id}/reveals`,
+  `/reader/guide?scene=&viewpoint=&version=&part=` (the story as it stood at a saved version, the
+  latest by default; the answer names the line of the story, version, scene position and viewpoint,
+  gives sections for reading and a Markdown export with that binding in a YAML header; `part` makes
+  only the characters, places, timeline or recap; `400` for a version that does not exist, `404` for
+  a scene not in the plan then); `PUT /plan/{id}/reveals`,
   `PUT /plan/{id}/when`.
 - `PUT /plan/{id}/path` (an arc's stages in order: name, the scene where each is reached, a fact
   that should hold from then; STY-006). `POST /plan` accepts `path` for a new arc. Plan items
@@ -197,7 +215,7 @@ Under `/projects/{project_id}`:
   150–3,000 words, with an optional direction. Returns a job. Checks the allowance first (`429
   usage_limit`). Changes no text.
 - `POST /plan/{id}/studio/reviews` (`202`): a check with the assistant of the current text or one
-  draft, with `passes` (any of `viewpoint`, `continuity`, `plan`, `voice`, `clarity`; every pass when
+  draft, with `passes` (any of `viewpoint`, `continuity`, `plan`, `voice`, `clarity`, `pictures`; every pass when
   left out; an empty list is `400`). One model call per pass. Returns a job whose result counts
   notes per pass. Every note quotes the text; one that does not is dropped. Notes carry
   `check_pass` (null for a note from the earlier all-in-one check) (CON-008).
@@ -247,6 +265,45 @@ Under `/projects/{project_id}`:
   (CON-006): `learned_later` (the words name everyone in it), `learned_later_planned`,
   `learned_later_said`, `learned_later_context` in the studio; `shown_before_learned` and
   `said_before_learned` in the plan. Warnings only, never blocking.
+
+- `GET /checks/calibration`: how often each check's findings were dismissed in this line of the
+  story (a note for the author; it changes no check). `GET /mutations/{id}/findings`,
+  `POST /mutations/{id}/findings/dismissals`, `DELETE …/dismissals/{dismissal_id}`: the advisory
+  findings on a proposal and dismissing one for that proposal only (CON-016).
+- `POST /plan/{id}/findings/proposal-estimate` and `POST /plan/{id}/findings/proposal`: settle a
+  check or note in the story bible ("make this true" or "change the story bible instead") through
+  the God Hand, as a proposal for review (CON-010).
+
+## Corrections, schedules, drift and voice (CON-011, CON-018)
+
+- `GET/POST /audits/{job_id}/corrections` and `GET …/corrections/estimate`: a correction plan from a
+  finished audit (a job, estimated first); `PUT /corrections/{plan_id}/items/{index}` keeps or skips
+  one step. Nothing in the story or its prose changes.
+- `GET /audits/{job_id}/drift`: voice against the author's usual and each pair of characters'
+  drift across the audited range. `GET /what-ifs/{id}/audit`: the differences between a what-if and
+  the main story. Both call no model.
+- `GET/PUT /audit-schedules`, `DELETE /audit-schedules/{id}`: an audit of a part of the story every
+  1–90 days, with a most per run (confirmed above the threshold).
+- `GET /voice/book`, `GET /plan/{id}/voice`, `PUT /plan/{id}/voice/usual`: each written scene's voice
+  against the author's usual, worked out with no model; leaving a scene out of the usual.
+
+## Planning help, summaries, scales (STY-003, STY-004, STY-006, CTX-006)
+
+- `GET /plan/{id}/intent/estimate`, `POST /plan/{id}/intent/suggest`: suggest what a scene is for, as
+  a plan change for review. `GET /plan/{id}/bridges/estimate`, `POST /plan/{id}/bridges/suggest?condition=`:
+  suggest one or two scenes to bring about an unmet "before" condition, as a plan change for review.
+- `GET/PUT /plan/{id}/summary`, `POST /plan/{id}/summary/suggest`, `POST /plan/{id}/summary/{summary_id}`:
+  the summary later scenes are given of this one; the assistant's suggestion is used only once the
+  author keeps it (as it is or corrected).
+- `GET/PUT /plan/scales`: the story's shared scales, each with its levels and a version.
+
+## Indexes and ready views (CTX-005, CTX-012, QRY-001)
+
+- `GET /texts-index`, `POST /texts-index/rebuild`: how far the writing index is (texts behind, what
+  waits and for how long, failures) and reading every text again.
+- `GET /story-views` and `GET /story-views/where|holders|relationships|dependents|disclosures`: the
+  state of each ready view of this line of the story, and reads that answer from a verified view or
+  work it out, saying which.
 
 ## Scenes back into the story (Phase 6, ADR-023)
 
@@ -320,5 +377,5 @@ suggestions made in the app are considered (`/assist/proposals`, `/changes`, `/l
 
 ## Not yet in the API
 
-Streaming drafts, merging drafts, media processing, and an HTTP archive import are later-phase
-work. No route accepts parameters that imply they are enforced.
+Streaming drafts, merging drafts, sound and film, and an HTTP archive import. No route accepts
+parameters that imply they are enforced.

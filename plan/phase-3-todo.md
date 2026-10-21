@@ -7,6 +7,15 @@
   `19-assistant-first-experience.md` (all of this is Level 5), ADR-004, ADR-005, ADR-012,
   ADR-020 (written with this phase).
 
+**Since this phase (checked 2026-10-21).** The checklists below record the state when the phase was
+built. Later work: trust between characters and recorded witnessing of an event (KNW-006, batch 4
+B); how each belief was learned (KNW-002); knowledge used before it was learned, someone in a scene
+after their death, travel and age arithmetic (CON-003, CON-004, CON-006); the "Promises to the
+reader" view by reading distance (STY-007); the reader's guide as a page to print and per part
+(QRY-002); and archives that carry every what-if (CAN-010). Still open: calendars (by design), a
+what-if of a what-if, conflicts per field, reveals read from prose, and an assistant path for
+telling or choosing reveals. Current status: [`10-backlog.md`](10-backlog.md).
+
 Everything here is optional for the author. The defaults stay: one story, time not stated,
 the author's own point of view. Nothing at levels 1–4 asks for a time, a what-if or a viewpoint.
 

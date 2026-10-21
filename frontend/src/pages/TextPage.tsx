@@ -37,6 +37,10 @@ export function TextPage() {
   const [replacing, setReplacing] = useState(false)
   const [removing, setRemoving] = useState(false)
   const [result, setResult] = useState<PassageRead | null>(null)
+  // The scene of the plan this text is the prose of, when the author says so (EXT-001).
+  const [sceneId, setSceneId] = useState('')
+  const outline = useQuery({ queryKey: scopedKey(scope, 'plan'), queryFn: () => api.outline(scope) })
+  const scenes = (outline.data?.items ?? []).filter((item) => item.kind === 'scene')
 
   const text = useQuery({
     queryKey: scopedKey(scope, 'text', sourceId, versionId ?? 'latest'),
@@ -61,6 +65,8 @@ export function TextPage() {
         start: part.start,
         end: part.end,
         expected_revision: expectedRevision,
+        // A scene's own text reads as that scene; a pasted text as the scene the author named.
+        scene_id: (detail?.text.kind === 'scene' ? detail.text.scene_id : sceneId) || null,
       }),
     (found) => {
       setResult(found)
@@ -133,6 +139,23 @@ export function TextPage() {
 
       <div className="section-gap">
         <ReadOnlyNotice canWrite={canWrite} />
+        {canWrite && detail.text.kind !== 'scene' && scenes.length > 0 && (
+          <label className="stack tight read-as-scene">
+            <span>Is this the writing of a scene in your plan? (optional)</span>
+            <select value={sceneId} onChange={(event) => setSceneId(event.target.value)}>
+              <option value="">No, read it on its own</option>
+              {scenes.map((scene) => (
+                <option key={scene.id} value={scene.id}>
+                  {scene.title || 'A scene with no title'}
+                </option>
+              ))}
+            </select>
+            <span className="hint">
+              Named, the assistant also suggests which of the plan’s threads it moves along or
+              settles, as a change to that scene for you to review.
+            </span>
+          </label>
+        )}
         {!isLatest && (
           <p className="notice plain" role="note">
             <span>This is an earlier version of the text.</span>
@@ -355,6 +378,12 @@ function ReadResult({
           <p className="small">
             {result.implied === 1 ? 'One of them is' : `${result.implied} of them are`} only implied by
             the text, not stated. Each is marked.
+          </p>
+        )}
+        {(result.thread_steps ?? 0) > 0 && (
+          <p className="small">
+            Among them: {plural(result.thread_steps ?? 0, 'step')} of the plan’s threads, as a change to the
+            scene you named.
           </p>
         )}
         {result.guesses > 0 && (

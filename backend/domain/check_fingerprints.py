@@ -121,6 +121,12 @@ SCENE_CHECKS: tuple[SceneCheck, ...] = (
         ("prose", "names", "cast"),
         "The place and the viewpoint named",
     ),
+    SceneCheck(
+        "looks",
+        ("appearance_differs", "height_differs", "mark_differs", "age_differs"),
+        ("prose", "names", "looks"),
+        "How people look and how old they are",
+    ),
     SceneCheck("stock", ("stock_phrase",), ("prose",), "Stock phrasing"),
     SceneCheck("length", ("short", "long"), ("prose", "length"), "Length"),
     SceneCheck("continuity", ("continuity_*",), ("timeline",), "Continuity in story time"),
@@ -143,6 +149,10 @@ CODE_WORDS: dict[str, str] = {
     "reveal_missing": "A reveal the plan promised may be missing",
     "place_missing": "The place is never named",
     "viewpoint_missing": "The viewpoint character is never named",
+    "appearance_differs": "Eyes, hair or a beard unlike the accepted details",
+    "height_differs": "A height unlike the accepted details",
+    "mark_differs": "A scar or mark on the other side",
+    "age_differs": "An age the story's dates do not allow",
     "stock_phrase": "Stock phrasing",
     "short": "Shorter than asked for",
     "long": "Longer than asked for",
@@ -242,6 +252,14 @@ def brief_inputs(brief: Any) -> dict[str, str]:
             }
         ),
         "length": digest_of(brief.words_asked),
+        "looks": digest_of(
+            {
+                "appearance": getattr(brief, "appearance", []),
+                "ages": getattr(brief, "ages", []),
+                "people": getattr(brief, "people", ()),
+                "also": also,
+            }
+        ),
         "brief": digest_of(whole),
     }
 

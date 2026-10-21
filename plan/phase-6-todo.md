@@ -7,6 +7,11 @@
   ADR-022 (the scene studio), ADR-023 (written with this phase). Level 4 in
   `19-assistant-first-experience.md`.
 
+**Since this phase (checked 2026-10-21).** The checklist below records the state when the phase was
+built. Later work: facts read from a scene with a story time start at that time (EXT-007,
+2026-10-18), and reading a scene also suggests thread steps, changes of state and new threads
+(EXT-001, batch 5 D and batch 8 D). Current status: [`10-backlog.md`](10-backlog.md).
+
 Most of the machinery exists already. Reading a text into proposed changes (Phase 2.7,
 `IntakeWorkflow.read_passage`) keeps only what it can quote, points every change at the exact
 version and words, and sends the changes to the grouped review; commits are checked against the

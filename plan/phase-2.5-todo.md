@@ -8,6 +8,16 @@
 - Rule for every item: an assistant path and a by-hand path, both tested; the assistant only ever
   produces a proposal.
 
+**Since this phase (checked 2026-10-21).** The dashboard and checklists below record the state
+when the phase was built. Later work closed several open items: starting from a premise (F,
+AST-EXP-005, batch 8 B); link suggestions by meaning, with how many the author kept recorded per run
+(G, AST-EXP-007, batch 8 B); pictures on scenes (L, AST-EXP-018, batch 2 B); need-based suggestions
+for planning and the Level 5 features (I, AST-EXP-009, Phases 2.6 and 3); and from "Left for later
+phases", the God Hand's merge, events, plan changes and retrieval beyond the listing (AST-EXP-017),
+and conversations in exports (CAN-010). Contradictions in meaning are looked for by the studio's
+check with the assistant (CON-008); the check on a proposal before review is still structural
+(AST-EXP-006). Current status: [`10-backlog.md`](10-backlog.md).
+
 **Standing limitation:** every assistant workflow below is tested with a scripted model, plus a
 check that its output format converts to a strict JSON schema. None has been run against a real
 provider by the implementer. The owner runs the real model by hand and reports back over time

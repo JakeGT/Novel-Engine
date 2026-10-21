@@ -97,3 +97,12 @@ bytes), `tests/application/test_provenance_and_history_authz.py`,
   ids for the facts, beliefs and links it states are `tmp:merge-<position>-…`, so they resolve
   deterministically like any other.
 - `restore_entity` is new and carries no extra fields.
+
+## Amendment 2026-10-21 (batch 9 C)
+
+New optional fields, each omitted from the canonical form while unset so earlier envelopes keep
+their checksums: `link_asset.applies_until` and `link_asset.shows_version` (AST-001, in the
+general omit list); `update_entity.type` and `amend_event.claim` (AST-EXP-017, omitted only on
+those operations while `None`, since `type` and `claim` keep their values on `create_entity` and
+`create_event`). A type change is validated against every current fact and belief about the entry,
+counting what the same set ends (`type_does_not_fit`).

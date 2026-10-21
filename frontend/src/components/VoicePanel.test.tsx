@@ -87,6 +87,57 @@ describe('Voice', () => {
     await waitFor(() => expect(within(panel).getByRole('checkbox', { name: /Count this scene/ })).not.toBeChecked())
   })
 
+  it('dismisses a note on how it sounds, says who says what, and brings the note back', async () => {
+    const note = {
+      code: 'voice_speaker_short_forms',
+      message: 'Tobin Ashe uses short forms such as “don\'t” and “I\'m” far less here.',
+      start: null,
+      end: null,
+      key: 'k_voice',
+    }
+    const dismissal = { id: 'dis_v', reason: 'intended' as const, note: '', expires_at: null, created_at: '2026-10-21T09:00:00Z' }
+    const speakers = [
+      { name: 'Tobin Ashe', lines: 20, words: 600, sentence_mean: 30.4, short_forms: 0, elsewhere: 3, compared: true },
+      { name: 'Mara', lines: 4, words: 20, sentence_mean: 5, short_forms: 0, elsewhere: 0, compared: false },
+    ]
+    const before = { ...voice, notes: [note], speakers, attributed: 0.92 }
+    const after = { ...before, notes: [{ ...note, dismissal }] }
+    const api = mockApi({
+      'GET /plan/pln_s4/voice': before,
+      'POST /plan/pln_s4/voice/dismissals': after,
+      'DELETE /plan/pln_s4/voice/dismissals/dis_v': before,
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(
+      <Voice planId="pln_s4" versionId="ver_4" text={TEXT} point={point} onShow={vi.fn()} stale={false} canWrite />,
+    )
+    const panel = await screen.findByRole('region', { name: 'How it sounds' })
+    await user.click(await within(panel).findByText('Who says what'))
+    const who = within(panel).getByRole('table', { name: 'Each speaker in this scene' })
+    expect(within(who).getByRole('rowheader', { name: /Tobin Ashe\s*Compared with 3 other scenes/ })).toBeInTheDocument()
+    expect(within(who).getByRole('rowheader', { name: /Mara\s*Too little to compare yet/ })).toBeInTheDocument()
+    expect(within(panel).getByText(/About 92% of the dialogue here is tied to who says it/)).toBeInTheDocument()
+
+    await user.click(within(panel).getByRole('button', { name: /^Dismiss: Tobin Ashe uses short forms/ }))
+    const form = within(panel).getByRole('group', { name: /^Dismiss: Tobin Ashe uses short forms/ })
+    // Only this scene: no wider choice for a note on how it sounds.
+    expect(within(form).queryByLabelText('Applies to')).not.toBeInTheDocument()
+    await expectAccessible(container)
+    await user.click(within(form).getByRole('button', { name: 'Dismiss' }))
+    await waitFor(() =>
+      expect(api.find('POST', '/plan/pln_s4/voice/dismissals')[0]?.body).toEqual({
+        key: 'k_voice',
+        reason: 'intended',
+        note: '',
+        days: null,
+      }),
+    )
+    const dismissed = (await within(panel).findByText('Dismissed: 1 note on how it sounds')).closest('details') as HTMLElement
+    expect(within(panel).getByText('Nothing else stands out.')).toBeInTheDocument()
+    await user.click(within(dismissed).getByRole('button', { name: /^Undo dismissing: Tobin Ashe/ }))
+    await waitFor(() => expect(api.find('DELETE', '/plan/pln_s4/voice/dismissals/dis_v')).toHaveLength(1))
+  })
+
   it('says why nothing is compared, and offers no choice to a reader', async () => {
     mockApi({
       'GET /plan/pln_s4/voice': {

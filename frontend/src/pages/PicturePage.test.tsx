@@ -218,7 +218,7 @@ describe('PicturePage', () => {
     )
     const user = userEvent.setup()
     open()
-    await user.click(await screen.findByRole('button', { name: 'Change who knows and when' }))
+    await user.click(await screen.findByRole('button', { name: 'Change who knows, when and which version' }))
     await user.click(screen.getByRole('checkbox', { name: 'Keep what it shows secret' }))
     await user.click(screen.getByRole('checkbox', { name: 'Tobin Ashe' }))
     await user.click(screen.getByRole('button', { name: 'Save' }))
@@ -227,9 +227,82 @@ describe('PicturePage', () => {
       secret: true,
       known_by: ['ent_tobin'],
       applies_from: null,
+      applies_until: null,
+      version_id: null,
       expected_revision: 7,
     })
     expect(await screen.findByText(/Secret: only Tobin Ashe knows what it shows./)).toBeInTheDocument()
+  })
+
+  it('shows for which story time a picture applies, and which version a place keeps', async () => {
+    const second = { ...version, id: 'ver_2', version: 2 }
+    const timed = {
+      ...picture().links[0],
+      applies_from: 'year 10',
+      applies_until: 'year 20',
+      window: 'from year 10 until year 20',
+      applies_from_time: { kind: 'at', at: 10 },
+      applies_until_time: { kind: 'at', at: 20 },
+      shows_version_id: version.id,
+      shows_version: version.version,
+    }
+    const shown = picture({ version: second, versions: [second, version], links: [timed] })
+    const api = mockApi(
+      routes(shown, {
+        'GET /entities': { items: [], limit: 200, offset: 0 },
+        'PUT /pictures/ast_1/links/lnk_1': shown,
+      }),
+    )
+    const user = userEvent.setup()
+    open()
+    expect(await screen.findByText(/It shows them from year 10 until year 20\./)).toBeInTheDocument()
+    expect(screen.getByText(/It always shows version 1\./)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Change who knows, when and which version' }))
+    // What is set now is shown to change, not cleared.
+    expect(screen.getByRole('combobox', { name: 'Which version it shows' })).toHaveValue(version.id)
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Which version it shows' }), '')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.find('PUT', '/links/lnk_1')).toHaveLength(1))
+    expect(api.find('PUT', '/links/lnk_1')[0].body).toMatchObject({
+      applies_from: { kind: 'at', at: 10 },
+      applies_until: { kind: 'at', at: 20 },
+      version_id: null,
+    })
+  })
+
+  it('adds a new version in two checked steps', async () => {
+    const upload = {
+      id: 'upl_1',
+      for: 'picture',
+      target_id: 'ast_1',
+      state: 'waiting',
+      byte_length: 4,
+      sha256: 'a'.repeat(64),
+      expires_at: '2026-10-21T12:00:00Z',
+      send_to: '/api/v1/projects/prj_1/uploads/upl_1',
+      finish_at: '/api/v1/projects/prj_1/uploads/upl_1/finish',
+    }
+    const api = mockApi(
+      routes(picture(), {
+        'POST /uploads': upload,
+        'PUT /uploads/upl_1': { upload: { ...upload, state: 'received' }, received: { bytes: 4 } },
+        'POST /uploads/upl_1/finish': {
+          upload: { ...upload, state: 'finished' },
+          version: { ...version, id: 'ver_2', version: 2 },
+          link: null,
+        },
+      }),
+    )
+    const { container } = open()
+    await screen.findByText('She wears a long blue coat.')
+    const file = new File([new Uint8Array([137, 80, 78, 71])], 'mara.png', { type: 'image/png' })
+    await userEvent.upload(screen.getByLabelText('Choose a new version of “Mara on the quay”'), file)
+    expect(await screen.findByText(/Added as version 2\./)).toBeInTheDocument()
+    const started = api.find('POST', '/uploads')[0].body as Record<string, unknown>
+    expect(started).toMatchObject({ for: 'picture', id: 'ast_1', byte_length: 4 })
+    expect(String(started.sha256)).toMatch(/^[0-9a-f]{64}$/)
+    expect(api.find('PUT', '/uploads/upl_1')).toHaveLength(1)
+    await expectAccessible(container)
   })
 
   it('lets a reader look but not change anything', async () => {

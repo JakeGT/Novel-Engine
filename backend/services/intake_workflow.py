@@ -41,6 +41,8 @@ importance, within a word budget, with what was left out counted and said.
 from __future__ import annotations
 
 import logging
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -71,7 +73,7 @@ from backend.domain.canon.plans import (
 from backend.domain.canon.propositions import ObjectKind
 from backend.domain.canon.registry import PredicateSpec
 from backend.domain.canon.revisions import OriginKind
-from backend.domain.errors import ValidationError
+from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.journal import MutationSet
 from backend.domain.operations import (
@@ -115,6 +117,7 @@ from backend.services.canon_creation_workflow import (
     DraftBelief,
     DraftEntity,
     DraftFact,
+    author_choices,
 )
 from backend.services.mutation_service import ValidationReport
 from backend.services.plan_workflow import PlanWorkflow
@@ -490,7 +493,7 @@ class IntakeWorkflow(PlanWorkflow):
         wanted = len(content) if end is None else min(end, len(content))
         within = [mention for mention in mentions if start <= mention.start < stop]
         predicates, entity_types = await self._vocabulary(workspace_id, project_id)
-        listing, known_events, threads = await self._read_listing(
+        listing, known_events, threads, choices = await self._read_listing(
             workspace_id, project_id, entities, within, scene
         )
         about, listed = _context(entities, within, index, listing=listing)
@@ -504,6 +507,7 @@ class IntakeWorkflow(PlanWorkflow):
                 entity_types,
                 threads=bool(listing.section("threads")),
                 opens=scene is not None,
+                choices=choices,
             ),
             response_format=SceneDraft if timed_scene else PassageDraft,
             prompt_version=READ_SCENE_PROMPT_VERSION if timed_scene else READ_PROMPT_VERSION,
@@ -548,6 +552,12 @@ class IntakeWorkflow(PlanWorkflow):
         for number, fact in enumerate(draft.facts[:MAX_PROPOSED_ITEMS]):
             key = f"f{number}"
             if locate("fact", fact.quote, key, stated=fact.stated):
+                picked = _picked_problem(
+                    fact.predicate, fact.object_value, fact.quote, predicates, choices
+                )
+                if picked is not None:
+                    discarded.append(DiscardedItem("fact", picked))
+                    continue
                 if getattr(fact, "changes_here", False):
                     changing.add(key)
                 kept_facts.append(
@@ -598,6 +608,13 @@ class IntakeWorkflow(PlanWorkflow):
             state_seen.append((key, change))
             beginnings.add(key)
             changing.add(key)
+            picked = _picked_problem(
+                change.predicate, change.value, change.quote, predicates, choices
+            )
+            if picked is not None:
+                # Still placed in time as an event below; the value is the author's to pick.
+                discarded.append(DiscardedItem("state", picked))
+                continue
             scalar = predicates[change.predicate].object_shape is not ObjectKind.ENTITY_REF
             kept_facts.append(
                 DraftFact(
@@ -619,6 +636,7 @@ class IntakeWorkflow(PlanWorkflow):
             session_id=version.id,
             answered=set(places),
             project_id=project_id,
+            choices=choices,
         )
         discarded.extend(dropped)
         if starts is not None:
@@ -955,8 +973,9 @@ class IntakeWorkflow(PlanWorkflow):
         entities: list[CanonEntity],
         mentions: list[Mention],
         scene: PlanItem | None,
-    ) -> tuple[Listing, list[Event], list[PlanItem]]:
-        """The story bible as the ``read-text`` policy shows it for this passage (CTX-002)."""
+    ) -> tuple[Listing, list[Event], list[PlanItem], dict[str, tuple[str, ...]]]:
+        """The story bible as the ``read-text`` policy shows it for this passage (CTX-002),
+        and the values the author picks by hand for each kind of fact (EXT-001)."""
         facts = list(
             await self._reader.list_facts(
                 workspace_id=workspace_id, project_id=project_id, limit=MAX_STORY_RECORDS
@@ -987,7 +1006,20 @@ class IntakeWorkflow(PlanWorkflow):
             unit=await self._unit(workspace_id, project_id),
             written_together=await self._written_together(workspace_id, project_id, named),
         )
-        return listing, events, threads
+        return listing, events, threads, author_choices(facts)
+
+    async def scene_for_reading(
+        self, workspace_id: str, project_id: str, scene_id: str
+    ) -> PlanItem:
+        """A scene of the plan a pasted text is the prose of (EXT-001): reading the text
+        then proposes the steps of the plan's threads it shows, as a scene's reading
+        does. The text keeps no link to it; the author names the scene each time."""
+        item = await self._reader.get_plan_item(  # type: ignore[attr-defined]
+            workspace_id=workspace_id, project_id=project_id, plan_id=scene_id
+        )
+        if item is None or not item.is_active or item.kind is not PlanKind.SCENE:
+            raise NotFoundError("That scene of the plan was not found.")
+        return item  # type: ignore[no-any-return]
 
     @staticmethod
     def _pointed(
@@ -1034,6 +1066,36 @@ class IntakeWorkflow(PlanWorkflow):
             if len(found) >= MAX_GUESSES:
                 break
         return found
+
+
+def _picked_problem(
+    predicate: str,
+    value: str | None,
+    quote: str,
+    predicates: dict[str, PredicateSpec],
+    choices: dict[str, tuple[str, ...]],
+) -> str | None:
+    """Why a value of a kind of fact whose values the author picks by hand cannot be
+    suggested, or None (EXT-001). One is suggested only from the author's own list, and
+    only when the passage itself uses that word."""
+    spec = predicates.get(predicate)
+    if spec is None or spec.object_shape is not ObjectKind.ENUM:
+        return None
+    allowed = choices.get(predicate, ())
+    word = " ".join((value or "").split())
+    if not allowed:
+        return (
+            f"{predicate}: you pick its values by hand, and the story has none yet, so "
+            "set it yourself"
+        )
+    match = next((item for item in allowed if item.casefold() == word.casefold()), None)
+    if match is None:
+        listed = ", ".join(allowed[:8])
+        return f"{predicate}: {word[:40]!r} is not one of your values ({listed})"
+    # The word itself, not the same letters inside another word ("ill" in "will").
+    if re.search(rf"(?<!\w){re.escape(match)}(?!\w)", quote, re.IGNORECASE) is None:
+        return f"{predicate}: the passage does not use the word “{match}”"
+    return None
 
 
 def _state_problem(change: ReadStateChange, predicates: dict[str, PredicateSpec]) -> str | None:
@@ -1340,6 +1402,9 @@ class FoundStep:
     # A thread the scene opens that the plan does not have yet (step ``opens``).
     title: str = ""
     summary: str = ""
+    # The version of the text whose words ``location`` points into, when it is not the
+    # one being read (a step an earlier, stopped reading found).
+    version_id: str = ""
 
 
 def _check_steps(
@@ -1432,7 +1497,11 @@ def thread_steps_change(
             kind=PlanKind.THREAD,
             title=item.title,
             summary=item.summary,
-            evidence=[EvidenceRef(source_artefact_id=version_id, location=item.location)],
+            evidence=[
+                EvidenceRef(
+                    source_artefact_id=item.version_id or version_id, location=item.location
+                )
+            ],
         )
         for number, item in enumerate(opening)
     ]
@@ -1449,7 +1518,11 @@ def thread_steps_change(
             continue
         cited.add(mark)
         if len(evidence) < MAX_EVIDENCE_PER_OPERATION:
-            evidence.append(EvidenceRef(source_artefact_id=version_id, location=item.location))
+            evidence.append(
+                EvidenceRef(
+                    source_artefact_id=item.version_id or version_id, location=item.location
+                )
+            )
     change = UpdatePlanItemOp(
         id=scene.id,
         details=with_advances(scene.details, [*advancing, *moves]) if moves else None,
@@ -1497,10 +1570,18 @@ def read_scene_messages(
     *,
     threads: bool = False,
     opens: bool = False,
+    choices: Mapping[str, tuple[str, ...]] | None = None,
 ) -> Messages:
     """The ``read-scene`` prompt: ``read-passage`` for a scene set at a known story time."""
     return read_passage_messages(
-        about, passage, predicates, entity_types, in_scene=True, threads=threads, opens=opens
+        about,
+        passage,
+        predicates,
+        entity_types,
+        in_scene=True,
+        threads=threads,
+        opens=opens,
+        choices=choices,
     )
 
 
@@ -1513,14 +1594,24 @@ def read_passage_messages(
     in_scene: bool = False,
     threads: bool = False,
     opens: bool = False,
+    choices: Mapping[str, tuple[str, ...]] | None = None,
 ) -> Messages:
     """The ``read-passage`` prompt: ``about`` lists the entries the passage may name, the
-    events already recorded, and (``threads``, reading a scene) the plan's threads.
-    ``opens`` (reading a scene) asks for threads the passage opens that the plan lacks."""
+    events already recorded, and (``threads``, reading a scene or a text the author says
+    is a scene's prose) the plan's threads. ``opens`` asks for threads the passage opens
+    that the plan lacks. ``choices`` are the values the author picks by hand for a kind
+    of fact; one is used only when the passage says it in those words (EXT-001)."""
+    picked = choices or {}
     predicate_lines = "\n".join(
         f"- {spec.predicate}: subject is one of {sorted(spec.subject_types)}; object is "
         f"{spec.object_shape.value}"
         + (f" of type {sorted(spec.object_types)}" if spec.object_types else "")
+        + (
+            f", one of the author's own values {list(picked[spec.predicate])}: give one only "
+            "when the passage uses that word"
+            if spec.object_shape is ObjectKind.ENUM and picked.get(spec.predicate)
+            else ""
+        )
         for spec in predicates.values()
     )
     # Markers the passage cannot contain, so its words cannot pretend to end it.

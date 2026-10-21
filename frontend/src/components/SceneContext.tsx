@@ -13,6 +13,8 @@ import {
 import { fullDate } from '../lib/time'
 import { plural } from '../lib/words'
 import { scopedKey, useCanonWrite, useEntries, useInvalidateProject, useProject } from '../project'
+import { partsAbove } from '../lib/plan'
+import { PartSummaryPanel } from './PartSummary'
 import { SceneSummaryPanel } from './SceneSummary'
 import { Button, Dialog, ErrorNotice, Loading, WriteProblem } from './ui'
 
@@ -30,6 +32,7 @@ const LEFT_OUT: Record<string, string> = {
   excluded: 'You said not to use these',
   budget: 'No room within the length you chose',
   secret: 'Secrets the viewpoint character does not know',
+  later: 'From later in the story’s time than this scene',
 }
 
 // Why something given for a kept draft is not given now.
@@ -37,6 +40,7 @@ const NOW_LEFT_OUT: Record<string, string> = {
   excluded: 'You said not to use it',
   budget: 'No room now within the length you chose',
   secret: 'A secret the viewpoint character does not know, now left out',
+  later: 'From later in the story’s time than this scene, now left out',
 }
 
 const WHAT_CHANGED: Record<string, string> = {
@@ -55,6 +59,10 @@ function signalLabel(name: string, effect: number): string {
       return 'Has an open warning'
     case 'distance':
       return 'Further from this scene'
+    case 'story time':
+      return 'Further back in the story’s time'
+    case 'later in time':
+      return 'Later in the story’s time'
     case 'diversity':
       return 'Like another passage'
     case 'meaning':
@@ -259,6 +267,9 @@ export function SceneContextDialog({ scene, onClose }: { scene: PlanItem; onClos
   const { scope, canWrite } = useProject()
   const entries = useEntries(scope)
   const invalidate = useInvalidateProject(scope)
+  // The beat, arc and story this scene sits in, for their summaries (CTX-006).
+  const outline = useQuery({ queryKey: scopedKey(scope, 'plan'), queryFn: () => api.outline(scope) })
+  const parts = partsAbove(scene, outline.data?.items ?? [])
   const context = useQuery({
     queryKey: scopedKey(scope, 'scene-context', scene.id),
     queryFn: () => api.sceneContext(scope, scene.id),
@@ -460,6 +471,9 @@ export function SceneContextDialog({ scene, onClose }: { scene: PlanItem; onClos
             )}
 
             <SceneSummaryPanel scene={scene} />
+            {parts.map((part) => (
+              <PartSummaryPanel key={part.id} part={part} />
+            ))}
 
             <details className="more">
               <summary>Technical details: exactly what would be given</summary>

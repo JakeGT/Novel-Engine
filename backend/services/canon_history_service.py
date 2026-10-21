@@ -726,6 +726,12 @@ class CanonHistoryService:
                                 if link.applies_from is not None
                                 else {}
                             ),
+                            **(
+                                {"applies_until": link.applies_until}
+                                if link.applies_until is not None
+                                else {}
+                            ),
+                            **({"shows_version": True} if link.shows_version else {}),
                         },
                     )
             else:
@@ -904,6 +910,8 @@ def _inverse_update(version: RecordVersion, before: CanonEntity) -> tuple[dict, 
         inverse["aliases"] = before.aliases
     if change.get("external_ids") is not None:
         inverse["external_ids"] = before.external_ids
+    if change.get("type") is not None and change["type"] != before.type:
+        inverse["type"] = before.type
     if len(inverse) == 2:
         return inverse, "the edit changed nothing"
     return inverse, None
@@ -940,6 +948,9 @@ def _inverse_amend(version: RecordVersion, before: Event) -> tuple[dict, str | N
     for key in ("cause_ids", "outcome_ids"):
         if change.get(key) is not None:
             inverse[key] = list(getattr(before, key))
+    if change.get("claim") is not None and before.claim is not None:
+        # A merge's rewrite of what was said is put back as it was (AST-EXP-017).
+        inverse["claim"] = before.claim.model_dump(mode="json")
     if len(inverse) == 2:
         return inverse, "the amendment changed nothing"
     return inverse, None
@@ -1032,6 +1043,7 @@ def _replay_entity(version: RecordVersion, current: CanonEntity | None) -> Canon
                 "external_ids": current.external_ids
                 if change.get("external_ids") is None
                 else change["external_ids"],
+                "type": current.type if change.get("type") is None else change["type"],
             }
         )
     if op == "retire_entity":
@@ -1150,6 +1162,8 @@ def _replay_event(version: RecordVersion, current: Event | None) -> Event | None
         for key in ("cause_ids", "outcome_ids"):
             if change.get(key) is not None:
                 update[key] = list(change[key])
+        if change.get("claim") is not None:
+            update["claim"] = EventClaim.model_validate(change["claim"])
         return current.model_copy(update=update)
     if op == "retire_event":
         return current.model_copy(update={"retired_revision": version.revision})

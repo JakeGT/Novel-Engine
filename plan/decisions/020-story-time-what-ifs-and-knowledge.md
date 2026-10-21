@@ -188,3 +188,39 @@ Sources: [W3C TAG, Good Practices for Capability URLs](https://www.w3.org/2001/t
 [Cratis Chronicle, rebuilding a read model](https://www.cratis.io/chronicle/scenarios/rebuild-a-read-model/)
 (idempotent projections with their own checkpoints; rebuild by clearing and replaying, then
 checking the result; rebuild time grows with history).
+
+## Amendment 2026-10-21 (batch 9 C): a screen for the ready views, and why they stay rebuilt whole
+
+`/projects/:id/story-views` ("Ready views of the story", linked from the Timeline) shows each view
+of the line being worked in: whether it is built, at which version and how many changes behind, when
+it was last built and (only while behind) how long it has been waiting, how many rows, the last
+replay check and its outcome, and whether reads use it now. `GET /story-views` gained `built_at`,
+`lag_seconds`, a plain `state`, the line's name and `how_built`.
+
+Incremental updates were not built. Each view is a function of the whole line: the timeline orders
+every event by resolving relative times through each other, the dependency view is a transitive
+closure, and the disclosure view depends on the reading order of every scene. One commit (a revert,
+a merge that expands into many changes, a time moved that others are relative to) can change rows
+far from the records it names, so a delta builder would need per-view invalidation rules, each a new
+way for a view to drift from the records. Practitioners report the same for recursive views:
+insertions are cheap to apply, but deletions and large cascades can cost more than a refresh, so
+hybrid systems fall back to a full rebuild. Replay verification compares whole checksums either way.
+A whole rebuild per commit is kept until a measurement on a large story shows it is too slow; the
+screen's "waiting" time is the first place that would show it.
+
+Sources consulted: [PostgreSQL hackers, materialized view incremental
+maintenance](https://www.postgresql.org/message-id/20161128231816.GA24797%40localhost) (mass deletion
+in a transitive closure: refreshing is faster than applying the delta);
+[pg_trickle, recursive CTEs that update themselves](https://pgxn.org/dist/pg_trickle/0.37.0/blog/recursive-ctes-that-update-themselves.html)
+(semi-naive for inserts, delete-and-rederive otherwise, and an automatic fall back to a full refresh).
+
+## Amendment 2026-10-21: what-ifs stay "set aside only" (owner decision)
+
+Batch 8 left one question open: a what-if cannot be discarded, so what is kept for it lives on.
+The owner decided on 2026-10-21 to keep it that way. A what-if is set aside and taken out again
+(`WhatIfService.set_aside`, which only changes the line's status); there is no discard action.
+A set-aside what-if keeps its rows, as before, and also its kept assistant conversations ("Change
+anything" keeps one per author and line) and its scheduled audits. A scheduled audit of a
+set-aside what-if does not run: each time it falls due it is recorded as gone and spends nothing,
+and it runs again if the what-if is taken out. All of it is removed only when the story itself is
+deleted. Recorded in `11-decisions-and-questions.md` and `HANDOFF.md`.

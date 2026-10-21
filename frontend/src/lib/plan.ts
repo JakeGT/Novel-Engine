@@ -106,3 +106,17 @@ export function readingScenes(items: PlanItem[]): PlanItem[] {
   walk('')
   return scenes
 }
+
+/** The parts of the plan a scene sits in, nearest first: its beat, its arc, its story. */
+export function partsAbove(scene: PlanItem, items: PlanItem[]): PlanItem[] {
+  const byId = new Map(items.map((item) => [item.id, item]))
+  const found: PlanItem[] = []
+  const seen = new Set<string>()
+  let parent = scene.parent_id ? byId.get(scene.parent_id) : undefined
+  while (parent && !seen.has(parent.id)) {
+    seen.add(parent.id)
+    if (parent.kind === 'beat' || parent.kind === 'arc' || parent.kind === 'story') found.push(parent)
+    parent = parent.parent_id ? byId.get(parent.parent_id) : undefined
+  }
+  return found
+}

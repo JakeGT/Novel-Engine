@@ -94,3 +94,19 @@ export function workText(scene: CheckRunScene): string | null {
 export function versionNumbers(versions: { id: string; number: number }[]): Map<string, number> {
   return new Map(versions.map((version) => [version.id, version.number]))
 }
+
+/** A time in plain words, in seconds: "under 0.001 seconds", "0.012 seconds", "3.4 seconds". */
+export function secondsText(ms: number): string {
+  if (ms < 1) return 'under 0.001 seconds'
+  const seconds = ms / 1000
+  if (seconds < 0.1) return `${seconds.toFixed(3)} seconds`
+  if (seconds < 10) return `${seconds.toFixed(seconds < 1 ? 2 : 1)} seconds`
+  return `${Math.round(seconds)} seconds`
+}
+
+/** How one pass with the assistant was sent, in a few words. */
+export function passTimingText(item: { calls: number; earlier?: boolean }): string {
+  if (item.earlier) return 'Finished by an earlier try: nothing sent again'
+  if (item.calls === 0) return 'Nothing to send'
+  return item.calls === 1 ? 'One request' : `${item.calls} requests`
+}

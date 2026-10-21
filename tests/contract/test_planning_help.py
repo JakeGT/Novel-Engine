@@ -216,6 +216,61 @@ def test_bridge_scenes_are_suggested_for_an_unmet_need_and_placed_before_it(
     assert before["id"] in {item["id"] for item in order}
 
 
+def test_a_preferred_condition_can_be_bridged_too(auth_client, fake_container) -> None:
+    """STY-004: a scene that would rather have something first gets a bridge offered, the
+    need said as preferred, and the bridge leaves it true as preferred."""
+    w = _world(auth_client, fake_container)
+    _add(auth_client, w, "scene", "The quarrel")
+    scene = _scene(auth_client, w)
+    _put(
+        auth_client,
+        w,
+        scene["id"],
+        "conditions",
+        {
+            "conditions": [
+                {
+                    "when": "before",
+                    "strength": "soft",
+                    "entity_id": w["mara"],
+                    "check": {
+                        "kind": "has",
+                        "pattern": {"predicate": "LOCATED_AT", "other_id": w["saltmere"]},
+                    },
+                }
+            ]
+        },
+    )
+    fake_container.ai.queue(
+        BridgeSheet(
+            bridges=[
+                BridgeDraft(
+                    title="The crossing to Saltmere",
+                    summary="Mara takes the night ferry to Saltmere.",
+                    how_it_helps="It brings her to Saltmere.",
+                    point_of_view=BridgeChoice(id=w["mara"], name="Mara"),
+                    place=BridgeChoice(id=w["saltmere"], name="Saltmere"),
+                )
+            ]
+        )
+    )
+    started = auth_client.post(
+        f"{w['base']}/plan/{scene['id']}/bridges/suggest", params={"condition": 0}
+    )
+    assert started.status_code == 202, started.text
+    (done,) = _run(fake_container)
+    assert done.status.value == "succeeded", done
+    sent = fake_container.ai.calls[-1]["messages"][-1]["content"]
+    assert "would rather have this first (preferred, not required)" in sent
+    _accept(auth_client, w, done.result["mutation_id"])
+    outline = _outline(auth_client, w)
+    bridge = next(i for i in outline["items"] if i["title"] == "The crossing to Saltmere")
+    assert bridge["conditions"][0]["when"] == "after"
+    assert bridge["conditions"][0]["strength"] == "soft"
+    [state] = [s for s in outline["conditions"] if s["plan_id"] == scene["id"]]
+    assert state["status"] == "planned"
+
+
 def test_a_met_need_gets_no_bridge(auth_client, fake_container) -> None:
     w = _world(auth_client, fake_container)
     scene = _scene(auth_client, w)

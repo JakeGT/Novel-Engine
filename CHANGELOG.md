@@ -71,6 +71,9 @@ for authors and for whoever runs an install. Version numbers start when the owne
 - **Merge two entries** in one reviewed step, with undo.
 - **How it sounds**: your scene's voice against your usual one; audits on a schedule; correction
   plans; compare a what-if with the main story.
+- **The assistant leaves out what happens later in your story's time** unless you choose to give
+  it; summaries of arcs and beats; dismiss a kind of finding for a whole character or a stretch of
+  scenes; pictures that apply between two points in the story.
 - **Photos lose their hidden details** (location, camera) when uploaded.
 - **Use a model on your own computer** (Ollama, LM Studio) on a self-hosted install, so nothing
   about your story leaves it.
@@ -78,7 +81,7 @@ for authors and for whoever runs an install. Version numbers start when the owne
 ### For whoever runs it
 
 - **Upgrading:** take a backup first (`deploy/hosted/backup.sh` on the hosted profile). The server
-  applies migrations on start; this release adds migrations up to `0055_voice_and_audits`. Key rotation: `python -m backend.devtools.rekey`. `0047` moves search vectors into a
+  applies migrations on start; this release adds migrations up to `0058_media_remainders`. Key rotation: `python -m backend.devtools.rekey`. `0047` moves search vectors into a
   new table; run `make reindex-status` afterwards.
 - **Readiness** now answers `ready`, `degraded` (200) or `unavailable` (503, a required store is
   down); a watcher that looked for `degraded` on a store outage must look for `unavailable`.
@@ -105,7 +108,8 @@ for authors and for whoever runs an install. Version numbers start when the owne
 ### Known limits
 
 - No real model has been measured; the assistant's quality is untested beyond scripted answers.
-- Pictures can be shown to a model only on a route you mark as seeing pictures; no audio or video.
+- Pictures can be shown to a model only on a route you mark as seeing pictures. Audio, video, and
+  Google Docs, DOCX or LaTeX import are deferred past this release.
 - No real vision or embedding model has been tried; search by meaning for pictures uses a stand-in
   in tests.
 - No open-source licence has been chosen yet.

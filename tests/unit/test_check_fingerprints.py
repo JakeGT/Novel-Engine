@@ -63,6 +63,7 @@ def test_a_change_to_one_slice_changes_only_the_checks_that_read_it():
         "knowledge",
         "reveals",
         "presence",
+        "looks",
         "stock",
         "length",
         "other",

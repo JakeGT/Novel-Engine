@@ -17,7 +17,9 @@ The time is the scene's when the reading runs, so a time set while it waited is 
 The threads of the plan the scene moves along or settles are one change, made at the end
 of the reading from the scene's plan as it is then (each passage's own would replace the
 scene's threads as that passage found them, so approving one would refuse the others).
-A reading stopped before its end suggests no thread steps for what it read.
+The steps found are recorded with the reading as it goes (EXT-007): a reading stopped
+before its end suggests none, and the next reading of the scene (or the same one,
+resumed) suggests them together with its own, once.
 """
 
 from __future__ import annotations
@@ -309,7 +311,20 @@ class SceneReadingService:
         # passage, each would replace the scene's threads as it read them and approving
         # one would refuse the others.
         events: set[EventKey] = set()
-        steps: list[FoundStep] = []
+        # Steps an earlier reading of this scene found and never suggested (it stopped
+        # part way): suggested with this reading's own at its end (EXT-007).
+        # Each cites the version its reading read, so one whose words are no longer kept
+        # is not suggested: it would point at nothing.
+        carried = [
+            r
+            for r in read.since
+            if r.id != mine.id
+            and r.steps
+            and (
+                r.version_id == version.id
+                or await self._words(workspace_id, project_id, r) is not None
+            )
+        ]
         for number, passage in enumerate(passages, start=1):
             start = passage.start
             while start < passage.end and version.content[start : passage.end].strip():
@@ -359,12 +374,12 @@ class SceneReadingService:
                         ),
                         discarded=mine.discarded + len(result.discarded),
                         passages=mine.passages + 1,
+                        steps=(*mine.steps, *(_packed(step) for step in result.found_steps)),
                     )
                     await self._store.save_reading(mine)
                 timed += result.timed
                 state_changes += result.state_changes
                 events.update(result.event_keys)
-                steps.extend(result.found_steps)
                 for guess in result.guesses:
                     try:
                         await self._sources.remember(
@@ -385,6 +400,13 @@ class SceneReadingService:
                 if not result.more or result.end <= start:
                     break
                 start = result.end
+        # A carried step cites the version its reading read: its place is in those words.
+        steps = [
+            _unpacked(item, r.version_id if r.version_id != version.id else "")
+            for r in carried
+            for item in r.steps
+        ] + [_unpacked(item) for item in mine.steps]
+        suggested = 0
         if steps:
             await ctx.step("Suggesting the threads the scene moves or opens", 96)
             async with ctx.holding():
@@ -392,7 +414,7 @@ class SceneReadingService:
                 scene = await self._studio._scene(  # noqa: SLF001
                     scope, workspace_id, project_id, plan_id
                 )
-                proposal, _ = await self._workflow.propose_thread_steps(
+                proposal, suggested = await self._workflow.propose_thread_steps(
                     scope,
                     workspace_id,
                     project_id,
@@ -401,9 +423,18 @@ class SceneReadingService:
                     version_id=version.id,
                     expected_revision=head,
                 )
-                if proposal is not None:
-                    mine = replace(mine, proposals=(*mine.proposals, proposal.id))
-                    await self._store.save_reading(mine)
+                # Suggested (or already in the plan): never suggested again, by this
+                # reading or by the next.
+                mine = replace(
+                    mine,
+                    proposals=(
+                        (*mine.proposals, proposal.id) if proposal is not None else mine.proposals
+                    ),
+                    steps=(),
+                )
+                await self._store.save_reading(mine)
+                for earlier in carried:
+                    await self._store.save_reading(replace(earlier, steps=()))
         await ctx.step("Recording what was read", 97)
         mine = replace(mine, status="complete")
         await self._store.save_reading(mine)
@@ -423,7 +454,19 @@ class SceneReadingService:
             "timed": timed,
             "state_changes": state_changes,
             "new_threads": sum(1 for step in steps if step.step == "opens"),
+            # Thread steps suggested, including any an earlier stopped reading found.
+            "thread_steps": suggested,
+            "carried_steps": sum(len(r.steps) for r in carried),
         }
+
+
+def _packed(step: FoundStep) -> tuple[str, str, str, str, str]:
+    return (step.thread, step.step, step.location, step.title, step.summary)
+
+
+def _unpacked(item: tuple[str, str, str, str, str], version_id: str = "") -> FoundStep:
+    thread, step, location, title, summary = item
+    return FoundStep(thread, step, location, title=title, summary=summary, version_id=version_id)
 
 
 __all__ = ["ReadingStatus", "SceneReadingService", "passage_tokens"]

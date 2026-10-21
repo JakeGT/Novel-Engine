@@ -115,6 +115,9 @@ evidence.
 
 ### Google Docs
 
+**Decision 2026-10-21: deferred past release one** (owner decision). Pasted text and Markdown stay
+the ways in for release one; the design below is kept for later work.
+
 Treat as an explicit synchronization/import-export workflow unless a later ADR makes it canonical. Required design:
 
 - stable document/scene mapping and revision token
@@ -125,6 +128,9 @@ Treat as an explicit synchronization/import-export workflow unless a later ADR m
 - OAuth scopes limited to selected documents
 
 ### LaTeX
+
+**Decision 2026-10-21: deferred past release one** (owner decision), as is DOCX import. Pasted
+text and Markdown stay the ways in for release one.
 
 Support deterministic export templates and potentially import of a controlled subset. Preserve unsupported commands as source blocks or produce a loss report. LaTeX is well suited to typesetting/export but not automatically the collaborative canonical editor.
 
@@ -153,8 +159,10 @@ and can be shared without granting access to later or author-only project state.
 - structured editor framework and canonical JSON schema
 - collaboration level: optimistic locking versus real-time CRDT/OT
 - scene/chapter split rules and user override
-- Google Docs integration priority and synchronization direction
-- supported LaTeX/Markdown round-trip guarantees
+- Google Docs integration priority and synchronization direction (Google Docs is deferred past
+  release one, 2026-10-21)
+- supported LaTeX/Markdown round-trip guarantees (LaTeX and DOCX import are deferred past release
+  one, 2026-10-21)
 - operator/user-configurable retention limits for immutable draft/generation versions
 
 ## Revision 2026-10-10: prose as a second way in

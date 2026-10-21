@@ -84,6 +84,17 @@ def _dismissal(row: Any) -> FindingDismissal:
     )
 
 
+def _steps(raw: Any) -> tuple[tuple[str, str, str, str, str], ...]:
+    """A reading's thread steps not suggested yet (EXT-007), as stored."""
+    items = raw if isinstance(raw, list) else json.loads(raw or "[]")
+    found = []
+    for item in items:
+        values = [str(value) for value in list(item)[:5]]
+        if len(values) == 5:
+            found.append((values[0], values[1], values[2], values[3], values[4]))
+    return tuple(found)
+
+
 class PostgresStudioStore:
     def __init__(self, session_factory: Any) -> None:
         self._session_factory = session_factory
@@ -346,13 +357,13 @@ class PostgresStudioStore:
                 text(
                     "INSERT INTO scene_readings (workspace_id, project_id, branch_id, id, plan_id, "
                     "source_id, version_id, job_id, passages, proposals, discarded, created_by, "
-                    "status, covered, base_reading_id) VALUES (:w, :p, :b, :id, :plan, :s, :v, "
-                    ":job, :n, CAST(:proposals AS JSONB), :discarded, :by, :status, "
-                    "CAST(:covered AS JSONB), :base) "
+                    "status, covered, base_reading_id, steps) VALUES (:w, :p, :b, :id, :plan, "
+                    ":s, :v, :job, :n, CAST(:proposals AS JSONB), :discarded, :by, :status, "
+                    "CAST(:covered AS JSONB), :base, CAST(:steps AS JSONB)) "
                     "ON CONFLICT (workspace_id, project_id, branch_id, id) DO UPDATE SET "
                     "passages = EXCLUDED.passages, proposals = EXCLUDED.proposals, "
                     "discarded = EXCLUDED.discarded, status = EXCLUDED.status, "
-                    "covered = EXCLUDED.covered"
+                    "covered = EXCLUDED.covered, steps = EXCLUDED.steps"
                 ),
                 {
                     "w": reading.workspace_id,
@@ -370,6 +381,7 @@ class PostgresStudioStore:
                     "status": reading.status,
                     "covered": json.dumps([list(span) for span in reading.covered]),
                     "base": reading.base_reading_id,
+                    "steps": json.dumps([list(step) for step in reading.steps]),
                 },
             )
 
@@ -386,7 +398,7 @@ class PostgresStudioStore:
                     text(
                         "SELECT workspace_id, project_id, branch_id, id, plan_id, source_id, "
                         "version_id, job_id, passages, proposals, discarded, created_by, "
-                        "created_at, status, covered, base_reading_id FROM scene_readings "
+                        "created_at, status, covered, base_reading_id, steps FROM scene_readings "
                         "WHERE workspace_id = :w AND project_id = :p AND branch_id = :b "
                         "AND plan_id = :plan ORDER BY created_at DESC, id DESC LIMIT :limit"
                     ),
@@ -421,6 +433,7 @@ class PostgresStudioStore:
                     status=row[13],
                     covered=tuple((int(a), int(b)) for a, b in covered),
                     base_reading_id=row[15],
+                    steps=_steps(row[16]),
                 )
             )
         return found

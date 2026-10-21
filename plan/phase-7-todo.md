@@ -4,6 +4,11 @@
 - Scope: `09-delivery-roadmap.md` Phase 7; release gates in `08-testing-and-quality.md`;
   `07-security-and-operations.md`.
 
+**Since this phase (checked 2026-10-21).** Batch 8 D added an example hook for copying backups off
+the host and example scheduling with pruning (OPS-003), a command that re-locks stored provider keys
+under a new credential key (`make rekey`), and the remaining recovery runbooks (OPS-004). The owner
+items below are unchanged. Current status: [`10-backlog.md`](10-backlog.md).
+
 ## What exists already
 
 - CI (`.github/workflows/foundation.yml`): secret scan, lockfile check, ruff, mypy, `pip-audit`,

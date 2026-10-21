@@ -40,6 +40,7 @@ function run(overrides: Partial<CheckRun>): CheckRun {
           { name: 'stock', words: 'Stock phrasing', reused: false },
           { name: 'continuity', words: 'Continuity in story time', reused: true },
         ],
+        stages: [],
       },
     ],
     findings: [
@@ -60,6 +61,7 @@ function run(overrides: Partial<CheckRun>): CheckRun {
     ],
     profile: { checking: 'on_request', checks: 'scene-checks/1' },
     coverage: {},
+    timings: [],
     ...overrides,
   }
 }
@@ -88,6 +90,7 @@ const older = run({
       superseded: 1,
       fixed: 1,
       checks: [],
+      stages: [],
     },
   ],
   findings: [
@@ -293,6 +296,141 @@ describe('CheckHistory', () => {
     mockApi({ 'GET /plan/pln_1/checks/runs': { items: [] }, 'GET /checks/calibration': { items: [] } })
     renderInProject(<CheckHistory planId="pln_1" versions={new Map()} refresh="" />)
     expect(await screen.findByText(/None yet\. Saving the scene keeps a record/)).toBeInTheDocument()
+  })
+})
+
+describe('CheckHistory timings and parts', () => {
+  it('says how long each step took and lists each passage of a pass sent in parts', async () => {
+    const timed = run({
+      id: 'run_3',
+      kind: 'assistant',
+      passes: ['model_free', 'clarity'],
+      job_id: 'job_3',
+      status: 'succeeded',
+      scenes: [
+        {
+          ...run({}).scenes[0],
+          checks: [
+            { name: 'stock', words: 'Stock phrasing', reused: false, ms: 2.5 },
+            { name: 'continuity', words: 'Continuity in story time', reused: true, ms: 0.2 },
+          ],
+          stages: [
+            { stage: 'gather', words: 'Reading what the checks need from the story', ms: 40 },
+            { stage: 'checks', words: 'Running the checks', ms: 3 },
+            { stage: 'keep', words: 'Keeping what they found', ms: 1 },
+          ],
+        },
+      ],
+      timings: [{ check_pass: 'clarity', words: 'Clarity', plan_id: null, ms: 2400, calls: 2, earlier: false }],
+      coverage: {
+        clarity: {
+          sent: 'groups',
+          groups: 2,
+          policy: 'scene-parts/1',
+          complete: true,
+          lines: ['Clarity: sent in 2 parts, each with everything this check reads of the story.'],
+          passages: [
+            { start: 0, end: 40, checks: ['Clarity'], part: 1, words: 'Tobin waited at Lantern Harbor while the tide…' },
+            { start: 42, end: 90, checks: ['Clarity'], part: 2, words: 'Mara came along the quay at last…' },
+          ],
+        },
+      },
+    })
+    mockApi({ 'GET /plan/pln_1/checks/runs': { items: [timed] }, 'GET /checks/calibration': { items: [] } })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<CheckHistory planId="pln_1" versions={new Map()} refresh="a" />)
+    const section = await screen.findByRole('region', { name: 'Check history' })
+    await user.click(await within(section).findByText(/Clarity: sent in 2 parts\. Every passage was checked once\./))
+    expect(within(section).getByText('Tobin waited at Lantern Harbor while the tide…')).toBeInTheDocument()
+    expect(within(section).getByText('part 2')).toBeInTheDocument()
+    await user.click(within(section).getByText('How long it took: 2.4 seconds'))
+    const table = within(section).getByRole('table')
+    expect(within(table).getByRole('cell', { name: '2 requests' })).toBeInTheDocument()
+    expect(within(table).getByRole('cell', { name: 'Reading what the checks need from the story' })).toBeInTheDocument()
+    expect(within(table).getByRole('cell', { name: '0.040 seconds' })).toBeInTheDocument()
+    expect(within(table).getByRole('cell', { name: 'Reused: nothing it reads had changed' })).toBeInTheDocument()
+    expect(within(table).getByRole('cell', { name: 'under 0.001 seconds' })).toBeInTheDocument()
+    await expectAccessible(container)
+  })
+})
+
+describe('CheckHistory wider dismissals', () => {
+  it('lists what is dismissed beyond one scene, with an undo for each', async () => {
+    const api = mockApi({
+      'GET /plan/pln_1/checks/runs': { items: [] },
+      'GET /checks/calibration': { items: [] },
+      'GET /dismissals/scoped': {
+        items: [
+          {
+            id: 'sd_1',
+            kind: 'check',
+            code: 'stock_phrase',
+            applies: 'range',
+            applies_to: 'Stock phrasing, in every scene from “The Docks” to “The Wait”',
+            reason: 'intended',
+            note: '',
+            created_at: '2026-10-18T09:00:00Z',
+            standing: true,
+          },
+          {
+            id: 'sd_0',
+            kind: 'check',
+            code: 'new_name',
+            applies: 'character',
+            applies_to: 'A new name, wherever it is about Mara',
+            reason: 'intended',
+            note: '',
+            created_at: '2026-10-17T09:00:00Z',
+            standing: false,
+          },
+        ],
+      },
+      'DELETE /dismissals/scoped/sd_1': {},
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<CheckHistory planId="pln_1" versions={new Map()} refresh="a" />)
+    const wider = await screen.findByRole('region', { name: 'Dismissed beyond one scene' })
+    expect(within(wider).getByText('Stock phrasing, in every scene from “The Docks” to “The Wait”')).toBeInTheDocument()
+    expect(within(wider).getByText('Intended · until you undo it')).toBeInTheDocument()
+    // One already brought back is not listed.
+    expect(within(wider).queryByText('A new name, wherever it is about Mara')).not.toBeInTheDocument()
+    await expectAccessible(container)
+    await user.click(within(wider).getByRole('button', { name: /^Undo everywhere: Stock phrasing/ }))
+    await waitFor(() => expect(api.find('DELETE', '/dismissals/scoped/sd_1')).toHaveLength(1))
+  })
+
+  it('shows one that covers nothing now as no longer applying, and lets it be undone', async () => {
+    const lapsed =
+      'Stock phrasing, in every scene from “The Docks” to “a scene no longer in the plan”. ' +
+      'It no longer applies: a scene it names is no longer in the plan'
+    const api = mockApi({
+      'GET /plan/pln_1/checks/runs': { items: [] },
+      'GET /checks/calibration': { items: [] },
+      'GET /dismissals/scoped': {
+        items: [
+          {
+            id: 'sd_2',
+            kind: 'check',
+            code: 'stock_phrase',
+            applies: 'range',
+            applies_to: lapsed,
+            reason: 'intended',
+            note: '',
+            created_at: '2026-10-18T09:00:00Z',
+            standing: false,
+            lapsed: true,
+          },
+        ],
+      },
+      'DELETE /dismissals/scoped/sd_2': {},
+    })
+    const user = userEvent.setup()
+    renderInProject(<CheckHistory planId="pln_1" versions={new Map()} refresh="a" />)
+    const wider = await screen.findByRole('region', { name: 'Dismissed beyond one scene' })
+    expect(within(wider).getByText(lapsed)).toBeInTheDocument()
+    expect(within(wider).getByText('Intended · no longer applies')).toBeInTheDocument()
+    await user.click(within(wider).getByRole('button', { name: /^Undo everywhere: Stock phrasing/ }))
+    await waitFor(() => expect(api.find('DELETE', '/dismissals/scoped/sd_2')).toHaveLength(1))
   })
 })
 

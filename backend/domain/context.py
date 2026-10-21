@@ -50,6 +50,8 @@ class ContextSection(StrEnum):
     EARLIER = "earlier"
     # The end of the scene before, as written (CTX-006A).
     BEFORE = "before"
+    # The ends of a few other recent scenes on the same viewpoint or thread (CTX-006A).
+    NEARBY = "nearby"
 
 
 # Stable first, volatile last, so a provider can reuse a cached prefix; and the scene
@@ -66,6 +68,7 @@ SECTION_ORDER: tuple[ContextSection, ...] = (
     ContextSection.EARLIER,
     ContextSection.PICTURES,
     ContextSection.WRITING,
+    ContextSection.NEARBY,
     # Recent prose sits next to the scene, after the stable material (plan 04: "scene
     # contract/task, then recent prose and volatile evidence").
     ContextSection.BEFORE,
@@ -89,6 +92,7 @@ SECTION_TITLES: dict[ContextSection, str] = {
     ContextSection.WRITING: "From the author's own writing",
     ContextSection.EARLIER: "What happened in earlier scenes",
     ContextSection.BEFORE: "How the scene before ends",
+    ContextSection.NEARBY: "How other recent scenes end",
 }
 
 # The same sections as the author sees them: the titles above are written for the model,
@@ -104,6 +108,17 @@ class LeftOut(StrEnum):
     EXCLUDED = "excluded"
     BUDGET = "budget"
     SECRET = "secret"
+    # It happens later in the story's time than the scene being written (CTX-004).
+    LATER = "later"
+
+
+class LaterInTime(StrEnum):
+    """What a policy does with material from a scene placed later in the story's time
+    than the one being written (CTX-004): leave it out (listed, so the author can still
+    choose it), or give it ranked lower."""
+
+    LEAVE_OUT = "leave_out"
+    LOWER = "lower"
 
 
 @dataclass(frozen=True)
@@ -114,12 +129,18 @@ class ContextPolicy:
     default_budget: int
     min_budget: int = 300
     max_budget: int = 12_000
+    # Material from a scene certainly later in the story's time (CTX-004).
+    later_in_story_time: LaterInTime = LaterInTime.LEAVE_OUT
 
 
 # 2: earlier scenes' summaries and event blocks, the end of the scene before, passages
 # from scenes on the same thread, and ranking by the author's importance, open
 # continuity findings, distance in the story and diversity (CTX-006, CTX-006A, CTX-007).
-SCENE_DRAFT_POLICY = ContextPolicy(version="scene-draft/2", default_budget=2500)
+# 3: material from scenes later in the story's time left out (listed, the author may
+# still choose it), summaries of earlier arcs and beats, the ends of other recent scenes
+# on the same viewpoint or thread, and decay by the story's time as well as reading order
+# (CTX-004, CTX-006, CTX-006A, CTX-007).
+SCENE_DRAFT_POLICY = ContextPolicy(version="scene-draft/3", default_budget=2500)
 
 
 @dataclass(frozen=True)
@@ -162,6 +183,9 @@ class ContextItem:
     media: MediaPart | None = None
     # How its score was made, part by part (CTX-007); empty for a fixed score.
     signals: tuple[Signal, ...] = ()
+    # It comes from a scene certainly later in the story's time than the one being
+    # written (CTX-004); the policy says whether it is left out or only ranked lower.
+    later: bool = False
 
     @property
     def words(self) -> int:
@@ -247,6 +271,13 @@ def assemble(
             and item.key not in pinned
         ):
             manifest.left_out.append(Omission(item, LeftOut.SECRET))
+        elif (
+            item.later
+            and policy.later_in_story_time is LaterInTime.LEAVE_OUT
+            and not item.hard
+            and item.key not in pinned
+        ):
+            manifest.left_out.append(Omission(item, LeftOut.LATER))
         else:
             eligible.append(item)
 
@@ -465,8 +496,10 @@ __all__ = [
     "ContextManifest",
     "ContextPolicy",
     "ContextSection",
+    "LaterInTime",
     "LeftOut",
     "Omission",
+    "PartSummary",
     "SavedManifest",
     "assemble",
     "clamp_budget",
@@ -590,6 +623,61 @@ def distance_signal(score: float, distance: int, title: str) -> Signal | None:
     else:
         note = f"It is from “{title}”, {back} back."
     return Signal("distance", round(score * (weight - 1.0), 3), note)
+
+
+# Story time, the second clock (CTX-007). Reading order says how far back a scene is
+# read; story time says how long before it happens. Prose from a scene long before this
+# one in the story's time loses half its weight every ``STORY_TIME_SHARE`` of the time
+# the line's placed scenes span (so the decay fits a story of days or of centuries),
+# never below ``STORY_TIME_FLOOR``: a deliberate jump back in time is still worth
+# something. The weights multiply with reading order's, like two decay functions in a
+# search engine's scoring (each halves at its own scale). Material that may happen later
+# than this scene (its time and this one's overlap, or it is open-ended) is weighed
+# ``MAYBE_LATER_WEIGHT``; certainly later is the policy's (CTX-004), and
+# ``LATER_IN_TIME_WEIGHT`` when the policy only lowers it.
+STORY_TIME_SHARE = 0.25
+STORY_TIME_FLOOR = 0.5
+MAYBE_LATER_WEIGHT = 0.75
+LATER_IN_TIME_WEIGHT = 0.5
+
+
+def story_time_weight(gap: float, half_life: float | None) -> float:
+    """``gap`` units of story time before this scene, halving every ``half_life``."""
+    if half_life is None or half_life <= 0 or gap <= 0 or not math.isfinite(gap):
+        return 1.0
+    return max(STORY_TIME_FLOOR, 0.5 ** (gap / half_life))
+
+
+def story_time_signal(
+    score: float, gap: float, half_life: float | None, unit: str
+) -> Signal | None:
+    """How far back in the story's time something is, as a signal with its reason."""
+    weight = story_time_weight(gap, half_life)
+    if weight >= 1.0:
+        return None
+    amount = round(gap, 1)
+    said = str(int(amount)) if amount == int(amount) else f"{amount:g}"
+    units = unit if amount == 1 else f"{unit}s"
+    return Signal(
+        "story time",
+        round(score * (weight - 1.0), 3),
+        f"In the story's time it happens {said} {units} before this scene.",
+    )
+
+
+def later_in_time_signal(score: float, *, certain: bool) -> Signal:
+    """Something that happens, or may happen, later in the story's time than this scene."""
+    if certain:
+        return Signal(
+            "later in time",
+            round(score * (LATER_IN_TIME_WEIGHT - 1.0), 3),
+            "It happens later in the story's time than this scene.",
+        )
+    return Signal(
+        "later in time",
+        round(score * (MAYBE_LATER_WEIGHT - 1.0), 3),
+        "It may happen later in the story's time than this scene.",
+    )
 
 
 def shingles(text: str, size: int = 3) -> frozenset[tuple[str, ...]]:
@@ -719,3 +807,38 @@ class SceneSummary:
     # The what-if it was written in; None for the main story. A what-if uses the main
     # story's kept summary of a text it shares until it keeps one of its own.
     branch_id: str | None = None
+
+
+# ---------------------------------------------------------- summaries of arcs and beats
+
+
+@dataclass(frozen=True)
+class PartSummary:
+    """A summary of a whole arc or beat (CTX-006): a derived layer, never a story fact.
+
+    ``basis`` is which kept scene summaries it was written from (scene id -> summary id,
+    in reading order) and ``basis_digest`` their fingerprint; when a scene summary in the
+    part is kept anew, replaced or dropped, the digest no longer matches and the part
+    summary is out of date until it is summarised again."""
+
+    id: str
+    plan_id: str
+    body: str
+    state: SummaryState
+    origin: SummaryOrigin
+    basis: tuple[tuple[str, str], ...]
+    basis_digest: str
+    created_at: datetime
+    model: str | None = None
+    prompt_version: str | None = None
+    job_id: str | None = None
+    created_by: str | None = None
+    decided_by: str | None = None
+    decided_at: datetime | None = None
+    branch_id: str | None = None
+
+
+def basis_digest(basis: Iterable[tuple[str, str]]) -> str:
+    """The fingerprint of which scene summaries a part summary stands on."""
+    body = "\n".join(f"{scene_id}:{summary_id}" for scene_id, summary_id in basis)
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()[:32]

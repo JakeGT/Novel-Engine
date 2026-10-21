@@ -37,7 +37,7 @@ Two rules dominate every design decision:
 | Phase 2.6 — story planning | Built (2026-10-11). See `plan/phase-2.6-todo.md`. |
 | Phase 2.7 — text intake | Built (2026-10-11). See `plan/phase-2.7-todo.md`. Extraction quality unmeasured. |
 | Phase 3 — time, what-ifs, knowledge | Built (2026-10-17). See `plan/phase-3-todo.md` and ADR-020. Assistant paths scripted model only. |
-| Phase 4 — explainable context | Built for text (2026-10-17); media processing not built. See `plan/phase-4-todo.md` and ADR-021. |
+| Phase 4 — explainable context | Built for text (2026-10-17); picture processing, search and context added in batches 6–9. Audio and video deferred past release one (owner decision 2026-10-21). See `plan/phase-4-todo.md` and ADR-021. |
 | Phase 5 — scene studio | Built (2026-10-17). See `plan/phase-5-todo.md` and ADR-022. Drafting and checks run against a scripted model and a local stand-in only. |
 | Phase 6 — scenes back into the story | Built (2026-10-17). See `plan/phase-6-todo.md` and ADR-023. Stand-in and scripted models only. |
 | Phase 7 — release hardening | In progress. See `plan/phase-7-todo.md`. |
@@ -181,13 +181,19 @@ All variables are documented in `.env.example`; production rejects unsafe defaul
   `ENABLE_DEBUG_ARTIFACTS`, `ARTIFACT_STORE_DIR` (debug), `OBJECT_STORE_DIR` (product object store).
 - Telemetry: `SENTRY_DSN_BACKEND`, `SENTRY_DSN_WEB`, `SENTRY_TRACES_SAMPLE_RATE` (opt-in; scrubbed);
   `METRICS_ENABLED`, `METRICS_TOKEN` (Prometheus text at `/health/metrics`, off by default).
+- Pictures and search: `AI_IMAGE_INPUT`, `AI_IMAGE_MAX_COUNT/MAX_BYTES/TYPES`, `AI_IMAGE_PROVIDERS`
+  (whether a route sees pictures); `MEDIA_*` (processing, decoding limits, `MEDIA_WORKER_SANDBOX`
+  `best|require|off`, workspace quota, orphan grace); `EMBEDDING_PROVIDER`, `EMBEDDING_GEMMA_*`,
+  `SEARCH_INDEX_CATCH_UP_MINUTES`.
 - Auth: `AUTH_MODE` (`local|hosted`), `AUTH_LOCAL_USER_ID`, `AUTH_LOCAL_WORKSPACE_ID`,
+  `AUTH_LOCAL_PROJECT_ID`,
   `OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET/REDIRECT_URI/POST_LOGOUT_REDIRECT_URI/SCOPES`,
   `SESSION_COOKIE_NAME`, `SESSION_TTL_SECONDS`, `SESSION_ROTATION_SECONDS`, `CSRF_COOKIE_NAME`,
-  `PLATFORM_ADMIN_USER_IDS`, `ALLOW_WORKSPACE_SELF_CREATION`.
+  `PLATFORM_ADMIN_USER_IDS`, `ALLOW_WORKSPACE_SELF_CREATION`, `ALLOW_PERSONAL_WORKSPACE`.
 - Credentials/limits: `CREDENTIAL_KEK`, `CREDENTIAL_KEK_VERSION`, `CREDENTIAL_PREVIOUS_KEKS`,
   `PROVIDER_PER_JOB_TOKEN_LIMIT`, `PROVIDER_PER_JOB_COST_LIMIT`, `PROVIDER_PERIOD_TOKEN_LIMIT`,
-  `PROVIDER_PERIOD_COST_LIMIT`, `PROVIDER_PERIOD_SECONDS`.
+  `PROVIDER_PERIOD_COST_LIMIT`, `PROVIDER_PERIOD_SECONDS`, `CONNECTOR_ANSWER_SECONDS` (local
+  connector wait).
 
 **Identity:** hosted mode uses Authentik (self-hosted, shared across `*.jaketalling.com`). App host
 `novel-engine.jaketalling.com`; issuer `https://auth.jaketalling.com/application/o/novel-engine/`.
@@ -252,7 +258,7 @@ then `pnpm --dir frontend run gen:api`.
 
 ## 10. Data & migrations
 
-- Alembic (PostgreSQL) head: **`0055_voice_and_audits`** (… → `0022_archive_imports` →
+- Alembic (PostgreSQL) head: **`0058_media_remainders`** (… → `0022_archive_imports` →
   `0023_session_id_token` → `0024_assist_sessions` → `0025_workspace_ai_settings` →
   `0026_assist_suggestions` → `0027_usage_allowance` → `0028_plan_items` →
   `0029_plan_conversations` → `0030_source_texts` → `0031_story_rules` → `0032_story_time` →
@@ -261,7 +267,8 @@ then `pnpm --dir frontend run gen:api`.
   `0042_delegation` → `0043_access_keys` → `0044_consistency_runs` → `0045_how_long` → `0046_media_variants` →
   `0047_embedding_generations` → `0048_media_observations` → `0049_check_fingerprints` →
   `0050_read_models` → `0051_planning_help` → `0052_context_layers` → `0053_local_connector` →
-  `0054_conversations` → `0055_voice_and_audits`).
+  `0054_conversations` → `0055_voice_and_audits` → `0056_context_remainders` →
+  `0057_check_remainders` → `0058_media_remainders`).
 - Neo4j ordered migrations: `0001_initial_graph_schema`, `0002_entity_scope_identity`,
   `0003_canon_scope_identity`, `0004_canon_projection_labels` (checksums in
   `plan/phase-2-evidence.md`).
@@ -897,7 +904,39 @@ asked). Everything ran against the scripted model and stand-ins only.
 A read-only review found no high issue; medium ones were fixed with tests: a quadratic voice regex
 that could freeze the server, connector words left after a crash, code-guess limits, credential
 reuse, unlimited long polls, archive privacy of threads, three merge data-loss cases, scheduled
-audit spend, and untimed readings ending facts. Open decision: what-ifs cannot be discarded, so
-their threads and schedules live until the project is deleted. Everything ran against the scripted
+audit spend, and untimed readings ending facts. Decided by the owner on 2026-10-21: what-ifs stay
+"set aside only", with no discard action, so their kept conversations and scheduled audits remain
+until the story is deleted (a set-aside what-if's scheduled audit does not run; ADR-020 amendment). Everything ran against the scripted
 model and stand-ins only; no real Ollama, LM Studio or llama.cpp server has been tried.
+
+## Remainders, scope decisions and a docs truth audit, ninth batch (2026-10-21)
+
+- **Owner decisions (2026-10-21):** audio and video, and Google Docs / DOCX / LaTeX import, are
+  deferred past release one; what-ifs stay "set aside" only (no discard). Recorded in
+  `plan/11-decisions-and-questions.md`, ADR-010, ADR-020, docs 15 and 17, and the backlog.
+- **Context** (CTX-004/005/006/006A/007/012, OPS-007; migration 0056): material from scenes later
+  in the story's time is left out by default (policy `scene-draft/3`) or ranked lower; story-time
+  decay alongside reading order; summaries of arcs and beats (kept, or suggested and then kept);
+  the endings of other recent scenes; waiting-list and media-index lag in health; an optional
+  scheduled search-index catch-up (`SEARCH_INDEX_CATCH_UP_MINUTES`).
+- **Checks** (CON-001/004/013/016/018, SCN-007, STY-003/004; migration 0057): height, marks and age
+  as written against the story bible; quantities a character spends; dismissals for a character
+  or a stretch of scenes; dismissing voice notes and each speaker's dialogue against their own;
+  timings per check; more passes sent in parts; plan drafting sets intent only from the author's
+  words; bridges for preferred conditions.
+- **Media and data** (AST-001/002/008, QRY-001, EXT-001/007, AST-EXP-017; migration 0058): picture
+  links that apply between story times and can pin a version; a two-step upload; deleting a
+  picture removes what a model said about it; a page for the ready views' state with a one-at-a-time
+  check; a pasted text can be read as a scene's writing; Change anything can change an entry's type
+  or a fact's kind, whole or not at all; merges rewrite what characters said.
+- **Docs truth audit:** every backlog status line was checked against the code and rewritten as one
+  current paragraph; README, AGENTS.md, CONTRIBUTING, SECURITY, api-surface, plan/README and
+  `.env.example` brought up to date.
+
+A read-only review found one high issue (the quantity check was quadratic on the event loop; any
+writer could stall the server) and several medium ones (mark and speaker checks slow, height false
+alarms, retype changes cut part-way, pinned picture versions ignored by checks, the scene before
+skipping the story-time filter, the history check without a lock); all were fixed with tests, and
+scene checks now run off the event loop. Consistency evaluation: 161 cases, precision 1.0, recall
+0.892. Everything ran against the scripted model and stand-ins only.
 

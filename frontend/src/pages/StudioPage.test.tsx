@@ -543,6 +543,35 @@ describe('StudioPage', () => {
       await expectAccessible(container)
     })
 
+    it('says which threads the scene moves, counting those an earlier stopped reading found', async () => {
+      let state = studio()
+      mockApi({
+        ...base,
+        'GET /plan/pln_s/studio': () => state,
+        'POST /plan/pln_s/studio/readings': reply(202, job({ id: 'job_4', kind: 'scene_read', status: 'queued', stage: '', progress: 0 })),
+        'GET /jobs/job_4': () => {
+          state = studio({
+            reading: { version_id: 'ver_2', version_number: 2, read_at: readAt, passages: 1, proposals: ['mut_2'], discarded: 0, changed_since: false },
+          })
+          return job({
+            id: 'job_4',
+            kind: 'scene_read',
+            status: 'succeeded',
+            progress: 100,
+            result: { passages: 1, proposals: ['mut_2'], discarded: 0, guesses: 0, thread_steps: 2, carried_steps: 1 },
+          })
+        },
+        'GET /mutations/mut_2': withOps('mut_2', 1),
+      })
+      const user = userEvent.setup()
+      renderInProject(<StudioPage />, route)
+      await user.click(await screen.findByRole('button', { name: 'Update the story from this scene' }))
+      const outcome = (await screen.findByText('1 change suggested from this scene.')).closest('.notice') as HTMLElement
+      expect(outcome).toHaveTextContent(
+        'Among them, the scene moves 2 threads of the plan along or settles them, one found by an earlier reading that stopped.',
+      )
+    })
+
     it('shows its progress with a way to stop, then says when there was nothing new', async () => {
       let polls = 0
       const api = mockApi({
@@ -772,6 +801,96 @@ describe('StudioPage', () => {
     await user.click(within(dismissed).getByRole('button', { name: 'Undo dismissing: A phrase readers often meet: “the weight of”.' }))
     await waitFor(() => expect(api.find('DELETE', '/plan/pln_s/studio/dismissals/dis_1')).toHaveLength(1))
     await waitFor(() => expect(within(checks).queryByText(/Dismissed:/)).not.toBeInTheDocument())
+  })
+
+  it('dismisses a kind of finding wherever it is about someone, and undoes it everywhere', async () => {
+    const before = studio({
+      checks: [
+        {
+          code: 'appearance_differs',
+          key: 'k_eyes',
+          severity: 'note',
+          message: 'Here Ines Varga has “blue eyes”, but the story bible says: “Grey eyes.”',
+          ...at('The weight of'),
+          came_back: false,
+          about: [{ entity_id: 'ent_ines', name: 'Ines Varga' }],
+        },
+      ],
+    })
+    const dismissal = {
+      id: 'sd_1',
+      reason: 'not_a_problem' as const,
+      note: '',
+      expires_at: null,
+      created_at: '2026-10-17T10:00:00Z',
+      scope_id: 'sd_1',
+      applies_to: 'Eyes, hair or a beard unlike the accepted details, wherever it is about Ines Varga',
+    }
+    const after = studio({ checks: before.checks.map((check) => ({ ...check, dismissal })) })
+    // A wider dismissal reaches other scenes, so the studio is read again after it.
+    let now = before
+    const api = mockApi({
+      ...base,
+      'GET /plan/pln_s/studio': () => now,
+      'POST /plan/pln_s/studio/dismissals': () => (now = after),
+      'DELETE /plan/pln_s/studio/dismissals/sd_1': () => (now = before),
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<StudioPage />, route)
+    const checks = (await screen.findByRole('heading', { name: 'Checks' })).closest('section') as HTMLElement
+    await user.click(within(checks).getByRole('button', { name: /^Dismiss: Here Ines Varga has/ }))
+    const form = within(checks).getByRole('group', { name: /^Dismiss: Here Ines Varga has/ })
+    const where = within(form).getByLabelText('Applies to')
+    expect(where).toHaveValue('scene')
+    await user.selectOptions(where, 'character:ent_ines')
+    expect(form).toHaveTextContent('Every finding of this kind there is dismissed, including any found later, until you undo it.')
+    expect(within(form).getByRole('option', { name: 'Until you undo it' })).toBeInTheDocument()
+    await expectAccessible(container)
+    await user.click(within(form).getByRole('button', { name: 'Not a problem' }))
+    await user.click(within(form).getByRole('button', { name: 'Dismiss' }))
+    await waitFor(() =>
+      expect(api.find('POST', '/plan/pln_s/studio/dismissals')[0]?.body).toEqual({
+        key: 'k_eyes',
+        reason: 'not_a_problem',
+        note: '',
+        days: null,
+        applies: 'character',
+        entity_id: 'ent_ines',
+      }),
+    )
+    expect(await within(checks).findByText(/Dismissed as/)).toHaveTextContent(
+      'Applies to: Eyes, hair or a beard unlike the accepted details, wherever it is about Ines Varga.',
+    )
+    const dismissed = within(checks).getByText('Dismissed: 1 check').closest('details') as HTMLElement
+    expect(dismissed).toHaveTextContent('Not a problem · until you undo it')
+    await user.click(within(dismissed).getByRole('button', { name: /^Undo everywhere dismissing:/ }))
+    await waitFor(() => expect(api.find('DELETE', '/plan/pln_s/studio/dismissals/sd_1')).toHaveLength(1))
+  })
+
+  it('dismisses a kind of finding for a stretch of scenes', async () => {
+    const before = studio()
+    const later = { ...scene, id: 'pln_t', title: 'The tide turns', position: 2 }
+    const api = mockApi({
+      ...base,
+      'GET /plan': { items: [scene, later], open: [], conditions: [] },
+      'GET /plan/pln_s/studio': before,
+      'POST /plan/pln_s/studio/dismissals': before,
+    })
+    const user = userEvent.setup()
+    renderInProject(<StudioPage />, route)
+    const checks = (await screen.findByRole('heading', { name: 'Checks' })).closest('section') as HTMLElement
+    await user.click(within(checks).getByRole('button', { name: 'Dismiss: A phrase readers often meet: “the weight of”.' }))
+    const form = within(checks).getByRole('group', { name: 'Dismiss: A phrase readers often meet: “the weight of”.' })
+    await user.selectOptions(within(form).getByLabelText('Applies to'), 'choose')
+    await user.selectOptions(within(form).getByLabelText('To'), 'pln_t')
+    await user.click(within(form).getByRole('button', { name: 'Dismiss' }))
+    await waitFor(() =>
+      expect(api.find('POST', '/plan/pln_s/studio/dismissals')[0]?.body).toMatchObject({
+        applies: 'range',
+        from_plan_id: 'pln_s',
+        to_plan_id: 'pln_t',
+      }),
+    )
   })
 
   it('dismisses an assistant’s note in the author’s own words, for a while', async () => {

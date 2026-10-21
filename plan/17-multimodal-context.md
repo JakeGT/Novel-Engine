@@ -377,8 +377,8 @@ The multimodal context system is release-ready when:
 - **Delivery placement, corrected.** Asset identity, immutable version metadata, authority,
   provenance, explicit links, a lifecycle audit, and archive inclusion shipped in Phase 2; secure
   ingestion and processing did not and remain Phase 4.
-- **Scope.** Images come first. Whether audio and video stay in release one is an owner decision
-  listed in [`audit-2026-10-10.md`](audit-2026-10-10.md).
+- **Scope.** Images come first. Whether audio and video stay in release one was an owner decision
+  listed in [`audit-2026-10-10.md`](audit-2026-10-10.md); decided 2026-10-21 (below).
 
 ## Revision 2026-10-10 (second): pictures on entries come first
 
@@ -404,3 +404,12 @@ variants, captions and other derived observations, audio and video, embeddings a
 sending media to a model. Until Phase 4, a picture is something the author looks at, not
 something the assistant reads.
 
+## Decision 2026-10-21: audio and video deferred past release one
+
+The owner decided on 2026-10-21 that audio and video are deferred past release one; pictures stay
+the only media. Everything in this document about recordings, transcripts, audio ranges, video
+windows and keyframes, sound and film context parts, audio/video embeddings and retrieval, and
+audio/video checks describes later work, not release one. The contracts that already name them
+(`AudioPart`, `VideoPart`, audio and video embedding inputs) stay declared and refused, so adding
+them later does not change the shapes pictures use. The release-one exit criteria above apply to
+pictures. Recorded in ADR-010 (amendment 2026-10-21) and `11-decisions-and-questions.md`.

@@ -122,3 +122,106 @@ def test_grouping_that_would_take_too_many_calls_sends_it_whole_and_says_why(
     assert _groups(fake_container) == []
     sent = job["result"]["passes"]["continuity"]["bundles"]
     assert sent["sent"] == "whole" and "groups" in sent["why"]
+
+
+def _parts(container) -> list[dict]:
+    return [
+        call
+        for call in container.ai.calls
+        if "it is checked in parts" in call["messages"][0]["content"]
+    ]
+
+
+def test_a_long_scene_is_checked_for_viewpoint_and_clarity_in_parts(
+    auth_client, fake_container, monkeypatch
+):
+    """CON-013: the passes that read the same part of the story for every passage are
+    sent in parts, each with all of it; every passage is in one part, and the run's
+    coverage lists each passage with its part and its first words. The plan check is
+    always sent whole, and says why."""
+    monkeypatch.setattr(scene_checks, "GROUP_ABOVE_TOKENS", 200)
+    # Room for a part of the scene with what each pass reads of the story.
+    monkeypatch.setattr(scene_checks, "GROUP_BUDGET", 1_100)
+    w, scene = _scene_world(auth_client, fake_container)
+    _save(auth_client, w, scene, "\n\n".join(PARAGRAPHS * 6), None)
+    for _ in range(2 * scene_checks.MAX_GROUP_CALLS + 1):
+        fake_container.ai.queue(
+            CheckNotes(notes=[CheckNote(quote="Mara came along the quay", problem="Unclear.")])
+        )
+    started = auth_client.post(
+        f"{w['base']}/plan/{scene['id']}/studio/reviews",
+        json={"passes": ["viewpoint", "clarity", "plan"]},
+    )
+    assert started.status_code == 202, started.text
+    asyncio.run(fake_container.job_runner.run_pending())
+    job = auth_client.get(f"{w['base']}/jobs/{started.json()['id']}").json()
+    assert job["status"] == "succeeded", job
+    calls = _parts(fake_container)
+    viewpoint = job["result"]["passes"]["viewpoint"]["bundles"]
+    clarity = job["result"]["passes"]["clarity"]["bundles"]
+    assert viewpoint["sent"] == clarity["sent"] == "groups", (viewpoint, clarity)
+    assert len(calls) == viewpoint["groups"] + clarity["groups"] and clarity["groups"] > 1
+    # Each part is sent with everything the pass reads, and different passages.
+    mine = [c for c in calls if "secrets kept from them" in c["messages"][0]["content"]]
+    assert all("For the author only" in c["messages"][1]["content"] for c in mine)
+    assert len({c["messages"][1]["content"] for c in mine}) == len(mine) > 1
+    assert job["result"]["passes"]["plan"]["bundles"] == {
+        "sent": "whole",
+        "why": "The plan check reads the whole scene to tell what it leaves out, so it is "
+        "always sent whole.",
+    }
+    run = next(
+        r
+        for r in auth_client.get(f"{w['base']}/plan/{scene['id']}/checks/runs").json()["items"]
+        if r["kind"] == "assistant"
+    )
+    passages = run["coverage"]["clarity"]["passages"]
+    assert [p["part"] for p in passages] == sorted(p["part"] for p in passages)
+    assert {p["part"] for p in passages} == {1, 2}
+    assert all(p["checks"] == ["Clarity"] for p in passages)
+    # The first words of each passage, read from the version checked (never stored).
+    assert passages[0]["words"].startswith("Tobin waited at Lantern Harbor")
+    assert all(p["words"] for p in passages)
+    again = auth_client.get(f"{w['base']}/jobs/{started.json()['id']}").json()
+    assert "words" not in again["result"]["passes"]["clarity"]["bundles"]["passages"][0]
+
+
+def test_a_pass_whose_story_is_too_large_for_parts_is_sent_whole_and_says_why(
+    auth_client, fake_container, monkeypatch
+):
+    monkeypatch.setattr(scene_checks, "GROUP_ABOVE_TOKENS", 200)
+    monkeypatch.setattr(scene_checks, "GROUP_BUDGET", 500)
+    w, scene = _scene_world(auth_client, fake_container)
+    _save(auth_client, w, scene, PROSE, None)
+    fake_container.ai.queue(CheckNotes(notes=[]))
+    started = auth_client.post(
+        f"{w['base']}/plan/{scene['id']}/studio/reviews", json={"passes": ["voice"]}
+    )
+    asyncio.run(fake_container.job_runner.run_pending())
+    job = auth_client.get(f"{w['base']}/jobs/{started.json()['id']}").json()
+    assert job["status"] == "succeeded", job
+    assert _parts(fake_container) == []
+    sent = job["result"]["passes"]["voice"]["bundles"]
+    assert sent["sent"] == "whole" and "too large" in sent["why"]
+
+
+def test_each_check_and_pass_records_how_long_it_took(auth_client, fake_container):
+    """CON-001: a run keeps how long each check that needs no model took, and each stage
+    of them, and how long each pass of a check with the assistant took, and its calls."""
+    w, scene = _scene_world(auth_client, fake_container)
+    _save(auth_client, w, scene, PARAGRAPHS[0], None)
+    fake_container.ai.queue(CheckNotes(notes=[]))
+    started = auth_client.post(
+        f"{w['base']}/plan/{scene['id']}/studio/reviews", json={"passes": ["continuity"]}
+    )
+    assert started.status_code == 202, started.text
+    asyncio.run(fake_container.job_runner.run_pending())
+    runs = auth_client.get(f"{w['base']}/plan/{scene['id']}/checks/runs").json()["items"]
+    run = next(r for r in runs if r["kind"] == "assistant")
+    [part] = run["scenes"]
+    assert part["checks"] and all(c["ms"] is not None and c["ms"] >= 0 for c in part["checks"])
+    assert [s["stage"] for s in part["stages"]] == ["gather", "checks", "keep"]
+    assert part["stages"][0]["words"] == "Reading what the checks need from the story"
+    [timing] = run["timings"]
+    assert timing["check_pass"] == "continuity" and timing["words"].startswith("Continuity")
+    assert timing["calls"] == 1 and timing["ms"] >= 0 and not timing["earlier"]

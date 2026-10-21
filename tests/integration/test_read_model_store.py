@@ -170,3 +170,19 @@ async def test_a_what_if_builds_its_own_views(stack) -> None:
     async with factory() as session:
         count = (await session.execute(text("SELECT count(*) FROM read_models"))).scalar()
     assert count == 2 * len(VIEWS)
+
+
+@pytest.mark.asyncio
+async def test_one_server_at_a_time_checks_a_line(stack) -> None:
+    # The check lock is a try-lock across processes: a second holder is told no at once,
+    # and the lock is let go when the first block ends.
+    *_, store, _consumer, _service, factory = stack
+    other = PostgresReadModelStore(factory)
+    async with store.check_lock(workspace_id=WS, project_id=PR, branch_id="main") as held:
+        assert held is True
+        async with other.check_lock(workspace_id=WS, project_id=PR, branch_id="main") as second:
+            assert second is False
+        async with other.check_lock(workspace_id=WS, project_id=PR, branch_id="b2") as apart:
+            assert apart is True
+    async with other.check_lock(workspace_id=WS, project_id=PR, branch_id="main") as later:
+        assert later is True

@@ -139,6 +139,7 @@ def _only_attributes(operation: UpdateEntityOp) -> bool:
         and operation.slug is None
         and operation.aliases is None
         and operation.external_ids is None
+        and operation.type is None
         and bool(operation.attributes)
     )
 

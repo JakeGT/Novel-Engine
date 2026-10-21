@@ -22,7 +22,8 @@ Thank you for helping. A few things keep Novel Engine trustworthy for the people
 ## Running it
 
 ```bash
-make install-dev
+cp .env.example .env
+make install-dev && make frontend-install
 make infra-up && make migrate && make seed
 make api                    # the backend
 pnpm --dir frontend dev     # the frontend
@@ -35,9 +36,12 @@ backend suite, the generated API types, and the frontend's lint, types, tests an
 `make test-integration` and `make e2e` need the local services (see the README). A change to the
 API updates `tests/contract/openapi_snapshot.json` and `frontend/src/api/schema.ts`
 (`pnpm --dir frontend run gen:api`); a change to the database adds an Alembic migration with a
-downgrade that never deletes an author's words.
+downgrade that never deletes an author's words; a change to a prompt's wording or answer shape
+raises its version in `backend/domain/prompts.py` and updates the snapshots
+(`uv run python -m tests.prompts.snapshots --update`).
 
 ## Status honesty
 
-Do not describe planned work as built. When you change a capability, update its status in `plan/`.
+Do not describe planned work as built. When you change a capability, update its status line in
+`plan/10-backlog.md` (one current paragraph: what is built, what is not) and its phase todo file.
 Say plainly what has only been tested against the scripted or stand-in model.

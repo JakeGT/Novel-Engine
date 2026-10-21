@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -18,6 +20,7 @@ from backend.api.v1.canon_assist import ContextUsedModel, DiscardedItemModel, co
 from backend.api.v1.router import _provider_context
 from backend.core.config import Settings
 from backend.domain.branching import working_branch_id
+from backend.domain.errors import ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.sources import Verdict, find_mentions
 from backend.services.assistant_settings_service import AssistBudget
@@ -38,6 +41,10 @@ class ReadPassageRequest(BaseModel):
     start: int = Field(default=0, ge=0)
     end: int | None = Field(default=None, ge=1)
     expected_revision: int = Field(ge=0)
+    # The scene of the plan this text is the prose of, when the author says so (EXT-001):
+    # the reading then also suggests the steps of the plan's threads it shows, as one
+    # change to that scene's plan per passage read.
+    scene_id: str | None = Field(default=None, max_length=200)
 
 
 class MissingModel(BaseModel):
@@ -62,7 +69,8 @@ class ReadPassageModel(BaseModel):
     discarded: list[DiscardedItemModel]
     missing: list[MissingModel]
     # How many of the suggested changes are events, and steps of the plan's threads (a
-    # scene's reading only); they wait for review with the rest (EXT-001).
+    # scene's reading, or a text read as a scene's prose); they wait for review with the
+    # rest (EXT-001).
     events: int = 0
     thread_steps: int = 0
     # How many are changes of state (a thing held or lost, a place reached or left, a
@@ -73,6 +81,31 @@ class ReadPassageModel(BaseModel):
     context: ContextUsedModel | None = None
     # The longest stretch read in one go.
     limit: int = MAX_PASSAGE
+
+
+async def _check_scene_text(
+    sources: SourceService, workspace_id: str, project_id: str, source_id: str, scene_id: str
+) -> None:
+    """A text read as a scene's prose is that scene's own text in this line of the story,
+    or a text no scene holds (pasted). A scene's text in another line (a what-if's own
+    words, or the main story's once a what-if has its own) is read there, never here."""
+    studio: Any = sources.studio
+    if studio is None:
+        return
+    holder = (await studio.scene_texts(workspace_id, project_id)).get(source_id)
+    if holder is not None:
+        if holder != scene_id:
+            raise ValidationError(
+                "This text is the prose of another scene of the plan; read it as that scene."
+            )
+        return
+    branch_id = await studio._branch_id(workspace_id, project_id)  # noqa: SLF001
+    if await studio._store.linked_elsewhere(  # noqa: SLF001
+        workspace_id=workspace_id, project_id=project_id, branch_id=branch_id, source_id=source_id
+    ):
+        raise ValidationError(
+            "This text is a scene's prose in another line of the story; read it there."
+        )
 
 
 @router.post("/{source_id}/read", response_model=ReadPassageModel)
@@ -94,7 +127,17 @@ async def read_passage_with_assistant(
     reading = await sources.read(
         scope, workspace_id, project_id, source_id, version_id=body.version_id
     )
-    index, entities, _ = await sources.index_for(workspace_id, project_id, source_id)
+    scene = (
+        await workflow.scene_for_reading(workspace_id, project_id, body.scene_id)
+        if body.scene_id
+        else None
+    )
+    if scene is not None:
+        await _check_scene_text(sources, workspace_id, project_id, source_id, scene.id)
+    # Names are read as that scene reads them, when the text is its prose (CTX-016).
+    index, entities, _ = await sources.index_for(
+        workspace_id, project_id, source_id, scene_id=scene.id if scene else None
+    )
     length = len(reading.version.content)
     stretch = max(0, min(body.end or length, length, body.start + MAX_PASSAGE) - body.start)
 
@@ -126,6 +169,7 @@ async def read_passage_with_assistant(
         credential=api_key,
         provider_base_url=provider_base_url,
         usage_sink=usage_sink,
+        scene=scene,
     )
     if credential_id:
         await credentials.mark_used(workspace_id, credential_id)

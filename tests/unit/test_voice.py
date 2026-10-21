@@ -297,3 +297,75 @@ def test_unclear_times_never_make_a_note():
     facts = [PairFact("f1", ("m", "t"), "Mara trusts Tobin")]
     (row,) = relationship_drift(scenes, facts, {"m": "Mara", "t": "Tobin"}, lambda f, i: "unclear")
     assert row.notes == []
+
+
+# ------------------------------------------------------------------ who says what
+
+from backend.domain.voice import Speech, attribute, speech_drift, speeches  # noqa: E402
+
+PEOPLE = {"Tobin Ashe": ("Tobin Ashe", "Tobin"), "Mara": ("Mara",), "Osric": ("Osric",)}
+EXCHANGE = (
+    '"You are late," Tobin said.\n'
+    '"The tide," said Mara.\n'
+    '"It turned an hour ago."\n'
+    '"Then it turned without me."\n'
+    '"Don\'t."\n'
+)
+
+
+def _who(text: str) -> list[tuple[str, str | None, str]]:
+    return [
+        (text[line.start : line.end], line.speaker, line.how) for line in attribute(text, PEOPLE)
+    ]
+
+
+def test_a_tag_names_the_speaker_and_turns_carry_an_exchange_of_two() -> None:
+    assert _who(EXCHANGE) == [
+        ('"You are late,"', "Tobin Ashe", "tag"),
+        ('"The tide,"', "Mara", "tag"),
+        ('"It turned an hour ago."', "Tobin Ashe", "turns"),
+        ('"Then it turned without me."', "Mara", "turns"),
+        ('"Don\'t."', "Tobin Ashe", "turns"),
+    ]
+    # "Tobin said, '…'" before the line works too.
+    assert _who('Tobin said quietly, "Go home."')[0][1] == "Tobin Ashe"
+
+
+def test_no_speaker_is_guessed_from_a_pronoun_or_a_crowded_exchange() -> None:
+    assert _who('"Go home," she said.') == [('"Go home,"', None, "")]
+    # Someone else named in the exchange may be speaking: no turns are given at all.
+    crowded = EXCHANGE + 'Osric came down the steps. "Enough."\n'
+    assert [speaker for _, speaker, how in _who(crowded) if how == "turns"] == []
+    # A tagged line out of turn breaks the exchange.
+    broken = EXCHANGE + '"Fine," said Tobin.\n'
+    assert all(how != "turns" for _, _, how in _who(broken))
+    # Two people tagged in one paragraph: neither is chosen.
+    both = '"Go," said Tobin. "No," said Mara.\n'
+    assert [speaker for _, speaker, _ in _who(both)] == [None, None]
+
+
+def test_speech_is_measured_per_speaker_with_the_share_tied() -> None:
+    found, share = speeches(EXCHANGE + '"Go home," she said.\n', PEOPLE)
+    assert set(found) == {"Tobin Ashe", "Mara"}
+    assert found["Tobin Ashe"].lines == 3 and found["Tobin Ashe"].contractions == 1
+    assert 0.5 < share < 1.0
+
+
+def _speech(words: int, sentences: int, contractions: int) -> Speech:
+    return Speech("Tobin Ashe", lines=8, words=words, sentences=sentences,
+                  contractions=contractions, questions=0)  # fmt: skip
+
+
+def test_a_speakers_drift_is_said_only_with_enough_speech_and_attribution() -> None:
+    usual = [_speech(120, 20, 15), _speech(110, 18, 14), _speech(130, 21, 16)]
+    odd = _speech(250, 8, 0)
+    codes = {note.code for note in speech_drift(odd, usual, 0.9)}
+    assert codes == {"voice_speaker_length", "voice_speaker_short_forms"}
+    [note] = [n for n in speech_drift(odd, usual, 0.9) if n.code == "voice_speaker_short_forms"]
+    assert note.subject == "Tobin Ashe\x1eless"
+    # Too little of the scene's dialogue tied to speakers, too few scenes, too little said.
+    assert speech_drift(odd, usual, 0.4) == []
+    assert speech_drift(odd, usual[:2], 0.9) == []
+    assert speech_drift(_speech(40, 4, 0), usual, 0.9) == []
+    # Like their usual: nothing.
+    assert speech_drift(_speech(120, 19, 15), usual, 0.9) == []

@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from backend.adapters.system import uuid7
 from backend.core.logging import log_event
+from backend.domain.arcs import arc_path
 from backend.domain.assist import SchemaSuggestion
 from backend.domain.bible_listing import (
     CHANGE_POLICY,
@@ -60,6 +61,7 @@ from backend.domain.canon.revisions import OriginKind
 from backend.domain.errors import ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.journal import MutationSet
+from backend.domain.knowledge import scene_reveals, with_reveals
 from backend.domain.merge import MergeRefused, check_pair, expand, plan_merge, read_records
 from backend.domain.operations import (
     AmendEventOp,
@@ -100,6 +102,7 @@ from backend.services.canon_creation_workflow import (
 from backend.services.meaning import EntryMeaning
 from backend.services.mutation_service import ValidationReport, story_reader
 from backend.services.plan_drafts import DraftPlanItem, DraftPlanRef
+from backend.services.schema_compiler import compile_definition
 from backend.services.schema_suggestions import (
     PROMPT_RULE,
     SuggestedFactKind,
@@ -210,6 +213,16 @@ class PlanChange(BaseModel):
     )
 
 
+class TypeChange(BaseModel):
+    ref: str = Field(description="The id of an existing entry, exactly as listed")
+    new_type: str = Field(description="The type it really is: one of the allowed entry types")
+
+
+class KindChange(BaseModel):
+    fact: str = Field(description="The id of an existing fact, exactly as listed")
+    new_kind: str = Field(description="The kind of fact it really is: one of those listed")
+
+
 class Secrecy(BaseModel):
     fact: str = Field(description="The id of an existing fact, exactly as listed")
     visibility: str = Field(
@@ -250,6 +263,10 @@ class ChangePlan(BaseModel):
     event_times: list[EventTime] = Field(default_factory=list)
     fact_times: list[FactTime] = Field(default_factory=list)
     secrecy: list[Secrecy] = Field(default_factory=list)
+    # An entry recorded as the wrong type, and a fact recorded as the wrong kind
+    # (AST-EXP-017); the types and kinds themselves are changed in setup.
+    type_changes: list[TypeChange] = Field(default_factory=list)
+    kind_changes: list[KindChange] = Field(default_factory=list)
     merge_entities: list[MergeRequest] = Field(
         default_factory=list, description="Two entries that are the same, to merge into one"
     )
@@ -354,6 +371,87 @@ class _Timed:
             return False
         self.kept_both = True
         return True
+
+
+@dataclass(eq=False)
+class _Whole:
+    """Changes that only make sense together (a new type and what it ends, or a fact ended
+    and stated again as another kind): kept whole or set aside whole, never cut part way."""
+
+    kind: str
+    # Why it is set aside, in plain words, when it is.
+    what: str
+    ops: list[CanonOperation]
+    notes: list[str] = field(default_factory=list)
+    # A fact stated again under a new id: (the old id, the new id).
+    restates: tuple[str, str] | None = None
+    dropped: bool = False
+
+
+def _keep_whole(
+    before: Sequence[CanonOperation],
+    after: list[CanonOperation],
+    groups: Sequence[_Whole],
+    discarded: list[DiscardedItem],
+    notes: list[str],
+) -> list[CanonOperation]:
+    """``after`` without any group that was whole in ``before`` and is no longer whole."""
+    was = {id(op) for op in before}
+    gone: set[int] = set()
+    present = {id(op) for op in after}
+    changed = True
+    while changed:
+        changed = False
+        for group in groups:
+            ids = {id(op) for op in group.ops}
+            if group.dropped or not ids <= was or ids <= present - gone:
+                continue
+            group.dropped = True
+            gone |= ids
+            changed = True
+            discarded.append(DiscardedItem(group.kind, group.what))
+            for note in group.notes:
+                if note in notes:
+                    notes.remove(note)
+    return [op for op in after if id(op) not in gone]
+
+
+def _within(
+    operations: list[CanonOperation],
+    limit: int,
+    groups: Sequence[_Whole],
+    discarded: list[DiscardedItem],
+    notes: list[str],
+) -> list[CanonOperation]:
+    """At most ``limit`` changes, never cutting a group part way, and saying what was cut."""
+    if len(operations) <= limit:
+        return operations
+    present = {id(op) for op in operations}
+    whole = [g for g in groups if not g.dropped and {id(op) for op in g.ops} <= present]
+    while True:
+        gone = {id(op) for g in whole if g.dropped for op in g.ops}
+        kept = [op for op in operations if id(op) not in gone][:limit]
+        inside = {id(op) for op in kept}
+        cut = [g for g in whole if not g.dropped and not {id(op) for op in g.ops} <= inside]
+        if not cut:
+            break
+        # The largest group cut part way is set aside first: it is what takes the room,
+        # and the smaller ones may fit once it is gone.
+        largest = max(cut, key=lambda g: len(g.ops))
+        largest.dropped = True
+        discarded.append(DiscardedItem(largest.kind, largest.what))
+        for note in largest.notes:
+            if note in notes:
+                notes.remove(note)
+    left = len(operations) - len(kept)
+    discarded.append(
+        DiscardedItem(
+            "limit",
+            f"{left} more change{'s' if left != 1 else ''} did not fit in one review; "
+            "ask again for the rest",
+        )
+    )
+    return kept
 
 
 @dataclass(frozen=True)
@@ -666,6 +764,22 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
             listing=listing,
         )
 
+    async def _detail_models(
+        self, workspace_id: str, project_id: str
+    ) -> dict[str, type[BaseModel]]:
+        """The details each type of entry the project's setup describes may have."""
+        if self._schema_store is None:
+            return {}
+        published = await self._schema_store.get_published(
+            workspace_id=workspace_id, project_id=project_id
+        )
+        if published is None:
+            return {}
+        compiled = compile_definition(
+            published.definition, workspace_id=workspace_id, project_id=project_id
+        )
+        return dict(compiled.entity_models)
+
     async def _story(
         self, workspace_id: str, project_id: str, focus: CanonEntity | None
     ) -> tuple[str, list[CanonEntity], list[Fact], list[Belief]]:
@@ -738,7 +852,7 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
         session_id = session_id or f"chg_{uuid7()}"
         understood = plan.understood.strip()[:500]
         questions = [q.strip()[:300] for q in plan.questions if q.strip()][:MAX_QUESTIONS]
-        operations, discarded, notes = self._change_operations(
+        operations, discarded, notes, whole = self._change_operations(
             plan,
             entities=bible.entities,
             facts=bible.facts,
@@ -748,6 +862,9 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
             entity_types=entity_types,
             session_id=session_id,
             project_id=project_id,
+            detail_models=(
+                await self._detail_models(workspace_id, project_id) if plan.type_changes else {}
+            ),
         )
         evidence = [EvidenceRef(source_artefact_id=session_id)]
         operations = await self._with_merges_and_plan(
@@ -763,6 +880,7 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
             discarded=discarded,
             notes=notes,
             session_id=session_id,
+            whole=whole,
         )
         notes = [*notes, *(note.strip()[:400] for note in plan.notes if note.strip())]
         if found:
@@ -891,8 +1009,10 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
         discarded: list[DiscardedItem],
         notes: list[str],
         session_id: str,
+        whole: list[_Whole] | None = None,
     ) -> list[CanonOperation]:
         """Merges as their own reviewed change, and changes to the plan (AST-EXP-017)."""
+        whole = whole if whole is not None else []
         active = {entity.id: entity for entity in entities if entity.is_active}
         merges: list[MergeEntitiesOp] = []
         merged_away: dict[str, str] = {}
@@ -979,7 +1099,8 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
                     )
                     continue
                 kept_ops.append(operation)
-            operations = kept_ops
+            # A new type or kind the merge cut part way is set aside whole.
+            operations = _keep_whole(operations, kept_ops, whole, discarded, notes)
         plan_ops = self._plan_operations(
             plan,
             entities=entities,
@@ -992,16 +1113,100 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
             # A plan change made beside a merge names the kept entry, never the one going.
             swap={merge.id: merge.into for merge in merges},
         )
+        plan_ops += await self._follow_restated(
+            workspace_id,
+            project_id,
+            whole,
+            removed={op.id for op in plan_ops if isinstance(op, RetirePlanItemOp)},
+            evidence=evidence,
+            notes=notes,
+        )
         retires = [op for op in operations if isinstance(op, RetireEntityOp)]
         rest = [op for op in operations if not isinstance(op, RetireEntityOp)]
-        # A merge the notes announce is never cut: other changes are cut first.
+        # A merge the notes announce is never cut: other changes are cut first, and a new
+        # type or kind is never cut part way.
         room = max(0, MAX_CHANGES * 2 - len(merges))
-        others = [*rest, *plan_ops, *retires][:room]
+        others = _within([*rest, *plan_ops, *retires], room, whole, discarded, notes)
         return [
             *(op for op in others if not isinstance(op, RetireEntityOp)),
             *merges,
             *(op for op in others if isinstance(op, RetireEntityOp)),
         ]
+
+    async def _follow_restated(
+        self,
+        workspace_id: str,
+        project_id: str,
+        whole: list[_Whole],
+        *,
+        removed: set[str],
+        evidence: list[EvidenceRef],
+        notes: list[str],
+    ) -> list[CanonOperation]:
+        """Scenes that reveal a fact stated again as another kind now reveal the fact as it
+        is stated again, in the same change; arc stages tied to it are named in a note
+        (AST-EXP-017).
+
+        A stage is not moved: undoing the change would put it back on the old fact, which
+        stays ended (undo states it again as a new record), and a stage tied to an ended
+        fact is refused, so the undo itself would be refused. A reveal names any fact.
+        """
+        restated = {g.restates[0]: g for g in whole if g.restates is not None and not g.dropped}
+        if not restated:
+            return []
+        items = await self._reader.list_plan_items(
+            workspace_id=workspace_id, project_id=project_id, limit=MAX_STORY_RECORDS
+        )
+        moved = {old: group.restates[1] for old, group in restated.items() if group.restates}
+        changes: list[CanonOperation] = []
+        scenes: dict[str, int] = {}
+        arcs: dict[str, list[str]] = {}
+        for item in items:
+            if not item.is_active or item.id in removed:
+                continue
+            for stage in arc_path(item.details):
+                if stage.fact_id in moved and item.title not in arcs.get(stage.fact_id, []):
+                    arcs.setdefault(stage.fact_id, []).append(item.title)
+            reveals = scene_reveals(item.details)
+            hits = {r.fact_id for r in reveals if r.fact_id in moved}
+            if not hits:
+                continue
+            details = with_reveals(
+                item.details,
+                [
+                    r.model_copy(update={"fact_id": moved.get(r.fact_id, r.fact_id)})
+                    for r in reveals
+                ],
+            )
+            change = UpdatePlanItemOp(id=item.id, details=details, evidence=evidence)
+            changes.append(change)
+            for old in hits:
+                restated[old].ops.append(change)
+                scenes[old] = scenes.get(old, 0) + 1
+        for old, group in restated.items():
+            said: list[str] = []
+            if old in scenes:
+                count = scenes[old]
+                said.append(
+                    f"{count} scene{'s' if count != 1 else ''} that "
+                    f"reveal{'s' if count == 1 else ''} the fact whose kind changes now "
+                    f"reveal{'s' if count == 1 else ''} it as it is stated again; undoing this "
+                    "change puts them back on the old record, which stays ended."
+                )
+            if old in arcs:
+                titles = ", ".join(f"“{title}”" for title in arcs[old][:3])
+                more = len(arcs[old]) - 3
+                said.append(
+                    f"The arc{'s' if len(arcs[old]) != 1 else ''} {titles}"
+                    + (f" and {more} more" if more > 0 else "")
+                    + f" still tie{'s' if len(arcs[old]) == 1 else ''} a stage to the old "
+                    "record of the fact whose kind changes; once this is kept, tie "
+                    f"{'it' if len(arcs[old]) == 1 else 'them'} to the fact as it is stated again."
+                )
+            for note in said:
+                group.notes.append(note)
+                notes.append(note)
+        return changes
 
     def _plan_operations(
         self,
@@ -1153,9 +1358,12 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
         session_id: str,
         project_id: str,
         events: list[Event] | None = None,
-    ) -> tuple[list[CanonOperation], list[DiscardedItem], list[str]]:
+        detail_models: dict[str, type[BaseModel]] | None = None,
+    ) -> tuple[list[CanonOperation], list[DiscardedItem], list[str], list[_Whole]]:
         discarded: list[DiscardedItem] = []
         notes: list[str] = []
+        whole: list[_Whole] = []
+        detail_models = detail_models or {}
         evidence = [EvidenceRef(source_artefact_id=session_id)]
         active = {entity.id: entity for entity in entities if entity.is_active}
         open_facts = {fact.id: fact for fact in facts}
@@ -1184,6 +1392,8 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
 
         updates: list[CanonOperation] = []
         changed: set[str] = set()
+        # Each entry's details as the changes before its new type leave them.
+        details_now: dict[str, dict[str, Any]] = {}
         for change in plan.entity_changes[:MAX_CHANGES]:
             entity = active.get(change.ref)
             if entity is None:
@@ -1221,6 +1431,8 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
             if not renamed and new_aliases is None and new_attributes is None:
                 continue
             changed.add(entity.id)
+            if new_attributes is not None:
+                details_now[entity.id] = new_attributes
             updates.append(
                 UpdateEntityOp(
                     id=entity.id,
@@ -1230,6 +1442,51 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
                     evidence=evidence,
                 )
             )
+
+        retyped: dict[str, str] = {}
+        retypes: list[CanonOperation] = []
+        retype_ops: dict[str, UpdateEntityOp] = {}
+        # Details the new type does not have, by entry: dropped with the new type.
+        undefined: dict[str, list[str]] = {}
+        for item in plan.type_changes[:MAX_CHANGES]:
+            entity = active.get(item.ref)
+            new_type = item.new_type.strip()
+            if entity is None:
+                discarded.append(DiscardedItem("type", f"{item.ref!r} is not an existing entry"))
+                continue
+            if new_type not in entity_types:
+                discarded.append(
+                    DiscardedItem(
+                        "type", f"{entity.name}: {new_type[:40]!r} is not a type of entry"
+                    )
+                )
+                continue
+            if new_type == entity.type or entity.id in retyped:
+                continue
+            retyped[entity.id] = new_type
+            # A type the setup describes has only its own details: the others go with the
+            # old type, and the author is told which.
+            attributes = details_now.get(entity.id, dict(entity.attributes))
+            model = detail_models.get(new_type)
+            kept = attributes
+            if model is not None:
+                kept = {
+                    key: value
+                    for key, value in attributes.items()
+                    if key in MARK_KEYS or key in model.model_fields
+                }
+                if len(kept) != len(attributes):
+                    undefined[entity.id] = [key for key in attributes if key not in kept]
+            # After what it can no longer have is ended, so undoing it in one step gives
+            # the type back before those facts are stated again.
+            retype = UpdateEntityOp(
+                id=entity.id,
+                type=new_type,
+                attributes=kept if entity.id in undefined else None,
+                evidence=evidence,
+            )
+            retype_ops[entity.id] = retype
+            retypes.append(retype)
 
         timed = self._time_operations(
             plan,
@@ -1258,8 +1515,126 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
                 ending.add(ref.id)
                 closes.append(CloseBeliefOp(id=ref.id, evidence=evidence))
 
+        # A fact recorded as the wrong kind (AST-EXP-017): ended, and stated again as the
+        # right kind with the same entries, value, story time and secrecy.
+        rekinded = 0
+        for kind_change in plan.kind_changes[:MAX_CHANGES]:
+            fact = open_facts.get(kind_change.fact)
+            kind = kind_change.new_kind.strip().upper()
+            if fact is None:
+                discarded.append(
+                    DiscardedItem("fact", f"{kind_change.fact!r} is not a current fact")
+                )
+                continue
+            if fact.id in ending or kind == fact.proposition.predicate:
+                continue
+            problem = _kind_problem(fact, kind, predicates, active, retyped)
+            if problem is not None:
+                discarded.append(DiscardedItem("fact", problem))
+                continue
+            ending.add(fact.id)
+            rekinded += 1
+            # Its own id now, so the plan's scenes and arcs that name the fact can be
+            # pointed at it in the same change (a temporary id is only resolved in the
+            # records' own fields, not in a plan item's details).
+            new_id = format_canon_id("fact", uuid7().hex)
+            close = CloseFactOp(id=fact.id, evidence=evidence)
+            restated = AssertFactOp(
+                id=new_id,
+                proposition=fact.proposition.model_copy(update={"predicate": kind}),
+                confidence=fact.confidence,
+                starts=fact.starts,
+                ends=fact.ends,
+                visibility=fact.visibility if fact.visibility.value != "ordinary" else None,
+                why=(
+                    f"It was recorded as {_kind_words(fact.proposition.predicate)}; "
+                    f"it is {_kind_words(kind)}."
+                ),
+                evidence=evidence,
+            )
+            closes.append(close)
+            asserts.append(restated)
+            subject = active.get(fact.proposition.subject_id)
+            whole.append(
+                _Whole(
+                    "fact",
+                    f"{subject.name if subject else 'An entry'}: changing "
+                    f"{_kind_words(fact.proposition.predicate)} to {_kind_words(kind)} did not "
+                    "fit in this change; ask for it again on its own",
+                    [close, restated],
+                    restates=(fact.id, new_id),
+                )
+            )
+
+        # An entry given a new type: what it cannot have as that type is ended, and
+        # the author is told (the review shows each one).
+        for entity_id, new_type in retyped.items():
+            entity = active[entity_id]
+            ended: list[CanonOperation] = []
+            unfit = [
+                fact
+                for fact in facts
+                if fact.id not in ending and not _fits(fact, entity_id, new_type, predicates)
+            ]
+            for fact in unfit:
+                ending.add(fact.id)
+                ended.append(CloseFactOp(id=fact.id, evidence=evidence))
+            held = (
+                [b for b in beliefs if b.holder_entity_id == entity_id and b.id not in ending]
+                if new_type != "Character"
+                else []
+            )
+            held += [
+                b
+                for b in beliefs
+                if b.id not in ending
+                and b not in held
+                and not _fits(b, entity_id, new_type, predicates)
+            ]
+            for belief in held:
+                ending.add(belief.id)
+                ended.append(CloseBeliefOp(id=belief.id, evidence=evidence))
+            closes.extend(ended)
+            dropped = undefined.get(entity_id, [])
+            note = (
+                f"{entity.name} becomes a {new_type.lower()}."
+                + (
+                    f" {len(unfit)} fact{'s' if len(unfit) != 1 else ''} a "
+                    f"{new_type.lower()} cannot have {'are' if len(unfit) != 1 else 'is'} ended."
+                    if unfit
+                    else ""
+                )
+                + (
+                    f" {len(held)} belief{'s' if len(held) != 1 else ''} "
+                    f"{'are' if len(held) != 1 else 'is'} ended with it."
+                    if held
+                    else ""
+                )
+                + (
+                    f" A {new_type.lower()} has no "
+                    + ", ".join(f"“{key}”" for key in dropped[:6])
+                    + (f" or {len(dropped) - 6} more" if len(dropped) > 6 else "")
+                    + f", so {'those details go' if len(dropped) != 1 else 'that detail goes'}."
+                    if dropped
+                    else ""
+                )
+            )
+            notes.append(note)
+            whole.append(
+                _Whole(
+                    "type",
+                    f"{entity.name}: the new type, with the {len(ended)} "
+                    f"thing{'s' if len(ended) != 1 else ''} it ends, did not fit in this "
+                    "change; ask for it again on its own",
+                    [*ended, retype_ops[entity_id]],
+                    notes=[note],
+                )
+            )
+
         # A kind of fact that holds one value at a time: adding a new value replaces
-        # the old one, whether or not the model remembered to end it.
+        # the old one, whether or not the model remembered to end it. What a fact stated
+        # again as another kind ends goes, or stays, with it.
+        stated_by = {id(group.ops[1]): group for group in whole if group.restates is not None}
         for op in asserts:
             if not isinstance(op, AssertFactOp):
                 continue
@@ -1274,7 +1649,10 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
                 if same and fact.id not in ending and not timed.apart(fact, op):
                     # Each true for its own stretch of story time: both stand.
                     ending.add(fact.id)
-                    closes.append(CloseFactOp(id=fact.id, evidence=evidence))
+                    replaced = CloseFactOp(id=fact.id, evidence=evidence)
+                    closes.append(replaced)
+                    if id(op) in stated_by:
+                        stated_by[id(op)].ops.append(replaced)
                     subject = active.get(fact.proposition.subject_id)
                     phrase = spec.predicate.replace("_", " ").lower()
                     notes.append(
@@ -1320,13 +1698,19 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
             *creates,
             *updates,
             *closes,
+            *retypes,
             *timed.new_events,
             *timed.event_changes,
             *timed.fact_changes,
             *asserts,
             *retires,
         ]
-        return operations[: MAX_CHANGES * 2], discarded, notes
+        return (
+            _within(operations, MAX_CHANGES * 2, whole, discarded, notes),
+            discarded,
+            notes,
+            whole,
+        )
 
     def _time_operations(
         self,
@@ -1447,6 +1831,55 @@ class CanonChangeWorkflow(CanonCreationWorkflow):
         return timed
 
 
+def _kind_words(predicate: str) -> str:
+    return f"“{predicate.replace('_', ' ').lower()}”"
+
+
+def _fits(record: Any, entity_id: str, new_type: str, predicates: dict[str, PredicateSpec]) -> bool:
+    """Whether a fact or belief still fits an entry given a new type."""
+    proposition = record.proposition
+    spec = predicates.get(proposition.predicate)
+    if spec is None:
+        return True
+    if proposition.subject_id == entity_id and new_type not in spec.subject_types:
+        return False
+    target = getattr(proposition.object, "entity_id", None)
+    return not (target == entity_id and spec.object_types and new_type not in spec.object_types)
+
+
+def _kind_problem(
+    fact: Fact,
+    kind: str,
+    predicates: dict[str, PredicateSpec],
+    active: dict[str, CanonEntity],
+    retyped: dict[str, str],
+) -> str | None:
+    """Why a fact cannot be stated again as another kind of fact, in plain words."""
+    spec = predicates.get(kind)
+    old = _kind_words(fact.proposition.predicate)
+    if spec is None:
+        return f"{old}: {kind[:60]!r} is not a kind of fact in this story"
+    current = predicates.get(fact.proposition.predicate)
+    if current is not None and current.object_shape is not spec.object_shape:
+        return f"{old} cannot become {_kind_words(kind)}: they record different things"
+    subject = active.get(fact.proposition.subject_id)
+    subject_type = retyped.get(fact.proposition.subject_id) or (subject.type if subject else "")
+    if subject_type not in spec.subject_types:
+        return (
+            f"{old} cannot become {_kind_words(kind)}: it is not said of a {subject_type.lower()}"
+        )
+    target_id = getattr(fact.proposition.object, "entity_id", None)
+    if target_id is not None and spec.object_types:
+        target = active.get(target_id)
+        target_type = retyped.get(target_id) or (target.type if target else "")
+        if target_type not in spec.object_types:
+            return (
+                f"{old} cannot become {_kind_words(kind)}: it cannot point to a "
+                f"{target_type.lower()}"
+            )
+    return None
+
+
 def change_messages(
     story: str,
     predicates: dict[str, PredicateSpec],
@@ -1476,6 +1909,11 @@ def change_messages(
         "- to correct a fact, end the old one (end_facts) and add the right one "
         "(add_facts). Facts are never edited in place.\n"
         "- to rename, use entity_changes.new_name; facts follow the entry automatically.\n"
+        '- when an entry was recorded as the wrong type ("the Fox is a group, not a '
+        'person"), put it in type_changes with the type it really is. When a fact was '
+        "recorded as the wrong kind, put it in kind_changes with the kind it really is; it "
+        "keeps its entries, value and time. Adding or changing the types and kinds "
+        "themselves is done in setup.\n"
         '- when two entries are the same ("merge them", "X and Y are one person"), use '
         "merge_entities with the id of the one that goes and the one that stays (the one "
         "the author names to keep, else the one with more recorded). Everything known "

@@ -259,12 +259,61 @@ describe('TextPage', () => {
     expect(result).toHaveTextContent('2 questions about who someone is')
     expect(result).toHaveTextContent('1 thing left out')
     expect(within(result).getByRole('link', { name: 'Look at them' })).toHaveAttribute('href', '/projects/prj_1/review/mut_9')
-    expect(api.find('POST', '/read')[0].body).toEqual({ version_id: 'srv_1', start: 0, end: null, expected_revision: 3 })
+    expect(api.find('POST', '/read')[0].body).toEqual({
+      version_id: 'srv_1',
+      start: 0,
+      end: null,
+      expected_revision: 3,
+      scene_id: null,
+    })
     await expectAccessible(container)
 
     await user.click(within(result).getByRole('button', { name: 'Read the next part' }))
     await waitFor(() => expect(api.find('POST', '/read')).toHaveLength(2))
     expect(api.find('POST', '/read')[1].body).toMatchObject({ start: 60, end: null })
+  })
+
+  it('reads a pasted text as the writing of a scene the author names', async () => {
+    const api = mockApi({
+      ...base,
+      'GET /texts/src_1': detail({ questions: [] }),
+      'GET /plan': {
+        items: [
+          { id: 'pln_quay', kind: 'scene', title: 'The quay at dawn', refs: [] },
+          { id: 'pln_t', kind: 'thread', title: 'The debt', refs: [] },
+        ],
+        open: [],
+        conditions: [],
+      },
+      'POST /assist/texts/src_1/read': {
+        mutation_id: 'mut_9',
+        operation_count: 2,
+        validation_ok: true,
+        start: 0,
+        end: 60,
+        more: false,
+        implied: 0,
+        guesses: 0,
+        discarded: [],
+        missing: [],
+        thread_steps: 1,
+        limit: 24000,
+      },
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<TextPage />, at)
+    const choice = await screen.findByRole('combobox', { name: /Is this the writing of a scene in your plan\?/ })
+    // Only scenes are offered, and reading on its own is the default.
+    expect(within(choice).getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'No, read it on its own',
+      'The quay at dawn',
+    ])
+    await user.selectOptions(choice, 'pln_quay')
+    await user.click(screen.getByRole('button', { name: 'Have the assistant read it' }))
+    const result = await screen.findByRole('status', { name: 'What the assistant found' })
+    expect(result).toHaveTextContent('Among them: 1 step of the plan’s threads')
+    expect(api.find('POST', '/read')[0].body).toMatchObject({ scene_id: 'pln_quay' })
+    await expectAccessible(container)
   })
 
   it('highlights the passage a change points back at', async () => {

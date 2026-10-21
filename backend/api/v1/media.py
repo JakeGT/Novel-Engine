@@ -7,12 +7,18 @@ from datetime import datetime
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import get_media_service
 from backend.domain.identity import AccessScope
-from backend.domain.media import PROCESSING_FAILURES, MediaSegment, VariantKind
+from backend.domain.media import (
+    PROCESSING_FAILURES,
+    MediaSegment,
+    PictureUpload,
+    UploadTarget,
+    VariantKind,
+)
 from backend.services.media_service import (
     PROCESSOR_VERSION,
     LibraryPicture,
@@ -124,6 +130,7 @@ async def asset_lifecycle(
                 "actor_user_id": event.actor_user_id,
                 "canon_revision": event.canon_revision,
                 "created_at": event.created_at,
+                **({"item_count": event.item_count} if event.item_count is not None else {}),
             }
             for event in events
         ]
@@ -324,6 +331,171 @@ def _received(received: ReceivedUpload) -> dict[str, Any]:
     return answer
 
 
+UploadFor = Literal["entity", "scene", "picture"]
+_UPLOAD_TARGETS = {
+    "entity": UploadTarget.ENTITY,
+    "scene": UploadTarget.SCENE,
+    "picture": UploadTarget.ASSET,
+}
+_UPLOAD_FOR = {target: name for name, target in _UPLOAD_TARGETS.items()}
+
+
+class UploadStartRequest(BaseModel):
+    """Ask to send a picture in two steps (AST-002): what it is for and what will come."""
+
+    model_config = ConfigDict(extra="forbid")
+    # entity: a picture of an entry; scene: shown on a scene of the plan; picture: a new
+    # version of a picture already in the story.
+    upload_for: UploadFor = Field(alias="for")
+    id: str = Field(min_length=1, max_length=200)
+    name: str | None = Field(default=None, max_length=200)
+    byte_length: int = Field(gt=0)
+    # The picture's SHA-256, as 64 hexadecimal letters and digits.
+    sha256: str = Field(min_length=64, max_length=64)
+
+
+class UploadModel(BaseModel):
+    id: str
+    upload_for: UploadFor = Field(serialization_alias="for")
+    target_id: str
+    # waiting (send the picture), received (finish it), finishing, finished or expired.
+    state: Literal["waiting", "received", "finishing", "finished", "expired"]
+    byte_length: int
+    sha256: str
+    expires_at: datetime
+    # Where to send the bytes (PUT) and where to finish (POST), relative to the API.
+    send_to: str
+    finish_at: str
+    asset_id: str | None = None
+    version_id: str | None = None
+    link_id: str | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+def _upload_model(upload: PictureUpload, project_id: str) -> UploadModel:
+    base = f"/api/v1/projects/{project_id}/uploads/{upload.id}"
+    return UploadModel(
+        id=upload.id,
+        upload_for=_UPLOAD_FOR[upload.target_type],  # type: ignore[arg-type]
+        target_id=upload.target_id,
+        state=upload.state.value,
+        byte_length=upload.expected_bytes,
+        sha256=upload.expected_sha256,
+        expires_at=upload.expires_at,
+        send_to=base,
+        finish_at=f"{base}/finish",
+        asset_id=upload.asset_id,
+        version_id=upload.version_id,
+        link_id=upload.link_id,
+    )
+
+
+@router.post("/uploads", status_code=201, response_model_by_alias=True)
+async def start_upload(
+    project_id: str,
+    body: UploadStartRequest,
+    scope: AccessScope = Depends(require_project_scope),
+    media: MediaService = Depends(get_media_service),
+) -> UploadModel:
+    """Start a two-step picture upload (AST-002): say what it is for, its size and its
+    SHA-256. Refused before anything is sent when it is too large (413), there is no
+    room, or what it is for is not in the story. Then send the bytes with ``PUT`` to
+    ``send_to`` and finish with ``POST`` to ``finish_at``, within an hour."""
+    upload = await media.start_upload(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        target_type=_UPLOAD_TARGETS[body.upload_for],
+        target_id=body.id,
+        byte_length=body.byte_length,
+        sha256=body.sha256,
+        name=body.name,
+    )
+    return _upload_model(upload, project_id)
+
+
+@router.get("/uploads/{upload_id}", response_model_by_alias=True)
+async def get_upload(
+    project_id: str,
+    upload_id: str,
+    scope: AccessScope = Depends(require_project_scope),
+    media: MediaService = Depends(get_media_service),
+) -> UploadModel:
+    """Where a two-step upload is. Only the person who started it can see it."""
+    upload = await media._own_upload(  # noqa: SLF001 - the same check as every step
+        scope, scope.workspace_id or "", project_id, upload_id
+    )
+    return _upload_model(upload, project_id)
+
+
+class UploadReceivedModel(BaseModel):
+    upload: UploadModel
+    # What arrived, as for a one-step upload.
+    received: dict[str, Any]
+
+
+@router.put("/uploads/{upload_id}")
+async def send_upload(
+    project_id: str,
+    upload_id: str,
+    request: Request,
+    scope: AccessScope = Depends(require_project_scope),
+    media: MediaService = Depends(get_media_service),
+) -> UploadReceivedModel:
+    """Send the picture itself as the request body. It is read as it streams in, never
+    past the size promised, and must match the size and SHA-256 promised; a
+    ``Content-Digest`` is checked too. When it does not match nothing is kept and it can
+    be sent again. It is not in the story until it is finished."""
+    upload, received = await media.receive_upload(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        upload_id,
+        request.stream(),
+        declared_length=request.headers.get("content-length"),
+        content_digest=request.headers.get("content-digest") or request.headers.get("repr-digest"),
+    )
+    return UploadReceivedModel(
+        upload=_upload_model(upload, project_id), received=_received(received)
+    )
+
+
+class UploadFinishedModel(BaseModel):
+    upload: UploadModel
+    # The new picture's version, and where it is shown (null for a new version of a
+    # picture already in the story).
+    version: dict[str, Any]
+    link: dict[str, Any] | None = None
+
+
+@router.post("/uploads/{upload_id}/finish")
+async def finish_upload(
+    project_id: str,
+    upload_id: str,
+    response: Response,
+    expected_revision: int | None = Query(default=None, ge=0),
+    scope: AccessScope = Depends(require_project_scope),
+    media: MediaService = Depends(get_media_service),
+) -> UploadFinishedModel:
+    """Finish a two-step upload: the stored bytes are checked against what was promised
+    again, then the picture is shown on its entry or scene (``expected_revision`` is the
+    story's revision) or added as a new version of its picture. Asking again once it is
+    finished answers with what it made."""
+    upload, link, version = await media.finish_upload(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        upload_id,
+        expected_revision=expected_revision,
+    )
+    return UploadFinishedModel(
+        upload=_upload_model(upload, project_id),
+        version=_version(version),
+        link=_link(link) if link is not None else None,
+    )
+
+
 @router.post("/plan/{plan_id}/pictures", status_code=201)
 async def add_scene_picture(
     project_id: str,
@@ -509,6 +681,8 @@ class DeletedPictureModel(BaseModel):
     files_removed: int
     copies_removed: int
     bytes_freed: int
+    # What a model said about it (captions and details), removed with it (AST-008).
+    notes_removed: int = 0
 
 
 @router.post("/assets/{asset_id}/delete")
@@ -529,6 +703,7 @@ async def delete_picture(
         files_removed=deleted.files_removed,
         copies_removed=deleted.copies_removed,
         bytes_freed=deleted.bytes_freed,
+        notes_removed=deleted.notes_removed,
     )
 
 

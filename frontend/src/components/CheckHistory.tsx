@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type CheckRun, type CheckRunFinding, type CheckRunScene } from '../api/client'
-import { findingStatus, profileText, runLabel, tallyText, workText } from '../lib/checkRuns'
-import { AUDIT_STATUS } from '../lib/studio'
+import { api, type CheckPass, type CheckRun, type CheckRunFinding, type CheckRunScene } from '../api/client'
+import { findingStatus, passTimingText, profileText, runLabel, secondsText, tallyText, workText } from '../lib/checkRuns'
+import { AUDIT_STATUS, PASS_NAMES } from '../lib/studio'
 import { fullDate, timeAgo } from '../lib/time'
 import { scopedKey, useProject } from '../project'
 import { Badge, Button, ErrorNotice, Loading } from './ui'
@@ -18,17 +18,34 @@ function Tally(part: { open: number; accepted?: number; dismissed: number; super
   return <span>{tallyText(part)}</span>
 }
 
-/** How one pass was sent, when it could be sent in groups (CON-013). */
+/** How one pass was sent, when it could be sent in groups or parts (CON-013). */
 interface Sent {
   sent: 'groups' | 'whole'
   why?: string
   groups?: number
+  policy?: string
   complete?: boolean
   lines?: string[]
-  passages?: { start: number; end: number; checks: string[] }[]
+  passages?: { start: number; end: number; checks: string[]; part?: number; words?: string }[]
 }
 
-const PASS_WORDS: Record<string, string> = { continuity: 'Continuity with the story bible' }
+/** Each passage of a pass sent in groups or parts, with its first words and what it got. */
+function Passages({ sent }: { sent: Sent }) {
+  const passages = sent.passages ?? []
+  if (passages.length === 0) return null
+  return (
+    <ol className="small run-passages">
+      {passages.map((passage) => (
+        <li key={`${passage.start}-${passage.end}`}>
+          {passage.words ? <q>{passage.words}</q> : <span className="muted">A passage</span>}{' '}
+          <span className="muted">
+            {passage.part ? `part ${passage.part}` : passage.checks.join(', ').toLowerCase()}
+          </span>
+        </li>
+      ))}
+    </ol>
+  )
+}
 
 /** For a check with the assistant: how a long scene was sent, and what each passage got. */
 function Coverage({ run }: { run: CheckRun }) {
@@ -37,7 +54,9 @@ function Coverage({ run }: { run: CheckRun }) {
   return (
     <div className="stack tight run-coverage">
       {entries.map(([name, sent]) => {
-        const label = PASS_WORDS[name.split(':').pop() ?? name] ?? 'A pass'
+        const pass = (name.split(':').pop() ?? name) as CheckPass
+        const label = PASS_NAMES[pass] ?? 'A pass'
+        const inParts = sent.policy?.startsWith('scene-parts') ?? false
         if (sent.sent !== 'groups') {
           return (
             <p className="small" key={name}>
@@ -52,23 +71,80 @@ function Coverage({ run }: { run: CheckRun }) {
         return (
           <details className="run-findings" key={name}>
             <summary>
-              {label}: sent in {sent.groups} groups.{' '}
-              {sent.complete ? 'Every passage got every check it needs.' : 'Not every passage got every check it needs.'}
+              {label}: sent in {sent.groups} {inParts ? 'parts' : 'groups'}.{' '}
+              {inParts
+                ? 'Every passage was checked once.'
+                : sent.complete
+                  ? 'Every passage got every check it needs.'
+                  : 'Not every passage got every check it needs.'}
             </summary>
             <ul className="small plain-list">
               {(sent.lines ?? []).map((line) => (
                 <li key={line}>{line}</li>
               ))}
-              {[...kinds.entries()].map(([kind, count]) => (
-                <li key={kind}>
-                  {kind}: {count === 1 ? '1 passage' : `${count} passages`}
-                </li>
-              ))}
+              {!inParts &&
+                [...kinds.entries()].map(([kind, count]) => (
+                  <li key={kind}>
+                    {kind}: {count === 1 ? '1 passage' : `${count} passages`}
+                  </li>
+                ))}
             </ul>
+            <Passages sent={sent} />
           </details>
         )
       })}
     </div>
+  )
+}
+
+/** How long each stage and each check took, and each pass with the assistant (CON-001). */
+function Timings({ run, part }: { run: CheckRun; part?: CheckRunScene }) {
+  const stages = part?.stages ?? []
+  // The slowest first: what took the time is what is worth reading.
+  const checks = (part?.checks ?? [])
+    .filter((check) => check.ms !== null && check.ms !== undefined)
+    .sort((a, b) => (b.ms ?? 0) - (a.ms ?? 0))
+  const passes = run.timings ?? []
+  if (stages.length === 0 && checks.length === 0 && passes.length === 0) return null
+  const total = stages.reduce((sum, stage) => sum + stage.ms, 0) + passes.reduce((sum, item) => sum + (item.ms ?? 0), 0)
+  return (
+    <details className="run-findings">
+      <summary>How long it took: {secondsText(total)}</summary>
+      <div className="table-wrap">
+        <table className="diff-table run-timings">
+          <thead>
+            <tr>
+              <th scope="col">Step</th>
+              <th scope="col">How</th>
+              <th scope="col">Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            {passes.map((item) => (
+              <tr key={`${item.plan_id ?? ''}-${item.check_pass}`}>
+                <td>{item.words}</td>
+                <td data-label="How">{passTimingText(item)}</td>
+                <td data-label="Time">{item.ms === null || item.ms === undefined ? '—' : secondsText(item.ms)}</td>
+              </tr>
+            ))}
+            {stages.map((stage) => (
+              <tr key={stage.stage}>
+                <td>{stage.words}</td>
+                <td data-label="How">{stage.stage === 'checks' ? `${checks.length} checks without the assistant` : ''}</td>
+                <td data-label="Time">{secondsText(stage.ms)}</td>
+              </tr>
+            ))}
+            {checks.map((check) => (
+              <tr key={check.name} className="run-timing-check">
+                <td>{check.words}</td>
+                <td data-label="How">{check.reused ? 'Reused: nothing it reads had changed' : 'Worked out again'}</td>
+                <td data-label="Time">{secondsText(check.ms ?? 0)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
   )
 }
 
@@ -142,6 +218,64 @@ function Calibration() {
           ))}
         </ul>
       )}
+    </section>
+  )
+}
+
+/** One kind of finding dismissed wider than one scene, each with what it applies to (CON-016). */
+function WiderDismissals() {
+  const { scope, canWrite } = useProject()
+  const client = useQueryClient()
+  const key = scopedKey(scope, 'scoped-dismissals')
+  const found = useQuery({ queryKey: key, queryFn: () => api.scopedDismissals(scope) })
+  const withdraw = useMutation({
+    mutationFn: (dismissalId: string) => api.withdrawScopedDismissal(scope, dismissalId),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: key })
+      void client.invalidateQueries({ queryKey: scopedKey(scope, 'studio') })
+      void client.invalidateQueries({ queryKey: scopedKey(scope, 'check-runs') })
+    },
+  })
+  // One that covers nothing now (a scene it names left the plan) is shown too, so it
+  // can be undone; it says so in its own words.
+  const standing = (found.data?.items ?? []).filter((item) => item.standing || item.lapsed)
+  if (standing.length === 0) return null
+  return (
+    <section className="stack tight" aria-labelledby="wider-dismissals-heading">
+      <h3 id="wider-dismissals-heading" className="check-calibration-title">
+        Dismissed beyond one scene
+      </h3>
+      <ul className="check-calibration">
+        {standing.map((item) => (
+          <li key={item.id}>
+            <span className="check-calibration-name">{item.applies_to}</span>
+            <span className="small muted">
+              {item.reason === 'other'
+                ? `“${item.note}”`
+                : item.reason === 'intended'
+                  ? 'Intended'
+                  : 'Not a problem'}
+              {item.lapsed
+                ? ' · no longer applies'
+                : item.expires_at
+                  ? ` · until ${fullDate(item.expires_at)}`
+                  : ' · until you undo it'}
+            </span>
+            {canWrite && (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={withdraw.isPending}
+                aria-label={`Undo everywhere: ${item.applies_to}`}
+                onClick={() => withdraw.mutate(item.id)}
+              >
+                Undo everywhere
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <ErrorNotice error={withdraw.error} prefix="Not brought back" />
     </section>
   )
 }
@@ -258,6 +392,7 @@ export function CheckHistory({
                     </span>
                   )}
                   <Coverage run={run} />
+                  <Timings run={run} part={part} />
                   {part && <PicturesRead part={part} />}
                   {part && (workText(part) || profileText(run.profile ?? {})) && (
                     <p className="small muted">
@@ -271,6 +406,7 @@ export function CheckHistory({
           })}
         </ol>
       )}
+      <WiderDismissals />
       <Calibration />
     </section>
   )

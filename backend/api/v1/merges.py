@@ -67,8 +67,11 @@ class MergePreviewModel(BaseModel):
     plan_items: list[str]
     pictures_moved: int
     pictures_ended: int
-    # What keeps naming the merged entry (what a character said keeps its words).
+    # What keeps naming the merged entry: something said that would name the kept entry
+    # twice keeps its words.
     still_naming: list[str]
+    # What characters said that will name the kept entry instead.
+    claims_moved: list[str] = []
     # How many changes the merge makes when it is saved.
     change_count: int
 
@@ -95,6 +98,7 @@ def _preview(summary: MergeSummary) -> MergePreviewModel:
         pictures_moved=summary.pictures_moved,
         pictures_ended=summary.pictures_ended,
         still_naming=summary.still_naming,
+        claims_moved=summary.claims_moved,
         change_count=summary.change_count,
     )
 

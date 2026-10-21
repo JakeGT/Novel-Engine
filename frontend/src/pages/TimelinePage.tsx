@@ -241,6 +241,9 @@ export function TimelinePage() {
             When things happen in your story. Nothing here is required: an event can stay “not
             placed in time” for as long as you like.
           </p>
+          <p className="small">
+            <Link to={`/projects/${scope.projectId}/story-views`}>See how up to date the ready views are</Link>
+          </p>
         </div>
         {canWrite && (
           <Button variant="primary" icon="plus" onClick={() => setEditing({})}>

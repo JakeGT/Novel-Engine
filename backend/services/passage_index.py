@@ -247,6 +247,14 @@ class PassageIndex:
         )
         return result
 
+    async def lag(self) -> IndexWaiting | None:
+        """The waiting list across every story (CTX-005), for readiness; None when texts
+        are read in at once and nothing waits."""
+        if self._queue is None or not hasattr(self._queue, "lag"):
+            return None
+        result: IndexWaiting = await self._queue.lag()
+        return result
+
     # ------------------------------------------------------------- reading texts in
 
     async def index_source(self, workspace_id: str, project_id: str, source_id: str) -> int:

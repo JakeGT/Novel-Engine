@@ -87,10 +87,20 @@ export function MergePreviewView({ preview }: { preview: MergePreview }) {
             `${plural(preview.pictures_ended, 'picture')} ${preview.pictures_ended === 1 ? 'is' : 'are'} already on “${preview.keep_name}”.`}
         </p>
       )}
+      {preview.claims_moved.length > 0 && (
+        <div>
+          <p className="label">What characters said, now about “{preview.keep_name}”</p>
+          <ul className="plain-list">
+            {preview.claims_moved.map((title, index) => (
+              <li key={index}>{title}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {preview.still_naming.length > 0 && (
         <p className="notice plain small" role="note">
-          Still naming “{preview.merged_name}”: {preview.still_naming.join(', ')}. What a character
-          said keeps its words.
+          Still naming “{preview.merged_name}”: {preview.still_naming.join(', ')}. Said of “
+          {preview.keep_name}” it would name the same entry twice, so it keeps its words.
         </p>
       )}
     </div>

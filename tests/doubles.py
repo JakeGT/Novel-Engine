@@ -68,6 +68,8 @@ from backend.domain.media import (
     MediaAssetVersion,
     MediaLifecycleAction,
     MediaLifecycleEvent,
+    PictureUpload,
+    UploadState,
 )
 from backend.domain.merge import expand_merges
 from backend.domain.objects import ObjectStat
@@ -2199,6 +2201,8 @@ class InMemoryCanonWriter:
                     entity["aliases"] = list(operation.aliases)
                 if operation.external_ids is not None:
                     entity["external_ids"] = dict(operation.external_ids)
+                if operation.type is not None:
+                    entity["type"] = operation.type
         elif isinstance(operation, RetireEntityOp):
             entity = self.entities.get(key)
             if entity is not None:
@@ -2306,6 +2310,8 @@ class InMemoryCanonWriter:
                     event["cause_ids"] = list(operation.cause_ids)
                 if operation.outcome_ids is not None:
                     event["outcome_ids"] = list(operation.outcome_ids)
+                if operation.claim is not None:
+                    event["claim"] = operation.claim
         elif isinstance(operation, RetireEventOp):
             event = self.events.get(key)
             if event is not None:
@@ -2817,6 +2823,18 @@ class InMemoryCanonRepository:
                     parent_branch_id,
                 ):
                     studio.saved_dismissals.append(_replace(dismissal, branch_id=branch_id))
+        # And the dismissals for a character or a stretch of the story (CON-016).
+        scoped = getattr(self, "scoped_dismissals", None)
+        if scoped is not None:
+            from dataclasses import replace as _scoped_copy
+
+            for item in list(scoped.items):
+                if (item.workspace_id, item.project_id, item.branch_id) == (
+                    workspace_id,
+                    project_id,
+                    parent_branch_id,
+                ):
+                    scoped.items.append(_scoped_copy(item, branch_id=branch_id))
         # The checks kept as runs come too (consistency_runs is forked).
         runs = getattr(self, "consistency_runs", None)
         if runs is not None:
@@ -3362,6 +3380,7 @@ class InMemoryCanonRepository:
                     "external_ids": operation.external_ids
                     if operation.external_ids is not None
                     else current.external_ids,
+                    "type": current.type if operation.type is None else operation.type,
                 }
             )
         elif isinstance(operation, RetireEntityOp) and key in self.entities:
@@ -3457,6 +3476,7 @@ class InMemoryCanonRepository:
                     "outcome_ids": current.outcome_ids
                     if operation.outcome_ids is None
                     else list(operation.outcome_ids),
+                    "claim": current.claim if operation.claim is None else operation.claim,
                     "name": current.name if operation.name is None else operation.name,
                     "world_position": operation.world_position
                     if operation.world_position is not None
@@ -3499,6 +3519,8 @@ class InMemoryCanonRepository:
                 visibility=operation.visibility or "open",
                 known_by=list(operation.known_by),
                 applies_from=operation.applies_from,
+                applies_until=operation.applies_until,
+                shows_version=bool(operation.shows_version),
             )
         elif isinstance(operation, RetireAssetLinkOp) and key in self.asset_links:
             self.asset_links[key] = self.asset_links[key].model_copy(
@@ -3909,6 +3931,98 @@ class InMemoryMediaStore:
         self.versions: dict[tuple[str, str, str], MediaAssetVersion] = {}
         self.events: list[MediaLifecycleEvent] = []
         self._counter = 0
+        # Two-step uploads (AST-002).
+        self.uploads: dict[tuple[str, str, str], PictureUpload] = {}
+
+    async def create_upload(
+        self,
+        upload: PictureUpload,
+        *,
+        max_per_person: int,
+        max_per_workspace: int,
+    ) -> PictureUpload | None:
+        mine = await self.open_uploads(
+            workspace_id=upload.workspace_id, actor_user_id=upload.actor_user_id or ""
+        )
+        everyone = await self.open_uploads(workspace_id=upload.workspace_id)
+        if mine >= max_per_person or everyone >= max_per_workspace:
+            return None
+        self.uploads[(upload.workspace_id, upload.project_id, upload.id)] = upload
+        return upload
+
+    async def get_upload(
+        self, *, workspace_id: str, project_id: str, upload_id: str
+    ) -> PictureUpload | None:
+        return self.uploads.get((workspace_id, project_id, upload_id))
+
+    async def open_uploads(self, *, workspace_id: str, actor_user_id: str | None = None) -> int:
+        now = utcnow()
+        return sum(
+            1
+            for upload in self.uploads.values()
+            if upload.workspace_id == workspace_id
+            and (actor_user_id is None or (upload.actor_user_id or "") == actor_user_id)
+            and upload.state in (UploadState.WAITING, UploadState.RECEIVED, UploadState.FINISHING)
+            and upload.expires_at > now
+        )
+
+    async def move_upload(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        upload_id: str,
+        from_state: UploadState,
+        to_state: UploadState,
+        staged_key: str | None = None,
+        content_type: str | None = None,
+        asset_id: str | None = None,
+        version_id: str | None = None,
+        link_id: str | None = None,
+        unexpired: bool = True,
+    ) -> PictureUpload | None:
+        key = (workspace_id, project_id, upload_id)
+        upload = self.uploads.get(key)
+        if upload is None or upload.state is not from_state:
+            return None
+        if unexpired and upload.expires_at <= utcnow():
+            return None
+        changes: dict[str, Any] = {"state": to_state}
+        for name, value in (
+            ("staged_key", staged_key),
+            ("content_type", content_type),
+            ("asset_id", asset_id),
+            ("version_id", version_id),
+            ("link_id", link_id),
+        ):
+            if value is not None:
+                changes[name] = value
+        if to_state is UploadState.FINISHED:
+            changes["finished_at"] = utcnow()
+        self.uploads[key] = moved = upload.model_copy(update=changes)
+        return moved
+
+    async def expire_uploads(
+        self, *, limit: int = 100, finishing_grace_seconds: int = 900
+    ) -> list[PictureUpload]:
+        now = utcnow()
+        grace = timedelta(seconds=finishing_grace_seconds)
+        due = [
+            key
+            for key, upload in self.uploads.items()
+            if (
+                upload.state in (UploadState.WAITING, UploadState.RECEIVED)
+                and upload.expires_at <= now
+            )
+            or (upload.state is UploadState.FINISHING and upload.expires_at <= now - grace)
+        ][:limit]
+        out = []
+        for key in due:
+            self.uploads[key] = expired = self.uploads[key].model_copy(
+                update={"state": UploadState.EXPIRED}
+            )
+            out.append(expired)
+        return out
 
     def _record(
         self,
@@ -3920,6 +4034,7 @@ class InMemoryMediaStore:
         asset_version_id: str | None = None,
         actor_user_id: str | None = None,
         canon_revision: int | None = None,
+        item_count: int | None = None,
     ) -> None:
         self._counter += 1
         self.events.append(
@@ -3932,7 +4047,28 @@ class InMemoryMediaStore:
                 action=action,
                 actor_user_id=actor_user_id,
                 canon_revision=canon_revision,
+                item_count=item_count,
             )
+        )
+
+    async def record_notes_removed(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        asset_id: str,
+        count: int,
+        actor_user_id: str | None = None,
+        canon_revision: int | None = None,
+    ) -> None:
+        self._record(
+            workspace_id,
+            project_id,
+            asset_id,
+            MediaLifecycleAction.NOTES_REMOVED,
+            actor_user_id=actor_user_id,
+            canon_revision=canon_revision,
+            item_count=count,
         )
 
     async def list_lifecycle_events(
@@ -3956,6 +4092,8 @@ class InMemoryMediaStore:
                 del store[key]
                 removed += 1
         self.events = [e for e in self.events if not owned((e.workspace_id, e.project_id))]
+        for key in [k for k in self.uploads if owned(k)]:
+            del self.uploads[key]
         return removed
 
     async def create_asset(
@@ -5150,6 +5288,18 @@ class InMemoryPassageQueue:
             failing=sum(1 for row in rows if row["attempts"] > 0),
         )
 
+    async def lag(self) -> Any:
+        from backend.domain.context import IndexWaiting
+
+        rows = list(self.rows.values())
+        if not rows:
+            return IndexWaiting()
+        return IndexWaiting(
+            count=len(rows),
+            oldest_seconds=max(0.0, self._now() - min(row["first"] for row in rows)),
+            failing=sum(1 for row in rows if row["attempts"] > 0),
+        )
+
     async def stories_waiting(self, *, limit) -> list[tuple[str, str]]:
         oldest: dict[tuple[str, str], float] = {}
         for key, row in self.rows.items():
@@ -5224,6 +5374,77 @@ class InMemorySceneSummaryStore:
                 for key, row in self.rows.items()
                 if key[:2] == (workspace_id, project_id)
                 and row.source_id in wanted
+                and row.state in (SummaryState.PROPOSED, SummaryState.ACCEPTED)
+            ),
+            key=lambda row: (row.created_at, row.id),
+        )
+
+
+class InMemoryPartSummaryStore:
+    """Summaries of whole arcs and beats (CTX-006)."""
+
+    def __init__(self) -> None:
+        self.rows: dict[tuple[str, str, str], Any] = {}
+
+    def _retire_accepted(self, workspace_id, project_id, summary) -> None:
+        from dataclasses import replace as _replace
+
+        from backend.domain.context import SummaryState
+
+        for key, row in list(self.rows.items()):
+            if (
+                key[:2] == (workspace_id, project_id)
+                and row.plan_id == summary.plan_id
+                and row.branch_id == summary.branch_id
+                and row.state is SummaryState.ACCEPTED
+                and row.id != summary.id
+            ):
+                self.rows[key] = _replace(row, state=SummaryState.REPLACED)
+
+    async def add(self, *, workspace_id, project_id, summary) -> None:
+        from backend.domain.context import SummaryState
+
+        if summary.state is SummaryState.ACCEPTED:
+            self._retire_accepted(workspace_id, project_id, summary)
+        self.rows[(workspace_id, project_id, summary.id)] = summary
+
+    async def decide(
+        self, *, workspace_id, project_id, summary_id, state, body, origin, decided_by, decided_at
+    ) -> Any:
+        from dataclasses import replace as _replace
+
+        from backend.domain.context import SummaryState
+
+        key = (workspace_id, project_id, summary_id)
+        row = self.rows.get(key)
+        if row is None or row.state is not SummaryState.PROPOSED:
+            return None
+        if state is SummaryState.ACCEPTED:
+            self._retire_accepted(workspace_id, project_id, row)
+        updated = _replace(
+            row,
+            state=state,
+            body=body if body is not None else row.body,
+            origin=origin or row.origin,
+            decided_by=decided_by,
+            decided_at=decided_at,
+        )
+        self.rows[key] = updated
+        return updated
+
+    async def get(self, *, workspace_id, project_id, summary_id) -> Any:
+        return self.rows.get((workspace_id, project_id, summary_id))
+
+    async def for_plans(self, *, workspace_id, project_id, plan_ids) -> list[Any]:
+        from backend.domain.context import SummaryState
+
+        wanted = set(plan_ids)
+        return sorted(
+            (
+                row
+                for key, row in self.rows.items()
+                if key[:2] == (workspace_id, project_id)
+                and row.plan_id in wanted
                 and row.state in (SummaryState.PROPOSED, SummaryState.ACCEPTED)
             ),
             key=lambda row: (row.created_at, row.id),
@@ -5878,6 +6099,8 @@ class InMemoryReviewDismissalStore:
 
     def __init__(self) -> None:
         self.dismissals: list[Any] = []
+        # What the review screen showed: (workspace, project, proposal, key) → kind.
+        self.seen: dict[tuple[str, str, str, str], str] = {}
 
     async def for_mutation(
         self, *, workspace_id: str, project_id: str, mutation_id: str
@@ -5920,6 +6143,68 @@ class InMemoryReviewDismissalStore:
                 dismissal_id,
             ) and item.withdrawn_at is None:
                 self.dismissals[index] = replace(item, withdrawn_at=at)
+                return True
+        return False
+
+    async def see(
+        self, *, workspace_id: str, project_id: str, mutation_id: str, found: list[Any]
+    ) -> None:
+        for fingerprint, code in found:
+            self.seen.setdefault((workspace_id, project_id, mutation_id, fingerprint), code)
+
+    async def seen_counts(self, *, workspace_id: str, project_id: str) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for (w, p, _m, _f), code in self.seen.items():
+            if (w, p) == (workspace_id, project_id):
+                counts[code] = counts.get(code, 0) + 1
+        return counts
+
+    async def for_project(self, *, workspace_id: str, project_id: str) -> list[Any]:
+        return [
+            item
+            for item in self.dismissals
+            if (item.workspace_id, item.project_id) == (workspace_id, project_id)
+        ]
+
+
+class InMemoryScopedDismissalStore:
+    """Dismissals for a character or a stretch of the story (CON-016), in memory."""
+
+    def __init__(self) -> None:
+        self.items: list[Any] = []
+
+    async def list(self, *, workspace_id: str, project_id: str, branch_id: str) -> list[Any]:
+        return sorted(
+            (
+                item
+                for item in self.items
+                if (item.workspace_id, item.project_id, item.branch_id)
+                == (workspace_id, project_id, branch_id)
+            ),
+            key=lambda item: (item.created_at, item.id),
+        )
+
+    async def count(self, *, workspace_id: str, project_id: str, branch_id: str) -> int:
+        return len(
+            await self.list(workspace_id=workspace_id, project_id=project_id, branch_id=branch_id)
+        )
+
+    async def add(self, item: Any) -> None:
+        self.items.append(item)
+
+    async def withdraw(
+        self, *, workspace_id: str, project_id: str, branch_id: str, dismissal_id: str, at: Any
+    ) -> bool:
+        from dataclasses import replace
+
+        for index, item in enumerate(self.items):
+            if (item.workspace_id, item.project_id, item.branch_id, item.id) == (
+                workspace_id,
+                project_id,
+                branch_id,
+                dismissal_id,
+            ) and item.withdrawn_at is None:
+                self.items[index] = replace(item, withdrawn_at=at)
                 return True
         return False
 
@@ -5973,6 +6258,17 @@ class InMemoryObservationStore:
     ) -> bool:
         self.choices[(workspace_id, project_id, asset_id)] = choice
         return True
+
+    async def delete_for_asset(self, *, workspace_id: str, project_id: str, asset_id: str) -> int:
+        doomed = [
+            key
+            for key in self.order
+            if key[:2] == (workspace_id, project_id) and self.observations[key].asset_id == asset_id
+        ]
+        for key in doomed:
+            del self.observations[key]
+        self.order = [key for key in self.order if key not in set(doomed)]
+        return len(doomed)
 
     async def delete_project(self, *, workspace_id: str, project_id: str) -> int:
         doomed = [key for key in self.order if key[:2] == (workspace_id, project_id)]

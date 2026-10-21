@@ -344,6 +344,13 @@ function ReadingOutcome({ job, close }: { job: StudioJob; close: ReactNode }) {
     left > 0
       ? ` ${plural(left, 'thing')} it found could not be tied to the scene’s words, so ${left === 1 ? 'it was' : 'they were'} left out.`
       : ''
+  // Thread steps, including those an earlier reading that stopped found (EXT-007).
+  const steps = Number(job.result.thread_steps ?? 0)
+  const carried = Number(job.result.carried_steps ?? 0)
+  const threads =
+    steps > 0
+      ? ` Among them, the scene moves ${plural(steps, 'thread')} of the plan along or settles ${steps === 1 ? 'it' : 'them'}${carried > 0 ? `, ${carried === 1 ? 'one' : carried} found by an earlier reading that stopped` : ''}.`
+      : ''
   if (proposals.length === 0) {
     return (
       <div className="notice plain" role="status">
@@ -361,7 +368,8 @@ function ReadingOutcome({ job, close }: { job: StudioJob; close: ReactNode }) {
         <strong>
           {count === null ? 'Changes suggested from this scene.' : `${plural(count, 'change')} suggested from this scene.`}
         </strong>{' '}
-        Nothing changes in your story until you review {count === 1 ? 'it' : 'them'}.{leftOut}
+        Nothing changes in your story until you review {count === 1 ? 'it' : 'them'}.{threads}
+        {leftOut}
       </p>
       <div className="actions">
         <Link className="btn primary sm" to={reviewPath(scope.projectId, proposals)}>

@@ -2020,6 +2020,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/dismissals/scoped": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Scoped Dismissals
+         * @description Every wider dismissal in this line of the story, newest first.
+         */
+        get: operations["scoped_dismissals_api_v1_projects__project_id__dismissals_scoped_get"];
+        put?: never;
+        /**
+         * Add Scoped Dismissal
+         * @description Dismiss one kind of finding wherever it is about a character, or in a stretch of
+         *     scenes. Nothing in the story or the checks changes.
+         */
+        post: operations["add_scoped_dismissal_api_v1_projects__project_id__dismissals_scoped_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/dismissals/scoped/{dismissal_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Withdraw Scoped Dismissal
+         * @description Bring the findings back everywhere it applied. The record stays, withdrawn.
+         */
+        delete: operations["withdraw_scoped_dismissal_api_v1_projects__project_id__dismissals_scoped__dismissal_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/drafts/{draft_id}": {
         parameters: {
             query?: never;
@@ -3410,7 +3455,8 @@ export interface paths {
         get?: never;
         /**
          * Change Picture Link
-         * @description Say who may know what the picture shows here, and from when it applies (AST-004).
+         * @description Say who may know what the picture shows here, for which story time it applies
+         *     (AST-004, AST-001: from and until) and which version it shows (null: the newest).
          *     The link is replaced by a new one in one change; the story's history keeps both.
          */
         put: operations["change_picture_link_api_v1_projects__project_id__pictures__asset_id__links__link_id__put"];
@@ -3719,6 +3765,71 @@ export interface paths {
         put?: never;
         /** Move Plan Item */
         post: operations["move_plan_item_api_v1_projects__project_id__plan__plan_id__move_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/part-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Part Summary
+         * @description The summary later scenes are given of a whole arc or beat, and any suggestion.
+         */
+        get: operations["part_summary_api_v1_projects__project_id__plan__plan_id__part_summary_get"];
+        /**
+         * Write Part Summary
+         * @description Keep the author's own summary of a whole arc or beat.
+         */
+        put: operations["write_part_summary_api_v1_projects__project_id__plan__plan_id__part_summary_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/part-summary/suggest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suggest Part Summary
+         * @description Ask the assistant to suggest a summary of a whole arc or beat from its scenes' kept
+         *     summaries; nothing is used until the author keeps it.
+         */
+        post: operations["suggest_part_summary_api_v1_projects__project_id__plan__plan_id__part_summary_suggest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/part-summary/{summary_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decide Part Summary
+         * @description Keep a suggested summary of a whole arc or beat (as it is, or corrected), or not.
+         */
+        post: operations["decide_part_summary_api_v1_projects__project_id__plan__plan_id__part_summary__summary_id__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4077,6 +4188,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/voice/dismissals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Voice Note
+         * @description Dismiss a note on how the scene sounds, with a reason. Nothing is changed.
+         */
+        post: operations["dismiss_voice_note_api_v1_projects__project_id__plan__plan_id__voice_dismissals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/voice/dismissals/{dismissal_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Undo Voice Dismissal
+         * @description Bring a dismissed note on how the scene sounds back.
+         */
+        delete: operations["undo_voice_dismissal_api_v1_projects__project_id__plan__plan_id__voice_dismissals__dismissal_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/plan/{plan_id}/voice/usual": {
         parameters: {
             query?: never;
@@ -4226,6 +4377,27 @@ export interface paths {
         put?: never;
         /** Preview Revert */
         post: operations["preview_revert_api_v1_projects__project_id__reverts_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/review/calibration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Review Calibration
+         * @description How often each kind of advisory finding on the review screen was dismissed in this
+         *     story (CON-016): a note for the author; nothing about the checks changes.
+         */
+        get: operations["review_calibration_api_v1_projects__project_id__review_calibration_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4458,6 +4630,28 @@ export interface paths {
         get: operations["story_views_api_v1_projects__project_id__story_views_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/story-views/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check Story Views
+         * @description Check this line's ready views against the story's history now (owners and
+         *     administrators). A view that matches is used by reads from then on; one that differs
+         *     is built again and used only once it matches. Nothing in the story changes.
+         */
+        post: operations["check_story_views_api_v1_projects__project_id__story_views_check_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4816,6 +5010,79 @@ export interface paths {
         /** Set Unit */
         put: operations["set_unit_api_v1_projects__project_id__timeline_unit_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Upload
+         * @description Start a two-step picture upload (AST-002): say what it is for, its size and its
+         *     SHA-256. Refused before anything is sent when it is too large (413), there is no
+         *     room, or what it is for is not in the story. Then send the bytes with ``PUT`` to
+         *     ``send_to`` and finish with ``POST`` to ``finish_at``, within an hour.
+         */
+        post: operations["start_upload_api_v1_projects__project_id__uploads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/uploads/{upload_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Upload
+         * @description Where a two-step upload is. Only the person who started it can see it.
+         */
+        get: operations["get_upload_api_v1_projects__project_id__uploads__upload_id__get"];
+        /**
+         * Send Upload
+         * @description Send the picture itself as the request body. It is read as it streams in, never
+         *     past the size promised, and must match the size and SHA-256 promised; a
+         *     ``Content-Digest`` is checked too. When it does not match nothing is kept and it can
+         *     be sent again. It is not in the story until it is finished.
+         */
+        put: operations["send_upload_api_v1_projects__project_id__uploads__upload_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/uploads/{upload_id}/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Finish Upload
+         * @description Finish a two-step upload: the stored bytes are checked against what was promised
+         *     again, then the picture is shown on its entry or scene (``expected_revision`` is the
+         *     story's revision) or added as a new version of its picture. Asking again once it is
+         *     finished answers with what it made.
+         */
+        post: operations["finish_upload_api_v1_projects__project_id__uploads__upload_id__finish_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5340,6 +5607,16 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AboutModel
+         * @description A character of the scene that a finding names (CON-016).
+         */
+        AboutModel: {
+            /** Entity Id */
+            entity_id: string;
+            /** Name */
+            name: string;
+        };
         /** AcceptInvitationRequest */
         AcceptInvitationRequest: {
             /** Token */
@@ -5493,6 +5770,7 @@ export interface components {
         AmendEventOp: {
             /** Cause Ids */
             cause_ids?: string[] | null;
+            claim?: components["schemas"]["EventClaim"] | null;
             /** Evidence */
             evidence?: components["schemas"]["EvidenceRef"][];
             /** Id */
@@ -5796,6 +6074,8 @@ export interface components {
         };
         /** AssistantNoteModel */
         AssistantNoteModel: {
+            /** About */
+            about?: components["schemas"]["AboutModel"][] | null;
             /** Category */
             category: string;
             check_pass?: components["schemas"]["CheckPass"] | null;
@@ -5830,6 +6110,8 @@ export interface components {
         };
         /** AuditCheckModel */
         AuditCheckModel: {
+            /** About */
+            about?: components["schemas"]["AboutModel"][] | null;
             /**
              * Came Back
              * @default false
@@ -5908,6 +6190,8 @@ export interface components {
         };
         /** AuditNoteModel */
         AuditNoteModel: {
+            /** About */
+            about?: components["schemas"]["AboutModel"][] | null;
             /** Category */
             category: string;
             check_pass?: components["schemas"]["CheckPass"] | null;
@@ -6456,6 +6740,8 @@ export interface components {
         };
         /** CheckModel */
         CheckModel: {
+            /** About */
+            about?: components["schemas"]["AboutModel"][] | null;
             /**
              * Came Back
              * @default false
@@ -6493,6 +6779,8 @@ export interface components {
          * @description One named check that needs no model, in one scene of a run.
          */
         CheckWorkModel: {
+            /** Ms */
+            ms?: number | null;
             /** Name */
             name: string;
             /** Reused */
@@ -7364,6 +7652,11 @@ export interface components {
             files_removed: number;
             /** Lifecycle */
             lifecycle: string;
+            /**
+             * Notes Removed
+             * @default 0
+             */
+            notes_removed: number;
             /** Versions */
             versions: number;
         };
@@ -7498,8 +7791,18 @@ export interface components {
         DismissReason: "intended" | "not_a_problem" | "other";
         /** DismissRequest */
         DismissRequest: {
+            /**
+             * Applies
+             * @default scene
+             * @enum {string}
+             */
+            applies: "scene" | "character" | "range";
             /** Days */
             days?: (7 | 30) | null;
+            /** Entity Id */
+            entity_id?: string | null;
+            /** From Plan Id */
+            from_plan_id?: string | null;
             /** Key */
             key: string;
             /**
@@ -7508,12 +7811,16 @@ export interface components {
              */
             note: string;
             reason: components["schemas"]["DismissReason"];
+            /** To Plan Id */
+            to_plan_id?: string | null;
         };
         /**
          * DismissalModel
          * @description The author dismissed this finding, and why (CON-010, CON-016).
          */
         DismissalModel: {
+            /** Applies To */
+            applies_to?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -7529,6 +7836,56 @@ export interface components {
              */
             note: string;
             reason: components["schemas"]["DismissReason"];
+            /** Scope Id */
+            scope_id?: string | null;
+        };
+        /**
+         * DraftIntent
+         * @description What a drafted scene is for (STY-003), only where the author's own words say it.
+         *     Untrusted: each part is kept only when its words are found in what the author said.
+         */
+        DraftIntent: {
+            /**
+             * Goal
+             * @description What the viewpoint character wants in it
+             * @default
+             */
+            goal: string;
+            /**
+             * Goal Words
+             * @description The author's words that say it, copied exactly; else empty
+             * @default
+             */
+            goal_words: string;
+            /**
+             * Obstacle
+             * @description Who or what stands in their way
+             * @default
+             */
+            obstacle: string;
+            /**
+             * Obstacle Words
+             * @description The author's words that say it, copied exactly; else empty
+             * @default
+             */
+            obstacle_words: string;
+            /**
+             * Outcome
+             * @description How it ends for them: yes, no, yes_but or no_and; else empty
+             * @default
+             */
+            outcome: string;
+            /**
+             * Outcome Words
+             * @description The author's words that say it, copied exactly; else empty
+             * @default
+             */
+            outcome_words: string;
+            /**
+             * Ref
+             * @description The ref of a scene you draft
+             */
+            ref: string;
         };
         /** DraftModel */
         DraftModel: {
@@ -8697,6 +9054,10 @@ export interface components {
             applies_from?: {
                 [key: string]: unknown;
             } | null;
+            /** Applies Until */
+            applies_until?: {
+                [key: string]: unknown;
+            } | null;
             /** Asset Id */
             asset_id: string;
             /** Asset Version Id */
@@ -8717,6 +9078,8 @@ export interface components {
              * @default EVIDENCE_FOR
              */
             role: string;
+            /** Shows Version */
+            shows_version?: boolean | null;
             /** Target Id */
             target_id: string;
             /**
@@ -8733,6 +9096,10 @@ export interface components {
             applies_from?: {
                 [key: string]: unknown;
             } | null;
+            /** Applies Until */
+            applies_until?: {
+                [key: string]: unknown;
+            } | null;
             /** Expected Revision */
             expected_revision: number;
             /** Known By */
@@ -8742,6 +9109,8 @@ export interface components {
              * @default false
              */
             secret: boolean;
+            /** Version Id */
+            version_id?: string | null;
         };
         /** LinkRequest */
         LinkRequest: {
@@ -8838,6 +9207,11 @@ export interface components {
             beliefs_moved: string[];
             /** Change Count */
             change_count: number;
+            /**
+             * Claims Moved
+             * @default []
+             */
+            claims_moved: string[];
             /** Details */
             details: {
                 [key: string]: unknown;
@@ -9367,6 +9741,60 @@ export interface components {
             /** Together */
             together: string[];
         };
+        /** PartSummariesModel */
+        PartSummariesModel: {
+            /** Derived */
+            derived?: string | null;
+            kept?: components["schemas"]["PartSummaryModel"] | null;
+            /**
+             * Kept Out Of Date
+             * @default false
+             */
+            kept_out_of_date: boolean;
+            /** Kind */
+            kind: string;
+            /**
+             * Max Words
+             * @default 200
+             */
+            max_words: number;
+            /** Plan Id */
+            plan_id: string;
+            /** Scenes */
+            scenes: number;
+            /** Suggested */
+            suggested?: components["schemas"]["PartSummaryModel"][];
+            /** Title */
+            title: string;
+            /** Unsummarised */
+            unsummarised?: string[];
+        };
+        /** PartSummaryModel */
+        PartSummaryModel: {
+            /** Body */
+            body: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Id */
+            id: string;
+            /** Job Id */
+            job_id?: string | null;
+            /** Model */
+            model?: string | null;
+            /** Origin */
+            origin: string;
+            /** Prompt Version */
+            prompt_version?: string | null;
+            /** Scenes */
+            scenes: number;
+            /** State */
+            state: string;
+        };
         /**
          * PassEstimateModel
          * @description One pass of a check with the assistant: what it looks at and roughly what it uses.
@@ -9383,6 +9811,30 @@ export interface components {
             prompt_tokens: number;
             /** Total Tokens */
             total_tokens: number;
+        };
+        /**
+         * PassTimingModel
+         * @description One pass of a check with the assistant: how long it took and the calls it made.
+         */
+        PassTimingModel: {
+            /**
+             * Calls
+             * @default 0
+             */
+            calls: number;
+            /** Check Pass */
+            check_pass: string;
+            /**
+             * Earlier
+             * @default false
+             */
+            earlier: boolean;
+            /** Ms */
+            ms?: number | null;
+            /** Plan Id */
+            plan_id?: string | null;
+            /** Words */
+            words: string;
         };
         /** PassageModel */
         PassageModel: {
@@ -9444,6 +9896,16 @@ export interface components {
         PictureLinkModel: {
             /** Applies From */
             applies_from?: string | null;
+            /** Applies From Time */
+            applies_from_time?: {
+                [key: string]: unknown;
+            } | null;
+            /** Applies Until */
+            applies_until?: string | null;
+            /** Applies Until Time */
+            applies_until_time?: {
+                [key: string]: unknown;
+            } | null;
             /** Id */
             id: string;
             /** Known By */
@@ -9456,6 +9918,10 @@ export interface components {
             role_words: string;
             /** Secret */
             secret: boolean;
+            /** Shows Version */
+            shows_version?: number | null;
+            /** Shows Version Id */
+            shows_version_id?: string | null;
             /** Target Kind */
             target_kind: string;
             /** Target Name */
@@ -9464,6 +9930,8 @@ export interface components {
             target_record_id: string;
             /** Target Record Type */
             target_record_type: string;
+            /** Window */
+            window?: string | null;
         };
         /** PictureModel */
         PictureModel: {
@@ -9580,6 +10048,11 @@ export interface components {
              * @description What the author has not decided, left open rather than made up
              */
             gaps?: string[];
+            /**
+             * Intents
+             * @description For a drafted scene, what it is for, only where the author said so
+             */
+            intents?: components["schemas"]["DraftIntent"][];
             /** Items */
             items?: components["schemas"]["DraftPlanItem"][];
             /**
@@ -10057,6 +10530,8 @@ export interface components {
             end?: number | null;
             /** Expected Revision */
             expected_revision: number;
+            /** Scene Id */
+            scene_id?: string | null;
             /**
              * Start
              * @default 0
@@ -10354,6 +10829,28 @@ export interface components {
             from_revision: number;
             /** To Revision */
             to_revision?: number | null;
+        };
+        /** ReviewCalibrationList */
+        ReviewCalibrationList: {
+            /** Items */
+            items: components["schemas"]["ReviewCalibrationModel"][];
+        };
+        /** ReviewCalibrationModel */
+        ReviewCalibrationModel: {
+            /** Accepted */
+            accepted: number;
+            /** Code */
+            code: string;
+            /** Dismissed */
+            dismissed: number;
+            /** Found */
+            found: number;
+            /** Note */
+            note: string;
+            /** Rate */
+            rate?: number | null;
+            /** Words */
+            words: string;
         };
         /**
          * ReviewDecision
@@ -10699,6 +11196,11 @@ export interface components {
             status: string;
             /** Story Revision */
             story_revision: number;
+            /**
+             * Timings
+             * @default []
+             */
+            timings: components["schemas"]["PassTimingModel"][];
             /** Title */
             title: string;
         };
@@ -10751,6 +11253,11 @@ export interface components {
             reasons: string[];
             /** Source Id */
             source_id?: string | null;
+            /**
+             * Stages
+             * @default []
+             */
+            stages: components["schemas"]["StageModel"][];
             /** Stale */
             stale: boolean;
             /**
@@ -10931,6 +11438,8 @@ export interface components {
         };
         /** SceneVoiceModel */
         SceneVoiceModel: {
+            /** Attributed */
+            attributed?: number | null;
             /** Band Labels */
             band_labels: string[];
             /** Counted */
@@ -10939,7 +11448,7 @@ export interface components {
             left_out: boolean;
             /**
              * Measures Version
-             * @default voice/1
+             * @default voice/2
              */
             measures_version: string;
             /**
@@ -10953,6 +11462,8 @@ export interface components {
             notes: components["schemas"]["VoiceNoteModel"][];
             /** Plan Id */
             plan_id: string;
+            /** Speakers */
+            speakers?: components["schemas"]["SpeakerModel"][] | null;
             stats: components["schemas"]["VoiceStatsModel"] | null;
             /** Title */
             title: string;
@@ -11095,6 +11606,87 @@ export interface components {
             version: number;
             /** Workspace Id */
             workspace_id: string;
+        };
+        /** ScopedDismissRequest */
+        ScopedDismissRequest: {
+            /**
+             * Applies
+             * @enum {string}
+             */
+            applies: "character" | "range";
+            /** Code */
+            code: string;
+            /** Days */
+            days?: (7 | 30) | null;
+            /** Entity Id */
+            entity_id?: string | null;
+            /** From Plan Id */
+            from_plan_id?: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "check" | "note";
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            reason: components["schemas"]["DismissReason"];
+            /** To Plan Id */
+            to_plan_id?: string | null;
+        };
+        /** ScopedDismissalList */
+        ScopedDismissalList: {
+            /** Items */
+            items: components["schemas"]["ScopedDismissalModel"][];
+        };
+        /** ScopedDismissalModel */
+        ScopedDismissalModel: {
+            /**
+             * Applies
+             * @enum {string}
+             */
+            applies: "character" | "range";
+            /** Applies To */
+            applies_to: string;
+            /** Code */
+            code: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Entity Id */
+            entity_id?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
+            /** From Plan Id */
+            from_plan_id?: string | null;
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "check" | "note";
+            /**
+             * Lapsed
+             * @default false
+             */
+            lapsed: boolean;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            reason: components["schemas"]["DismissReason"];
+            /** Standing */
+            standing: boolean;
+            /** To Plan Id */
+            to_plan_id?: string | null;
+            /** Withdrawn At */
+            withdrawn_at?: string | null;
         };
         /** SectionModel */
         SectionModel: {
@@ -11280,6 +11872,41 @@ export interface components {
             fact: components["schemas"]["FactModel"];
             /** Starts */
             starts?: string | null;
+        };
+        /**
+         * SpeakerModel
+         * @description One character's dialogue in the scene, told by a speech tag or by turns (CON-018).
+         */
+        SpeakerModel: {
+            /** Compared */
+            compared: boolean;
+            /** Elsewhere */
+            elsewhere: number;
+            /** Lines */
+            lines: number;
+            /** Name */
+            name: string;
+            /** Sentence Mean */
+            sentence_mean: number;
+            /** Short Forms */
+            short_forms: number;
+            /** Words */
+            words: number;
+        };
+        /**
+         * StageModel
+         * @description One stage of the checks that need no model in one scene of a run (CON-001).
+         */
+        StageModel: {
+            /** Ms */
+            ms: number;
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "gather" | "checks" | "keep";
+            /** Words */
+            words: string;
         };
         /** StartWhatIfRequest */
         StartWhatIfRequest: {
@@ -11699,6 +12326,8 @@ export interface components {
             op: "update_entity";
             /** Slug */
             slug?: string | null;
+            /** Type */
+            type?: string | null;
         };
         /** UpdateEntityRequest */
         UpdateEntityRequest: {
@@ -11759,6 +12388,81 @@ export interface components {
             summary?: string | null;
             /** Title */
             title?: string | null;
+        };
+        /** UploadFinishedModel */
+        UploadFinishedModel: {
+            /** Link */
+            link?: {
+                [key: string]: unknown;
+            } | null;
+            upload: components["schemas"]["UploadModel"];
+            /** Version */
+            version: {
+                [key: string]: unknown;
+            };
+        };
+        /** UploadModel */
+        UploadModel: {
+            /** Asset Id */
+            asset_id?: string | null;
+            /** Byte Length */
+            byte_length: number;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Finish At */
+            finish_at: string;
+            /**
+             * For
+             * @enum {string}
+             */
+            for: "entity" | "scene" | "picture";
+            /** Id */
+            id: string;
+            /** Link Id */
+            link_id?: string | null;
+            /** Send To */
+            send_to: string;
+            /** Sha256 */
+            sha256: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "waiting" | "received" | "finishing" | "finished" | "expired";
+            /** Target Id */
+            target_id: string;
+            /** Version Id */
+            version_id?: string | null;
+        };
+        /** UploadReceivedModel */
+        UploadReceivedModel: {
+            /** Received */
+            received: {
+                [key: string]: unknown;
+            };
+            upload: components["schemas"]["UploadModel"];
+        };
+        /**
+         * UploadStartRequest
+         * @description Ask to send a picture in two steps (AST-002): what it is for and what will come.
+         */
+        UploadStartRequest: {
+            /** Byte Length */
+            byte_length: number;
+            /**
+             * For
+             * @enum {string}
+             */
+            for: "entity" | "scene" | "picture";
+            /** Id */
+            id: string;
+            /** Name */
+            name?: string | null;
+            /** Sha256 */
+            sha256: string;
         };
         /** UseComputerRequest */
         UseComputerRequest: {
@@ -11875,20 +12579,40 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** ViewCheckModel */
+        ViewCheckModel: {
+            /** Checked */
+            checked: number;
+            /** Differed */
+            differed: number;
+            /** Matched */
+            matched: number;
+            /** Skipped */
+            skipped: number;
+        };
         /** ViewStateModel */
         ViewStateModel: {
             /** Answers Reads */
             answers_reads: boolean;
             /** Behind */
             behind: number;
+            /** Built At */
+            built_at?: string | null;
             /** Differences */
             differences?: number | null;
+            /** Lag Seconds */
+            lag_seconds?: number | null;
             /** Latest Version */
             latest_version: number;
             /** Outcome */
             outcome?: ("matched" | "differed") | null;
             /** Rows */
             rows: number;
+            /**
+             * State
+             * @default
+             */
+            state: string;
             /** Trusted */
             trusted: boolean;
             /** Verified At */
@@ -11902,6 +12626,21 @@ export interface components {
         };
         /** ViewStatusModel */
         ViewStatusModel: {
+            /**
+             * How Built
+             * @default
+             */
+            how_built: string;
+            /**
+             * Line
+             * @default
+             */
+            line: string;
+            /**
+             * Main Story
+             * @default true
+             */
+            main_story: boolean;
             /** Views */
             views?: components["schemas"]["ViewStateModel"][];
         };
@@ -11919,6 +12658,19 @@ export interface components {
             /** Schema Version Id */
             schema_version_id: string | null;
         };
+        /** VoiceDismissRequest */
+        VoiceDismissRequest: {
+            /** Days */
+            days?: (7 | 30) | null;
+            /** Key */
+            key: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            reason: components["schemas"]["DismissReason"];
+        };
         /** VoiceModel */
         VoiceModel: {
             /**
@@ -11931,8 +12683,11 @@ export interface components {
         VoiceNoteModel: {
             /** Code */
             code: string;
+            dismissal?: components["schemas"]["DismissalModel"] | null;
             /** End */
             end?: number | null;
+            /** Key */
+            key?: string | null;
             /** Message */
             message: string;
             /** Start */
@@ -16459,6 +17214,104 @@ export interface operations {
             };
         };
     };
+    scoped_dismissals_api_v1_projects__project_id__dismissals_scoped_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScopedDismissalList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_scoped_dismissal_api_v1_projects__project_id__dismissals_scoped_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScopedDismissRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScopedDismissalModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_scoped_dismissal_api_v1_projects__project_id__dismissals_scoped__dismissal_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                dismissal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScopedDismissalModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     discard_draft_api_v1_projects__project_id__drafts__draft_id__delete: {
         parameters: {
             query?: never;
@@ -19989,6 +20842,145 @@ export interface operations {
             };
         };
     };
+    part_summary_api_v1_projects__project_id__plan__plan_id__part_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartSummariesModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    write_part_summary_api_v1_projects__project_id__plan__plan_id__part_summary_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WriteSummaryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartSummariesModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suggest_part_summary_api_v1_projects__project_id__plan__plan_id__part_summary_suggest_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_part_summary_api_v1_projects__project_id__plan__plan_id__part_summary__summary_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+                summary_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecideSummaryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartSummariesModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     set_arc_path_api_v1_projects__project_id__plan__plan_id__path_put: {
         parameters: {
             query?: never;
@@ -20658,6 +21650,75 @@ export interface operations {
             };
         };
     };
+    dismiss_voice_note_api_v1_projects__project_id__plan__plan_id__voice_dismissals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoiceDismissRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneVoiceModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_voice_dismissal_api_v1_projects__project_id__plan__plan_id__voice_dismissals__dismissal_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+                dismissal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneVoiceModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     count_scene_api_v1_projects__project_id__plan__plan_id__voice_usual_put: {
         parameters: {
             query?: never;
@@ -20926,6 +21987,37 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_calibration_api_v1_projects__project_id__review_calibration_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewCalibrationList"];
                 };
             };
             /** @description Validation Error */
@@ -21397,6 +22489,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ViewStatusModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_story_views_api_v1_projects__project_id__story_views_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewCheckModel"];
                 };
             };
             /** @description Validation Error */
@@ -22197,6 +23320,139 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UnitModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_upload_api_v1_projects__project_id__uploads_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_upload_api_v1_projects__project_id__uploads__upload_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                upload_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_upload_api_v1_projects__project_id__uploads__upload_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                upload_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadReceivedModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finish_upload_api_v1_projects__project_id__uploads__upload_id__finish_post: {
+        parameters: {
+            query?: {
+                expected_revision?: number | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                upload_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadFinishedModel"];
                 };
             };
             /** @description Validation Error */

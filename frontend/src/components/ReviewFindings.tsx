@@ -129,6 +129,9 @@ function IssueNotice({
       {finding?.came_back && (
         <p className="hint">Back again: this change or what it says has changed since you dismissed it.</p>
       )}
+      {finding && reviewed?.calibration(issue) && (
+        <p className="hint review-calibration">How often you dismiss this kind in this story: {reviewed.calibration(issue)}</p>
+      )}
       {editable && reviewed && finding && !open && (
         <button
           type="button"

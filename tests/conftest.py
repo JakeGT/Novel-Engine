@@ -354,6 +354,13 @@ def _build_fake_container(settings, tmp_path):
     review_dismissals = ReviewDismissalService(
         store=InMemoryReviewDismissalStore(), mutations=mutation_service, rules=rules
     )
+    from backend.services.scoped_dismissals import ScopedDismissalService
+    from tests.doubles import InMemoryScopedDismissalStore
+
+    scoped_dismissal_store = InMemoryScopedDismissalStore()
+    scoped_dismissals = ScopedDismissalService(store=scoped_dismissal_store, studio=studio_service)
+    studio_service.scoped = scoped_dismissals
+    canon_repository.scoped_dismissals = scoped_dismissal_store
     source_service.studio = studio_service
     from backend.services.assistant_settings_service import AssistantSettingsService, AssistBudget
     from tests.doubles import InMemoryAssistantSettingsStore
@@ -459,6 +466,20 @@ def _build_fake_container(settings, tmp_path):
     )
     scene_summaries.register_jobs()
     context_service.summaries = scene_summaries
+    from backend.services.scene_summaries import PartSummaryService
+    from tests.doubles import InMemoryPartSummaryStore
+
+    # Summaries of whole arcs and beats, on the scenes' kept summaries (CTX-006).
+    scene_summaries.parts = PartSummaryService(
+        store=InMemoryPartSummaryStore(),
+        scenes=scene_summaries,
+        runner=job_runner,
+        ai=ai,
+        settings=settings,
+        credentials=credential_service,
+        usage=usage_service,
+    )
+    scene_summaries.parts.register_jobs()
     equivalence_service = CanonEquivalenceService(
         canon=canon_repository, journal=journal, writer=canon_writer
     )
@@ -635,6 +656,7 @@ def _build_fake_container(settings, tmp_path):
         consistency_run_store=consistency_run_store,
         consistency_runs=consistency_runs,
         review_dismissals=review_dismissals,
+        scoped_dismissals=scoped_dismissals,
         scene_reading=scene_reading,
         scene_plan_card=scene_plan_card,
         planning_help=planning_help,

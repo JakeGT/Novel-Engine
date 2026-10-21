@@ -178,3 +178,74 @@ Reranking for Reordering Documents and Producing Summaries", SIGIR 1998
 and outbox relays with leases and at-least-once delivery
 (https://milanjovanovic.tech/blog/pessimistic-locking-ef-core-postgresql,
 https://pkg.go.dev/github.com/gopherex/pg-outbox).
+
+## Amendment (2026-10-21): story time, whole parts and nearby scenes (CTX-004, CTX-005, CTX-006, CTX-006A, CTX-007, CTX-012, OPS-007)
+
+**Story time as a filter (CTX-004).** Policy `scene-draft/3` gains `later_in_story_time`:
+`leave_out` (the default) or `lower`. Material drawn from another scene that is certainly later
+in the story's time than the scene being written (its interval starts after this scene's ends)
+is marked `later`. Under `leave_out`, `assemble` lists it as left out with the reason `later`
+("From later in the story's time than this scene") unless the author pins it, so a jump forward
+the reader has already met never feeds knowledge of the future into a draft silently, and the
+author can still choose it. Search by meaning never scores those texts at all: the filter is a
+set of text ids worked out from the plan at query time and passed as the existing `source_id`
+filter in the same scan as the ranking, for the same reason as the point-of-view filter (a
+scene's time can change without its prose being read again, so it is not written onto the
+rows). At most five such passages are listed, so they never take a place from what may be given.
+Material that only *may* be later (its time overlaps this one's, or is open-ended) is given,
+lowered ×0.75 with a note. The scene just before keeps its "how it ends" item whatever its time:
+it is what the reader has just read. Under `lower`, certainly later material is weighed ×0.5.
+
+**Two clocks (CTX-007).** Reading order already decays prose (half every four scenes back). The
+second clock is the story's time, after Genette's distinction between the order of the story and
+the order of its telling (*Narrative Discourse*, 1980; a flashback or a jump forward is where they
+part). Prose, summaries and event blocks from a scene placed before this one lose half their
+weight every quarter of the time the line's placed scenes span (so the decay fits a story of days
+or of centuries without a unit-specific constant), never below 0.5: a deliberate jump back is
+still worth something. The two weights multiply, like two decay functions in a search engine's
+scoring, each halving at its own scale (Elasticsearch `function_score` decay functions with
+`decay: 0.5` at `scale`); recency decay over time for memory retrieval is also how Park et al.'s
+generative agents rank memories (exponential, per game hour). Each is its own signal with its
+own sentence ("It is four scenes back." / "In the story's time it happens 4 years before this
+scene."). With fewer than two placed scenes, or no time on this one, the second clock is silent.
+
+**Summaries of whole arcs and beats (CTX-006; migration `0056_context_remainders`).** A part
+(story, arc or beat) is summarised from the kept summaries of its scenes, never its prose, the
+bottom-up shape of recursive summarisation (Wu et al., "Recursively Summarizing Books with Human
+Feedback", 2021; RAPTOR, Sarthi et al., 2024). Without a model the summary is those scene
+summaries in reading order, cut at 150 words, always current. The author can keep their own, or
+ask the assistant (`part-summary/1`, the scene summaries fenced as material, cost first and every
+spending control) and keep, correct or turn down the suggestion. `part_summaries` records which
+scene summaries a kept one stands on (`basis`, and its fingerprint); when any of them is kept anew,
+replaced or dropped the part summary is out of date: still given, lowered by 1, and said so. A
+scene's context gives up to three earlier parts that do not hold the scene, whose scenes all come
+before it, and at least one of them further back than the five scenes given one by one; a part
+overlapping one already chosen is left to it (nearest and smallest first). Lines of the story and
+the archive behave as for scene summaries; kept ones travel in the same archive list, marked
+`"part": true`, and their fingerprint is worked out again on restore.
+
+**The ends of other recent scenes (CTX-006A).** Besides the scene just before, the last 120 words
+of up to two scenes from two to eight scenes back are given ("How other recent scenes end"), when
+they are seen through the same eyes or on one of this scene's threads; one through other eyes
+carries the warning in its words. They are ordinary items under the budget, decayed by both
+clocks and subject to the story-time policy; passages inside them are not given twice.
+
+**Operations (CTX-005, CTX-012, OPS-007).** `/health/ready` gains an optional `passage_index`
+part (texts waiting, the oldest wait, how many failed; degraded after 15 minutes; counts only,
+never which story), and the `search_index` part reports `caption_lag` and `picture_lag` beside
+`lag`. `SEARCH_INDEX_CATCH_UP_MINUTES` (0, off, by default) runs `make reindex-refresh`'s work in
+the background with `JobRunner.every`: only into the index in use when it is the configured
+model's, looking at up to 50 stories a round (taking turns) and bringing up to three of them up to
+date.
+
+**Measured.** The retrieval evaluation's numbers did not move (its scenes have story times but no
+scene prose, and no parts): recall 1.0, Recall@5 0.793, Recall@10 1.0, MRR 1.0, precision 1.0, no
+leaks, no silent omissions. The weights are starting values on the stand-ins only.
+
+Sources: Genette, *Narrative Discourse: An Essay in Method* (Cornell, 1980), summarised at
+https://literariness.org/2016/12/03/gerard-genette-and-structural-narratology/; Elasticsearch decay
+functions (https://www.elastic.co/guide/en/elasticsearch/guide/current/decay-functions.html); Park
+et al., "Generative Agents: Interactive Simulacra of Human Behavior" (https://arxiv.org/abs/2304.03442);
+Wu et al., "Recursively Summarizing Books with Human Feedback" (https://arxiv.org/abs/2109.10862);
+Sarthi et al., "RAPTOR: Recursive Abstractive Processing for Tree-Organized Retrieval"
+(https://arxiv.org/abs/2401.18059).

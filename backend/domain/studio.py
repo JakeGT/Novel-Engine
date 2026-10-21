@@ -78,6 +78,10 @@ class SceneReading:
     # The [start, end] spans of the version read so far.
     covered: tuple[tuple[int, int], ...] = ()
     base_reading_id: str | None = None
+    # Thread steps found but not suggested yet (EXT-007): (thread, step, where, and for a
+    # thread the scene opens, its suggested title and summary). Kept so a reading stopped
+    # part way passes them to the next instead of losing them.
+    steps: tuple[tuple[str, str, str, str, str], ...] = ()
 
 
 __all__ = [

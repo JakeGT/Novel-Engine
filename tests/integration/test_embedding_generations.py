@@ -381,3 +381,18 @@ async def test_build_switch_and_search_with_real_gates(disposable_database) -> N
     restored = await service.rollback()
     assert restored.id == old.id
     assert store.get(new.id).state is GenerationState.RETIRED  # type: ignore[union-attr]
+
+
+def test_one_server_at_a_time_holds_the_catch_up_lock(disposable_database) -> None:  # type: ignore[no-untyped-def]
+    dsn = disposable_database.psycopg_dsn
+    first, second = PgEmbeddingIndexStore(dsn), PgEmbeddingIndexStore(dsn)
+    held = first.hold_lock("embedding-catch-up")
+    assert held is not None
+    assert second.hold_lock("embedding-catch-up") is None
+    other = second.hold_lock("something else")
+    assert other is not None
+    second.release_lock(other)
+    first.release_lock(held)
+    again = second.hold_lock("embedding-catch-up")
+    assert again is not None
+    second.release_lock(again)

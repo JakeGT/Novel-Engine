@@ -23,6 +23,8 @@ from backend.domain.identity import AccessScope
 from backend.services.review_dismissals import ReviewDismissalService, ReviewFinding
 
 router = APIRouter(prefix="/projects/{project_id}/mutations/{mutation_id}", tags=["review"])
+# How often each kind of finding on the review screen is dismissed, across the story.
+calibration_router = APIRouter(prefix="/projects/{project_id}", tags=["review"])
 
 
 def get_review_dismissals(container: Container = Depends(get_container)) -> ReviewDismissalService:
@@ -118,3 +120,41 @@ async def undo_review_dismissal(
 ) -> ReviewFindingList:
     """Bring a dismissed finding back. The dismissal stays on record, withdrawn."""
     return _list(await service.undo(scope, mutation_id, dismissal_id))
+
+
+class ReviewCalibrationModel(BaseModel):
+    code: str
+    words: str
+    found: int
+    dismissed: int
+    accepted: int
+    rate: float | None = None
+    note: str
+
+
+class ReviewCalibrationList(BaseModel):
+    items: list[ReviewCalibrationModel]
+
+
+@calibration_router.get("/review/calibration")
+async def review_calibration(
+    project_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    service: ReviewDismissalService = Depends(get_review_dismissals),
+) -> ReviewCalibrationList:
+    """How often each kind of advisory finding on the review screen was dismissed in this
+    story (CON-016): a note for the author; nothing about the checks changes."""
+    return ReviewCalibrationList(
+        items=[
+            ReviewCalibrationModel(
+                code=line.code,
+                words=line.words,
+                found=line.found,
+                dismissed=line.dismissed,
+                accepted=line.accepted,
+                rate=line.rate,
+                note=line.note,
+            )
+            for line in await service.calibration(scope)
+        ]
+    )

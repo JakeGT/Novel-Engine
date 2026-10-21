@@ -472,7 +472,7 @@ def apply_operations(world: World, operations: Sequence[CanonOperation]) -> Worl
             if current is not None:
                 after.entries[operation.id] = WorldEntry(
                     current.id,
-                    current.type,
+                    operation.type or current.type,
                     operation.name or current.name,
                     current.tags if operation.attributes is None else _tags(operation.attributes),
                 )

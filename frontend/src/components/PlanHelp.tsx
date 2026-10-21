@@ -137,13 +137,15 @@ export function SuggestIntent({ scene }: { scene: PlanItem }) {
 }
 
 /** One or two scenes to come before this one and bring about what it needs (STY-004). */
-export function SuggestBridges({ scene, index }: { scene: PlanItem; index: number }) {
+export function SuggestBridges({ scene, index, preferred = false }: { scene: PlanItem; index: number; preferred?: boolean }) {
   const { scope } = useProject()
   return (
     <HelpOffer
-      offer="Suggest a scene to bridge this"
+      offer={preferred ? 'Suggest a scene to bring this about' : 'Suggest a scene to bridge this'}
       what={() =>
-        `The assistant reads what this needs, the scenes around “${scene.title}” and the entries involved, and suggests one or two scenes to come just before it.`
+        preferred
+          ? `The scene would rather have this, though it does not need it. The assistant reads it, the scenes around “${scene.title}” and the entries involved, and suggests one or two scenes to come just before it.`
+          : `The assistant reads what this needs, the scenes around “${scene.title}” and the entries involved, and suggests one or two scenes to come just before it.`
       }
       estimateKey={['plan-help', 'bridges', scene.id, index, JSON.stringify(scene.conditions)]}
       estimate={() => api.bridgeEstimate(scope, scene.id, index)}

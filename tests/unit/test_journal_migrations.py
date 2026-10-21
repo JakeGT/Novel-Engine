@@ -26,7 +26,7 @@ def test_canon_scope_migration_is_registered() -> None:
 
 
 def test_postgres_head_is_canon_journal() -> None:
-    assert postgres_head_revision() == "0055_voice_and_audits"
+    assert postgres_head_revision() == "0058_media_remainders"
 
 
 def test_graph_layer_never_uses_elementid() -> None:

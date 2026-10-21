@@ -9,9 +9,10 @@ one makes it a new version that remembers the job and exact context it came from
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -125,6 +126,9 @@ class StudioState:
     dismissals: dict[str, FindingDismissal] = field(default_factory=dict)
     # Findings dismissed before and back because what they say has changed (CON-016).
     came_back: set[str] = field(default_factory=set)
+    # The scene's characters each finding names, by fingerprint: whom it can be
+    # dismissed for, wherever it is about them (CON-016).
+    about: dict[str, list[tuple[str, str]]] = field(default_factory=dict)
     # How much checking runs on its own in this story, and what it has used here (CON-009).
     checking: Checking | None = None
     # What saving or keeping just now did about an automatic check (see ``AUTOMATIC``).
@@ -276,6 +280,8 @@ class StudioService:
         self.controls = controls
         # Where checks are kept as runs (CON-001); None keeps no record.
         self.runs: Any = None
+        # Dismissals for a character or a stretch of the story (CON-016).
+        self.scoped: Any = None
         self._store = store
         self._sources = sources
         self._plan = plan
@@ -470,6 +476,43 @@ class StudioService:
                 earlier = state.dismissals.get(old_key)
                 if earlier is not None:
                     state.dismissals[key] = earlier
+        await self._mark_scoped(workspace_id, project_id, state, checks, notes)
+
+    async def _mark_scoped(
+        self,
+        workspace_id: str,
+        project_id: str,
+        state: StudioState,
+        checks: list[tuple[str, DraftFinding]],
+        notes: list[tuple[str, AssistantFinding, str]],
+    ) -> None:
+        """Findings a wider dismissal covers (a character, a stretch of the story), and the
+        scene's characters each finding names, so it can be dismissed for them (CON-016)."""
+        if self.scoped is None:
+            return
+        from backend.services.scoped_dismissals import finding_words
+
+        scoping = await self.scoped.scoping(workspace_id, project_id)
+        people = list(
+            dict.fromkeys(
+                [*state.scene.refs_as("point_of_view"), *state.scene.refs_as("participant")]
+            )
+        )
+        found = [
+            (key, FindingKind.CHECK, check.code, finding_words(check.subject))
+            for key, check in checks
+        ] + [
+            (key, FindingKind.NOTE, note.check_pass or note.category, note.message)
+            for _text, note, key in notes
+        ]
+        for key, kind, code, words in found:
+            state.about[key] = scoping.about(words, people, kind)
+            if key in state.dismissals:
+                continue
+            covering = scoping.covering(state.scene.id, kind, code, words)
+            if covering is not None:
+                state.dismissals[key] = replace(covering, fingerprint=key)
+                state.came_back.discard(key)
 
     async def dismiss(
         self,
@@ -482,9 +525,17 @@ class StudioService:
         reason: DismissReason,
         note: str = "",
         days: int | None = None,
+        applies: str = "scene",
+        entity_id: str | None = None,
+        from_plan_id: str | None = None,
+        to_plan_id: str | None = None,
     ) -> StudioState:
         """Dismiss a check or a note on this scene, with a reason. It stays dismissed while
-        the words it points at are unchanged, or until it runs out."""
+        the words it points at are unchanged, or until it runs out.
+
+        With ``applies`` "character" or "range", this kind of finding is dismissed wider
+        than this scene: wherever it is about that character (one this finding names), or
+        in every scene from one to another (CON-016)."""
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         state = await self.state(scope, workspace_id, project_id, plan_id)
         found = state.keys().get(key)
@@ -492,6 +543,30 @@ class StudioService:
             raise NotFoundError(
                 "That finding is no longer there: the words it was about may have changed."
             )
+        if applies != "scene":
+            if self.scoped is None:
+                raise ValidationError("This can only be dismissed for this scene here.")
+            from backend.domain.dismissals import DismissalScope
+
+            if applies == "character" and entity_id not in {
+                entity for entity, _name in state.about.get(key, [])
+            }:
+                raise ValidationError("Choose someone this finding is about.")
+            await self.scoped.add(
+                scope,
+                workspace_id,
+                project_id,
+                kind=found[0],
+                code=found[1],
+                applies=DismissalScope(applies),
+                reason=reason,
+                note=note,
+                days=days,
+                entity_id=entity_id,
+                from_plan_id=from_plan_id,
+                to_plan_id=to_plan_id,
+            )
+            return await self.state(scope, workspace_id, project_id, plan_id)
         note = " ".join(note.split())
         if reason is DismissReason.OTHER and not note:
             raise ValidationError("Say in a few words why this is not a problem.")
@@ -562,9 +637,15 @@ class StudioService:
         plan_id: str,
         dismissal_id: str,
     ) -> StudioState:
-        """Bring a dismissed finding back. The dismissal stays on record, withdrawn."""
+        """Bring a dismissed finding back. The dismissal stays on record, withdrawn. A wider
+        dismissal (a character, a stretch of the story) is withdrawn everywhere it applied."""
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         await self._scene(scope, workspace_id, project_id, plan_id)
+        if self.scoped is not None and await self.scoped.has(
+            workspace_id, project_id, dismissal_id
+        ):
+            await self.scoped.withdraw(scope, workspace_id, project_id, dismissal_id)
+            return await self.state(scope, workspace_id, project_id, plan_id)
         withdrawn = await self._store.withdraw_dismissal(
             workspace_id=workspace_id,
             project_id=project_id,
@@ -744,7 +825,9 @@ class StudioService:
         if words is not None:
             changes["words_asked"] = words
         brief = DraftBrief(**{**brief.__dict__, **changes})
-        return check_draft(content, brief, mentions)
+        # The checks are plain Python over the whole text: run apart from the event loop
+        # so a long scene does not hold up every other request.
+        return await asyncio.to_thread(check_draft, content, brief, mentions)
 
     # ------------------------------------------------------------------ writing
 

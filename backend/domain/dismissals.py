@@ -28,6 +28,7 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -73,6 +74,10 @@ class FindingDismissal:
     # A digest of what the finding said when dismissed; None for a note, or one dismissed
     # before this was kept.
     depends_on: str | None = None
+    # For a finding dismissed by a wider dismissal (``ScopedDismissal``): its id and what
+    # it applies to, in words. Never stored on a scene's own dismissal.
+    scope_id: str | None = None
+    applies_to: str = ""
 
     def applies(self, now: datetime) -> bool:
         if self.withdrawn_at is not None:
@@ -103,6 +108,82 @@ class ReviewDismissal:
     @property
     def standing(self) -> bool:
         return self.withdrawn_at is None
+
+
+class DismissalScope(StrEnum):
+    # Everywhere the finding is about one character.
+    CHARACTER = "character"
+    # In every scene from one to another, in reading order.
+    RANGE = "range"
+
+
+# How many wider dismissals one line of the story may hold, standing or not.
+MAX_SCOPED_DISMISSALS = 300
+
+
+@dataclass(frozen=True)
+class ScopedDismissal:
+    """One kind of finding dismissed wider than one scene (CON-016): wherever it is about
+    one character, or in a stretch of scenes. It holds for findings found later too, until
+    it runs out or is withdrawn. A finding is about a character when what it says names
+    them (by any of their names here); a scene is in a stretch by reading order now, so
+    a scene moved into it is covered and one moved out is not."""
+
+    workspace_id: str
+    project_id: str
+    branch_id: str
+    id: str
+    kind: FindingKind
+    # The check's code or the note's pass.
+    code: str
+    scope: DismissalScope
+    reason: DismissReason
+    note: str
+    created_at: datetime
+    entity_id: str | None = None
+    from_plan_id: str | None = None
+    to_plan_id: str | None = None
+    expires_at: datetime | None = None
+    created_by: str | None = None
+    withdrawn_at: datetime | None = None
+
+    def applies(self, now: datetime) -> bool:
+        if self.withdrawn_at is not None:
+            return False
+        return self.expires_at is None or self.expires_at > now
+
+
+def names_someone(words: str, names: tuple[str, ...] | list[str]) -> bool:
+    """Whether some words name someone, by any of their names, as whole words."""
+    folded = unicodedata.normalize("NFC", words).casefold()
+    for name in names:
+        name = " ".join(name.split()).casefold()
+        if name and re.search(rf"(?<![\w]){re.escape(name)}(?![\w])", folded):
+            return True
+    return False
+
+
+def scope_covers(
+    dismissal: ScopedDismissal,
+    *,
+    kind: FindingKind,
+    code: str,
+    about: Collection[str] = (),
+    position: int | None = None,
+    span: tuple[int, int] | None = None,
+) -> bool:
+    """Whether a wider dismissal covers one finding: the same kind and code, and either
+    the finding is about the character (``about``: the entry ids of whom it is about,
+    never merely whom it mentions), or the scene's ``position`` in reading order falls
+    in the stretch (``span``: the positions of its first and last scene, now)."""
+    if dismissal.kind is not kind or dismissal.code != code:
+        return False
+    if dismissal.scope is DismissalScope.CHARACTER:
+        return bool(dismissal.entity_id) and dismissal.entity_id in about
+    if position is None or span is None:
+        return False
+    low, high = min(span), max(span)
+    return low <= position <= high
 
 
 def review_fingerprint(mutation_id: str, operation: str, code: str, occurrence: int = 0) -> str:
@@ -155,6 +236,17 @@ def fingerprint(kind: FindingKind, code: str, subject: str, passage: str) -> str
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def voice_fingerprint(code: str, subject: str, message: str, passage: str) -> str:
+    """A voice note's fingerprint. A note on a passage is known by that sentence. A note
+    on the whole scene has no passage, so a digest of what it says stands in for one, and
+    two such notes of one kind and subject never share a dismissal; its numbers are left
+    out, so a dismissal holds while only they move."""
+    if not passage:
+        said = re.sub(r"\d[\d,.]*", "#", _normal(message).casefold())
+        passage = "scene:" + hashlib.sha256(said.encode("utf-8")).hexdigest()
+    return fingerprint(FindingKind.CHECK, code, subject, passage)
+
+
 def expiry(now: datetime, days: int | None) -> datetime | None:
     if days is None:
         return None
@@ -167,12 +259,18 @@ __all__ = [
     "EXPIRY_DAYS",
     "MAX_DISMISSALS_PER_SCENE",
     "MAX_NOTE",
+    "MAX_SCOPED_DISMISSALS",
     "DismissReason",
+    "DismissalScope",
     "FindingDismissal",
     "FindingKind",
     "ReviewDismissal",
+    "ScopedDismissal",
+    "names_someone",
+    "scope_covers",
     "anchor",
     "expiry",
     "fingerprint",
     "review_fingerprint",
+    "voice_fingerprint",
 ]

@@ -34,6 +34,9 @@ CANON_PROJECT_TABLES: tuple[str, ...] = (
     "finding_dismissals",
     # Advisory findings on a proposal in review the author dismissed (CON-016).
     "review_dismissals",
+    # Dismissals for a character or a stretch of the story, and review findings seen (CON-016).
+    "scoped_dismissals",
+    "review_finding_seen",
     "scene_readings",
     "draft_findings",
     "scene_drafts",
@@ -43,8 +46,12 @@ CANON_PROJECT_TABLES: tuple[str, ...] = (
     # The passage index's waiting list (CTX-005) and summaries of scenes (CTX-006).
     "passage_index_waiting",
     "scene_summaries",
+    # Summaries of whole arcs and beats (CTX-006).
+    "part_summaries",
     "context_manifests",
     "media_lifecycle_events",
+    # Two-step picture uploads waiting to be finished (AST-002): no story words.
+    "media_uploads",
     "media_observations",
     "media_segments",
     "media_variants",

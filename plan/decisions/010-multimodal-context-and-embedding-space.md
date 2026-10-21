@@ -465,3 +465,62 @@ versions and rights; descriptors opened before are not restricted; `stat` cannot
 (allows `landlock_*`, `prctl` and `seccomp`; `unshare` and `clone3` gated on `CAP_SYS_ADMIN`);
 [Docker, seccomp security profiles](https://docs.docker.com/engine/security/seccomp/);
 [Pillow security handbook](https://pillow.readthedocs.io/en/latest/handbook/security.html).
+
+## Amendment 2026-10-21 (batch 9 C): picture time windows, two-step uploads, notes of deleted pictures
+
+**Time applicability (AST-001).** A picture link applies for a window of story time: `applies_from`
+(batch 6) and now `applies_until`, a `[from, until)` window read like a fact's span (`link_applies_at`
+in `backend/domain/media.py`). A scene set outside the window is not given the picture; one whose
+time cannot settle it is given it with a note saying so; a window that ends before it starts is
+refused. A version of a picture applies for a story time through its link: a link can show one
+version (`shows_version`, with `asset_version_id`) instead of following the newest, so "Mara as a
+child" and "Mara grown" are two links of one picture, each with its own window and version. Links
+made before this keep following the newest version (the column defaults to false, and an upload's
+link names its version only as a record). Both fields are optional operation fields omitted while
+unset (ADR-015), so earlier envelopes keep their checksums. Versions themselves stay immutable and
+carry no time: when a version applies is a statement about the story, so it is a reviewed link.
+
+**Two-step upload (AST-002).** `POST /uploads` states what the picture is for (an entry, a scene, or
+a new version of a picture already in the story), its size and its SHA-256; it is refused before
+any byte is sent when too large (413), when the workspace has no room, when what it is for is not
+in the story, or when 20 are already on their way. `PUT` to the address it answers with streams the
+bytes, read never past the promised size, checked against the promised size and digest (and any
+`Content-Digest`, RFC 9530), and staged; `POST …/finish` re-reads the staged bytes, checks them
+against the promise again, takes hidden details out as for any picture and shows it (one reviewed
+link change) or adds the version. A received upload claims "finishing" with a conditional update,
+so two finishes never make two pictures; asking again once finished answers with what it made.
+Unfinished uploads expire after an hour and their staged file is removed by a sweep the job runner
+runs every five minutes (`JobRunner.every`); a staged file left by a crash falls to the batch-6
+orphan retention after its grace period. Only the person who started an upload can see or move it.
+The one-step upload stays for small pictures. Not built: resuming a partly sent upload (the bytes go
+in one request; a failed send is sent again whole), and hosted scanning. Resumption was left out on
+purpose: pictures are at most 8 MB, and the IETF resumable-uploads draft (104 Upload Resumption
+Supported, `Upload-Offset`) is still a draft; when the limit grows, that draft is the shape to
+follow rather than a protocol of our own.
+
+**What a model said about a deleted picture (AST-008).** Deleting a picture's files now first
+removes its observations (captions and details, whatever the author decided); their search rows go
+with the versions (`on_versions_removed`, caption rows carry the version). A `notes_removed` audit
+event records how many (`item_count`), never the words. Proposals already made from an observation
+stay: they are the author's own review records. Provider-upload cleanup is still moot: no provider
+keeps an upload.
+
+Sources consulted: [tus resumable upload protocol 1.0](https://tus.io/protocols/resumable-upload)
+(creation states `Upload-Length` first; checksum and expiration extensions; an unfinished upload may
+cease to exist); [IETF draft, Resumable Uploads for HTTP](https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-resumable-upload/)
+(104 status, `Upload-Complete`, `Upload-Offset`; still a draft); [Amazon S3, checking object
+integrity on upload](https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity-upload.html)
+(the server computes the checksum itself and refuses a mismatch before storing; a presigned PUT does
+not bind the digest, so the server must check what arrived, as finish does here).
+
+## Amendment 2026-10-21: audio and video deferred past release one (owner decision)
+
+The owner decided on 2026-10-21 that audio and video are deferred past release one; pictures stay
+the only media. The decision above to "deliver image ingestion/retrieval first, followed by audio
+and video on the same asset, segment, context-part, authorization, and provenance contracts"
+still describes the order, but audio and video are no longer release-one work: no audio or video
+upload, processing, transcripts, segments, embeddings, retrieval, context delivery or checks.
+What exists stays as it is: `AudioPart` and `VideoPart` are declared and never sent, and every
+embedding adapter refuses audio, video and interleaved inputs. Backlog items that list audio or
+video (CTX-011–CTX-014, AST-003, AST-005, CON-008, CON-014, SCN-002) now say so instead of
+listing them as not built. Recorded in `11-decisions-and-questions.md`.

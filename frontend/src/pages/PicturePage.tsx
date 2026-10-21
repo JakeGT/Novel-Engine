@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   api,
@@ -8,6 +8,7 @@ import {
   type PictureChoice,
   type PictureLink,
   type PictureObservation,
+  uploadApi,
   type WorldTime,
 } from '../api/client'
 import { JobProgress } from '../components/StudioWork'
@@ -110,7 +111,11 @@ function linkTarget(projectId: string, link: PictureLink): string {
     : `/projects/${projectId}/entries/${link.target_record_id}`
 }
 
-/** Who may know what the picture shows here, and from when it applies. */
+const asTime = (value: unknown): WorldTime | null =>
+  value && typeof value === 'object' && 'kind' in value ? (value as WorldTime) : null
+const placed = (value: WorldTime | null): WorldTime | null => (value && value.kind !== 'unknown' ? value : null)
+
+/** Who may know what the picture shows here, for which story time, and which version. */
 function LinkChange({ picture, link, onDone }: { picture: Picture; link: PictureLink; onDone: () => void }) {
   const { scope } = useProject()
   const client = useQueryClient()
@@ -118,14 +123,19 @@ function LinkChange({ picture, link, onDone }: { picture: Picture; link: Picture
   const clock = useStoryClock(scope)
   const [secret, setSecret] = useState(link.secret)
   const [knownBy, setKnownBy] = useState<string[]>(link.known_by)
-  const [from, setFrom] = useState<WorldTime | null>(null)
+  // What is set now, to change (AST-001).
+  const [from, setFrom] = useState<WorldTime | null>(asTime(link.applies_from_time))
+  const [until, setUntil] = useState<WorldTime | null>(asTime(link.applies_until_time))
+  const [versionId, setVersionId] = useState<string>(link.shows_version_id ?? '')
   const characters = entries.items.filter((entry) => entry.type === 'Character' && entry.lifecycle !== 'retired')
   const save = useMutation({
     mutationFn: () =>
       pictureApi.changeLink(scope, picture.asset_id, link.id, {
         secret,
         known_by: secret ? knownBy : [],
-        applies_from: from && from.kind !== 'unknown' ? from : null,
+        applies_from: placed(from),
+        applies_until: placed(until),
+        version_id: versionId || null,
         expected_revision: picture.revision,
       }),
     onSuccess: (next) => {
@@ -177,7 +187,30 @@ function LinkChange({ picture, link, onDone }: { picture: Picture; link: Picture
         unit={clock.unit}
         events={clock.events}
       />
-      <p className="hint">Leave the time as “Not said” for a picture that is true throughout the story.</p>
+      <WhenField
+        legend="No longer shows them from this story time on"
+        value={until}
+        onChange={setUntil}
+        unit={clock.unit}
+        events={clock.events}
+      />
+      <p className="hint">
+        Leave both times as “Not said” for a picture that is true throughout the story. A scene set
+        outside these times is not given the picture.
+      </p>
+      {picture.versions.length > 1 && (
+        <label className="stack tight">
+          <span>Which version it shows</span>
+          <select value={versionId} onChange={(event) => setVersionId(event.target.value)}>
+            <option value="">The newest (version {picture.version.version}), as it changes</option>
+            {picture.versions.map((item) => (
+              <option key={item.id} value={item.id}>
+                Always version {item.version}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <ErrorNotice error={save.error} prefix="Could not change this" />
       <div className="picture-actions">
         <Button type="submit" variant="primary" disabled={save.isPending}>
@@ -210,7 +243,7 @@ function WhereShown({ picture }: { picture: Picture }) {
                 </span>
                 {canWrite && changing !== link.id && (
                   <Button size="sm" onClick={() => setChanging(link.id)}>
-                    Change who knows and when
+                    Change who knows, when and which version
                   </Button>
                 )}
               </div>
@@ -220,12 +253,66 @@ function WhereShown({ picture }: { picture: Picture }) {
                     ? `Secret: only ${link.known_by_names.join(', ')} ${link.known_by_names.length === 1 ? 'knows' : 'know'} what it shows.`
                     : 'Secret: for the author alone.'
                   : 'Anyone in the story may know what it shows.'}{' '}
-                {link.applies_from ? `It shows them from ${link.applies_from} on.` : 'It holds throughout the story.'}
+                {link.window ? `It shows them ${link.window}.` : 'It holds throughout the story.'}{' '}
+                {link.shows_version ? `It always shows version ${link.shows_version}.` : ''}
               </p>
               {changing === link.id && <LinkChange picture={picture} link={link} onDone={() => setChanging(null)} />}
             </li>
           ))}
         </ul>
+      )}
+    </section>
+  )
+}
+
+/** A new version of the picture, sent in two checked steps (AST-002). */
+function NewVersion({ picture }: { picture: Picture }) {
+  const { scope, canWrite } = useProject()
+  const client = useQueryClient()
+  const input = useRef<HTMLInputElement>(null)
+  const [done, setDone] = useState<number | null>(null)
+  const add = useMutation({
+    mutationFn: (file: File) => uploadApi.upload(scope, { for: 'picture', id: picture.asset_id }, file),
+    onSuccess: (made) => {
+      setDone(Number(made.version.version))
+      void client.invalidateQueries({ queryKey: scopedKey(scope, 'picture-page', picture.asset_id) })
+      void client.invalidateQueries({ queryKey: scopedKey(scope, 'pictures') })
+    },
+  })
+  if (!canWrite) return null
+  return (
+    <section className="picture-section" aria-labelledby="picture-new-version">
+      <h2 id="picture-new-version">Add a new version</h2>
+      <p className="hint">
+        PNG, JPEG or WebP, up to 8 MB. Where it is shown stays the same: places that show the newest
+        version show this one; a place set to always show one version keeps it.
+      </p>
+      <input
+        ref={input}
+        className="sr-only"
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        aria-label={`Choose a new version of “${picture.name}”`}
+        tabIndex={-1}
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          event.target.value = ''
+          if (file) {
+            setDone(null)
+            add.mutate(file)
+          }
+        }}
+      />
+      <div className="picture-actions">
+        <Button icon="image" disabled={add.isPending} onClick={() => input.current?.click()}>
+          {add.isPending ? 'Adding the new version…' : 'Add a new version'}
+        </Button>
+      </div>
+      <ErrorNotice error={add.error} prefix="Could not add the new version" />
+      {done !== null && (
+        <p className="small" role="status">
+          Added as version {done}. It was checked against what was sent before it was kept.
+        </p>
       )}
     </section>
   )
@@ -591,6 +678,7 @@ export function PicturePage() {
           <Describe picture={found} marked={marked} onMark={setMarked} />
           <ContextChoice picture={found} />
           <WhereShown picture={found} />
+          <NewVersion picture={found} />
           {found.versions.length > 1 && (
             <p className="small muted">
               Older versions: {found.versions.slice(1).map((item) => `version ${item.version}`).join(', ')}. What

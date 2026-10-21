@@ -13,13 +13,29 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
+from decimal import Decimal
 from typing import Any
 
-from backend.domain.appearance import AppearanceDetail, detail_words
+from backend.domain.appearance import AgeKnown, AppearanceDetail, detail_words
 from backend.domain.canon.plans import PlanItem
-from backend.domain.continuity import POSSESSION_KINDS, counts_whole_units
-from backend.domain.drafting import AfterShown, DraftBrief, Holding, TimeNeighbour, days_between
+from backend.domain.continuity import (
+    AGE_KINDS,
+    BIRTH_KINDS,
+    BIRTH_ROLES,
+    PLAIN_LIFE_KINDS,
+    POSSESSION_KINDS,
+    counts_whole_units,
+)
+from backend.domain.drafting import (
+    AfterShown,
+    DraftBrief,
+    Holding,
+    Supply,
+    TimeNeighbour,
+    days_between,
+)
 from backend.domain.knowledge import reading_order, scene_time
+from backend.domain.media import link_applies_at
 from backend.domain.media_observations import ObservationKind
 from backend.domain.scene_conditions import condition_reading, scene_conditions
 from backend.domain.worldtime import (
@@ -27,9 +43,7 @@ from backend.domain.worldtime import (
     Interval,
     Truth,
     describe,
-    parse_world_time,
     resolve,
-    span_of,
     true_at,
 )
 from backend.services.story_time_service import Story, anchor_lookup, event_times, fact_span
@@ -113,7 +127,9 @@ async def add_prose_signals(
     brief.after = _after(scene, story, first)
     brief.previous = _previous(scene, items, times, unit, story)
     brief.holdings = _holdings(story, moment, set(people), first, names_of, brief)
+    brief.supplies = _supplies(story, moment, first, names_of, unit, brief)
     brief.appearance = _appearance(story, moment, people, first, names_of)
+    brief.ages = _ages(story, when, people, first, names_of, unit)
     if pictures is not None:
         brief.appearance.extend(
             await _pictures_seen(
@@ -176,8 +192,21 @@ def _previous(
         return None
     whole = counts_whole_units(unit)
     days = days_between((then_at.lo, then_at.hi), (this_at.lo, this_at.hi), unit, whole=whole)
+    # In the story's own units, whatever they are: "chapter 3" after "chapter 4" is
+    # before it even when a chapter has no length in days.
+    reach = 1.0 if whole else 0.0
+    then_hi = then_at.hi + (reach if whole and float(then_at.hi).is_integer() else 0)
+    this_hi = this_at.hi + (reach if whole and float(this_at.hi).is_integer() else 0)
+    apart = (this_at.lo - then_hi, this_hi - then_at.lo)
+    event_names = {event.id: event.name for event in story.events}
     if days is None:
-        return None
+        return TimeNeighbour(
+            title=before.title,
+            days=None,
+            this_when=describe(this_when, unit=unit, event_name=event_names.get),
+            then_when=describe(then_when, unit=unit, event_name=event_names.get),
+            apart=apart,
+        )
     same_day: bool | None = None
     word = unit.strip().lower().removesuffix("s")
     if (
@@ -189,13 +218,13 @@ def _previous(
         and float(then_when.at).is_integer()
     ):
         same_day = this_when.at == then_when.at
-    event_names = {event.id: event.name for event in story.events}
     return TimeNeighbour(
         title=before.title,
         days=days,
         same_day=same_day,
         this_when=describe(this_when, unit=unit, event_name=event_names.get),
         then_when=describe(then_when, unit=unit, event_name=event_names.get),
+        apart=apart,
     )
 
 
@@ -252,6 +281,90 @@ def _holdings(
     return found
 
 
+def _number(value: Any) -> float | None:
+    """A finite number from a fact's value (an integer, a decimal or a quantity), or None."""
+    if isinstance(value, bool) or not isinstance(value, int | float | Decimal | str):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+# Kinds of fact that say how many of a thing there are (SCN-007), as the author names
+# them: "has quantity", "count", "amount", "how many".
+QUANTITY_KINDS = frozenset(
+    {
+        "HAS_QUANTITY",
+        "QUANTITY",
+        "HAS_COUNT",
+        "COUNT",
+        "HAS_AMOUNT",
+        "AMOUNT",
+        "HAS_SUPPLY",
+        "SUPPLY",
+        "HOW_MANY",
+        "NUMBER_OF",
+    }
+)
+_COUNTABLE = frozenset({"Object", "Resource"})
+
+
+def _supplies(
+    story: Story,
+    moment: Interval | None,
+    first: dict[str, str],
+    names_of: dict[str, tuple[str, ...]],
+    unit: str,
+    brief: DraftBrief,
+) -> list[Supply]:
+    """How many of each thing there are at the scene's time: a fact of a kind that says
+    so, with a number, certainly true then. Two such facts true at once say nothing."""
+    times = event_times(story.events)
+    event_names = {event.id: event.name for event in story.events}
+    amounts: dict[str, list[tuple[float, Any]]] = {}
+    for fact in story.facts:
+        subject = fact.proposition.subject_id
+        entity = story.entities.get(subject)
+        if (
+            fact.closed_revision is not None
+            or fact.proposition.predicate not in QUANTITY_KINDS
+            or entity is None
+            or entity.type not in _COUNTABLE
+            or subject not in first
+            or not _true_then(fact_span(fact, times), moment)
+        ):
+            continue
+        value = _number(getattr(fact.proposition.object, "value", None))
+        if value is None or value < 0:
+            continue
+        amounts.setdefault(subject, []).append((value, fact))
+    found: list[Supply] = []
+    for thing, rows in sorted(amounts.items()):
+        if len({value for value, _fact in rows}) != 1:
+            continue
+        value, fact = rows[0]
+        since = (
+            f" (from {describe(fact.starts, unit=unit, event_name=event_names.get)})"
+            if fact.starts is not None
+            else ""
+        )
+        found.append(
+            Supply(
+                first[thing],
+                names_of.get(thing, (first[thing],)),
+                value,
+                source=f"the story bible{since}",
+                key=fact.id,
+            )
+        )
+        brief.ids.setdefault(first[thing], thing)
+        if len(found) >= MAX_HOLDINGS:
+            break
+    return found
+
+
 def _appearance(
     story: Story,
     moment: Interval | None,
@@ -290,6 +403,122 @@ def _appearance(
     return found
 
 
+# Just short of the next whole unit: "year 5" is any time in year 5.
+_WITHIN = 1e-6
+
+
+def _widened(interval: Interval | None, when: Any, whole: bool) -> Interval | None:
+    if interval is None or math.isinf(interval.lo) or math.isinf(interval.hi):
+        return None
+    hi = interval.hi
+    if (
+        whole
+        and float(hi).is_integer()
+        and (isinstance(when, At) or getattr(when, "latest", None) is not None)
+    ):
+        hi = hi + 1 - _WITHIN
+    return Interval(interval.lo, hi)
+
+
+def _ages(
+    story: Story,
+    when: Any,
+    people: Sequence[str],
+    first: dict[str, str],
+    names_of: dict[str, tuple[str, ...]],
+    unit: str,
+) -> list[AgeKnown]:
+    """How old each person in the scene can be at its time, in a story counted in years:
+    from a birth placed in story time, or an age the author gave from a time (CON-004).
+    Nothing when the story is not counted in years or the scene has no time."""
+    if " ".join(unit.lower().split()).removesuffix("s") != "year" or when is None:
+        return []
+    times = event_times(story.events)
+    lookup = anchor_lookup(times)
+    whole = counts_whole_units(unit)
+    scene_at = _widened(resolve(when, lookup).interval, when, whole)
+    if scene_at is None:
+        return []
+    names = {event.id: event.name for event in story.events}
+    scene_words = describe(when, unit=unit, event_name=names.get)
+    wanted = set(people)
+    found: list[AgeKnown] = []
+
+    def add(subject: str, born_lo: float, born_hi: float, because: str, key: str) -> None:
+        lo = math.floor(scene_at.lo - born_hi + 1e-9)
+        hi = math.floor(scene_at.hi - born_lo + 1e-9)
+        if hi < 0 or lo > hi:
+            return
+        found.append(
+            AgeKnown(
+                who=first[subject],
+                names=names_of.get(subject, (first[subject],)),
+                lo=max(lo, 0),
+                hi=hi,
+                because=because,
+                key=key,
+            )
+        )
+
+    for event in story.events:
+        kind = " ".join(str(event.kind).lower().split())
+        if kind not in BIRTH_KINDS:
+            continue
+        characters = [
+            item
+            for item in event.participants
+            if story.entities.get(item.entity_id) is not None
+            and story.entities[item.entity_id].type == "Character"
+        ]
+        whose = [item.entity_id for item in characters if str(item.role).lower() in BIRTH_ROLES]
+        if not whose and len(characters) == 1 and kind in PLAIN_LIFE_KINDS:
+            whose = [characters[0].entity_id]
+        born = _widened(times[event.id].interval, event.when, whole) if event.id in times else None
+        if born is None:
+            continue
+        for subject in dict.fromkeys(whose):
+            if subject in wanted and subject in first:
+                add(
+                    subject,
+                    born.lo,
+                    born.hi,
+                    f"“{event.name}” is {describe(event.when, unit=unit, event_name=names.get)} "
+                    f"and this scene is {scene_words}",
+                    event.id,
+                )
+    for fact in story.facts:
+        subject = fact.proposition.subject_id
+        if (
+            fact.closed_revision is not None
+            or fact.proposition.predicate not in AGE_KINDS
+            or fact.starts is None
+            or subject not in wanted
+            or subject not in first
+        ):
+            continue
+        obj = fact.proposition.object
+        said_unit = getattr(obj, "unit", None)
+        if said_unit is not None and str(said_unit).lower().removesuffix("s") != "year":
+            continue
+        value = _number(getattr(obj, "value", None))
+        if value is None or value < 0 or not value.is_integer():
+            continue
+        start = _widened(resolve(fact.starts, lookup).interval, fact.starts, whole)
+        if start is None:
+            continue
+        # Aged v at some time in [start]: born after start.lo - v - 1, by start.hi - v.
+        add(
+            subject,
+            start.lo - value - 1 + _WITHIN,
+            start.hi - value,
+            f"the story bible gives {first[subject]}'s age as {int(value)} from "
+            f"{describe(fact.starts, unit=unit, event_name=names.get)} and this scene is "
+            f"{scene_words}",
+            fact.id,
+        )
+    return found
+
+
 async def _pictures_seen(
     reader: Any,
     pictures: Any,
@@ -313,7 +542,8 @@ async def _pictures_seen(
     )
     wanted = set(people)
     lookup = anchor_lookup(times)
-    asset_ids: list[str] = []
+    # Picture -> the versions its links show (None: its newest), as the context does.
+    versions: dict[str, set[str | None]] = {}
     for link in links:
         if not link.is_active:
             continue
@@ -321,18 +551,21 @@ async def _pictures_seen(
         of_person = link.target_record_type != "plan_item" and link.target_record_id in wanted
         if not (on_scene or of_person):
             continue
-        if link.applies_from is not None and moment is not None:
-            start = parse_world_time(link.applies_from)
-            if (
-                start is not None
-                and true_at(span_of(resolve(start, lookup), None), moment) is Truth.FALSE
-            ):
-                continue
-        asset_ids.append(link.asset_id)
-    asset_ids = list(dict.fromkeys(asset_ids))
-    if not asset_ids:
+        if moment is not None and link_applies_at(link, moment, lookup) is Truth.FALSE:
+            continue
+        versions.setdefault(link.asset_id, set()).add(
+            link.asset_version_id if link.shows_version else None
+        )
+    if not versions:
         return []
-    shown = await pictures.for_context(workspace_id, project_id, asset_ids)
+    # AST-001: a picture whose links all show one version is read at that version, so the
+    # details checked against the prose are the ones that version shows.
+    pinned = {
+        asset_id: next(iter(shown_versions))
+        for asset_id, shown_versions in versions.items()
+        if len(shown_versions) == 1 and None not in shown_versions
+    }
+    shown = await pictures.for_context(workspace_id, project_id, list(versions), pinned=pinned)
     observations = await store.for_assets(
         workspace_id=workspace_id, project_id=project_id, asset_ids=list(shown)
     )
@@ -360,4 +593,4 @@ async def _pictures_seen(
     return found
 
 
-__all__ = ["GONE_WORDS", "add_prose_signals"]
+__all__ = ["GONE_WORDS", "QUANTITY_KINDS", "add_prose_signals"]

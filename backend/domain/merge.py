@@ -125,7 +125,10 @@ class MergePreview:
     plan_items: list[str] = field(default_factory=list)
     links_moved: list[str] = field(default_factory=list)
     links_ended: list[tuple[str, str]] = field(default_factory=list)
-    # Records that keep naming the merged entry (claims keep their words).
+    # Claims (what a character said) rewritten to name the kept entry, by event id.
+    claims_moved: list[str] = field(default_factory=list)
+    # Records that keep naming the merged entry: a claim that would name the kept entry
+    # twice keeps its words.
     still_naming: list[tuple[str, str]] = field(default_factory=list)
 
     @property
@@ -139,6 +142,7 @@ class MergePreview:
             + len(self.plan_items)
             + len(self.links_moved)
             + len(self.links_ended)
+            + len([i for i in self.claims_moved if i not in self.events])
         )
 
 
@@ -473,9 +477,18 @@ def expand(
 
     event_changes: list[CanonOperation] = []
     for event in records.events:
-        if _claim_names(event, merged_id):
-            preview.still_naming.append(("event", event.id))
+        claim = None
+        if event.claim is not None and _claim_names(event, merged_id):
+            said = _moved(event.claim.proposition, merged_id, keep_id)
+            if said.subject_id == _entity_target(said):
+                # Saying the kept entry is related to itself means nothing: kept as said.
+                preview.still_naming.append(("event", event.id))
+            else:
+                claim = event.claim.model_copy(update={"proposition": said})
+                preview.claims_moved.append(event.id)
         if not _event_names(event, merged_id):
+            if claim is not None:
+                event_changes.append(AmendEventOp(id=event.id, claim=claim, evidence=evidence))
             continue
         participants: list[EventParticipant] = []
         seen: set[str] = set()
@@ -497,6 +510,7 @@ def expand(
                 location_ids=locations if locations != list(event.location_ids) else None,
                 cause_ids=causes if causes != list(event.cause_ids) else None,
                 outcome_ids=outcomes if outcomes != list(event.outcome_ids) else None,
+                claim=claim,
                 evidence=evidence,
             )
         )
@@ -549,6 +563,8 @@ def expand(
                 visibility=link.visibility if link.visibility != "open" else None,
                 known_by=known_by,
                 applies_from=link.applies_from,
+                applies_until=link.applies_until,
+                shows_version=link.shows_version or None,
                 evidence=evidence,
             )
         )
@@ -602,6 +618,7 @@ def _after(records: MergeRecords, earlier: Sequence[CanonOperation]) -> MergeRec
             or op.location_ids is not None
             or op.cause_ids is not None
             or op.outcome_ids is not None
+            or op.claim is not None
         ):
             people[op.id] = op
     merged_id = records.merged.id
@@ -633,6 +650,7 @@ def _after(records: MergeRecords, earlier: Sequence[CanonOperation]) -> MergeRec
                     "outcome_ids": event.outcome_ids
                     if change.outcome_ids is None
                     else list(change.outcome_ids),
+                    "claim": event.claim if change.claim is None else change.claim,
                 }
             )
         if _event_names(event, merged_id) or _claim_names(event, merged_id):

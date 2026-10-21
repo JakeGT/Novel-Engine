@@ -171,8 +171,10 @@ test('later scenes get earlier ones as summaries, events and prose, and say why 
   await expect(earlier.getByText(/It is two scenes back/).first()).toBeVisible()
   const before = dialog.getByRole('region', { name: 'How the scene before ends' })
   await expect(before.getByText(/and Bram Ottery did not come\./)).toBeVisible()
-  const writing = dialog.getByRole('region', { name: /From your writing/ })
-  await expect(writing.getByText(/which opens the thread “The missing ledger”/).first()).toBeVisible()
+  // The thread's opening scene is two back on the same thread: its ending is given once, under
+  // the nearby scenes, rather than again among the author's other writing.
+  const nearby = dialog.getByRole('region', { name: 'How other recent scenes end' })
+  await expect(nearby.getByText(/The shelf where the ledger lived was bare\./)).toBeVisible()
   await expect(dialog.getByText('Raised: Important to you').first()).toBeVisible()
   await expectAccessible(page)
   await earlier.scrollIntoViewIfNeeded()

@@ -28,7 +28,7 @@ The author chooses an autonomy profile. AI may draft, analyze, retrieve, and pro
 2. Ask the project useful questions that expose missing or contradictory world design.
 3. Plan arcs, beats, scenes, conflicts, promises, reveals, and payoffs against the current world state.
 4. Assemble trustworthy context for a scene from explicit entities, current state, point-of-view knowledge, relevant history, and narrative intent.
-5. Organize and retrieve character, location, object, map, audio, and video references as scoped evidence rather than disconnected uploads.
+5. Organize and retrieve character, location, object, and map pictures as scoped evidence rather than disconnected uploads. Audio and video references are deferred past release one (owner decision 2026-10-21).
 6. Draft or revise prose while respecting constraints and established voice.
 7. Review proposed state changes before accepting them into canon.
 8. Explore alternatives on a branch without damaging the main timeline.
@@ -75,8 +75,8 @@ author will keep using.
 - Linear timeline plus branch creation and comparison
 - Story hierarchy: story, arc, beat, scene plan, scene
 - Context preview with inclusion reasons and token budget
-- Project media library for images, audio, and video with explicit entity/scene links, provenance, authority, and branch/time/POV applicability
-- Cross-modal retrieval and capability-aware context delivery with visible caption/transcript fallback
+- Project media library for images with explicit entity/scene links, provenance, authority, and branch/time/POV applicability (audio and video deferred past release one, owner decision 2026-10-21)
+- Cross-modal retrieval and capability-aware context delivery with visible caption fallback
 - One primary model provider behind an internal provider interface
 - OpenRouter cloud routing plus an OpenAI-compatible local-provider path
 - Structured model outputs with retry and validation

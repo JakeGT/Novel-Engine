@@ -64,7 +64,11 @@ restarted.
 
 **Behind** (`lag` above zero; a restore, or pictures and captions that arrived while the worker
 was down): `make reindex-refresh` (after a restore, `REINDEX_ARGS=--from-texts`). It only adds
-what is missing.
+what is missing. Readiness's `search_index` part says how much of the lag is media
+(`caption_lag`, `picture_lag`). To have the server do this by itself, set
+`SEARCH_INDEX_CATCH_UP_MINUTES` (0, off, by default): between jobs it looks at up to 50 stories a
+round, taking turns, and brings up to three of them up to date in the index in use, only when that
+index is the configured model's (log event `embedding.caught_up`, counts only).
 
 **A build left waiting** (`building_generation` set, nothing running): continue it with
 `python -m backend.devtools.embeddings build --resume`, or remove it with
@@ -85,8 +89,9 @@ Saving a text puts it on `passage_index_waiting`; the background worker (the sam
 keeps the graph up to date, every two seconds) reads it into the passage index. Nothing here
 can lose a text: the index is derived and can always be rebuilt.
 
-**How you notice.** The scene's context says "N texts you changed are still being read in…"
-for more than a minute or two, or "could not be read and will be tried again";
+**How you notice.** Readiness's optional `passage_index` part is degraded (the oldest text has
+waited more than 15 minutes; counts only); the scene's context says "N texts you changed are
+still being read in…" for more than a minute or two, or "could not be read and will be tried again";
 `GET /api/v1/projects/{id}/texts-index` shows `waiting`, `waiting_seconds` and `failing`;
 `passage_index_deliveries_total{outcome="failed"}` rises; logs show `passages.index_failed`
 or `passages.worker.poll_error` (error type only, never the words).

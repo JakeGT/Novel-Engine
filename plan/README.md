@@ -35,6 +35,7 @@ Read in this order:
 26. [Phase 2.5 todo](phase-2.5-todo.md) — assistant-led creation: what is built, what is partial, and what is next.
 22. [Phase 2 todo](phase-2-todo.md) — execution plan and completion dashboard for governed schema, revisioned canon, mutation review and commits, evidence assets, authoring UI, and archive recovery. Evidence: [phase-2-evidence.md](phase-2-evidence.md).
 23. [Author rules, canon queries, and derived views](18-author-rules-canon-queries-and-derived-views.md) — story invariants, explanation/history queries, reader disclosure, scene contracts, derived projections, MCP, and suppressions.
+- Later phase checklists: [2.6](phase-2.6-todo.md), [2.7](phase-2.7-todo.md), [4](phase-4-todo.md), [5](phase-5-todo.md), [6](phase-6-todo.md), [7](phase-7-todo.md). The [backlog](10-backlog.md) is the current status of every item.
 - [Recovery runbooks](runbooks/README.md) — what to do when a migration fails, work piles up, the graph is behind, a provider is down, a restore or import is needed, the disk fills, or the credential key must change (OPS-004).
 
 Architectural decisions that become settled should be recorded in `decisions/` using [the ADR template](decisions/000-template.md).
@@ -52,7 +53,7 @@ Architectural decisions that become settled should be recorded in `decisions/` u
 - **Open source and hosted use share one core.** Self-hosted local identity and invite-only portfolio identity enter the same scoped application contracts.
 - **Tenancy is explicit; commerce is absent.** Hosted workspace isolation is foundational, while billing and platform-funded inference are not release dependencies.
 - **Consistency is tiered.** Cheap deterministic checks run continuously; paid model audits escalate only where they add value.
-- **Context is multimodal and authority-aware.** Text, images, audio, and video retain original evidence, explicit links, provenance, branch/time/POV scope, and honest provider fallbacks.
+- **Context is multimodal and authority-aware.** Text and images retain original evidence, explicit links, provenance, branch/time/POV scope, and honest provider fallbacks. Audio and video are deferred past release one (owner decision 2026-10-21).
 
 ## Status vocabulary
 
@@ -64,7 +65,7 @@ Architectural decisions that become settled should be recorded in `decisions/` u
 | Implemented | Acceptance criteria and quality gates pass. |
 | Deferred | Intentionally excluded from the current release. |
 
-Core domain decisions are recorded under `decisions/`. ADR-008 proposes the open-source/free distribution pivot, ADR-009 accepts invite-only tenancy through shared portfolio identity (Authentik), ADR-010 accepts multimodal context with a shared embedding-space boundary, ADR-012 makes PostgreSQL authoritative canon with Neo4j as a replayable projection (superseding ADR-011), and ADR-013 accepts warning-default declarative story invariants while making built-in integrity checks permanently blocking. ADR-014 (review workflow and high-impact gate), ADR-015 (entity handles, evidence, and checksum-stable operation evolution), and ADR-016 (projection isolation, verified restore, and legacy archives) were accepted on 2026-10-10. ADR-017 (assistant-first interaction and progressive disclosure) is accepted in effect: the owner directed work to continue on the revised plan on 2026-10-10. Licensing and governance remain owner decisions in `11-decisions-and-questions.md`.
+Core domain decisions are recorded under `decisions/`. ADR-008 proposes the open-source/free distribution pivot, ADR-009 accepts invite-only tenancy through shared portfolio identity (Authentik), ADR-010 accepts multimodal context with a shared embedding-space boundary, ADR-012 makes PostgreSQL authoritative canon with Neo4j as a replayable projection (superseding ADR-011), and ADR-013 accepts warning-default declarative story invariants while making built-in integrity checks permanently blocking. ADR-014 (review workflow and high-impact gate), ADR-015 (entity handles, evidence, and checksum-stable operation evolution), and ADR-016 (projection isolation, verified restore, and legacy archives) were accepted on 2026-10-10. ADR-017 (assistant-first interaction and progressive disclosure) is accepted in effect: the owner directed work to continue on the revised plan on 2026-10-10. ADR-018–024 (plan records, source texts and rules as data, story time and what-ifs, scene context, the scene studio, scenes back into the story, connected assistants) were accepted or accepted in effect between 2026-10-11 and 2026-10-18; ADR-025 (the local model connector) is proposed. Licensing and governance remain owner decisions in `11-decisions-and-questions.md`.
 
 ## Current repository baseline
 
@@ -93,19 +94,26 @@ interface, and assisted creation with the to-fill-in list (not yet verified with
 The plan was audited and revised on 2026-10-10 to be assistant-first with a gentle learning curve
 (ADR-017, documents 19 and 20, and the audit record).
 
-Built on 2026-10-17: Phase 3 (story time, what-ifs, who knows what, the reader's ledger,
-record-level rebasing); see `phase-3-todo.md` and ADR-020. Phase 4 (explainable scene context and
-the passage index; ADR-021, `phase-4-todo.md`) and Phase 5 (the scene studio: drafts, checks and jobs;
-ADR-022, `phase-5-todo.md`).
+Built on 2026-10-10/11: Phases 2.5 (assistant-led creation), 2.6 (story planning) and 2.7 (text
+intake). Built on 2026-10-17: Phase 3 (story time, what-ifs, who knows what, the reader's ledger,
+record-level rebasing; ADR-020), Phase 4 (explainable scene context and the passage index;
+ADR-021), Phase 5 (the scene studio: drafts, checks and jobs; ADR-022) and Phase 6 (scenes read
+back into the story; ADR-023). Phase 7 (release hardening) is in progress with its code-side items
+done. Nine batches of open release-one items followed (2026-10-18 to 2026-10-21):
+pictures prepared in a sandboxed worker, searched by meaning, given to the assistant and checked
+against prose; generation-versioned search indexes and evaluation sets; consistency profiles,
+dismissals in one scene and beyond it, incremental checks and check history; ready views; planning
+help; voice measures and scheduled audits; a connector for a model on the author's own computer;
+and key rotation. `HANDOFF.md` has each batch.
 
-Not yet built (later phases, as resequenced):
+Still open:
 
-- real-provider verification, stored conversations, starting from a premise, link suggestions,
-  grouped review, first-run, levels (Phase 2.5)
-- story structure and story planning through conversation (Phase 2.6)
-- manuscript import, extraction/entity-resolution evaluation, story rules, scene contracts
-  (Phase 2.7)
-- media ingestion/processing (Phase 4 remainder)
-- consistency profiles and suppressions (Phase 5 remainder) and extraction-to-commit from scenes
-  (Phase 6, `phase-6-todo.md`)
-- production operations, backup automation, and release hardening (Phase 7)
+- **Real models.** Every assistant path has run against the scripted model and the local stand-in
+  only; quality with a real model is unmeasured (owner runs).
+- **Owner and operational items:** a licence and governance, the first hosted CI run, the restore
+  drill on a clean host, installing scheduled backups, identity recovery and MFA policy, and the
+  PostgreSQL row-level security decision.
+- **Remaining limits** listed per item in the backlog: search by meaning is off on the hosted site,
+  no streaming, no hosted malware scanning, MCP without OAuth sign-in.
+- **Deferred past release one by owner decision (2026-10-21):** audio and video (pictures are the
+  only media), and Google Docs, DOCX and LaTeX import (pasted text and Markdown are the ways in).

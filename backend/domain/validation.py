@@ -277,6 +277,19 @@ class ValidationContext:
     predicate_specs: dict[str, PredicateSpec] = field(default_factory=dict)
 
 
+def _window_backwards(start: object, end: object) -> bool:
+    """Whether a picture link's window certainly ends before (or as) it starts (AST-001).
+
+    Only plain times are compared; one relative to an event is left to be placed later."""
+    if start is None or end is None:
+        return False
+    first = resolve(parse_world_time(start), lambda _event: False).interval
+    last = resolve(parse_world_time(end), lambda _event: False).interval
+    if first is None or last is None:
+        return False
+    return last.hi <= first.lo
+
+
 def _ref_keys(refs: Sequence[Any]) -> set[tuple[str, str]]:
     return {(ref.entity_id, ref.role) for ref in refs}
 
@@ -378,6 +391,38 @@ def _only_fills_intent(
     )
 
 
+# A new type is checked against every current fact and belief, read at once; a story with
+# more than this many of either is refused rather than checked in part (AST-EXP-017).
+MAX_RETYPE_RECORDS = 100_000
+
+
+def _retyped_details(error: PydanticValidationError, new_type: str) -> str:
+    """Why an entry's details do not suit the type it is given, in plain words."""
+    kind = new_type.lower()
+    extra = [str(item["loc"][0]) for item in error.errors() if item["type"] == "extra_forbidden"]
+    missing = [str(item["loc"][0]) for item in error.errors() if item["type"] == "missing"]
+    wrong = [
+        str(item["loc"][0])
+        for item in error.errors()
+        if item["type"] not in ("extra_forbidden", "missing") and item["loc"]
+    ]
+
+    def listed(keys: list[str]) -> str:
+        return ", ".join(f"“{key}”" for key in dict.fromkeys(keys))
+
+    said: list[str] = []
+    if extra:
+        said.append(
+            f"a {kind} has no detail{'s' if len(extra) != 1 else ''} {listed(extra)}; remove "
+            f"{'them' if len(extra) != 1 else 'it'} in the same change, or keep the type"
+        )
+    if missing:
+        said.append(f"a {kind} needs {listed(missing)}; add it in the same change")
+    if wrong:
+        said.append(f"{listed(wrong)} does not suit a {kind}; change it in the same change")
+    return "; ".join(said) or f"the entry's details do not suit a {kind}"
+
+
 class AuthoritativeValidator:
     """Pure, deterministic canon validation over an ordered operation set.
 
@@ -432,6 +477,8 @@ class AuthoritativeValidator:
         # the batch, so a one-at-a-time kind can be checked span against span.
         open_by_key: dict[tuple[str, str], dict[str, Fact]] = {}
         created_record_ids: set[str] = set()
+        # Entries given a new type in this set (AST-EXP-017): id -> (operation, new type).
+        retyped: dict[str, tuple[int, str]] = {}
 
         async def entity(entity_id: str) -> CanonEntity | None:
             if entity_id not in entities:
@@ -888,6 +935,55 @@ class AuthoritativeValidator:
                         f"predicate {spec.predicate!r} does not accept target type {target.type!r}",
                     )
 
+        async def validate_swapped(index: int, before: Any, after: Any) -> None:
+            """A claim naming another entry in place of one it named: the new entry must be
+            in the story and, unless it is of the same type as the one it replaces, fit."""
+            spec = context.predicate_specs.get(after.predicate) or CORE_PREDICATES.get(
+                after.predicate
+            )
+            if after.subject_id != before.subject_id:
+                subject = await require_active_entity(index, after.subject_id, "subject")
+                old = await entity(before.subject_id)
+                if (
+                    subject is not None
+                    and spec is not None
+                    and (old is None or old.type != subject.type)
+                    and subject.type not in spec.subject_types
+                ):
+                    blocking(
+                        index,
+                        "invalid_proposition",
+                        f"predicate {spec.predicate!r} does not accept subject type "
+                        f"{subject.type!r}",
+                    )
+            old_target = (
+                before.object.entity_id if isinstance(before.object, EntityRefObject) else None
+            )
+            if isinstance(after.object, EntityRefObject):
+                if after.object.entity_id == old_target:
+                    return
+                if after.object.project_id != context.project_id:
+                    blocking(index, "cross_project_reference", "entity reference crosses project")
+                    return
+                target = await require_active_entity(
+                    index, after.object.entity_id, "object reference"
+                )
+                old = await entity(old_target) if old_target is not None else None
+                if (
+                    target is not None
+                    and spec is not None
+                    and spec.object_types
+                    and (old is None or old.type != target.type)
+                    and target.type not in spec.object_types
+                ):
+                    blocking(
+                        index,
+                        "invalid_proposition",
+                        f"predicate {spec.predicate!r} does not accept target type {target.type!r}",
+                    )
+            elif after.object != before.object:
+                await validate_proposition(index, after)
+
         # Entries a change in this batch names, so a merge does not leave one pointing
         # at the entry it retires (AST-EXP-017).
         named_in_batch: set[str] = set()
@@ -949,6 +1045,13 @@ class AuthoritativeValidator:
                 )
             elif isinstance(operation, UpdateEntityOp):
                 current = await require_active_entity(index, operation.id, "entity")
+                if current is not None and operation.type is not None:
+                    # AST-EXP-017: a new type; what it holds is checked once the set is read.
+                    if operation.type not in context.allowed_entity_types:
+                        blocking(index, "unknown_type", f"unknown entity type {operation.type!r}")
+                        continue
+                    retyped[operation.id] = (index, operation.type)
+                    current = current.model_copy(update={"type": operation.type})
                 if current is not None:
                     attributes = (
                         current.attributes if operation.attributes is None else operation.attributes
@@ -958,7 +1061,13 @@ class AuthoritativeValidator:
                         try:
                             model.model_validate(details(attributes))
                         except PydanticValidationError as error:
-                            blocking(index, "invalid_attributes", str(error))
+                            blocking(
+                                index,
+                                "invalid_attributes",
+                                _retyped_details(error, current.type)
+                                if operation.type is not None
+                                else str(error),
+                            )
                     updated = current.model_copy(
                         update={
                             "name": current.name if operation.name is None else operation.name,
@@ -988,8 +1097,11 @@ class AuthoritativeValidator:
                         slug=updated.slug,
                         aliases=updated.aliases,
                         external_ids=updated.external_ids,
-                        check_name=operation.name is not None
-                        and normalize_name(operation.name) != normalize_name(current.name),
+                        check_name=(
+                            operation.name is not None
+                            and normalize_name(operation.name) != normalize_name(current.name)
+                        )
+                        or operation.type is not None,
                         check_slug=operation.slug is not None and operation.slug != current.slug,
                         check_external_ids=operation.external_ids is not None,
                     )
@@ -1314,6 +1426,26 @@ class AuthoritativeValidator:
                 elif event_current.retired_revision is not None:
                     blocking(index, "retired_event", f"event {operation.id!r} is retired")
                 else:
+                    if operation.claim is not None:
+                        if event_current.kind != CLAIM_KIND:
+                            blocking(
+                                index,
+                                "invalid_claim",
+                                "only an event of kind 'claim' says something",
+                            )
+                        said = event_current.claim
+                        if said is not None and said.proposition.predicate == (
+                            operation.claim.proposition.predicate
+                        ):
+                            # What was said is kept as said: only an entry it now names
+                            # instead of another (a merge) is checked, so a claim about
+                            # something since archived, or recorded before a new type,
+                            # never blocks the change.
+                            await validate_swapped(
+                                index, said.proposition, operation.claim.proposition
+                            )
+                        else:
+                            await validate_proposition(index, operation.claim.proposition)
                     for participant in operation.participants or []:
                         await require_active_entity(index, participant.entity_id, "participant")
                     for place in operation.location_ids or []:
@@ -1346,6 +1478,9 @@ class AuthoritativeValidator:
                             "outcome_ids": event_current.outcome_ids
                             if operation.outcome_ids is None
                             else list(operation.outcome_ids),
+                            "claim": event_current.claim
+                            if operation.claim is None
+                            else operation.claim,
                             "name": event_current.name
                             if operation.name is None
                             else operation.name,
@@ -1528,6 +1663,24 @@ class AuthoritativeValidator:
                     blocking(
                         index, "invalid_time", "the story time the link applies from is not valid"
                     )
+                if operation.applies_until is not None and (
+                    parse_world_time(operation.applies_until) is None
+                ):
+                    blocking(
+                        index, "invalid_time", "the story time the link applies until is not valid"
+                    )
+                if operation.shows_version and operation.asset_version_id is None:
+                    blocking(
+                        index,
+                        "invalid_version",
+                        "a link that shows one version must name that version",
+                    )
+                if _window_backwards(operation.applies_from, operation.applies_until):
+                    blocking(
+                        index,
+                        "invalid_time",
+                        "the picture would stop applying before it starts",
+                    )
                 links[operation.id] = AssetLink(
                     id=operation.id,
                     workspace_id=context.workspace_id,
@@ -1543,6 +1696,8 @@ class AuthoritativeValidator:
                     visibility=operation.visibility or "open",
                     known_by=list(operation.known_by),
                     applies_from=operation.applies_from,
+                    applies_until=operation.applies_until,
+                    shows_version=bool(operation.shows_version),
                 )
             elif isinstance(operation, RetireAssetLinkOp):
                 link_current = await link(operation.id)
@@ -1557,7 +1712,79 @@ class AuthoritativeValidator:
                         update={"retired_revision": context.head_revision + 1}
                     )
 
+        if retyped:
+            await self._check_retyped(retyped, facts, beliefs, context, blocking)
         return DomainValidationReport(findings=tuple(findings))
+
+    @staticmethod
+    async def _check_retyped(
+        retyped: dict[str, tuple[int, str]],
+        batch_facts: dict[str, Fact | None],
+        batch_beliefs: dict[str, Belief | None],
+        context: ValidationContext,
+        blocking: Any,
+    ) -> None:
+        """Every current fact and belief about an entry given a new type must still fit
+        it (AST-EXP-017), counting what the same set ends or states. A story with more
+        than can be read at once is refused in plain words rather than checked in part."""
+        stored_facts = await context.reader.asserted_facts(MAX_RETYPE_RECORDS + 1)
+        stored_beliefs = await context.reader.current_beliefs(MAX_RETYPE_RECORDS + 1)
+        if len(stored_facts) > MAX_RETYPE_RECORDS or len(stored_beliefs) > MAX_RETYPE_RECORDS:
+            first = min(position for position, _ in retyped.values())
+            blocking(
+                first,
+                "story_too_large",
+                f"the story has more than {MAX_RETYPE_RECORDS:,} current facts or beliefs, too "
+                "many to check a new type against at once; keep the type",
+            )
+            return
+        facts = {fact.id: fact for fact in stored_facts}
+        facts.update({key: value for key, value in batch_facts.items() if value is not None})
+        beliefs = {belief.id: belief for belief in stored_beliefs}
+        beliefs.update({key: value for key, value in batch_beliefs.items() if value is not None})
+
+        def spec_of(predicate: str) -> PredicateSpec | None:
+            return context.predicate_specs.get(predicate) or CORE_PREDICATES.get(predicate)
+
+        def check(proposition: Any, what: str) -> None:
+            spec = spec_of(proposition.predicate)
+            if spec is None:
+                return
+            words = spec.predicate.replace("_", " ").lower()
+            subject = retyped.get(proposition.subject_id)
+            if subject is not None and subject[1] not in spec.subject_types:
+                blocking(
+                    subject[0],
+                    "type_does_not_fit",
+                    f"a {subject[1].lower()} cannot have the {what} “{words}”; end it "
+                    "in the same change, or keep the type",
+                )
+            obj = proposition.object
+            target = obj.entity_id if isinstance(obj, EntityRefObject) else None
+            pointed = retyped.get(target) if target is not None else None
+            if pointed is not None and spec.object_types and pointed[1] not in spec.object_types:
+                blocking(
+                    pointed[0],
+                    "type_does_not_fit",
+                    f"the {what} “{words}” cannot point to a {pointed[1].lower()}; end "
+                    "it in the same change, or keep the type",
+                )
+
+        for fact in facts.values():
+            if fact.closed_revision is None:
+                check(fact.proposition, "fact")
+        for belief in beliefs.values():
+            if belief.closed_revision is not None:
+                continue
+            holder = retyped.get(belief.holder_entity_id)
+            if holder is not None and holder[1] != "Character":
+                blocking(
+                    holder[0],
+                    "type_does_not_fit",
+                    f"only a character holds beliefs, and a {holder[1].lower()} is not one; end "
+                    "them in the same change, or keep the type",
+                )
+            check(belief.proposition, "belief")
 
 
 __all__ = [

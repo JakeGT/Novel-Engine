@@ -165,9 +165,11 @@ class Neo4jCanonWriter:
                     FOREACH (_ IN CASE WHEN $attributes IS NULL THEN [] ELSE [1] END | SET n.attributes = $attributes)
                     FOREACH (_ IN CASE WHEN $aliases IS NULL THEN [] ELSE [1] END | SET n.aliases = $aliases)
                     FOREACH (_ IN CASE WHEN $external_ids IS NULL THEN [] ELSE [1] END | SET n.external_ids = $external_ids)
+                    FOREACH (_ IN CASE WHEN $type IS NULL THEN [] ELSE [1] END | SET n.type = $type)
                     RETURN n.id AS id
                     """,
                     id=operation.id,
+                    type=operation.type,
                     name=operation.name,
                     slug=operation.slug,
                     attributes=_dumps(operation.attributes),
@@ -392,6 +394,8 @@ class Neo4jCanonWriter:
                         SET e.causes = $causes)
                     FOREACH (_ IN CASE WHEN $set_outcomes THEN [1] ELSE [] END |
                         SET e.outcomes = $outcomes)
+                    FOREACH (_ IN CASE WHEN $claim IS NULL THEN [] ELSE [1] END |
+                        SET e.claim = $claim)
                     RETURN e.id AS id
                     """,
                     id=operation.id,
@@ -408,6 +412,11 @@ class Neo4jCanonWriter:
                     ),
                     set_locations=operation.location_ids is not None,
                     locations=_dumps(list(operation.location_ids or [])),
+                    claim=(
+                        _dumps(operation.claim.model_dump(mode="json"))
+                        if operation.claim is not None
+                        else None
+                    ),
                     set_causes=operation.cause_ids is not None,
                     causes=_dumps(list(operation.cause_ids or [])),
                     set_outcomes=operation.outcome_ids is not None,

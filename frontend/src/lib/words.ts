@@ -240,7 +240,10 @@ export function describeOperation(operation: OperationLike, names: Names): strin
     case 'create_entity':
       return `Add ${typeLabel(String(payload.type ?? 'entry')).toLowerCase()} “${String(payload.name ?? '')}”`
     case 'update_entity':
-      return `Update “${target()}”`
+      // A new type of entry (AST-EXP-017) is said outright: it changes what it can have.
+      return payload.type
+        ? `Change “${target()}” to ${/^[aeiou]/i.test(typeLabel(String(payload.type))) ? 'an' : 'a'} ${typeLabel(String(payload.type)).toLowerCase()}`
+        : `Update “${target()}”`
     case 'retire_entity':
       return payload.merged_into
         ? `Archive “${target()}”, merged into “${nameOf(names, String(payload.merged_into))}”`

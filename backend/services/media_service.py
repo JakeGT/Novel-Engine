@@ -58,9 +58,12 @@ from backend.domain.media import (
     MediaProcessing,
     MediaSegment,
     MediaVariant,
+    PictureUpload,
     ProcessingStatus,
     SegmentKind,
     StorageQuotaExceeded,
+    UploadState,
+    UploadTarget,
     VariantKind,
     is_link_role,
     processing_failure_words,
@@ -88,12 +91,23 @@ MAX_LIBRARY_LINKS = 2000
 MEDIA_PROCESS_KIND = "media_process"
 DEFAULT_QUOTA_BYTES = 2 * 1024 * 1024 * 1024
 DEFAULT_ORPHAN_GRACE = timedelta(hours=24)
+# Two-step uploads (AST-002): how long one may take from asking to finishing, how many one
+# person (and a whole workspace) may have on their way at once, how long one being
+# finished is left past its hour before it is cleared, and how often unfinished ones are.
+UPLOAD_LIFETIME = timedelta(hours=1)
+MAX_OPEN_UPLOADS = 20
+MAX_OPEN_UPLOADS_PER_WORKSPACE = 100
+FINISHING_GRACE = timedelta(minutes=15)
+UPLOAD_SWEEP_SECONDS = 300.0
+_SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 # The types of file this service itself stores: pictures and their smaller copies.
 _OWNED_TYPES = PICTURE_TYPES | {VARIANT_CONTENT_TYPE}
 
 # Called with (workspace_id, project_id, version_ids) when picture versions are retired,
 # discarded or their picture is retired, so derived indexes (vectors) can forget them.
 VersionsRemovedHook = Callable[[str, str, list[str]], Awaitable[None]]
+# Called with (asset_id, version_id, link_id) the moment a finished upload's picture exists.
+LandedHook = Callable[[str, str, str | None], Awaitable[None]]
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +190,14 @@ _DIGEST_MEMBER = re.compile(r"(?:^|,)\s*sha-256\s*=\s*:([A-Za-z0-9+/=]+):", re.I
 _TOO_LARGE = f"The picture is too large (the limit is {MAX_PICTURE_BYTES // (1024 * 1024)} MB)."
 _TOO_SLOW = "The picture took too long to arrive. Check the connection and add it again."
 _NOT_A_PICTURE = "Only PNG, JPEG, and WebP pictures can be added."
+_UPLOAD_STATE_WORDS = {
+    UploadState.RECEIVED: "This picture has already arrived. Finish it to add it.",
+    UploadState.FINISHING: "This picture is being added now.",
+    UploadState.FINISHED: "This picture has already been added.",
+    UploadState.EXPIRED: "This upload was not finished within the hour and was cleared. "
+    "Add the picture again.",
+    UploadState.WAITING: "The picture has not arrived yet. Send it first.",
+}
 # Enough leading bytes to tell a PNG, a JPEG or a WebP file from anything else.
 _SIGNATURE_BYTES = 12
 
@@ -284,6 +306,8 @@ class DeletedPicture:
     files_removed: int
     copies_removed: int
     bytes_freed: int
+    # What a model said about it (observations), removed with it (AST-008).
+    notes_removed: int = 0
 
 
 _WORD = re.compile(r"[\w’']+", re.UNICODE)
@@ -621,6 +645,9 @@ class MediaService:
                 )
             self._refuse_if_shown(shown)
         revision = await self._retired_revision(workspace_id, project_id)
+        # Committed to deleting it: what a model said about it goes first, so a deletion
+        # stopped part way never leaves notes about a picture that can no longer be seen.
+        notes = await self._remove_notes(scope, workspace_id, project_id, asset_id, revision)
         copies_of: dict[str, list[MediaVariant]] = {}
         if self._processing is not None and live:
             copies_of = await self._processing.list_variants(
@@ -680,6 +707,7 @@ class MediaService:
             copies=copies,
             bytes=freed,
             kept=len(kept),
+            notes=notes,
         )
         return DeletedPicture(
             asset=gone or asset,
@@ -687,7 +715,40 @@ class MediaService:
             files_removed=files,
             copies_removed=copies,
             bytes_freed=freed,
+            notes_removed=notes,
         )
+
+    async def _remove_notes(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        asset_id: str,
+        revision: int | None,
+    ) -> int:
+        """Remove what a model said about a picture being deleted (AST-008): its
+        observations (captions and appearance details, whatever the author decided), so
+        neither the picture page, an archive, a check nor search can repeat them. Their
+        search rows go with the versions (``on_versions_removed``). Recorded as a
+        ``notes_removed`` event with how many, never the words. Proposals already made
+        from them stay in review and history: they are the author's own records."""
+        store = self.observation_store
+        remove = getattr(store, "delete_for_asset", None)
+        if remove is None:
+            return 0
+        count = int(
+            await remove(workspace_id=workspace_id, project_id=project_id, asset_id=asset_id)
+        )
+        if count:
+            await self._media.record_notes_removed(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                asset_id=asset_id,
+                count=count,
+                actor_user_id=scope.actor_user_id,
+                canon_revision=revision,
+            )
+        return count
 
     @staticmethod
     def _refuse_if_shown(shown: int) -> None:
@@ -757,6 +818,408 @@ class MediaService:
             by_meaning=str(by_meaning).lower(),
         )
         return PictureSearch(found=found[:limit], by_meaning=by_meaning, note=note)
+
+    # ------------------------------------------------- two-step uploads (AST-002)
+    async def start_upload(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        *,
+        target_type: UploadTarget,
+        target_id: str,
+        byte_length: int,
+        sha256: str,
+        name: str | None = None,
+    ) -> PictureUpload:
+        """Ask to send a picture: say what it is for, how large it is and its SHA-256.
+
+        Refused before any byte is sent when it is too large, the workspace has no room
+        for it, what it is for is not in the story, or too many are already on their way.
+        The answer is where to send it; it must be sent, and then finished, within an
+        hour. The one-step upload (``add_picture``) stays for small pictures."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        digest = sha256.strip().lower()
+        if not _SHA256_HEX.match(digest):
+            raise ValidationError("Give the picture's SHA-256 as 64 letters and digits.")
+        if byte_length <= 0:
+            raise ValidationError("The picture is empty.")
+        if byte_length > MAX_PICTURE_BYTES:
+            metrics.increment(
+                "media_uploads_refused_total",
+                "Picture uploads refused, by reason.",
+                reason="too_large",
+            )
+            raise PictureTooLarge(_TOO_LARGE)
+        label = " ".join((name or "").split())[:120] or None
+        await self._upload_target(workspace_id, project_id, target_type, target_id)
+        await self._check_quota(workspace_id, byte_length)
+        now = utcnow()
+        upload = PictureUpload(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            id=f"upl_{uuid7()}",
+            branch_id=await self._line_id(workspace_id, project_id),
+            actor_user_id=scope.actor_user_id,
+            target_type=target_type,
+            target_id=target_id,
+            name=label,
+            expected_bytes=byte_length,
+            expected_sha256=digest,
+            created_at=now,
+            expires_at=now + UPLOAD_LIFETIME,
+        )
+        # Counted and added in one step, so two at once cannot both take the last place.
+        created = await self._media.create_upload(
+            upload,
+            max_per_person=MAX_OPEN_UPLOADS,
+            max_per_workspace=MAX_OPEN_UPLOADS_PER_WORKSPACE,
+        )
+        if created is None:
+            mine = await self._media.open_uploads(
+                workspace_id=workspace_id, actor_user_id=scope.actor_user_id or ""
+            )
+            whose = (
+                f"{MAX_OPEN_UPLOADS} of your pictures are"
+                if mine >= MAX_OPEN_UPLOADS
+                else f"{MAX_OPEN_UPLOADS_PER_WORKSPACE} pictures in this workspace are"
+            )
+            raise ConflictError(
+                f"{whose} already on their way. Finish those, or wait an hour for "
+                "unfinished ones to be cleared, then add this one."
+            )
+        log_event(logger, "media.upload_started", bytes=byte_length, target=target_type.value)
+        return created
+
+    async def receive_upload(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        upload_id: str,
+        chunks: AsyncIterator[bytes],
+        *,
+        declared_length: str | None = None,
+        content_digest: str | None = None,
+    ) -> tuple[PictureUpload, ReceivedUpload]:
+        """Take the picture's bytes for an upload, as they stream in.
+
+        Never more than was promised is read; what arrived must be exactly the size and
+        SHA-256 promised, and a picture by its first bytes. Kept aside (not yet in the
+        story or the library) until it is finished. When it does not match, nothing is
+        kept and it can be sent again while the upload has not expired."""
+        upload = await self._own_upload(scope, workspace_id, project_id, upload_id)
+        if upload.state is not UploadState.WAITING:
+            raise ConflictError(_UPLOAD_STATE_WORDS.get(upload.state, "This upload has moved on."))
+        received = await receive_picture(
+            chunks,
+            declared_length=declared_length,
+            content_digest=content_digest,
+            max_bytes=upload.expected_bytes,
+        )
+        if received.size != upload.expected_bytes or not hmac.compare_digest(
+            received.sha256, upload.expected_sha256
+        ):
+            metrics.increment(
+                "media_uploads_refused_total",
+                "Picture uploads refused, by reason.",
+                reason="not_as_promised",
+            )
+            raise ValidationError(
+                "What arrived is not the picture that was promised: its size or SHA-256 "
+                "differs. Nothing was kept; send it again."
+            )
+        content_type = sniff_image_type(received.data)
+        if content_type is None:
+            raise ValidationError(_NOT_A_PICTURE)
+        stat = self._objects.put(
+            received.data,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            content_type=content_type,
+        )
+        moved = await self._media.move_upload(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            upload_id=upload_id,
+            from_state=UploadState.WAITING,
+            to_state=UploadState.RECEIVED,
+            staged_key=stat.key,
+            content_type=content_type,
+        )
+        if moved is None:
+            # Sent twice at once, or it expired while arriving: keep nothing of this one.
+            self._objects.delete(stat.key, workspace_id=workspace_id, project_id=project_id)
+            raise ConflictError(
+                "This upload has already arrived or has expired. Look again before sending it."
+            )
+        log_event(logger, "media.upload_received", bytes=received.size)
+        return moved, received
+
+    async def finish_upload(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        upload_id: str,
+        *,
+        expected_revision: int | None = None,
+    ) -> tuple[PictureUpload, AssetLink | None, MediaAssetVersion]:
+        """Make a received upload into a picture: the stored bytes are checked against
+        what was promised once more, hidden details are taken out as for any picture,
+        and it is shown on its entry or scene (a change to the story, so the story's
+        revision is needed) or added as a new version of its picture. Asking again once
+        it is finished answers with what it made."""
+        upload = await self._own_upload(scope, workspace_id, project_id, upload_id)
+        if upload.state is UploadState.FINISHED:
+            return await self._finished(workspace_id, project_id, upload)
+        if upload.state is not UploadState.RECEIVED:
+            raise ConflictError(_UPLOAD_STATE_WORDS.get(upload.state, "This upload has moved on."))
+        if upload.target_type is not UploadTarget.ASSET and expected_revision is None:
+            raise ValidationError("Send the story's revision with the picture.")
+        if upload.branch_id != await self._line_id(workspace_id, project_id):
+            raise ConflictError(
+                "This picture was started in another line of the story. Switch back to it to "
+                "finish it, or add the picture again here."
+            )
+        claimed = await self._media.move_upload(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            upload_id=upload_id,
+            from_state=UploadState.RECEIVED,
+            to_state=UploadState.FINISHING,
+        )
+        if claimed is None:
+            raise ConflictError("This upload is being finished now, or has expired.")
+        staged = claimed.staged_key or ""
+        made: PictureUpload | None = None
+
+        async def landed(asset_id: str, version_id: str, link_id: str | None) -> None:
+            # Recorded the moment the picture exists, before anything else can fail, so
+            # asking again answers with this picture and never makes a second one.
+            nonlocal made
+            made = await self._media.move_upload(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                upload_id=upload_id,
+                from_state=UploadState.FINISHING,
+                to_state=UploadState.FINISHED,
+                asset_id=asset_id,
+                version_id=version_id,
+                link_id=link_id,
+                unexpired=False,
+            ) or claimed.model_copy(
+                update={
+                    "state": UploadState.FINISHED,
+                    "asset_id": asset_id,
+                    "version_id": version_id,
+                    "link_id": link_id,
+                }
+            )
+
+        try:
+            try:
+                data = self._objects.open(staged, workspace_id=workspace_id, project_id=project_id)
+            except Exception as error:  # noqa: BLE001 - said plainly below
+                raise ValidationError(
+                    "The picture that arrived can no longer be found. Add it again."
+                ) from error
+            if len(data) != claimed.expected_bytes or not hmac.compare_digest(
+                hashlib.sha256(data).hexdigest(), claimed.expected_sha256
+            ):
+                raise ValidationError(
+                    "The picture that arrived changed while it waited. Add it again."
+                )
+            data, content_type = await self._checked_picture(data)
+            link: AssetLink | None = None
+            if claimed.target_type is UploadTarget.ASSET:
+                version = await self._store_version(
+                    scope,
+                    workspace_id,
+                    project_id,
+                    claimed.target_id,
+                    data,
+                    content_type,
+                    landed=landed,
+                )
+            else:
+                target = await self._upload_target(
+                    workspace_id, project_id, claimed.target_type, claimed.target_id
+                )
+                _, link, version = await self._store_and_link(
+                    scope,
+                    workspace_id,
+                    project_id,
+                    data=data,
+                    content_type=content_type,
+                    label=claimed.name or target,
+                    target_record_type=claimed.target_type.value,
+                    target_id=claimed.target_id,
+                    expected_revision=int(expected_revision or 0),
+                    landed=landed,
+                )
+        except BaseException:
+            if made is None:
+                # Nothing was made: it can be finished again while it has not expired.
+                await self._media.move_upload(
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    upload_id=upload_id,
+                    from_state=UploadState.FINISHING,
+                    to_state=UploadState.RECEIVED,
+                    unexpired=False,
+                )
+            else:
+                self._drop_staged(staged, workspace_id, project_id)
+            raise
+        self._drop_staged(staged, workspace_id, project_id)
+        log_event(logger, "media.upload_finished", target=claimed.target_type.value)
+        return made or claimed, link, version
+
+    def _drop_staged(self, staged: str, workspace_id: str, project_id: str) -> None:
+        """Remove a finished upload's staged file; a stray left here is cleared later."""
+        try:
+            self._objects.delete(staged, workspace_id=workspace_id, project_id=project_id)
+        except Exception:  # noqa: BLE001 - retention removes strays later
+            log_event(logger, "media.upload_cleanup_failed", level=logging.WARNING)
+
+    async def expire_uploads(self) -> int:
+        """Clear uploads not finished within the hour: what arrived is removed. One being
+        finished right now is left a while longer, so its file is not taken from under
+        it. Bounded work, run by the background worker about every five minutes."""
+        expired = await self._media.expire_uploads(
+            limit=100, finishing_grace_seconds=int(FINISHING_GRACE.total_seconds())
+        )
+        for upload in expired:
+            if upload.staged_key:
+                try:
+                    self._objects.delete(
+                        upload.staged_key,
+                        workspace_id=upload.workspace_id,
+                        project_id=upload.project_id,
+                    )
+                except Exception:  # noqa: BLE001 - retention removes strays later
+                    log_event(logger, "media.upload_cleanup_failed", level=logging.WARNING)
+        if expired:
+            log_event(logger, "media.uploads_expired", count=len(expired))
+        return len(expired)
+
+    async def _own_upload(
+        self, scope: AccessScope, workspace_id: str, project_id: str, upload_id: str
+    ) -> PictureUpload:
+        """An upload of this project, started by the person asking."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        upload = await self._media.get_upload(
+            workspace_id=workspace_id, project_id=project_id, upload_id=upload_id
+        )
+        if upload is None or (
+            upload.actor_user_id is not None and upload.actor_user_id != scope.actor_user_id
+        ):
+            raise NotFoundError("That upload was not found.")
+        if upload.state in (UploadState.WAITING, UploadState.RECEIVED) and (
+            upload.expires_at <= utcnow()
+        ):
+            raise ConflictError(_UPLOAD_STATE_WORDS[UploadState.EXPIRED])
+        return upload
+
+    async def _finished(
+        self, workspace_id: str, project_id: str, upload: PictureUpload
+    ) -> tuple[PictureUpload, AssetLink | None, MediaAssetVersion]:
+        version = await self._media.get_version(
+            workspace_id=workspace_id, project_id=project_id, version_id=upload.version_id or ""
+        )
+        if version is None:
+            raise NotFoundError("The picture this upload made was not found.")
+        link = (
+            await self._reader.get_link(
+                workspace_id=workspace_id, project_id=project_id, link_id=upload.link_id
+            )
+            if upload.link_id
+            else None
+        )
+        return upload, link, version
+
+    async def _line_id(self, workspace_id: str, project_id: str) -> str | None:
+        if self._journal is None:
+            return None
+        branch = await self._journal.working_branch(  # type: ignore[attr-defined]
+            workspace_id=workspace_id, project_id=project_id
+        )
+        return None if getattr(branch, "is_root", True) else str(branch.id)
+
+    async def _upload_target(
+        self, workspace_id: str, project_id: str, target_type: UploadTarget, target_id: str
+    ) -> str:
+        """Check what an upload is for is in this line of the story; its default label."""
+        if target_type is UploadTarget.ENTITY:
+            entity = await self._reader.get_entity(
+                workspace_id=workspace_id, project_id=project_id, entity_id=target_id
+            )
+            if entity is None or not entity.is_active:
+                raise NotFoundError("Entry not found.")
+            return f"Picture of {entity.name}"[:120]
+        if target_type is UploadTarget.SCENE:
+            scene = await self._reader.get_plan_item(
+                workspace_id=workspace_id, project_id=project_id, plan_id=target_id
+            )
+            if scene is None or not scene.is_active or scene.kind != PlanKind.SCENE:
+                raise NotFoundError("Scene not found.")
+            return f"Picture for {scene.title}"[:120]
+        asset = await self._media.get_asset(
+            workspace_id=workspace_id, project_id=project_id, asset_id=target_id
+        )
+        versions = (
+            await self._media.list_versions(
+                workspace_id=workspace_id, project_id=project_id, asset_id=target_id
+            )
+            if asset is not None
+            else []
+        )
+        if (
+            asset is None
+            or not asset.is_active
+            or not any(version.content_type in PICTURE_TYPES for version in versions)
+        ):
+            raise NotFoundError("That picture was not found.")
+        return asset.name
+
+    async def _store_version(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        asset_id: str,
+        data: bytes,
+        content_type: str,
+        *,
+        landed: LandedHook | None = None,
+    ) -> MediaAssetVersion:
+        """A new version of a picture already in the story (AST-001, AST-002). Where it
+        is shown is unchanged: links that follow the newest version show it from now on;
+        a link that shows one version keeps showing that one. ``landed`` is told the
+        moment the version exists."""
+        await self._upload_target(workspace_id, project_id, UploadTarget.ASSET, asset_id)
+        async with self._quota_guard(workspace_id):
+            await self._check_quota(workspace_id, len(data))
+            stat = self._objects.put(
+                data, workspace_id=workspace_id, project_id=project_id, content_type=content_type
+            )
+            version = await self._media.create_version(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                asset_id=asset_id,
+                object_key=stat.key,
+                content_type=stat.content_type,
+                byte_length=stat.byte_length,
+                checksum=stat.checksum,
+                authority="author_reference",
+                created_revision=await self._retired_revision(workspace_id, project_id) or 0,
+                actor_user_id=scope.actor_user_id,
+            )
+        if landed is not None:
+            await landed(asset_id, version.id, None)
+        await self._queue_quietly(scope, workspace_id, project_id, version)
+        return version
 
     # ---------------------------------------------------------------- pictures
     async def add_picture(
@@ -866,7 +1329,10 @@ class MediaService:
         target_record_type: str,
         target_id: str,
         expected_revision: int,
+        landed: LandedHook | None = None,
     ) -> tuple[CommitResult, AssetLink, MediaAssetVersion]:
+        """Store a picture and show it on its target. ``landed`` is told the moment the
+        link is in the story, before it is read back or queued for preparation."""
         # Checked and counted together: the room is only taken up once the version row
         # exists, so two uploads at once must not both see the room as free.
         async with self._quota_guard(workspace_id):
@@ -912,8 +1378,13 @@ class MediaService:
         except Exception:
             # The picture never reached the story: leave nothing behind for the
             # library to offer.
-            await self._discard_upload(workspace_id, project_id, link_id, asset.id, stat.key)
+            kept = await self._discard_upload(workspace_id, project_id, link_id, asset.id, stat.key)
+            if kept and landed is not None:
+                # The commit did land before it failed: the picture is in the story.
+                await landed(asset.id, version.id, link_id)
             raise
+        if landed is not None:
+            await landed(asset.id, version.id, link_id)
         link = await self._reader.get_link(
             workspace_id=workspace_id, project_id=project_id, link_id=link_id
         )
@@ -923,8 +1394,9 @@ class MediaService:
 
     async def _discard_upload(
         self, workspace_id: str, project_id: str, link_id: str, asset_id: str, object_key: str
-    ) -> None:
-        """Remove an upload whose link was refused; a failure here never hides why."""
+    ) -> bool:
+        """Remove an upload whose link was refused; a failure here never hides why. True
+        when the link turns out to be in the story after all, so nothing was removed."""
         try:
             # Checked first, in case the commit did land before it failed.
             if (
@@ -933,7 +1405,7 @@ class MediaService:
                 )
                 is not None
             ):
-                return
+                return True
             versions = await self._media.list_versions(
                 workspace_id=workspace_id, project_id=project_id, asset_id=asset_id
             )
@@ -944,6 +1416,7 @@ class MediaService:
             await self._versions_removed(workspace_id, project_id, [v.id for v in versions])
         except Exception:  # noqa: BLE001 - the refusal is what the author needs to see
             logger.warning("media.discard_failed", exc_info=True)
+        return False
 
     async def picture_library(
         self, scope: AccessScope, workspace_id: str, project_id: str
@@ -1099,6 +1572,9 @@ class MediaService:
         """Teach the job runner to prepare pictures."""
         if self._runner is not None and self.processing_enabled:
             self._runner.register(MEDIA_PROCESS_KIND, self._run_process_job)
+        if self._runner is not None and hasattr(self._runner, "every"):
+            # Unfinished two-step uploads are cleared once their hour is up (AST-002).
+            self._runner.every(UPLOAD_SWEEP_SECONDS, self.expire_uploads)
 
     async def storage_used(self, workspace_id: str) -> int:
         if self._processing is None:

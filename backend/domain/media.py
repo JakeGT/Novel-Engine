@@ -66,6 +66,9 @@ class MediaLifecycleAction(StrEnum):
     # as the tombstone (checksum, size, type, when); the file and its copies are gone.
     ORIGINAL_DELETED = "original_deleted"
     ASSET_DELETED = "asset_deleted"
+    # What a model said about a deleted picture (its observations and their search rows)
+    # removed with it (AST-008); ``item_count`` says how many, never the words.
+    NOTES_REMOVED = "notes_removed"
 
 
 class MediaLifecycleEvent(BaseModel):
@@ -80,6 +83,8 @@ class MediaLifecycleEvent(BaseModel):
     actor_user_id: str | None = None
     canon_revision: int | None = None
     created_at: datetime = Field(default_factory=utcnow)
+    # How many things the event removed (``notes_removed``); None for other events.
+    item_count: int | None = None
 
 
 class MediaAsset(BaseModel):
@@ -145,6 +150,11 @@ class AssetLink(BaseModel):
     known_by: list[str] = Field(default_factory=list)
     # A story time (a ``WorldTime`` as JSON) from which the link applies; None is always.
     applies_from: dict[str, Any] | None = None
+    # AST-001: a story time from which it no longer applies; None is to the end.
+    applies_until: dict[str, Any] | None = None
+    # AST-001: True when the link shows the version it names (``asset_version_id``);
+    # otherwise it shows the picture's newest version.
+    shows_version: bool = False
 
     @property
     def is_active(self) -> bool:
@@ -153,6 +163,58 @@ class AssetLink(BaseModel):
     @property
     def is_secret(self) -> bool:
         return self.visibility == "secret"
+
+    @property
+    def is_timed(self) -> bool:
+        return self.applies_from is not None or self.applies_until is not None
+
+
+class UploadState(StrEnum):
+    """Where a two-step picture upload is (AST-002)."""
+
+    # Asked for, with its size and digest; the picture has not arrived yet.
+    WAITING = "waiting"
+    # Arrived whole and as promised; kept aside until it is finished.
+    RECEIVED = "received"
+    # Being made into a picture now.
+    FINISHING = "finishing"
+    FINISHED = "finished"
+    # Not finished in time: what arrived was removed.
+    EXPIRED = "expired"
+
+
+class UploadTarget(StrEnum):
+    ENTITY = "entity"
+    SCENE = "plan_item"
+    # A new version of a picture already in the story.
+    ASSET = "asset"
+
+
+class PictureUpload(BaseModel):
+    """A two-step picture upload (AST-002): what was promised, then what arrived, then
+    what finishing it made. Never holds the picture's bytes."""
+
+    workspace_id: str
+    project_id: str
+    id: str
+    branch_id: str | None = None
+    actor_user_id: str | None = None
+    target_type: UploadTarget
+    target_id: str
+    name: str | None = None
+    expected_bytes: int
+    expected_sha256: str
+    state: UploadState = UploadState.WAITING
+    staged_key: str | None = None
+    content_type: str | None = None
+    asset_id: str | None = None
+    version_id: str | None = None
+    link_id: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+    expires_at: datetime
+    finished_at: datetime | None = None
+
+    model_config = {"frozen": True}
 
 
 class ProcessingStatus(StrEnum):
@@ -281,6 +343,66 @@ class StorageQuotaExceeded(DomainError):
     title = "No room left"
 
 
+def link_applies_at(link: AssetLink, moment: Any, when_of: Any) -> Any:
+    """Whether a picture link applies at a moment of story time (AST-001).
+
+    ``None`` when the link holds throughout (no time, or only times not placed); else a
+    ``Truth``: ``maybe`` when the scene has no time or the window cannot settle it.
+    ``when_of`` looks up an event's time for a relative one. The window is ``[from,
+    until)``: it applies from its start and no longer at its end."""
+    from backend.domain.worldtime import Truth, is_unknown, parse_world_time, resolve, span_of
+    from backend.domain.worldtime import true_at as _true_at
+
+    # Read leniently: a link-like record from before AST-001 has no ``applies_until``.
+    raw_start = getattr(link, "applies_from", None)
+    raw_end = getattr(link, "applies_until", None)
+    start = parse_world_time(raw_start) if raw_start is not None else None
+    end = parse_world_time(raw_end) if raw_end is not None else None
+    start = None if is_unknown(start) else start
+    end = None if is_unknown(end) else end
+    if start is None and end is None:
+        return None
+    if moment is None:
+        return Truth.MAYBE
+    span = span_of(
+        resolve(start, when_of) if start is not None else None,
+        resolve(end, when_of) if end is not None else None,
+    )
+    if not span.stated:
+        return Truth.MAYBE
+    return _true_at(span, moment)
+
+
+def link_window_words(
+    link: AssetLink, *, unit: str = "year", event_name: Any = lambda _id: None
+) -> str | None:
+    """The story time a link applies for, in words; None when it holds throughout."""
+    from backend.domain.worldtime import describe, is_unknown, parse_world_time
+
+    # Read leniently: a link-like record from before AST-001 has no ``applies_until``.
+    raw_start = getattr(link, "applies_from", None)
+    raw_end = getattr(link, "applies_until", None)
+    start = parse_world_time(raw_start) if raw_start is not None else None
+    end = parse_world_time(raw_end) if raw_end is not None else None
+    start_words = (
+        describe(start, unit=unit, event_name=event_name)
+        if start is not None and not (is_unknown(start) and not start.label)
+        else None
+    )
+    end_words = (
+        describe(end, unit=unit, event_name=event_name)
+        if end is not None and not (is_unknown(end) and not end.label)
+        else None
+    )
+    if start_words and end_words:
+        return f"from {start_words} until {end_words}"
+    if start_words:
+        return f"from {start_words} on"
+    if end_words:
+        return f"until {end_words}"
+    return None
+
+
 def is_link_role(value: str) -> bool:
     try:
         LinkRole(value)
@@ -303,10 +425,15 @@ __all__ = [
     "MediaSegment",
     "MediaVariant",
     "PROCESSING_FAILURES",
+    "PictureUpload",
+    "UploadState",
+    "UploadTarget",
     "ProcessingStatus",
     "SegmentKind",
     "StorageQuotaExceeded",
     "VariantKind",
     "is_link_role",
+    "link_applies_at",
+    "link_window_words",
     "processing_failure_words",
 ]

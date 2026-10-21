@@ -4418,6 +4418,18 @@ textarea.mono {
   padding: 0.5rem 0;
   border-top: 1px solid var(--line);
 }
+/* An undo beside one wider dismissal sits at its start, not across the column. */
+.check-calibration li > button {
+  align-self: flex-start;
+}
+/* How long each check took (CON-001): times stay on one line. */
+.run-timings td[data-label='Time'] {
+  white-space: nowrap;
+}
+.run-passages {
+  margin: 0.25rem 0 0;
+  padding-left: 1.25rem;
+}
 .check-calibration-title {
   margin: 0.75rem 0 0;
   font-family: var(--font-ui);
@@ -4892,4 +4904,34 @@ textarea.mono {
 .grounding q {
   font-style: italic;
   color: var(--ink-2);
+}
+
+/* The story's ready views (QRY-001). */
+.story-views .story-view {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.9rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.story-views .story-view:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.story-view-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 0.75rem;
+}
+
+.story-view-name {
+  font-size: 1.05rem;
+  margin: 0;
+}
+
+/* Reading a pasted text as a scene's prose (EXT-001): a short choice, not a full row. */
+.read-as-scene {
+  max-width: 36rem;
 }

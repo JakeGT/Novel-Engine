@@ -76,6 +76,11 @@ def _generation(row: Sequence[Any]) -> Generation:
     )
 
 
+# The first key of the two-key advisory locks taken by ``hold_lock``, apart from the
+# journal's (12_012) and the story views' (12_013).
+_LOCK_SPACE = 12_014
+
+
 def _index_name(generation_id: str) -> sql.Identifier:
     return sql.Identifier(f"embedding_vectors_hnsw_{require_generation_id(generation_id)}")
 
@@ -606,6 +611,29 @@ class PgEmbeddingIndexStore:
                     (generation_id, workspace_id),
                 ).fetchone()
         return int(row[0]) if row else 0
+
+    # --- a lock across servers -------------------------------------------------------
+
+    def hold_lock(self, name: str) -> Any:
+        """Take the named lock without waiting: a handle to give to ``release_lock`` while
+        it is held, or None when another server holds it. The lock lives in a session kept
+        open for it, so it is let go however that ends, even if the process dies."""
+        connection = psycopg.connect(self._dsn, autocommit=True)
+        try:
+            row = connection.execute(
+                "SELECT pg_try_advisory_lock(%s, hashtext(%s))", (_LOCK_SPACE, name)
+            ).fetchone()
+        except Exception:
+            connection.close()
+            raise
+        if not (row and row[0]):
+            connection.close()
+            return None
+        return connection
+
+    def release_lock(self, held: Any) -> None:
+        # Closing the session lets go of the lock it holds.
+        held.close()
 
     def ping(self) -> bool:
         try:

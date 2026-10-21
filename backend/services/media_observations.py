@@ -29,9 +29,10 @@ never logged.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -81,6 +82,7 @@ from backend.domain.prompting import fence
 from backend.domain.prompts import prompt_version
 from backend.domain.providers import provider_spec
 from backend.domain.tenancy import Permission
+from backend.domain.worldtime import is_unknown, parse_world_time
 from backend.ports import ImageInput
 from backend.services.job_runner import JobContext, JobSubmission
 from backend.services.provider_route import resolve_provider
@@ -228,6 +230,17 @@ class ContextPicture:
     description: str
     width: int | None = None
     height: int | None = None
+
+
+class ContextPictures(dict[str, ContextPicture]):
+    """The pictures found for a context, by asset id. ``left_out`` names, with the
+    reason in plain words, each picture whose links show one version that is no longer
+    shown (retired, its file deleted, or not a picture): it is not sent in place of
+    that version, so the author can choose again."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.left_out: dict[str, str] = {}
 
 
 @dataclass
@@ -591,10 +604,20 @@ class MediaObservationService:
         return content, content_type, "original"
 
     async def for_context(
-        self, workspace_id: str, project_id: str, asset_ids: Sequence[str]
-    ) -> dict[str, ContextPicture]:
-        """Each still-shown picture's newest version, choice and accepted description."""
-        found: dict[str, ContextPicture] = {}
+        self,
+        workspace_id: str,
+        project_id: str,
+        asset_ids: Sequence[str],
+        *,
+        pinned: Mapping[str, str] | None = None,
+    ) -> ContextPictures:
+        """Each still-shown picture's newest version, choice and accepted description.
+
+        ``pinned`` names the version a link shows (AST-001); it is used while it is still
+        shown. Once it is not (retired, or its file deleted), the picture is left out and
+        named in ``left_out``: the newest is never sent in its place, as it may show
+        something else."""
+        found = ContextPictures()
         ids = list(dict.fromkeys(asset_ids))
         if not ids:
             return found
@@ -617,6 +640,29 @@ class MediaObservationService:
         sizes: dict[str, tuple[int | None, int | None]] = {}
         processing = getattr(self._media, "_processing", None)
         newest = {asset_id: _newest(versions.get(asset_id, [])) for asset_id in ids}
+        for asset_id, version_id in (pinned or {}).items():
+            chosen = next(
+                (
+                    version
+                    for version in versions.get(asset_id, [])
+                    if version.id == version_id
+                    and version.retired_revision is None
+                    and version.deleted_at is None
+                    and version.content_type in PICTURE_TYPES
+                ),
+                None,
+            )
+            if asset_id not in newest:
+                continue
+            if chosen is None:
+                newest[asset_id] = None
+                found.left_out[asset_id] = (
+                    "The version of this picture chosen to be shown is no longer shown, so "
+                    "the picture is left out. Choose another version, or let it follow the "
+                    "newest."
+                )
+            else:
+                newest[asset_id] = chosen
         if processing is not None:
             current = [version.id for version in newest.values() if version is not None]
             states = await processing.list_processing(
@@ -1045,6 +1091,8 @@ class MediaObservationService:
         links = await self._reader.list_links(
             workspace_id=workspace_id, project_id=project_id, asset_id=observation.asset_id
         )
+        # Only where the picture is still shown counts: a link taken off says nothing.
+        links = [link for link in links if link.is_active]
         about = [link for link in links if link.target_record_id == subject_id]
         # A picture put on a scene shows who and what the scene names, so its link
         # there counts as showing this entry too.
@@ -1054,7 +1102,11 @@ class MediaObservationService:
             scene = await self._reader.get_plan_item(
                 workspace_id=workspace_id, project_id=project_id, plan_id=link.target_record_id
             )
-            if scene is not None and subject_id in {ref.entity_id for ref in scene.refs}:
+            if (
+                scene is not None
+                and scene.is_active
+                and subject_id in {ref.entity_id for ref in scene.refs}
+            ):
                 about.append(link)
         # Seen only in a secret picture of this entry: the fact is a secret too, known to
         # those every secret link names (AST-004).
@@ -1064,20 +1116,29 @@ class MediaObservationService:
             knowers = set(about[0].known_by)
             for link in about[1:]:
                 knowers &= set(link.known_by)
+        # AST-001: a picture shown only for a stretch of story time shows how they look
+        # then, so the fact is true for that stretch. Shown for different stretches, no
+        # time is set and the review says so.
+        windows = {_link_window(link) for link in about}
+        starts, ends = next(iter(windows)) if len(windows) == 1 else (None, None)
         operations: list[Any] = []
         value: dict[str, Any] = {APPEARANCE_KEY: observation.words}
-        open_details = await self._reader.list_facts(
-            workspace_id=workspace_id,
-            project_id=project_id,
-            subject_id=subject_id,
-            predicate=APPEARANCE_PREDICATE,
-        )
+        open_details = [
+            fact
+            for fact in await self._reader.list_facts(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                subject_id=subject_id,
+                predicate=APPEARANCE_PREDICATE,
+            )
+            if _same_time(fact.starts, starts) and _same_time(fact.ends, ends)
+        ]
         old_beliefs: list[Any] = []
         if open_details:
-            # One detail fact per entry at a time: the new words join what is there,
-            # and the old fact is closed in the same proposal. Words are never made
-            # more widely known by joining: when either is a secret the joined fact is
-            # one, known only to those who know both.
+            # One detail fact per entry (for each stretch of story time) at a time: the
+            # new words join what is there, and the old fact is closed in the same
+            # proposal. Words are never made more widely known by joining: when either is
+            # a secret the joined fact is one, known only to those who know both.
             current = open_details[0]
             old = dict(getattr(current.proposition.object, "value", {}) or {})
             before = str(old.get(APPEARANCE_KEY, "")).strip()
@@ -1122,12 +1183,18 @@ class MediaObservationService:
             why = f"Seen in a secret picture; you accepted it. Kept a secret, {who}."
         else:
             why = "Seen in a picture; you accepted it. An ordinary fact, not a secret."
+        if len(windows) > 1:
+            why += " It is shown for different stretches of story time, so no time is set."
+        elif starts is not None or ends is not None:
+            why += " True for the story time the picture is shown for."
         location = observation.region.location() if observation.region else "picture"
         operations.append(
             AssertFactOp(
                 id=fact_id,
                 proposition=proposition,
                 confidence=observation.confidence if observation.confidence is not None else 1.0,
+                starts=parse_world_time(json.loads(starts)) if starts is not None else None,
+                ends=parse_world_time(json.loads(ends)) if ends is not None else None,
                 visibility=FactVisibility.SECRET if secret else None,
                 evidence=[
                     EvidenceRef(source_artefact_id=observation.asset_version_id, location=location)
@@ -1200,10 +1267,13 @@ class MediaObservationService:
         known_by: Sequence[str],
         applies_from: dict[str, Any] | None,
         expected_revision: int,
+        applies_until: dict[str, Any] | None = None,
+        version_id: str | None = None,
     ) -> AssetLink:
-        """Say who may know what a picture shows, and from when it applies. A link is
-        never edited in place: the old one is retired and a new one made in its place, in
-        one reviewed change, so history keeps both."""
+        """Say who may know what a picture shows, for which story time it applies (from
+        and until, AST-001), and which version it shows (``version_id``; None follows the
+        newest). A link is never edited in place: the old one is retired and a new one
+        made in its place, in one reviewed change, so history keeps both."""
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         await self._asset(workspace_id, project_id, asset_id)
         current = await self._reader.get_link(
@@ -1212,6 +1282,23 @@ class MediaObservationService:
         if current is None or current.asset_id != asset_id or not current.is_active:
             raise NotFoundError("That place the picture is shown was not found.")
         knowers = list(dict.fromkeys(known_by)) if secret else []
+        if version_id is not None:
+            chosen = next(
+                (
+                    version
+                    for version in await self._versions(workspace_id, project_id, asset_id)
+                    if version.id == version_id
+                ),
+                None,
+            )
+            if chosen is None or chosen.retired_revision is not None:
+                raise NotFoundError("That version of the picture was not found.")
+            if chosen.deleted_at is not None:
+                raise ValidationError(
+                    "That version's file was deleted, so it cannot be shown. Choose another."
+                )
+            if chosen.content_type not in PICTURE_TYPES:
+                raise ValidationError("That version is not a picture. Choose another.")
         from backend.domain.operations import LinkAssetOp, RetireAssetLinkOp
         from backend.services.media_service import format_asset_link_id
 
@@ -1221,13 +1308,15 @@ class MediaObservationService:
             LinkAssetOp(
                 id=new_id,
                 asset_id=current.asset_id,
-                asset_version_id=current.asset_version_id,
+                asset_version_id=version_id or current.asset_version_id,
                 target_record_type=current.target_record_type,
                 target_id=current.target_record_id,
                 role=current.role.value,
                 visibility="secret" if secret else None,
                 known_by=knowers,
                 applies_from=applies_from,
+                applies_until=applies_until,
+                shows_version=True if version_id is not None else None,
             ),
         ]
         mutation = await self._mutation.create_draft(
@@ -1243,7 +1332,13 @@ class MediaObservationService:
         )
         if link is None:
             raise NotFoundError("That place the picture is shown was not found.")
-        log_event(logger, "media.link_changed", secret=secret, timed=applies_from is not None)
+        log_event(
+            logger,
+            "media.link_changed",
+            secret=secret,
+            timed=applies_from is not None or applies_until is not None,
+            one_version=version_id is not None,
+        )
         return link  # type: ignore[no-any-return]
 
     # ------------------------------------------------------------- archives
@@ -1327,6 +1422,23 @@ class MediaObservationService:
                 workspace_id=workspace_id, project_id=project_id, asset_id=asset_id, choice=choice
             )
         return len(restored)
+
+
+def _time_key(value: Any) -> str | None:
+    """A story time as a comparable key; None for no time (or one not placed)."""
+    parsed = parse_world_time(value) if isinstance(value, dict) else value
+    if parsed is None or is_unknown(parsed):
+        return None
+    return json.dumps(parsed.model_dump(mode="json"), sort_keys=True)
+
+
+def _link_window(link: AssetLink) -> tuple[Any, Any]:
+    """A link's window as hashable keys; (None, None) when it holds throughout."""
+    return _time_key(link.applies_from), _time_key(link.applies_until)
+
+
+def _same_time(stored: Any, wanted: str | None) -> bool:
+    return _time_key(stored) == wanted
 
 
 def _newest_description_first(observations: list[MediaObservation]) -> list[MediaObservation]:

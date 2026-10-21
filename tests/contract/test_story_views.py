@@ -285,3 +285,93 @@ def test_an_archive_says_the_views_are_left_out_and_built_again(auth_client, fak
     archive = asyncio.run(fake_container.archive_service.export_project(workspace, project))
     assert archive["derived"]["story_views"]["included"] is False
     assert "read_models" not in str(archive["sections"])
+
+
+def test_the_views_screen_says_how_far_each_is_and_an_owner_can_check_them(
+    auth_client, fake_container
+):
+    # QRY-001's screen: words for each view's state, how long a lagging one has waited, and
+    # a check against the story's history on request.
+    w, _head = _story(auth_client, fake_container)
+    body = auth_client.get(f"{w['base']}/story-views").json()
+    assert body["main_story"] is True and "built again in full" in body["how_built"]
+    assert {view["state"] for view in body["views"]} == {"Not built yet"}
+    _build(fake_container)
+    states = _status(auth_client, w)
+    assert {view["state"] for view in states.values()} == {"Not checked yet"}
+    assert all(view["built_at"] and view["lag_seconds"] is None for view in states.values())
+
+    checked = auth_client.post(f"{w['base']}/story-views/check")
+    assert checked.status_code == 200, checked.text
+    assert checked.json() == {"checked": 6, "matched": 6, "differed": 0, "skipped": 0}
+    states = _status(auth_client, w)
+    assert {view["state"] for view in states.values()} == {"Ready"}
+    assert all(view["answers_reads"] for view in states.values())
+
+    # A change: each view is behind until built again, and says since when.
+    head = int(auth_client.get(f"{w['base']}/projection").json()["head_revision"])
+    added = auth_client.post(
+        f"{w['base']}/entities",
+        json={"type": "Character", "name": "Odile Fenn", "expected_revision": head},
+    )
+    assert added.status_code == 201, added.text
+    states = _status(auth_client, w)
+    assert {view["state"] for view in states.values()} == {"Catching up"}
+    assert all(view["behind"] == 1 and view["lag_seconds"] is not None for view in states.values())
+
+
+def test_one_check_of_a_line_runs_at_a_time_and_its_replay_runs_off_the_loop(
+    auth_client, fake_container, monkeypatch
+):
+    # Checking replays the whole history: a second check while one runs is refused (409),
+    # here or on another server, and the replay itself runs in a thread so other requests
+    # are answered meanwhile.
+    import threading
+
+    from backend.domain.errors import ConflictError
+    from backend.domain.identity import AccessScope, AuthMode
+    from backend.services import story_at_version
+
+    w, _head = _story(auth_client, fake_container)
+    _build(fake_container)
+    service = fake_container.read_models
+    workspace = fake_container.settings.AUTH_LOCAL_WORKSPACE_ID
+    project = fake_container.settings.AUTH_LOCAL_PROJECT_ID
+    scope = AccessScope(actor_user_id="usr_x", auth_mode=AuthMode.LOCAL, workspace_id=workspace)
+
+    threads: list[int] = []
+    real_replay = story_at_version.replay
+
+    def replay(versions):
+        threads.append(threading.get_ident())
+        return real_replay(versions)
+
+    monkeypatch.setattr(story_at_version, "replay", replay)
+    real_verify = service.verify
+
+    async def slow_verify(*args, **kwargs):
+        await asyncio.sleep(0.05)
+        return await real_verify(*args, **kwargs)
+
+    monkeypatch.setattr(service, "verify", slow_verify)
+
+    async def both():
+        return await asyncio.gather(
+            service.check_now(scope, workspace, project),
+            service.check_now(scope, workspace, project),
+            return_exceptions=True,
+        )
+
+    first, second = asyncio.run(both())
+    assert isinstance(first, list) and len(first) == 6
+    assert isinstance(second, ConflictError)
+    assert threads and threading.get_ident() not in threads
+    # Once the first finished, the line can be checked again.
+    assert len(asyncio.run(service.check_now(scope, workspace, project))) == 6
+
+    # Another server holding the line's check: answered at once with 409.
+    branch_id, _ = asyncio.run(service._line(workspace, project))
+    fake_container.read_model_store.held_elsewhere.add((workspace, project, branch_id))
+    refused = auth_client.post(f"{w['base']}/story-views/check")
+    assert refused.status_code == 409, refused.text
+    assert "being checked now" in refused.text

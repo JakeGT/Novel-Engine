@@ -340,3 +340,61 @@ def test_planning_requires_a_session_and_uses_provider_safe_formats(api_client) 
 
     assert not free_form(to_strict_json_schema(PlanDraft))
     assert not free_form(to_strict_json_schema(DirectionSheet))
+
+
+def test_a_drafted_scene_says_what_it_is_for_only_in_the_authors_words(
+    auth_client, fake_container
+) -> None:
+    """STY-003: plan drafting sets a scene's goal, obstacle and outcome when the author's
+    material states them, each part quoting their words; anything else is dropped."""
+    from backend.services.plan_workflow import DraftIntent
+
+    w = _world(auth_client, fake_container)
+    fake_container.ai.queue(
+        PlanDraft(
+            items=[
+                DraftPlanItem(
+                    ref="s1",
+                    kind="scene",
+                    title="The empty vault",
+                    entries=[DraftPlanRef(ref=w["mara"], role="point_of_view")],
+                )
+            ],
+            intents=[
+                DraftIntent(
+                    ref="s1",
+                    goal="To find the guild's ledgers",
+                    goal_words="Mara wants the ledgers back",
+                    obstacle="Tobin, who has hidden them",
+                    obstacle_words="Tobin hid them",
+                    # Not said by the author: dropped.
+                    outcome="no_and",
+                    outcome_words="and it all goes wrong",
+                ),
+                # Not a drafted scene: ignored.
+                DraftIntent(ref="nowhere", goal="Anything", goal_words="Mara wants the ledgers"),
+            ],
+        )
+    )
+    made = auth_client.post(
+        f"{w['base']}/assist/plan/proposals",
+        json={
+            "description": "In the vault scene Mara wants the ledgers back, but Tobin hid them.",
+            "depth": "scenes",
+            "expected_revision": int(w["head"]),
+        },
+    )
+    assert made.status_code == 201, made.text
+    body = made.json()
+    assert any(
+        "part of what it is for was left out" in item["reason"] for item in body["discarded"]
+    )
+    system = fake_container.ai.calls[-1]["messages"][0]["content"]
+    assert "only what the author said it is for" in system
+    _accept(auth_client, w, body["mutation_id"])
+    (scene,) = [item for item in _plan(auth_client, w) if item["kind"] == "scene"]
+    assert scene["intent"] == {
+        "goal": "To find the guild's ledgers",
+        "obstacle": "Tobin, who has hidden them",
+        "outcome": None,
+    }

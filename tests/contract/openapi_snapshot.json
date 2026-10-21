@@ -1,6 +1,25 @@
 {
   "components": {
     "schemas": {
+      "AboutModel": {
+        "description": "A character of the scene that a finding names (CON-016).",
+        "properties": {
+          "entity_id": {
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_id",
+          "name"
+        ],
+        "title": "AboutModel",
+        "type": "object"
+      },
       "AcceptInvitationRequest": {
         "properties": {
           "token": {
@@ -496,6 +515,16 @@
               }
             ],
             "title": "Cause Ids"
+          },
+          "claim": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EventClaim"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "evidence": {
             "items": {
@@ -1805,6 +1834,20 @@
       },
       "AssistantNoteModel": {
         "properties": {
+          "about": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AboutModel"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "About"
+          },
           "category": {
             "title": "Category",
             "type": "string"
@@ -1914,6 +1957,20 @@
       },
       "AuditCheckModel": {
         "properties": {
+          "about": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AboutModel"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "About"
+          },
           "came_back": {
             "default": false,
             "title": "Came Back",
@@ -2132,6 +2189,20 @@
       },
       "AuditNoteModel": {
         "properties": {
+          "about": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AboutModel"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "About"
+          },
           "category": {
             "title": "Category",
             "type": "string"
@@ -3783,6 +3854,20 @@
       },
       "CheckModel": {
         "properties": {
+          "about": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AboutModel"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "About"
+          },
           "came_back": {
             "default": false,
             "title": "Came Back",
@@ -3870,6 +3955,17 @@
       "CheckWorkModel": {
         "description": "One named check that needs no model, in one scene of a run.",
         "properties": {
+          "ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ms"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -6177,6 +6273,11 @@
             "title": "Lifecycle",
             "type": "string"
           },
+          "notes_removed": {
+            "default": 0,
+            "title": "Notes Removed",
+            "type": "integer"
+          },
           "versions": {
             "title": "Versions",
             "type": "integer"
@@ -6557,6 +6658,16 @@
       "DismissRequest": {
         "additionalProperties": false,
         "properties": {
+          "applies": {
+            "default": "scene",
+            "enum": [
+              "scene",
+              "character",
+              "range"
+            ],
+            "title": "Applies",
+            "type": "string"
+          },
           "days": {
             "anyOf": [
               {
@@ -6572,6 +6683,28 @@
             ],
             "title": "Days"
           },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          },
+          "from_plan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Plan Id"
+          },
           "key": {
             "maxLength": 64,
             "minLength": 64,
@@ -6586,6 +6719,17 @@
           },
           "reason": {
             "$ref": "#/components/schemas/DismissReason"
+          },
+          "to_plan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Plan Id"
           }
         },
         "required": [
@@ -6598,6 +6742,17 @@
       "DismissalModel": {
         "description": "The author dismissed this finding, and why (CON-010, CON-016).",
         "properties": {
+          "applies_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applies To"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -6626,6 +6781,17 @@
           },
           "reason": {
             "$ref": "#/components/schemas/DismissReason"
+          },
+          "scope_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Id"
           }
         },
         "required": [
@@ -6634,6 +6800,57 @@
           "created_at"
         ],
         "title": "DismissalModel",
+        "type": "object"
+      },
+      "DraftIntent": {
+        "description": "What a drafted scene is for (STY-003), only where the author's own words say it.\nUntrusted: each part is kept only when its words are found in what the author said.",
+        "properties": {
+          "goal": {
+            "default": "",
+            "description": "What the viewpoint character wants in it",
+            "title": "Goal",
+            "type": "string"
+          },
+          "goal_words": {
+            "default": "",
+            "description": "The author's words that say it, copied exactly; else empty",
+            "title": "Goal Words",
+            "type": "string"
+          },
+          "obstacle": {
+            "default": "",
+            "description": "Who or what stands in their way",
+            "title": "Obstacle",
+            "type": "string"
+          },
+          "obstacle_words": {
+            "default": "",
+            "description": "The author's words that say it, copied exactly; else empty",
+            "title": "Obstacle Words",
+            "type": "string"
+          },
+          "outcome": {
+            "default": "",
+            "description": "How it ends for them: yes, no, yes_but or no_and; else empty",
+            "title": "Outcome",
+            "type": "string"
+          },
+          "outcome_words": {
+            "default": "",
+            "description": "The author's words that say it, copied exactly; else empty",
+            "title": "Outcome Words",
+            "type": "string"
+          },
+          "ref": {
+            "description": "The ref of a scene you draft",
+            "title": "Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "title": "DraftIntent",
         "type": "object"
       },
       "DraftModel": {
@@ -9799,6 +10016,18 @@
             ],
             "title": "Applies From"
           },
+          "applies_until": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applies Until"
+          },
           "asset_id": {
             "title": "Asset Id",
             "type": "string"
@@ -9844,6 +10073,17 @@
             "title": "Role",
             "type": "string"
           },
+          "shows_version": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shows Version"
+          },
           "target_id": {
             "title": "Target Id",
             "type": "string"
@@ -9888,6 +10128,18 @@
             ],
             "title": "Applies From"
           },
+          "applies_until": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applies Until"
+          },
           "expected_revision": {
             "minimum": 0.0,
             "title": "Expected Revision",
@@ -9905,6 +10157,18 @@
             "default": false,
             "title": "Secret",
             "type": "boolean"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
           }
         },
         "required": [
@@ -10153,6 +10417,14 @@
           "change_count": {
             "title": "Change Count",
             "type": "integer"
+          },
+          "claims_moved": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Claims Moved",
+            "type": "array"
           },
           "details": {
             "additionalProperties": true,
@@ -11877,6 +12149,163 @@
         "title": "PairModel",
         "type": "object"
       },
+      "PartSummariesModel": {
+        "properties": {
+          "derived": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Derived"
+          },
+          "kept": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PartSummaryModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kept_out_of_date": {
+            "default": false,
+            "title": "Kept Out Of Date",
+            "type": "boolean"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "max_words": {
+            "default": 200,
+            "title": "Max Words",
+            "type": "integer"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "scenes": {
+            "title": "Scenes",
+            "type": "integer"
+          },
+          "suggested": {
+            "items": {
+              "$ref": "#/components/schemas/PartSummaryModel"
+            },
+            "title": "Suggested",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "unsummarised": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unsummarised",
+            "type": "array"
+          }
+        },
+        "required": [
+          "plan_id",
+          "kind",
+          "title",
+          "scenes"
+        ],
+        "title": "PartSummariesModel",
+        "type": "object"
+      },
+      "PartSummaryModel": {
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "prompt_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Version"
+          },
+          "scenes": {
+            "title": "Scenes",
+            "type": "integer"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "state",
+          "origin",
+          "scenes",
+          "created_at"
+        ],
+        "title": "PartSummaryModel",
+        "type": "object"
+      },
       "PassEstimateModel": {
         "description": "One pass of a check with the assistant: what it looks at and roughly what it uses.",
         "properties": {
@@ -11913,6 +12342,57 @@
           "total_tokens"
         ],
         "title": "PassEstimateModel",
+        "type": "object"
+      },
+      "PassTimingModel": {
+        "description": "One pass of a check with the assistant: how long it took and the calls it made.",
+        "properties": {
+          "calls": {
+            "default": 0,
+            "title": "Calls",
+            "type": "integer"
+          },
+          "check_pass": {
+            "title": "Check Pass",
+            "type": "string"
+          },
+          "earlier": {
+            "default": false,
+            "title": "Earlier",
+            "type": "boolean"
+          },
+          "ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ms"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "words": {
+            "title": "Words",
+            "type": "string"
+          }
+        },
+        "required": [
+          "check_pass",
+          "words"
+        ],
+        "title": "PassTimingModel",
         "type": "object"
       },
       "PassageModel": {
@@ -12077,6 +12557,41 @@
             ],
             "title": "Applies From"
           },
+          "applies_from_time": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applies From Time"
+          },
+          "applies_until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applies Until"
+          },
+          "applies_until_time": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applies Until Time"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -12107,6 +12622,28 @@
             "title": "Secret",
             "type": "boolean"
           },
+          "shows_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shows Version"
+          },
+          "shows_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shows Version Id"
+          },
           "target_kind": {
             "title": "Target Kind",
             "type": "string"
@@ -12122,6 +12659,17 @@
           "target_record_type": {
             "title": "Target Record Type",
             "type": "string"
+          },
+          "window": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window"
           }
         },
         "required": [
@@ -12473,6 +13021,14 @@
               "type": "string"
             },
             "title": "Gaps",
+            "type": "array"
+          },
+          "intents": {
+            "description": "For a drafted scene, what it is for, only where the author said so",
+            "items": {
+              "$ref": "#/components/schemas/DraftIntent"
+            },
+            "title": "Intents",
             "type": "array"
           },
           "items": {
@@ -13851,6 +14407,18 @@
             "title": "Expected Revision",
             "type": "integer"
           },
+          "scene_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
           "start": {
             "default": 0,
             "minimum": 0.0,
@@ -14612,6 +15180,71 @@
           "from_revision"
         ],
         "title": "RevertPreviewRequest",
+        "type": "object"
+      },
+      "ReviewCalibrationList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewCalibrationModel"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ReviewCalibrationList",
+        "type": "object"
+      },
+      "ReviewCalibrationModel": {
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "integer"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "dismissed": {
+            "title": "Dismissed",
+            "type": "integer"
+          },
+          "found": {
+            "title": "Found",
+            "type": "integer"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "words": {
+            "title": "Words",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "words",
+          "found",
+          "dismissed",
+          "accepted",
+          "note"
+        ],
+        "title": "ReviewCalibrationModel",
         "type": "object"
       },
       "ReviewDecision": {
@@ -15628,6 +16261,14 @@
             "title": "Story Revision",
             "type": "integer"
           },
+          "timings": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PassTimingModel"
+            },
+            "title": "Timings",
+            "type": "array"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -15762,6 +16403,14 @@
               }
             ],
             "title": "Source Id"
+          },
+          "stages": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/StageModel"
+            },
+            "title": "Stages",
+            "type": "array"
           },
           "stale": {
             "title": "Stale",
@@ -16325,6 +16974,17 @@
       },
       "SceneVoiceModel": {
         "properties": {
+          "attributed": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attributed"
+          },
           "band_labels": {
             "items": {
               "type": "string"
@@ -16341,7 +17001,7 @@
             "type": "boolean"
           },
           "measures_version": {
-            "default": "voice/1",
+            "default": "voice/2",
             "title": "Measures Version",
             "type": "string"
           },
@@ -16371,6 +17031,20 @@
           "plan_id": {
             "title": "Plan Id",
             "type": "string"
+          },
+          "speakers": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SpeakerModel"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speakers"
           },
           "stats": {
             "anyOf": [
@@ -16760,6 +17434,237 @@
           "created_at"
         ],
         "title": "SchemaVersionModel",
+        "type": "object"
+      },
+      "ScopedDismissRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "applies": {
+            "enum": [
+              "character",
+              "range"
+            ],
+            "title": "Applies",
+            "type": "string"
+          },
+          "code": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "days": {
+            "anyOf": [
+              {
+                "enum": [
+                  7,
+                  30
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days"
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          },
+          "from_plan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Plan Id"
+          },
+          "kind": {
+            "enum": [
+              "check",
+              "note"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Note",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/DismissReason"
+          },
+          "to_plan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Plan Id"
+          }
+        },
+        "required": [
+          "kind",
+          "code",
+          "applies",
+          "reason"
+        ],
+        "title": "ScopedDismissRequest",
+        "type": "object"
+      },
+      "ScopedDismissalList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ScopedDismissalModel"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ScopedDismissalList",
+        "type": "object"
+      },
+      "ScopedDismissalModel": {
+        "properties": {
+          "applies": {
+            "enum": [
+              "character",
+              "range"
+            ],
+            "title": "Applies",
+            "type": "string"
+          },
+          "applies_to": {
+            "title": "Applies To",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "from_plan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Plan Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "check",
+              "note"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "lapsed": {
+            "default": false,
+            "title": "Lapsed",
+            "type": "boolean"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/DismissReason"
+          },
+          "standing": {
+            "title": "Standing",
+            "type": "boolean"
+          },
+          "to_plan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Plan Id"
+          },
+          "withdrawn_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Withdrawn At"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "code",
+          "applies",
+          "applies_to",
+          "reason",
+          "created_at",
+          "standing"
+        ],
+        "title": "ScopedDismissalModel",
         "type": "object"
       },
       "SectionModel": {
@@ -17311,6 +18216,79 @@
           "fact"
         ],
         "title": "SpannedFactModel",
+        "type": "object"
+      },
+      "SpeakerModel": {
+        "description": "One character's dialogue in the scene, told by a speech tag or by turns (CON-018).",
+        "properties": {
+          "compared": {
+            "title": "Compared",
+            "type": "boolean"
+          },
+          "elsewhere": {
+            "title": "Elsewhere",
+            "type": "integer"
+          },
+          "lines": {
+            "title": "Lines",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sentence_mean": {
+            "title": "Sentence Mean",
+            "type": "number"
+          },
+          "short_forms": {
+            "title": "Short Forms",
+            "type": "number"
+          },
+          "words": {
+            "title": "Words",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "lines",
+          "words",
+          "sentence_mean",
+          "short_forms",
+          "elsewhere",
+          "compared"
+        ],
+        "title": "SpeakerModel",
+        "type": "object"
+      },
+      "StageModel": {
+        "description": "One stage of the checks that need no model in one scene of a run (CON-001).",
+        "properties": {
+          "ms": {
+            "title": "Ms",
+            "type": "number"
+          },
+          "stage": {
+            "enum": [
+              "gather",
+              "checks",
+              "keep"
+            ],
+            "title": "Stage",
+            "type": "string"
+          },
+          "words": {
+            "title": "Words",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage",
+          "words",
+          "ms"
+        ],
+        "title": "StageModel",
         "type": "object"
       },
       "StartWhatIfRequest": {
@@ -18641,6 +19619,17 @@
               }
             ],
             "title": "Slug"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
           }
         },
         "required": [
@@ -18871,6 +19860,205 @@
           "id"
         ],
         "title": "UpdatePlanItemOp",
+        "type": "object"
+      },
+      "UploadFinishedModel": {
+        "properties": {
+          "link": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Link"
+          },
+          "upload": {
+            "$ref": "#/components/schemas/UploadModel"
+          },
+          "version": {
+            "additionalProperties": true,
+            "title": "Version",
+            "type": "object"
+          }
+        },
+        "required": [
+          "upload",
+          "version"
+        ],
+        "title": "UploadFinishedModel",
+        "type": "object"
+      },
+      "UploadModel": {
+        "properties": {
+          "asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Id"
+          },
+          "byte_length": {
+            "title": "Byte Length",
+            "type": "integer"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "finish_at": {
+            "title": "Finish At",
+            "type": "string"
+          },
+          "for": {
+            "enum": [
+              "entity",
+              "scene",
+              "picture"
+            ],
+            "title": "For",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "link_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Link Id"
+          },
+          "send_to": {
+            "title": "Send To",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "waiting",
+              "received",
+              "finishing",
+              "finished",
+              "expired"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          }
+        },
+        "required": [
+          "id",
+          "for",
+          "target_id",
+          "state",
+          "byte_length",
+          "sha256",
+          "expires_at",
+          "send_to",
+          "finish_at"
+        ],
+        "title": "UploadModel",
+        "type": "object"
+      },
+      "UploadReceivedModel": {
+        "properties": {
+          "received": {
+            "additionalProperties": true,
+            "title": "Received",
+            "type": "object"
+          },
+          "upload": {
+            "$ref": "#/components/schemas/UploadModel"
+          }
+        },
+        "required": [
+          "upload",
+          "received"
+        ],
+        "title": "UploadReceivedModel",
+        "type": "object"
+      },
+      "UploadStartRequest": {
+        "additionalProperties": false,
+        "description": "Ask to send a picture in two steps (AST-002): what it is for and what will come.",
+        "properties": {
+          "byte_length": {
+            "exclusiveMinimum": 0.0,
+            "title": "Byte Length",
+            "type": "integer"
+          },
+          "for": {
+            "enum": [
+              "entity",
+              "scene",
+              "picture"
+            ],
+            "title": "For",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "sha256": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "for",
+          "id",
+          "byte_length",
+          "sha256"
+        ],
+        "title": "UploadStartRequest",
         "type": "object"
       },
       "UseComputerRequest": {
@@ -19162,6 +20350,34 @@
         "title": "ViewAnswerModel",
         "type": "object"
       },
+      "ViewCheckModel": {
+        "properties": {
+          "checked": {
+            "title": "Checked",
+            "type": "integer"
+          },
+          "differed": {
+            "title": "Differed",
+            "type": "integer"
+          },
+          "matched": {
+            "title": "Matched",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "checked",
+          "matched",
+          "differed",
+          "skipped"
+        ],
+        "title": "ViewCheckModel",
+        "type": "object"
+      },
       "ViewStateModel": {
         "properties": {
           "answers_reads": {
@@ -19171,6 +20387,18 @@
           "behind": {
             "title": "Behind",
             "type": "integer"
+          },
+          "built_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Built At"
           },
           "differences": {
             "anyOf": [
@@ -19182,6 +20410,17 @@
               }
             ],
             "title": "Differences"
+          },
+          "lag_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lag Seconds"
           },
           "latest_version": {
             "title": "Latest Version",
@@ -19205,6 +20444,11 @@
           "rows": {
             "title": "Rows",
             "type": "integer"
+          },
+          "state": {
+            "default": "",
+            "title": "State",
+            "type": "string"
           },
           "trusted": {
             "title": "Trusted",
@@ -19263,6 +20507,21 @@
       },
       "ViewStatusModel": {
         "properties": {
+          "how_built": {
+            "default": "",
+            "title": "How Built",
+            "type": "string"
+          },
+          "line": {
+            "default": "",
+            "title": "Line",
+            "type": "string"
+          },
+          "main_story": {
+            "default": true,
+            "title": "Main Story",
+            "type": "boolean"
+          },
           "views": {
             "items": {
               "$ref": "#/components/schemas/ViewStateModel"
@@ -19323,6 +20582,47 @@
         "title": "VocabularyModel",
         "type": "object"
       },
+      "VoiceDismissRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "days": {
+            "anyOf": [
+              {
+                "enum": [
+                  7,
+                  30
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days"
+          },
+          "key": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Key",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Note",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/DismissReason"
+          }
+        },
+        "required": [
+          "key",
+          "reason"
+        ],
+        "title": "VoiceDismissRequest",
+        "type": "object"
+      },
       "VoiceModel": {
         "additionalProperties": false,
         "properties": {
@@ -19342,6 +20642,16 @@
             "title": "Code",
             "type": "string"
           },
+          "dismissal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DismissalModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "end": {
             "anyOf": [
               {
@@ -19352,6 +20662,17 @@
               }
             ],
             "title": "End"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
           },
           "message": {
             "title": "Message",
@@ -26896,6 +28217,152 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/dismissals/scoped": {
+      "get": {
+        "description": "Every wider dismissal in this line of the story, newest first.",
+        "operationId": "scoped_dismissals_api_v1_projects__project_id__dismissals_scoped_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopedDismissalList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scoped Dismissals",
+        "tags": [
+          "checks"
+        ]
+      },
+      "post": {
+        "description": "Dismiss one kind of finding wherever it is about a character, or in a stretch of\nscenes. Nothing in the story or the checks changes.",
+        "operationId": "add_scoped_dismissal_api_v1_projects__project_id__dismissals_scoped_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScopedDismissRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopedDismissalModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Scoped Dismissal",
+        "tags": [
+          "checks"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/dismissals/scoped/{dismissal_id}": {
+      "delete": {
+        "description": "Bring the findings back everywhere it applied. The record stays, withdrawn.",
+        "operationId": "withdraw_scoped_dismissal_api_v1_projects__project_id__dismissals_scoped__dismissal_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "dismissal_id",
+            "required": true,
+            "schema": {
+              "title": "Dismissal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopedDismissalModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Withdraw Scoped Dismissal",
+        "tags": [
+          "checks"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/drafts/{draft_id}": {
       "delete": {
         "operationId": "discard_draft_api_v1_projects__project_id__drafts__draft_id__delete",
@@ -31744,7 +33211,7 @@
     },
     "/api/v1/projects/{project_id}/pictures/{asset_id}/links/{link_id}": {
       "put": {
-        "description": "Say who may know what the picture shows here, and from when it applies (AST-004).\nThe link is replaced by a new one in one change; the story's history keeps both.",
+        "description": "Say who may know what the picture shows here, for which story time it applies\n(AST-004, AST-001: from and until) and which version it shows (null: the newest).\nThe link is replaced by a new one in one change; the story's history keeps both.",
         "operationId": "change_picture_link_api_v1_projects__project_id__pictures__asset_id__links__link_id__put",
         "parameters": [
           {
@@ -32951,6 +34418,259 @@
         "summary": "Move Plan Item",
         "tags": [
           "plan"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/part-summary": {
+      "get": {
+        "description": "The summary later scenes are given of a whole arc or beat, and any suggestion.",
+        "operationId": "part_summary_api_v1_projects__project_id__plan__plan_id__part_summary_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartSummariesModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Part Summary",
+        "tags": [
+          "context"
+        ]
+      },
+      "put": {
+        "description": "Keep the author's own summary of a whole arc or beat.",
+        "operationId": "write_part_summary_api_v1_projects__project_id__plan__plan_id__part_summary_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WriteSummaryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartSummariesModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Write Part Summary",
+        "tags": [
+          "context"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/part-summary/suggest": {
+      "post": {
+        "description": "Ask the assistant to suggest a summary of a whole arc or beat from its scenes' kept\nsummaries; nothing is used until the author keeps it.",
+        "operationId": "suggest_part_summary_api_v1_projects__project_id__plan__plan_id__part_summary_suggest_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Suggest Part Summary",
+        "tags": [
+          "context"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/part-summary/{summary_id}": {
+      "post": {
+        "description": "Keep a suggested summary of a whole arc or beat (as it is, or corrected), or not.",
+        "operationId": "decide_part_summary_api_v1_projects__project_id__plan__plan_id__part_summary__summary_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "summary_id",
+            "required": true,
+            "schema": {
+              "title": "Summary Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideSummaryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartSummariesModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide Part Summary",
+        "tags": [
+          "context"
         ]
       }
     },
@@ -34225,6 +35945,129 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/voice/dismissals": {
+      "post": {
+        "description": "Dismiss a note on how the scene sounds, with a reason. Nothing is changed.",
+        "operationId": "dismiss_voice_note_api_v1_projects__project_id__plan__plan_id__voice_dismissals_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceDismissRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneVoiceModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dismiss Voice Note",
+        "tags": [
+          "voice"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/voice/dismissals/{dismissal_id}": {
+      "delete": {
+        "description": "Bring a dismissed note on how the scene sounds back.",
+        "operationId": "undo_voice_dismissal_api_v1_projects__project_id__plan__plan_id__voice_dismissals__dismissal_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "dismissal_id",
+            "required": true,
+            "schema": {
+              "title": "Dismissal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneVoiceModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Undo Voice Dismissal",
+        "tags": [
+          "voice"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/plan/{plan_id}/voice/usual": {
       "put": {
         "description": "Leave the scene out of the author's usual voice, or count it again.",
@@ -34708,6 +36551,49 @@
         "summary": "Preview Revert",
         "tags": [
           "canon-history"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/review/calibration": {
+      "get": {
+        "description": "How often each kind of advisory finding on the review screen was dismissed in this\nstory (CON-016): a note for the author; nothing about the checks changes.",
+        "operationId": "review_calibration_api_v1_projects__project_id__review_calibration_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewCalibrationList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review Calibration",
+        "tags": [
+          "review"
         ]
       }
     },
@@ -35389,6 +37275,49 @@
           }
         },
         "summary": "Story Views",
+        "tags": [
+          "story-views"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/story-views/check": {
+      "post": {
+        "description": "Check this line's ready views against the story's history now (owners and\nadministrators). A view that matches is used by reads from then on; one that differs\nis built again and used only once it matches. Nothing in the story changes.",
+        "operationId": "check_story_views_api_v1_projects__project_id__story_views_check_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewCheckModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Check Story Views",
         "tags": [
           "story-views"
         ]
@@ -36706,6 +38635,230 @@
         "summary": "Set Unit",
         "tags": [
           "story-time"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/uploads": {
+      "post": {
+        "description": "Start a two-step picture upload (AST-002): say what it is for, its size and its\nSHA-256. Refused before anything is sent when it is too large (413), there is no\nroom, or what it is for is not in the story. Then send the bytes with ``PUT`` to\n``send_to`` and finish with ``POST`` to ``finish_at``, within an hour.",
+        "operationId": "start_upload_api_v1_projects__project_id__uploads_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Upload",
+        "tags": [
+          "media"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/uploads/{upload_id}": {
+      "get": {
+        "description": "Where a two-step upload is. Only the person who started it can see it.",
+        "operationId": "get_upload_api_v1_projects__project_id__uploads__upload_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "upload_id",
+            "required": true,
+            "schema": {
+              "title": "Upload Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Upload",
+        "tags": [
+          "media"
+        ]
+      },
+      "put": {
+        "description": "Send the picture itself as the request body. It is read as it streams in, never\npast the size promised, and must match the size and SHA-256 promised; a\n``Content-Digest`` is checked too. When it does not match nothing is kept and it can\nbe sent again. It is not in the story until it is finished.",
+        "operationId": "send_upload_api_v1_projects__project_id__uploads__upload_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "upload_id",
+            "required": true,
+            "schema": {
+              "title": "Upload Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadReceivedModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send Upload",
+        "tags": [
+          "media"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/uploads/{upload_id}/finish": {
+      "post": {
+        "description": "Finish a two-step upload: the stored bytes are checked against what was promised\nagain, then the picture is shown on its entry or scene (``expected_revision`` is the\nstory's revision) or added as a new version of its picture. Asking again once it is\nfinished answers with what it made.",
+        "operationId": "finish_upload_api_v1_projects__project_id__uploads__upload_id__finish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "upload_id",
+            "required": true,
+            "schema": {
+              "title": "Upload Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expected_revision",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Revision"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadFinishedModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Finish Upload",
+        "tags": [
+          "media"
         ]
       }
     },

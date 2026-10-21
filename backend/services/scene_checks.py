@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -270,6 +271,37 @@ def pass_messages(
     return clarity_messages(material.story, content)
 
 
+def part_messages(
+    check_pass: str,
+    story: str,
+    passages: str,
+    part: str,
+    *,
+    secrets: str = "",
+    voice: str = "",
+    pov: str | None = None,
+) -> list[dict[str, str]]:
+    """One part of a long scene checked by a pass that reads the same part of the story
+    for every passage (viewpoint, voice, clarity; CON-013): the pass's own instructions,
+    with everything it reads of the story, and some passages of the scene in order."""
+    check = CheckPass(check_pass)
+    if check is CheckPass.VIEWPOINT:
+        messages = viewpoint_messages(story, secrets, passages, pov)
+    elif check is CheckPass.VOICE:
+        messages = voice_messages(story, voice, passages)
+    else:
+        messages = clarity_messages(story, passages)
+    messages[0] = {
+        "role": "system",
+        "content": messages[0]["content"]
+        + "\nThis scene is too long to check at once, so it is checked in parts. This is "
+        f"{part.lower()}: some passages of the scene, in order, given as the scene below. "
+        "Report only what is in these passages, and nothing about passages you were not "
+        "given.",
+    }
+    return messages
+
+
 # ------------------------------------------------------------------------ groups
 #
 # A continuity check of a long scene against a large story is sent in groups (CON-013,
@@ -282,8 +314,21 @@ def pass_messages(
 # the job's result says which and why.
 
 # Passes that may be sent in groups: continuity is the one that reads the story bible at
-# large. The others read a few sections and are sent whole.
-GROUPED_PASSES: frozenset[CheckPass] = frozenset({CheckPass.CONTINUITY})
+# large, and is grouped by what each passage names. Viewpoint, voice and clarity read the
+# same part of the story for every passage, so a long scene is sent in parts, each with
+# all of it (``PART_PASSES``). The plan check reads the whole scene to tell what it leaves
+# out, and the pictures check sends its pictures, so both are always sent whole.
+PART_PASSES: frozenset[CheckPass] = frozenset(
+    {CheckPass.VIEWPOINT, CheckPass.VOICE, CheckPass.CLARITY}
+)
+GROUPED_PASSES: frozenset[CheckPass] = frozenset({CheckPass.CONTINUITY}) | PART_PASSES
+# Why a long scene's pass is still sent whole, when it cannot be split.
+ALWAYS_WHOLE: dict[CheckPass, str] = {
+    CheckPass.PLAN: "The plan check reads the whole scene to tell what it leaves out, so it is "
+    "always sent whole.",
+    CheckPass.PICTURES: "The pictures check is sent whole, with its pictures.",
+}
+PARTS_POLICY = "scene-parts/1"
 # A pass whose prompt would be larger than this is sent in groups, each within this.
 GROUP_ABOVE_TOKENS = 6_000
 GROUP_BUDGET = 6_000
@@ -306,6 +351,9 @@ class GroupCall:
     spans: tuple[tuple[int, int], ...]
     secrets: int
     estimate: PassEstimate
+    # For a part of a pass sent in parts: what else the pass reads, the same each time.
+    secrets_text: str = ""
+    voice: str = ""
 
 
 @dataclass(frozen=True)
@@ -375,10 +423,20 @@ async def plan_groups(
     pass to be sent whole (the earlier way), never fails the check."""
     found: dict[CheckPass, GroupedPass] = {}
     for material in materials:
-        if material.check not in GROUPED_PASSES or not content.strip():
+        if not content.strip():
             continue
         flat = estimate_pass(material, content)
         if flat.prompt_tokens <= (above or GROUP_ABOVE_TOKENS):
+            continue
+        if material.check in ALWAYS_WHOLE:
+            found[material.check] = GroupedPass(material.check, whole=ALWAYS_WHOLE[material.check])
+            continue
+        if material.check not in GROUPED_PASSES:
+            continue
+        if material.check in PART_PASSES:
+            found[material.check] = in_parts(
+                scene.id, content, material, budget=budget or GROUP_BUDGET
+            )
             continue
         try:
             found[material.check] = await _grouped(
@@ -390,6 +448,96 @@ async def plan_groups(
                 material.check, whole="The passages could not be grouped, so it was sent whole."
             )
     return found
+
+
+def in_parts(scene_id: str, content: str, material: PassMaterial, *, budget: int) -> GroupedPass:
+    """A long scene as parts for a pass that reads the same part of the story for every
+    passage: consecutive passages (paragraphs, or sentences of a long one, as
+    ``review_units`` cuts them) packed in order, each part sent with all the pass reads of
+    the story. Every passage is in exactly one part, so the check is complete; a part can
+    miss a problem that runs across where two parts meet, which the job says."""
+    from backend.domain.review_bundles import MAX_UNIT_TOKENS, SceneFrame, review_units, tokens_of
+
+    check = material.check
+    label = PASS_LABELS[check]
+    fixed = (
+        tokens_of(material.story)
+        + tokens_of(material.secrets)
+        + tokens_of(material.voice)
+        + math.ceil(PASS_INSTRUCTION_WORDS * TOKENS_PER_WORD)
+    )
+    room = budget - fixed
+    if room < MAX_UNIT_TOKENS // 2:
+        return GroupedPass(
+            check,
+            whole="What this check reads of the story is too large to send with part of the "
+            "scene, so it was sent whole.",
+        )
+    units = review_units(
+        content, SceneFrame(scene_id, 0), [], {}, max_tokens=min(MAX_UNIT_TOKENS, room)
+    )
+    parts: list[list[Any]] = []
+    for unit in units:
+        if parts and sum(item.tokens for item in parts[-1]) + unit.tokens <= room:
+            parts[-1].append(unit)
+        else:
+            parts.append([unit])
+    if len(parts) <= 1:
+        return GroupedPass(check, whole="One part would hold it all, so it was sent whole.")
+    if len(parts) > MAX_GROUP_CALLS:
+        return GroupedPass(
+            check,
+            whole=f"It would take {len(parts)} parts, more than {MAX_GROUP_CALLS}, so it was "
+            "sent whole.",
+        )
+    calls: list[GroupCall] = []
+    passages: list[dict[str, Any]] = []
+    for number, part in enumerate(parts, start=1):
+        start, end = part[0].start, part[-1].end
+        words = f"Part {number} of {len(parts)}"
+        text = content[start:end].strip()
+        reads = (
+            len(material.story.split())
+            + len(material.secrets.split())
+            + len(material.voice.split())
+            + len(text.split())
+            + PASS_INSTRUCTION_WORDS
+        )
+        calls.append(
+            GroupCall(
+                group_id=f"{scene_id}:part{number}",
+                family="part",
+                words=words,
+                story=material.story,
+                passages=text,
+                spans=((start, end),),
+                secrets=0,
+                estimate=PassEstimate(
+                    check=check,
+                    prompt_tokens=math.ceil(reads * TOKENS_PER_WORD),
+                    completion_tokens=PASS_ANSWER_TOKENS,
+                ),
+                secrets_text=material.secrets,
+                voice=material.voice,
+            )
+        )
+        passages.extend(
+            {"start": unit.start, "end": unit.end, "checks": [label], "part": number}
+            for unit in part
+        )
+    return GroupedPass(
+        check,
+        calls=tuple(calls),
+        complete=True,
+        lines=(
+            f"{label}: sent in {len(parts)} parts, each with everything this check reads of "
+            "the story.",
+            "Every passage was checked once. Something that runs across where two parts meet "
+            "may be missed.",
+        ),
+        passages=tuple(passages),
+        policy=PARTS_POLICY,
+    )
 
 
 async def _grouped(
@@ -572,6 +720,11 @@ class PassOutcome:
     delivery: dict[str, Any] | None = None
     # A pass that could be sent in groups: how it was sent (CON-013).
     groups: dict[str, Any] | None = None
+    # How long it took, the calls it made, and whether an earlier run of the same job
+    # had already finished it (CON-001).
+    ms: float | None = None
+    calls: int = 0
+    earlier: bool = False
 
 
 @dataclass
@@ -596,6 +749,9 @@ class CheckOutcome:
                     "dropped": item.dropped,
                     **({"delivery": item.delivery} if item.delivery is not None else {}),
                     **({"bundles": item.groups} if item.groups is not None else {}),
+                    **({"ms": round(item.ms, 1)} if item.ms is not None else {}),
+                    "calls": item.calls,
+                    **({"earlier": True} if item.earlier else {}),
                 }
                 for item in self.passes
             },
@@ -762,137 +918,185 @@ class PassRunner:
         tried again): a pass it finished is not asked again, and a pass sent in groups
         goes on from the first group it did not finish, so no note is stored twice.
         """
-        api_key, base_url, sink = provider
-        job = ctx.job
         outcome = CheckOutcome()
-        lo, hi = progress
         count = len(materials)
         for index, material in enumerate(materials):
-            check = material.check
-            label = PASS_LABELS[check].lower()
-            await ctx.step(
-                f"{stage}Checking {label} ({index + 1} of {count})"
-                if count > 1
-                else f"{stage}Checking {label}",
-                lo + int((hi - lo) * index / max(count, 1)),
-            )
-            key = call_key(check)
-            grouped = (groups or {}).get(check)
-            mine = pass_notes(earlier, check, target_id)
-            if pass_finished(mine, grouped):
-                # Finished by an earlier run of this job: its notes are kept as they are.
-                outcome.passes.append(
-                    PassOutcome(
-                        check,
-                        kept=len(mine),
-                        groups=grouped.summary() if grouped is not None else None,
-                    )
-                )
-                continue
-            images: list[Any] = []
-            legend = ""
-            names: dict[str, str] = {}
-            delivery: dict[str, Any] | None = None
-            if check is CheckPass.PICTURES:
-                if self._pictures is None or not material.has_material:
-                    outcome.passes.append(PassOutcome(check))
-                    continue
-                delivered = await self._pictures.deliver(
-                    ctx.scope,
-                    job.workspace_id,
-                    job.project_id,
-                    material.pictures,
-                    self._pictures.limits_for(base_url),
-                )
-                delivery = delivered.delivery.as_dict()
-                if not any(
-                    part.representation.value in ("picture", "fallback", "description")
-                    for part in delivered.delivery.parts
-                ):
-                    # Nothing reaches the model in any form: no call, nothing spent.
-                    outcome.passes.append(PassOutcome(check, delivery=delivery))
-                    continue
-                images, legend = delivered.images, delivered.legend
-                names = {ref.lower(): label for ref, label in delivered.names.items()}
-            if grouped is not None and grouped.grouped:
-                outcome.passes.append(
-                    await self._run_groups(
-                        ctx,
-                        grouped,
-                        earlier=mine,
-                        content=content,
-                        target_kind=target_kind,
-                        target_id=target_id,
-                        provider=provider,
-                        key=key,
-                        remaining=remaining_tokens(index),
-                        check_first=bool(index or not first_call_checked),
-                        progress=(
-                            lo + int((hi - lo) * index / max(count, 1)),
-                            lo + int((hi - lo) * (index + 1) / max(count, 1)),
-                        ),
-                        stage=stage,
-                    )
-                )
-                continue
-            if (index or not first_call_checked) and self._usage is not None:
-                # Checked again before each call: the allowance may have run out meanwhile.
-                await self._usage.ensure_within_limits(
-                    workspace_id=job.workspace_id,
-                    actor_user_id=job.actor_user_id,
-                    estimated_tokens=remaining_tokens(index),
-                    idempotency_key=key,
-                )
-            async with ctx.holding():
-                response = await self._ai.generate_structured(
-                    messages=pass_messages(material, content, pov, legend),
-                    response_format=PictureNotes if check is CheckPass.PICTURES else CheckNotes,
-                    model=self._model,
-                    api_key=api_key,
-                    base_url=base_url,
-                    **({"images": images} if images else {}),
-                )
-            await sink(response.usage, response.model, idempotency_key=key)
-            await ctx.used(
-                response.usage.prompt_tokens,
-                response.usage.completion_tokens,
-                response.usage.cached_prompt_tokens,
-                response.usage.cost_usd,
-            )
-            kept, dropped = keep_notes(
-                response.parsed.notes or [],
-                content,
-                check=check,
+            began = time.perf_counter()
+            await self._one(
+                ctx,
+                outcome,
+                index=index,
+                count=count,
+                material=material,
+                content=content,
+                pov=pov,
                 target_kind=target_kind,
                 target_id=target_id,
-                job_id=job.id,
-                pictures=names,
+                provider=provider,
+                call_key=call_key,
+                remaining_tokens=remaining_tokens,
+                progress=progress,
+                stage=stage,
+                first_call_checked=first_call_checked,
+                groups=groups,
+                earlier=earlier,
             )
-            # Nothing from this pass is stored once the author has asked it to stop.
-            await ctx.step(
-                f"{stage}Saving what it found", lo + int((hi - lo) * (index + 1) / max(count, 1))
-            )
-            await self._store.add_findings(
-                workspace_id=job.workspace_id, project_id=job.project_id, findings=kept
-            )
+            if outcome.passes:
+                outcome.passes[-1].ms = (time.perf_counter() - began) * 1000
+        return outcome
+
+    async def _one(
+        self,
+        ctx: JobContext,
+        outcome: CheckOutcome,
+        *,
+        index: int,
+        count: int,
+        material: PassMaterial,
+        content: str,
+        pov: str | None,
+        target_kind: str,
+        target_id: str,
+        provider: tuple[str | None, str | None, Sink],
+        call_key: Callable[[CheckPass], str],
+        remaining_tokens: Callable[[int], int],
+        progress: tuple[int, int],
+        stage: str,
+        first_call_checked: bool,
+        groups: Mapping[CheckPass, GroupedPass] | None,
+        earlier: Sequence[AssistantFinding],
+    ) -> None:
+        """One pass of ``run``; appends its outcome."""
+        api_key, base_url, sink = provider
+        job = ctx.job
+        lo, hi = progress
+        check = material.check
+        label = PASS_LABELS[check].lower()
+        await ctx.step(
+            f"{stage}Checking {label} ({index + 1} of {count})"
+            if count > 1
+            else f"{stage}Checking {label}",
+            lo + int((hi - lo) * index / max(count, 1)),
+        )
+        key = call_key(check)
+        grouped = (groups or {}).get(check)
+        mine = pass_notes(earlier, check, target_id)
+        if pass_finished(mine, grouped):
+            # Finished by an earlier run of this job: its notes are kept as they are.
             outcome.passes.append(
                 PassOutcome(
                     check,
-                    kept=len(kept),
-                    dropped=dropped,
-                    delivery=delivery,
+                    kept=len(mine),
                     groups=grouped.summary() if grouped is not None else None,
+                    earlier=True,
                 )
             )
-            log_event(
-                logger,
-                "studio.check_pass",
-                check_pass=check.value,
+            return
+        images: list[Any] = []
+        legend = ""
+        names: dict[str, str] = {}
+        delivery: dict[str, Any] | None = None
+        if check is CheckPass.PICTURES:
+            if self._pictures is None or not material.has_material:
+                outcome.passes.append(PassOutcome(check))
+                return
+            delivered = await self._pictures.deliver(
+                ctx.scope,
+                job.workspace_id,
+                job.project_id,
+                material.pictures,
+                self._pictures.limits_for(base_url),
+            )
+            delivery = delivered.delivery.as_dict()
+            if not any(
+                part.representation.value in ("picture", "fallback", "description")
+                for part in delivered.delivery.parts
+            ):
+                # Nothing reaches the model in any form: no call, nothing spent.
+                outcome.passes.append(PassOutcome(check, delivery=delivery))
+                return
+            images, legend = delivered.images, delivered.legend
+            names = {ref.lower(): label for ref, label in delivered.names.items()}
+        if grouped is not None and grouped.grouped:
+            outcome.passes.append(
+                await self._run_groups(
+                    ctx,
+                    grouped,
+                    earlier=mine,
+                    content=content,
+                    target_kind=target_kind,
+                    target_id=target_id,
+                    provider=provider,
+                    key=key,
+                    remaining=remaining_tokens(index),
+                    check_first=bool(index or not first_call_checked),
+                    progress=(
+                        lo + int((hi - lo) * index / max(count, 1)),
+                        lo + int((hi - lo) * (index + 1) / max(count, 1)),
+                    ),
+                    stage=stage,
+                    pov=pov,
+                )
+            )
+            return
+        if (index or not first_call_checked) and self._usage is not None:
+            # Checked again before each call: the allowance may have run out meanwhile.
+            await self._usage.ensure_within_limits(
+                workspace_id=job.workspace_id,
+                actor_user_id=job.actor_user_id,
+                estimated_tokens=remaining_tokens(index),
+                idempotency_key=key,
+            )
+        async with ctx.holding():
+            response = await self._ai.generate_structured(
+                messages=pass_messages(material, content, pov, legend),
+                response_format=PictureNotes if check is CheckPass.PICTURES else CheckNotes,
+                model=self._model,
+                api_key=api_key,
+                base_url=base_url,
+                **({"images": images} if images else {}),
+            )
+        await sink(response.usage, response.model, idempotency_key=key)
+        await ctx.used(
+            response.usage.prompt_tokens,
+            response.usage.completion_tokens,
+            response.usage.cached_prompt_tokens,
+            response.usage.cost_usd,
+        )
+        kept, dropped = keep_notes(
+            response.parsed.notes or [],
+            content,
+            check=check,
+            target_kind=target_kind,
+            target_id=target_id,
+            job_id=job.id,
+            pictures=names,
+        )
+        # Nothing from this pass is stored once the author has asked it to stop.
+        await ctx.step(
+            f"{stage}Saving what it found", lo + int((hi - lo) * (index + 1) / max(count, 1))
+        )
+        await self._store.add_findings(
+            workspace_id=job.workspace_id, project_id=job.project_id, findings=kept
+        )
+        outcome.passes.append(
+            PassOutcome(
+                check,
                 kept=len(kept),
                 dropped=dropped,
-                prompt_version=prompt_version(PASS_PROMPTS[check]),
+                delivery=delivery,
+                groups=grouped.summary() if grouped is not None else None,
+                calls=1,
             )
-        return outcome
+        )
+        log_event(
+            logger,
+            "studio.check_pass",
+            check_pass=check.value,
+            kept=len(kept),
+            dropped=dropped,
+            prompt_version=prompt_version(PASS_PROMPTS[check]),
+        )
 
     async def _run_groups(
         self,
@@ -909,6 +1113,7 @@ class PassRunner:
         progress: tuple[int, int],
         stage: str,
         earlier: Sequence[AssistantFinding] = (),
+        pov: str | None = None,
     ) -> PassOutcome:
         """One pass sent as its groups. The first group's call uses the pass's own key, so
         a pass that was sent whole before keeps its key; later groups add their number.
@@ -945,9 +1150,22 @@ class PassRunner:
                     estimated_tokens=max(remaining - spent, call.estimate.total),
                     idempotency_key=call_key,
                 )
+            messages = (
+                continuity_group_messages(call.story, call.passages, call.words)
+                if check is CheckPass.CONTINUITY
+                else part_messages(
+                    check.value,
+                    call.story,
+                    call.passages,
+                    call.words,
+                    secrets=call.secrets_text,
+                    voice=call.voice,
+                    pov=pov,
+                )
+            )
             async with ctx.holding():
                 response = await self._ai.generate_structured(
-                    messages=continuity_group_messages(call.story, call.passages, call.words),
+                    messages=messages,
                     response_format=CheckNotes,
                     model=self._model,
                     api_key=api_key,
@@ -993,13 +1211,25 @@ class PassRunner:
             kept=len(kept_all),
             dropped=dropped,
             groups=count,
-            prompt_version=prompt_version("check-continuity-group"),
+            prompt_version=prompt_version(
+                "check-continuity-group" if check is CheckPass.CONTINUITY else "check-part"
+            ),
         )
-        return PassOutcome(check, kept=len(kept_all), dropped=dropped, groups=grouped.summary())
+        return PassOutcome(
+            check,
+            kept=len(kept_all),
+            dropped=dropped,
+            groups=grouped.summary(),
+            calls=count - min(done, count),
+        )
 
 
 __all__ = [
+    "ALWAYS_WHOLE",
     "GROUPED_PASSES",
+    "PART_PASSES",
+    "in_parts",
+    "part_messages",
     "GroupCall",
     "GroupedPass",
     "continuity_group_messages",

@@ -1,10 +1,21 @@
 # Phase 4 implementation todo: explainable context and derived memory
 
-- Status: Built (2026-10-17) for text; media processing not built. Phase 5 drafting uses it.
+- Status: Built (2026-10-17) for text; pictures followed in batch 6 (2026-10-20). Phase 5 drafting
+  uses it.
 - Scope: `09-delivery-roadmap.md` Phase 4; backlog `CTX-001`, `CTX-002`, `CTX-004`–`CTX-010`,
   `CTX-015`; the multimodal items (`CTX-011`–`CTX-014`, `AST-003`, `AST-005`) as far as pictures.
 - Governing documents: `04-ai-and-retrieval.md`, `17-multimodal-context.md`, ADR-005, ADR-020,
   ADR-021 (written with this phase). Level 4 in `19-assistant-first-experience.md`.
+
+**Since this phase (checked 2026-10-21).** The checklists below record the state when the phase was
+built. Later work: a retrieval evaluation set with a pinned baseline (CTX-010); pictures prepared,
+described, and found by meaning beside words (AST-003, AST-005, CTX-012); pictures sent to models
+that can see them (CTX-013); generation-versioned vectors that cannot mix sizes, and an
+EmbeddingGemma 2 adapter that has never been run here (CTX-011, CTX-012); a multimodal evaluation run
+with the stand-in only (CTX-014); and richer context (CTX-005–CTX-007, batch 7 A). Still open: an
+assistant path for "don't use that", search by meaning on hosted deployments (the image does not
+install the embeddings extra). Sound and film are deferred past release one by owner decision
+(2026-10-21). Current status: [`10-backlog.md`](10-backlog.md).
 
 ## Decisions taken for this phase (ADR-021)
 

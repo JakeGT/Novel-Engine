@@ -48,6 +48,14 @@ PICTURE_KIND = "picture"
 CAPTION_KIND = "caption"
 MEDIA_KINDS = (PICTURE_KIND, CAPTION_KIND)
 BATCH = 16
+# The scheduled catch-up (CTX-012): stories looked at, and brought up to date, per round,
+# and at most this many things embedded in one round however many a story is missing
+# (jobs wait while it runs; the rest is caught up the next round).
+CATCH_UP_SCAN = 50
+CATCH_UP_STORIES = 3
+CATCH_UP_ITEMS = 200
+# The lock one server takes for a round, so two never catch up at the same time.
+CATCH_UP_LOCK = "embedding-catch-up"
 
 Step = Callable[[str, int], Awaitable[None]]
 
@@ -82,6 +90,11 @@ class ProjectBuild:
     def add(self, other: ProjectBuild) -> None:
         for name in vars(self):
             setattr(self, name, getattr(self, name) + getattr(other, name))
+
+    @property
+    def embedded(self) -> int:
+        """Things sent to the model to embed (a picture that could not be read counts)."""
+        return self.documents + self.captions + self.pictures + self.pictures_unreadable
 
 
 @dataclass
@@ -164,6 +177,8 @@ class EmbeddingIndexService:
         self._passages = passages
         self._runner = runner
         self._batch = max(1, batch_size)
+        # Where the next scheduled catch-up round starts, so every story gets its turn.
+        self._catch_up_from = 0
 
     # --- configuration --------------------------------------------------------------
 
@@ -316,8 +331,12 @@ class EmbeddingIndexService:
         *,
         from_texts: bool = False,
         step: Step | None = None,
+        limit: int | None = None,
     ) -> ProjectBuild:
-        """Bring one project in one generation up to date. Idempotent and resumable."""
+        """Bring one project in one generation up to date. Idempotent and resumable.
+
+        With ``limit``, stop after embedding about that many things; what is left is
+        brought up to date by the next build."""
         generation = await self._target(generation_id)
         scope = {"workspace_id": workspace_id, "project_id": project_id}
         report = ProjectBuild()
@@ -334,15 +353,21 @@ class EmbeddingIndexService:
                 for row in await self._call("text_rows", active.id, **scope)
                 if row.asset_id is None and row.id not in have
             ]
+            if limit is not None:
+                documents = documents[:limit]
             for start in range(0, len(documents), self._batch):
                 await self._check_cancel(generation.id, step, "documents", 10)
                 chunk = documents[start : start + self._batch]
                 report.documents += await self._embed_text_rows(generation, chunk, scope)
+
+        def room() -> int | None:
+            return None if limit is None else max(0, limit - report.embedded)
+
         await self._check_cancel(generation.id, step, "captions", 40)
-        report.add(await self._build_captions(generation, have, scope))
+        report.add(await self._build_captions(generation, have, scope, room=room()))
         if generation.supports(Modality.IMAGE):
             await self._check_cancel(generation.id, step, "pictures", 60)
-            report.add(await self._build_pictures(generation, have, scope, step=step))
+            report.add(await self._build_pictures(generation, have, scope, step=step, room=room()))
         else:
             # A text-only space never holds picture rows.
             report.removed += await self._call(
@@ -383,7 +408,12 @@ class EmbeddingIndexService:
         return int(await self._call("upsert", generation.id, fresh, **scope))
 
     async def _build_captions(
-        self, generation: Generation, have: dict[str, str], scope: dict[str, str]
+        self,
+        generation: Generation,
+        have: dict[str, str],
+        scope: dict[str, str],
+        *,
+        room: int | None = None,
     ) -> ProjectBuild:
         report = ProjectBuild()
         captions = await self._call("accepted_captions", **scope)
@@ -397,6 +427,8 @@ class EmbeddingIndexService:
                 report.unchanged += 1
                 continue
             pending.append((row_id, caption, item))
+        if room is not None:
+            pending = pending[:room]
         for start in range(0, len(pending), self._batch):
             chunk = pending[start : start + self._batch]
             vectors = await asyncio.to_thread(
@@ -433,6 +465,7 @@ class EmbeddingIndexService:
         *,
         step: Step | None = None,
         only_version: str | None = None,
+        room: int | None = None,
     ) -> ProjectBuild:
         report = ProjectBuild()
         pictures = await self._call("pictures_ready", **scope)
@@ -443,6 +476,9 @@ class EmbeddingIndexService:
             row_id = picture_row_id(picture.asset_version_id)
             if have.get(row_id) == picture.checksum:
                 report.unchanged += 1
+                continue
+            if room is not None and report.pictures + report.pictures_unreadable >= room:
+                # The rest waits for the next round; a row still wanted is never removed.
                 continue
             if step is not None:
                 await self._check_cancel(generation.id, step, "pictures", 70)
@@ -657,6 +693,80 @@ class EmbeddingIndexService:
         )
         log_event(logger, "embedding.versions_forgotten", versions=len(version_ids), rows=removed)
         return removed
+
+    # --- the scheduled catch-up (CTX-012) ---------------------------------------------
+
+    def schedule_catch_up(self, runner: Any, minutes: int) -> bool:
+        """Run ``catch_up`` about every ``minutes`` between jobs; off when ``minutes`` is 0
+        (the default setting, ``SEARCH_INDEX_CATCH_UP_MINUTES``)."""
+        if runner is None or minutes <= 0:
+            return False
+        runner.every(float(minutes) * 60.0, self.catch_up)
+        return True
+
+    async def catch_up(
+        self,
+        *,
+        stories: int = CATCH_UP_STORIES,
+        scan: int = CATCH_UP_SCAN,
+        items: int = CATCH_UP_ITEMS,
+    ) -> ProjectBuild:
+        """One round of the scheduled catch-up, what ``make reindex-refresh`` does, a little
+        at a time: in the index in use, when it is the configured model's and the model is
+        ready, look at up to ``scan`` stories (taking turns from where the last round
+        stopped) and bring up to ``stories`` of those still missing something up to date,
+        embedding at most ``items`` things in all. Bounded, since jobs wait while it runs;
+        idempotent, like every build; one server at a time (another's round is skipped)."""
+        total = ProjectBuild()
+        if not self.configured_ready():
+            return total
+        held = await self._call("hold_lock", CATCH_UP_LOCK)
+        if held is None:
+            return total
+        try:
+            return await self._catch_up_round(total, stories, scan, max(1, items))
+        finally:
+            await self._call("release_lock", held)
+
+    async def _catch_up_round(
+        self, total: ProjectBuild, stories: int, scan: int, items: int
+    ) -> ProjectBuild:
+        active = await self._call("active")
+        if active is None or not self._matches(active):
+            return total
+        projects = list(await self._call("projects"))
+        if not projects:
+            return total
+        start = self._catch_up_from % len(projects)
+        turn = (projects[start:] + projects[:start])[: max(1, scan)]
+        brought = looked = 0
+        for workspace_id, project_id in turn:
+            if brought >= stories or total.embedded >= items:
+                break
+            looked += 1
+            lag = await self.project_lag(active, workspace_id, project_id)
+            if not lag.total:
+                continue
+            room = items - total.embedded
+            report = await self.build_project(active.id, workspace_id, project_id, limit=room)
+            total.add(report)
+            brought += 1
+            if report.embedded >= room:
+                # Perhaps cut short: the next round starts with this story again.
+                looked -= 1
+                break
+        self._catch_up_from = start + looked
+        if brought:
+            log_event(
+                logger,
+                "embedding.caught_up",
+                generation=active.id,
+                stories=brought,
+                captions=total.captions,
+                pictures=total.pictures,
+                removed=total.removed,
+            )
+        return total
 
     # --- the job ----------------------------------------------------------------------
 

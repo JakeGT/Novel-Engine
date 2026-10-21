@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -50,6 +51,12 @@ from backend.domain.operations import (
     EvidenceRef,
 )
 from backend.domain.prompts import Messages, prompt_version
+from backend.domain.scene_intent import (
+    MAX_INTENT_LENGTH,
+    OUTCOME_WORDS,
+    SceneIntent,
+    with_intent,
+)
 from backend.domain.tenancy import Permission
 from backend.services.canon_character_workflow import (
     MAX_ANSWERS,
@@ -92,6 +99,27 @@ DEPTHS: dict[str, str] = {
 }
 
 
+class DraftIntent(BaseModel):
+    """What a drafted scene is for (STY-003), only where the author's own words say it.
+    Untrusted: each part is kept only when its words are found in what the author said."""
+
+    ref: str = Field(description="The ref of a scene you draft")
+    goal: str = Field(default="", description="What the viewpoint character wants in it")
+    goal_words: str = Field(
+        default="", description="The author's words that say it, copied exactly; else empty"
+    )
+    obstacle: str = Field(default="", description="Who or what stands in their way")
+    obstacle_words: str = Field(
+        default="", description="The author's words that say it, copied exactly; else empty"
+    )
+    outcome: str = Field(
+        default="", description="How it ends for them: yes, no, yes_but or no_and; else empty"
+    )
+    outcome_words: str = Field(
+        default="", description="The author's words that say it, copied exactly; else empty"
+    )
+
+
 class PlanDraft(BaseModel):
     """Structured model output. Untrusted: typed and checked before it becomes operations."""
 
@@ -105,6 +133,34 @@ class PlanDraft(BaseModel):
         default_factory=list,
         description="What the author has not decided, left open rather than made up",
     )
+    intents: list[DraftIntent] = Field(
+        default_factory=list,
+        description="For a drafted scene, what it is for, only where the author said so",
+    )
+
+
+def drafted_intent(intent: DraftIntent, material: str) -> tuple[SceneIntent | None, int]:
+    """What a drafted scene is for, keeping only the parts the author's own words say
+    (``material``: ``author_material``), and how many parts were dropped."""
+    values: dict[str, Any] = {"goal": "", "obstacle": "", "outcome": None}
+    dropped = 0
+    for part in ("goal", "obstacle", "outcome"):
+        value = str(getattr(intent, part) or "").strip()
+        if not value:
+            continue
+        if not quotes(str(getattr(intent, f"{part}_words") or "")[:300], material):
+            dropped += 1
+            continue
+        if part == "outcome":
+            choice = value.lower().replace(", ", "_").replace(" ", "_")
+            if choice not in OUTCOME_WORDS:
+                dropped += 1
+                continue
+            values["outcome"] = choice
+        else:
+            values[part] = " ".join(value.split())[:MAX_INTENT_LENGTH]
+    found = SceneIntent(**values)
+    return (None if found.is_empty() else found), dropped
 
 
 class Direction(BaseModel):
@@ -212,8 +268,13 @@ def plan_operations(
     entities: list[CanonEntity],
     entity_types: set[str],
     session_id: str,
+    material: str | None = None,
 ) -> tuple[list[CanonOperation], list[DiscardedItem]]:
-    """Typed operations for a drafted piece of plan, and what was left out and why."""
+    """Typed operations for a drafted piece of plan, and what was left out and why.
+
+    With ``material`` (the author's own words), a drafted scene also takes what it is for
+    (STY-003), each part only where those words say it."""
+    intents = {item.ref: item for item in draft.intents} if material is not None else {}
     evidence = [EvidenceRef(source_artefact_id=session_id)]
     discarded: list[DiscardedItem] = []
     operations: list[CanonOperation] = []
@@ -363,12 +424,27 @@ def plan_operations(
 
             temporary = f"tmp:plan-{len(created)}"
             placed[item.ref] = (temporary, kind)
+            details: dict[str, str] = {}
+            wanted_intent = intents.get(item.ref)
+            if wanted_intent is not None and kind is PlanKind.SCENE and material is not None:
+                intent, dropped = drafted_intent(wanted_intent, material)
+                if intent is not None:
+                    details = with_intent({}, intent)
+                if dropped:
+                    discarded.append(
+                        DiscardedItem(
+                            "plan",
+                            f"{title}: part of what it is for was left out, as nothing you "
+                            "said says it",
+                        )
+                    )
             created.append(
                 CreatePlanItemOp(
                     id=temporary,
                     kind=kind,
                     title=title,
                     summary=item.summary.strip()[:MAX_SUMMARY_LENGTH],
+                    details=details,
                     parent_id=parent_id,
                     position=position_for(parent_id, kind),
                     refs=refs,
@@ -493,7 +569,12 @@ class PlanWorkflow(CanonLinkWorkflow):
     ) -> PlanProposalResult:
         _predicates, entity_types = await self._vocabulary(workspace_id, project_id)
         operations, discarded = plan_operations(
-            draft, plan=plan, entities=entities, entity_types=entity_types, session_id=session_id
+            draft,
+            plan=plan,
+            entities=entities,
+            entity_types=entity_types,
+            session_id=session_id,
+            material=material,
         )
         grounding = grounding_of(draft, operations, material)
         if not any(isinstance(operation, CreatePlanItemOp) for operation in operations):
@@ -731,6 +812,11 @@ def plan_draft_messages(
         "- in each item's `quote`, copy exactly the author's words it comes from (from "
         "what they said, their answers or the story bible); leave it empty when the item "
         "is your own suggestion. Never make a quote up.\n"
+        "- for a scene you draft, add to `intents` (by its ref) only what the author said "
+        "it is for: what the viewpoint character wants in it (goal), who or what is in the "
+        "way (obstacle), and how it ends for them (outcome: yes, no, yes_but or no_and), "
+        "each with the author's exact words that say it in its `_words`. Leave out "
+        "anything they did not say; never fill it in yourself.\n"
         "- `understood` restates what is being planned in one plain sentence.\n" + DEPTHS[depth]
     )
     user = (

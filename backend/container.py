@@ -88,6 +88,8 @@ class Container:
     consistency_runs: Any = None
     # Advisory findings dismissed on a proposal in review (CON-016).
     review_dismissals: Any = None
+    # Dismissals for a character or a stretch of the story (CON-016).
+    scoped_dismissals: Any = None
     scene_reading: Any = None
     scene_plan_card: Any = None
     # The assistant's help with a scene's plan: intent and bridge scenes (STY-003, STY-004).
@@ -546,6 +548,14 @@ def build_container(settings: Settings | None = None) -> Container:
         mutations=container.mutation_service,
         rules=container.rules,
     )
+    from backend.adapters.scoped_dismissal_store import PostgresScopedDismissalStore
+    from backend.services.scoped_dismissals import ScopedDismissalService
+
+    container.scoped_dismissals = ScopedDismissalService(
+        store=PostgresScopedDismissalStore(database.session_factory),
+        studio=container.studio_service,
+    )
+    container.studio_service.scoped = container.scoped_dismissals
     # Which scene a text holds, so names are read as that scene reads them (CTX-016).
     container.source_service.studio = container.studio_service
     container.what_if_service = WhatIfService(
@@ -747,6 +757,20 @@ def build_container(settings: Settings | None = None) -> Container:
     )
     container.scene_summaries.register_jobs()
     container.context_service.summaries = container.scene_summaries
+    from backend.adapters.part_summary_store import PostgresPartSummaryStore
+    from backend.services.scene_summaries import PartSummaryService
+
+    # Summaries of whole arcs and beats, on the scenes' kept summaries (CTX-006).
+    container.scene_summaries.parts = PartSummaryService(
+        store=PostgresPartSummaryStore(database.session_factory),
+        scenes=container.scene_summaries,
+        runner=container.job_runner,
+        ai=container.ai,
+        settings=resolved,
+        credentials=container.credential_service,
+        usage=container.usage_service,
+    )
+    container.scene_summaries.parts.register_jobs()
     from backend.services.assist_session_service import AssistSessionService
 
     container.assist_session_service = AssistSessionService(
@@ -846,6 +870,10 @@ def build_container(settings: Settings | None = None) -> Container:
         runner=container.job_runner,
     )
     container.embedding_index_service.register_jobs()
+    # Catching the search index up in the background, when switched on (CTX-012).
+    container.embedding_index_service.schedule_catch_up(
+        container.job_runner, resolved.SEARCH_INDEX_CATCH_UP_MINUTES
+    )
     container.media_search = MediaSearchService(
         index=container.embedding_index, embedder=container.multimodal_embedder
     )

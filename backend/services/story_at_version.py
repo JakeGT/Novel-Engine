@@ -97,12 +97,24 @@ async def story_at(
     canon: CanonRepositoryPort, workspace_id: str, project_id: str, revision: int
 ) -> StoryAt:
     """The entries, facts, events, beliefs and plan as they stood at ``revision``."""
+    return replay(await _versions_up_to(canon, workspace_id, project_id, revision))
+
+
+async def versions_up_to(
+    canon: CanonRepositoryPort, workspace_id: str, project_id: str, revision: int
+) -> list[RecordVersion]:
+    """The record history up to ``revision``, oldest first, for ``replay``."""
+    return await _versions_up_to(canon, workspace_id, project_id, revision)
+
+
+def replay(versions: list[RecordVersion]) -> StoryAt:
+    """The story the record history adds up to; pure work, so it can run off the loop."""
     entities: dict[str, CanonEntity | None] = {}
     facts: dict[str, Fact | None] = {}
     beliefs: dict[str, Belief | None] = {}
     events: dict[str, Event | None] = {}
     plan: dict[str, PlanItem | None] = {}
-    for version in await _versions_up_to(canon, workspace_id, project_id, revision):
+    for version in versions:
         key = version.record_id
         if version.record_type == "entity":
             entities[key] = _replay_entity(version, entities.get(key))
@@ -131,4 +143,4 @@ async def story_at(
     )
 
 
-__all__ = ["MAX_VERSIONS", "StoryAt", "story_at"]
+__all__ = ["MAX_VERSIONS", "StoryAt", "replay", "story_at", "versions_up_to"]

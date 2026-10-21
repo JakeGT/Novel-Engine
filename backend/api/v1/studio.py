@@ -69,6 +69,18 @@ class DismissalModel(BaseModel):
     # None: dismissed until the words it points at change.
     expires_at: datetime | None = None
     created_at: datetime
+    # A wider dismissal (CON-016): what it applies to, in words, e.g. "Stock phrasing, in
+    # every scene from “A” to “B”". None for one of this scene only.
+    applies_to: str | None = None
+    # The wider dismissal it comes from; undoing it brings the findings back everywhere.
+    scope_id: str | None = None
+
+
+class AboutModel(BaseModel):
+    """A character of the scene that a finding names (CON-016)."""
+
+    entity_id: str
+    name: str
 
 
 class CheckModel(BaseModel):
@@ -82,6 +94,8 @@ class CheckModel(BaseModel):
     dismissal: DismissalModel | None = None
     # Dismissed before, and back because what it says has changed since (CON-016).
     came_back: bool = False
+    # The scene's characters it names: it can be dismissed wherever it is about them.
+    about: list[AboutModel] | None = None
 
 
 class AssistantNoteModel(BaseModel):
@@ -95,6 +109,8 @@ class AssistantNoteModel(BaseModel):
     dismissal: DismissalModel | None = None
     # The pass of the check that found it; None for a note from the earlier all-in-one check.
     check_pass: CheckPass | None = None
+    # The scene's characters it names: it can be dismissed wherever it is about them.
+    about: list[AboutModel] | None = None
 
 
 class DismissRequest(BaseModel):
@@ -104,6 +120,13 @@ class DismissRequest(BaseModel):
     note: str = Field(default="", max_length=MAX_NOTE)
     # How long it stays dismissed; none means until the words change.
     days: Literal[7, 30] | None = None
+    # Where it stays dismissed (CON-016): this scene only (the default); wherever this kind
+    # of finding is about one character it names (``entity_id``); or in every scene from
+    # ``from_plan_id`` to ``to_plan_id`` in reading order.
+    applies: Literal["scene", "character", "range"] = "scene"
+    entity_id: str | None = None
+    from_plan_id: str | None = None
+    to_plan_id: str | None = None
 
 
 class VersionModel(BaseModel):
@@ -283,6 +306,8 @@ def _dismissal(found: FindingDismissal | None) -> DismissalModel | None:
         note=found.note,
         expires_at=found.expires_at,
         created_at=found.created_at,
+        applies_to=found.applies_to or None,
+        scope_id=found.scope_id,
     )
 
 
@@ -326,7 +351,7 @@ def _check_pass(value: str | None) -> CheckPass | None:
 def _checks(findings: list[DraftFinding], keys: list[str], state: StudioState) -> list[CheckModel]:
     return [
         _check(f, key, state.dismissals.get(key)).model_copy(
-            update={"came_back": key in state.came_back}
+            update={"came_back": key in state.came_back, "about": _about(state, key)}
         )
         for f, key in zip(findings, keys or [""] * len(findings), strict=False)
     ]
@@ -336,9 +361,16 @@ def _notes(
     findings: list[AssistantFinding], keys: list[str], state: StudioState
 ) -> list[AssistantNoteModel]:
     return [
-        _note(f, key, state.dismissals.get(key))
+        _note(f, key, state.dismissals.get(key)).model_copy(update={"about": _about(state, key)})
         for f, key in zip(findings, keys or [""] * len(findings), strict=False)
     ]
+
+
+def _about(state: StudioState, key: str) -> list[AboutModel] | None:
+    found = [
+        AboutModel(entity_id=entity_id, name=name) for entity_id, name in state.about.get(key, [])
+    ]
+    return found or None
 
 
 def _version(version: SourceVersion) -> VersionModel:
@@ -490,6 +522,10 @@ async def dismiss_finding(
         reason=body.reason,
         note=body.note,
         days=body.days,
+        applies=body.applies,
+        entity_id=body.entity_id,
+        from_plan_id=body.from_plan_id,
+        to_plan_id=body.to_plan_id,
     )
     return await _answer(state, reading, scope.workspace_id or "", project_id)
 

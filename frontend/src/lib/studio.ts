@@ -78,13 +78,24 @@ export function useDismissals(planId: string) {
   const studioKey = scopedKey(scope, 'studio', planId)
   const dismiss = useMutation({
     mutationFn: (ask: DismissAsk) => api.dismissFinding(scope, planId, ask),
-    onSuccess: (next) => client.setQueryData(studioKey, next),
+    onSuccess: (next, ask) => {
+      client.setQueryData(studioKey, next)
+      if (ask.applies && ask.applies !== 'scene') {
+        void client.invalidateQueries({ queryKey: scopedKey(scope, 'studio') })
+        void client.invalidateQueries({ queryKey: scopedKey(scope, 'scoped-dismissals') })
+      }
+    },
   })
   const undo = useMutation({
     mutationFn: (dismissalId: string) => api.undoDismissal(scope, planId, dismissalId),
-    onSuccess: (next) => client.setQueryData(studioKey, next),
+    onSuccess: (next) => {
+      client.setQueryData(studioKey, next)
+      // A wider dismissal reaches other scenes too (CON-016).
+      void client.invalidateQueries({ queryKey: scopedKey(scope, 'studio') })
+      void client.invalidateQueries({ queryKey: scopedKey(scope, 'scoped-dismissals') })
+    },
   })
-  return { dismiss, undo }
+  return { dismiss, undo, planId }
 }
 
 /** What a check with the assistant looks for, in the author's words. */

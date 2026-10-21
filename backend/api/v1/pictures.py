@@ -27,6 +27,7 @@ from backend.api.v1.studio import JobModel, _job
 from backend.container import Container
 from backend.domain.context_parts import CHOICE_WORDS, ContextChoice
 from backend.domain.identity import AccessScope
+from backend.domain.media import link_window_words
 from backend.domain.media_observations import (
     MAX_OBSERVATION_TEXT,
     MediaObservation,
@@ -83,6 +84,16 @@ class PictureLinkModel(BaseModel):
     known_by_names: list[str]
     # The story time from which the link applies, in words; null for always.
     applies_from: str | None = None
+    # The story time from which it no longer applies, in words; null for to the end.
+    applies_until: str | None = None
+    # The whole window in words ("from year 10 until year 20"); null when it always holds.
+    window: str | None = None
+    # The same times as the story-time API takes them, to edit (AST-001).
+    applies_from_time: dict[str, Any] | None = None
+    applies_until_time: dict[str, Any] | None = None
+    # The version this link shows when it shows one; null when it shows the newest.
+    shows_version_id: str | None = None
+    shows_version: int | None = None
 
 
 class ObservationRegionModel(BaseModel):
@@ -187,15 +198,16 @@ def _version(version: Any) -> PictureVersionModel:
     )
 
 
-def _applies(link: Any) -> str | None:
-    if link.applies_from is None:
+def _applies(value: Any) -> str | None:
+    if value is None:
         return None
-    when = parse_world_time(link.applies_from)
+    when = parse_world_time(value)
     return describe(when) if when is not None else None
 
 
-def _link(view: LinkView) -> PictureLinkModel:
+def _link(view: LinkView, numbers: dict[str, int] | None = None) -> PictureLinkModel:
     link = view.link
+    pinned = link.asset_version_id if link.shows_version else None
     return PictureLinkModel(
         id=link.id,
         role=link.role.value,
@@ -207,7 +219,13 @@ def _link(view: LinkView) -> PictureLinkModel:
         secret=link.is_secret,
         known_by=list(link.known_by),
         known_by_names=list(view.known_by_names),
-        applies_from=_applies(link),
+        applies_from=_applies(link.applies_from),
+        applies_until=_applies(link.applies_until),
+        window=link_window_words(link),
+        applies_from_time=link.applies_from,
+        applies_until_time=link.applies_until,
+        shows_version_id=pinned,
+        shows_version=(numbers or {}).get(pinned) if pinned else None,
     )
 
 
@@ -254,7 +272,10 @@ def _picture(view: PictureView) -> PictureModel:
         versions=[_version(version) for version in view.versions],
         width=view.width,
         height=view.height,
-        links=[_link(item) for item in view.links],
+        links=[
+            _link(item, {version.id: version.version for version in view.versions})
+            for item in view.links
+        ],
         observations=[
             _observation(item, current_version=view.version.id, names=names)
             for item in view.observations
@@ -366,6 +387,10 @@ class LinkChangeRequest(BaseModel):
     known_by: list[str] = Field(default_factory=list, max_length=50)
     # A story time (as the story-time API takes it) from which the link applies.
     applies_from: dict[str, Any] | None = None
+    # And one from which it no longer applies (AST-001); null for to the end.
+    applies_until: dict[str, Any] | None = None
+    # The version it shows; null follows the picture's newest version.
+    version_id: str | None = Field(default=None, max_length=200)
     expected_revision: int = Field(ge=0)
 
 
@@ -379,7 +404,8 @@ async def change_picture_link(
     scope: AccessScope = Depends(require_project_scope),
     service: MediaObservationService = Depends(get_observations),
 ) -> PictureModel:
-    """Say who may know what the picture shows here, and from when it applies (AST-004).
+    """Say who may know what the picture shows here, for which story time it applies
+    (AST-004, AST-001: from and until) and which version it shows (null: the newest).
     The link is replaced by a new one in one change; the story's history keeps both."""
     link = await service.change_link(
         scope,
@@ -390,6 +416,8 @@ async def change_picture_link(
         secret=body.secret,
         known_by=body.known_by,
         applies_from=body.applies_from,
+        applies_until=body.applies_until,
+        version_id=body.version_id,
         expected_revision=body.expected_revision,
     )
     response.headers["X-Link-Id"] = link.id

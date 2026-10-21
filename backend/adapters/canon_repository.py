@@ -147,6 +147,8 @@ def _link(row: Any) -> AssetLink:
         visibility=getattr(row, "visibility", None) or "open",
         known_by=list(getattr(row, "known_by", None) or []),
         applies_from=getattr(row, "applies_from", None),
+        applies_until=getattr(row, "applies_until", None),
+        shows_version=bool(getattr(row, "shows_version", False)),
     )
 
 
@@ -272,6 +274,8 @@ _FORKED_TABLES = (
     "scene_readings",
     # Findings the author dismissed in a scene, so a what-if starts with the same decisions.
     "finding_dismissals",
+    # And those dismissed for a character or a stretch of the story (CON-016).
+    "scoped_dismissals",
     # The checks kept as runs (CON-001), so a what-if starts with the same check history.
     "consistency_runs",
 )
@@ -1396,11 +1400,13 @@ class PostgresCanonRepository:
                 "name = COALESCE(:name, name), slug = COALESCE(:slug, slug), "
                 "attributes = COALESCE(CAST(:attributes AS JSONB), attributes), "
                 "aliases = COALESCE(CAST(:aliases AS JSONB), aliases), "
-                "external_ids = COALESCE(CAST(:external_ids AS JSONB), external_ids) "
+                "external_ids = COALESCE(CAST(:external_ids AS JSONB), external_ids), "
+                "type = COALESCE(:type, type) "
                 "WHERE workspace_id = :w AND project_id = :p AND branch_id = :b AND id = :id",
                 {
                     **scope,
                     "id": operation.id,
+                    "type": operation.type,
                     "name": operation.name,
                     "slug": operation.slug,
                     "attributes": json.dumps(operation.attributes)
@@ -1578,7 +1584,8 @@ class PostgresCanonRepository:
                 "participants = COALESCE(CAST(:participants AS JSONB), participants), "
                 "location_ids = COALESCE(CAST(:locations AS JSONB), location_ids), "
                 "cause_ids = COALESCE(CAST(:causes AS JSONB), cause_ids), "
-                "outcome_ids = COALESCE(CAST(:outcomes AS JSONB), outcome_ids) "
+                "outcome_ids = COALESCE(CAST(:outcomes AS JSONB), outcome_ids), "
+                "claim = COALESCE(CAST(:claim AS JSONB), claim) "
                 "WHERE workspace_id = :w AND project_id = :p AND branch_id = :b AND id = :id",
                 {
                     **scope,
@@ -1603,6 +1610,11 @@ class PostgresCanonRepository:
                     "outcomes": (
                         json.dumps(operation.outcome_ids)
                         if operation.outcome_ids is not None
+                        else None
+                    ),
+                    "claim": (
+                        json.dumps(operation.claim.model_dump(mode="json"))
+                        if operation.claim is not None
                         else None
                     ),
                 },
@@ -1678,10 +1690,12 @@ class PostgresCanonRepository:
                 text(
                     "INSERT INTO asset_links (workspace_id, project_id, branch_id, id, asset_id, "
                     "asset_version_id, role, target_record_type, target_record_id, provenance_id, "
-                    "created_revision, visibility, known_by, applies_from) VALUES (:w, :p, :b, "
+                    "created_revision, visibility, known_by, applies_from, applies_until, "
+                    "shows_version) "
+                    "VALUES (:w, :p, :b, "
                     ":id, :asset_id, :asset_version_id, :role, :target_record_type, :target_id, "
                     ":prov, :rev, :visibility, CAST(:known_by AS JSONB), "
-                    "CAST(:applies_from AS JSONB))"
+                    "CAST(:applies_from AS JSONB), CAST(:applies_until AS JSONB), :shows_version)"
                 ),
                 {
                     **scope,
@@ -1690,6 +1704,12 @@ class PostgresCanonRepository:
                     "applies_from": (
                         json.dumps(operation.applies_from)
                         if operation.applies_from is not None
+                        else None
+                    ),
+                    "shows_version": bool(operation.shows_version),
+                    "applies_until": (
+                        json.dumps(operation.applies_until)
+                        if operation.applies_until is not None
                         else None
                     ),
                     "id": operation.id,

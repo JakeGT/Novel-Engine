@@ -9,10 +9,12 @@ Novel Engine is an open-source fiction authoring system with self-hosted and fre
 ## Current maturity
 
 The repository is a release-one candidate that has not been released, not a production application. Phase 0 is complete.
-Phase 1 is implemented with explicit external/operational exit items remaining. Phase 2
-(trustworthy canon) is complete and accepted by the owner (2026-10-09); the evidence is in
-`plan/phase-2-evidence.md`. Still open and operational: the first hosted CI run and the clean-host backup/restore rehearsal (deferred by the owner until the
-project is on a permanent host). ADR-014–016 are accepted. See `plan/phase-2-todo.md`.
+Phases 1 and 2 (identity and tenancy; trustworthy canon) are accepted by the owner (2026-10-09); the
+evidence is in `plan/phase-1-evidence.md` and `plan/phase-2-evidence.md`. Phases 2.5–6 are built and
+Phase 7's code-side release work is done; later batches of work (to batch 8, 2026-10-21) filled in
+backlog items. `plan/10-backlog.md` holds the current status of every capability.
+Still open and operational: the first hosted CI run and the clean-host backup/restore rehearsal
+(deferred by the owner until the project is on a permanent host). ADR-014–016 are accepted.
 
 - Application lifecycle, dependency container, ports, and adapters exist; imports perform no
   external work.
@@ -27,22 +29,29 @@ project is on a permanent host). ADR-014–016 are accepted. See `plan/phase-2-t
   explicit human approval; reviewers decide per operation, and an edit is a new operation revision.
 - The guided character workflow produces review proposals only. The generic graph API (CRUD,
   tagged-entity context retrieval, the original character questionnaire) is a separate legacy
-  store whose writes are restricted to local mode; the world workflow is parked and unfinished.
+  store whose writes are restricted to local mode; the old world workflow was removed by the owner
+  (Phase 1A, FND-008).
 - The vector store is PostgreSQL/pgvector behind the vector port. The author's writing has a
   derived passage index (pointers and names, never the words), rebuildable; embeddings optional.
 - The React frontend covers the story bible, planning, texts and their reading, story rules, the
   timeline, what-ifs, knowledge and the reader's ledger, scene context, the scene studio, review,
   history, customisation and media panels, with component, accessibility and browser tests.
-- OIDC/local identity, invite-only multi-tenancy, scoped storage, encrypted OpenRouter BYOK,
-  object storage, and a verified, ledgered project archive restore exist.
+- OIDC/local identity, invite-only multi-tenancy, scoped storage, encrypted keys for OpenRouter and
+  six other providers, object storage, and a verified, ledgered project archive restore exist.
 - Built since Phase 2 (each with a todo file and an ADR in `plan/`): assistant-led creation (2.5),
   story planning (2.6), text intake and story rules (2.7), story time, what-ifs and point-of-view
-  knowledge (3), explainable scene context (4, text only), the scene studio with background jobs
-  (5), and reading scenes back into reviewed proposals (6).
-- Still planned or partial: media processing (images, audio, video), consistency profiles and
-  suppressions, release hardening items that are the owner's (licence, hosted CI run, restore
-  drill on a clean host), and any measurement of a real model's output. Every assistant path has
-  run against the scripted model and the local stand-in only.
+  knowledge (3), explainable scene context (4), the scene studio with background jobs (5), and
+  reading scenes back into reviewed proposals (6).
+- Built in later batches: pictures prepared in a sandboxed worker, described by a model and given
+  to the assistant as pictures or descriptions; generation-versioned search by meaning; consistency
+  profiles, checks kept as runs and re-run only where something changed, dismissals that come back
+  when what they said changes, and impact preview; deep and scheduled audits, correction plans and
+  voice; planning help; read-only MCP with access keys (ADR-024); and a connector for a model on the
+  author's own computer (ADR-025).
+- Still planned or partial: sound and film, release hardening items that are the owner's (licence,
+  hosted CI run, restore drill on a clean host), and any measurement of a real model's output.
+  Every assistant path has run against the scripted model and the local stand-in only. Each
+  backlog item's status line lists what it still lacks.
 
 Do not describe a planned capability as implemented. When changing a capability, update its
 status in `plan/`.
@@ -61,7 +70,8 @@ status in `plan/`.
 | `backend/container.py` | Dependency container built from explicit settings; owns adapters and lifecycle |
 | `backend/migrate.py` | `make migrate` CLI; Alembic plus Neo4j migration verification |
 | `backend/seed/` | Versioned reference-world manifest and idempotent seed application |
-| `backend/devtools/` | Guarded developer/operator CLIs: seed, reset, project, verify, watch, archive, diagnostics, retention |
+| `backend/devtools/` | Guarded developer/operator CLIs: seed, reset, project, verify, watch, archive, diagnostics, retention, provision (first workspace), reconcile (interrupted commits), rekey (`make rekey`: re-lock stored provider keys under a new credential key), media (`make media`: picture preparation status, backfill, orphan files and retired copies), read_models (`make read-models`, `make read-models-verify`: build, verify and forget the story's ready views), reindex (rebuild the passage index), embeddings (`make reindex*`: build, refresh, switch, roll back and cancel search-by-meaning generations), intake_eval (name-finding measurement) |
+| `connector/` | Standalone, standard-library-only connector (`uv run python -m connector --site …`) that links Ollama, LM Studio or a llama.cpp server on an author's computer to a site by outbound long poll (ADR-025, `plan/runbooks/local-connector.md`); linted and type-checked with `backend` |
 | `migrations/` | Alembic environment and PostgreSQL/pgvector revisions |
 | `scripts/manual/` | Non-hermetic manual scripts; never collected by pytest |
 | `scripts/ci/` | CI guards such as the credential secret scanner |

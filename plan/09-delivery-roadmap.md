@@ -261,7 +261,7 @@ Work:
 - provider-neutral multimodal embedding port and generation-based vector migration/rebuild
 - EmbeddingGemma 2 evaluation against MiniLM and a strong text-only baseline; select 768/512 only from project metrics
 - scene summaries/event blocks/full-text indexing
-- image-first, then audio/video cross-modal indexing with captions/transcripts as derived fallbacks
+- image cross-modal indexing with captions as derived fallbacks; audio/video indexing and transcripts later (audio and video deferred past release one by owner decision, 2026-10-21)
 - previous-prose retrieval with semantic, two-clock recency, author importance, narrative proximity, continuity impact, and thread signals
 - hybrid ranking, deduplication, diversity, and token budgeting
 - context preview API and context inspector UI
@@ -298,13 +298,13 @@ Work:
 - scene readiness checks
 - async job framework, progress stream, cancellation, and budgets
 - provider-neutral generation gateway
-- typed text/image/audio/video context parts and capability-aware OpenRouter/local adapter translation
+- typed text/image context parts and capability-aware OpenRouter/local adapter translation; audio/video parts stay declared only (audio and video deferred past release one by owner decision, 2026-10-21)
 - OpenRouter BYOK/local-provider routing and normalized usage records
 - versioned generation prompts and fake adapter
 - scene editor, entity mentions, context preview, and draft variants
 - immutable scene versions and lineage
 - Tier 0/1 deterministic consistency preflight/postflight
-- multimodal consistency checks over reviewed media facts plus evidence-citing image/audio/video critic passes
+- multimodal consistency checks over reviewed media facts plus evidence-citing image critic passes (audio and video deferred past release one by owner decision, 2026-10-21)
 - user-triggered Tier 2 model critics, including isolated POV secret-leakage validation, with contextual recommendations and opt-in budgeted automation
 - consistency findings/correction review UI and incremental invalidation
 - dependency-backed canon-edit impact preview and scoped finding suppressions
@@ -332,7 +332,7 @@ derived from accepted scenes for authors who do not outline.
 Work:
 
 - event/fact/belief extraction contract
-- caption/transcript/visual/audio observations may propose evidence-backed mutations through the same review contract
+- caption/visual observations may propose evidence-backed mutations through the same review contract (transcript/audio observations deferred with audio and video, 2026-10-21)
 - evidence spans and entity-resolution workflow
 - reuse the Phase 2.5 alias/correction memory and extraction evaluation baseline
 - mutation-set validation and status machine
@@ -381,12 +381,13 @@ Exit criteria:
 ## Later options
 
 - richer branch merge/rebase tools
-- generative image/audio/video creation and editing (multimodal retrieval/context is in release one)
+- generative image/audio/video creation and editing (picture retrieval/context is in release one)
+- audio and video as context: upload, processing, transcripts, segments, retrieval, context parts and checks (deferred past release one by owner decision, 2026-10-21)
 - richer local-model capability negotiation and offline workflows
 - real-time collaborative editing, presence, and comments if not included in release one
 - advanced graph/timeline visualization
 - manuscript-wide revision and continuity reports
-- importers for common writing tools beyond the release-one paste/Markdown intake path
+- importers for common writing tools beyond the release-one paste/Markdown intake path, including Google Docs, DOCX and LaTeX (deferred past release one by owner decision, 2026-10-21)
 - delegated autonomy beyond "keep the safe ones for me" (the in-product assistant itself is Phases 2.5–2.6)
 - public demo or managed multi-user hosting, with a separate funding/privacy/operations decision
 - open signup or public community hosting beyond the invite-only portfolio deployment

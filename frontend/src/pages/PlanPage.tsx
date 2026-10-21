@@ -386,9 +386,9 @@ export function PlanPage() {
                     </span>{' '}
                     {entry.reading} <Badge tone={badge.tone}>{badge.label}</Badge>
                     {entry.note && <span className="condition-note"> {entry.note}</span>}
-                    {canWrite && entry.when === 'before' && entry.strength === 'hard' && entry.status === 'not_met' && (
+                    {canWrite && entry.when === 'before' && entry.status === 'not_met' && (
                       <div>
-                        <SuggestBridges scene={item} index={entry.index ?? index} />
+                        <SuggestBridges scene={item} index={entry.index ?? index} preferred={entry.strength === 'soft'} />
                       </div>
                     )}
                   </li>

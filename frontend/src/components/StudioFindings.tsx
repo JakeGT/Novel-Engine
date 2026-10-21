@@ -11,7 +11,8 @@ import {
   type FindingRef,
   type SceneVoice,
 } from '../api/client'
-import { excerpt, NOTE_KINDS, orderChecks, orderNotes, tokenCount, type Span, type useDismissals } from '../lib/studio'
+import { readingScenes } from '../lib/plan'
+import { excerpt, NOTE_KINDS, orderChecks, orderNotes, tokenCount, type Span } from '../lib/studio'
 import { fullDate } from '../lib/time'
 import { plural } from '../lib/words'
 import { scopedKey, useProject } from '../project'
@@ -48,12 +49,38 @@ function reasonText(dismissal: FindingDismissal): string {
 }
 
 function lastsText(dismissal: FindingDismissal): string {
+  if (dismissal.scope_id) {
+    return dismissal.expires_at ? `until ${fullDate(dismissal.expires_at)}, or until you undo it` : 'until you undo it'
+  }
   return dismissal.expires_at
     ? `until ${fullDate(dismissal.expires_at)}, or until the words change`
     : 'until the words change'
 }
 
-type Dismissals = ReturnType<typeof useDismissals>
+/** Where a dismissal holds (CON-016): this scene, everywhere about someone, or a stretch. */
+type Where =
+  | { applies: 'scene' }
+  | { applies: 'character'; entity_id: string }
+  | { applies: 'range'; from_plan_id: string; to_plan_id: string }
+
+interface About {
+  entity_id: string
+  name: string
+}
+
+/** What dismissing needs: a check's or note's in the studio, or a note on how it sounds. */
+interface Dismissals {
+  dismiss: {
+    mutate(ask: DismissAsk, options?: { onSuccess?: () => void }): void
+    isPending: boolean
+    isSuccess: boolean
+    variables?: DismissAsk
+    error: unknown
+  }
+  undo: { mutate(dismissalId: string): void; isPending: boolean; error: unknown }
+  /** The scene, to offer dismissing wider than it; null where only this scene is offered. */
+  planId: string | null
+}
 
 /** Where a note points: a quotation and a way to go to it, or why it can no longer be found. */
 export function Passage({ text, span, onShow }: { text: string; span: Span | null | undefined; onShow: (span: Span) => void }) {
@@ -74,6 +101,8 @@ function DismissForm({
   what,
   anchored,
   busy,
+  about = [],
+  planId = null,
   onDismiss,
   onCancel,
 }: {
@@ -81,19 +110,47 @@ function DismissForm({
   /** Whether the finding points at words; one about the whole scene has none. */
   anchored: boolean
   busy: boolean
-  onDismiss: (reason: Reason, note: string, days: 7 | 30 | null) => void
+  /** The scene's characters the finding names: it can be dismissed wherever it is about them. */
+  about?: About[]
+  /** This scene, to offer a stretch of scenes around it; null to offer this scene only. */
+  planId?: string | null
+  onDismiss: (reason: Reason, note: string, days: 7 | 30 | null, where: Where) => void
   onCancel: () => void
 }) {
   const id = useId()
+  const { scope } = useProject()
+  const outline = useQuery({
+    queryKey: scopedKey(scope, 'plan'),
+    queryFn: () => api.outline(scope),
+    enabled: Boolean(planId),
+  })
+  const scenes = readingScenes(outline.data?.items ?? [])
+  const here = scenes.findIndex((scene) => scene.id === planId)
   const [reason, setReason] = useState<Reason>('intended')
   const [note, setNote] = useState('')
   const [lasts, setLasts] = useState<'' | '7' | '30'>('')
+  const [where, setWhere] = useState('scene')
+  const [from, setFrom] = useState(planId ?? '')
+  const [to, setTo] = useState(planId ?? '')
   const [tried, setTried] = useState(false)
   const missing = reason === 'other' && !note.trim()
+  const wider = where !== 'scene'
+  const chosen = (): Where => {
+    if (where.startsWith('character:')) return { applies: 'character', entity_id: where.slice('character:'.length) }
+    if (where === 'after' && here >= 0) {
+      return { applies: 'range', from_plan_id: scenes[here].id, to_plan_id: scenes[scenes.length - 1].id }
+    }
+    if (where === 'before' && here >= 0) return { applies: 'range', from_plan_id: scenes[0].id, to_plan_id: scenes[here].id }
+    if (where === 'choose' && from && to) {
+      const [first, last] = scenes.findIndex((s) => s.id === from) <= scenes.findIndex((s) => s.id === to) ? [from, to] : [to, from]
+      return { applies: 'range', from_plan_id: first, to_plan_id: last }
+    }
+    return { applies: 'scene' }
+  }
   const submit = () => {
     setTried(true)
     if (missing) return
-    onDismiss(reason, reason === 'other' ? note.trim() : '', lasts ? (Number(lasts) as 7 | 30) : null)
+    onDismiss(reason, reason === 'other' ? note.trim() : '', lasts ? (Number(lasts) as 7 | 30) : null, chosen())
   }
   return (
     <div className="dismiss-form stack tight" role="group" aria-label={`Dismiss: ${what}`}>
@@ -130,20 +187,68 @@ function DismissForm({
           )}
         </div>
       )}
+      {(about.length > 0 || here >= 0) && (
+        <div className="field">
+          <label htmlFor={`${id}-where`}>Applies to</label>
+          <select id={`${id}-where`} value={where} onChange={(event) => setWhere(event.target.value)}>
+            <option value="scene">This scene only</option>
+            {about.map((person) => (
+              <option key={person.entity_id} value={`character:${person.entity_id}`}>
+                Wherever it is about {person.name}
+              </option>
+            ))}
+            {here >= 0 && <option value="after">This scene and every one after it</option>}
+            {here > 0 && <option value="before">Every scene up to this one</option>}
+            {scenes.length > 1 && <option value="choose">Scenes you choose…</option>}
+          </select>
+          {where === 'choose' && (
+            <div className="row-fields">
+              <div className="field">
+                <label htmlFor={`${id}-from`}>From</label>
+                <select id={`${id}-from`} value={from} onChange={(event) => setFrom(event.target.value)}>
+                  {scenes.map((scene, index) => (
+                    <option key={scene.id} value={scene.id}>
+                      {index + 1}. {scene.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor={`${id}-to`}>To</label>
+                <select id={`${id}-to`} value={to} onChange={(event) => setTo(event.target.value)}>
+                  {scenes.map((scene, index) => (
+                    <option key={scene.id} value={scene.id}>
+                      {index + 1}. {scene.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+          {wider && (
+            <span className="hint">
+              Every finding of this kind there is dismissed, including any found later, until you undo it. The checks
+              still run.
+            </span>
+          )}
+        </div>
+      )}
       <div className="field">
         <label htmlFor={`${id}-lasts`}>How long</label>
         <select id={`${id}-lasts`} value={lasts} onChange={(event) => setLasts(event.target.value as '' | '7' | '30')}>
           {LASTS.map((item) => (
             <option key={item.value} value={item.value}>
-              {item.label}
+              {wider && item.value === '' ? 'Until you undo it' : item.label}
             </option>
           ))}
         </select>
-        <span className="hint">
-          {anchored
-            ? 'It comes back by itself if the words it points at, or what it says, change.'
-            : 'It is about the scene as a whole, so it stays dismissed for this scene.'}
-        </span>
+        {!wider && (
+          <span className="hint">
+            {anchored
+              ? 'It comes back by itself if the words it points at, or what it says, change.'
+              : 'It is about the scene as a whole, so it stays dismissed for this scene.'}
+          </span>
+        )}
       </div>
       <div className="actions">
         <Button size="sm" variant="primary" disabled={busy} onClick={submit}>
@@ -163,6 +268,7 @@ interface Item {
   message: string
   start?: number | null
   end?: number | null
+  about?: About[] | null
 }
 
 /** One finding with its way to be dismissed, opened in place under it. */
@@ -211,9 +317,15 @@ function Finding({
                 what={item.message}
                 anchored={item.start !== null && item.start !== undefined}
                 busy={dismissals.dismiss.isPending}
+                about={item.about ?? []}
+                planId={dismissals.planId}
                 onCancel={onClose}
-                onDismiss={(reason, note, days) =>
-                  dismissals.dismiss.mutate({ key: item.key, reason, note, days }, { onSuccess: onClose })
+                onDismiss={(reason, note, days, where) =>
+                  dismissals.dismiss.mutate(
+                    // This scene only is the server's default, so it is not sent.
+                    { key: item.key, reason, note, days, ...(where.applies === 'scene' ? {} : where) },
+                    { onSuccess: onClose },
+                  )
                 }
               />
             )}
@@ -250,15 +362,16 @@ function Dismissed({
               <p className="small">
                 <strong>{reasonText(dismissal)}</strong> · {lastsText(dismissal)}
               </p>
+              {dismissal.applies_to && <p className="small">Applies to: {dismissal.applies_to}</p>}
               {dismissals && (
                 <Button
                   size="sm"
                   variant="ghost"
                   disabled={dismissals.undo.isPending}
-                  aria-label={`Undo dismissing: ${item.message}`}
+                  aria-label={`${dismissal.scope_id ? 'Undo everywhere' : 'Undo'} dismissing: ${item.message}`}
                   onClick={() => dismissals.undo.mutate(dismissal.id)}
                 >
-                  Undo
+                  {dismissal.scope_id ? 'Undo everywhere' : 'Undo'}
                 </Button>
               )}
             </li>
@@ -280,6 +393,7 @@ function JustDismissed({ items, dismissals }: { items: Item[]; dismissals: Dismi
       {dismissal.reason === 'other' ? 'Dismissed: ' : 'Dismissed as '}
       <strong>{reasonText(dismissal)}</strong>
       {dismissal.reason === 'other' ? ' ' : '. '}
+      {dismissal.applies_to ? `Applies to: ${dismissal.applies_to}. ` : ''}
       <button
         type="button"
         className="link-button"
@@ -591,8 +705,23 @@ export function Voice({
     mutationFn: (leftOut: boolean) => api.setVoiceLeftOut(scope, planId, leftOut),
     onSuccess: (found) => client.setQueryData(key, found),
   })
+  // A note on how it sounds can be dismissed with a reason, like a check (CON-018).
+  const dismiss = useMutation({
+    mutationFn: (ask: DismissAsk) =>
+      api.dismissVoiceNote(scope, planId, { key: ask.key, reason: ask.reason, note: ask.note, days: ask.days ?? null }),
+    onSuccess: (found) => client.setQueryData(key, found),
+  })
+  const undo = useMutation({
+    mutationFn: (dismissalId: string) => api.undoVoiceDismissal(scope, planId, dismissalId),
+    onSuccess: (found) => client.setQueryData(key, found),
+  })
+  const [open, setOpen] = useState<string | null>(null)
   // Only a reading of this scene's voice counts (it always carries the usual).
   const found: SceneVoice | undefined = voice.data?.usual ? voice.data : undefined
+  const voiceDismissals: Dismissals | null = canWrite ? { dismiss, undo, planId: null } : null
+  const [active, dismissed] = split(
+    (found?.notes ?? []).map((note) => ({ ...note, key: note.key ?? '', dismissal: note.dismissal ?? null })),
+  )
   return (
     <section className="stack tight voice-panel" aria-labelledby="voice-heading">
       <div>
@@ -612,21 +741,36 @@ export function Voice({
         <>
           {stale && found.stats && <p className="hint">This is about the saved text.</p>}
           {found.not_compared && <p className="muted small">{found.not_compared}</p>}
-          {found.notes.length > 0 && (
+          {active.length > 0 && (
             <ul className="findings">
-              {found.notes.map((note, index) => (
-                <li className="finding note" key={`${note.code}-${index}`}>
+              {active.map((note, index) => (
+                <Finding
+                  key={`${note.code}-${index}`}
+                  item={note}
+                  className="finding note"
+                  open={open === note.key}
+                  onOpen={() => setOpen(note.key)}
+                  onClose={() => setOpen(null)}
+                  dismissals={note.key ? voiceDismissals : null}
+                >
                   <Badge>Voice</Badge>
                   <p>{note.message}</p>
                   <Passage text={text} span={point(note.start, note.end)} onShow={onShow} />
-                </li>
+                </Finding>
               ))}
             </ul>
           )}
-          {!found.not_compared && found.notes.length === 0 && (
-            <p className="muted small">It sounds like your other scenes.</p>
+          <JustDismissed items={dismissed} dismissals={voiceDismissals} />
+          <Dismissed items={dismissed} noun={['note on how it sounds', 'notes on how it sounds']} dismissals={voiceDismissals} />
+          <ErrorNotice error={dismiss.error} prefix="Not dismissed" />
+          <ErrorNotice error={undo.error} prefix="Not brought back" />
+          {!found.not_compared && active.length === 0 && (
+            <p className="muted small">
+              {dismissed.length > 0 ? 'Nothing else stands out.' : 'It sounds like your other scenes.'}
+            </p>
           )}
           {found.stats && <Measures voice={found} />}
+          <Speakers voice={found} />
           {found.stats && found.stats.echoes.length > 0 && (
             <div className="stack tight">
               <h3 className="voice-subtitle">Repeated close together</h3>
@@ -671,6 +815,48 @@ export function Voice({
         </>
       )}
     </section>
+  )
+}
+
+/** Who says what in the scene, where a tag or turns in an exchange say so (CON-018). */
+function Speakers({ voice }: { voice: SceneVoice }) {
+  const speakers = voice.speakers ?? []
+  if (speakers.length === 0) return null
+  return (
+    <details className="more">
+      <summary>Who says what</summary>
+      <p className="hint">
+        {`About ${percent(voice.attributed)} of the dialogue here is tied to who says it, by “said Tobin” and the like, or by turns between two people. Nothing is guessed from “he” or “she”.`}
+      </p>
+      <table className="voice-measures small">
+        <caption className="sr-only">Each speaker in this scene</caption>
+        <thead>
+          <tr>
+            <th scope="col">Who</th>
+            <th scope="col">Lines</th>
+            <th scope="col">Sentence length</th>
+            <th scope="col">Short forms</th>
+          </tr>
+        </thead>
+        <tbody>
+          {speakers.map((row) => (
+            <tr key={row.name}>
+              <th scope="row">
+                {row.name}
+                <span className="hint block">
+                  {row.compared
+                    ? `Compared with ${plural(row.elsewhere, 'other scene')}`
+                    : 'Too little to compare yet'}
+                </span>
+              </th>
+              <td>{row.lines}</td>
+              <td>about {Math.round(row.sentence_mean)} words</td>
+              <td>{Math.round(row.short_forms)} in 100 words</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </details>
   )
 }
 

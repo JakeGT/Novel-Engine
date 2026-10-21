@@ -93,6 +93,10 @@ class Settings(BaseSettings):
     # "auto" picks bfloat16 on a GPU that supports it, else float32. Never float16.
     EMBEDDING_DTYPE: Literal["auto", "bfloat16", "float32"] = "auto"
     EMBEDDING_FAKE_DIMENSION: int = 768
+    # Bring the search index in use up to date in the background every this many minutes
+    # (CTX-012): pictures and accepted descriptions whose quick update was missed, a few
+    # stories a time. 0 (the default) leaves it off; `make reindex-refresh` still works.
+    SEARCH_INDEX_CATCH_UP_MINUTES: int = 0
     CUSTOM_SCHEMA_PATH: str = "backend/config/custom_schema.json"
     ENABLE_DEBUG_ARTIFACTS: bool = False
     ARTIFACT_STORE_DIR: str = "backend/debug"

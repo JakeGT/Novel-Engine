@@ -68,3 +68,12 @@ with `behind: 0` for each view.
 
 The commands were run against the in-memory test doubles and a disposable PostgreSQL database
 (2026-10-20); none has been run on the live site.
+
+## The views' screen (batch 9)
+
+`/projects/:id/story-views` shows, for the line being worked in, each view's state in words
+("Ready", "Catching up", "Not checked yet", "Differed when checked", "Not built yet"), how many
+changes behind it is and, while behind, how many seconds since it was last built. A view that stays
+"Catching up" for more than a minute or two means the projection worker's loop is not running or is
+failing for that story (look for `read_models.build_failed`). "Differed when checked" clears after
+`make read-models-verify --repair` and a later matching check.

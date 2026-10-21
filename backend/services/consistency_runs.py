@@ -59,7 +59,7 @@ from backend.domain.consistency_runs import (
     judge_note,
     story_change_touches,
 )
-from backend.domain.dismissals import DismissReason, FindingDismissal
+from backend.domain.dismissals import DismissReason, FindingDismissal, FindingKind
 from backend.domain.drafting import DraftFinding, Severity
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
@@ -187,6 +187,18 @@ def compared_with(message: str, pictures: list[PictureRead]) -> PictureRead | No
     return None
 
 
+@dataclass(frozen=True)
+class PassTiming:
+    """One pass of a check with the assistant, as its job recorded it (CON-001)."""
+
+    check_pass: str
+    plan_id: str | None
+    ms: float | None
+    calls: int
+    # Finished by an earlier run of the same job (taken over or tried again).
+    earlier: bool = False
+
+
 @dataclass
 class RunView:
     run: ConsistencyRun
@@ -199,6 +211,8 @@ class RunView:
     coverage: dict[str, Any] = field(default_factory=dict)
     # The pictures the pictures pass was given, by scene, each saying what changed since.
     pictures: dict[str, list[PictureRead]] = field(default_factory=dict)
+    # How long each assistant pass took, the calls it made, from its job (CON-001).
+    timings: list[PassTiming] = field(default_factory=list)
 
     @property
     def stale(self) -> bool:
@@ -235,6 +249,17 @@ class _Now:
     # Each finding found now (by fingerprint) and what it depends on.
     found: dict[str, str | None] = field(default_factory=dict)
     dismissed: dict[str, FindingDismissal] = field(default_factory=dict)
+    # The wider dismissals standing now (a character, a stretch of the story; CON-016).
+    scoping: Any = None
+
+    def dismissed_for(self, key: str, kind: Any, code: str, words: str) -> dict[str, Any]:
+        """The scene's dismissals, with a wider one that covers this finding as its own."""
+        if key in self.dismissed or self.scoping is None or self.scene is None:
+            return self.dismissed
+        covering = self.scoping.covering(self.scene.id, kind, code, words)
+        if covering is None:
+            return self.dismissed
+        return {**self.dismissed, key: covering}
 
 
 def _quoted(content: str, start: int | None, end: int | None) -> str:
@@ -670,7 +695,11 @@ class ConsistencyRunService:
             workspace_id, project_id, run, only=None, cache={}, later=later, scope=scope
         )
 
-    async def _now(self, workspace_id: str, project_id: str, plan_id: str) -> _Now:
+    async def _now(
+        self, workspace_id: str, project_id: str, plan_id: str, *, scoping: Any = None
+    ) -> _Now:
+        """A scene as it is now. ``scoping`` is the wider dismissals already worked out in
+        this call, used again rather than read for every scene."""
         studio = self._studio
         scene = await studio._reader.get_plan_item(
             workspace_id=workspace_id, project_id=project_id, plan_id=plan_id
@@ -694,6 +723,11 @@ class ConsistencyRunService:
             workspace_id=workspace_id, project_id=project_id, branch_id=branch_id, plan_id=plan_id
         )
         now.dismissed = {item.fingerprint: item for item in standing if item.applies(moment)}
+        scoped = getattr(studio, "scoped", None)
+        if scoping is not None:
+            now.scoping = scoping
+        elif scoped is not None:
+            now.scoping = await scoped.scoping(workspace_id, project_id)
         return now
 
     async def _then(self, workspace_id: str, project_id: str, item: RunInput) -> str | None:
@@ -850,6 +884,7 @@ class ConsistencyRunService:
         scope: AccessScope | None = None,
         pictures_now: dict[str, list[PictureRead] | None] | None = None,
     ) -> RunView:
+        from backend.services.scoped_dismissals import finding_words
         from backend.services.studio_service import check_key, note_key
 
         job = await self._job(workspace_id, project_id, run)
@@ -858,6 +893,7 @@ class ConsistencyRunService:
             title=await self._title(workspace_id, project_id, run),
             status="done" if job is None else str(job.status.value),
             coverage=_coverage(job),
+            timings=_timings(job),
         )
         notes: list[AssistantFinding] = []
         if run.job_id is not None:
@@ -867,11 +903,17 @@ class ConsistencyRunService:
         changes = await self._changed(workspace_id, project_id, run)
         rules_changed = await self._rules_changed(workspace_id, project_id, run)
         records: dict[str, set[str]] = {}
+        texts: dict[str, str | None] = {}
         for item in run.inputs:
             if only is not None and item.plan_id != only:
                 continue
             if item.plan_id not in cache:
-                cache[item.plan_id] = await self._now(workspace_id, project_id, item.plan_id)
+                # The wider dismissals (the whole plan and every character's names) are
+                # the same for every scene: worked out once per call.
+                shared = next((n.scoping for n in cache.values() if n.scoping is not None), None)
+                cache[item.plan_id] = await self._now(
+                    workspace_id, project_id, item.plan_id, scoping=shared
+                )
             now = cache[item.plan_id]
             then = await self._then(workspace_id, project_id, item)
             again = (later or {}).get(item.plan_id, set())
@@ -937,7 +979,12 @@ class ConsistencyRunService:
                         start=check.start,
                         end=check.end,
                         found_now=now.found if not item.draft_id else {key: dependency_of(finding)},
-                        dismissed=now.dismissed,
+                        dismissed=now.dismissed_for(
+                            key,
+                            FindingKind.CHECK,
+                            check.code,
+                            finding_words(check.subject),
+                        ),
                     )
                     if then is not None
                     else None
@@ -975,7 +1022,9 @@ class ConsistencyRunService:
                     now=current,
                     start=note.start,
                     end=note.end,
-                    dismissed=now.dismissed,
+                    dismissed=now.dismissed_for(
+                        key, FindingKind.NOTE, note.check_pass or note.category, note.message
+                    ),
                 )
                 status = judged_note.status
                 if status == "open" and key in again:
@@ -1007,6 +1056,8 @@ class ConsistencyRunService:
                     )
                 )
             view.scenes.append(part)
+            texts[item.plan_id] = then
+        _passage_words(view.coverage, texts, run.plan_id if run.scope == "scene" else None)
         return view
 
     # -------------------------------------------------------------- calibration
@@ -1087,6 +1138,11 @@ def _times(number: int) -> str:
     return "once" if number == 1 else "twice" if number == 2 else f"{number} times"
 
 
+def calibration_note(found: int, dismissed: int, accepted: int, rate: float | None) -> str:
+    """How often one kind of finding was dismissed, in words for the author."""
+    return _calibration_note(found, dismissed, accepted, rate)
+
+
 def _calibration_note(found: int, dismissed: int, accepted: int, rate: float | None) -> str:
     if found == 0:
         return "Nothing found yet."
@@ -1108,6 +1164,42 @@ def _calibration_note(found: int, dismissed: int, accepted: int, rate: float | N
     return " ".join(parts)
 
 
+PASSAGE_WORDS = 8
+
+
+def _first_words(text: str, start: Any, end: Any) -> str:
+    if not isinstance(start, int) or not isinstance(end, int) or not 0 <= start < end:
+        return ""
+    words = text[start:end].split()
+    shown = " ".join(words[:PASSAGE_WORDS])
+    return shown + ("…" if len(words) > PASSAGE_WORDS else "")
+
+
+def _passage_words(
+    coverage: dict[str, Any], texts: dict[str, str | None], scene: str | None
+) -> None:
+    """Each passage of a pass sent in groups or parts, with its first few words, read
+    from the exact version the run checked (the job keeps only where each passage is)."""
+    for key, sent in list(coverage.items()):
+        plan_id, _, _pass = key.rpartition(":")
+        text = texts.get(plan_id or scene or "")
+        if not text or not isinstance(sent, dict):
+            continue
+        passages = sent.get("passages")
+        if not isinstance(passages, list):
+            continue
+        # A copy: the job's own result is never changed.
+        coverage[key] = {
+            **sent,
+            "passages": [
+                {**item, "words": _first_words(text, item.get("start"), item.get("end"))}
+                if isinstance(item, dict)
+                else item
+                for item in passages
+            ],
+        }
+
+
 def _coverage(job: Job | None) -> dict[str, Any]:
     """How each pass of a check with the assistant was sent (CON-013), from its result."""
     if job is None or not isinstance(job.result, dict):
@@ -1125,14 +1217,48 @@ def _coverage(job: Job | None) -> dict[str, Any]:
     return found
 
 
+def _timing(check_pass: str, plan_id: str | None, outcome: Any) -> PassTiming | None:
+    if not isinstance(outcome, dict):
+        return None
+    ms = outcome.get("ms")
+    calls = outcome.get("calls")
+    return PassTiming(
+        check_pass=check_pass,
+        plan_id=plan_id,
+        ms=float(ms) if isinstance(ms, int | float) else None,
+        calls=int(calls) if isinstance(calls, int) else 0,
+        earlier=bool(outcome.get("earlier")),
+    )
+
+
+def _timings(job: Job | None) -> list[PassTiming]:
+    """How long each pass took, from the job's result; older jobs kept no times."""
+    if job is None or not isinstance(job.result, dict):
+        return []
+    found: list[PassTiming] = []
+    for check_pass, outcome in (job.result.get("passes") or {}).items():
+        if (timing := _timing(str(check_pass), None, outcome)) is not None:
+            found.append(timing)
+    for scene in job.result.get("scenes") or []:
+        if not isinstance(scene, dict):
+            continue
+        for check_pass, outcome in (scene.get("passes") or {}).items():
+            plan_id = str(scene.get("plan_id") or "") or None
+            if (timing := _timing(str(check_pass), plan_id, outcome)) is not None:
+                found.append(timing)
+    return found
+
+
 RUN_KINDS: tuple[RunKind, ...] = ("checks", "assistant", "audit")
 
 __all__ = [
     "MIN_CALIBRATION_FINDINGS",
+    "calibration_note",
     "RUN_KINDS",
     "CalibrationLine",
     "ConsistencyRunService",
     "FindingView",
+    "PassTiming",
     "PictureRead",
     "RunView",
     "compared_with",

@@ -31,6 +31,7 @@ const preview: MergePreview = {
   pictures_moved: 1,
   pictures_ended: 0,
   still_naming: [],
+  claims_moved: ['what is said in “Tobin’s warning”'],
   change_count: 6,
 }
 
@@ -59,6 +60,8 @@ describe('MergeDialog', () => {
     expect(await within(dialog).findByText('Tobin Ashe knows Mara V.')).toBeInTheDocument()
     expect(within(dialog).getByText(/holds only one/)).toBeInTheDocument()
     expect(within(dialog).getByText('The meeting')).toBeInTheDocument()
+    // What a character said follows the kept entry (AST-EXP-017).
+    expect(within(dialog).getByText('what is said in “Tobin’s warning”')).toBeInTheDocument()
     expect(api.find('POST', '/merges/preview')[0].body).toEqual({
       entity_id: 'ent_twin',
       into: 'ent_mara',

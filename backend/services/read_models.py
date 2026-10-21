@@ -27,7 +27,7 @@ from typing import Any, Literal
 from backend.core.logging import log_event
 from backend.core.metrics import metrics
 from backend.domain.branching import working_in
-from backend.domain.errors import ValidationError
+from backend.domain.errors import ConflictError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.knowledge import ReaderStep, reading_order, scene_reveals
 from backend.domain.read_views import (
@@ -58,6 +58,7 @@ MAX_BACKOFF_SECONDS = 300.0
 # what was read and saying it is behind.
 SETTLE_ATTEMPTS = 3
 KINDS = frozenset({"entity", "fact", "belief", "event", "plan_item"})
+CHECK_RUNNING = "These views are being checked now. Look again when that check finishes."
 
 Source = Literal["view", "worked_out"]
 
@@ -93,10 +94,14 @@ async def read_snapshot(
 async def replayed_snapshot(
     reader: CanonRepositoryPort, workspace_id: str, project_id: str, revision: int
 ) -> Snapshot:
-    """The records of the line being worked in at ``revision``, from the record history."""
-    from backend.services.story_at_version import story_at
+    """The records of the line being worked in at ``revision``, from the record history.
 
-    state = await story_at(reader, workspace_id, project_id, revision)
+    The history is read on the loop; the replay, which is all work and no waiting, runs
+    in a thread so other requests are answered meanwhile."""
+    from backend.services.story_at_version import replay, versions_up_to
+
+    versions = await versions_up_to(reader, workspace_id, project_id, revision)
+    state = await asyncio.to_thread(replay, versions)
     return Snapshot(
         entities=state.story.entities,
         facts=state.story.facts,
@@ -153,6 +158,8 @@ class ViewState:
     verified_version: int | None = None
     outcome: str | None = None
     differences: int | None = None
+    # When it was last built (QRY-001's screen); None before it ever was.
+    built_at: Any = None
 
     @property
     def behind(self) -> int:
@@ -307,6 +314,8 @@ class ReadModelService:
         self._journal = journal
         self._tenancy = tenancy
         self._local_mode = local_mode
+        # The lines being checked now by ``check_now`` in this process.
+        self._checking: set[tuple[str, str, str]] = set()
 
     async def _authorize(self, scope: AccessScope, workspace_id: str, project_id: str) -> None:
         if self._local_mode or self._tenancy is None:
@@ -622,9 +631,18 @@ class ReadModelService:
                     verified_version=view.verified_revision if view else None,
                     outcome=view.verify_outcome if view else None,
                     differences=view.differences if view else None,
+                    built_at=view.built_at if view else None,
                 )
             )
         return states
+
+    async def line_name(self, workspace_id: str, project_id: str) -> tuple[str, bool]:
+        """The name of the line of the story being worked in, and whether it is the main
+        story (for the views' screen)."""
+        branch = await self._journal.working_branch(
+            workspace_id=workspace_id, project_id=project_id
+        )
+        return str(getattr(branch, "name", "") or ""), bool(getattr(branch, "is_root", True))
 
     async def verify(
         self,
@@ -697,7 +715,7 @@ class ReadModelService:
                     continue
                 fresh = rebuilt[summary.view]
                 matched = checksum(fresh) == full.checksum
-                count = 0 if matched else differences(full.rows, fresh)
+                count = 0 if matched else await asyncio.to_thread(differences, full.rows, fresh)
                 differed = differed or not matched
                 await self._store.record_verification(
                     workspace_id=workspace_id,
@@ -739,6 +757,35 @@ class ReadModelService:
                     workspace_id=workspace_id, project_id=project_id, branch_id=line_id
                 )
         return results
+
+    async def check_now(
+        self, scope: AccessScope, workspace_id: str, project_id: str
+    ) -> list[Verification]:
+        """Check the views of the line being worked in against the story's history now
+        (QRY-001's screen): what ``make read-models-verify`` does for one line, for an owner
+        or administrator. A view that differs is not used until it is built again and
+        matches; nothing in the story changes."""
+        if not self._local_mode and self._tenancy is not None:
+            await self._tenancy.require_project(
+                scope, workspace_id, project_id, Permission.PROJECT_ADMIN
+            )
+        branch_id, _ = await self._line(workspace_id, project_id)
+        key = (workspace_id, project_id, branch_id)
+        # One check of a line at a time: a second one while it runs would replay the whole
+        # history again for nothing. Checked and marked with no wait between, so two
+        # requests in this process cannot both pass; the store's lock covers other servers.
+        if key in self._checking:
+            raise ConflictError(CHECK_RUNNING)
+        self._checking.add(key)
+        try:
+            async with self._store.check_lock(
+                workspace_id=workspace_id, project_id=project_id, branch_id=branch_id
+            ) as held:
+                if not held:
+                    raise ConflictError(CHECK_RUNNING)
+                return await self.verify(workspace_id, project_id, branch_id=branch_id, repair=True)
+        finally:
+            self._checking.discard(key)
 
     async def forget(self, workspace_id: str, project_id: str) -> int:
         """Remove a story's views so they are built again (after a restore, say)."""

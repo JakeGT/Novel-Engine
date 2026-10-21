@@ -13,7 +13,17 @@ PROSE = (
     "Mara of the Harbor Guild did not come."
 )
 # Every named check that reads the words.
-READS_WORDS = {"names", "secrets", "knowledge", "reveals", "presence", "stock", "length", "other"}
+READS_WORDS = {
+    "names",
+    "secrets",
+    "knowledge",
+    "reveals",
+    "presence",
+    "looks",
+    "stock",
+    "length",
+    "other",
+}
 
 
 def _record(client, w, scene) -> dict:

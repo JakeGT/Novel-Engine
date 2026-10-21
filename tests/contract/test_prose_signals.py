@@ -83,3 +83,57 @@ def test_the_studio_reads_the_prose_against_the_story(auth_client, fake_containe
     assert "same day as “Arrival”" in codes["time_words_next_day"]
     assert "after_not_shown" in codes
     assert fake_container.ai.calls == []
+
+
+def test_the_studio_reads_height_marks_and_age_against_the_story(
+    auth_client, fake_container
+) -> None:
+    """CON-004: a birth placed in story time gives an age; accepted details give height
+    and a scar; the prose that says otherwise is a note quoting both."""
+    w = _world(auth_client, fake_container)
+    _fact(
+        auth_client,
+        w,
+        w["mara"],
+        "HAS_DETAIL",
+        {"kind": "structured", "value": {"appearance": "Tall, with a scar across her left cheek."}},
+    )
+    born = auth_client.post(
+        f"{w['base']}/events",
+        json={
+            "kind": "birth",
+            "name": "Mara is born",
+            "when": {"kind": "at", "at": 5},
+            "participants": [{"entity_id": w["mara"], "role": "born"}],
+            "expected_revision": _head(auth_client, w),
+        },
+    )
+    assert born.status_code == 201, born.text
+    scene = _add(
+        auth_client,
+        w,
+        "scene",
+        "The strongroom",
+        refs=[{"entity_id": w["mara"], "role": "point_of_view"}],
+    )
+    _put(auth_client, w, scene["id"], "when", {"when": {"kind": "at", "at": 21}})
+    unit = auth_client.put(f"{w['base']}/timeline/unit", json={"unit": "year"})
+    assert unit.status_code in (200, 204), unit.text
+    saved = _save(
+        auth_client,
+        w,
+        scene,
+        "Mara pulled up her hood. Mara was a small woman, and quick. "
+        "Mara, nineteen and tired, touched the scar on her right cheek.",
+        None,
+    )
+    assert saved.status_code == 200, saved.text
+    codes = _codes(saved.json())
+    assert (
+        "the story bible says: “Tall, with a scar across her left cheek.”"
+        in codes["height_differs"]
+    )
+    assert "“scar on her right cheek”" in codes["mark_differs"]
+    assert codes["age_differs"].startswith("Here Mara is 19 (“Mara, nineteen”), but “Mara is born”")
+    assert "so Mara is 15 or 16 here." in codes["age_differs"]
+    assert fake_container.ai.calls == []

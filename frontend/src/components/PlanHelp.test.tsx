@@ -101,6 +101,16 @@ describe('SuggestIntent', () => {
 })
 
 describe('SuggestBridges', () => {
+  it('offers to bring about a preferred condition, saying it is not needed', async () => {
+    mockApi({ 'GET /plan/pln_room/bridges/estimate': { total_tokens: 2400, reads_prose: false } })
+    const user = userEvent.setup()
+    renderInProject(<SuggestBridges scene={scene} index={0} preferred />)
+    await user.click(screen.getByRole('button', { name: 'Suggest a scene to bring this about' }))
+    expect(await screen.findByText(/About 2,400 tokens/)).toHaveTextContent(
+      'The scene would rather have this, though it does not need it.',
+    )
+  })
+
   it('asks for bridge scenes for one condition, with the cost first', async () => {
     const api = mockApi({
       'GET /plan/pln_room/bridges/estimate': { total_tokens: 2400, reads_prose: false },

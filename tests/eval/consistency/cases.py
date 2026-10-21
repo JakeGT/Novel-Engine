@@ -25,7 +25,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 
 from backend.domain.acquisition import held_at, learned_later, placement, said_before_learned
-from backend.domain.appearance import AppearanceDetail
+from backend.domain.appearance import AgeKnown, AppearanceDetail
 from backend.domain.canon.events import EventClaim
 from backend.domain.continuity import (
     HowLong,
@@ -41,6 +41,7 @@ from backend.domain.drafting import (
     LaterKnowledge,
     PlannedReveal,
     SecretToGuard,
+    Supply,
     TimeNeighbour,
     check_draft,
 )
@@ -1252,6 +1253,27 @@ _WREN_PICTURE = AppearanceDetail(
 _WREN_BLUE = AppearanceDetail(
     "Wren Halloway", ("Wren Halloway", "Wren"), "Blue eyes; brown hair.", "the story bible"
 )
+_WREN_TALL = AppearanceDetail(
+    "Wren Halloway",
+    ("Wren Halloway", "Wren"),
+    "Tall, with a scar across her left cheek; short black hair.",
+    "the story bible",
+)
+_WREN_AGE = AgeKnown(
+    "Wren Halloway",
+    ("Wren Halloway", "Wren"),
+    15,
+    16,
+    "“Wren is born” is year 5 and this scene is year 21",
+)
+_FLARES = Supply("the flares", ("the flares",), 4, "the story bible (from day 3)")
+_WRENS_FLARES = Supply("Wren Halloway's flares", ("the flares",), 4, "the story bible (from day 3)")
+_WREN_SMALL_SCAR = AppearanceDetail(
+    "Wren Halloway",
+    ("Wren Halloway", "Wren"),
+    "Tall, with a small scar above her left eye, a tiny tattoo on her wrist and a short skirt.",
+    "the story bible",
+)
 _SEXTANT_WITH_ADA = Holding(
     "the brass sextant", ("the brass sextant",), "Ada Quill", ("Ada Quill", "Ada")
 )
@@ -1273,6 +1295,8 @@ def _prose_cases() -> list[Case]:
     looks = ["appearance_differs"]
     when = ["time_words_next_day", "time_words_same_day", "time_words_amount", "time_words_before"]
     held = ["resource_held_elsewhere", "resource_used_up"]
+    counted = ["supply_overspent", "supply_count_differs"]
+    identity = ["height_differs", "mark_differs", "age_differs"]
     return [
         _case(
             "prose/eyes-differ",
@@ -1429,6 +1453,224 @@ def _prose_cases() -> list[Case]:
                 "Wren reached the quay. She rubbed her blue eyes.", appearance=[_WREN_LOOKS]
             ),
             known_limit="A pronoun is not read as a name; telling whose eyes these are needs a model.",
+        ),
+        _case(
+            "prose/height-differs",
+            "prose",
+            "The story bible says Wren is tall; the scene calls her a small woman.",
+            defect=True,
+            codes=identity,
+            run=lambda: _prose(
+                "Wren was a small woman, quick on the ropes.", appearance=[_WREN_TALL]
+            ),
+        ),
+        _case(
+            "prose/scar-other-side",
+            "prose",
+            "Wren's scar is on her left cheek; the scene puts it on the right.",
+            defect=True,
+            codes=identity,
+            run=lambda: _prose(
+                "The scar on Wren's right cheek pulled as she smiled.", appearance=[_WREN_TALL]
+            ),
+        ),
+        _case(
+            "prose/age-differs",
+            "prose",
+            "Born in year 5 and in a scene in year 21, Wren cannot be nineteen.",
+            defect=True,
+            codes=identity,
+            run=lambda: _prose("Wren, nineteen and tired, rowed on.", ages=[_WREN_AGE]),
+        ),
+        _case(
+            "prose/age-hyphenated",
+            "prose",
+            "'The twenty-year-old Wren' against an age of 15 or 16.",
+            defect=True,
+            codes=identity,
+            run=lambda: _prose("The twenty-year-old Wren took the oars.", ages=[_WREN_AGE]),
+        ),
+        _case(
+            "prose/scar-by-pronoun-elsewhere",
+            "prose",
+            "'Her right cheek' after the prose has given Wren 'her' in another sentence.",
+            defect=True,
+            codes=identity,
+            run=lambda: _prose(
+                "Wren pulled up her hood. Wren touched the scar on her right cheek.",
+                appearance=[_WREN_TALL],
+            ),
+        ),
+        _case(
+            "prose/stood-tall",
+            "prose",
+            "'Stood tall' is how she holds herself, not her height.",
+            defect=False,
+            codes=identity,
+            run=lambda: _prose("Wren stood tall at the rail.", appearance=[_WREN_TALL]),
+        ),
+        _case(
+            "prose/short-of-breath",
+            "prose",
+            "'Short of breath' and 'short hair' are not her height.",
+            defect=False,
+            codes=identity,
+            run=lambda: _prose(
+                "Wren was short of breath. Wren had short hair.", appearance=[_WREN_TALL]
+            ),
+        ),
+        _case(
+            "prose/too-short-to-reach",
+            "prose",
+            "'Too short to reach the lamp' is about the lamp, not a contradiction.",
+            defect=False,
+            codes=identity,
+            run=lambda: _prose("Wren was too short to reach the lamp.", appearance=[_WREN_TALL]),
+        ),
+        _case(
+            "prose/short-with-him",
+            "prose",
+            "'Short with him' is her manner, not her height.",
+            defect=False,
+            codes=identity,
+            run=lambda: _prose("Wren was short with him all morning.", appearance=[_WREN_TALL]),
+        ),
+        _case(
+            "prose/short-on-patience",
+            "prose",
+            "'Short on patience' is not her height.",
+            defect=False,
+            codes=identity,
+            run=lambda: _prose("Wren was short on patience that night.", appearance=[_WREN_TALL]),
+        ),
+        _case(
+            "prose/a-small-part",
+            "prose",
+            "'A small part of the plan' is not her height.",
+            defect=False,
+            codes=identity,
+            run=lambda: _prose("Wren was a small part of the plan.", appearance=[_WREN_TALL]),
+        ),
+        _case(
+            "prose/a-tiny-bit",
+            "prose",
+            "'A tiny bit annoyed' is not her height.",
+            defect=False,
+            codes=identity,
+            run=lambda: _prose("Wren was a tiny bit annoyed.", appearance=[_WREN_TALL]),
+        ),
+        _case(
+            "prose/small-comfort",
+            "prose",
+            "'Small comfort' is not her height.",
+            defect=False,
+            codes=identity,
+            run=lambda: _prose("Wren was small comfort to the crew.", appearance=[_WREN_TALL]),
+        ),
+        _case(
+            "prose/short-a-few-coins",
+            "prose",
+            "'Short a few coins' is money, not height.",
+            defect=False,
+            codes=identity,
+            run=lambda: _prose("Wren was short a few coins for the fare.", appearance=[_WREN_TALL]),
+        ),
+        _case(
+            "prose/small-scar-is-not-height",
+            "prose",
+            "A small scar, a tiny tattoo and a short skirt in her details say nothing of her height.",
+            defect=False,
+            codes=identity,
+            run=lambda: _prose("Wren was tall.", appearance=[_WREN_SMALL_SCAR]),
+        ),
+        _case(
+            "prose/age-that-summer",
+            "prose",
+            "'Wren was nineteen that summer' is another time, not this scene.",
+            defect=False,
+            codes=identity,
+            run=lambda: _prose("Wren was nineteen that summer.", ages=[_WREN_AGE]),
+        ),
+        _case(
+            "prose/age-a-list",
+            "prose",
+            "'Wren, two, three, four' is a count of heads, not an age.",
+            defect=False,
+            codes=identity,
+            run=lambda: _prose("Osric counted them off: Wren, two, three, four.", ages=[_WREN_AGE]),
+        ),
+        _case(
+            "prose/someone-elses-scar",
+            "prose",
+            "'Wren touched the scar on his right cheek': Osric's scar, not hers.",
+            defect=False,
+            codes=identity,
+            run=lambda: _prose(
+                "Wren pulled up her hood. Wren touched the scar on his right cheek.",
+                appearance=[_WREN_TALL],
+            ),
+        ),
+        _case(
+            "prose/a-fresh-scar",
+            "prose",
+            "A fresh scar on the other cheek is new, not a contradiction.",
+            defect=False,
+            codes=identity,
+            run=lambda: _prose(
+                "Wren pulled up her hood. Wren had a fresh scar on her right cheek.",
+                appearance=[_WREN_TALL],
+            ),
+        ),
+        _case(
+            "prose/age-when-younger",
+            "prose",
+            "'When Wren was twelve' is about an earlier time.",
+            defect=False,
+            codes=identity,
+            run=lambda: _prose("When Wren was twelve she ran away to sea.", ages=[_WREN_AGE]),
+        ),
+        _case(
+            "prose/age-looked",
+            "prose",
+            "'Wren looked nineteen' is how she looked.",
+            defect=False,
+            codes=identity,
+            run=lambda: _prose("In the lamplight Wren looked nineteen.", ages=[_WREN_AGE]),
+        ),
+        _case(
+            "prose/age-a-count",
+            "prose",
+            "'Wren, one of the crew' and 'three days late' are not ages.",
+            defect=False,
+            codes=identity,
+            run=lambda: _prose(
+                "Wren, one of the crew, waved. Wren was three days late.", ages=[_WREN_AGE]
+            ),
+        ),
+        _case(
+            "prose/age-said-aloud",
+            "prose",
+            "Someone saying an age aloud may be lying: dialogue is not read.",
+            defect=False,
+            codes=identity,
+            run=lambda: _prose("“Wren is nineteen,” Osric lied.", ages=[_WREN_AGE]),
+        ),
+        _case(
+            "prose/age-on-someone-else",
+            "prose",
+            "'Osric was nineteen, and Wren laughed': the age is Osric's.",
+            defect=False,
+            codes=identity,
+            run=lambda: _prose("Osric was nineteen, and Wren laughed.", ages=[_WREN_AGE]),
+        ),
+        _case(
+            "prose/age-by-pronoun",
+            "prose",
+            "'She was nineteen' with Wren named only before: pronouns are not read for age.",
+            defect=True,
+            codes=identity,
+            run=lambda: _prose("Wren took the oars. She was nineteen.", ages=[_WREN_AGE]),
+            known_limit="An age is read only beside the person's name; 'she' needs a model.",
         ),
         _case(
             "prose/next-morning-same-day",
@@ -1597,6 +1839,115 @@ def _prose_cases() -> list[Case]:
             known_limit="'It' is not read as the thing named before; that needs a model.",
         ),
         _case(
+            "prose/spends-more-than-there-are",
+            "prose",
+            "Four flares in the story bible; Wren lights two, then three more.",
+            defect=True,
+            codes=counted,
+            run=lambda: _prose(
+                "Wren lit two flares off Marrow Light. Later Wren lit three more flares.",
+                supplies=[_FLARES],
+            ),
+        ),
+        _case(
+            "prose/more-left-than-possible",
+            "prose",
+            "Four flares; Wren lights one and still has four left.",
+            defect=True,
+            codes=counted,
+            run=lambda: _prose("Wren lit a flare. Wren had four flares left.", supplies=[_FLARES]),
+        ),
+        _case(
+            "prose/spends-within-the-count",
+            "prose",
+            "Four flares; Wren lights one and has three left.",
+            defect=False,
+            codes=counted,
+            run=lambda: _prose("Wren lit a flare. Wren had three flares left.", supplies=[_FLARES]),
+        ),
+        _case(
+            "prose/someone-else-fires-flares",
+            "prose",
+            "Flares fired from the shore by no one in the scene are not Wren's.",
+            defect=False,
+            codes=counted,
+            run=lambda: _prose("Six flares rose from the far shore.", supplies=[_FLARES]),
+        ),
+        _case(
+            "prose/wished-for-flares",
+            "prose",
+            "Wren wishing for ten flares spends none.",
+            defect=False,
+            codes=counted,
+            run=lambda: _prose("Wren wished she had ten flares.", supplies=[_FLARES]),
+        ),
+        _case(
+            "prose/others-fire-flares-she-watches",
+            "prose",
+            "Wren watching as the harbour guards fire six flares spends none of hers.",
+            defect=False,
+            codes=counted,
+            run=lambda: _prose(
+                "Wren watched as the harbour guards fired six flares.", supplies=[_FLARES]
+            ),
+        ),
+        _case(
+            "prose/osric-fires-at-wren",
+            "prose",
+            "Osric firing six flares at Wren spends none of Wren's own.",
+            defect=False,
+            codes=counted,
+            run=lambda: _prose("Osric fired six flares at Wren.", supplies=[_WRENS_FLARES]),
+        ),
+        _case(
+            "prose/someone-else-has-flares",
+            "prose",
+            "The guards having nine flares left is not a count of Wren's.",
+            defect=False,
+            codes=counted,
+            run=lambda: _prose(
+                "Wren saw that the guards had nine flares left.", supplies=[_FLARES]
+            ),
+        ),
+        _case(
+            "prose/she-fires-her-flares",
+            "prose",
+            "Four of Wren's flares; 'she' fires six of them, with Wren named just before.",
+            defect=True,
+            codes=counted,
+            run=lambda: _prose(
+                "Wren reached the rail. She fired six flares.", supplies=[_WRENS_FLARES]
+            ),
+        ),
+        _case(
+            "prose/chapters-next-morning-before",
+            "prose",
+            "A story counted in chapters: 'the next morning', but this scene is placed "
+            "before the one it follows.",
+            defect=True,
+            codes=when,
+            run=lambda: _prose(
+                "The next morning, Wren untied the ferry at Kestle Quay.",
+                previous=TimeNeighbour(
+                    "The Crossing", None, None, "chapter 3", "chapter 4", (-2.0, -1.0)
+                ),
+            ),
+        ),
+        _case(
+            "prose/chapters-three-days-later",
+            "prose",
+            "A story counted in chapters: 'three days later' cannot be measured, and is "
+            "not called wrong.",
+            defect=False,
+            codes=when,
+            run=lambda: _prose(
+                "Three days later, Wren untied the ferry at Kestle Quay.",
+                previous=TimeNeighbour(
+                    "The Crossing", None, None, "chapter 5", "chapter 4", (0.0, 2.0)
+                ),
+            ),
+        ),
+        _case(
             "prose/after-never-shown",
             "prose",
             "The plan says Wren ends the scene at Marrow Light; the light is never named.",
@@ -1661,6 +2012,31 @@ def _voice(scene: str) -> Run:
 
         usual = baseline([measure(_voice_text(_USUAL_LINES, 1600, seed)) for seed in range(6)])
         return {note.code for note in drift(measure(scene), usual)}
+
+    return run
+
+
+_SPEAKERS = {"Tobin": ("Tobin",), "Wren": ("Wren",), "Ada": ("Ada",)}
+# Tobin's usual: short lines with short forms, in exchanges with Wren.
+_TOBIN_USUAL = (
+    '"You\'re late," said Tobin.\n"The tide," said Wren.\n'
+    '"Don\'t. It\'s been turning all night."\n"Then it\'s slow."\n'
+    '"I\'m cold. I won\'t wait."\n"You will."\n'
+)
+
+
+def _speakers(scene: str) -> Run:
+    def run() -> set[str]:
+        from backend.domain.voice import speech_drift, speeches
+
+        usual = [speeches("\n".join([_TOBIN_USUAL] * 10), _SPEAKERS)[0]["Tobin"]] * 3
+        found, share = speeches(scene, _SPEAKERS)
+        return {
+            note.code
+            for who, speech in found.items()
+            if who == "Tobin"
+            for note in speech_drift(speech, usual, share)
+        }
 
     return run
 
@@ -1826,6 +2202,71 @@ def _voice_cases() -> list[Case]:
             defect=False,
             codes={"voice_person", "voice_person_mixed"},
             run=_voice(_voice_text(in_dialogue_i, 600, 10)),
+        ),
+        _case(
+            "voice/speaker-speaks-differently",
+            "voice",
+            "Tobin, tagged, makes long speeches with no short forms; usually clipped and full of them",
+            defect=True,
+            codes={"voice_speaker_length", "voice_speaker_short_forms"},
+            run=_speakers(
+                "\n".join(
+                    [
+                        '"You are late, and I would have you know that I have stood upon '
+                        "these stones since the first bell, and I do not intend to stand "
+                        'upon them for one moment longer than I must," said Tobin.\n'
+                        '"The tide," said Wren.\n'
+                        '"I do not believe that the tide is to blame, for I have watched '
+                        'it all night and it has done nothing it does not do every night."\n'
+                        '"Then it is slow."\n'
+                    ]
+                    * 4
+                )
+            ),
+        ),
+        _case(
+            "voice/speaker-by-pronoun-only",
+            "voice",
+            "long formal lines with only “he said”: whose they are is not read",
+            defect=False,
+            codes={"voice_speaker_length", "voice_speaker_short_forms"},
+            run=_speakers(
+                "\n".join(
+                    [
+                        '"I do not believe that the tide is to blame, for I have watched '
+                        'it all night and it has done nothing it does not do," he said.\n'
+                        '"Then it is slow," Wren said.\n'
+                    ]
+                    * 6
+                )
+            ),
+        ),
+        _case(
+            "voice/speaker-in-a-crowded-exchange",
+            "voice",
+            "untagged long lines in an exchange that names a third person: turns are not given",
+            defect=False,
+            codes={"voice_speaker_length", "voice_speaker_short_forms"},
+            run=_speakers(
+                "\n".join(
+                    [
+                        '"Short," said Tobin.\n"Short," said Wren.\n'
+                        'Ada came down the steps. "I do not believe that the tide is to '
+                        'blame, for I have watched it all night and it has done nothing."\n'
+                        '"I would have you know that I have stood upon these stones since '
+                        'the first bell, and I shall not stand upon them a moment longer."\n'
+                    ]
+                    * 6
+                )
+            ),
+        ),
+        _case(
+            "voice/speaker-as-usual",
+            "voice",
+            "Tobin's lines sound as they usually do",
+            defect=False,
+            codes={"voice_speaker_length", "voice_speaker_short_forms"},
+            run=_speakers("\n".join([_TOBIN_USUAL] * 4)),
         ),
         _case(
             "voice/general-truth",

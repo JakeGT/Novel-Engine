@@ -16,7 +16,7 @@ The project owner answered the original architecture questionnaires on 2026-10-0
 | Author experience | Assistant-first: every capability has an assistant path (describe → interview → draft → review) and a by-hand path; advanced features are kept and revealed by level; the assistant never writes canon (ADR-017, proposed 2026-10-10 on the owner's direction) |
 | First complete workflow | Describe the story → fill in by interview → plan by conversation → plan a scene → draft → check → review changes → new version (revised 2026-10-10) |
 | Context | Include previous prose using semantic, temporal, narrative, continuity, and author-importance signals |
-| Multimodal context | Text, images, audio, and video are typed evidence with explicit authority, provenance, branch/time/POV scope, and provider delivery trace |
+| Multimodal context | Text and images are typed evidence with explicit authority, provenance, branch/time/POV scope, and provider delivery trace. Audio and video are deferred past release one (owner decision 2026-10-21); the typed contracts keep room for them |
 | Multimodal embeddings | Evaluate EmbeddingGemma 2 as the preferred local candidate at 768/512 dimensions; adopt only after Novel Engine retrieval/resource benchmarks |
 | Autonomy | Include delegated low-risk canon writes; protected/high-impact actions remain human-in-the-loop |
 | Branches | Fork, compare, and merge; author resolves conflicts or accepts an agent proposal through review |
@@ -39,6 +39,8 @@ The project owner answered the original architecture questionnaires on 2026-10-0
 | Consistency | Deterministic checks every generation; model-assisted checks are user-triggered by default |
 | Story invariants | Safe declarative rules; author rules default to warnings and require explicit enablement to block; built-in integrity rules are permanently blocking and non-suppressible (ADR-013) |
 | Canon reasoning | One point-in-time/history/provenance query boundary serves UI, rules, exports, review agents, and MCP |
+| Manuscript import | Pasted text and Markdown are the ways in for release one; Google Docs, DOCX and LaTeX import are deferred past release one (owner decision 2026-10-21) |
+| What-ifs | Set aside only, with no discard action; a what-if's kept conversations and scheduled audits remain until the story is deleted (owner decision 2026-10-21, ADR-020 amendment) |
 | Reader knowledge | Track reviewed disclosures separately from character beliefs and objective canon |
 | External assistants | Read-only scoped MCP queries; all write-like actions return reviewable proposals and never commit directly |
 
@@ -95,7 +97,25 @@ From the plan audit ([`audit-2026-10-10.md`](audit-2026-10-10.md)):
 1. How a new author gets a working assistant on first run (guided bring-your-own-key, a capped
    hosted starter allowance, or a local default).
 2. ADR-017 and the resequenced roadmap (Phases 2.5, 2.6, 2.7).
-3. Whether to defer audio and video, Google Docs and LaTeX intake, the local-inference connector,
-   and voice fingerprints out of release one.
+3. *(Decided 2026-10-21 by the owner.)* Audio and video are deferred past release one; pictures
+   stay the only media. Google Docs, DOCX and LaTeX import are deferred past release one; pasted
+   text and Markdown stay the ways in. The local-inference connector (SCN-002A, ADR-025) and voice
+   measures (CON-018) were built anyway in batch 8 and stay.
 4. Whether Neo4j remains required infrastructure after Phase 3's query prototype.
 5. Licensing and governance; PostgreSQL row-level security (carried).
+
+## Owner decisions of 2026-10-21
+
+The owner (Jake) answered these directly:
+
+1. **Audio and video: deferred past release one.** Pictures stay the only media. The typed
+   contracts that already name sound and film (`AudioPart`, `VideoPart`, audio/video embedding
+   inputs) stay declared and refused; no audio or video ingestion, processing, transcripts,
+   segments, retrieval, context delivery or checks are release-one work. Recorded in ADR-010
+   (amendment 2026-10-21), `17-multimodal-context.md`, the roadmap and the backlog.
+2. **Google Docs, DOCX and LaTeX import: deferred past release one.** Pasted text and Markdown
+   stay the ways in (Phase 2.7). Recorded in `15-prose-editor-and-memory.md`,
+   `phase-2.7-todo.md` and the roadmap's later options.
+3. **What-ifs stay "set aside only".** There is no discard action. A set-aside what-if keeps its
+   rows, its kept assistant conversations and its scheduled audits until the story itself is
+   deleted. Recorded in ADR-020 (amendment 2026-10-21) and `HANDOFF.md`.

@@ -354,10 +354,12 @@ def test_a_check_keeps_only_notes_that_quote_the_text(auth_client, fake_containe
     assert started.status_code == 202, started.text
     (done,) = _run(fake_container)
     assert done.status.value == "succeeded"
+    # How long the pass took is kept too (CON-001); it varies, so it is only checked to be there.
+    assert done.result["passes"]["continuity"].pop("ms") >= 0
     assert done.result == {
         "findings": 1,
         "dropped": 3,
-        "passes": {"continuity": {"findings": 1, "dropped": 3}},
+        "passes": {"continuity": {"findings": 1, "dropped": 3, "calls": 1}},
     }
     state = _studio(auth_client, w, scene)
     (note,) = state["assistant"]

@@ -104,6 +104,57 @@ class PostgresReviewDismissalStore:
                 },
             )
 
+    async def for_project(self, *, workspace_id: str, project_id: str) -> list[ReviewDismissal]:
+        """Every dismissal on the review screen in this story, withdrawn ones too."""
+        async with session_scope(self._session_factory) as db:
+            rows = (
+                await db.execute(
+                    text(
+                        _SELECT + " WHERE workspace_id = :w AND project_id = :p "
+                        "ORDER BY created_at, id LIMIT 5000"
+                    ),
+                    {"w": workspace_id, "p": project_id},
+                )
+            ).all()
+        return [_row(row) for row in rows]
+
+    async def see(
+        self, *, workspace_id: str, project_id: str, mutation_id: str, found: list[Any]
+    ) -> None:
+        """Note each advisory finding the review screen showed, once (``found``: its key and
+        kind). No words."""
+        if not found:
+            return
+        async with session_scope(self._session_factory) as db:
+            for fingerprint, code in found:
+                await db.execute(
+                    text(
+                        "INSERT INTO review_finding_seen (workspace_id, project_id, mutation_id, "
+                        "fingerprint, code) VALUES (:w, :p, :m, :f, :code) ON CONFLICT DO NOTHING"
+                    ),
+                    {
+                        "w": workspace_id,
+                        "p": project_id,
+                        "m": mutation_id,
+                        "f": fingerprint,
+                        "code": code,
+                    },
+                )
+
+    async def seen_counts(self, *, workspace_id: str, project_id: str) -> dict[str, int]:
+        """How many advisory findings of each kind the review screen has shown."""
+        async with session_scope(self._session_factory) as db:
+            rows = (
+                await db.execute(
+                    text(
+                        "SELECT code, count(*) FROM review_finding_seen WHERE workspace_id = :w "
+                        "AND project_id = :p GROUP BY code"
+                    ),
+                    {"w": workspace_id, "p": project_id},
+                )
+            ).all()
+        return {str(row[0]): int(row[1]) for row in rows}
+
     async def withdraw(
         self, *, workspace_id: str, project_id: str, mutation_id: str, dismissal_id: str, at: Any
     ) -> bool:

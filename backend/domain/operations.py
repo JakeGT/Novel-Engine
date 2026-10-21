@@ -85,6 +85,9 @@ class UpdateEntityOp(_Operation):
     # ``None`` leaves the current value; a list/mapping replaces it wholesale.
     aliases: list[str] | None = None
     external_ids: dict[str, str] | None = None
+    # AST-EXP-017: a new type of entry (a character found to be a group, say). Every
+    # current fact and belief about it must still fit. Omitted while unset (ADR-015).
+    type: str | None = None
 
 
 class RetireEntityOp(_Operation):
@@ -203,6 +206,9 @@ class AmendEventOp(_Operation):
     # What causes it and what follows from it, replaced wholesale the same way.
     cause_ids: list[str] | None = None
     outcome_ids: list[str] | None = None
+    # What a claim says, replaced wholesale (a merge names the kept entry in it,
+    # AST-EXP-017). Only on an event of kind "claim"; omitted while unset (ADR-015).
+    claim: EventClaim | None = None
 
 
 class RetireEventOp(_Operation):
@@ -221,6 +227,10 @@ class LinkAssetOp(_Operation):
     visibility: str | None = None
     known_by: list[str] = Field(default_factory=list)
     applies_from: dict[str, Any] | None = None
+    # AST-001: a story time from which the link no longer applies. Omitted while unset.
+    applies_until: dict[str, Any] | None = None
+    # AST-001: True when the link shows the version it names rather than the newest.
+    shows_version: bool | None = None
 
 
 class RetireAssetLinkOp(_Operation):
@@ -576,6 +586,8 @@ _CANONICAL_OMIT_WHEN_UNSET = (
     "known_by",
     "applies_from",
     "merged_into",
+    "applies_until",
+    "shows_version",
 )
 
 # Fields added to one kind of operation whose name another kind already uses with a
@@ -583,7 +595,8 @@ _CANONICAL_OMIT_WHEN_UNSET = (
 # an event's creation, even when empty). Omitted only on that kind, and only while unset
 # (``None``), so an explicit empty list on it is still recorded.
 _CANONICAL_OMIT_WHEN_NONE_BY_OP: dict[str, tuple[str, ...]] = {
-    "amend_event": ("participants", "location_ids", "cause_ids", "outcome_ids"),
+    "amend_event": ("participants", "location_ids", "cause_ids", "outcome_ids", "claim"),
+    "update_entity": ("type",),
 }
 
 

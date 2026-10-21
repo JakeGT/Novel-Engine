@@ -145,11 +145,51 @@ async def _search_index(
         "active_dimension": active.get("dimension"),
         "active_rows": active.get("rows"),
         "lag": status.lag.get("total") if status.lag else None,
+        # What media still has to reach the index in use (OPS-007): accepted picture
+        # descriptions and prepared pictures not yet embedded. Counts only.
+        "caption_lag": status.lag.get("captions") if status.lag else None,
+        "picture_lag": status.lag.get("pictures") if status.lag else None,
         "building_generation": building.get("id"),
         "building_lag": (status.building_lag or {}).get("total") if building else None,
     }
     switched_off = service.embedder is None
     return (status.searchable or switched_off), status.reason, facts
+
+
+# Writing waiting longer than this to be read into the passage index means the worker is
+# stuck or behind (a failure is tried again after at most ten minutes).
+STALE_PASSAGE_SECONDS = 900
+
+
+async def _passage_index(
+    container: Container,
+) -> tuple[bool, str | None, dict[str, object]] | None:
+    """How far behind reading the author's writing into the passage index is (CTX-005):
+    how many texts wait, the oldest wait, and how many failed. Counts only, never which
+    stories; None when texts are read in at once."""
+    index = getattr(container, "passage_index", None)
+    if index is None or not hasattr(index, "lag"):
+        return None
+    try:
+        lag = await asyncio.wait_for(index.lag(), timeout=OPTIONAL_CHECK_SECONDS)
+    except Exception:  # noqa: BLE001 - reported in plain words, never the error text
+        return False, "How far reading in your writing has got could not be read.", {}
+    if lag is None:
+        return None
+    oldest = lag.oldest_seconds
+    facts: dict[str, object] = {
+        "waiting": int(lag.count),
+        "oldest_waiting_seconds": None if oldest is None else round(float(oldest)),
+        "failing": int(lag.failing),
+    }
+    if oldest is not None and float(oldest) > STALE_PASSAGE_SECONDS:
+        return (
+            False,
+            f"Writing has waited about {round(float(oldest) / 60)} minutes to be read in, so "
+            "the assistant may not find what it says yet. The writing itself is safe.",
+            facts,
+        )
+    return True, None, facts
 
 
 # A picture waiting longer than this to be prepared means picture work is stuck or behind.
@@ -305,6 +345,18 @@ async def readiness(
             optional=True,
             brief="Finding things by meaning is off for now; names and links still work.",
             **index_facts,
+        )
+
+    passages = await _passage_index(container)
+    if passages is not None:
+        passages_ok, passages_detail, passage_facts = passages
+        record(
+            "passage_index",
+            passages_ok,
+            passages_detail,
+            optional=True,
+            brief="Writing is waiting too long to be read in; the writing itself is safe.",
+            **passage_facts,
         )
 
     pictures = await _picture_processing(container)

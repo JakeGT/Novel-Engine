@@ -50,6 +50,22 @@ class ReviewFinding:
     came_back: bool = False
 
 
+# The advisory findings of the review screen, in the author's words, for the note on how
+# often each is dismissed. A story rule set to warn is counted as one kind, "rule".
+REVIEW_WORDS: dict[str, str] = {
+    "possible_duplicate": "A possible duplicate",
+    "archived_twin": "Like an archived entry",
+    "already_recorded": "Already recorded",
+    "name_collision": "Another entry has the same name",
+    "referenced_entity": "Still referred to elsewhere",
+    "rule": "A story rule set to warn",
+}
+
+
+def _kind(code: str) -> str:
+    return "rule" if code.startswith("rule:") else code
+
+
 def _rule_id(code: str) -> str | None:
     return code.split(":", 1)[1] if code.startswith("rule:") else None
 
@@ -118,6 +134,7 @@ class ReviewDismissalService:
         ]
         by_key = {item.fingerprint: item for item in standing}
         found: list[ReviewFinding] = []
+        shown: list[tuple[str, str]] = []
         # How many findings of each kind on each change came before, so two of the same
         # kind on one change are told apart.
         seen: dict[tuple[int, str], int] = {}
@@ -130,6 +147,7 @@ class ReviewDismissalService:
             key = review_fingerprint(mutation_id, identity, issue.code, occurrence)
             depends = _depends(issue.code, identity, issue.message, versions)
             held = by_key.get(key)
+            shown.append((key, issue.code))
             came_back = held is not None and held.depends_on != depends
             found.append(
                 ReviewFinding(
@@ -141,7 +159,68 @@ class ReviewDismissalService:
                     came_back=came_back,
                 )
             )
+        await self._seen(scope, mutation_id, shown)
         return found
+
+    async def _seen(
+        self, scope: AccessScope, mutation_id: str, shown: list[tuple[str, str]]
+    ) -> None:
+        """Note what the screen showed, once each, for how often each kind is dismissed.
+        A note for the author only: a failure here never stops the review screen."""
+        see = getattr(self._store, "see", None)
+        if see is None or not shown:
+            return
+        try:
+            await see(
+                workspace_id=scope.workspace_id or "",
+                project_id=scope.project_id or "",
+                mutation_id=mutation_id,
+                found=shown,
+            )
+        except Exception as error:  # noqa: BLE001 - the count is extra to the review
+            log_event(logger, "review.findings_seen_unkept", error_type=type(error).__name__)
+
+    async def calibration(self, scope: AccessScope) -> list[Any]:
+        """How often each kind of advisory finding on the review screen was dismissed in
+        this story: found (shown on a proposal), not a problem, kept on purpose. A note for
+        the author, never a change to what the checks do (CON-016)."""
+        from backend.services.consistency_runs import (
+            MIN_CALIBRATION_FINDINGS,
+            CalibrationLine,
+            calibration_note,
+        )
+
+        workspace_id, project_id = scope.workspace_id or "", scope.project_id or ""
+        await self._mutations._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        seen = await self._store.seen_counts(workspace_id=workspace_id, project_id=project_id)
+        decided: dict[str, list[ReviewDismissal]] = {}
+        for item in await self._store.for_project(workspace_id=workspace_id, project_id=project_id):
+            if item.standing:
+                decided.setdefault(_kind(item.code), []).append(item)
+        counts: dict[str, int] = {}
+        for code, number in seen.items():
+            counts[_kind(code)] = counts.get(_kind(code), 0) + number
+        lines: list[Any] = []
+        for code in sorted(set(counts) | set(decided)):
+            mine = decided.get(code, [])
+            accepted = sum(1 for item in mine if item.reason is DismissReason.INTENDED)
+            dismissed = len(mine) - accepted
+            found = max(counts.get(code, 0), len(mine))
+            rate = dismissed / found if found >= MIN_CALIBRATION_FINDINGS else None
+            lines.append(
+                CalibrationLine(
+                    code=code,
+                    words=REVIEW_WORDS.get(code, code.replace("_", " ").capitalize()),
+                    source="check",
+                    found=found,
+                    dismissed=dismissed,
+                    accepted=accepted,
+                    rate=rate,
+                    note=calibration_note(found, dismissed, accepted, rate),
+                )
+            )
+        lines.sort(key=lambda line: (-(line.rate or 0.0), -line.found, line.words))
+        return lines
 
     async def dismiss(
         self,
@@ -216,4 +295,4 @@ class ReviewDismissalService:
         return await self.findings(scope, mutation_id)
 
 
-__all__ = ["ReviewDismissalService", "ReviewFinding"]
+__all__ = ["REVIEW_WORDS", "ReviewDismissalService", "ReviewFinding"]

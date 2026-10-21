@@ -1,5 +1,5 @@
 {
-  "cases": 121,
+  "cases": 161,
   "false_positives": [],
   "families": {
     "continuity": {
@@ -51,16 +51,16 @@
       "true_positive": 5
     },
     "prose": {
-      "clean": 23,
-      "defects": 12,
-      "f1": 0.8,
-      "false_negative": 4,
+      "clean": 49,
+      "defects": 22,
+      "f1": 0.872,
+      "false_negative": 5,
       "false_positive": 0,
       "false_positive_rate": 0.0,
       "precision": 1.0,
-      "recall": 0.667,
-      "true_negative": 23,
-      "true_positive": 8
+      "recall": 0.773,
+      "true_negative": 49,
+      "true_positive": 17
     },
     "rules": {
       "clean": 7,
@@ -75,16 +75,16 @@
       "true_positive": 7
     },
     "voice": {
-      "clean": 3,
-      "defects": 9,
-      "f1": 0.941,
+      "clean": 6,
+      "defects": 10,
+      "f1": 0.947,
       "false_negative": 1,
       "false_positive": 0,
       "false_positive_rate": 0.0,
       "precision": 1.0,
-      "recall": 0.889,
-      "true_negative": 3,
-      "true_positive": 8
+      "recall": 0.9,
+      "true_negative": 6,
+      "true_positive": 9
     }
   },
   "leakage": {
@@ -96,22 +96,23 @@
     "continuity/two-places-place-only-in-words",
     "drafting/secret-by-pronoun",
     "prose/after-named-but-denied",
+    "prose/age-by-pronoun",
     "prose/dawn-without-a-cue",
     "prose/eyes-by-pronoun",
     "prose/uses-it-by-pronoun",
     "voice/short-scene-in-first-person"
   ],
   "overall": {
-    "clean": 58,
-    "defects": 63,
-    "f1": 0.941,
-    "false_negative": 7,
+    "clean": 87,
+    "defects": 74,
+    "f1": 0.943,
+    "false_negative": 8,
     "false_positive": 0,
     "false_positive_rate": 0.0,
     "precision": 1.0,
-    "recall": 0.889,
-    "true_negative": 58,
-    "true_positive": 56
+    "recall": 0.892,
+    "true_negative": 87,
+    "true_positive": 66
   },
   "set": "saltglass-consistency/1"
 }

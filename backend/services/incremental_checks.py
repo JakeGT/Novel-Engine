@@ -20,7 +20,9 @@ words: a finding keeps its code, message, offsets and subject, as a run does.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -57,6 +59,10 @@ class CheckWork:
     checks: dict[str, str] = field(default_factory=dict)
     ran: set[str] = field(default_factory=set)
     reused: set[str] = field(default_factory=set)
+    # How long each check took, in milliseconds (a reused one: looking it up), and how
+    # long each stage of the run took (CON-001). Never words.
+    ms: dict[str, float] = field(default_factory=dict)
+    stages: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def unchanged(self) -> bool:
@@ -70,6 +76,8 @@ class CheckWork:
             "ran": sorted(self.ran),
             "reused": sorted(self.reused),
             "unchanged": self.unchanged,
+            "ms": {name: round(value, 1) for name, value in sorted(self.ms.items())},
+            "stages": list(self.stages),
         }
 
 
@@ -135,9 +143,29 @@ def _sliced(check: SceneCheck, brief: DraftBrief) -> DraftBrief:
         )
     if check.name == "length":
         return DraftBrief(words_asked=brief.words_asked)
+    if check.name == "looks":
+        return DraftBrief(
+            people=brief.people,
+            appearance=list(brief.appearance),
+            ages=list(brief.ages),
+            ids=dict(brief.ids),
+            also=dict(brief.also),
+        )
     if check.name == OTHER.name:
         return replace(brief, continuity=[])
     return DraftBrief()
+
+
+# The stages of a run of the checks that need no model, in plain words (CON-001).
+STAGE_WORDS: dict[str, str] = {
+    "gather": "Reading what the checks need from the story",
+    "checks": "Running the checks",
+    "keep": "Keeping what they found",
+}
+
+
+def _stage(name: str, began: float, ended: float) -> dict[str, Any]:
+    return {"stage": name, "ms": round((ended - began) * 1000, 1)}
 
 
 class SceneCheckRunner:
@@ -179,6 +207,7 @@ class SceneCheckRunner:
         studio = self._studio
         from backend.services.studio_service import _phrases_meaning
 
+        began = time.perf_counter()
         names, _, _ = await studio._sources.index_for(
             workspace_id, project_id, source_id or "", scene_id=scene.id
         )
@@ -207,15 +236,19 @@ class SceneCheckRunner:
         )
         mentions: list[Any] | None = None
         work = CheckWork(findings=[], inputs=inputs, checks=fingerprints)
+        gathered = time.perf_counter()
+        work.stages.append(_stage("gather", began, gathered))
         by_check: dict[str, list[DraftFinding]] = {}
         fresh: list[tuple[str, str, list[RecordedCheck]]] = []
         for check in ALL_CHECKS:
             fingerprint = fingerprints[check.name]
+            started = time.perf_counter()
             if (check.name, fingerprint) in kept:
                 by_check[check.name] = [
                     _finding(item) for item in kept[(check.name, fingerprint)]["findings"]
                 ]
                 work.reused.add(check.name)
+                work.ms[check.name] = (time.perf_counter() - started) * 1000
                 continue
             if check.name == "continuity":
                 from backend.services.story_time_service import read_story
@@ -228,13 +261,15 @@ class SceneCheckRunner:
                     # newer version than the fingerprint says, so it is not kept.
                     by_check[check.name] = found
                     work.ran.add(check.name)
+                    work.ms[check.name] = (time.perf_counter() - started) * 1000
                     continue
             else:
                 if mentions is None:
                     mentions = find_mentions(content, names)
                 reads_names = "names" in check.reads
-                everything = check_draft(
-                    content, _sliced(check, brief), mentions if reads_names else []
+                # Plain Python over the whole text: kept off the event loop.
+                everything = await asyncio.to_thread(
+                    check_draft, content, _sliced(check, brief), mentions if reads_names else []
                 )
                 if check is OTHER:
                     found = [
@@ -246,7 +281,10 @@ class SceneCheckRunner:
                     found = [item for item in everything if check.owns(item.code)]
             by_check[check.name] = found
             work.ran.add(check.name)
+            work.ms[check.name] = (time.perf_counter() - started) * 1000
             fresh.append((check.name, fingerprint, _recorded(scene.id, found)))
+        checked = time.perf_counter()
+        work.stages.append(_stage("checks", gathered, checked))
         # Put back in the order one run of every check gives them.
         for check in ALL_CHECKS:
             work.findings.extend(by_check.get(check.name, []))
@@ -265,6 +303,7 @@ class SceneCheckRunner:
             ],
             keep=KEEP_PER_CHECK,
         )
+        work.stages.append(_stage("keep", checked, time.perf_counter()))
         log_event(
             logger,
             "checks.incremental",
@@ -276,4 +315,4 @@ class SceneCheckRunner:
         return work
 
 
-__all__ = ["KEEP_PER_CHECK", "CheckWork", "SceneCheckRunner", "ordered"]
+__all__ = ["KEEP_PER_CHECK", "STAGE_WORDS", "CheckWork", "SceneCheckRunner", "ordered"]

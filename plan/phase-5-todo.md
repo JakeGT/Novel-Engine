@@ -7,6 +7,14 @@
 - Governing documents: `04-ai-and-retrieval.md` (scene generation pipeline), `13-consistency-system.md`,
   ADR-005, ADR-021, ADR-022 (written with this phase). Level 4 in `19-assistant-first-experience.md`.
 
+**Since this phase (checked 2026-10-21).** The checklists below record the state when the phase was
+built. Later work: pictures reach the drafting context as pictures or descriptions (CTX-013); scene
+contracts, arc paths, threads and readiness are partly built (STY-002, STY-004–STY-006); consistency
+profiles (CON-009), dismissals (CON-016), checks re-run only where something changed (CON-007) and
+impact preview (CON-017); and the context behind a kept draft can be compared from the scene's
+context (SCN-005). Still open: a real provider, streaming, editing inside or merging drafts, and
+ADR-022's known limits (OSS-008). Current status: [`10-backlog.md`](10-backlog.md).
+
 ## Decisions taken for this phase (ADR-022)
 
 - **A scene's prose is one of the author's texts**, linked to the scene, so it has immutable

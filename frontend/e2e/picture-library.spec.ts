@@ -207,7 +207,13 @@ test('the reader’s guide is made as a timeline and as a recap', async ({ page 
   await page.getByLabel('What to include').selectOption('recap')
   const recap = page.getByRole('article', { name: /Recap so far/ })
   await expect(recap.getByText('Where: Heron Skerry.')).toBeVisible()
-  await expect(recap.getByText('Set earlier in story time than the scene before it.')).toBeVisible()
+  // Other tests share this story: look in this test's own scene.
+  await expect(
+    recap
+      .locator('.guide-entry')
+      .filter({ hasText: 'The first winter' })
+      .getByText('Set earlier in story time than the scene before it.'),
+  ).toBeVisible()
   await shot(page, '7-guide-recap-1280')
   await page.setViewportSize({ width: 390, height: 844 })
   await page.reload()

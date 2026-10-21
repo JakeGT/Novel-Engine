@@ -21,6 +21,7 @@ from backend.api.dependencies import get_container
 from backend.api.v1.studio import DismissalModel, _dismissal
 from backend.container import Container
 from backend.domain.check_fingerprints import BY_NAME
+from backend.domain.check_passes import PASS_LABELS, CheckPass
 from backend.domain.identity import AccessScope
 from backend.services.consistency_runs import (
     CalibrationLine,
@@ -28,6 +29,7 @@ from backend.services.consistency_runs import (
     PictureRead,
     RunView,
 )
+from backend.services.incremental_checks import STAGE_WORDS
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["checks"])
 
@@ -92,6 +94,32 @@ class CheckWorkModel(BaseModel):
     words: str
     # Worked out for this run, or reused because nothing it reads had changed.
     reused: bool
+    # How long it took, in milliseconds (a reused one: looking it up); null for runs
+    # kept before times were recorded (CON-001).
+    ms: float | None = None
+
+
+class StageModel(BaseModel):
+    """One stage of the checks that need no model in one scene of a run (CON-001)."""
+
+    stage: Literal["gather", "checks", "keep"]
+    # Plain words for it.
+    words: str
+    ms: float
+
+
+class PassTimingModel(BaseModel):
+    """One pass of a check with the assistant: how long it took and the calls it made."""
+
+    check_pass: str
+    # Plain words for the pass.
+    words: str
+    # The scene, for an audit of more than one.
+    plan_id: str | None = None
+    ms: float | None = None
+    calls: int = 0
+    # An earlier run of the same job had already finished it: nothing was sent again.
+    earlier: bool = False
 
 
 class RunSceneModel(BaseModel):
@@ -111,6 +139,8 @@ class RunSceneModel(BaseModel):
     fixed: int
     # The checks that need no model, as this run worked them out (empty for older runs).
     checks: list[CheckWorkModel] = []
+    # How long each stage of those checks took (empty for older runs).
+    stages: list[StageModel] = []
     # The pictures the pictures pass was given for this scene (empty when it read none).
     pictures: list[RunPictureModel] = []
 
@@ -138,6 +168,8 @@ class RunModel(BaseModel):
     # How each pass of a check with the assistant was sent, when it was sent in groups
     # (CON-013): the groups, whether every passage got every check, in plain words.
     coverage: dict[str, Any] = {}
+    # How long each pass of a check with the assistant took (CON-001).
+    timings: list[PassTimingModel] = []
 
 
 class CalibrationModel(BaseModel):
@@ -158,11 +190,36 @@ class CalibrationList(BaseModel):
 def _checks(run_view: RunView, plan_id: str) -> list[CheckWorkModel]:
     kept = run_view.run.scene_fingerprints(plan_id)
     reused = set(kept.get("reused") or [])
+    raw = kept.get("ms")
+    took: dict[str, Any] = raw if isinstance(raw, dict) else {}
     return [
-        CheckWorkModel(name=name, words=BY_NAME[name].words, reused=name in reused)
+        CheckWorkModel(
+            name=name,
+            words=BY_NAME[name].words,
+            reused=name in reused,
+            ms=float(took[name]) if isinstance(took.get(name), int | float) else None,
+        )
         for name in sorted(kept.get("checks") or {})
         if name in BY_NAME
     ]
+
+
+def _stages(run_view: RunView, plan_id: str) -> list[StageModel]:
+    kept = run_view.run.scene_fingerprints(plan_id).get("stages")
+    return [
+        StageModel(stage=item["stage"], words=STAGE_WORDS[item["stage"]], ms=float(item["ms"]))
+        for item in (kept if isinstance(kept, list) else [])
+        if isinstance(item, dict)
+        and item.get("stage") in STAGE_WORDS
+        and isinstance(item.get("ms"), int | float)
+    ]
+
+
+def _pass_words(check_pass: str) -> str:
+    try:
+        return PASS_LABELS[CheckPass(check_pass)]
+    except ValueError:
+        return check_pass.replace("_", " ").capitalize()
 
 
 def _calibration(line: CalibrationLine) -> CalibrationModel:
@@ -212,6 +269,7 @@ def _run(view: RunView) -> RunModel:
                 superseded=part.tally.superseded,
                 fixed=part.tally.fixed,
                 checks=_checks(view, part.input.plan_id),
+                stages=_stages(view, part.input.plan_id),
                 pictures=[
                     model
                     for picture in view.pictures.get(part.input.plan_id, [])
@@ -241,6 +299,17 @@ def _run(view: RunView) -> RunModel:
         ],
         profile={str(k): str(v) for k, v in run.profile.items()},
         coverage=view.coverage,
+        timings=[
+            PassTimingModel(
+                check_pass=item.check_pass,
+                words=_pass_words(item.check_pass),
+                plan_id=item.plan_id,
+                ms=item.ms,
+                calls=item.calls,
+                earlier=item.earlier,
+            )
+            for item in view.timings
+        ],
     )
 
 

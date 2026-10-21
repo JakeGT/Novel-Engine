@@ -54,6 +54,8 @@ from backend.domain.media import (
     MediaAsset,
     MediaAssetVersion,
     MediaLifecycleEvent,
+    PictureUpload,
+    UploadState,
 )
 from backend.domain.objects import ObjectStat
 from backend.domain.operations import CanonOperation
@@ -1432,6 +1434,52 @@ class MediaStorePort(Protocol):
         retired_revision: int | None = None,
         actor_user_id: str | None = None,
     ) -> MediaAsset | None: ...
+
+    # Two-step picture uploads (AST-002).
+    async def create_upload(
+        self,
+        upload: PictureUpload,
+        *,
+        max_per_person: int,
+        max_per_workspace: int,
+    ) -> PictureUpload | None: ...
+
+    async def get_upload(
+        self, *, workspace_id: str, project_id: str, upload_id: str
+    ) -> PictureUpload | None: ...
+
+    async def open_uploads(self, *, workspace_id: str, actor_user_id: str | None = None) -> int: ...
+
+    async def move_upload(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        upload_id: str,
+        from_state: UploadState,
+        to_state: UploadState,
+        staged_key: str | None = None,
+        content_type: str | None = None,
+        asset_id: str | None = None,
+        version_id: str | None = None,
+        link_id: str | None = None,
+        unexpired: bool = True,
+    ) -> PictureUpload | None: ...
+
+    async def expire_uploads(
+        self, *, limit: int = 100, finishing_grace_seconds: int = 900
+    ) -> list[PictureUpload]: ...
+
+    async def record_notes_removed(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        asset_id: str,
+        count: int,
+        actor_user_id: str | None = None,
+        canon_revision: int | None = None,
+    ) -> None: ...
 
     async def hold_for_deletion(
         self, *, workspace_id: str, project_id: str, asset_id: str, lifecycle: AssetLifecycle

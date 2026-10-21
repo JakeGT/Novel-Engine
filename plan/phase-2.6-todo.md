@@ -5,6 +5,14 @@
 - Governing documents: `19-assistant-first-experience.md` ("Story planning by conversation"),
   `03-domain-and-temporal-model.md` ("Plan records are intent"), ADR-018.
 
+**Since this phase (checked 2026-10-21).** The dashboard below records the state when the phase was
+built. Later work: scene contracts are partly built, as scene conditions, reveals, thread set-ups
+and pay-offs and the scene's want, obstacle and outcome (G; STY-003, STY-005; Phase 2.7 E, Phase 3
+E, batch 7 D); the God Hand changes plan records (AST-EXP-017, batch 8 B); each suggested plan item
+records whether it quotes the author's material (AST-EXP-013, batch 8 B); and a scene's plan card
+can be suggested from its prose (Phase 6). Still not built: the first-plan measure and fixtures for
+plan quality. Current status: [`10-backlog.md`](10-backlog.md).
+
 **Standing limitation:** the three assistant workflows here (planning questions, drafting a
 plan, "what could happen next") have only run against a scripted model. The owner tests real
 models by hand and reports back (decided 2026-10-10).

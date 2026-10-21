@@ -80,6 +80,8 @@ def test_three_years_before_the_war_becomes_a_relative_time(auth_client, fake_co
         "location_ids": None,
         "cause_ids": None,
         "outcome_ids": None,
+        # What a claim says is left as it is too (a merge rewrites it, AST-EXP-017).
+        "claim": None,
         "evidence": amended["evidence"],
     }
     # The model was told the unit and shown the events.

@@ -1,6 +1,6 @@
 # Prompt snapshot. Change it only with: uv run python -m tests.prompts.snapshots --update
 id: read-passage
-version: 3
+version: 4
 
 ##### case: a passage
 

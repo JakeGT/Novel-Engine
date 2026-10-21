@@ -201,3 +201,63 @@ https://docs.sonarsource.com/sonarqube-server/2025.3/user-guide/issues/solution-
 https://docs.sonarsource.com/sonarqube-for-ide/visual-studio/using/fixing-issues. Sadowski et al.,
 "Tricorder: Building a Program Analysis Ecosystem", ICSE 2015,
 https://research.google/pubs/tricorder-building-a-program-analysis-ecosystem/.
+
+## Amendment 2026-10-21 (batch 9 B): wider dismissals, the other passes in parts, timings, who says what, identity details (CON-016, CON-013, CON-001, CON-018, CON-004, SCN-007)
+
+**Dismissals wider than one scene (CON-016).** Code checkers suppress at more than one scope:
+ESLint has line, block (a stretch of a file, between disable and enable) and file scopes, and asks
+that a disable comment say why; SARIF records each suppression with its kind, a state and a
+justification. Here a kind of finding can be dismissed wherever it is about one character, or in a
+stretch of scenes by reading order now (so a scene moved into the stretch is covered). Each says in
+words what it applies to, keeps a reason, may run out, and is withdrawn rather than deleted, which
+brings the findings back everywhere. A finding is about a character when what it says names them by
+their name or an alias; no guess is made. They are forked with a what-if and not carried by an
+archive (a working decision of this copy, like a review screen's dismissals). Dismissed findings are
+still found and kept in the history; nothing about a check changes. The review screen now notes
+each advisory finding it shows once per proposal, so how often each kind is dismissed there is told
+as a share of how often it was found, with the same note and the same five-finding floor as the
+studio's.
+
+**The other passes in parts (CON-013).** The viewpoint, voice and clarity passes read the same part
+of the story for every passage, so grouping by what a passage names (the continuity pass's
+bundles) buys nothing for them. A long scene is sent to them in parts: consecutive passages as
+`review_units` cuts them, each part with everything the pass reads, every passage in exactly one
+part (prompt `check-part`). A problem that runs across where two parts meet can be missed, and the
+job says so. The plan pass reads the whole scene to tell what it leaves out, and the pictures pass
+sends its pictures, so both are always sent whole and say why. The coverage list now gives each
+passage's first words, read on demand from the exact version checked (the job keeps positions
+only). Found while measuring: the voice pass's own writing samples can include the scene being
+checked, so its material grows with the scene; a part then has no room and the pass is sent whole.
+
+**Stages and timings (CON-001).** Each run keeps how long each check without the assistant took
+(a reused one: looking it up) and its three stages (reading what the checks need, running them,
+keeping what they found); each pass with the assistant keeps its time and its calls in the job's
+result. Times are never compared between machines or used to decide anything.
+
+**Who says what (CON-018).** Attribution follows the precision-first end of quote attribution
+research: Muzny et al.'s sieve system links quotes to speakers through explicit tags first and
+conversational turn-taking after, and can be tuned to 90% precision at 65% recall. Only the two
+most reliable sieves are used: a speech verb next to a name ("said Tobin", "Mara asked", "Tobin
+said, …"), and turns in an exchange of exactly two people, each tagged in it, where every tag sits
+where the turns put it and no one else is named. A pronoun tag is never read. A character's speech
+(sentence length, and short forms such as "don't" per 100 words) is compared with their own speech
+in the author's other scenes with the same modified z-score as the rest of the voice measures,
+only when half the scene's dialogue is tied to a speaker, they say at least 60 words in three lines
+here, and there are three other scenes and 300 words of them elsewhere. A voice note can be
+dismissed like a check; it holds while the note points the same way (its "subject").
+
+**Identity details and quantities (CON-004, SCN-007).** Height (tall against short words, or
+numbers within 5 cm), a scar, tattoo, birthmark, mole or brand on the other side of the same part,
+and an age as written against the ages a birth or a stated age allows at the scene's time (story
+time in years only). The same rules as the colour check: tied to the named person, a pronoun read
+only for a mark and only when the prose gives that person the pronoun elsewhere, hedged sentences
+and dialogue left alone. Quantities spent are added up from numbers next to the thing's own word,
+against a "has quantity" kind of fact certainly true then; a unit with no length in days says only
+"this comes before it".
+
+Sources: ESLint, "Configure Rules" (disable comments by line, block and file),
+https://eslint.org/docs/head/use/configure/rules. OASIS SARIF 2.1.0 `suppression` object (kind,
+state, justification), as summarised in GitHub's SARIF output reference,
+https://docs.github.com/en/enterprise-server@3.19/code-security/reference/code-scanning/codeql/codeql-cli/sarif-output.
+Muzny, Fang, Chang and Jurafsky, "A Two-stage Sieve Approach for Quote Attribution", EACL 2017,
+https://aclanthology.org/E17-1044/.

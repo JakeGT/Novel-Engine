@@ -29,17 +29,22 @@ from backend.domain.knowledge import reading_order
 from backend.domain.sources import VersionOrigin
 from backend.domain.tenancy import Permission
 from backend.domain.voice import (
+    MIN_ATTRIBUTED_SHARE,
     MIN_BASELINE_SCENES,
     MIN_BASELINE_WORDS,
     MIN_SCENE_WORDS,
     VOICE_VERSION,
     Baseline,
+    Speech,
     Trend,
     VoiceNote,
     VoiceStats,
     baseline,
     drift,
     measure,
+    speech_drift,
+    speech_drift_ready,
+    speeches,
     trends,
 )
 
@@ -84,12 +89,29 @@ class Usual:
         return self.baseline.enough
 
 
+@dataclass(frozen=True)
+class SpeakerRow:
+    """One character's dialogue in the scene, and whether it was compared (CON-018)."""
+
+    speech: Speech
+    # Other scenes with enough of their dialogue to compare with.
+    elsewhere: int
+    compared: bool
+
+
 @dataclass
 class SceneVoice:
     scene: PlanItem
     reading: SceneReading | None
     usual: Usual
     notes: list[VoiceNote] = field(default_factory=list)
+    # Who says what here, when a tag or turns in an exchange says so (CON-018).
+    speakers: list[SpeakerRow] = field(default_factory=list)
+    # The share of the scene's dialogue tied to a speaker; notes need at least half.
+    attributed: float = 0.0
+    # Each note's fingerprint, and the author's dismissal of it if one holds.
+    keys: list[str] = field(default_factory=list)
+    dismissals: dict[str, Any] = field(default_factory=dict)
     # Whether this scene counts towards the usual, and whether the author left it out.
     counted: bool = False
     left_out: bool = False
@@ -133,6 +155,8 @@ class VoiceService:
         # version id -> (whether the author wrote it, its measures). Words never change
         # under a version id, so nothing kept here can be out of date.
         self._kept: OrderedDict[str, tuple[VoiceStats, bool, int]] = OrderedDict()
+        # (version id, the characters' names) -> who says what in it. Kept the same way.
+        self._spoken: OrderedDict[tuple[str, str], tuple[dict[str, Speech], float]] = OrderedDict()
 
     # ------------------------------------------------------------------ reading
 
@@ -268,6 +292,9 @@ class VoiceService:
         found.not_compared = not_compared(mine, usual)
         if mine is not None and found.not_compared is None:
             found.notes = drift(mine.stats, usual.baseline)
+        if mine is not None:
+            await self._speakers(workspace_id, project_id, found, mine, readings, left)
+        await self._mark_dismissed(workspace_id, project_id, found)
         log_event(
             logger,
             "voice.scene_read",
@@ -276,6 +303,221 @@ class VoiceService:
             version=VOICE_VERSION,
         )
         return found
+
+    # ------------------------------------------------------------ who says what
+
+    async def _people(self, workspace_id: str, project_id: str) -> dict[str, tuple[str, ...]]:
+        """Every character's name and aliases, by the name the notes call them."""
+        entities = await self._studio._reader.list_entities(
+            workspace_id=workspace_id, project_id=project_id, entity_type="Character", limit=2000
+        )
+        return {
+            entity.name: tuple(dict.fromkeys([entity.name, *getattr(entity, "aliases", [])]))
+            for entity in entities
+            if entity.name
+        }
+
+    async def _spoken_in(
+        self,
+        workspace_id: str,
+        project_id: str,
+        reading: SceneReading,
+        people: dict[str, tuple[str, ...]],
+        names_key: str,
+    ) -> tuple[dict[str, Speech], float]:
+        key = (reading.version_id, names_key)
+        kept = self._spoken.get(key)
+        if kept is not None:
+            self._spoken.move_to_end(key)
+            return kept
+        _, version, _ = await self._studio._sources.version(
+            workspace_id, project_id, reading.source_id, reading.version_id
+        )
+        found = await asyncio.to_thread(speeches, version.content, people)
+        self._spoken[key] = found
+        while len(self._spoken) > MAX_KEPT:
+            self._spoken.popitem(last=False)
+        return found
+
+    async def _speakers(
+        self,
+        workspace_id: str,
+        project_id: str,
+        found: SceneVoice,
+        mine: SceneReading,
+        readings: list[SceneReading],
+        left: list[str],
+    ) -> None:
+        """Who says what in this scene, each against their own dialogue in the author's
+        other scenes (left-out scenes and kept drafts aside, as for the usual)."""
+        people = await self._people(workspace_id, project_id)
+        if not people:
+            return
+        names_key = "\x1f".join(f"{who}={'|'.join(names)}" for who, names in sorted(people.items()))
+        here, share = await self._spoken_in(workspace_id, project_id, mine, people, names_key)
+        found.attributed = share
+        if not here:
+            return
+        others = [
+            item
+            for item in readings
+            if item.plan_id != mine.plan_id
+            and item.plan_id not in left
+            and (item.own or not found.usual.own_only)
+        ]
+        elsewhere: dict[str, list[Speech]] = {}
+        for item in others:
+            spoken, other_share = await self._spoken_in(
+                workspace_id, project_id, item, people, names_key
+            )
+            if other_share < MIN_ATTRIBUTED_SHARE:
+                continue
+            for who, speech in spoken.items():
+                elsewhere.setdefault(who, []).append(speech)
+        for who in sorted(here, key=lambda name: -here[name].words):
+            notes = speech_drift(here[who], elsewhere.get(who, []), share)
+            found.notes.extend(notes)
+            found.speakers.append(
+                SpeakerRow(
+                    speech=here[who],
+                    elsewhere=len(elsewhere.get(who, [])),
+                    compared=share >= MIN_ATTRIBUTED_SHARE
+                    and bool(speech_drift_ready(here[who], elsewhere.get(who, []))),
+                )
+            )
+
+    # ------------------------------------------------------------- dismissing
+
+    def _key(self, content: str, note: VoiceNote) -> str:
+        from backend.domain.dismissals import anchor, voice_fingerprint
+
+        return voice_fingerprint(
+            note.code, note.subject, note.message, anchor(content, note.start, note.end)
+        )
+
+    async def _content(self, workspace_id: str, project_id: str, found: SceneVoice) -> str:
+        reading = found.reading
+        if reading is None:
+            return ""
+        _, version, _ = await self._studio._sources.version(
+            workspace_id, project_id, reading.source_id, reading.version_id
+        )
+        return str(version.content)
+
+    async def _mark_dismissed(self, workspace_id: str, project_id: str, found: SceneVoice) -> None:
+        """Each note's fingerprint, and which the author dismissed. A dismissal holds while
+        the note says the same thing (which way it points, whose speech), or for a note on
+        a passage, while that sentence is unchanged."""
+        if not found.notes:
+            return
+        from datetime import UTC, datetime
+
+        content = await self._content(workspace_id, project_id, found)
+        found.keys = [self._key(content, note) for note in found.notes]
+        studio = self._studio
+        standing = await studio._store.dismissals(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            branch_id=await studio._branch_id(workspace_id, project_id),
+            plan_id=found.scene.id,
+        )
+        now = datetime.now(UTC)
+        held = {item.fingerprint: item for item in standing if item.applies(now)}
+        found.dismissals = {key: held[key] for key in found.keys if key in held}
+
+    async def dismiss(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        *,
+        key: str,
+        reason: Any,
+        note: str = "",
+        days: int | None = None,
+    ) -> SceneVoice:
+        """Dismiss a note on how the scene sounds, with a reason (CON-018). It stays
+        dismissed while the note says the same thing; the measures still run."""
+        from datetime import UTC, datetime
+
+        from backend.adapters.system import uuid7
+        from backend.domain.dismissals import (
+            MAX_DISMISSALS_PER_SCENE,
+            MAX_NOTE,
+            DismissReason,
+            FindingDismissal,
+            FindingKind,
+            expiry,
+        )
+
+        studio = self._studio
+        await studio._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        found = await self.scene(scope, workspace_id, project_id, plan_id)
+        if key not in found.keys:
+            raise NotFoundError("That note is no longer there: the scene may have changed.")
+        voice_note = found.notes[found.keys.index(key)]
+        note = " ".join(note.split())
+        if reason is DismissReason.OTHER and not note:
+            raise ValidationError("Say in a few words why this is not a problem.")
+        if len(note) > MAX_NOTE:
+            raise ValidationError(f"Keep the reason under {MAX_NOTE} characters.")
+        now = datetime.now(UTC)
+        try:
+            expires_at = expiry(now, days)
+        except ValueError:
+            raise ValidationError("Choose how long it stays dismissed.") from None
+        branch_id = await studio._branch_id(workspace_id, project_id)
+        standing = await studio._store.dismissals(
+            workspace_id=workspace_id, project_id=project_id, branch_id=branch_id, plan_id=plan_id
+        )
+        if len(standing) >= MAX_DISMISSALS_PER_SCENE:
+            raise ValidationError("This scene has as many dismissed findings as it can hold.")
+        await studio._store.add_dismissal(
+            FindingDismissal(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                branch_id=branch_id,
+                id=str(uuid7()),
+                plan_id=plan_id,
+                fingerprint=key,
+                kind=FindingKind.CHECK,
+                code=voice_note.code,
+                reason=reason,
+                note=note,
+                expires_at=expires_at,
+                created_by=scope.actor_user_id,
+                created_at=now,
+            )
+        )
+        log_event(logger, "voice.note_dismissed", code=voice_note.code, reason=reason.value)
+        return await self.scene(scope, workspace_id, project_id, plan_id)
+
+    async def undo_dismissal(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        dismissal_id: str,
+    ) -> SceneVoice:
+        """Bring a dismissed note back. The dismissal stays on record, withdrawn."""
+        from datetime import UTC, datetime
+
+        studio = self._studio
+        await studio._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        await studio._scene(scope, workspace_id, project_id, plan_id)
+        withdrawn = await studio._store.withdraw_dismissal(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            branch_id=await studio._branch_id(workspace_id, project_id),
+            plan_id=plan_id,
+            dismissal_id=dismissal_id,
+            at=datetime.now(UTC),
+        )
+        if not withdrawn:
+            raise NotFoundError("That was already brought back.")
+        return await self.scene(scope, workspace_id, project_id, plan_id)
 
     async def book(self, scope: AccessScope, workspace_id: str, project_id: str) -> BookVoice:
         """Every written scene's voice, in reading order, against the usual."""
@@ -385,6 +627,7 @@ class VoiceService:
 
 
 __all__ = [
+    "SpeakerRow",
     "BookVoice",
     "RangeVoice",
     "SceneReading",

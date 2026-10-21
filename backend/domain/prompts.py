@@ -101,7 +101,9 @@ _SPECS = (
         # own entries first, with a last line saying how much is not listed.
         # 3: merges as their own change, changes to the plan, the earlier turns of the
         # author's kept conversation, and the material inside markers (AST-EXP-017).
-        3,
+        # 4: an entry's type and a fact's kind can be changed (type_changes,
+        # kind_changes), reviewed like every change (AST-EXP-017).
+        4,
         "One instruction from the author, worked out into every change it implies.",
         _S + "canon_change_workflow:change_messages",
         _S + "canon_change_workflow:ChangePlan",
@@ -134,7 +136,8 @@ _SPECS = (
     PromptSpec(
         "plan-draft",
         # 2: each item quotes the author's words it comes from, or none (AST-EXP-013).
-        2,
+        # 3: a drafted scene says what it is for, only in the author's words (STY-003).
+        3,
         "What the author said about the story, turned into plan items to review.",
         _S + "plan_workflow:plan_draft_messages",
         _S + "plan_workflow:PlanDraft",
@@ -151,7 +154,9 @@ _SPECS = (
         "read-passage",
         # 2: the read-text listing policy (CTX-002), and events and thread steps (EXT-001).
         # 3: changes of state (held, where, status, relationship) and new threads (EXT-001).
-        3,
+        # 4: a kind of fact whose values the author picks lists the author's own values
+        # (EXT-001); pasted text linked to a scene lists the plan's threads.
+        4,
         "What a passage of the author's writing establishes, as changes to review.",
         _S + "intake_workflow:read_passage_messages",
         _S + "intake_workflow:PassageDraft",
@@ -163,7 +168,8 @@ _SPECS = (
         # 3: the read-text listing policy (CTX-002), and events (in the scene or not) and
         # thread steps (EXT-001).
         # 4: changes of state and new threads (EXT-001).
-        4,
+        # 5: a kind of fact whose values the author picks lists the author's own values.
+        5,
         "A passage of a written scene set at a known story time, read as changes to review; "
         "each fact also says whether the scene shows it changing or starting there.",
         _S + "intake_workflow:read_scene_messages",
@@ -207,6 +213,14 @@ _SPECS = (
         "Notes quoting some passages of a long scene where they go against the parts of the "
         "story they bear on, for one kind of question (CON-013).",
         _S + "scene_checks:continuity_group_messages",
+        _S + "scene_checks:CheckNotes",
+    ),
+    PromptSpec(
+        "check-part",
+        1,
+        "Notes quoting one part of a long scene, checked for its viewpoint, voice or clarity "
+        "with everything that check reads of the story (CON-013).",
+        _S + "scene_checks:part_messages",
         _S + "scene_checks:CheckNotes",
     ),
     PromptSpec(
@@ -259,6 +273,14 @@ _SPECS = (
         "A short summary of a scene's prose, kept only when the author accepts it (CTX-006).",
         _S + "scene_summaries:summary_messages",
         _S + "scene_summaries:SceneSummaryDraft",
+    ),
+    PromptSpec(
+        "part-summary",
+        1,
+        "A short summary of a whole arc or beat from its scenes' kept summaries, kept only "
+        "when the author accepts it (CTX-006).",
+        _S + "scene_summaries:part_summary_messages",
+        _S + "scene_summaries:PartSummaryDraft",
     ),
     PromptSpec(
         "scene-intent",

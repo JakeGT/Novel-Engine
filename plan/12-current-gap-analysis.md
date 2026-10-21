@@ -1,8 +1,10 @@
 # Current gap analysis
 
 This is a point-in-time map of the prototype to the target design. It was rewritten after
-Phase 0 stabilization (see `plan/phase-0-evidence.md`). Update it when a subsystem crosses
-from prototype to planned architecture.
+Phase 0 stabilization (see `plan/phase-0-evidence.md`), and each later section supersedes the ones
+above it where they differ. The newest, [State on 2026-10-21](#state-on-2026-10-21), is the current
+one; the earlier sections are kept as history. Update it when a subsystem crosses from prototype to
+planned architecture.
 
 ## Repository-wide
 
@@ -214,9 +216,10 @@ the PostgreSQL RLS decision carried from Phase 1.
   links; a derived to-fill-in list; the same assistant fills in any entry; a starter schema on
   project creation.
 
-## Gaps against the assistant-first direction (ADR-017)
+## Gaps against the assistant-first direction (ADR-017), as of 2026-10-10
 
-Measured against [`19-assistant-first-experience.md`](19-assistant-first-experience.md):
+Every gap below except the first and the last has since been closed or narrowed; see the next
+section. Measured against [`19-assistant-first-experience.md`](19-assistant-first-experience.md):
 
 - **Unverified:** the assistant has run only against a scripted model. Draft quality with real
   providers is unknown.
@@ -234,3 +237,47 @@ Measured against [`19-assistant-first-experience.md`](19-assistant-first-experie
 
 The next transition is Phase 2.5 as revised (assistant-led creation), then 2.6 (story planning
 through conversation), then 2.7 (text intake).
+
+## State on 2026-10-21
+
+After Phases 2.5–7 and batches 1–8. This section supersedes the paragraphs above where they differ;
+the status of each capability, with what it still lacks, is in [`10-backlog.md`](10-backlog.md).
+
+Closed since 2026-10-10:
+
+- **Assistant paths** exist for review ("revise this"), undo, custom types, invitations, story
+  planning, scenes (drafting, checks, reading back), rules, timelines and knowledge, what-ifs,
+  pictures, audits and corrections (choosing what a scene's context leaves out is by hand only); **by-hand paths** for beliefs, members and invitations.
+- **Story structure** (story, arc, beat, scene plan, thread) is canon-governed intent (ADR-018).
+- **Conversations** are stored, resumable, kept per author and line, and archived.
+- **Linking** also uses meaning when a model for search is configured; each run records how many
+  suggestions the author kept.
+- **Review scales**: grouped, bulk decisions; "keep the safe ones for me" by opt-in rule.
+- **First run**: onboarding, a prompt to connect a key, a sample story, and starting from a premise.
+- **Levels**: what is shown and offered is decided by level (`lib/levels.ts`).
+- **Providers**: keys for OpenRouter and six other providers, a local OpenAI-compatible endpoint, and
+  a connector for a model on the author's own computer (ADR-025).
+- **Earlier repository-wide gaps**: identity, invitations and scoping at every boundary (Phase 1);
+  journal, outbox and the credential vault (Phases 1–2); background workers (Phase 5); the legacy
+  `/api` aliases are removed; the domain redesign and a consistency engine exist (Phases 2–5 and
+  later batches); the parked world workflow was discarded by the owner (FND-008).
+- **Retrieval**: vector filters, generation-versioned indexes with rebuild and rollback, hybrid
+  ranking with recorded signals, and retrieval evaluation sets (CTX-004–CTX-014).
+- **Frontend**: the product UI replaced the Vite scaffold (story bible, plan, studio, review,
+  history, timeline, media and settings).
+
+Still open:
+
+- **Real models.** Every assistant path has run against the scripted model and the local stand-in
+  only; quality, groundedness and critic precision with a real model are unmeasured (owner runs).
+- **Owner and operational items.** A licence, the first hosted CI run, the restore drill on a clean
+  host or live stack, installing scheduled backups and copy-off, the identity provider's recovery and
+  MFA policy (IDN-006), and the PostgreSQL row-level security decision (deferred by ADR-009).
+- **Search by meaning on the hosted site** is off: the hosted image does not install the embeddings
+  extra. EmbeddingGemma 2 has never been loaded here.
+- **Media**: hosted malware scanning, a remote-provider preview, and a screen for marking regions.
+  Sound and film are deferred past release one by owner decision (2026-10-21).
+- **Transport**: no streaming, no HTTP archive import, `/rag/query` stays `501`, and MCP has no OAuth
+  sign-in.
+- **Checks without a model** read only what words and records show; each backlog item lists its
+  limits.

@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import math
 import re
+from bisect import bisect_left
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
@@ -42,7 +43,7 @@ from statistics import median
 from typing import Literal
 
 # Raised when any measure or threshold changes, so a reading can say which it used.
-VOICE_VERSION = "voice/1"
+VOICE_VERSION = "voice/2"
 
 MIN_SCENE_WORDS = 300
 MIN_BASELINE_SCENES = 3
@@ -600,6 +601,9 @@ class VoiceNote:
     message: str
     start: int | None = None
     end: int | None = None
+    # What the note is about, short: which way it points ("longer", "present"), or whose
+    # speech. A dismissal of the note holds while this stays the same.
+    subject: str = ""
 
 
 # measure -> (floor for a deviation of 0, the least difference worth saying)
@@ -643,6 +647,7 @@ def drift(stats: VoiceStats, usual: Baseline) -> list[VoiceNote]:
                 "voice_sentence_length",
                 f"Sentences here run about {round(stats.sentence_mean)} words on average; "
                 f"yours usually run about {round(middle)}.",
+                subject="longer" if stats.sentence_mean > middle else "shorter",
             )
         )
     if _far(usual.sentence_spread, stats.sentence_spread, "sentence_spread"):
@@ -654,6 +659,7 @@ def drift(stats: VoiceStats, usual: Baseline) -> list[VoiceNote]:
                 "Sentence lengths vary much more here than in your other scenes."
                 if more
                 else "Sentences here are much more alike in length than in your other scenes.",
+                subject="more" if more else "less",
             )
         )
     if _far(usual.dialogue_share, stats.dialogue_share, "dialogue_share"):
@@ -663,6 +669,7 @@ def drift(stats: VoiceStats, usual: Baseline) -> list[VoiceNote]:
                 "voice_dialogue",
                 f"About {_percent(stats.dialogue_share)} of this scene is dialogue; your scenes "
                 f"are usually about {_percent(middle)}.",
+                subject="more" if stats.dialogue_share > middle else "less",
             )
         )
     if _far(usual.adverb_rate, stats.adverb_rate, "adverb_rate"):
@@ -673,6 +680,7 @@ def drift(stats: VoiceStats, usual: Baseline) -> list[VoiceNote]:
                 "voice_adverbs",
                 f"Words ending in -ly come about {round(stats.adverb_rate or 0)} times in every "
                 f"1,000 words of narration here ({shown}); usually about {round(middle)}.",
+                subject="more" if (stats.adverb_rate or 0) > middle else "less",
             )
         )
     if _far(usual.echo_rate, stats.echo_rate, "echo_rate") and stats.echoes:
@@ -697,6 +705,7 @@ def drift(stats: VoiceStats, usual: Baseline) -> list[VoiceNote]:
                 "voice_person",
                 f"This scene is told {_people(stats.person)} in the narration; your other "
                 f"scenes are told {_people(usual.person)}.",
+                subject=stats.person,
             )
         )
     elif usual.person == "third" and usual.person_share >= 0.8 and stats.person == "third":
@@ -715,6 +724,7 @@ def drift(stats: VoiceStats, usual: Baseline) -> list[VoiceNote]:
                     "voice_tense",
                     f"This scene is told in the {stats.tense} tense; your other scenes are in "
                     f"the {usual.tense}.",
+                    subject=stats.tense,
                 )
             )
         elif stats.tense == "mixed" and stats.tense_pairs >= 10:
@@ -787,7 +797,13 @@ def leans(stats: VoiceStats, usual: Baseline) -> list[VoiceNote]:
         if len(listed) == 1
         else "This scene leans on words you seldom use elsewhere: "
     )
-    return [VoiceNote("voice_leans_on", lead + "; ".join(listed) + ".")]
+    return [
+        VoiceNote(
+            "voice_leans_on",
+            lead + "; ".join(listed) + ".",
+            subject=" ".join(sorted(word for _, word, _ in found[:MAX_LEANS])),
+        )
+    ]
 
 
 # ---------------------------------------------------------------------------- trends
@@ -836,6 +852,299 @@ def trends(stats: Sequence[tuple[str, VoiceStats]]) -> list[Trend]:
     return found
 
 
+# ------------------------------------------------------------------ who says what
+
+# Words that tie a line of dialogue to its speaker in a tag: "said Tobin", "Mara asked".
+SPEECH_VERBS = frozenset(
+    """said says asked asks replied replies answered answers whispered whispers shouted
+    shouts called calls muttered mutters murmured murmurs cried cries snapped snaps added
+    adds told tells began begins continued continues insisted insists admitted admits
+    demanded demands protested protests yelled yells hissed hisses breathed breathes
+    agreed agrees repeated repeats explained explains warned warns""".split()
+)
+# A character's speech is compared once there is this much of it, here and elsewhere.
+MIN_SPEECH_WORDS = 60
+MIN_SPEECH_LINES = 3
+MIN_SPEECH_SCENES = 3
+MIN_SPEECH_USUAL_WORDS = 300
+# The share of a scene's dialogue that must be tied to someone for notes about who says
+# what; below it, attribution is too uncertain to say anything.
+MIN_ATTRIBUTED_SHARE = 0.5
+_CONTRACTION = re.compile(r"[^\W\d_]+['’](?:t|s|re|ve|ll|d|m)(?![^\W\d_])", re.IGNORECASE)
+_LINE_BREAK = re.compile(r"\n+")
+
+
+@dataclass(frozen=True)
+class Line:
+    """One quoted line of dialogue, and who says it when that can be told for sure."""
+
+    start: int
+    end: int
+    speaker: str | None
+    # How it was told: "tag" (a speech verb and a name next to it) or "turns" (an
+    # exchange between two people taking turns, each tagged elsewhere in it).
+    how: str = ""
+
+
+@dataclass(frozen=True)
+class Speech:
+    """One person's dialogue in one text, measured."""
+
+    who: str
+    lines: int
+    words: int
+    sentences: int
+    contractions: int
+    questions: int
+
+    @property
+    def sentence_mean(self) -> float:
+        return self.words / self.sentences if self.sentences else 0.0
+
+    @property
+    def contraction_rate(self) -> float:
+        """Short forms (don't, I'm, she'll) per 100 words of their speech."""
+        return 100 * self.contractions / self.words if self.words else 0.0
+
+
+def _quotes(text: str) -> list[tuple[int, int]]:
+    spans = [m.span() for m in _DOUBLE.finditer(text)]
+    return spans or [m.span() for m in _SINGLE.finditer(text)]
+
+
+def _name_pattern(names: Iterable[str]) -> str:
+    unique = sorted(
+        {" ".join(name.split()) for name in names if name.strip()}, key=len, reverse=True
+    )
+    return "|".join(re.escape(name) for name in unique)
+
+
+_VERBS = "|".join(sorted(SPEECH_VERBS))
+_SPEECH_VERB = re.compile(rf"(?<![\w])(?:{_VERBS})(?![\w])", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class _Names:
+    """Everyone's names in one pattern each way, read once for a whole text."""
+
+    who: dict[str, frozenset[str]]
+    after: re.Pattern[str] | None
+    before: re.Pattern[str] | None
+    any: re.Pattern[str] | None
+
+    @classmethod
+    def of(cls, people: dict[str, tuple[str, ...]]) -> _Names:
+        who: dict[str, set[str]] = {}
+        for person, names in people.items():
+            for name in names:
+                if name.strip():
+                    who.setdefault(" ".join(name.split()).casefold(), set()).add(person)
+        everyone = _name_pattern(name for names in people.values() for name in names)
+        if not everyone:
+            return cls({}, None, None, None)
+        return cls(
+            {name: frozenset(persons) for name, persons in who.items()},
+            re.compile(
+                rf"\s*,?\s*(?:(?:{_VERBS})\s+(?P<name>{everyone})|(?P<first>{everyone})\s+"
+                rf"(?:{_VERBS}))(?![\w])",
+                re.IGNORECASE,
+            ),
+            re.compile(
+                rf"(?<![\w])(?P<name>{everyone})\s+(?:{_VERBS})(?:\s+[\w-]+){{0,2}}\s*[,:]\s*$",
+                re.IGNORECASE,
+            ),
+            re.compile(rf"(?<![\w])(?:{everyone})(?![\w])", re.IGNORECASE),
+        )
+
+    def people(self, name: str) -> frozenset[str]:
+        return self.who.get(" ".join(name.split()).casefold(), frozenset())
+
+
+def _tagged(
+    text: str, start: int, end: int, names: _Names, paragraph: tuple[int, int]
+) -> str | None:
+    """The person a speech tag right next to a quote names: '"…," said Tobin', '"…" Tobin
+    asked', 'Tobin said, "…"'. A pronoun ("she said") is never read."""
+    if names.after is None or names.before is None:
+        return None
+    found: set[str] = set()
+    after = names.after.match(text, end, min(paragraph[1], end + 60))
+    if after is not None:
+        found |= names.people(after.group("name") or after.group("first"))
+    before = names.before.search(text[max(paragraph[0], start - 60) : start])
+    if before is not None:
+        found |= names.people(before.group("name"))
+    return next(iter(found)) if len(found) == 1 else None
+
+
+def attribute(text: str, people: dict[str, tuple[str, ...]]) -> list[Line]:
+    """Every quoted line, with its speaker when a tag says so, or when it sits in an
+    exchange of two people taking turns (one line a paragraph, each of the two tagged at
+    least once, and every tag in the exchange where the turns put it). Anything else is
+    left with no speaker: a line is never guessed from a pronoun or from who is nearby."""
+    text = text[:MAX_TEXT]
+    paragraphs: list[tuple[int, int]] = []
+    cursor = 0
+    for match in _LINE_BREAK.finditer(text):
+        if text[cursor : match.start()].strip():
+            paragraphs.append((cursor, match.start()))
+        cursor = match.end()
+    if text[cursor:].strip():
+        paragraphs.append((cursor, len(text)))
+    quotes = _quotes(text)
+    starts = [start for start, _end in quotes]
+    names = _Names.of(people)
+    lines: list[Line] = []
+    # Each paragraph's lines, the one person its tags name (None: no tag, or two), whether
+    # it is all dialogue (and its tag), and the people its narration names.
+    by_paragraph: list[tuple[list[int], str | None, bool, set[str]]] = []
+    for paragraph in paragraphs:
+        mine = list(range(bisect_left(starts, paragraph[0]), bisect_left(starts, paragraph[1])))
+        tags = {
+            tagged
+            for index in mine
+            if (tagged := _tagged(text, *quotes[index], names, paragraph)) is not None
+        }
+        pieces, at = [], paragraph[0]
+        for index in mine:
+            start, end = quotes[index]
+            pieces.append(text[at:start])
+            at = max(at, end)
+        pieces.append(text[at : paragraph[1]] if at < paragraph[1] else "")
+        narration = "".join(pieces)
+        named = (
+            {who for match in names.any.finditer(narration) for who in names.people(match.group(0))}
+            if names.any is not None
+            else set()
+        )
+        # A tag with a pronoun ("she said") is someone's turn, but not one to name.
+        spoken_only = (
+            bool(mine)
+            and len(_WORD.findall(narration)) <= 4
+            and not (_SPEECH_VERB.search(narration) and not tags)
+        )
+        speaker = next(iter(tags)) if len(tags) == 1 else None
+        by_paragraph.append((mine, speaker, spoken_only, named))
+    # Exchanges: runs of paragraphs with dialogue in them, one turn each.
+    turns: dict[int, str] = {}
+    run: list[int] = []
+
+    def settle(run: list[int]) -> None:
+        tagged = [(i, by_paragraph[i][1]) for i in run if by_paragraph[i][1] is not None]
+        speakers = {who for _, who in tagged if who is not None}
+        if len(speakers) != 2 or len(run) < 3:
+            return
+        # Anyone else named in the exchange may be the one speaking: no turns are given.
+        if any(by_paragraph[i][3] - speakers for i in run):
+            return
+        first_index, first_who = tagged[0]
+        other = next(who for who in speakers if who != first_who)
+        for i, who in tagged:
+            expected = first_who if (i - first_index) % 2 == 0 else other
+            if who != expected:
+                return
+        for i in run:
+            if by_paragraph[i][1] is None and by_paragraph[i][2]:
+                turns[i] = str(first_who if (i - first_index) % 2 == 0 else other)
+
+    for i, (mine, _speaker, _only, _named) in enumerate(by_paragraph):
+        if mine:
+            run.append(i)
+        else:
+            settle(run)
+            run = []
+    settle(run)
+    for i, (mine, speaker, _only, _named) in enumerate(by_paragraph):
+        for index in mine:
+            start, end = quotes[index]
+            if speaker is not None:
+                lines.append(Line(start, end, speaker, "tag"))
+            elif i in turns:
+                lines.append(Line(start, end, turns[i], "turns"))
+            else:
+                lines.append(Line(start, end, None))
+    return lines
+
+
+def speeches(text: str, people: dict[str, tuple[str, ...]]) -> tuple[dict[str, Speech], float]:
+    """Each person's dialogue in a text, measured, and the share of the text's dialogue
+    (in words) that could be tied to someone."""
+    text = text[:MAX_TEXT]
+    lines = attribute(text, people)
+    gathered: dict[str, list[str]] = {}
+    total = 0
+    tied = 0
+    for line in lines:
+        words = text[line.start : line.end]
+        count = len(_WORD.findall(words))
+        total += count
+        if line.speaker is not None:
+            tied += count
+            gathered.setdefault(line.speaker, []).append(words)
+    found: dict[str, Speech] = {}
+    for who, said in gathered.items():
+        spoken = sum(len(_WORD.findall(item)) for item in said)
+        sentences = sum(max(1, len(re.findall(r"[.!?…]+", item.strip('"“”‘’ ')))) for item in said)
+        found[who] = Speech(
+            who=who,
+            lines=len(said),
+            words=spoken,
+            sentences=sentences,
+            contractions=sum(len(_CONTRACTION.findall(item)) for item in said),
+            questions=sum(item.count("?") for item in said),
+        )
+    return found, (tied / total if total else 0.0)
+
+
+def speech_drift_ready(here: Speech, elsewhere: Sequence[Speech]) -> bool:
+    """Whether there is enough of someone's speech, here and elsewhere, to compare."""
+    if here.words < MIN_SPEECH_WORDS or here.lines < MIN_SPEECH_LINES:
+        return False
+    usable = [item for item in elsewhere if item.words >= MIN_SPEECH_WORDS // 2]
+    return len(usable) >= MIN_SPEECH_SCENES and sum(i.words for i in usable) >= (
+        MIN_SPEECH_USUAL_WORDS
+    )
+
+
+def speech_drift(here: Speech, elsewhere: Sequence[Speech], share: float) -> list[VoiceNote]:
+    """How one person's dialogue in this scene departs from their dialogue elsewhere: how
+    long their sentences run, and how often they use short forms (don't, I'm). Said only
+    when enough of the scene's dialogue is tied to its speakers, they say enough here, and
+    there is enough of them elsewhere."""
+    if share < MIN_ATTRIBUTED_SHARE or not speech_drift_ready(here, elsewhere):
+        return []
+    usable = [item for item in elsewhere if item.words >= MIN_SPEECH_WORDS // 2]
+    notes: list[VoiceNote] = []
+    lengths = _spread([item.sentence_mean for item in usable])
+    if lengths is not None:
+        value = here.sentence_mean
+        if abs(lengths.score(value, 1.5)) > OUTLIER_SCORE and abs(value - lengths.middle) >= 4:
+            notes.append(
+                VoiceNote(
+                    "voice_speaker_length",
+                    f"{here.who}'s sentences run about {round(value)} words here when they "
+                    f"speak; in your other scenes about {round(lengths.middle)}.",
+                    subject=f"{here.who}\x1e{'longer' if value > lengths.middle else 'shorter'}",
+                )
+            )
+    short = _spread([item.contraction_rate for item in usable])
+    if short is not None:
+        value = here.contraction_rate
+        if abs(short.score(value, 1.0)) > OUTLIER_SCORE and abs(value - short.middle) >= 3:
+            more = value > short.middle
+            notes.append(
+                VoiceNote(
+                    "voice_speaker_short_forms",
+                    f"{here.who} uses short forms such as “don't” and “I'm” "
+                    + ("far more" if more else "far less")
+                    + f" here: about {round(value)} in every 100 words they say, against "
+                    f"about {round(short.middle)} in your other scenes.",
+                    subject=f"{here.who}\x1e{'more' if more else 'less'}",
+                )
+            )
+    return notes
+
+
 __all__ = [
     "BANDS",
     "FUNCTION_WORDS",
@@ -851,6 +1160,12 @@ __all__ = [
     "Trend",
     "VoiceNote",
     "VoiceStats",
+    "Line",
+    "Speech",
+    "attribute",
+    "speech_drift",
+    "speech_drift_ready",
+    "speeches",
     "baseline",
     "delta",
     "dialogue_mask",

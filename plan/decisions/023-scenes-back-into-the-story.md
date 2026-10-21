@@ -146,3 +146,24 @@ pasted text opens none. `read-passage` is at version 3 and `read-scene` at versi
 
 Checked with the scripted model and the browser stand-in only; how often a real model finds the
 right changes is unmeasured.
+
+## Amendment 2026-10-21 (batch 9 C): pasted text as a scene's prose, hand-picked values, carried steps
+
+- **Pasted text and threads (EXT-001).** Reading a pasted text may name a scene of the plan
+  (`scene_id` on `POST /assist/texts/{id}/read`; "Is this the writing of a scene in your plan?" on
+  the text page). The plan's threads are then listed and the reading suggests their steps as one
+  change to that scene's plan per passage, as a scene's reading does, only adding and refused at
+  approval if the author changed the scene's plan since. The text keeps no lasting link to the
+  scene; the author names it each time. The scene's story time is not used: the text is the
+  author's, and whether it happens at the scene's moment is not said.
+- **Values the author picks by hand (EXT-001).** A kind of fact whose values are a list
+  (`enum`, such as `HAS_STATUS`) is suggested only from the author's own list (every value the
+  story's facts of that kind allow, `author_choices`), in the author's spelling, and only when the
+  passage itself uses that word; otherwise it is set aside saying why, and in a timed scene the
+  event is still suggested. With no list yet, it is left to the author. The prompt lists the
+  author's values; `read-passage` is at version 4 and `read-scene` at version 5.
+- **Thread steps a stopped reading found (EXT-007).** Each passage's thread steps are recorded with
+  the reading as it goes (`scene_readings.steps`). The next reading of the scene, or the same one
+  resumed, suggests them together with its own in its one change at the end, and clears them, so a
+  step is never suggested twice nor lost. The job's result says how many steps were suggested and
+  how many came from an earlier reading.

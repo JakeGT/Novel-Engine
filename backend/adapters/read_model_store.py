@@ -9,7 +9,8 @@ fields are kept while the builder version stays the same and cleared when it cha
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -17,6 +18,10 @@ from typing import Any
 from sqlalchemy import text
 
 from backend.core.database import session_scope
+
+# The first key of the two-key advisory lock taken by ``check_lock``, so it never meets the
+# single-key locks used elsewhere or the journal's story lock (12_012).
+_CHECK_LOCK_SPACE = 12_013
 
 
 @dataclass(frozen=True)
@@ -278,6 +283,24 @@ class PostgresReadModelStore:
                     "d": differences,
                 },
             )
+
+    @asynccontextmanager
+    async def check_lock(
+        self, *, workspace_id: str, project_id: str, branch_id: str
+    ) -> AsyncIterator[bool]:
+        """The right to check one line's views by replay, held while the block runs.
+
+        Yields False at once, without waiting, when another process holds it. The lock
+        belongs to a transaction kept open for the block, so it is let go however the
+        block ends."""
+        async with session_scope(self._session_factory) as session:
+            held = (
+                await session.execute(
+                    text("SELECT pg_try_advisory_xact_lock(:space, hashtext(:key))"),
+                    {"space": _CHECK_LOCK_SPACE, "key": f"{workspace_id}/{project_id}/{branch_id}"},
+                )
+            ).scalar()
+            yield bool(held)
 
     async def forget(
         self, *, workspace_id: str, project_id: str, branch_id: str | None = None

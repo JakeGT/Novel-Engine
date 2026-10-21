@@ -128,6 +128,8 @@ class InMemoryEmbeddingIndexStore:
         self._rows: dict[tuple[str, str, str, str], VectorRow] = {}
         self._ids = itertools.count(1)
         self.reachable = True
+        # Named locks held, as PostgreSQL's advisory locks would hold them across servers.
+        self.locks: set[str] = set()
 
     # --- generations ---------------------------------------------------------------
 
@@ -423,6 +425,15 @@ class InMemoryEmbeddingIndexStore:
             for k in self._rows
             if k[0] == generation_id and (workspace_id is None or k[1] == workspace_id)
         )
+
+    def hold_lock(self, name: str) -> str | None:
+        if name in self.locks:
+            return None
+        self.locks.add(name)
+        return name
+
+    def release_lock(self, held: str) -> None:
+        self.locks.discard(held)
 
     def ping(self) -> bool:
         return self.reachable

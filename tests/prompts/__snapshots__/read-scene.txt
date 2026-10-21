@@ -1,6 +1,6 @@
 # Prompt snapshot. Change it only with: uv run python -m tests.prompts.snapshots --update
 id: read-scene
-version: 4
+version: 5
 
 ##### case: a scene
 

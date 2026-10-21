@@ -42,7 +42,7 @@ const context = {
   scene_id: 'plan_1',
   point_of_view: 'ent_mara',
   settings: { pins: [], excludes: [], budget: null, include_secrets: false },
-  policy_version: 'scene-draft/2',
+  policy_version: 'scene-draft/3',
   budget: 2500,
   words: 12,
   checksum: 'abcdef0123456789',

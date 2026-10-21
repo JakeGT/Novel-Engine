@@ -109,6 +109,7 @@ export type SpannedFact = Schemas['SpannedFactModel']
 export type CharacterKnowledge = Schemas['CharacterKnowledgeModel']
 export type Learned = Schemas['LearnedModel']
 export type CheckRun = Schemas['RunModel']
+export type ScopedDismissal = Schemas['ScopedDismissalModel']
 export type CheckRunFinding = Schemas['RunFindingModel']
 export type CheckRunScene = Schemas['RunSceneModel']
 export type CheckCalibration = Schemas['CalibrationModel']
@@ -123,6 +124,8 @@ export type ContextItem = Schemas['ContextItemModel']
 export type ContextSignal = Schemas['SignalModel']
 export type SceneSummaries = Schemas['SceneSummariesModel']
 export type SceneSummary = Schemas['SceneSummaryModel']
+export type PartSummaries = Schemas['PartSummariesModel']
+export type PartSummary = Schemas['PartSummaryModel']
 export type ContextSettings = Schemas['ContextSettings']
 export type KeptContext = Schemas['KeptContextModel']
 export type ContextComparison = Schemas['ContextComparisonModel']
@@ -135,7 +138,10 @@ export type SceneDraft = Schemas['DraftModel']
 export type DraftCheck = Schemas['CheckModel']
 export type AssistantNote = Schemas['AssistantNoteModel']
 export type FindingDismissal = Schemas['DismissalModel']
-export type DismissAsk = Schemas['DismissRequest']
+// Where it stays dismissed is this scene unless said otherwise (CON-016).
+export type DismissAsk = Omit<Schemas['DismissRequest'], 'applies'> & {
+  applies?: Schemas['DismissRequest']['applies']
+}
 export type SceneVersion = Schemas['backend__api__v1__studio__VersionModel']
 export type StudioJob = Schemas['JobModel']
 export type DraftEstimate = Schemas['backend__api__v1__studio__EstimateModel']
@@ -954,6 +960,21 @@ export const api = {
       accept,
       body: body ?? null,
     } satisfies Schemas['DecideSummaryRequest']),
+  /** The summary later scenes are given of a whole arc or beat (CTX-006). */
+  partSummary: (scope: Scope, planId: string) =>
+    get<PartSummaries>(scope, `/plan/${id(planId)}/part-summary`),
+  writePartSummary: (scope: Scope, planId: string, body: string) =>
+    send<PartSummaries>(scope, 'PUT', `/plan/${id(planId)}/part-summary`, {
+      body,
+    } satisfies Schemas['WriteSummaryRequest']),
+  /** Ask the assistant to suggest one from the scenes' kept summaries; used only once kept. */
+  suggestPartSummary: (scope: Scope, planId: string) =>
+    send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/part-summary/suggest`),
+  decidePartSummary: (scope: Scope, planId: string, summaryId: string, accept: boolean, body?: string) =>
+    send<PartSummaries>(scope, 'POST', `/plan/${id(planId)}/part-summary/${id(summaryId)}`, {
+      accept,
+      body: body ?? null,
+    } satisfies Schemas['DecideSummaryRequest']),
   writingIndex: (scope: Scope) => get<WritingIndex>(scope, '/texts-index'),
   rebuildWritingIndex: (scope: Scope) =>
     send<{ passages: number }>(scope, 'POST', '/texts-index/rebuild'),
@@ -969,6 +990,13 @@ export const api = {
     get<CheckRun>(scope, `/checks/runs/by-job/${id(jobId)}`),
   /** How often each check's findings were dismissed in this line of the story (CON-016). */
   checkCalibration: (scope: Scope) => get<Items<CheckCalibration>>(scope, '/checks/calibration'),
+  /** How often each kind of finding on the review screen is dismissed in this story (CON-016). */
+  reviewCalibration: (scope: Scope) =>
+    get<Items<Schemas['ReviewCalibrationModel']>>(scope, '/review/calibration'),
+  /** Dismissals of one kind of finding for a character or a stretch of scenes (CON-016). */
+  scopedDismissals: (scope: Scope) => get<Items<ScopedDismissal>>(scope, '/dismissals/scoped'),
+  withdrawScopedDismissal: (scope: Scope, dismissalId: string) =>
+    send<ScopedDismissal>(scope, 'DELETE', `/dismissals/scoped/${id(dismissalId)}`),
   saveSceneText: (scope: Scope, planId: string, content: string, baseVersionId: string | null) =>
     send<Studio>(scope, 'PUT', `/plan/${id(planId)}/studio/text`, {
       content,
@@ -1030,6 +1058,11 @@ export const api = {
   whatIfAudit: (scope: Scope, branchId: string) => get<WhatIfAudit>(scope, `/what-ifs/${id(branchId)}/audit`),
   /** How the scene's saved words sound against the author's usual. Calls no model. */
   sceneVoice: (scope: Scope, planId: string) => get<SceneVoice>(scope, `/plan/${id(planId)}/voice`),
+  /** Dismiss a note on how the scene sounds, with a reason (CON-018). */
+  dismissVoiceNote: (scope: Scope, planId: string, body: Schemas['VoiceDismissRequest']) =>
+    send<SceneVoice>(scope, 'POST', `/plan/${id(planId)}/voice/dismissals`, body),
+  undoVoiceDismissal: (scope: Scope, planId: string, dismissalId: string) =>
+    send<SceneVoice>(scope, 'DELETE', `/plan/${id(planId)}/voice/dismissals/${id(dismissalId)}`),
   setVoiceLeftOut: (scope: Scope, planId: string, leftOut: boolean) =>
     send<SceneVoice>(scope, 'PUT', `/plan/${id(planId)}/voice/usual`, {
       left_out: leftOut,
@@ -1405,6 +1438,71 @@ export const pictureApi = {
     scope: Scope,
     assetId: string,
     linkId: string,
-    change: { secret: boolean; known_by: string[]; applies_from: WorldTime | null; expected_revision: number },
+    change: {
+      secret: boolean
+      known_by: string[]
+      applies_from: WorldTime | null
+      /** From this story time on it no longer applies (AST-001); null for to the end. */
+      applies_until?: WorldTime | null
+      /** The version it shows; null follows the newest. */
+      version_id?: string | null
+      expected_revision: number
+    },
   ) => send<Picture>(scope, 'PUT', `/pictures/${id(assetId)}/links/${id(linkId)}`, change),
+}
+
+// ---------------------------------------------------------------------------------
+// Two-step picture uploads (AST-002): say what is coming (size and SHA-256), send the
+// bytes, then finish. Refused before anything is sent when it is too large or has no room.
+
+export type PictureUpload = Schemas['UploadModel']
+export type UploadFor = PictureUpload['for']
+
+async function sha256Hex(file: Blob): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer())
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+export const uploadApi = {
+  start: (scope: Scope, body: { for: UploadFor; id: string; name?: string | null; byte_length: number; sha256: string }) =>
+    send<PictureUpload>(scope, 'POST', '/uploads', body),
+  sendBytes: (scope: Scope, upload: PictureUpload, file: Blob) =>
+    request<Schemas['UploadReceivedModel']>(upload.send_to, {
+      method: 'PUT',
+      workspaceId: scope.workspaceId,
+      body: file,
+      headers: { ...branchHeaders(scope), 'Content-Type': file.type || 'application/octet-stream' },
+    }),
+  finish: (scope: Scope, upload: PictureUpload, expectedRevision?: number) =>
+    request<Schemas['UploadFinishedModel']>(
+      `${upload.finish_at}${query({ expected_revision: expectedRevision })}`,
+      { method: 'POST', workspaceId: scope.workspaceId, headers: branchHeaders(scope) },
+    ),
+  /** The whole two-step upload: what is promised is checked by the server at each step. */
+  upload: async (
+    scope: Scope,
+    target: { for: UploadFor; id: string; name?: string | null },
+    file: Blob,
+    expectedRevision?: number,
+  ) => {
+    const started = await uploadApi.start(scope, {
+      ...target,
+      byte_length: file.size,
+      sha256: await sha256Hex(file),
+    })
+    await uploadApi.sendBytes(scope, started, file)
+    return uploadApi.finish(scope, started, expectedRevision)
+  },
+}
+
+// ---------------------------------------------------------------------------------
+// The story's ready views (QRY-001): how far each is, and whether reads use it.
+
+export type StoryViews = Schemas['ViewStatusModel']
+export type StoryView = Schemas['ViewStateModel']
+
+export const storyViewsApi = {
+  status: (scope: Scope) => get<StoryViews>(scope, '/story-views'),
+  /** Check them against the story's history now (owners and administrators). */
+  check: (scope: Scope) => send<Schemas['ViewCheckModel']>(scope, 'POST', '/story-views/check'),
 }

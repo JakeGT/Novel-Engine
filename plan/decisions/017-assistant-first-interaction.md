@@ -190,3 +190,33 @@ means "quotes the author's material", not "is right".
   alone is used and the result says so.
 - Precision counts the changes kept in a saved proposal; an author who keeps a suggestion and
   then edits it counts as kept.
+
+## Amendment 2026-10-21 (batch 9 C): changing types and kinds, and claims in a merge
+
+- **Change anything can change an entry's type and a fact's kind (AST-EXP-017).** `type_changes`
+  (an entry recorded as the wrong type) becomes an `update_entity` with the new `type`, placed after
+  the change ends what that type cannot have (each such fact and belief is ended and the author is
+  told how many), so undoing it in one step gives the type back before those are stated again.
+  `kind_changes` (a fact recorded as the wrong kind) ends the fact and states it again as the right
+  kind with the same entries, value, story time and secrecy, saying why; a kind that records
+  something else, or does not fit the entries, is set aside in plain words. Both wait for review.
+  Adding or changing the types and kinds themselves stays in setup. Prompt `change-by-instruction/4`.
+- **Claims follow a merge.** What a character said about the merged entry (an event of kind
+  `claim`) is rewritten to name the kept entry (`amend_event` with `claim`), and put back when the
+  merge is undone; one that would name the kept entry twice keeps its words and is listed as still
+  naming the merged entry. Only the entry a rewritten claim now names is checked (it must be in the
+  story, and fit unless it is of the same type as the one it replaces), so a claim about something
+  archived or given a new type since never blocks a merge.
+- **Never cut part way (review, batch 9).** A new type with everything it ends, and a fact ended
+  and stated again as another kind, are kept whole or set aside whole with a plain reason when the
+  proposal has more changes than one review holds (the largest group cut is set aside first), and
+  whenever changes are cut the author is told how many. A type the setup describes keeps only its
+  own details: the others go with the old type, and the note names them; by hand, a new type that
+  still carries them is refused in plain words. A new type is checked against every current fact
+  and belief up to 100,000 of each; a larger story is refused rather than checked in part.
+- **Plan records follow a kind change, and what undo restores (review, batch 9).** The fact stated
+  again gets its own id in the proposal, and scenes that reveal the old fact reveal the new one in
+  the same change. Arc stages tied to it are named in a note but not moved: undoing a change states
+  an ended fact again as a new record, so an undone stage would point at the ended record and the
+  undo itself would be refused. Undoing a kind change therefore brings the old kind back as a new
+  record, and the scenes that reveal it point at the old, ended record again; the note says so.

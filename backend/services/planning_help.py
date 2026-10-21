@@ -13,7 +13,8 @@ author's own intent always wins and approving the change is refused if they have
 since filled a part in.
 
 **Bridge scenes** (STY-004). When a scene needs something first ("Mara is at Lantern
-Harbor") and the story does not have it there, the assistant suggests one or two short
+Harbor"), or would rather have it (a preferred condition), and the story does not have
+it there, the assistant suggests one or two short
 scenes to come before it that would bring it about. Each is a new scene in the plan,
 placed just before, naming only people and places from the story bible (id and name
 both, so a swapped id is caught), and carrying the need as what it should leave true,
@@ -815,7 +816,13 @@ class PlanningHelpService:
             when = " (placed in story time)" if scene_time(item.details) is not None else ""
             summary = f": {item.summary.strip()}" if item.summary.strip() else ""
             lines.append(f"- “{item.title}”{when}{summary}{mark}")
-        need = f"“{scene.title}” needs this first: {reading.rstrip('.')}."
+        # A preferred condition (STY-004) is bridged too, and said as what it is.
+        need = (
+            f"“{scene.title}” would rather have this first (preferred, not required): "
+            f"{reading.rstrip('.')}."
+            if condition.strength == "soft"
+            else f"“{scene.title}” needs this first: {reading.rstrip('.')}."
+        )
         return scene, condition, bridge_messages("\n".join(lines), need), listed
 
     async def bridge_estimate(

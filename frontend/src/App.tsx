@@ -15,6 +15,7 @@ import { KeptPage } from './pages/KeptPage'
 import { Home } from './pages/Home'
 import { MediaPage } from './pages/MediaPage'
 import { PicturePage } from './pages/PicturePage'
+import { StoryViewsPage } from './pages/StoryViewsPage'
 import { Overview } from './pages/Overview'
 import { PeoplePage } from './pages/PeoplePage'
 import { PlanPage } from './pages/PlanPage'
@@ -68,6 +69,7 @@ export default function App() {
               <Route path="audits/:jobId" element={<AuditPage />} />
               <Route path="rules" element={<RulesPage />} />
               <Route path="timeline" element={<TimelinePage />} />
+              <Route path="story-views" element={<StoryViewsPage />} />
               <Route path="what-ifs" element={<WhatIfsPage />} />
               <Route path="what-ifs/:branchId" element={<WhatIfPage />} />
               <Route path="what-ifs/:branchId/audit" element={<WhatIfAuditPage />} />

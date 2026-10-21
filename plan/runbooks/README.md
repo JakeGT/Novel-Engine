@@ -52,8 +52,9 @@ except e.HTTPError as x:
     print(x.code, x.read().decode())"
 ```
 
-`200 ready` is healthy. `200 degraded` means an optional part (the background worker or the
-search store) is down and `reasons` says which, in plain words. `503 unavailable` means a
+`200 ready` is healthy. `200 degraded` means an optional part (the background worker, the graph
+worker, the search store, the search index, or picture preparation) is down or behind, and
+`reasons` says which, in plain words. `503 unavailable` means a
 required store (the database, the story graph, or either one's layout) is down. On a hosted site
 the counts are shown only with the metrics token: add
 `headers={'Authorization': 'Bearer <METRICS_TOKEN>'}` through a `u.Request`, if one is set.

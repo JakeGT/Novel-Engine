@@ -18,13 +18,17 @@ from backend.domain.context import (
     ContextComparison,
     ContextItem,
     ContextSettings,
+    PartSummary,
     SceneSummary,
     picture_record,
 )
 from backend.domain.identity import AccessScope
 from backend.services.context_service import ContextService, SceneContext
 from backend.services.scene_summaries import (
+    MAX_PART_WORDS,
     MAX_SUMMARY_WORDS,
+    PartSummaryService,
+    PartView,
     SceneSummaryService,
     SummaryView,
 )
@@ -43,7 +47,8 @@ def get_summaries(container: Container = Depends(get_container)) -> SceneSummary
 class SignalModel(BaseModel):
     """One part of why an item ranks where it does (CTX-007)."""
 
-    # importance, continuity, distance, diversity, meaning, thread, out of date
+    # importance, continuity, distance, story time, later in time, diversity, meaning,
+    # thread, out of date
     name: str
     # How much it moved the item's score; an item's signals add up to its score.
     effect: float
@@ -84,7 +89,8 @@ class ContextItemModel(BaseModel):
 
 class LeftOutModel(BaseModel):
     item: ContextItemModel
-    # excluded (the author said so), budget (no room), secret (not known to the viewpoint).
+    # excluded (the author said so), budget (no room), secret (not known to the viewpoint),
+    # later (it happens later in the story's time than the scene; CTX-004).
     reason: str
 
 
@@ -523,3 +529,131 @@ async def decide_scene_summary(
         scope, workspace_id, project_id, plan_id, summary_id, accept=body.accept, body=body.body
     )
     return _summaries(await summaries.for_scene(scope, workspace_id, project_id, plan_id))
+
+
+# ------------------------------------------------- summaries of arcs and beats (CTX-006)
+
+
+class PartSummaryModel(BaseModel):
+    id: str
+    body: str
+    # proposed, accepted, rejected, replaced
+    state: str
+    # author, model (suggested by the assistant), model_corrected (suggested, then corrected)
+    origin: str
+    # How many scene summaries it was written from.
+    scenes: int
+    created_at: datetime
+    model: str | None = None
+    prompt_version: str | None = None
+    job_id: str | None = None
+    decided_at: datetime | None = None
+
+
+class PartSummariesModel(BaseModel):
+    plan_id: str
+    # story, arc or beat
+    kind: str
+    title: str
+    # How many scenes are in it, and the titles of those with no kept summary.
+    scenes: int
+    unsummarised: list[str] = Field(default_factory=list)
+    # Worked out from its scenes' kept summaries, without a model; given to later scenes
+    # when nothing is kept for the part itself. Null when no scene in it has a summary.
+    derived: str | None = None
+    kept: PartSummaryModel | None = None
+    # A scene summary in it was kept anew, replaced or dropped since this was written.
+    kept_out_of_date: bool = False
+    suggested: list[PartSummaryModel] = Field(default_factory=list)
+    max_words: int = MAX_PART_WORDS
+
+
+def _part_summary(summary: PartSummary) -> PartSummaryModel:
+    return PartSummaryModel(
+        id=summary.id,
+        body=summary.body,
+        state=summary.state.value,
+        origin=summary.origin.value,
+        scenes=len(summary.basis),
+        created_at=summary.created_at,
+        model=summary.model,
+        prompt_version=summary.prompt_version,
+        job_id=summary.job_id,
+        decided_at=summary.decided_at,
+    )
+
+
+def _parts(view: PartView) -> PartSummariesModel:
+    return PartSummariesModel(
+        plan_id=view.plan_id,
+        kind=view.kind,
+        title=view.title,
+        scenes=view.scenes,
+        unsummarised=view.unsummarised,
+        derived=view.derived,
+        kept=_part_summary(view.kept) if view.kept is not None else None,
+        kept_out_of_date=view.kept_stale,
+        suggested=[_part_summary(item) for item in view.proposed],
+    )
+
+
+def get_parts(container: Container = Depends(get_container)) -> PartSummaryService:
+    return container.scene_summaries.parts  # type: ignore[no-any-return]
+
+
+@router.get("/plan/{plan_id}/part-summary")
+async def part_summary(
+    project_id: str,
+    plan_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    parts: PartSummaryService = Depends(get_parts),
+) -> PartSummariesModel:
+    """The summary later scenes are given of a whole arc or beat, and any suggestion."""
+    return _parts(await parts.for_part(scope, scope.workspace_id or "", project_id, plan_id))
+
+
+@router.put("/plan/{plan_id}/part-summary")
+async def write_part_summary(
+    project_id: str,
+    plan_id: str,
+    body: WriteSummaryRequest,
+    scope: AccessScope = Depends(require_project_scope),
+    parts: PartSummaryService = Depends(get_parts),
+) -> PartSummariesModel:
+    """Keep the author's own summary of a whole arc or beat."""
+    workspace_id = scope.workspace_id or ""
+    await parts.write(scope, workspace_id, project_id, plan_id, body.body)
+    return _parts(await parts.for_part(scope, workspace_id, project_id, plan_id))
+
+
+@router.post("/plan/{plan_id}/part-summary/suggest", status_code=status.HTTP_202_ACCEPTED)
+async def suggest_part_summary(
+    project_id: str,
+    plan_id: str,
+    scope: AccessScope = Depends(require_project_scope),
+    parts: PartSummaryService = Depends(get_parts),
+    confirmed: int | None = Depends(confirmed_tokens),
+) -> JobModel:
+    """Ask the assistant to suggest a summary of a whole arc or beat from its scenes' kept
+    summaries; nothing is used until the author keeps it."""
+    job = await parts.ask(
+        scope, scope.workspace_id or "", project_id, plan_id, confirmed_tokens=confirmed
+    )
+    return _job(job)
+
+
+@router.post("/plan/{plan_id}/part-summary/{summary_id}")
+async def decide_part_summary(
+    project_id: str,
+    plan_id: str,
+    summary_id: str,
+    body: DecideSummaryRequest,
+    scope: AccessScope = Depends(require_project_scope),
+    parts: PartSummaryService = Depends(get_parts),
+) -> PartSummariesModel:
+    """Keep a suggested summary of a whole arc or beat (as it is, or corrected), or not."""
+    workspace_id = scope.workspace_id or ""
+    await parts.decide(
+        scope, workspace_id, project_id, plan_id, summary_id, accept=body.accept, body=body.body
+    )
+    return _parts(await parts.for_part(scope, workspace_id, project_id, plan_id))

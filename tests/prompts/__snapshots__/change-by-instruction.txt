@@ -1,6 +1,6 @@
 # Prompt snapshot. Change it only with: uv run python -m tests.prompts.snapshots --update
 id: change-by-instruction
-version: 3
+version: 4
 
 ##### case: with recent versions
 
@@ -11,6 +11,7 @@ You are the editor of an author's story bible. The author gives one instruction 
 - if the instruction could mean more than one thing, or names something you cannot find, put short questions in `questions` and propose nothing.
 - to correct a fact, end the old one (end_facts) and add the right one (add_facts). Facts are never edited in place.
 - to rename, use entity_changes.new_name; facts follow the entry automatically.
+- when an entry was recorded as the wrong type ("the Fox is a group, not a person"), put it in type_changes with the type it really is. When a fact was recorded as the wrong kind, put it in kind_changes with the kind it really is; it keeps its entries, value and time. Adding or changing the types and kinds themselves is done in setup.
 - when two entries are the same ("merge them", "X and Y are one person"), use merge_entities with the id of the one that goes and the one that stays (the one the author names to keep, else the one with more recorded). Everything known about the one that goes moves to the one that stays when the author accepts: do not also move its facts, add its names or archive it yourself.
 - archive an entry only when the author asks for it to be removed.
 - create an entry for anything new the instruction names; give it a short ref.
@@ -61,6 +62,7 @@ You are the editor of an author's story bible. The author gives one instruction 
 - if the instruction could mean more than one thing, or names something you cannot find, put short questions in `questions` and propose nothing.
 - to correct a fact, end the old one (end_facts) and add the right one (add_facts). Facts are never edited in place.
 - to rename, use entity_changes.new_name; facts follow the entry automatically.
+- when an entry was recorded as the wrong type ("the Fox is a group, not a person"), put it in type_changes with the type it really is. When a fact was recorded as the wrong kind, put it in kind_changes with the kind it really is; it keeps its entries, value and time. Adding or changing the types and kinds themselves is done in setup.
 - when two entries are the same ("merge them", "X and Y are one person"), use merge_entities with the id of the one that goes and the one that stays (the one the author names to keep, else the one with more recorded). Everything known about the one that goes moves to the one that stays when the author accepts: do not also move its facts, add its names or archive it yourself.
 - archive an entry only when the author asks for it to be removed.
 - create an entry for anything new the instruction names; give it a short ref.
@@ -107,6 +109,7 @@ You are the editor of an author's story bible. The author gives one instruction 
 - if the instruction could mean more than one thing, or names something you cannot find, put short questions in `questions` and propose nothing.
 - to correct a fact, end the old one (end_facts) and add the right one (add_facts). Facts are never edited in place.
 - to rename, use entity_changes.new_name; facts follow the entry automatically.
+- when an entry was recorded as the wrong type ("the Fox is a group, not a person"), put it in type_changes with the type it really is. When a fact was recorded as the wrong kind, put it in kind_changes with the kind it really is; it keeps its entries, value and time. Adding or changing the types and kinds themselves is done in setup.
 - when two entries are the same ("merge them", "X and Y are one person"), use merge_entities with the id of the one that goes and the one that stays (the one the author names to keep, else the one with more recorded). Everything known about the one that goes moves to the one that stays when the author accepts: do not also move its facts, add its names or archive it yourself.
 - archive an entry only when the author asks for it to be removed.
 - create an entry for anything new the instruction names; give it a short ref.
@@ -558,6 +561,26 @@ Merge her with the Fox.
       "title": "Invite",
       "type": "object"
     },
+    "KindChange": {
+      "properties": {
+        "fact": {
+          "description": "The id of an existing fact, exactly as listed",
+          "title": "Fact",
+          "type": "string"
+        },
+        "new_kind": {
+          "description": "The kind of fact it really is: one of those listed",
+          "title": "New Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fact",
+        "new_kind"
+      ],
+      "title": "KindChange",
+      "type": "object"
+    },
     "MergeRequest": {
       "properties": {
         "keep": {
@@ -998,6 +1021,26 @@ Merge her with the Fox.
       ],
       "title": "TimedFact",
       "type": "object"
+    },
+    "TypeChange": {
+      "properties": {
+        "new_type": {
+          "description": "The type it really is: one of the allowed entry types",
+          "title": "New Type",
+          "type": "string"
+        },
+        "ref": {
+          "description": "The id of an existing entry, exactly as listed",
+          "title": "Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "new_type"
+      ],
+      "title": "TypeChange",
+      "type": "object"
     }
   },
   "description": "Structured model output. Untrusted: resolved and typed before it becomes operations.",
@@ -1091,6 +1134,13 @@ Merge her with the Fox.
       "default": null,
       "description": "Only when the author asks to invite someone"
     },
+    "kind_changes": {
+      "items": {
+        "$ref": "#/$defs/KindChange"
+      },
+      "title": "Kind Changes",
+      "type": "array"
+    },
     "merge_entities": {
       "description": "Two entries that are the same, to merge into one",
       "items": {
@@ -1169,6 +1219,13 @@ Merge her with the Fox.
         "$ref": "#/$defs/SuggestedType"
       },
       "title": "Suggested Types",
+      "type": "array"
+    },
+    "type_changes": {
+      "items": {
+        "$ref": "#/$defs/TypeChange"
+      },
+      "title": "Type Changes",
       "type": "array"
     },
     "understood": {

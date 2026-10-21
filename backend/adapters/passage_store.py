@@ -354,6 +354,28 @@ class PostgresPassageQueue:
             failing=int(row.failing or 0),
         )
 
+    async def lag(self) -> IndexWaiting:
+        """How far behind the passage index is across every story on this server
+        (``/health/ready``): counts and the oldest wait only, never which stories."""
+        async with session_scope(self._session_factory) as db:
+            row = (
+                await db.execute(
+                    text(
+                        "SELECT count(*) AS n, "
+                        "EXTRACT(EPOCH FROM now() - min(first_requested_at)) AS oldest, "
+                        "count(*) FILTER (WHERE attempts > 0) AS failing "
+                        "FROM passage_index_waiting"
+                    )
+                )
+            ).first()
+        if row is None or not row.n:
+            return IndexWaiting()
+        return IndexWaiting(
+            count=int(row.n),
+            oldest_seconds=max(0.0, float(row.oldest or 0.0)),
+            failing=int(row.failing or 0),
+        )
+
     async def stories_waiting(self, *, limit: int) -> list[tuple[str, str]]:
         """Stories with a text ready to read now, oldest change first."""
         async with session_scope(self._session_factory) as db:

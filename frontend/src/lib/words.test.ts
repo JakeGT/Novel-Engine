@@ -82,6 +82,21 @@ describe('changes to an existing fact name the fact', () => {
     },
   }
 
+  it('says outright when an entry becomes another type', () => {
+    expect(
+      describeOperation(
+        { operation_type: 'update_entity', payload: { id: 'ent_guild', type: 'Character' }, target_before: { name: 'Harbor Guild' } },
+        names,
+      ),
+    ).toBe('Change “Harbor Guild” to a character')
+    expect(
+      describeOperation(
+        { operation_type: 'update_entity', payload: { id: 'ent_guild', type: 'Object' }, target_before: { name: 'Harbor Guild' } },
+        names,
+      ),
+    ).toBe('Change “Harbor Guild” to an object')
+  })
+
   it('says which fact ends or changes when', () => {
     expect(
       describeOperation({ operation_type: 'close_fact', payload: { id: 'fct_1' }, target_before: before }, names),

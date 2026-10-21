@@ -189,3 +189,16 @@ To see what was deleted:
 docker compose exec -T postgres psql -U novel -d novel -c \
   "SELECT asset_id, id, byte_length, checksum, deleted_at FROM media_asset_versions WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 20"
 ```
+
+## Two-step uploads and deleted pictures' notes (batch 9)
+
+- A two-step upload (`POST /uploads`, `PUT` the bytes, `POST …/finish`) keeps its staged file until
+  it is finished or its hour is up. The job runner clears expired uploads about every five minutes
+  (`MediaService.expire_uploads`, log event `media.uploads_expired`, counts only); rows of finished
+  and expired uploads are forgotten a week later. A staged file left by a crash between storing and
+  recording it is removed by `make retention` after the orphan grace period.
+- `media_uploads_refused_total{reason="not_as_promised"}` counts uploads whose bytes did not match
+  the size or SHA-256 promised. A rise usually means a client computing the digest of the wrong
+  bytes, not an attack: nothing is kept either way.
+- Deleting a picture's files also removes what a model said about it; the picture's lifecycle shows
+  a `notes_removed` event with how many (`GET /assets/{id}/lifecycle`).

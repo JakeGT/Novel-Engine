@@ -151,6 +151,18 @@ class PostgresObservationStore:
             ).all()
         return [_observation(row) for row in rows]
 
+    async def delete_for_asset(self, *, workspace_id: str, project_id: str, asset_id: str) -> int:
+        """Remove what a model said about one picture (AST-008, once it is deleted)."""
+        async with session_scope(self._session_factory) as db:
+            result = await db.execute(
+                text(
+                    "DELETE FROM media_observations "
+                    "WHERE workspace_id = :w AND project_id = :p AND asset_id = :a"
+                ),
+                {"w": workspace_id, "p": project_id, "a": asset_id},
+            )
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]
+
     async def all(self, *, workspace_id: str, project_id: str) -> list[MediaObservation]:
         async with session_scope(self._session_factory) as db:
             rows = (

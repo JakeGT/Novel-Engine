@@ -64,6 +64,8 @@ class MergeSummary:
     pictures_moved: int = 0
     pictures_ended: int = 0
     still_naming: list[str] = field(default_factory=list)
+    # What characters said that will name the kept entry instead (AST-EXP-017).
+    claims_moved: list[str] = field(default_factory=list)
     change_count: int = 0
 
 
@@ -136,6 +138,11 @@ def summarize(records: MergeRecords, preview: MergePreview, names: dict[str, str
             f"what is said in “{events[record_id].name}”"
             for record_type, record_id in preview.still_naming
             if record_type == "event" and record_id in events
+        ],
+        claims_moved=[
+            f"what is said in “{events[record_id].name}”"
+            for record_id in preview.claims_moved
+            if record_id in events
         ],
         change_count=preview.change_count + 1,
     )

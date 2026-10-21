@@ -7,13 +7,13 @@ worked out on read, and at which version of the line of the story. Reads only.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from backend.api.auth import get_project_scope
+from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import get_container
 from backend.container import Container
 from backend.domain.identity import AccessScope
@@ -76,10 +76,52 @@ class ViewStateModel(BaseModel):
     verified_version: int | None = None
     outcome: Literal["matched", "differed"] | None = None
     differences: int | None = None
+    # When it was last built, and (only while it is behind) how many seconds since then:
+    # how long reads have been working the answer out instead (QRY-001).
+    built_at: datetime | None = None
+    lag_seconds: float | None = None
+    # In plain words, for the views' screen: "Ready", "Catching up", "Not checked yet",
+    # "Differed when checked", "Not built yet".
+    state: str = ""
 
 
 class ViewStatusModel(BaseModel):
     views: list[ViewStateModel] = Field(default_factory=list)
+    # The line of the story these are for: its name, and whether it is the main story.
+    line: str = ""
+    main_story: bool = True
+    # How each view is brought up to date, in plain words.
+    how_built: str = ""
+
+
+# Why each view is rebuilt whole rather than changed in place (QRY-001).
+HOW_BUILT = (
+    "Each view is built again in full from the story's records after a change, a moment "
+    "later, by the background worker. Reads use a view only once a check against the "
+    "story's history has matched it and it is up to date; until then they work the answer "
+    "out from the records, which is slower but always right."
+)
+
+
+def _state_words(state: Any) -> str:
+    if state.version is None:
+        return "Not built yet"
+    if state.outcome == "differed":
+        return "Differed when checked"
+    if not state.trusted:
+        return "Not checked yet"
+    if state.behind:
+        return "Catching up"
+    return "Ready"
+
+
+class ViewCheckModel(BaseModel):
+    # How many views were checked, matched, differed, or could not be checked yet (built
+    # by another version, or the story moved on while checking).
+    checked: int
+    matched: int
+    differed: int
+    skipped: int
 
 
 def _answer(answer: Answer) -> ViewAnswerModel:
@@ -100,7 +142,12 @@ async def story_views(
 ) -> ViewStatusModel:
     """How far each ready view of this line of the story is, and whether reads use it."""
     states = await service.status(scope, scope.workspace_id or "", project_id)
+    line, main = await service.line_name(scope.workspace_id or "", project_id)
+    now = datetime.now(UTC)
     return ViewStatusModel(
+        line=line,
+        main_story=main,
+        how_built=HOW_BUILT,
         views=[
             ViewStateModel(
                 view=state.view,
@@ -114,9 +161,34 @@ async def story_views(
                 verified_version=state.verified_version,
                 outcome=state.outcome,  # type: ignore[arg-type]
                 differences=state.differences,
+                built_at=state.built_at,
+                lag_seconds=(
+                    max(0.0, (now - state.built_at).total_seconds())
+                    if state.built_at is not None and state.behind
+                    else None
+                ),
+                state=_state_words(state),
             )
             for state in states
-        ]
+        ],
+    )
+
+
+@router.post("/story-views/check")
+async def check_story_views(
+    project_id: str,
+    scope: AccessScope = Depends(require_project_scope),
+    service: ReadModelService = Depends(get_read_models),
+) -> ViewCheckModel:
+    """Check this line's ready views against the story's history now (owners and
+    administrators). A view that matches is used by reads from then on; one that differs
+    is built again and used only once it matches. Nothing in the story changes."""
+    results = await service.check_now(scope, scope.workspace_id or "", project_id)
+    return ViewCheckModel(
+        checked=len(results),
+        matched=sum(1 for item in results if item.matched),
+        differed=sum(1 for item in results if not item.matched and item.skipped is None),
+        skipped=sum(1 for item in results if item.skipped is not None),
     )
 
 

@@ -15,7 +15,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import get_container
 from backend.api.v1.assistant_settings import confirmed_tokens
+from backend.api.v1.studio import DismissalModel, _dismissal
 from backend.container import Container
+from backend.domain.dismissals import MAX_NOTE, DismissReason
 from backend.domain.identity import AccessScope
 from backend.domain.voice import (
     BANDS,
@@ -78,6 +80,23 @@ class VoiceNoteModel(BaseModel):
     message: str
     start: int | None = None
     end: int | None = None
+    # Names this note when dismissing it (CON-018); empty in the book's view.
+    key: str | None = None
+    dismissal: DismissalModel | None = None
+
+
+class SpeakerModel(BaseModel):
+    """One character's dialogue in the scene, told by a speech tag or by turns (CON-018)."""
+
+    name: str
+    lines: int
+    words: int
+    sentence_mean: float
+    # Short forms (don't, I'm) in every 100 words they say.
+    short_forms: float
+    # Other scenes with enough of their dialogue to compare with.
+    elsewhere: int
+    compared: bool
 
 
 class UsualModel(BaseModel):
@@ -113,6 +132,10 @@ class SceneVoiceModel(BaseModel):
     band_labels: list[str]
     min_words: int = MIN_SCENE_WORDS
     measures_version: str = VOICE_VERSION
+    # Who says what, where a tag or turns in an exchange say so; the share of the
+    # scene's dialogue tied to a speaker (notes about speakers need at least half).
+    speakers: list[SpeakerModel] | None = None
+    attributed: float | None = None
 
 
 class BookSceneModel(BaseModel):
@@ -194,11 +217,80 @@ def scene_model(found: SceneVoice) -> SceneVoiceModel:
         version_number=reading.version_number if reading else None,
         stats=stats_model(reading.stats) if reading else None,
         usual=usual_model(found.usual),
-        notes=[note_model(note) for note in found.notes],
+        notes=[
+            note_model(note).model_copy(
+                update={
+                    "key": key or None,
+                    "dismissal": _dismissal(found.dismissals.get(key)) if key else None,
+                }
+            )
+            for note, key in zip(found.notes, found.keys or [""] * len(found.notes), strict=False)
+        ],
         counted=found.counted,
         left_out=found.left_out,
         not_compared=found.not_compared,
         band_labels=band_labels(),
+        speakers=[
+            SpeakerModel(
+                name=row.speech.who,
+                lines=row.speech.lines,
+                words=row.speech.words,
+                sentence_mean=round(row.speech.sentence_mean, 1),
+                short_forms=round(row.speech.contraction_rate, 1),
+                elsewhere=row.elsewhere,
+                compared=row.compared,
+            )
+            for row in found.speakers
+        ]
+        or None,
+        attributed=round(found.attributed, 3) if found.speakers else None,
+    )
+
+
+class VoiceDismissRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    key: str = Field(min_length=64, max_length=64)
+    reason: DismissReason
+    note: str = Field(default="", max_length=MAX_NOTE)
+    days: Literal[7, 30] | None = None
+
+
+@router.post("/plan/{plan_id}/voice/dismissals")
+async def dismiss_voice_note(
+    project_id: str,
+    plan_id: str,
+    body: VoiceDismissRequest,
+    scope: AccessScope = Depends(require_project_scope),
+    voice: VoiceService = Depends(get_voice),
+) -> SceneVoiceModel:
+    """Dismiss a note on how the scene sounds, with a reason. Nothing is changed."""
+    return scene_model(
+        await voice.dismiss(
+            scope,
+            scope.workspace_id or "",
+            project_id,
+            plan_id,
+            key=body.key,
+            reason=body.reason,
+            note=body.note,
+            days=body.days,
+        )
+    )
+
+
+@router.delete("/plan/{plan_id}/voice/dismissals/{dismissal_id}")
+async def undo_voice_dismissal(
+    project_id: str,
+    plan_id: str,
+    dismissal_id: str,
+    scope: AccessScope = Depends(require_project_scope),
+    voice: VoiceService = Depends(get_voice),
+) -> SceneVoiceModel:
+    """Bring a dismissed note on how the scene sounds back."""
+    return scene_model(
+        await voice.undo_dismissal(
+            scope, scope.workspace_id or "", project_id, plan_id, dismissal_id
+        )
     )
 
 

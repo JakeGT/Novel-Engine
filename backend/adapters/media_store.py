@@ -23,8 +23,11 @@ from backend.domain.media import (
     MediaProcessing,
     MediaSegment,
     MediaVariant,
+    PictureUpload,
     ProcessingStatus,
     SegmentKind,
+    UploadState,
+    UploadTarget,
     VariantKind,
 )
 
@@ -75,13 +78,14 @@ async def _record_event(
     asset_version_id: str | None = None,
     actor_user_id: str | None = None,
     canon_revision: int | None = None,
+    item_count: int | None = None,
 ) -> None:
     """Append a lifecycle event inside the transaction making the change."""
     await session.execute(
         text(
             "INSERT INTO media_lifecycle_events (id, workspace_id, project_id, asset_id, "
-            "asset_version_id, action, actor_user_id, canon_revision) "
-            "VALUES (:id, :w, :p, :a, :v, :action, :actor, :rev)"
+            "asset_version_id, action, actor_user_id, canon_revision, item_count) "
+            "VALUES (:id, :w, :p, :a, :v, :action, :actor, :rev, :count)"
         ),
         {
             "id": format_canon_id("operation", str(uuid7())),
@@ -92,6 +96,7 @@ async def _record_event(
             "action": action.value,
             "actor": actor_user_id,
             "rev": canon_revision,
+            "count": item_count,
         },
     )
 
@@ -124,9 +129,33 @@ class PostgresMediaStore:
                 actor_user_id=row.actor_user_id,
                 canon_revision=row.canon_revision,
                 created_at=row.created_at,
+                item_count=getattr(row, "item_count", None),
             )
             for row in rows
         ]
+
+    async def record_notes_removed(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        asset_id: str,
+        count: int,
+        actor_user_id: str | None = None,
+        canon_revision: int | None = None,
+    ) -> None:
+        """Note that what a model said about a deleted picture was removed (AST-008)."""
+        async with session_scope(self._session_factory) as session:
+            await _record_event(
+                session,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                asset_id=asset_id,
+                action=MediaLifecycleAction.NOTES_REMOVED,
+                actor_user_id=actor_user_id,
+                canon_revision=canon_revision,
+                item_count=count,
+            )
 
     async def create_asset(
         self,
@@ -651,6 +680,167 @@ class PostgresMediaStore:
         )
         return created or version
 
+    # ------------------------------------------------- two-step uploads (AST-002)
+    async def create_upload(
+        self,
+        upload: PictureUpload,
+        *,
+        max_per_person: int,
+        max_per_workspace: int,
+    ) -> PictureUpload | None:
+        """Start an upload unless its person already has ``max_per_person`` on their way,
+        or the workspace ``max_per_workspace``; None then. Counted and added under one
+        lock per workspace, so two at once can never both take the last place."""
+        async with session_scope(self._session_factory) as session:
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+                {"key": f"media_uploads_open:{upload.workspace_id}"},
+            )
+            row = (
+                await session.execute(
+                    text(
+                        "SELECT count(*) AS everyone, count(*) FILTER (WHERE "
+                        "actor_user_id IS NOT DISTINCT FROM :actor) AS mine FROM media_uploads "
+                        "WHERE workspace_id=:w AND state IN ('waiting', 'received', 'finishing') "
+                        "AND expires_at > now()"
+                    ),
+                    {"w": upload.workspace_id, "actor": upload.actor_user_id},
+                )
+            ).one()
+            if int(row.mine) >= max_per_person or int(row.everyone) >= max_per_workspace:
+                return None
+            await session.execute(
+                text(
+                    "INSERT INTO media_uploads (workspace_id, project_id, id, branch_id, "
+                    "actor_user_id, target_type, target_id, name, expected_bytes, "
+                    "expected_sha256, state, created_at, expires_at) VALUES (:w, :p, :id, "
+                    ":b, :actor, :tt, :tid, :name, :bytes, :sha, :state, :created, :expires)"
+                ),
+                {
+                    "w": upload.workspace_id,
+                    "p": upload.project_id,
+                    "id": upload.id,
+                    "b": upload.branch_id,
+                    "actor": upload.actor_user_id,
+                    "tt": upload.target_type.value,
+                    "tid": upload.target_id,
+                    "name": upload.name,
+                    "bytes": upload.expected_bytes,
+                    "sha": upload.expected_sha256,
+                    "state": upload.state.value,
+                    "created": upload.created_at,
+                    "expires": upload.expires_at,
+                },
+            )
+        return upload
+
+    async def get_upload(
+        self, *, workspace_id: str, project_id: str, upload_id: str
+    ) -> PictureUpload | None:
+        async with session_scope(self._session_factory) as session:
+            row = (
+                await session.execute(
+                    text(
+                        "SELECT * FROM media_uploads "
+                        "WHERE workspace_id=:w AND project_id=:p AND id=:id"
+                    ),
+                    {"w": workspace_id, "p": project_id, "id": upload_id},
+                )
+            ).first()
+        return _upload(row) if row is not None else None
+
+    async def open_uploads(self, *, workspace_id: str, actor_user_id: str | None = None) -> int:
+        """How many uploads of a workspace (or, with ``actor_user_id``, of one person in
+        it; ``""`` for nobody signed in) are still on their way (not expired yet)."""
+        async with session_scope(self._session_factory) as session:
+            count = (
+                await session.execute(
+                    text(
+                        "SELECT count(*) FROM media_uploads WHERE workspace_id=:w "
+                        "AND state IN ('waiting', 'received', 'finishing') AND expires_at > now() "
+                        "AND (NOT :one OR COALESCE(actor_user_id, '') = :actor)"
+                    ),
+                    {"w": workspace_id, "one": actor_user_id is not None, "actor": actor_user_id},
+                )
+            ).scalar_one()
+        return int(count)
+
+    async def move_upload(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        upload_id: str,
+        from_state: UploadState,
+        to_state: UploadState,
+        staged_key: str | None = None,
+        content_type: str | None = None,
+        asset_id: str | None = None,
+        version_id: str | None = None,
+        link_id: str | None = None,
+        unexpired: bool = True,
+    ) -> PictureUpload | None:
+        """Move an upload on, only from ``from_state`` (and, with ``unexpired``, only
+        while it has not expired). None when it was not in that state any more."""
+        async with session_scope(self._session_factory) as session:
+            row = (
+                await session.execute(
+                    text(
+                        "UPDATE media_uploads SET state=:to, "
+                        "staged_key=COALESCE(:key, staged_key), "
+                        "content_type=COALESCE(:ct, content_type), "
+                        "asset_id=COALESCE(:a, asset_id), version_id=COALESCE(:v, version_id), "
+                        "link_id=COALESCE(:l, link_id), "
+                        "finished_at=CASE WHEN :to='finished' THEN now() ELSE finished_at END "
+                        "WHERE workspace_id=:w AND project_id=:p AND id=:id AND state=:from "
+                        "AND (NOT :unexpired OR expires_at > now()) RETURNING *"
+                    ),
+                    {
+                        "w": workspace_id,
+                        "p": project_id,
+                        "id": upload_id,
+                        "from": from_state.value,
+                        "to": to_state.value,
+                        "key": staged_key,
+                        "ct": content_type,
+                        "a": asset_id,
+                        "v": version_id,
+                        "l": link_id,
+                        "unexpired": unexpired,
+                    },
+                )
+            ).first()
+        return _upload(row) if row is not None else None
+
+    async def expire_uploads(
+        self, *, limit: int = 100, finishing_grace_seconds: int = 900
+    ) -> list[PictureUpload]:
+        """Mark uploads not finished in time expired, returning them (with the file each
+        staged, for the caller to remove). One being finished right now is left for
+        ``finishing_grace_seconds`` past its hour, so its file is not taken mid-finish."""
+        async with session_scope(self._session_factory) as session:
+            rows = (
+                await session.execute(
+                    text(
+                        "UPDATE media_uploads SET state='expired' WHERE (workspace_id, "
+                        "project_id, id) IN (SELECT workspace_id, project_id, id FROM "
+                        "media_uploads WHERE ((state IN ('waiting', 'received') AND "
+                        "expires_at <= now()) OR (state = 'finishing' AND expires_at <= "
+                        "now() - make_interval(secs => :grace))) ORDER BY expires_at LIMIT :n "
+                        "FOR UPDATE SKIP LOCKED) RETURNING *"
+                    ),
+                    {"n": limit, "grace": finishing_grace_seconds},
+                )
+            ).all()
+            # Finished and expired uploads are kept a week, then forgotten.
+            await session.execute(
+                text(
+                    "DELETE FROM media_uploads WHERE state IN ('finished', 'expired') "
+                    "AND expires_at < now() - interval '7 days'"
+                )
+            )
+        return [_upload(row) for row in rows]
+
     async def health(self) -> bool:
         try:
             async with session_scope(self._session_factory) as session:
@@ -658,6 +848,30 @@ class PostgresMediaStore:
             return True
         except Exception:
             return False
+
+
+def _upload(row: Any) -> PictureUpload:
+    return PictureUpload(
+        workspace_id=row.workspace_id,
+        project_id=row.project_id,
+        id=row.id,
+        branch_id=row.branch_id,
+        actor_user_id=row.actor_user_id,
+        target_type=UploadTarget(row.target_type),
+        target_id=row.target_id,
+        name=row.name,
+        expected_bytes=int(row.expected_bytes),
+        expected_sha256=row.expected_sha256,
+        state=UploadState(row.state),
+        staged_key=row.staged_key,
+        content_type=row.content_type,
+        asset_id=row.asset_id,
+        version_id=row.version_id,
+        link_id=row.link_id,
+        created_at=row.created_at,
+        expires_at=row.expires_at,
+        finished_at=row.finished_at,
+    )
 
 
 # ------------------------------------------------------------- processing (AST-003)

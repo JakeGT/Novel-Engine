@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import copy
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
@@ -19,6 +20,8 @@ class InMemoryReadModelStore:
         self._journal = journal
         self.views: dict[tuple[str, str, str, str], StoredView] = {}
         self.saves = 0
+        # Lines whose check lock another process is holding, as the advisory lock would say.
+        self.held_elsewhere: set[tuple[str, str, str]] = set()
 
     async def pending(
         self, *, builder_version: int, views: int, limit: int = 50
@@ -140,3 +143,9 @@ class InMemoryReadModelStore:
         for key in gone:
             del self.views[key]
         return len(gone)
+
+    @asynccontextmanager
+    async def check_lock(
+        self, *, workspace_id: str, project_id: str, branch_id: str
+    ) -> AsyncIterator[bool]:
+        yield (workspace_id, project_id, branch_id) not in self.held_elsewhere
