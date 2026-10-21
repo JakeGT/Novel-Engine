@@ -33,11 +33,11 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from backend.domain.canon.plans import MAX_DETAIL_LENGTH, PlanItem, PlanKind
 from backend.domain.plan_checks import PlanFinding
@@ -47,6 +47,13 @@ PATH_KEY = "_path"
 # climax, an end); nine stages covers that and keeps the path inside one detail.
 MAX_STAGES = 9
 MAX_STAGE_NAME = 60
+# A scale shared by the story's arcs (STY-006): a few of them, each a handful of levels.
+MAX_SCALES = 8
+MAX_LEVELS = 9
+MIN_LEVELS = 2
+MAX_SCALE_NAME = 40
+MAX_LEVEL_NAME = 40
+MAX_SCALE_ABOUT = 200
 # A stretch with no stage is a note when it is longer than this share of the plan's
 # scenes (about an act) and at least this many scenes.
 STRETCH_SHARE = 0.25
@@ -68,6 +75,16 @@ class ArcStage(BaseModel):
     scene_id: str | None = Field(default=None, min_length=1, max_length=200)
     # A story-bible fact that should be true from that scene on.
     fact_id: str | None = Field(default=None, min_length=1, max_length=200)
+    # Where the character stands on one of the story's scales from here (STY-006): a
+    # scale's id and one of its levels, both or neither.
+    scale_id: str | None = Field(default=None, min_length=1, max_length=60)
+    level: str | None = Field(default=None, min_length=1, max_length=MAX_LEVEL_NAME)
+
+    @model_validator(mode="after")
+    def _scale_and_level(self) -> ArcStage:
+        if (self.scale_id is None) != (self.level is None):
+            raise ValueError("a stage on a scale needs both the scale and its level")
+        return self
 
     @field_validator("name")
     @classmethod
@@ -169,6 +186,9 @@ class StageReading:
     fact_id: str | None
     # How its fact stands where it is reached; None when it has no fact.
     fact: FactStanding | None
+    # Where the character stands on a shared scale from here, if the stage says (STY-006).
+    scale_id: str | None = None
+    level: str | None = None
 
 
 @dataclass(frozen=True)
@@ -221,6 +241,8 @@ def read_arcs(
                     scene_number=number,
                     fact_id=stage.fact_id,
                     fact=standing,
+                    scale_id=stage.scale_id,
+                    level=stage.level,
                 )
             )
         readings.append(ArcReading(arc_id=arc.id, about=arc.refs_as("about"), stages=stages))
@@ -359,7 +381,302 @@ def moves_in_scene(items: Sequence[PlanItem], scene_id: str) -> list[ArcMove]:
     return moves
 
 
+# ------------------------------------------------------------------ shared scales
+#
+# A scale is a state many characters share, such as trust or standing, with named
+# levels (STY-006). The design notes call these "project-defined state dimensions": an
+# ordered scale (from "none" to "complete") or a set of states with no order ("loyal",
+# "wavering", "turned"), and which moves are allowed. Writing tools that track arcs do
+# the same with a starting value, a current value and a target; here the levels are
+# words, never scores, since a number would claim more than the author said.
+# A stage can say where its character stands on a scale from then on; the plan shows,
+# for each scale, where each character stands scene by scene, and whether each move is
+# towards where their arc ends.
+
+
+class StateScale(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=60, pattern=r"^[a-z0-9][a-z0-9_-]*$")
+    name: str = Field(min_length=1, max_length=MAX_SCALE_NAME)
+    # In order from one end to the other when ``ordered``; otherwise just the states.
+    levels: list[str] = Field(min_length=MIN_LEVELS, max_length=MAX_LEVELS)
+    ordered: bool = True
+    # For an ordered scale: a character moves at most one level between stages.
+    one_step: bool = False
+    # What the scale is about, in the author's words.
+    about: str = Field(default="", max_length=MAX_SCALE_ABOUT)
+
+    @field_validator("name", "about")
+    @classmethod
+    def _tidy_words(cls, value: str) -> str:
+        return " ".join(value.split())
+
+    @field_validator("levels")
+    @classmethod
+    def _tidy_levels(cls, value: list[str]) -> list[str]:
+        tidy = [" ".join(level.split()) for level in value]
+        if any(not level or len(level) > MAX_LEVEL_NAME for level in tidy):
+            raise ValueError(f"each level needs a name of at most {MAX_LEVEL_NAME} characters")
+        if len({level.casefold() for level in tidy}) != len(tidy):
+            raise ValueError("give each level its own name")
+        return tidy
+
+    @model_validator(mode="after")
+    def _steps(self) -> StateScale:
+        if self.one_step and not self.ordered:
+            raise ValueError("only a scale in order can move one level at a time")
+        return self
+
+    def rank(self, level: str | None) -> int | None:
+        if level is None:
+            return None
+        wanted = level.casefold()
+        return next((i for i, item in enumerate(self.levels) if item.casefold() == wanted), None)
+
+
+class ScaleSet(BaseModel):
+    """The story's scales, shared by every line of the story like its unit of time."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    scales: list[StateScale] = Field(default_factory=list, max_length=MAX_SCALES)
+
+    @model_validator(mode="after")
+    def _unique(self) -> ScaleSet:
+        if len({scale.id for scale in self.scales}) != len(self.scales):
+            raise ValueError("each scale needs its own id")
+        if len({scale.name.casefold() for scale in self.scales}) != len(self.scales):
+            raise ValueError("give each scale its own name")
+        return self
+
+    def by_id(self) -> dict[str, StateScale]:
+        return {scale.id: scale for scale in self.scales}
+
+
+def read_scales(raw: object) -> ScaleSet:
+    """The stored scales; anything unreadable is treated as none."""
+    if not raw:
+        return ScaleSet()
+    try:
+        return ScaleSet.model_validate(raw)
+    except ValidationError:
+        return ScaleSet()
+
+
+def scale_removal_problem(
+    kept: ScaleSet, proposed: ScaleSet, arcs: Iterable[tuple[str, Sequence[ArcStage]]]
+) -> str | None:
+    """Why ``proposed`` cannot replace ``kept``: it drops a scale, or a level of one,
+    that a stage of one of ``arcs`` (each its title and stages, from every line of the
+    story) stands on. ``None`` when nothing in use goes."""
+    new = proposed.by_id()
+    for scale in kept.scales:
+        after = new.get(scale.id)
+        for title, stages in arcs:
+            for stage in stages:
+                if stage.scale_id != scale.id:
+                    continue
+                if after is None:
+                    return (
+                        f"“{scale.name}” is used by “{title}”. Take it off that arc's stages first."
+                    )
+                if after.rank(stage.level) is None:
+                    return (
+                        f"The level “{stage.level}” of “{scale.name}” is used by “{title}”. "
+                        "Move that arc's stage to another level first."
+                    )
+    return None
+
+
+def scale_findings(
+    readings: Sequence[ArcReading], scales: ScaleSet, titles: dict[str, str]
+) -> list[PlanFinding]:
+    """A stage on a scale that is gone or a level the scale no longer has, and on a
+    one-level-at-a-time scale, a move of more than one level between placed stages."""
+    known = scales.by_id()
+    found: list[PlanFinding] = []
+    for arc in readings:
+        previous: dict[str, StageReading] = {}
+        for stage in sorted(
+            (item for item in arc.stages if item.scale_id is not None),
+            key=lambda item: (item.scene_number is None, item.scene_number or 0, item.index),
+        ):
+            scale = known.get(stage.scale_id or "")
+            if scale is None:
+                found.append(
+                    PlanFinding(
+                        arc.arc_id,
+                        "arc_scale_gone",
+                        f"“{stage.name}” is on a scale that is no longer in the story.",
+                    )
+                )
+                continue
+            rank = scale.rank(stage.level)
+            if rank is None:
+                found.append(
+                    PlanFinding(
+                        arc.arc_id,
+                        "arc_level_gone",
+                        f"“{stage.name}” is at “{stage.level}” on {scale.name}, which no longer "
+                        "has that level.",
+                    )
+                )
+                continue
+            before = previous.get(scale.id)
+            if (
+                before is not None
+                and scale.one_step
+                and stage.scene_number is not None
+                and before.scene_number is not None
+            ):
+                jump = abs(rank - (scale.rank(before.level) or 0))
+                if jump > 1:
+                    found.append(
+                        PlanFinding(
+                            arc.arc_id,
+                            "arc_level_jump",
+                            f"On {scale.name}, “{stage.name}” moves {jump} levels at once, from "
+                            f"“{before.level}” to “{stage.level}”; this scale moves one level "
+                            "at a time.",
+                        )
+                    )
+            if stage.scene_number is not None:
+                previous[scale.id] = stage
+    return found
+
+
+def lapse_findings(
+    readings: Sequence[ArcReading],
+    scenes: Sequence[PlanItem],
+    fact_standing: Callable[[str, PlanItem | None], FactStanding],
+    titles: dict[str, str],
+    fact_words: Callable[[str], str] | None = None,
+) -> list[PlanFinding]:
+    """A stage's fact that stops being true before the next stage is reached (STY-006).
+
+    A stage says its fact should hold from its scene on; this looks at each scene after
+    it, up to the scene where the next stage is reached (or to the end, for the last
+    one), and says the first where the fact is not true at that scene's story time. A
+    scene with no story time cannot say, and is passed over.
+    """
+    found: list[PlanFinding] = []
+    for arc in readings:
+        placed = sorted(
+            (stage for stage in arc.stages if stage.scene_number is not None),
+            key=lambda stage: (stage.scene_number or 0, stage.index),
+        )
+        for position, stage in enumerate(placed):
+            if stage.fact_id is None or stage.fact != "holds" or stage.scene_number is None:
+                continue
+            reached = stage.scene_number
+            following: int = next(
+                (
+                    later.scene_number
+                    for later in placed[position + 1 :]
+                    if later.scene_number is not None and later.scene_number > reached
+                ),
+                len(scenes) + 1,
+            )
+            for number in range(reached + 1, following):
+                scene = scenes[number - 1]
+                if fact_standing(stage.fact_id, scene) == "not_then":
+                    said = fact_words(stage.fact_id) if fact_words is not None else "its fact"
+                    until = (
+                        f"before the next stage is reached in “{scenes[following - 1].title}”"
+                        if following <= len(scenes)
+                        else "and no later stage changes it"
+                    )
+                    found.append(
+                        PlanFinding(
+                            arc.arc_id,
+                            "arc_fact_lapses",
+                            f"“{stage.name}” should hold from “{titles.get(stage.scene_id or '', 'its scene')}” "
+                            f"on, but “{said}” is no longer true when “{scene.title}” happens, "
+                            f"{until}.",
+                        )
+                    )
+                    break
+    return found
+
+
+@dataclass(frozen=True)
+class ScaleStep:
+    scene_id: str
+    scene_number: int
+    level: str
+    # For an ordered scale: towards the arc's last level, away from it, or level with it.
+    toward: Literal["toward", "away", "same", "reached"] | None = None
+
+
+@dataclass(frozen=True)
+class ScaleRow:
+    arc_id: str
+    about: list[str]
+    # Where the arc starts on the scale (its first stage, if on it), and where it ends.
+    start: str | None
+    target: str | None
+    steps: list[ScaleStep]
+
+
+@dataclass(frozen=True)
+class ScaleProgress:
+    scale: StateScale
+    rows: list[ScaleRow]
+
+
+def scale_progress(readings: Sequence[ArcReading], scales: ScaleSet) -> list[ScaleProgress]:
+    """For each scale, where each arc's character stands scene by scene (STY-006)."""
+    progress: list[ScaleProgress] = []
+    for scale in scales.scales:
+        rows: list[ScaleRow] = []
+        for arc in readings:
+            on = [stage for stage in arc.stages if stage.scale_id == scale.id]
+            if not on:
+                continue
+            target = on[-1].level
+            target_rank = scale.rank(target)
+            start = on[0].level if on[0].index == 0 else None
+            steps: list[ScaleStep] = []
+            last_rank = scale.rank(start)
+            for stage in sorted(
+                (item for item in on if item.scene_number is not None and item.scene_id),
+                key=lambda item: (item.scene_number or 0, item.index),
+            ):
+                rank = scale.rank(stage.level)
+                toward: Literal["toward", "away", "same", "reached"] | None = None
+                if rank is not None and rank == target_rank:
+                    toward = "reached"
+                elif scale.ordered and rank is not None and target_rank is not None:
+                    if last_rank is None:
+                        toward = None
+                    elif abs(target_rank - rank) < abs(target_rank - last_rank):
+                        toward = "toward"
+                    elif abs(target_rank - rank) > abs(target_rank - last_rank):
+                        toward = "away"
+                    else:
+                        toward = "same"
+                steps.append(
+                    ScaleStep(
+                        scene_id=stage.scene_id or "",
+                        scene_number=stage.scene_number or 0,
+                        level=stage.level or "",
+                        toward=toward,
+                    )
+                )
+                if rank is not None:
+                    last_rank = rank
+            rows.append(
+                ScaleRow(
+                    arc_id=arc.arc_id, about=arc.about, start=start, target=target, steps=steps
+                )
+            )
+        progress.append(ScaleProgress(scale=scale, rows=rows))
+    return progress
+
+
 __all__ = [
+    "MAX_SCALES",
     "MAX_STAGES",
     "MAX_STAGE_NAME",
     "PATH_KEY",
@@ -367,15 +684,25 @@ __all__ = [
     "ArcReading",
     "ArcStage",
     "FactStanding",
+    "ScaleProgress",
+    "ScaleRow",
+    "ScaleSet",
+    "ScaleStep",
+    "StateScale",
     "StageReading",
     "arc_findings",
     "arc_path",
     "arcs_with_paths",
+    "lapse_findings",
     "long_stretch",
     "moves_in_scene",
     "path_fits",
     "path_problem",
     "read_arcs",
+    "read_scales",
+    "scale_findings",
+    "scale_progress",
+    "scale_removal_problem",
     "with_path",
     "without_scenes",
 ]

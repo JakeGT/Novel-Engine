@@ -372,3 +372,44 @@ Sources: [OpenRouter image inputs](https://openrouter.ai/docs/features/multimoda
 data URLs for private images; text before images; supported types; per-model image limits);
 [Claude vision](https://platform.claude.com/docs/en/build-with-claude/vision) (tokens ≈ width ×
 height / 750, used for the budget estimate).
+
+## Amendment 2026-10-20: uploads read as they stream, pictures found by words, a picture's file deleted (AST-002, AST-007, AST-008)
+
+**Uploads.** `receive_picture` (`backend/services/media_service.py`) reads an upload chunk by
+chunk: a declared `Content-Length` over 8 MB is refused with `413` before anything is read, a body
+is refused as soon as more than the limit has arrived, and once its first 12 bytes show it is not
+a PNG, JPEG or WebP file it is refused without reading the rest. The SHA-256 is worked out as the
+bytes arrive; a `Content-Digest` or `Repr-Digest` the sender gives (RFC 9530, `sha-256=:…:`;
+other algorithms are ignored) must match, or the upload is refused as not arrived whole. The
+answer carries `received: {bytes, sha256}` of what arrived, before hidden details are taken out
+(the stored checksum is of the cleaned file). Not built: an upload/finalize flow and hosted
+malware scanning.
+
+**The media page** adds a picture itself: a file, "Show it on" (an entry or a scene), a name.
+Every picture is still placed on something, so the library never holds a picture nobody placed,
+and the upload is the same reviewed link as from an entry. "Find pictures" looks for every word
+in a picture's name and in descriptions the author accepted or corrected (unreviewed ones are not
+searched), then asks search by meaning (`MediaSearchService.pictures_for`) when it is set up,
+keeping only pictures this line's library offers; each result says how it was found. When search
+by meaning is not available the page says so in fixed words rather than the operator's reason.
+
+**Deleting a picture's file.** `POST /assets/{id}/delete`, for owners and administrators, only
+when the picture is shown on no entry or scene in any line of the story (a what-if's link
+counts). Each version's original and copies are removed from storage, derived indexes are told
+through `on_versions_removed`, the version rows are kept as the tombstone (checksum, size, type,
+`deleted_at`, retired) with `original_deleted` and `asset_deleted` lifecycle events naming who,
+and the asset becomes `deleted`. Deleted versions stop counting toward the workspace's room.
+History keeps the picture's name: the label is the author's own and links in history refer to
+it. An archive exported afterwards carries the tombstone without the file; an earlier archive
+still holds the file. Not built: removing what a model said about the picture (reviewed and
+unreviewed descriptions stay, though the picture can no longer be opened), and provider-side
+uploads (none are kept). On the page the word "Delete" is used for this one action, with a
+deliberate tick: unlike every other ending in the product it erases something (design rules D1,
+D5, D6 in `~/Projects/Common/rules.md`).
+
+Ran against the in-memory doubles, a disposable PostgreSQL and a browser test with no model;
+search by meaning was exercised with a stand-in only.
+
+Sources: [RFC 9530, Digest Fields](https://rfc-editor.org/rfc/rfc9530) (`Content-Digest` and
+`Repr-Digest`, structured byte sequences); [MDN, 413 Content Too Large](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/413)
+(the RFC 9110 name for 413).

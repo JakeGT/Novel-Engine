@@ -134,3 +134,70 @@ Sources: Liu et al., "Lost in the Middle: How Language Models Use Long Contexts"
 https://arxiv.org/abs/2307.03172 (TACL 12:157–173, 2024). Ranked-retrieval measures as in
 Manning, Raghavan and Schütze, *Introduction to Information Retrieval*, ch. 8,
 https://nlp.stanford.edu/IR-book/html/htmledition/evaluation-of-ranked-retrieval-results-1.html.
+
+## Amendment 2026-10-20 (batch 7): checks worked out only where inputs changed, what becomes of a finding, and groups in the continuity pass (CON-007, CON-001, CON-013, CON-016)
+
+Status of this ADR: still **proposed** (the critic-side measurement above has still not been run).
+What follows is built and tested against the scripted model and the in-memory and PostgreSQL
+stores only.
+
+**Fingerprints and a cache (CON-007).** The studio's checks that need no model are split into
+named checks, each declaring what it reads (`backend/domain/check_fingerprints.py`). Every input is
+a SHA-256 digest (the words exactly, normalised to one Unicode form; the names as the scene reads
+them; each slice of the brief a check reads; for continuity, the line of the story and its version
+with the clock, travel table and the scene's card). A check's fingerprint is a digest of the
+version of the checks, its name and its inputs' digests, and its result is kept against it
+(`check_cache`). This is a *constructive trace* in the terms of Mokhov, Mitchell and Peyton Jones:
+the result is stored with the hashes of what produced it, so a check with the same fingerprint is
+taken from the store, not worked out again, and exactly the checks whose inputs changed run.
+Two choices worth recording:
+
+- The brief (what the story bible says about the scene) is read every time and fingerprinted, not
+  cached by the story's version. Other parts of the app add to the brief (this batch's checks
+  against the prose read pictures and plan scales that do not move the story's version); a cache
+  keyed by version would use a result for inputs it did not see. Reading costs the story bible
+  read; it never costs a wrong answer.
+- Any finding no named check claims belongs to a catch-all that reads everything, so a check added
+  to `drafting.py` without being listed here is worked out whenever anything changes, never lost.
+
+**What becomes of a finding (CON-001).** plan/13 asks for open, accepted, dismissed, fixed and
+superseded. *Accepted* follows code-quality tools that separate "the finding is right and I am
+leaving it" from "the finding is wrong": SonarQube calls the first **Accept** (it replaced "Won't
+fix") and keeps it apart from **False positive**. Here "Intended" is accepted and "Not a problem"
+(or the author's own reason) is dismissed, so the two never mix in the calibration note.
+*Superseded* is an open finding a later check of the same scene found again, so the history points
+at the newest record rather than repeating the same note down the page. Runs record the story's
+checking profile, are carried by the archive, and are copied into a what-if.
+
+**A dismissal depends on more than its sentence (CON-016).** A check's dismissal keeps a digest of
+what the finding said. Its message is built from the facts, times, places and people it read, so a
+change that matters to it changes the message, and the dismissal no longer holds; plan/13's "a
+changed dependency or rule version marks it stale". On the review screen an advisory finding is
+dismissed for one proposal, keyed by the change's revision and content and the version of the rule
+it cites. Blocking findings and integrity checks are never offered (ADR-013).
+
+**Calibration as a note, not a policy.** How often each check's findings are dismissed is shown
+per check, with a rate only after five findings. Google's Tricorder made the same signal (developers
+marking a result "not useful") the measure of an analyser's effective false-positive rate, and
+analysers that stayed above about 10% were fixed or switched off by their owners. Here the author
+is the owner: the note says a check is often wrong for this story, and nothing changes unless the
+author changes it (plan/13: threshold calibration is an explicit choice, never silent learning).
+
+**Groups in the continuity pass (CON-013).** The continuity pass is sent in groups when its single
+prompt would be over 6,000 tokens, at most 12 groups; otherwise, or when a grouping would leave a
+passage without a check it needs, it is sent whole and the job says why. Two departures from the
+prototype: the scene's viewpoint is not given to every passage (what the viewpoint character
+knows is the viewpoint pass's question), and records about the scene as a whole (rules, the plan,
+the author's own writing) go with every passage in one group, so no record is left unread. The
+grouping happens before the estimate, so the author confirms the groups' cost. Grouping usually
+costs more tokens than one whole call on a story that fits (the benchmark above); the case for it
+remains long scenes against large stories and focused prompts.
+
+Sources: Mokhov, Mitchell and Peyton Jones, "Build Systems à la Carte", ICFP 2018,
+https://www.microsoft.com/en-us/research/publication/build-systems-a-la-carte/ (and the JFP 2020
+version, https://www.microsoft.com/en-us/research/publication/build-systems-a-la-carte-theory-and-practice/).
+SonarQube issue statuses (Accepted, False positive),
+https://docs.sonarsource.com/sonarqube-server/2025.3/user-guide/issues/solution-overview and
+https://docs.sonarsource.com/sonarqube-for-ide/visual-studio/using/fixing-issues. Sadowski et al.,
+"Tricorder: Building a Program Analysis Ecosystem", ICSE 2015,
+https://research.google/pubs/tricorder-building-a-program-analysis-ecosystem/.

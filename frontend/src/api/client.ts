@@ -74,6 +74,7 @@ export type NameExample = Schemas['NameExampleModel']
 export type Passage = Schemas['PassageModel']
 export type PassageRead = Schemas['ReadPassageModel']
 export type ReaderGuide = Schemas['GuideModel']
+export type GuidePart = NonNullable<ReaderGuide['part']>
 export type SchemaSuggestion = Schemas['SchemaSuggestionModel']
 export type AiProvider = Schemas['ProviderModel']
 export type AiChoice = Schemas['AiChoiceModel']
@@ -90,6 +91,9 @@ export type PlacedEvent = Schemas['PlacedEventModel']
 export type Moment = Schemas['MomentModel']
 export type Continuity = Schemas['ContinuityModel']
 export type ContinuityFinding = Schemas['ContinuityFindingModel']
+export type StateScale = Schemas['StateScale']
+export type ScaleProgress = Schemas['ScaleProgressModel']
+export type HelpEstimate = Schemas['HelpEstimateModel']
 export type FindingRecord = Schemas['RecordModel']
 export type HowLong = Schemas['HowLongModel']
 export type HowLongRequest = Schemas['HowLongRequest']
@@ -98,12 +102,19 @@ export type CharacterKnowledge = Schemas['CharacterKnowledgeModel']
 export type Learned = Schemas['LearnedModel']
 export type CheckRun = Schemas['RunModel']
 export type CheckRunFinding = Schemas['RunFindingModel']
+export type CheckRunScene = Schemas['RunSceneModel']
+export type CheckCalibration = Schemas['CalibrationModel']
+export type ReviewFinding = Schemas['ReviewFindingModel']
+export type ReviewDismissAsk = Schemas['ReviewDismissRequest']
 export type FactKnowledge = Schemas['FactKnowledgeModel']
 export type ReaderJourney = Schemas['JourneyModel']
 export type ReaderStep = Schemas['ReaderStepModel']
 export type Reveal = Schemas['Reveal']
 export type SceneContext = Schemas['SceneContextModel']
 export type ContextItem = Schemas['ContextItemModel']
+export type ContextSignal = Schemas['SignalModel']
+export type SceneSummaries = Schemas['SceneSummariesModel']
+export type SceneSummary = Schemas['SceneSummaryModel']
 export type ContextSettings = Schemas['ContextSettings']
 export type KeptContext = Schemas['KeptContextModel']
 export type ContextComparison = Schemas['ContextComparisonModel']
@@ -285,6 +296,7 @@ export interface AssetLink {
 
 /** A picture the author can choose for an entry or a scene, shown somewhere or nowhere. */
 export type LibraryPicture = Schemas['LibraryPictureModel']
+export type FoundPicture = Schemas['FoundPictureModel']
 export type PictureProcessing = Schemas['ProcessingModel']
 export type PictureStorage = Schemas['StorageModel']
 /** Which copy of a picture to fetch: a 256px thumbnail, a 1024px copy, or the file itself. */
@@ -651,6 +663,20 @@ export const api = {
   /** How an arc's character changes: its stages in order, each with the scene it is reached in. */
   setArcPath: (scope: Scope, planId: string, body: Schemas['SetPathRequest']) =>
     send<PlanItem>(scope, 'PUT', `/plan/${id(planId)}/path`, body),
+  /** The story's shared scales (trust, standing…), each with its levels (STY-006). */
+  scales: (scope: Scope) => get<Schemas['ScalesModel']>(scope, '/plan/scales'),
+  setScales: (scope: Scope, body: Schemas['SetScalesRequest']) =>
+    send<Schemas['ScalesModel']>(scope, 'PUT', '/plan/scales', body),
+  /** What suggesting a scene's intent would use, before anything is sent (STY-003). */
+  intentEstimate: (scope: Scope, planId: string) =>
+    get<HelpEstimate>(scope, `/plan/${id(planId)}/intent/estimate`),
+  suggestIntent: (scope: Scope, planId: string) =>
+    send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/intent/suggest`),
+  /** What suggesting bridge scenes for one unmet condition would use (STY-004). */
+  bridgeEstimate: (scope: Scope, planId: string, condition: number) =>
+    get<HelpEstimate>(scope, `/plan/${id(planId)}/bridges/estimate`, { condition }),
+  suggestBridges: (scope: Scope, planId: string, condition: number) =>
+    send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/bridges/suggest${query({ condition })}`),
   removePlanItem: (scope: Scope, planId: string, expectedRevision: number) =>
     send<Schemas['RemovedModel']>(scope, 'POST', `/plan/${id(planId)}/remove`, {
       expected_revision: expectedRevision,
@@ -833,8 +859,8 @@ export const api = {
     }),
   readerJourney: (scope: Scope) => get<ReaderJourney>(scope, '/reader'),
   /** What a reader could know after a scene; at a saved version when one is given. */
-  readerGuide: (scope: Scope, sceneId: string, viewpoint?: string, version?: number) =>
-    get<Schemas['GuideModel']>(scope, '/reader/guide', { scene: sceneId, viewpoint, version }),
+  readerGuide: (scope: Scope, sceneId: string, viewpoint?: string, version?: number, part?: GuidePart) =>
+    get<Schemas['GuideModel']>(scope, '/reader/guide', { scene: sceneId, viewpoint, version, part }),
   setSceneReveals: (scope: Scope, planId: string, reveals: Reveal[], expectedRevision: number) =>
     send<PlanItem>(scope, 'PUT', `/plan/${id(planId)}/reveals`, {
       reveals,
@@ -858,6 +884,21 @@ export const api = {
     get<KeptContext[]>(scope, `/plan/${id(planId)}/context/kept`),
   compareSceneContext: (scope: Scope, planId: string, manifestId: string) =>
     get<ContextComparison>(scope, `/plan/${id(planId)}/context/kept/${id(manifestId)}`),
+  /** The summary later scenes are given of this one (CTX-006), and any suggestion waiting. */
+  sceneSummary: (scope: Scope, planId: string) =>
+    get<SceneSummaries>(scope, `/plan/${id(planId)}/summary`),
+  writeSceneSummary: (scope: Scope, planId: string, body: string) =>
+    send<SceneSummaries>(scope, 'PUT', `/plan/${id(planId)}/summary`, {
+      body,
+    } satisfies Schemas['WriteSummaryRequest']),
+  /** Ask the assistant to suggest a summary; it is used only once kept. */
+  suggestSceneSummary: (scope: Scope, planId: string) =>
+    send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/summary/suggest`),
+  decideSceneSummary: (scope: Scope, planId: string, summaryId: string, accept: boolean, body?: string) =>
+    send<SceneSummaries>(scope, 'POST', `/plan/${id(planId)}/summary/${id(summaryId)}`, {
+      accept,
+      body: body ?? null,
+    } satisfies Schemas['DecideSummaryRequest']),
   writingIndex: (scope: Scope) => get<WritingIndex>(scope, '/texts-index'),
   rebuildWritingIndex: (scope: Scope) =>
     send<{ passages: number }>(scope, 'POST', '/texts-index/rebuild'),
@@ -871,6 +912,8 @@ export const api = {
     send<CheckRun>(scope, 'POST', `/plan/${id(planId)}/checks/runs`),
   checkRunForJob: (scope: Scope, jobId: string) =>
     get<CheckRun>(scope, `/checks/runs/by-job/${id(jobId)}`),
+  /** How often each check's findings were dismissed in this line of the story (CON-016). */
+  checkCalibration: (scope: Scope) => get<Items<CheckCalibration>>(scope, '/checks/calibration'),
   saveSceneText: (scope: Scope, planId: string, content: string, baseVersionId: string | null) =>
     send<Studio>(scope, 'PUT', `/plan/${id(planId)}/studio/text`, {
       content,
@@ -1025,6 +1068,17 @@ export const api = {
 
   validateMutation: (scope: Scope, mutationId: string) =>
     send<MutationValidation>(scope, 'POST', `/mutations/${id(mutationId)}/validate`),
+  // --- advisory findings on a proposal, and dismissing them (CON-016) --------------
+  reviewFindings: (scope: Scope, mutationId: string) =>
+    get<Items<ReviewFinding>>(scope, `/mutations/${id(mutationId)}/findings`),
+  dismissReviewFinding: (scope: Scope, mutationId: string, ask: ReviewDismissAsk) =>
+    send<Items<ReviewFinding>>(scope, 'POST', `/mutations/${id(mutationId)}/findings/dismissals`, ask),
+  undoReviewDismissal: (scope: Scope, mutationId: string, dismissalId: string) =>
+    send<Items<ReviewFinding>>(
+      scope,
+      'DELETE',
+      `/mutations/${id(mutationId)}/findings/dismissals/${id(dismissalId)}`,
+    ),
 
   /** Several keep/skip decisions in one request: all are recorded, or none. */
   decideOperations: (
@@ -1148,6 +1202,12 @@ export const api = {
     ),
   /** Every picture in the story, including those shown nowhere now. */
   pictureLibrary: (scope: Scope) => get<Schemas['PictureLibraryModel']>(scope, '/pictures'),
+  /** Pictures for some words: by name or reviewed description, then by meaning (AST-007). */
+  searchPictures: (scope: Scope, words: string) =>
+    get<Schemas['PictureSearchModel']>(scope, '/pictures/search', { q: words }),
+  /** Delete a picture's files; it must be shown nowhere first (AST-008). Cannot be undone. */
+  deletePicture: (scope: Scope, assetId: string) =>
+    send<Schemas['DeletedPictureModel']>(scope, 'POST', `/assets/${id(assetId)}/delete`),
   /** Show a picture from the library on an entry or a scene: a new link, nothing copied. */
   showPicture: (
     scope: Scope,

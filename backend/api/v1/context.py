@@ -3,28 +3,51 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import get_container
+from backend.api.v1.assistant_settings import confirmed_tokens
+from backend.api.v1.studio import JobModel, _job
 from backend.container import Container
 from backend.domain.context import (
-    SECTION_TITLES,
+    SHOWN_SECTION_TITLES,
     ContextComparison,
     ContextItem,
     ContextSettings,
+    SceneSummary,
     picture_record,
 )
 from backend.domain.identity import AccessScope
 from backend.services.context_service import ContextService, SceneContext
+from backend.services.scene_summaries import (
+    MAX_SUMMARY_WORDS,
+    SceneSummaryService,
+    SummaryView,
+)
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["context"])
 
 
 def get_context_service(container: Container = Depends(get_container)) -> ContextService:
     return container.context_service  # type: ignore[no-any-return]
+
+
+def get_summaries(container: Container = Depends(get_container)) -> SceneSummaryService:
+    return container.scene_summaries  # type: ignore[no-any-return]
+
+
+class SignalModel(BaseModel):
+    """One part of why an item ranks where it does (CTX-007)."""
+
+    # importance, continuity, distance, diversity, meaning, thread, out of date
+    name: str
+    # How much it moved the item's score; an item's signals add up to its score.
+    effect: float
+    note: str
 
 
 class ContextPictureModel(BaseModel):
@@ -56,6 +79,7 @@ class ContextItemModel(BaseModel):
     hard: bool
     pinned: bool
     picture: ContextPictureModel | None = None
+    signals: list[SignalModel] = Field(default_factory=list)
 
 
 class LeftOutModel(BaseModel):
@@ -70,6 +94,11 @@ class IndexStatusModel(BaseModel):
     behind: list[str]
     names_as_of: int | None = None
     semantic: bool
+    # Texts changed and not yet read into the index (CTX-005), since how many seconds,
+    # and how many of them failed at least once and wait to be tried again.
+    waiting: int = 0
+    waiting_seconds: float | None = None
+    failing: int = 0
 
 
 class SceneContextModel(BaseModel):
@@ -154,7 +183,7 @@ def _item(item: ContextItem, pinned: set[str]) -> ContextItemModel:
     return ContextItemModel(
         key=item.key,
         section=item.section.value,
-        section_title=SECTION_TITLES[item.section],
+        section_title=SHOWN_SECTION_TITLES[item.section],
         text=item.text,
         reason=item.reason,
         authority=item.authority,
@@ -166,6 +195,10 @@ def _item(item: ContextItem, pinned: set[str]) -> ContextItemModel:
         hard=item.hard,
         pinned=item.key in pinned,
         picture=_picture(item),
+        signals=[
+            SignalModel(name=signal.name, effect=round(signal.effect, 3), note=signal.note)
+            for signal in item.signals
+        ],
     )
 
 
@@ -179,6 +212,21 @@ def _picture(item: ContextItem) -> ContextPictureModel | None:
         choice=record["choice"],
         representation=record["representation"],
         representation_words=record["representation_words"],
+    )
+
+
+def _index(index: Any) -> IndexStatusModel:
+    return IndexStatusModel(
+        texts=index.texts,
+        indexed=index.indexed,
+        behind=index.behind,
+        names_as_of=index.names_as_of,
+        semantic=index.semantic,
+        waiting=index.waiting,
+        waiting_seconds=round(index.waiting_seconds, 1)
+        if index.waiting_seconds is not None
+        else None,
+        failing=index.failing,
     )
 
 
@@ -198,15 +246,7 @@ def _model(context: SceneContext) -> SceneContextModel:
             LeftOutModel(item=_item(omission.item, manifest.pinned), reason=omission.reason.value)
             for omission in manifest.left_out
         ],
-        index=IndexStatusModel(
-            texts=index.texts,
-            indexed=index.indexed,
-            behind=index.behind,
-            names_as_of=index.names_as_of,
-            semantic=index.semantic,
-        )
-        if index is not None
-        else None,
+        index=_index(index) if index is not None else None,
         rendered=manifest.rendered,
     )
 
@@ -244,7 +284,7 @@ def _comparison(result: ContextComparison) -> ContextComparisonModel:
         removed=[
             RemovedContextModel(
                 key=then.key,
-                section_title=SECTION_TITLES[then.section] if then.section else None,
+                section_title=SHOWN_SECTION_TITLES[then.section] if then.section else None,
                 text=then.text,
                 reason=then.reason,
                 words=then.words,
@@ -258,7 +298,7 @@ def _comparison(result: ContextComparison) -> ContextComparisonModel:
                 item=_item(change.now, set()),
                 text_then=change.then.text,
                 reason_then=change.then.reason,
-                section_title_then=SECTION_TITLES[change.then.section]
+                section_title_then=SHOWN_SECTION_TITLES[change.then.section]
                 if change.then.section
                 else None,
                 what=[_WHAT[what] for what in change.what],
@@ -336,13 +376,7 @@ async def writing_index(
     container: Container = Depends(get_container),
 ) -> IndexStatusModel:
     status = await container.passage_index.status(scope.workspace_id or "", project_id)
-    return IndexStatusModel(
-        texts=status.texts,
-        indexed=status.indexed,
-        behind=status.behind,
-        names_as_of=status.names_as_of,
-        semantic=status.semantic,
-    )
+    return _index(status)
 
 
 @router.post("/texts-index/rebuild")
@@ -357,3 +391,135 @@ async def rebuild_writing_index(
     """
     count = await container.passage_index.rebuild(scope.workspace_id or "", project_id)
     return RebuildResult(passages=count)
+
+
+# ------------------------------------------------------------ summaries (CTX-006)
+
+
+class SceneSummaryModel(BaseModel):
+    id: str
+    body: str
+    # proposed, accepted, rejected, replaced
+    state: str
+    # author, model (suggested by the assistant), model_corrected (suggested, then corrected)
+    origin: str
+    version_id: str
+    created_at: datetime
+    model: str | None = None
+    prompt_version: str | None = None
+    job_id: str | None = None
+    decided_at: datetime | None = None
+
+
+class SceneSummariesModel(BaseModel):
+    plan_id: str
+    has_prose: bool
+    version_id: str | None = None
+    version_number: int | None = None
+    # What the plan card says happens, used for this scene when nothing is kept.
+    plan_card: str | None = None
+    kept: SceneSummaryModel | None = None
+    # The kept summary is of an earlier version of the prose.
+    kept_out_of_date: bool = False
+    suggested: list[SceneSummaryModel] = Field(default_factory=list)
+    max_words: int = MAX_SUMMARY_WORDS
+
+
+class WriteSummaryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    body: str = Field(min_length=1, max_length=2000)
+
+
+class DecideSummaryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # Keep the suggestion, or turn it down.
+    accept: bool
+    # The author's corrected words, when keeping it with changes.
+    body: str | None = Field(default=None, max_length=2000)
+
+
+def _summary(summary: SceneSummary) -> SceneSummaryModel:
+    return SceneSummaryModel(
+        id=summary.id,
+        body=summary.body,
+        state=summary.state.value,
+        origin=summary.origin.value,
+        version_id=summary.version_id,
+        created_at=summary.created_at,
+        model=summary.model,
+        prompt_version=summary.prompt_version,
+        job_id=summary.job_id,
+        decided_at=summary.decided_at,
+    )
+
+
+def _summaries(view: SummaryView) -> SceneSummariesModel:
+    return SceneSummariesModel(
+        plan_id=view.plan_id,
+        has_prose=view.has_prose,
+        version_id=view.version_id,
+        version_number=view.version_number,
+        plan_card=view.plan_card,
+        kept=_summary(view.kept) if view.kept is not None else None,
+        kept_out_of_date=view.kept_stale,
+        suggested=[_summary(item) for item in view.proposed],
+    )
+
+
+@router.get("/plan/{plan_id}/summary")
+async def scene_summary(
+    project_id: str,
+    plan_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    summaries: SceneSummaryService = Depends(get_summaries),
+) -> SceneSummariesModel:
+    """The summary later scenes are given of this one, and any suggestion waiting."""
+    view = await summaries.for_scene(scope, scope.workspace_id or "", project_id, plan_id)
+    return _summaries(view)
+
+
+@router.put("/plan/{plan_id}/summary")
+async def write_scene_summary(
+    project_id: str,
+    plan_id: str,
+    body: WriteSummaryRequest,
+    scope: AccessScope = Depends(require_project_scope),
+    summaries: SceneSummaryService = Depends(get_summaries),
+) -> SceneSummariesModel:
+    """Keep the author's own summary of the scene as it is written now."""
+    workspace_id = scope.workspace_id or ""
+    await summaries.write(scope, workspace_id, project_id, plan_id, body.body)
+    return _summaries(await summaries.for_scene(scope, workspace_id, project_id, plan_id))
+
+
+@router.post("/plan/{plan_id}/summary/suggest", status_code=status.HTTP_202_ACCEPTED)
+async def suggest_scene_summary(
+    project_id: str,
+    plan_id: str,
+    scope: AccessScope = Depends(require_project_scope),
+    summaries: SceneSummaryService = Depends(get_summaries),
+    confirmed: int | None = Depends(confirmed_tokens),
+) -> JobModel:
+    """Ask the assistant to suggest a summary of the scene's prose; nothing is used until
+    the author keeps it."""
+    job = await summaries.ask(
+        scope, scope.workspace_id or "", project_id, plan_id, confirmed_tokens=confirmed
+    )
+    return _job(job)
+
+
+@router.post("/plan/{plan_id}/summary/{summary_id}")
+async def decide_scene_summary(
+    project_id: str,
+    plan_id: str,
+    summary_id: str,
+    body: DecideSummaryRequest,
+    scope: AccessScope = Depends(require_project_scope),
+    summaries: SceneSummaryService = Depends(get_summaries),
+) -> SceneSummariesModel:
+    """Keep a suggested summary (as it is, or corrected), or turn it down."""
+    workspace_id = scope.workspace_id or ""
+    await summaries.decide(
+        scope, workspace_id, project_id, plan_id, summary_id, accept=body.accept, body=body.body
+    )
+    return _summaries(await summaries.for_scene(scope, workspace_id, project_id, plan_id))

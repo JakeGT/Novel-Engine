@@ -32,6 +32,7 @@ from backend.domain.embedding import (
     SearchGate,
     TextInput,
     VectorRow,
+    metadata_filter,
 )
 
 logger = logging.getLogger(__name__)
@@ -207,8 +208,12 @@ class PgVectorStore:
         workspace_id: str,
         project_id: str,
         n_results: int = 5,
+        where: dict[str, Sequence[str]] | None = None,
     ) -> list[dict[str, Any]]:
+        """The nearest documents; ``where`` filters them by metadata in the same scan
+        (CTX-004: which text, and its kind)."""
         self._require_supported_dimension()
+        metadata = metadata_filter(where)
         active = self.searchable()
         if active is None or self._embedder is None or not query_text.strip():
             return []
@@ -222,7 +227,7 @@ class PgVectorStore:
             workspace_id=workspace_id,
             project_id=project_id,
             # Documents only: pictures and their captions are searched by media search.
-            gate=SearchGate(assets=False),
+            gate=SearchGate(assets=False, metadata=metadata),
             limit=n_results,
         )
         return [

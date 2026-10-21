@@ -6,7 +6,7 @@ export pnpm_config_store_dir = $(PNPM_STORE_DIR)
 
 TYPE_CHECK_TARGETS = backend
 
-.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify verify seed reset-dev diagnostics retention media reindex reindex-refresh reindex-status reindex-activate reindex-rollback reindex-cancel eval-media eval eval-model reconcile project watch archive audit api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check secret-scan frontend-install frontend-api-check frontend-lint frontend-typecheck frontend-test frontend-build frontend-e2e-install e2e check
+.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify verify seed reset-dev diagnostics retention media read-models read-models-verify reindex reindex-refresh reindex-status reindex-activate reindex-rollback reindex-cancel eval-media eval eval-model reconcile project watch archive audit api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check secret-scan frontend-install frontend-api-check frontend-lint frontend-typecheck frontend-test frontend-build frontend-e2e-install e2e check
 
 help:
 	@echo "install             Install runtime Python dependencies"
@@ -23,6 +23,8 @@ help:
 	@echo "diagnostics         Print a redacted diagnostics/support bundle"
 	@echo "retention           Purge expired sign-ins and assistant leftovers (RETENTION_ARGS='--days 30 --dry-run')"
 	@echo "media               Picture upkeep: status, backfill, reconcile, copies (MEDIA_ARGS='status')"
+	@echo "read-models         The story's ready views: status, build or forget (READ_MODELS_ARGS=build)"
+	@echo "read-models-verify  Rebuild each ready view from the story's history and compare (READ_MODELS_ARGS=--repair)"
 	@echo "reindex             Build a new search index with the configured model (REINDEX_ARGS='--from-texts')"
 	@echo "reindex-refresh     Bring the search index in use up to date (after a restore, say)"
 	@echo "reindex-status      Show the search index in use, any build, and what is missing"
@@ -98,6 +100,12 @@ retention:
 
 media:
 	uv run --locked python -m backend.devtools.media $(or $(MEDIA_ARGS),status)
+
+read-models:
+	uv run --locked python -m backend.devtools.read_models $(or $(READ_MODELS_ARGS),status)
+
+read-models-verify:
+	uv run --locked python -m backend.devtools.read_models verify $(READ_MODELS_ARGS)
 
 reindex:
 	uv run --locked python -m backend.devtools.embeddings build $(REINDEX_ARGS)

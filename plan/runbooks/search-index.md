@@ -78,3 +78,38 @@ lists `search_index` among its reasons.
 Checked against a disposable database with the stand-in model (2026-10-20): status, build,
 activate, rollback, build with `--activate`, cancel and refresh. Not yet run with a real model or
 on the hosted stack.
+
+## The passage index waiting list (CTX-005)
+
+Saving a text puts it on `passage_index_waiting`; the background worker (the same loop that
+keeps the graph up to date, every two seconds) reads it into the passage index. Nothing here
+can lose a text: the index is derived and can always be rebuilt.
+
+**How you notice.** The scene's context says "N texts you changed are still being read in…"
+for more than a minute or two, or "could not be read and will be tried again";
+`GET /api/v1/projects/{id}/texts-index` shows `waiting`, `waiting_seconds` and `failing`;
+`passage_index_deliveries_total{outcome="failed"}` rises; logs show `passages.index_failed`
+or `passages.worker.poll_error` (error type only, never the words).
+
+**What to check.**
+
+```sql
+SELECT workspace_id, project_id, count(*) AS waiting,
+       now() - min(first_requested_at) AS oldest,
+       count(*) FILTER (WHERE attempts > 0) AS failing,
+       max(attempts) AS most_attempts
+FROM passage_index_waiting GROUP BY 1, 2 ORDER BY oldest DESC;
+SELECT source_id, attempts, last_error, claimed_until FROM passage_index_waiting
+WHERE attempts > 0 ORDER BY attempts DESC LIMIT 20;
+```
+
+Rows waiting with no failures: is the API process running its worker (`app.startup` logged,
+not a command-line tool)? Rows failing: `last_error` is the error's type; a failure waits 5 s,
+doubling to 10 minutes, so a fixed cause clears by itself.
+
+**What to do.** Fix the cause (database, embedder settings — see above). To read everything now,
+`uv run python -m backend.devtools.reindex --workspace W --project P` rebuilds a story's index directly; rows still
+waiting are read again harmlessly. Deleting a row is safe (the next status read asks again
+for any text found behind). A claim held by a stopped server is let go after 120 seconds.
+
+**How to confirm.** `waiting` returns to 0 and the context dialog's note goes away by itself.

@@ -101,7 +101,7 @@ async def test_the_reference_world_has_every_layer(world) -> None:
     draft = await world.studio.get_draft(**P, draft_id=DRAFT)
     assert draft.status == "kept" and draft.kept_version_id == PROSE_V2
     saved = await world.manifests.get(**P, manifest_id=MANIFEST)
-    assert saved.policy_version == "scene-draft/1" and saved.plan_id == SCENE_DUSK
+    assert saved.policy_version == "scene-draft/2" and saved.plan_id == SCENE_DUSK
 
     # "The pilot" means Mara only from the Saltkeep scene on.
     (answer,) = [b for b in await world.sources.list_bindings(**P) if b.id == NAME_ANSWER]

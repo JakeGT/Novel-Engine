@@ -783,6 +783,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/assets/{asset_id}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete Picture
+         * @description Delete a picture's files before its story is deleted (AST-008). Owners and
+         *     administrators only, and only once it is shown nowhere. The record stays as a
+         *     tombstone; the files, their smaller copies and what search had of them are gone.
+         */
+        post: operations["delete_picture_api_v1_projects__project_id__assets__asset_id__delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/assets/{asset_id}/lifecycle": {
         parameters: {
             query?: never;
@@ -1530,6 +1552,27 @@ export interface paths {
         put?: never;
         /** Character Questions */
         post: operations["character_questions_api_v1_projects__project_id__characters__entity_id__questions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/checks/calibration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Calibration
+         * @description How often each check's findings were dismissed in this line of the story: a note
+         *     for the author; nothing about the checks changes because of it.
+         */
+        get: operations["calibration_api_v1_projects__project_id__checks_calibration_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2468,6 +2511,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/findings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Review Findings
+         * @description The advisory findings on these changes now, and which the author dismissed.
+         */
+        get: operations["review_findings_api_v1_projects__project_id__mutations__mutation_id__findings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/findings/dismissals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Review Finding
+         * @description Dismiss an advisory finding on these changes, with a reason. Nothing else changes.
+         */
+        post: operations["dismiss_review_finding_api_v1_projects__project_id__mutations__mutation_id__findings_dismissals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/mutations/{mutation_id}/findings/dismissals/{dismissal_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Undo Review Dismissal
+         * @description Bring a dismissed finding back. The dismissal stays on record, withdrawn.
+         */
+        delete: operations["undo_review_dismissal_api_v1_projects__project_id__mutations__mutation_id__findings_dismissals__dismissal_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/mutations/{mutation_id}/impact": {
         parameters: {
             query?: never;
@@ -2751,6 +2854,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/pictures/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Pictures
+         * @description Pictures of this line of the story for some words: by their name or reviewed
+         *     description first, then by meaning when that is set up (AST-007).
+         */
+        get: operations["search_pictures_api_v1_projects__project_id__pictures_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/pictures/{asset_id}": {
         parameters: {
             query?: never;
@@ -2871,6 +2995,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/plan/scales": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Scales
+         * @description The story's shared scales (trust, standing…), each with its levels (STY-006).
+         */
+        get: operations["get_scales_api_v1_projects__project_id__plan_scales_get"];
+        /**
+         * Set Scales
+         * @description Replace the story's shared scales. Shared by every line of the story.
+         */
+        put: operations["set_scales_api_v1_projects__project_id__plan_scales_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/plan/{plan_id}": {
         parameters: {
             query?: never;
@@ -2886,6 +3034,47 @@ export interface paths {
         head?: never;
         /** Change Plan Item */
         patch: operations["change_plan_item_api_v1_projects__project_id__plan__plan_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/bridges/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Bridge Estimate
+         * @description What suggesting bridge scenes for one unmet condition would use.
+         */
+        get: operations["bridge_estimate_api_v1_projects__project_id__plan__plan_id__bridges_estimate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/bridges/suggest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suggest Bridges
+         * @description Suggest one or two scenes to come before this one and bring about what it needs
+         *     first, as a plan change for review.
+         */
+        post: operations["suggest_bridges_api_v1_projects__project_id__plan__plan_id__bridges_suggest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/projects/{project_id}/plan/{plan_id}/checks/runs": {
@@ -2985,6 +3174,48 @@ export interface paths {
         get: operations["compare_scene_context_api_v1_projects__project_id__plan__plan_id__context_kept__manifest_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/intent/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Intent Estimate
+         * @description What suggesting this scene's intent would use, before anything is sent. A read,
+         *     so no CSRF token; only someone who may change the plan is answered.
+         */
+        get: operations["intent_estimate_api_v1_projects__project_id__plan__plan_id__intent_estimate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/intent/suggest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suggest Intent
+         * @description Suggest what the viewpoint character wants, what is in the way and how it ends,
+         *     from the plan card and the prose, as a plan change for review.
+         */
+        post: operations["suggest_intent_api_v1_projects__project_id__plan__plan_id__intent_suggest_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3275,6 +3506,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Scene Summary
+         * @description The summary later scenes are given of this one, and any suggestion waiting.
+         */
+        get: operations["scene_summary_api_v1_projects__project_id__plan__plan_id__summary_get"];
+        /**
+         * Write Scene Summary
+         * @description Keep the author's own summary of the scene as it is written now.
+         */
+        put: operations["write_scene_summary_api_v1_projects__project_id__plan__plan_id__summary_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/summary/suggest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suggest Scene Summary
+         * @description Ask the assistant to suggest a summary of the scene's prose; nothing is used until
+         *     the author keeps it.
+         */
+        post: operations["suggest_scene_summary_api_v1_projects__project_id__plan__plan_id__summary_suggest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/summary/{summary_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decide Scene Summary
+         * @description Keep a suggested summary (as it is, or corrected), or turn it down.
+         */
+        post: operations["decide_scene_summary_api_v1_projects__project_id__plan__plan_id__summary__summary_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/plan/{plan_id}/when": {
         parameters: {
             query?: never;
@@ -3364,6 +3660,8 @@ export interface paths {
          * @description The story bible a reader could see after a scene, as the story stood at a version.
          *
          *     Without ``version`` it is the latest one; the guide always names the version it shows.
+         *     ``part`` makes one part of it on its own: the characters, the places, a timeline of
+         *     the scenes read so far and what happened in them, or a recap scene by scene.
          */
         get: operations["reader_guide_api_v1_projects__project_id__reader_guide_get"];
         put?: never;
@@ -3614,6 +3912,124 @@ export interface paths {
         put?: never;
         /** Publish Schema Version */
         post: operations["publish_schema_version_api_v1_projects__project_id__schemas__version_id__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/story-views": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Story Views
+         * @description How far each ready view of this line of the story is, and whether reads use it.
+         */
+        get: operations["story_views_api_v1_projects__project_id__story_views_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/story-views/dependents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Dependents
+         * @description What leans on a record (``entity:…``, ``fact:…``, ``event:…``, ``belief:…`` or
+         *     ``plan_item:…``), nearest first.
+         */
+        get: operations["dependents_api_v1_projects__project_id__story_views_dependents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/story-views/disclosures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Disclosures
+         * @description The scenes that show or hint at a fact, in reading order.
+         */
+        get: operations["disclosures_api_v1_projects__project_id__story_views_disclosures_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/story-views/holders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Holders
+         * @description Who holds a thing, or what someone holds, at a moment of story time.
+         */
+        get: operations["holders_api_v1_projects__project_id__story_views_holders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/story-views/relationships": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Relationships */
+        get: operations["relationships_api_v1_projects__project_id__story_views_relationships_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/story-views/where": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Where
+         * @description Where someone or something is at a moment of story time (or anywhere, without ``at``).
+         */
+        get: operations["where_api_v1_projects__project_id__story_views_where_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4597,8 +5013,12 @@ export interface components {
         ArcStage: {
             /** Fact Id */
             fact_id?: string | null;
+            /** Level */
+            level?: string | null;
             /** Name */
             name: string;
+            /** Scale Id */
+            scale_id?: string | null;
             /** Scene Id */
             scene_id?: string | null;
         };
@@ -4610,8 +5030,12 @@ export interface components {
             fact_id: string | null;
             /** Index */
             index: number;
+            /** Level */
+            level?: string | null;
             /** Name */
             name: string;
+            /** Scale Id */
+            scale_id?: string | null;
             /** Scene Id */
             scene_id: string | null;
             /** Scene Number */
@@ -4832,6 +5256,11 @@ export interface components {
         };
         /** AuditCheckModel */
         AuditCheckModel: {
+            /**
+             * Came Back
+             * @default false
+             */
+            came_back: boolean;
             /** Code */
             code: string;
             dismissal?: components["schemas"]["DismissalModel"] | null;
@@ -5064,6 +5493,33 @@ export interface components {
              * @default
              */
             when: string;
+        };
+        /** CalibrationList */
+        CalibrationList: {
+            /** Items */
+            items: components["schemas"]["CalibrationModel"][];
+        };
+        /** CalibrationModel */
+        CalibrationModel: {
+            /** Accepted */
+            accepted: number;
+            /** Code */
+            code: string;
+            /** Dismissed */
+            dismissed: number;
+            /** Found */
+            found: number;
+            /** Note */
+            note: string;
+            /** Rate */
+            rate?: number | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "check" | "note";
+            /** Words */
+            words: string;
         };
         /** CanonEntityListResponse */
         CanonEntityListResponse: {
@@ -5375,6 +5831,11 @@ export interface components {
         };
         /** CheckModel */
         CheckModel: {
+            /**
+             * Came Back
+             * @default false
+             */
+            came_back: boolean;
             /** Code */
             code: string;
             dismissal?: components["schemas"]["DismissalModel"] | null;
@@ -5402,6 +5863,18 @@ export interface components {
          * @enum {string}
          */
         CheckProfile: "on_request" | "balanced" | "thorough";
+        /**
+         * CheckWorkModel
+         * @description One named check that needs no model, in one scene of a run.
+         */
+        CheckWorkModel: {
+            /** Name */
+            name: string;
+            /** Reused */
+            reused: boolean;
+            /** Words */
+            words: string;
+        };
         /**
          * CheckingModel
          * @description How much checking runs on its own in this story, and what it has used here.
@@ -5630,6 +6103,8 @@ export interface components {
             section: string;
             /** Section Title */
             section_title: string;
+            /** Signals */
+            signals?: components["schemas"]["SignalModel"][];
             /** Text */
             text: string;
             /** Words */
@@ -5995,6 +6470,13 @@ export interface components {
          * @enum {string}
          */
         CredentialProvider: "openrouter" | "anthropic" | "openai" | "google" | "xai" | "mistral" | "deepseek";
+        /** DecideSummaryRequest */
+        DecideSummaryRequest: {
+            /** Accept */
+            accept: boolean;
+            /** Body */
+            body?: string | null;
+        };
         /** DecimalObject */
         DecimalObject: {
             /**
@@ -6004,6 +6486,21 @@ export interface components {
             kind: "decimal";
             /** Value */
             value: number | string;
+        };
+        /** DeletedPictureModel */
+        DeletedPictureModel: {
+            /** Asset Id */
+            asset_id: string;
+            /** Bytes Freed */
+            bytes_freed: number;
+            /** Copies Removed */
+            copies_removed: number;
+            /** Files Removed */
+            files_removed: number;
+            /** Lifecycle */
+            lifecycle: string;
+            /** Versions */
+            versions: number;
         };
         /** DependentModel */
         DependentModel: {
@@ -6038,6 +6535,24 @@ export interface components {
             title: string;
             /** Version Id */
             version_id?: string | null;
+        };
+        /** DependentsModel */
+        DependentsModel: {
+            /**
+             * Answered From
+             * @enum {string}
+             */
+            answered_from: "view" | "worked_out";
+            /** Cut */
+            cut: boolean;
+            /** Dependents */
+            dependents: components["schemas"]["LeaningRecordModel"][];
+            /** Latest Version */
+            latest_version: number;
+            /** Record */
+            record: string;
+            /** Version */
+            version: number;
         };
         /** DescribeEstimateModel */
         DescribeEstimateModel: {
@@ -6085,6 +6600,29 @@ export interface components {
             kind: string;
             /** Reason */
             reason: string;
+        };
+        /** DisclosuresModel */
+        DisclosuresModel: {
+            /**
+             * Answered From
+             * @enum {string}
+             */
+            answered_from: "view" | "worked_out";
+            /**
+             * Cut
+             * @default false
+             */
+            cut: boolean;
+            /** First Shown */
+            first_shown?: number | null;
+            /** Latest Version */
+            latest_version: number;
+            /** Rows */
+            rows: {
+                [key: string]: unknown;
+            }[];
+            /** Version */
+            version: number;
         };
         /**
          * DismissReason
@@ -6667,6 +7205,44 @@ export interface components {
          * @enum {string}
          */
         FactVisibility: "ordinary" | "common" | "secret";
+        /** FoundPictureModel */
+        FoundPictureModel: {
+            /** Asset Id */
+            asset_id: string;
+            /** Byte Length */
+            byte_length: number;
+            /** Content Type */
+            content_type: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Has Thumbnail
+             * @default false
+             */
+            has_thumbnail: boolean;
+            /** Matched */
+            matched: string;
+            /** Name */
+            name: string;
+            /** Processing */
+            processing?: ("queued" | "processing" | "ready" | "failed") | null;
+            /** Processing Message */
+            processing_message?: string | null;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "words" | "meaning";
+            /** Score */
+            score?: number | null;
+            /** Shown */
+            shown: number;
+            /** Version Id */
+            version_id: string;
+        };
         /** GraphUpdateResponse */
         GraphUpdateResponse: {
             /** Edges */
@@ -6693,6 +7269,12 @@ export interface components {
             leaves_out: string;
             /** Markdown */
             markdown: string;
+            /**
+             * Part
+             * @default everything
+             * @enum {string}
+             */
+            part: "everything" | "characters" | "places" | "timeline" | "recap";
             /** Rules */
             rules: number;
             /** Scene Count */
@@ -6727,6 +7309,13 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HelpEstimateModel */
+        HelpEstimateModel: {
+            /** Reads Prose */
+            reads_prose: boolean;
+            /** Total Tokens */
+            total_tokens: number;
         };
         /** HowLongModel */
         HowLongModel: {
@@ -6764,6 +7353,11 @@ export interface components {
         IndexStatusModel: {
             /** Behind */
             behind: string[];
+            /**
+             * Failing
+             * @default 0
+             */
+            failing: number;
             /** Indexed */
             indexed: number;
             /** Names As Of */
@@ -6772,6 +7366,13 @@ export interface components {
             semantic: boolean;
             /** Texts */
             texts: number;
+            /**
+             * Waiting
+             * @default 0
+             */
+            waiting: number;
+            /** Waiting Seconds */
+            waiting_seconds?: number | null;
         };
         /**
          * InferRequest
@@ -7051,6 +7652,17 @@ export interface components {
              * @enum {string}
              */
             subject_kind: "event" | "fact";
+        };
+        /** LeaningRecordModel */
+        LeaningRecordModel: {
+            /** Depth */
+            depth: number;
+            /** Record */
+            record: string;
+            /** Via */
+            via: string;
+            /** Why */
+            why: string;
         };
         /**
          * LearnedModel
@@ -7655,6 +8267,8 @@ export interface components {
             open: components["schemas"]["OpenItemModel"][];
             /** Promises */
             promises?: components["schemas"]["PromiseModel"][];
+            /** Scales */
+            scales?: components["schemas"]["ScaleProgressModel"][];
             /** Threads */
             threads?: components["schemas"]["ThreadProgressModel"][];
         };
@@ -7781,6 +8395,15 @@ export interface components {
             /** Width */
             width?: number | null;
         };
+        /** PictureSearchModel */
+        PictureSearchModel: {
+            /** By Meaning */
+            by_meaning: boolean;
+            /** Items */
+            items: components["schemas"]["FoundPictureModel"][];
+            /** Note */
+            note?: string | null;
+        };
         /** PictureVersionModel */
         PictureVersionModel: {
             /** Attribution */
@@ -7826,8 +8449,12 @@ export interface components {
         PlanBase: {
             /** Advances */
             advances?: string[];
+            /** Intent */
+            intent?: string | null;
             /** Pays Off */
             pays_off?: string[];
+            /** Position */
+            position?: number | null;
             /** Refs */
             refs?: components["schemas"]["PlanRef"][];
             /** Sets Up */
@@ -8551,6 +9178,61 @@ export interface components {
             /** Note */
             note?: string | null;
         };
+        /** ReviewDismissRequest */
+        ReviewDismissRequest: {
+            /** Key */
+            key: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            reason: components["schemas"]["DismissReason"];
+        };
+        /** ReviewDismissalModel */
+        ReviewDismissalModel: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            reason: components["schemas"]["DismissReason"];
+        };
+        /** ReviewFindingList */
+        ReviewFindingList: {
+            /** Items */
+            items: components["schemas"]["ReviewFindingModel"][];
+        };
+        /** ReviewFindingModel */
+        ReviewFindingModel: {
+            /**
+             * Came Back
+             * @default false
+             */
+            came_back: boolean;
+            /** Code */
+            code: string;
+            dismissal?: components["schemas"]["ReviewDismissalModel"] | null;
+            /** Key */
+            key: string;
+            /** Message */
+            message: string;
+            /** Ordinal */
+            ordinal: number;
+            /**
+             * Severity
+             * @default advisory
+             * @constant
+             */
+            severity: "advisory";
+        };
         /** ReviewNoteRequest */
         ReviewNoteRequest: {
             /** Note */
@@ -8728,6 +9410,13 @@ export interface components {
         RuleStatus: "on" | "paused";
         /** RunFindingModel */
         RunFindingModel: {
+            /**
+             * Came Back
+             * @default false
+             */
+            came_back: boolean;
+            /** Check */
+            check?: string | null;
             /** Check Pass */
             check_pass?: string | null;
             /** Code */
@@ -8760,7 +9449,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "open" | "dismissed" | "fixed";
+            status: "open" | "accepted" | "dismissed" | "superseded" | "fixed";
         };
         /** RunList */
         RunList: {
@@ -8769,6 +9458,13 @@ export interface components {
         };
         /** RunModel */
         RunModel: {
+            /**
+             * Coverage
+             * @default {}
+             */
+            coverage: {
+                [key: string]: unknown;
+            };
             /** Created At */
             created_at: string | null;
             /** Findings */
@@ -8786,6 +9482,13 @@ export interface components {
             passes: string[];
             /** Plan Id */
             plan_id: string | null;
+            /**
+             * Profile
+             * @default {}
+             */
+            profile: {
+                [key: string]: string;
+            };
             /** Scenes */
             scenes: components["schemas"]["RunSceneModel"][];
             /**
@@ -8804,6 +9507,16 @@ export interface components {
         };
         /** RunSceneModel */
         RunSceneModel: {
+            /**
+             * Accepted
+             * @default 0
+             */
+            accepted: number;
+            /**
+             * Checks
+             * @default []
+             */
+            checks: components["schemas"]["CheckWorkModel"][];
             /** Dismissed */
             dismissed: number;
             /** Draft Id */
@@ -8822,6 +9535,11 @@ export interface components {
             source_id?: string | null;
             /** Stale */
             stale: boolean;
+            /**
+             * Superseded
+             * @default 0
+             */
+            superseded: number;
             /** Title */
             title: string;
             /** Version Id */
@@ -8843,6 +9561,43 @@ export interface components {
             base_version_id?: string | null;
             /** Content */
             content: string;
+        };
+        /** ScaleProgressModel */
+        ScaleProgressModel: {
+            /** Rows */
+            rows: components["schemas"]["ScaleRowModel"][];
+            scale: components["schemas"]["StateScale"];
+        };
+        /** ScaleRowModel */
+        ScaleRowModel: {
+            /** About */
+            about: string[];
+            /** Arc Id */
+            arc_id: string;
+            /** Start */
+            start: string | null;
+            /** Steps */
+            steps: components["schemas"]["ScaleStepModel"][];
+            /** Target */
+            target: string | null;
+        };
+        /** ScaleStepModel */
+        ScaleStepModel: {
+            /** Level */
+            level: string;
+            /** Scene Id */
+            scene_id: string;
+            /** Scene Number */
+            scene_number: number;
+            /** Toward */
+            toward?: string | null;
+        };
+        /** ScalesModel */
+        ScalesModel: {
+            /** Scales */
+            scales: components["schemas"]["StateScale"][];
+            /** Version */
+            version: number;
         };
         /**
          * SceneCondition
@@ -8903,6 +9658,58 @@ export interface components {
             obstacle: string;
             /** Outcome */
             outcome?: ("yes" | "no" | "yes_but" | "no_and") | null;
+        };
+        /** SceneSummariesModel */
+        SceneSummariesModel: {
+            /** Has Prose */
+            has_prose: boolean;
+            kept?: components["schemas"]["SceneSummaryModel"] | null;
+            /**
+             * Kept Out Of Date
+             * @default false
+             */
+            kept_out_of_date: boolean;
+            /**
+             * Max Words
+             * @default 120
+             */
+            max_words: number;
+            /** Plan Card */
+            plan_card?: string | null;
+            /** Plan Id */
+            plan_id: string;
+            /** Suggested */
+            suggested?: components["schemas"]["SceneSummaryModel"][];
+            /** Version Id */
+            version_id?: string | null;
+            /** Version Number */
+            version_number?: number | null;
+        };
+        /** SceneSummaryModel */
+        SceneSummaryModel: {
+            /** Body */
+            body: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Id */
+            id: string;
+            /** Job Id */
+            job_id?: string | null;
+            /** Model */
+            model?: string | null;
+            /** Origin */
+            origin: string;
+            /** Prompt Version */
+            prompt_version?: string | null;
+            /** State */
+            state: string;
+            /** Version Id */
+            version_id: string;
         };
         /** SchemaDefinitionRequest */
         SchemaDefinitionRequest: {
@@ -9105,6 +9912,13 @@ export interface components {
         SetRoleRequest: {
             role: components["schemas"]["Role"];
         };
+        /** SetScalesRequest */
+        SetScalesRequest: {
+            /** Expected Version */
+            expected_version: number;
+            /** Scales */
+            scales: components["schemas"]["StateScale"][];
+        };
         /** SetSceneTimeRequest */
         SetSceneTimeRequest: {
             /** Expected Revision */
@@ -9137,6 +9951,18 @@ export interface components {
             main_reveal: boolean;
         };
         /**
+         * SignalModel
+         * @description One part of why an item ranks where it does (CTX-007).
+         */
+        SignalModel: {
+            /** Effect */
+            effect: number;
+            /** Name */
+            name: string;
+            /** Note */
+            note: string;
+        };
+        /**
          * SourceKind
          * @enum {string}
          */
@@ -9155,6 +9981,30 @@ export interface components {
             description?: string | null;
             /** Name */
             name: string;
+        };
+        /** StateScale */
+        StateScale: {
+            /**
+             * About
+             * @default
+             */
+            about: string;
+            /** Id */
+            id: string;
+            /** Levels */
+            levels: string[];
+            /** Name */
+            name: string;
+            /**
+             * One Step
+             * @default false
+             */
+            one_step: boolean;
+            /**
+             * Ordered
+             * @default true
+             */
+            ordered: boolean;
         };
         /** StorageModel */
         StorageModel: {
@@ -9562,6 +10412,62 @@ export interface components {
          */
         Verdict: "is" | "is_not" | "ignore" | "suggested";
         /**
+         * ViewAnswerModel
+         * @description Rows of one view of the story. ``answered_from`` is ``view`` when the ready view
+         *     answered and ``worked_out`` when it was worked out on read (the view was missing,
+         *     behind, or not yet verified).
+         */
+        ViewAnswerModel: {
+            /**
+             * Answered From
+             * @enum {string}
+             */
+            answered_from: "view" | "worked_out";
+            /**
+             * Cut
+             * @default false
+             */
+            cut: boolean;
+            /** Latest Version */
+            latest_version: number;
+            /** Rows */
+            rows: {
+                [key: string]: unknown;
+            }[];
+            /** Version */
+            version: number;
+        };
+        /** ViewStateModel */
+        ViewStateModel: {
+            /** Answers Reads */
+            answers_reads: boolean;
+            /** Behind */
+            behind: number;
+            /** Differences */
+            differences?: number | null;
+            /** Latest Version */
+            latest_version: number;
+            /** Outcome */
+            outcome?: ("matched" | "differed") | null;
+            /** Rows */
+            rows: number;
+            /** Trusted */
+            trusted: boolean;
+            /** Verified At */
+            verified_at?: string | null;
+            /** Verified Version */
+            verified_version?: number | null;
+            /** Version */
+            version: number | null;
+            /** View */
+            view: string;
+        };
+        /** ViewStatusModel */
+        ViewStatusModel: {
+            /** Views */
+            views?: components["schemas"]["ViewStateModel"][];
+        };
+        /**
          * VocabularyModel
          * @description The entity types and predicates a write to this project may use right now.
          */
@@ -9653,6 +10559,11 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** WriteSummaryRequest */
+        WriteSummaryRequest: {
+            /** Body */
+            body: string;
         };
         /** WrongBeliefModel */
         WrongBeliefModel: {
@@ -11529,6 +12440,38 @@ export interface operations {
             };
         };
     };
+    delete_picture_api_v1_projects__project_id__assets__asset_id__delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedPictureModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     asset_lifecycle_api_v1_projects__project_id__assets__asset_id__lifecycle_get: {
         parameters: {
             query?: never;
@@ -13101,6 +14044,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CharacterQuestionSheetModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    calibration_api_v1_projects__project_id__checks_calibration_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationList"];
                 };
             };
             /** @description Validation Error */
@@ -15132,6 +16106,107 @@ export interface operations {
             };
         };
     };
+    review_findings_api_v1_projects__project_id__mutations__mutation_id__findings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                mutation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewFindingList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_review_finding_api_v1_projects__project_id__mutations__mutation_id__findings_dismissals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                mutation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewDismissRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewFindingList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_review_dismissal_api_v1_projects__project_id__mutations__mutation_id__findings_dismissals__dismissal_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                mutation_id: string;
+                dismissal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewFindingList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     mutation_impact_api_v1_projects__project_id__mutations__mutation_id__impact_get: {
         parameters: {
             query?: never;
@@ -15682,6 +16757,40 @@ export interface operations {
             };
         };
     };
+    search_pictures_api_v1_projects__project_id__pictures_search_get: {
+        parameters: {
+            query: {
+                q: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PictureSearchModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_picture_api_v1_projects__project_id__pictures__asset_id__get: {
         parameters: {
             query?: never;
@@ -15919,6 +17028,72 @@ export interface operations {
             };
         };
     };
+    get_scales_api_v1_projects__project_id__plan_scales_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScalesModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_scales_api_v1_projects__project_id__plan_scales_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetScalesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScalesModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     change_plan_item_api_v1_projects__project_id__plan__plan_id__patch: {
         parameters: {
             query?: never;
@@ -15942,6 +17117,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlanItemModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bridge_estimate_api_v1_projects__project_id__plan__plan_id__bridges_estimate_get: {
+        parameters: {
+            query: {
+                condition: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HelpEstimateModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suggest_bridges_api_v1_projects__project_id__plan__plan_id__bridges_suggest_post: {
+        parameters: {
+            query: {
+                condition: number;
+            };
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobModel"];
                 };
             };
             /** @description Validation Error */
@@ -16178,6 +17423,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ContextComparisonModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    intent_estimate_api_v1_projects__project_id__plan__plan_id__intent_estimate_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HelpEstimateModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suggest_intent_api_v1_projects__project_id__plan__plan_id__intent_suggest_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobModel"];
                 };
             };
             /** @description Validation Error */
@@ -16725,6 +18036,145 @@ export interface operations {
             };
         };
     };
+    scene_summary_api_v1_projects__project_id__plan__plan_id__summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneSummariesModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    write_scene_summary_api_v1_projects__project_id__plan__plan_id__summary_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WriteSummaryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneSummariesModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suggest_scene_summary_api_v1_projects__project_id__plan__plan_id__summary_suggest_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_scene_summary_api_v1_projects__project_id__plan__plan_id__summary__summary_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+                summary_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecideSummaryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneSummariesModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     set_scene_when_api_v1_projects__project_id__plan__plan_id__when_put: {
         parameters: {
             query?: never;
@@ -16866,6 +18316,7 @@ export interface operations {
                 scene: string;
                 viewpoint?: string | null;
                 version?: number | null;
+                part?: "everything" | "characters" | "places" | "timeline" | "recap";
             };
             header?: never;
             path: {
@@ -17396,6 +18847,207 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SchemaVersionModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    story_views_api_v1_projects__project_id__story_views_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewStatusModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dependents_api_v1_projects__project_id__story_views_dependents_get: {
+        parameters: {
+            query: {
+                record: string;
+                depth?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DependentsModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disclosures_api_v1_projects__project_id__story_views_disclosures_get: {
+        parameters: {
+            query: {
+                fact: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DisclosuresModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    holders_api_v1_projects__project_id__story_views_holders_get: {
+        parameters: {
+            query?: {
+                item?: string | null;
+                holder?: string | null;
+                at?: number | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewAnswerModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    relationships_api_v1_projects__project_id__story_views_relationships_get: {
+        parameters: {
+            query: {
+                entity: string;
+                at?: number | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewAnswerModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    where_api_v1_projects__project_id__story_views_where_get: {
+        parameters: {
+            query: {
+                entity: string;
+                at?: number | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewAnswerModel"];
                 };
             };
             /** @description Validation Error */

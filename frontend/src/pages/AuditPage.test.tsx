@@ -96,6 +96,7 @@ const report: Audit = {
         {
           code: 'stock_phrase',
           severity: 'note',
+          came_back: false,
           message: '“the weight of” is stock phrasing that readers often notice.',
           start: null,
           end: null,

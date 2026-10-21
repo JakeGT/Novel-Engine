@@ -10,11 +10,77 @@ afterEach(() => vi.unstubAllGlobals())
 const asset = { id: 'ast_1', name: 'Harbor map', lifecycle: 'active', created_revision: 2, retired_revision: null, created_at: '2026-10-09T10:00:00Z' }
 
 describe('MediaPage', () => {
-  it('is honest that it lists media rather than uploading it', async () => {
-    mockApi({ 'GET /assets': { items: [] }, 'GET /entities': { items: [], limit: 200, offset: 0 } })
+  it('says how to start when there is nothing yet, and where a picture can be shown', async () => {
+    mockApi({ 'GET /assets': { items: [] }, 'GET /entities': { items: [], limit: 200, offset: 0 }, 'GET /plan': { items: [] } })
     renderInProject(<MediaPage />)
     expect(await screen.findByText('No media yet')).toBeInTheDocument()
-    expect(screen.getByText(/adding files from this page is not\s+available yet/)).toBeInTheDocument()
+    expect(await screen.findByText(/Add an entry or a scene first/)).toBeInTheDocument()
+  })
+
+  it('adds a picture to the entry or scene chosen, and says where it went', async () => {
+    const api = mockApi({
+      'GET /assets': { items: [] },
+      'GET /entities': { items: [entity()], limit: 200, offset: 0 },
+      'GET /plan': { items: [{ id: 'pln_docks', kind: 'scene', title: 'The Docks' }] },
+      'POST /plan/pln_docks/pictures': { link: { asset_id: 'ast_9' }, version: { id: 'asv_9' } },
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<MediaPage />)
+    const where = await screen.findByLabelText('Show it on')
+    await waitFor(() => expect(within(where).getByRole('option', { name: 'The Docks' })).toBeInTheDocument())
+    await user.selectOptions(where, 'scene:pln_docks')
+    const file = new File(['png'], 'harbor-at-dusk.png', { type: 'image/png' })
+    await user.upload(screen.getByLabelText('Picture file'), file)
+    expect(screen.getByLabelText('Name')).toHaveValue('harbor-at-dusk')
+    await user.click(screen.getByRole('button', { name: 'Add picture' }))
+    expect(await screen.findByText(/Added “harbor-at-dusk” to The Docks/)).toBeInTheDocument()
+    const [sent] = api.find('POST', '/plan/pln_docks/pictures')
+    expect(sent.search.get('name')).toBe('harbor-at-dusk')
+    expect(sent.body).toBe(file)
+    await expectAccessible(container)
+  })
+
+  it('refuses a file that is too large before sending it', async () => {
+    const api = mockApi({
+      'GET /assets': { items: [] },
+      'GET /entities': { items: [entity()], limit: 200, offset: 0 },
+      'GET /plan': { items: [] },
+    })
+    const user = userEvent.setup()
+    renderInProject(<MediaPage />)
+    const big = new File([new Uint8Array(8 * 1024 * 1024 + 1)], 'huge.png', { type: 'image/png' })
+    await user.upload(await screen.findByLabelText('Picture file'), big)
+    expect(await screen.findByRole('alert')).toHaveTextContent('larger than 8 MB')
+    await user.click(screen.getByRole('button', { name: 'Add picture' }))
+    expect(api.find('POST', '/pictures')).toHaveLength(0)
+  })
+
+  it('finds pictures by words and says how each was found', async () => {
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:found') }))
+    const found = {
+      asset_id: 'ast_2', version_id: 'asv_2', name: 'Portrait of Mara', content_type: 'image/png', byte_length: 10,
+      created_at: '2026-10-09T10:00:00Z', shown: 0, processing: 'ready', processing_message: null, has_thumbnail: true,
+      reason: 'words', matched: 'description', score: null,
+    }
+    const api = mockApi({
+      'GET /assets': { items: [] },
+      'GET /entities': { items: [entity()], limit: 200, offset: 0 },
+      'GET /plan': { items: [] },
+      'GET /pictures/search': { items: [found], by_meaning: false, note: 'Search by meaning is switched off.' },
+      'GET /content': new Blob(['x']),
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<MediaPage />)
+    await user.type(await screen.findByLabelText('Words to look for'), 'green coat')
+    await user.click(screen.getByRole('button', { name: 'Find' }))
+    expect(await screen.findByRole('link', { name: 'Portrait of Mara' })).toHaveAttribute(
+      'href',
+      '/projects/prj_1/pictures/ast_2',
+    )
+    expect(screen.getByText(/Found by its description/)).toBeInTheDocument()
+    expect(screen.getByText(/Search by meaning is not available here/)).toBeInTheDocument()
+    expect(api.find('GET', '/pictures/search')[0].search.get('q')).toBe('green coat')
+    await expectAccessible(container)
   })
 
   it('opens an item to show its versions and what it is linked to by name', async () => {
@@ -106,6 +172,39 @@ describe('MediaPage pictures', () => {
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument()
   })
 
+  it('deletes a picture’s file only once it is shown nowhere, after a deliberate tick', async () => {
+    let n = 0
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => `blob:picture-${(n += 1)}`) }))
+    const api = mockApi({
+      ...routes(libraryPicture({ shown: 0 }), { status: 'ready', retryable: false, copies: [] }),
+      'GET /plan': { items: [] },
+      'POST /assets/ast_1/delete': { asset_id: 'ast_1', lifecycle: 'deleted', versions: 1, files_removed: 1, copies_removed: 2, bytes_freed: 2048 },
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<MediaPage />)
+    await user.click(await screen.findByRole('button', { name: /Harbor map/ }))
+    await user.click(await screen.findByRole('button', { name: 'Delete the file' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Delete the file of “Harbor map”?' })
+    // The safe choice holds focus, and the deletion waits for the tick.
+    expect(within(dialog).getByRole('button', { name: 'Keep the picture' })).toHaveFocus()
+    const confirm = within(dialog).getByRole('button', { name: 'Delete the file for good' })
+    expect(confirm).toBeDisabled()
+    await expectAccessible(container)
+    await user.click(within(dialog).getByLabelText('I understand the file cannot be brought back.'))
+    await user.click(confirm)
+    await waitFor(() => expect(api.find('POST', '/assets/ast_1/delete')).toHaveLength(1))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('says a shown picture must be taken off first', async () => {
+    mockApi({ ...routes(libraryPicture({ shown: 2 }), { status: 'ready', retryable: false, copies: [] }), 'GET /plan': { items: [] } })
+    const user = userEvent.setup()
+    renderInProject(<MediaPage />)
+    await user.click(await screen.findByRole('button', { name: /Harbor map/ }))
+    expect(await screen.findByText(/shown on 2 entries or scenes. Take it off them/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Delete the file' })).toBeDisabled()
+  })
+
   it('offers no Try again to a reader', async () => {
     const failed = { status: 'failed', failure_code: 'damaged', message: 'This picture could not be read.', retryable: true, copies: [] }
     mockApi(routes(libraryPicture({ processing: 'failed', has_thumbnail: false }), failed))
@@ -114,5 +213,9 @@ describe('MediaPage pictures', () => {
     await user.click(await screen.findByRole('button', { name: /Harbor map/ }))
     expect(await screen.findByText('No small copy for lists.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument()
+    // A reader can find pictures but neither adds nor deletes them.
+    expect(screen.queryByLabelText('Picture file')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete the file' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Words to look for')).toBeInTheDocument()
   })
 })

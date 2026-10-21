@@ -1,14 +1,17 @@
 """Checks kept as runs (CON-001): a scene's history of checks, one run, and an audit's run.
 
 Each run says what it covered, the story's version and the text versions it read, the
-passes it ran, and, judged now, each finding open, dismissed or fixed, and which scenes it
-is out of date for. Reading a run never calls a model.
+passes it ran, the story's checking profile, which checks were worked out again and which
+were reused because nothing they read had changed (CON-007), and, judged now, each finding
+open, accepted, dismissed, superseded or fixed, and which scenes it is out of date for.
+Reading a run never calls a model. ``/checks/calibration`` says how often the author
+dismissed each check's findings (CON-016).
 """
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel
@@ -17,8 +20,9 @@ from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import get_container
 from backend.api.v1.studio import DismissalModel, _dismissal
 from backend.container import Container
+from backend.domain.check_fingerprints import BY_NAME
 from backend.domain.identity import AccessScope
-from backend.services.consistency_runs import ConsistencyRunService, RunView
+from backend.services.consistency_runs import CalibrationLine, ConsistencyRunService, RunView
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["checks"])
 
@@ -36,13 +40,27 @@ class RunFindingModel(BaseModel):
     message: str
     # The words it was about, from the version the run read.
     quoted: str = ""
-    status: Literal["open", "dismissed", "fixed"]
+    status: Literal["open", "accepted", "dismissed", "superseded", "fixed"]
     # What fixed it: its words changed, or the story did.
     fixed_by: Literal["words", "story"] | None = None
     dismissal: DismissalModel | None = None
     check_pass: str | None = None
     # Still open, but the scene changed since: it may no longer hold.
     stale: bool = False
+    # Dismissed before, and back because what it says has changed since.
+    came_back: bool = False
+    # For a check that needs no model, the named check it belongs to (CON-007).
+    check: str | None = None
+
+
+class CheckWorkModel(BaseModel):
+    """One named check that needs no model, in one scene of a run."""
+
+    name: str
+    # Plain words for it.
+    words: str
+    # Worked out for this run, or reused because nothing it reads had changed.
+    reused: bool
 
 
 class RunSceneModel(BaseModel):
@@ -56,8 +74,12 @@ class RunSceneModel(BaseModel):
     # Why it is out of date, in plain words.
     reasons: list[str]
     open: int
+    accepted: int = 0
     dismissed: int
+    superseded: int = 0
     fixed: int
+    # The checks that need no model, as this run worked them out (empty for older runs).
+    checks: list[CheckWorkModel] = []
 
 
 class RunModel(BaseModel):
@@ -77,6 +99,50 @@ class RunModel(BaseModel):
     stale: bool
     scenes: list[RunSceneModel]
     findings: list[RunFindingModel]
+    # How much the story checked on its own then ("on_request", "balanced",
+    # "thorough"), and the versions of the checks and of the grouping of passages.
+    profile: dict[str, str] = {}
+    # How each pass of a check with the assistant was sent, when it was sent in groups
+    # (CON-013): the groups, whether every passage got every check, in plain words.
+    coverage: dict[str, Any] = {}
+
+
+class CalibrationModel(BaseModel):
+    code: str
+    words: str
+    source: Literal["check", "note"]
+    found: int
+    dismissed: int
+    accepted: int
+    rate: float | None = None
+    note: str
+
+
+class CalibrationList(BaseModel):
+    items: list[CalibrationModel]
+
+
+def _checks(run_view: RunView, plan_id: str) -> list[CheckWorkModel]:
+    kept = run_view.run.scene_fingerprints(plan_id)
+    reused = set(kept.get("reused") or [])
+    return [
+        CheckWorkModel(name=name, words=BY_NAME[name].words, reused=name in reused)
+        for name in sorted(kept.get("checks") or {})
+        if name in BY_NAME
+    ]
+
+
+def _calibration(line: CalibrationLine) -> CalibrationModel:
+    return CalibrationModel(
+        code=line.code,
+        words=line.words,
+        source=line.source,
+        found=line.found,
+        dismissed=line.dismissed,
+        accepted=line.accepted,
+        rate=line.rate,
+        note=line.note,
+    )
 
 
 class RunList(BaseModel):
@@ -108,8 +174,11 @@ def _run(view: RunView) -> RunModel:
                 stale=part.staleness.stale,
                 reasons=part.staleness.reasons(),
                 open=part.tally.open,
+                accepted=part.tally.accepted,
                 dismissed=part.tally.dismissed,
+                superseded=part.tally.superseded,
                 fixed=part.tally.fixed,
+                checks=_checks(view, part.input.plan_id),
             )
             for part in view.scenes
         ],
@@ -126,9 +195,13 @@ def _run(view: RunView) -> RunModel:
                 dismissal=_dismissal(item.dismissal),
                 check_pass=item.check_pass,
                 stale=item.stale,
+                came_back=item.came_back,
+                check=item.check,
             )
             for item in view.findings
         ],
+        profile={str(k): str(v) for k, v in run.profile.items()},
+        coverage=view.coverage,
     )
 
 
@@ -178,3 +251,15 @@ async def run_for_job(
 ) -> RunModel:
     """The run an audit or a check with the assistant keeps, once it has started reading."""
     return _run(await runs.for_job(scope, scope.workspace_id or "", project_id, job_id))
+
+
+@router.get("/checks/calibration")
+async def calibration(
+    project_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    runs: ConsistencyRunService = Depends(get_runs),
+) -> CalibrationList:
+    """How often each check's findings were dismissed in this line of the story: a note
+    for the author; nothing about the checks changes because of it."""
+    found = await runs.calibration(scope, scope.workspace_id or "", project_id)
+    return CalibrationList(items=[_calibration(line) for line in found])

@@ -94,7 +94,7 @@ def test_secrets_can_be_given_and_are_marked_as_the_authors_alone(auth_client, f
     scene = _setup(auth_client, w)
     context = _context(auth_client, w, scene, secrets="true")
     secret = next(item for item in context["items"] if item["key"] == f"fact:{w['in_guild']}")
-    assert secret["section_title"].startswith("For the author only")
+    assert secret["section_title"].startswith("Only for you")
 
 
 def test_the_author_pins_excludes_and_sets_a_budget_and_it_is_kept_with_the_scene(
@@ -165,6 +165,10 @@ def test_the_authors_writing_that_names_the_cast_is_given_with_where_it_came_fro
         "behind": [],
         "names_as_of": status["names_as_of"],
         "semantic": status["semantic"],
+        # Nothing waits to be read in (CTX-005).
+        "waiting": 0,
+        "waiting_seconds": None,
+        "failing": 0,
     }
     context = _context(auth_client, w, scene)
     writing = [item for item in context["items"] if item["section"] == "writing"]
@@ -272,7 +276,7 @@ def test_a_secret_the_reader_was_shown_stays_the_authors_when_the_viewpoint_lack
     given = _context(auth_client, w, scene, secrets="true", budget=12000)
     item = next(item for item in given["items"] if item["key"] == key)
     assert item["section"] == "secrets"
-    assert item["section_title"].startswith("For the author only")
+    assert item["section_title"].startswith("Only for you")
 
 
 def test_a_secret_the_viewpoint_knows_stays_with_what_the_reader_was_shown(
@@ -320,4 +324,4 @@ def test_with_no_viewpoint_every_secret_is_the_authors_alone(auth_client, fake_c
 
     given = _context(auth_client, w, scene, secrets="true", budget=12000)
     secret = next(i for i in given["items"] if i["key"] == f"fact:{w['in_guild']}")
-    assert secret["section_title"].startswith("For the author only")
+    assert secret["section_title"].startswith("Only for you")

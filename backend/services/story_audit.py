@@ -32,6 +32,7 @@ from backend.domain.sources import SourceVersion
 from backend.domain.studio import AUDIT_JOB, AssistantFinding
 from backend.domain.tenancy import Permission
 from backend.services.job_runner import JobContext, JobSubmission
+from backend.services.scene_checks import pass_finished, pass_notes
 
 logger = logging.getLogger(__name__)
 
@@ -299,6 +300,11 @@ class StoryAudit:
                     ],
                     "unwritten": [entry.scene.id for entry in found.scenes if not entry.written],
                     "estimated_tokens": total,
+                    # What the author confirmed (None when no confirming was needed), and
+                    # each scene's part of the estimate: a scene is planned again as it is
+                    # read, and the audit stops if it would need more than confirmed.
+                    "confirmed_tokens": confirmed_tokens,
+                    "scene_tokens": {entry.scene.id: entry.tokens for entry in written},
                 },
                 idempotency_key=idempotency_key,
             ),
@@ -319,15 +325,16 @@ class StoryAudit:
         done: list[dict[str, Any]] = []
         ctx.partial = {"scenes": done}
         # An audit taken over from a worker that stopped, or put back when the app was
-        # stopping, starts again from the top: a pass whose notes an earlier run of it
-        # already stored is not asked for again, so its notes are not stored twice.
-        earlier: dict[tuple[str, str], int] = {}
+        # stopping, starts again from the top: a pass an earlier run of it finished is not
+        # asked for again, and one sent in groups goes on from the first group it did not
+        # finish, so no note is stored twice and no group is left out.
+        earlier: list[AssistantFinding] = []
         if chosen:
-            for note in await studio._store.findings_for_job(
-                workspace_id=workspace_id, project_id=project_id, job_id=job.id
-            ):
-                where = (note.target_id, note.check_pass or note.category)
-                earlier[where] = earlier.get(where, 0) + 1
+            earlier = list(
+                await studio._store.findings_for_job(
+                    workspace_id=workspace_id, project_id=project_id, job_id=job.id
+                )
+            )
         if studio.runs is not None:
             # Kept as a run (CON-001): the exact versions it reads; once per job.
             try:
@@ -337,6 +344,11 @@ class StoryAudit:
         provider = None
         total = len(scenes)
         runner = studio.pass_runner()
+        # The whole audit's estimate, brought up to date as each scene is planned again.
+        expected = int(payload.get("estimated_tokens") or 0)
+        planned: dict[str, int] = {
+            str(key): int(value) for key, value in (payload.get("scene_tokens") or {}).items()
+        }
         for index, entry in enumerate(scenes):
             prefix = f"Scene {index + 1} of {total}: "
             lo = 5 + int(90 * index / max(total, 1))
@@ -348,6 +360,7 @@ class StoryAudit:
                 )
             except NotFoundError:
                 done.append({**entry, "status": "gone", "findings": 0, "dropped": 0})
+                expected -= planned.pop(entry["plan_id"], 0)
                 continue
             scene = await studio._reader.get_plan_item(
                 workspace_id=workspace_id, project_id=project_id, plan_id=entry["plan_id"]
@@ -355,6 +368,7 @@ class StoryAudit:
             if scene is None or not scene.is_active:
                 # Removed from the plan since the audit started: nothing to check it against.
                 done.append({**entry, "status": "gone", "findings": 0, "dropped": 0})
+                expected -= planned.pop(entry["plan_id"], 0)
                 continue
             record: dict[str, Any] = {
                 **entry,
@@ -371,7 +385,18 @@ class StoryAudit:
                 except NotFoundError:
                     # Removed from the plan since the audit started: nothing to check it against.
                     done.append({**entry, "status": "gone", "findings": 0, "dropped": 0})
+                    expected -= planned.pop(entry["plan_id"], 0)
                     continue
+                now = sum(item.total for item in plan.estimates)
+                expected += now - planned.get(entry["plan_id"], now)
+                planned[entry["plan_id"]] = now
+                await studio.confirm_again(
+                    workspace_id,
+                    project_id,
+                    payload,
+                    estimated_tokens=expected,
+                    doing="Auditing this part of the story",
+                )
 
                 def call_key(check: CheckPass, number: int = index) -> str:
                     return f"{job.id}:{job.attempts}:{number}:{check.value}"
@@ -381,10 +406,10 @@ class StoryAudit:
                     zip(plan.materials, plan.estimates, strict=True)
                 ):
                     check = material.check
-                    kept = earlier.get((version.id, check.value), 0)
-                    if kept:
+                    mine = pass_notes(earlier, check, version.id)
+                    if pass_finished(mine, (plan.groups or {}).get(check)):
                         # Finished by an earlier run of this audit: its notes are kept.
-                        outcome = {"findings": kept, "dropped": 0}
+                        outcome = {"findings": len(mine), "dropped": 0}
                     else:
                         first = provider is None
                         if provider is None:
@@ -412,6 +437,9 @@ class StoryAudit:
                             ),
                             stage=prefix,
                             first_call_checked=first,
+                            # A long scene's continuity is sent in groups (CON-013).
+                            groups=plan.groups,
+                            earlier=mine,
                         )
                         outcome = result.result()["passes"][check.value]
                     record["passes"][check.value] = outcome

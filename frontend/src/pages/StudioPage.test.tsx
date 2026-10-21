@@ -84,8 +84,8 @@ function studio(overrides: Partial<Studio> = {}): Studio {
       { id: 'ver_1', number: 1, words: 12, origin: 'author', created_at: '2026-10-16T09:00:00Z' },
     ],
     checks: [
-      { code: 'stock_phrase', key: 'k_stock', severity: 'note', message: 'A phrase readers often meet: “the weight of”.', ...at('The weight of') },
-      { code: 'new_name', key: 'k_name', severity: 'warning', message: 'Tobin Ashe is not in your story bible yet.', ...at('Tobin Ashe') },
+      { code: 'stock_phrase', key: 'k_stock', severity: 'note', message: 'A phrase readers often meet: “the weight of”.', ...at('The weight of'), came_back: false },
+      { code: 'new_name', key: 'k_name', severity: 'warning', message: 'Tobin Ashe is not in your story bible yet.', ...at('Tobin Ashe'), came_back: false },
     ],
     assistant: [
       {
@@ -298,7 +298,7 @@ describe('StudioPage', () => {
     const finished = studio({
       drafts: [
         draft(),
-        draft({ id: 'drf_2', number: 2, content: DRAFT_TWO, words: 7, checks: [{ code: 'place_missing', key: 'k_place', severity: 'warning', message: 'Kestrel Point is never mentioned.' }] }),
+        draft({ id: 'drf_2', number: 2, content: DRAFT_TWO, words: 7, checks: [{ code: 'place_missing', key: 'k_place', severity: 'warning', message: 'Kestrel Point is never mentioned.', came_back: false }] }),
       ],
       jobs: [job({ status: 'succeeded', progress: 100, result: { drafts: 2 } })],
     })
@@ -744,7 +744,7 @@ describe('StudioPage', () => {
     // The common answer is chosen already; how long defaults to "until the words change".
     expect(within(form).getByRole('button', { name: 'Intended' })).toHaveAttribute('aria-pressed', 'true')
     expect(within(form).getByLabelText('How long')).toHaveValue('')
-    expect(form).toHaveTextContent('It comes back by itself if the words it points at change.')
+    expect(form).toHaveTextContent('It comes back by itself if the words it points at, or what it says, change.')
     await expectAccessible(container)
 
     // Their own words are needed for "Other reason", and what was typed is kept.

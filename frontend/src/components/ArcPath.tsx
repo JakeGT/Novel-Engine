@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { api, type ArcReading, type ArcStage, type CanonEntity, type PlanItem } from '../api/client'
 import { factSentence } from '../lib/facts'
 import { readingScenes } from '../lib/plan'
+import { useScales } from '../lib/scales'
 import { scopedKey, useCanonWrite, useEntries, useProject } from '../project'
 import { Badge, Button, Dialog, ErrorNotice, Loading, WriteProblem } from './ui'
 
@@ -82,6 +83,8 @@ export function ArcStages({
   const facts = useFactWords(stages.map((stage) => stage.fact_id))
   const outline = useQuery({ queryKey: scopedKey(scope, 'plan'), queryFn: () => api.outline(scope) })
   const byId = new Map((outline.data?.items ?? []).map((item) => [item.id, item]))
+  const scales = useScales()
+  const scaleName = new Map((scales.data?.scales ?? []).map((scale) => [scale.id, scale.name]))
   if (stages.length === 0) return null
   return (
     <ol className="arc-path" aria-label={`Stages of “${arc.title}”, in order`}>
@@ -109,6 +112,11 @@ export function ArcStages({
             {stage.fact_id && (
               <span className="arc-stage-fact">
                 From then on: {facts.text(stage.fact_id)} {badge && <Badge tone={badge.tone}>{badge.label}</Badge>}
+              </span>
+            )}
+            {stage.scale_id && (
+              <span className="arc-stage-fact">
+                On {scaleName.get(stage.scale_id) ?? 'a scale no longer in the story'}: {stage.level}
               </span>
             )}
           </li>
@@ -164,12 +172,16 @@ export function ArcPathDialog({
     ;(same && !same.disabled ? same : other)?.focus()
   })
 
-  const cleaned = () =>
-    rows.map((row) => ({
+  const scales = useScales()
+  const shared = scales.data?.scales ?? []
+  const clean = (stages: ArcStage[]) =>
+    stages.map((row) => ({
       name: row.name.trim().replace(/\s+/g, ' '),
       ...(row.scene_id ? { scene_id: row.scene_id } : {}),
       ...(row.fact_id ? { fact_id: row.fact_id } : {}),
+      ...(row.scale_id && row.level ? { scale_id: row.scale_id, level: row.level } : {}),
     }))
+  const cleaned = () => clean(rows)
   const save = useCanonWrite(
     (expectedRevision) =>
       arc
@@ -201,7 +213,7 @@ export function ArcPathDialog({
   }
   const titleMissing = !arc && !title.trim()
   const invalid = titleMissing || rows.some((_, index) => problem(index) !== null)
-  const unchanged = arc !== undefined && JSON.stringify(cleaned()) === JSON.stringify(arc.path ?? [])
+  const unchanged = arc !== undefined && JSON.stringify(cleaned()) === JSON.stringify(clean(arc.path ?? []))
   const heading = arc ? `Stages of “${arc.title}”` : `Start an arc for ${about?.name ?? 'this character'}`
 
   return (
@@ -314,6 +326,32 @@ export function ArcPathDialog({
                         )}
                       </select>
                     </label>
+                    {shared.length > 0 && (
+                      <label className="field">
+                        <span>On a shared scale (optional)</span>
+                        <select
+                          value={row.scale_id && row.level ? `${row.scale_id}\u0000${row.level}` : ''}
+                          onChange={(event) => {
+                            const [scaleId, level] = event.target.value ? event.target.value.split('\u0000') : [null, null]
+                            change(index, { scale_id: scaleId, level })
+                          }}
+                        >
+                          <option value="">Not on a scale</option>
+                          {row.scale_id && row.level && !shared.some((scale) => scale.id === row.scale_id && scale.levels.includes(row.level ?? '')) && (
+                            <option value={`${row.scale_id}\u0000${row.level}`}>{row.level} (no longer on its scale)</option>
+                          )}
+                          {shared.map((scale) => (
+                            <optgroup key={scale.id} label={scale.name}>
+                              {scale.levels.map((level) => (
+                                <option key={level} value={`${scale.id}\u0000${level}`}>
+                                  {scale.name}: {level}
+                                </option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </select>
+                      </label>
+                    )}
                   </div>
                   <div className="actions">
                     <Button

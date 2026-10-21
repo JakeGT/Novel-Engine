@@ -48,7 +48,13 @@ from backend.domain.journal import (
     OutboxMessage,
     ReviewDecision,
 )
-from backend.domain.media import AssetLink, MediaAsset, MediaAssetVersion, MediaLifecycleEvent
+from backend.domain.media import (
+    AssetLifecycle,
+    AssetLink,
+    MediaAsset,
+    MediaAssetVersion,
+    MediaLifecycleEvent,
+)
 from backend.domain.objects import ObjectStat
 from backend.domain.operations import CanonOperation
 from backend.domain.projection import EvidenceRecord, ProjectionWatermark, RecordVersion
@@ -149,6 +155,8 @@ class VectorStorePort(Protocol):
         workspace_id: str,
         project_id: str,
         n_results: int = 5,
+        # Metadata filters (CTX-004): key -> the values it may take.
+        where: dict[str, Sequence[str]] | None = None,
     ) -> list[dict[str, Any]]: ...
 
     def delete(self, ids: Sequence[str], *, workspace_id: str, project_id: str) -> None: ...
@@ -1399,6 +1407,46 @@ class MediaStorePort(Protocol):
         retired_revision: int | None = None,
         actor_user_id: str | None = None,
     ) -> MediaAssetVersion | None: ...
+
+    async def delete_original(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        version_id: str,
+        retired_revision: int | None = None,
+        actor_user_id: str | None = None,
+    ) -> MediaAssetVersion | None: ...
+
+    async def delete_asset(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        asset_id: str,
+        retired_revision: int | None = None,
+        actor_user_id: str | None = None,
+    ) -> MediaAsset | None: ...
+
+    async def hold_for_deletion(
+        self, *, workspace_id: str, project_id: str, asset_id: str, lifecycle: AssetLifecycle
+    ) -> bool:
+        """Mark an asset deleted before its files go, only if it is still in ``lifecycle``
+        (nothing recorded yet); False when it changed (AST-008)."""
+        ...
+
+    async def release_hold(
+        self, *, workspace_id: str, project_id: str, asset_id: str, lifecycle: AssetLifecycle
+    ) -> None:
+        """Put back an asset held for deletion whose files were never touched."""
+        ...
+
+    async def object_keys_in_use(
+        self, *, workspace_id: str, project_id: str, object_keys: list[str], except_asset_id: str
+    ) -> set[str]:
+        """Which of these stored files another asset's version (file not deleted), or a
+        smaller copy of one, still uses."""
+        ...
 
     async def import_asset(self, asset: MediaAsset) -> MediaAsset: ...
 

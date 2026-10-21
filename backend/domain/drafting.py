@@ -13,6 +13,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from backend.domain.appearance import AppearanceDetail, clashes
 from backend.domain.sources import Mention, MentionStatus
 
 # Phrases readers increasingly recognise as machine-written, from writing-tool checklists
@@ -104,6 +105,47 @@ class LaterKnowledge:
     said: bool = False
 
 
+@dataclass(frozen=True)
+class AfterShown:
+    """An "after" condition that names two things the prose can be read for (STY-005):
+    an entry and the other end of its fact, or the value it should hold."""
+
+    reading: str
+    names: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class TimeNeighbour:
+    """The scene before this one in reading order, and how far before it is in story time.
+
+    ``days`` is the least and the most it can be, in days, from the two scenes' times
+    and the story's unit; ``same_day`` is True when both fall in the same whole day of a
+    story counted in days, False when certainly not, None when that cannot be told.
+    """
+
+    title: str
+    days: tuple[float, float]
+    same_day: bool | None = None
+    # In the author's terms, for the note: "day 5", "between day 3 and 4" (the
+    # scene before, and this one).
+    this_when: str = ""
+    then_when: str = ""
+
+
+@dataclass(frozen=True)
+class Holding:
+    """Something a person could use in the scene, and who has it at the scene's time.
+
+    ``holder`` is who has it then (None when no one does); ``gone`` says, in a few words,
+    that it is used up, lost or destroyed by then ("its status is used up")."""
+
+    thing: str
+    names: tuple[str, ...]
+    holder: str | None = None
+    holder_names: tuple[str, ...] = ()
+    gone: str = ""
+
+
 @dataclass
 class DraftBrief:
     """What the checks know about the scene the prose is meant to be."""
@@ -123,6 +165,14 @@ class DraftBrief:
     # in this scene (its aliases, and the author's answers that hold here; CTX-016).
     ids: dict[str, str] = field(default_factory=dict)
     also: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # Checks against the prose itself (STY-005, SCN-007, CON-004, CON-014): who is in
+    # the scene, what it should leave true, when it comes after the scene before it,
+    # who has what then, and how its people look in their accepted details.
+    people: tuple[str, ...] = ()
+    after: list[AfterShown] = field(default_factory=list)
+    previous: TimeNeighbour | None = None
+    holdings: list[Holding] = field(default_factory=list)
+    appearance: list[AppearanceDetail] = field(default_factory=list)
 
     def names_for(self, name: str) -> list[str]:
         return [name, *self.also.get(name, ())]
@@ -384,6 +434,7 @@ def check_draft(text: str, brief: DraftBrief, mentions: Sequence[Mention]) -> li
                 )
             )
 
+    findings.extend(prose_findings(text, brief))
     findings.extend(brief.continuity)
 
     order = {Severity.WARNING: 0, Severity.NOTE: 1}
@@ -391,14 +442,431 @@ def check_draft(text: str, brief: DraftBrief, mentions: Sequence[Mention]) -> li
     return findings
 
 
+# ------------------------------------------------------------------ against the prose
+#
+# Checks that read the prose against what the plan and the story bible say about this
+# scene (STY-005, SCN-007, CON-004, CON-014). Each looks only for a signal it can read
+# for certain (two names together, a word for when, a colour word), so each is a note
+# or, where nothing could make both true, a warning. What they cannot read (a pronoun,
+# a paraphrase) is left to the assistant's check of the scene.
+
+# How many days one of a story's units is, for comparing "the next day" with story time.
+DAYS_PER_UNIT: dict[str, float] = {
+    "minute": 1 / 1440,
+    "min": 1 / 1440,
+    "hour": 1 / 24,
+    "hr": 1 / 24,
+    "day": 1.0,
+    "week": 7.0,
+    "month": 30.0,
+    "season": 91.0,
+    "year": 365.0,
+    "decade": 3650.0,
+}
+# Only the opening of a scene says how it follows the one before.
+_OPENING_SENTENCES = 2
+_OPENING_LIMIT = 400
+
+_NEXT_DAY = re.compile(
+    r"(?<![\w])(?:(?:the\s+)?(?:next|following)\s+(?:day|morning|afternoon|evening|night|dawn)"
+    r"|the\s+(?:day|morning|night)\s+after(?!\s+(?:the|a|an|that|his|her|their)\b)"
+    r"|a\s+day\s+later)(?![\w])",
+    re.IGNORECASE,
+)
+_SAME_DAY = re.compile(
+    r"(?<![\w])(?:(?:later\s+that|that\s+same|the\s+same)\s+(?:day|morning|afternoon|evening|night)"
+    r"|(?:an?|one|two|three|a\s+few|some)\s+hours?\s+later"
+    r"|(?:minutes|moments)\s+later)(?![\w])",
+    re.IGNORECASE,
+)
+_NUMBER_WORDS: dict[str, tuple[float, float]] = {
+    "a": (1, 1),
+    "an": (1, 1),
+    "one": (1, 1),
+    "two": (2, 2),
+    "three": (3, 3),
+    "four": (4, 4),
+    "five": (5, 5),
+    "six": (6, 6),
+    "seven": (7, 7),
+    "eight": (8, 8),
+    "nine": (9, 9),
+    "ten": (10, 10),
+    "eleven": (11, 11),
+    "twelve": (12, 12),
+    "a few": (2, 5),
+    "several": (3, 7),
+}
+_AMOUNT = re.compile(
+    r"(?<![\w])(?P<n>a\s+few|several|an?|one|two|three|four|five|six|seven|eight|nine|ten|"
+    r"eleven|twelve|\d{1,3})\s+(?P<unit>days?|weeks?|months?|years?)\s+"
+    # "Three days on, ..." but not "three days on the road".
+    r"(?:later|passed|on(?=\s*[,;:—–]))"
+    r"(?![\w])",
+    re.IGNORECASE,
+)
+# Words before a phrase for when that say it is not what happens: "did not wait for
+# the next morning", "promised to be gone by the next morning".
+_NOT_SO = re.compile(
+    r"(?<![\w])(?:not|never|no|n[’']t|without|would|could|should|might|must|"
+    r"promised|promises|promise|hoped|hopes|planned|plans|meant|intended|wanted|wants|"
+    r"expected|until|till|wait|waited|waiting|unless|if)(?![\w])",
+    re.IGNORECASE,
+)
+_USES = re.compile(
+    r"(?<![\w])(?:drew|draws|held|holds|holding|carried|carries|carrying|wielded|wields|"
+    r"wielding|gripped|grips|clutched|clutches|raised|raises|swung|swings|lifted|lifts|"
+    r"opened|opens|used|uses|consulted|consults|wore|wears|pocketed|unwrapped|unrolled|"
+    r"took\s+out|pulls?\s+out|pulled\s+out|handed|hands|polished|aimed|fired|"
+    r"drank|drinks|ate|eats|spent|spends|lit|lights)(?![\w])",
+    re.IGNORECASE,
+)
+# The thing must come soon after the word for using it: "lifted the old sextant", not
+# "held her breath and stared at the sextant".
+_USE_REACH_WORDS = 3
+_NOT_USED = re.compile(
+    r"(?<![\w])(?:not|never|no|n[’']t|without|remembered|remembers|thought\s+of|wished|"
+    r"missed|missing|lost|gone|had\s+given|once|used\s+to|dreamed|dreamt|imagined)(?![\w])",
+    re.IGNORECASE,
+)
+
+
+def _unit_days(unit: str) -> float | None:
+    word = " ".join(unit.replace("_", " ").replace("-", " ").lower().split())
+    return DAYS_PER_UNIT.get(word, DAYS_PER_UNIT.get(word.removesuffix("s")))
+
+
+def days_between(
+    before: tuple[float, float], after: tuple[float, float], unit: str, *, whole: bool
+) -> tuple[float, float] | None:
+    """The least and the most days from one time to the other, or None for a unit with
+    no length in days. ``whole``: a whole number means some time in that unit
+    ("day 5" is any time in day 5), so each end reaches to the next."""
+    per = _unit_days(unit)
+    if per is None:
+        return None
+    reach = 1.0 if whole else 0.0
+    b_lo, b_hi = before[0], before[1] + (reach if whole and float(before[1]).is_integer() else 0)
+    a_lo, a_hi = after[0], after[1] + (reach if whole and float(after[1]).is_integer() else 0)
+    return ((a_lo - b_hi) * per, (a_hi - b_lo) * per)
+
+
+def _without_speech(text: str) -> str:
+    """The text with what characters say aloud blanked, so offsets still match."""
+    return _SPOKEN.sub(lambda match: " " * len(match.group(0)), text)
+
+
+def _opening(text: str) -> str:
+    spans = _paragraphs(text)
+    if not spans:
+        return ""
+    start, end = spans[0]
+    first = text[:end]
+    sentences = list(_SENTENCE.finditer(first, start))
+    if sentences:
+        end = sentences[min(len(sentences), _OPENING_SENTENCES) - 1].end()
+    return _without_speech(text[: min(end, start + _OPENING_LIMIT)])
+
+
+def _days_words(days: float) -> str:
+    if days < 1:
+        hours = max(1, round(days * 24))
+        return f"{hours} hour{'s' if hours != 1 else ''}"
+    whole = round(days)
+    return f"{whole} day{'s' if whole != 1 else ''}"
+
+
+def _days_range(lo: float, hi: float) -> str:
+    if lo >= 1 and round(hi) != round(lo):
+        return f"{round(lo)} to {_days_words(hi)}"
+    return _days_words(lo)
+
+
+def time_words(text: str, previous: TimeNeighbour) -> list[DraftFinding]:
+    """The opening's words for when ("the next morning", "three days later", "that
+    evening") against the story time between this scene and the one before (SCN-007)."""
+    opening = _opening(text)
+    if not opening.strip():
+        return []
+    lo, hi = previous.days
+    whole = previous.same_day
+    then = (
+        f" (“{previous.title}” is {previous.then_when}; this one is {previous.this_when})"
+        if previous.this_when and previous.then_when
+        else ""
+    )
+    found: list[DraftFinding] = []
+
+    def add(code: str, severity: Severity, message: str, match: re.Match[str]) -> None:
+        found.append(
+            DraftFinding(
+                code, severity, message, match.start(), match.end(), subject=match.group(0).lower()
+            )
+        )
+
+    def said(pattern: re.Pattern[str]) -> list[re.Match[str]]:
+        """Each match that says this is when the scene comes, not hedged or denied."""
+        kept = []
+        for match in pattern.finditer(opening):
+            sentence = next(
+                (s for s in _SENTENCE.finditer(opening) if s.start() <= match.start() < s.end()),
+                None,
+            )
+            before = opening[sentence.start() if sentence else 0 : match.start()]
+            if not _NOT_SO.search(before):
+                kept.append(match)
+        return kept
+
+    nxt = next(iter(said(_NEXT_DAY)), None)
+    if nxt is not None:
+        words = nxt.group(0)
+        if hi < 0:
+            add(
+                "time_words_before",
+                Severity.WARNING if whole is False and hi <= -1 else Severity.NOTE,
+                f"This opens “{words}”, but in story time it comes before “{previous.title}”{then}.",
+                nxt,
+            )
+        elif whole is True:
+            add(
+                "time_words_next_day",
+                Severity.WARNING,
+                f"This opens “{words}”, but it happens on the same day as “{previous.title}”{then}.",
+                nxt,
+            )
+        elif lo >= 2:
+            add(
+                "time_words_next_day",
+                Severity.NOTE,
+                f"This opens “{words}”, but it comes at least {_days_words(lo)} after "
+                f"“{previous.title}”{then}.",
+                nxt,
+            )
+    same = next(iter(said(_SAME_DAY)), None)
+    if same is not None:
+        words = same.group(0)
+        if hi < 0:
+            add(
+                "time_words_before",
+                Severity.NOTE,
+                f"This opens “{words}”, but in story time it comes before “{previous.title}”{then}.",
+                same,
+            )
+        elif lo >= 1.5:
+            add(
+                "time_words_same_day",
+                Severity.WARNING if lo >= 2 else Severity.NOTE,
+                f"This opens “{words}”, but it comes at least {_days_words(lo)} after "
+                f"“{previous.title}”{then}.",
+                same,
+            )
+    read = [match.span() for match in (nxt, same) if match is not None]
+    for amount in said(_AMOUNT):
+        # "A day later" is read once, as the next day.
+        if any(amount.start() < end and start < amount.end() for start, end in read):
+            continue
+        number = amount.group("n").lower()
+        count = (
+            (float(number), float(number))
+            if number.isdigit()
+            else _NUMBER_WORDS.get(" ".join(number.split()), (1, 1))
+        )
+        per = _unit_days(amount.group("unit"))
+        if per is None:
+            continue
+        said_lo, said_hi = count[0] * per, count[1] * per
+        # Generous on purpose: "three days later" is not wrong for two and a half or four.
+        slack = 1.0 if per <= 7 else per * 0.25
+        if said_hi * 1.5 + slack < lo or said_lo * 0.5 - slack > hi:
+            add(
+                "time_words_amount",
+                Severity.NOTE,
+                f"This opens “{amount.group(0)}”, but in story time it comes "
+                + (
+                    f"before “{previous.title}”"
+                    if hi < 0
+                    else _days_range(lo, hi) + f" after “{previous.title}”"
+                )
+                + f"{then}.",
+                amount,
+            )
+        break
+    return found
+
+
+def _spans(text: str, names: Iterable[str]) -> list[tuple[int, int]]:
+    found: list[tuple[int, int]] = []
+    for name in names:
+        if name:
+            found.extend(
+                (m.start(), m.end())
+                for m in re.finditer(rf"(?<![\w]){re.escape(name)}(?![\w])", text, re.IGNORECASE)
+            )
+    return sorted(found)
+
+
+def resource_findings(text: str, brief: DraftBrief) -> list[DraftFinding]:
+    """Someone in the scene using a thing that someone else has then, or that is used
+    up, lost or destroyed by then (SCN-007, CON-004). Read only where a sentence names
+    the person, then a word for using it, then the thing within a few words."""
+    if not brief.holdings or not brief.people:
+        return []
+    found: list[DraftFinding] = []
+    plain = _without_speech(text)
+    for holding in brief.holdings:
+        thing_names = [*holding.names, *brief.also.get(holding.thing, ())]
+        holder_names = (
+            [*holding.holder_names, *brief.also.get(holding.holder, ())] if holding.holder else []
+        )
+        for sentence in _SENTENCE.finditer(plain):
+            words = sentence.group(0)
+            if _NOT_USED.search(words):
+                continue
+            things = _spans(words, thing_names)
+            if not things:
+                continue
+            user = None
+            for person in brief.people:
+                if holding.holder is not None and person == holding.holder:
+                    continue
+                spans = _spans(words, brief.names_for(person))
+                if not spans:
+                    continue
+                if any(
+                    0 <= start - verb.end()
+                    and len(words[verb.end() : start].split()) <= _USE_REACH_WORDS
+                    for verb in _USES.finditer(words, spans[0][1])
+                    for start, _ in things
+                ):
+                    user = person
+                    break
+            if user is None:
+                continue
+            if holding.holder is not None and _spans(words, holder_names):
+                continue
+            start = sentence.start()
+            end = sentence.end()
+            if holding.gone:
+                found.append(
+                    DraftFinding(
+                        "resource_used_up",
+                        Severity.NOTE,
+                        f"Here {user} uses {holding.thing}, but by this point in the story "
+                        f"{holding.gone}.",
+                        start,
+                        end,
+                        subject=f"{holding.thing}\x1egone",
+                    )
+                )
+            elif holding.holder is not None:
+                found.append(
+                    DraftFinding(
+                        "resource_held_elsewhere",
+                        Severity.NOTE,
+                        f"Here {user} has {holding.thing}, but at this time {holding.holder} "
+                        "has it, and is not named here.",
+                        start,
+                        end,
+                        subject=f"{holding.thing}\x1e{holding.holder}",
+                    )
+                )
+            break
+    return found
+
+
+def after_findings(text: str, brief: DraftBrief) -> list[DraftFinding]:
+    """An "after" condition whose names never share a paragraph (STY-005). Naming them
+    together is not proof the scene shows it, so only the absence is said, as a note."""
+    found: list[DraftFinding] = []
+    paragraphs = [text[start:end] for start, end in _paragraphs(text)]
+    for condition in brief.after:
+        names = [name for name in condition.names if name]
+        if len(names) < 2:
+            continue
+        if any(
+            all(_mentions(paragraph, brief.names_for(name)) for name in names)
+            for paragraph in paragraphs
+        ):
+            continue
+        found.append(
+            DraftFinding(
+                "after_not_shown",
+                Severity.NOTE,
+                "The plan says this scene should leave this true, and no paragraph names "
+                f"{' and '.join(names)} together: {condition.reading.rstrip('.')}.",
+                subject=condition.reading,
+            )
+        )
+    return found
+
+
+def appearance_findings(text: str, brief: DraftBrief) -> list[DraftFinding]:
+    """The prose giving someone eyes, hair or a beard of a colour their accepted
+    details say otherwise (CON-004; with pictures' accepted details, CON-014)."""
+    if not brief.appearance:
+        return []
+    details = [
+        AppearanceDetail(
+            who=detail.who,
+            names=tuple(dict.fromkeys([*detail.names, *brief.also.get(detail.who, ())])),
+            words=detail.words,
+            source=detail.source,
+            key=detail.key,
+        )
+        for detail in brief.appearance
+    ]
+    others = [
+        name
+        for person in brief.people
+        for name in brief.names_for(person)
+        if all(person != detail.who for detail in details)
+    ]
+    found: list[DraftFinding] = []
+    for clash in clashes(_without_speech(text), details, others):
+        said = " ".join(clash.detail.words.split())
+        if len(said) > 160:
+            said = said[:157].rstrip() + "…"
+        found.append(
+            DraftFinding(
+                "appearance_differs",
+                Severity.NOTE,
+                f"Here {clash.who} has “{text[clash.start : clash.end]}”, but "
+                f"{clash.detail.source} says: “{said}”",
+                clash.start,
+                clash.end,
+                subject=f"{clash.who}\x1e{clash.feature}\x1e{clash.prose_colour}",
+            )
+        )
+    return found
+
+
+def prose_findings(text: str, brief: DraftBrief) -> list[DraftFinding]:
+    """Every check against the prose that the brief has something for."""
+    found = [*after_findings(text, brief)]
+    if brief.previous is not None:
+        found.extend(time_words(text, brief.previous))
+    found.extend(resource_findings(text, brief))
+    found.extend(appearance_findings(text, brief))
+    return found
+
+
 __all__ = [
     "STOCK_PHRASES",
+    "AfterShown",
     "DraftBrief",
     "DraftFinding",
+    "Holding",
     "LaterKnowledge",
     "PlannedReveal",
     "SecretToGuard",
     "Severity",
+    "TimeNeighbour",
+    "after_findings",
+    "appearance_findings",
     "check_draft",
+    "days_between",
+    "prose_findings",
+    "resource_findings",
+    "time_words",
     "word_count",
 ]

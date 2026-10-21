@@ -101,3 +101,61 @@ class PostgresStoryClockStore:
                     )
                 ).first()
         return int(row[0]) if row is not None else None
+
+    async def get_scales(self, *, workspace_id: str, project_id: str) -> tuple[Any, int]:
+        """The story's shared scales (STY-006), and their version (0 when none)."""
+        async with session_scope(self._session_factory) as db:
+            row = (
+                await db.execute(
+                    text(
+                        "SELECT scales, scales_version FROM story_clocks "
+                        "WHERE workspace_id = :ws AND project_id = :pj"
+                    ),
+                    {"ws": workspace_id, "pj": project_id},
+                )
+            ).first()
+        if row is None:
+            return {}, 0
+        return row[0] or {}, int(row[1])
+
+    async def set_scales(
+        self, *, workspace_id: str, project_id: str, scales: Any, expected_version: int
+    ) -> int | None:
+        """Replace the scales if still at ``expected_version``; the new version, or ``None``
+        when someone else saved them first."""
+        params = {
+            "ws": workspace_id,
+            "pj": project_id,
+            "scales": json.dumps(scales),
+            "expected": expected_version,
+        }
+        async with session_scope(self._session_factory) as db:
+            row = (
+                await db.execute(
+                    text(
+                        "INSERT INTO story_clocks (workspace_id, project_id, scales, "
+                        "scales_version) "
+                        "SELECT :ws, :pj, CAST(:scales AS JSONB), 1 WHERE :expected = 0 "
+                        "ON CONFLICT (workspace_id, project_id) DO UPDATE SET "
+                        "scales = EXCLUDED.scales, "
+                        "scales_version = story_clocks.scales_version + 1, "
+                        "updated_at = now() "
+                        "WHERE story_clocks.scales_version = :expected "
+                        "RETURNING scales_version"
+                    ),
+                    params,
+                )
+            ).first()
+            if row is None and expected_version > 0:
+                row = (
+                    await db.execute(
+                        text(
+                            "UPDATE story_clocks SET scales = CAST(:scales AS JSONB), "
+                            "scales_version = scales_version + 1, updated_at = now() "
+                            "WHERE workspace_id = :ws AND project_id = :pj "
+                            "AND scales_version = :expected RETURNING scales_version"
+                        ),
+                        params,
+                    )
+                ).first()
+        return int(row[0]) if row is not None else None

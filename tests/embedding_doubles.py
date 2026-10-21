@@ -26,6 +26,7 @@ from backend.domain.embedding import (
     StoredHit,
     VectorRow,
     cosine,
+    metadata_matches,
 )
 
 
@@ -269,6 +270,8 @@ class InMemoryEmbeddingIndexStore:
         if gate.assets is True and row.asset_id is None:
             return False
         if gate.assets is False and row.asset_id is not None:
+            return False
+        if gate.metadata and not metadata_matches(row.metadata, gate):
             return False
         if row.asset_id is None:
             return True

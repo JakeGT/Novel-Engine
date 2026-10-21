@@ -115,3 +115,25 @@ async def test_a_story_another_server_is_delivering_is_left_to_it() -> None:
     # Skipped, not failed: it is tried again straight away next round.
     journal.busy.clear()
     assert await worker.run_once(now=0) == 1
+
+
+@pytest.mark.asyncio
+async def test_views_are_built_under_the_story_lock_and_within_a_budget() -> None:
+    from backend.services.projection_worker import READ_MODEL_BUDGET_SECONDS
+
+    class _Views:
+        def __init__(self):
+            self.calls = []
+
+        async def run_once(self, **kwargs):
+            self.calls.append(kwargs)
+            return 1
+
+    journal = _LockingJournal([], busy=set())
+    worker = ProjectionWorker(journal=journal, consumer=_Consumer({}))
+    views = _Views()
+    worker.read_models = views
+    assert await worker.run_read_models() == 1
+    (call,) = views.calls
+    assert call["budget_seconds"] == READ_MODEL_BUDGET_SECONDS
+    assert call["lock"] == journal.story_lock

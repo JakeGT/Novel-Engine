@@ -42,7 +42,7 @@ const context = {
   scene_id: 'plan_1',
   point_of_view: 'ent_mara',
   settings: { pins: [], excludes: [], budget: null, include_secrets: false },
-  policy_version: 'scene-draft/1',
+  policy_version: 'scene-draft/2',
   budget: 2500,
   words: 12,
   checksum: 'abcdef0123456789',
@@ -53,11 +53,36 @@ const context = {
   left_out: [
     {
       reason: 'secret',
-      item: item('fact:2', 'secrets', 'For the author only', 'Mara is a member of the guild.', 'It is a secret.'),
+      item: item('fact:2', 'secrets', 'Only for you', 'Mara is a member of the guild.', 'It is a secret.'),
     },
   ],
   index: { texts: 0, indexed: 0, behind: [], names_as_of: null, semantic: false },
   rendered: '## The scene\n- The Docks.\n',
+}
+
+const summaries = {
+  plan_id: 'plan_1',
+  has_prose: false,
+  version_id: null,
+  version_number: null,
+  plan_card: null,
+  kept: null,
+  kept_out_of_date: false,
+  suggested: [],
+  max_words: 120,
+}
+
+const suggestion = {
+  id: 'sum_1',
+  body: 'Mara comes home and Tobin does not greet her.',
+  state: 'proposed',
+  origin: 'model',
+  version_id: 'ver_1',
+  created_at: '2026-10-20T09:00:00Z',
+  model: 'stand-in',
+  prompt_version: 'scene-summary/1',
+  job_id: 'job_1',
+  decided_at: null,
 }
 
 describe('SceneContextDialog', () => {
@@ -66,6 +91,7 @@ describe('SceneContextDialog', () => {
       'GET /entities': { items: [entity()], limit: 200, offset: 0 },
       'GET /plan/plan_1/context': context,
       'GET /plan/plan_1/context/kept': [],
+      'GET /plan/plan_1/summary': summaries,
       'PUT /plan/plan_1/context': context,
     })
     const user = userEvent.setup()
@@ -92,6 +118,7 @@ describe('SceneContextDialog', () => {
     const api = mockApi({
       'GET /entities': { items: [entity()], limit: 200, offset: 0 },
       'GET /plan/plan_1/context': context,
+      'GET /plan/plan_1/summary': summaries,
       'GET /plan/plan_1/context/kept': [
         { manifest_id: 'ctx_1', version_id: 'ver_2', version_number: 2, kept_at: '2026-10-12T09:30:00Z', words: 10 },
       ],
@@ -162,9 +189,98 @@ describe('SceneContextDialog', () => {
       'GET /entities': { items: [entity()], limit: 200, offset: 0 },
       'GET /plan/plan_1/context': context,
       'GET /plan/plan_1/context/kept': [],
+      'GET /plan/plan_1/summary': summaries,
     })
     renderInProject(<SceneContextDialog scene={scene as never} onClose={vi.fn()} />)
     expect(await screen.findByText(/When you keep a draft of this scene, you can compare/)).toBeInTheDocument()
     expect(screen.queryByLabelText('Compare with what a kept draft was written from')).not.toBeInTheDocument()
+  })
+
+  it('says what moved each item, how far behind the index is, and keeps a summary only when asked', async () => {
+    const ranked = {
+      ...item(
+        'summary:plan_0',
+        'earlier',
+        'What happened in earlier scenes',
+        '“The arrival”, as planned: Mara comes home.',
+        'It is what the plan card of “The arrival” says happens. It is from “The arrival”, two scenes back.',
+      ),
+      signals: [
+        { name: 'distance', effect: -0.6, note: 'It is from “The arrival”, two scenes back.' },
+        { name: 'importance', effect: 1.2, note: 'You marked Mara as one of your main entries.' },
+      ],
+    }
+    const withLayers = {
+      ...context,
+      items: [ranked, ...context.items],
+      index: { ...context.index, texts: 2, indexed: 1, waiting: 1, waiting_seconds: 300, failing: 1 },
+    }
+    const written = { ...summaries, has_prose: true, version_id: 'ver_1', version_number: 1, plan_card: 'Mara comes home.' }
+    const kept = {
+      ...written,
+      kept: { ...suggestion, state: 'accepted', origin: 'model_corrected', body: 'Mara comes home.' },
+    }
+    const api = mockApi({
+      'GET /entities': { items: [entity()], limit: 200, offset: 0 },
+      'GET /plan/plan_1/context': withLayers,
+      'GET /plan/plan_1/context/kept': [],
+      'GET /plan/plan_1/summary': { ...written, suggested: [suggestion] },
+      'POST /plan/plan_1/summary/sum_1': kept,
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<SceneContextDialog scene={scene as never} onClose={vi.fn()} />)
+    const dialog = await screen.findByRole('dialog', { name: 'What the assistant would use for “The Docks”' })
+    const earlier = await within(dialog).findByRole('region', { name: 'What happened in earlier scenes' })
+    expect(earlier).toHaveTextContent('Lowered: Further from this scene')
+    expect(earlier).toHaveTextContent('Raised: Important to you')
+    expect(earlier).toHaveTextContent('two scenes back')
+    expect(dialog).toHaveTextContent(
+      '1 text you changed is still being read in for about 5 minutes; what it says may be missing here for now. 1 text could not be read and will be tried again.',
+    )
+
+    const panel = within(dialog).getByRole('region', { name: 'Summary for later scenes' })
+    expect(await within(panel).findByText('The assistant suggests')).toBeInTheDocument()
+    expect(panel).toHaveTextContent('No summary kept yet. Later scenes are given what the plan card says: “Mara comes home”.')
+    expect(panel).toHaveTextContent('The assistant suggests')
+    expect(panel).toHaveTextContent('Not used until you keep it.')
+    await expectAccessible(container)
+
+    await user.click(within(panel).getByRole('button', { name: 'Correct it' }))
+    const box = within(panel).getByLabelText('Correct the suggestion, then keep it')
+    await user.clear(box)
+    await user.type(box, 'Mara comes home.')
+    await user.click(within(panel).getByRole('button', { name: 'Keep my correction' }))
+    await waitFor(() => expect(api.find('POST', '/plan/plan_1/summary/sum_1')).toHaveLength(1))
+    expect(api.find('POST', '/plan/plan_1/summary/sum_1')[0].body).toEqual({ accept: true, body: 'Mara comes home.' })
+    expect(await within(panel).findByText('Suggested by the assistant and corrected by you')).toBeInTheDocument()
+  })
+
+  it('asks the assistant for a summary and writes the author’s own', async () => {
+    const written = { ...summaries, has_prose: true, version_id: 'ver_1', version_number: 1 }
+    const api = mockApi({
+      'GET /entities': { items: [entity()], limit: 200, offset: 0 },
+      'GET /plan/plan_1/context': context,
+      'GET /plan/plan_1/context/kept': [],
+      'GET /plan/plan_1/summary': written,
+      'PUT /plan/plan_1/summary': {
+        ...written,
+        kept: { ...suggestion, state: 'accepted', origin: 'author', body: 'Tobin waits.' },
+      },
+      'POST /plan/plan_1/summary/suggest': { id: 'job_9', kind: 'scene_summary', status: 'queued' },
+      'GET /jobs/job_9': { id: 'job_9', kind: 'scene_summary', status: 'succeeded' },
+    })
+    const user = userEvent.setup()
+    renderInProject(<SceneContextDialog scene={scene as never} onClose={vi.fn()} />)
+    const panel = await screen.findByRole('region', { name: 'Summary for later scenes' })
+    await user.click(await within(panel).findByRole('button', { name: 'Ask the assistant to suggest one' }))
+    await waitFor(() => expect(api.find('POST', '/plan/plan_1/summary/suggest')).toHaveLength(1))
+
+    await user.click(within(panel).getByRole('button', { name: 'Write a summary' }))
+    await user.type(within(panel).getByLabelText('Your summary of the scene as it is written now'), 'Tobin waits.')
+    expect(panel).toHaveTextContent('2 words of 120 at most')
+    await user.click(within(panel).getByRole('button', { name: 'Keep my summary' }))
+    await waitFor(() => expect(api.find('PUT', '/plan/plan_1/summary')).toHaveLength(1))
+    expect(api.find('PUT', '/plan/plan_1/summary')[0].body).toEqual({ body: 'Tobin waits.' })
+    expect(await within(panel).findByText('Written by you')).toBeInTheDocument()
   })
 })

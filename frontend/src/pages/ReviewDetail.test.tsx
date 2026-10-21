@@ -739,6 +739,46 @@ describe('ReviewDetail', () => {
     await expectAccessible(container)
   })
 
+  it('reads a suggested intent and a bridge’s condition in words, one part per row', async () => {
+    const condition = {
+      when: 'before',
+      strength: 'hard',
+      entity_id: 'ent_mara',
+      check: { kind: 'has', pattern: { predicate: 'LOCATED_AT', direction: 'out', other_id: 'ent_mara', count: 1 } },
+    }
+    mockApi({
+      ...entries,
+      'GET /plan': { items: [], open: [] },
+      'GET /mutations/mut_1': mutation({
+        operations: [
+          operation({
+            operation_type: 'update_plan_item',
+            target_before: { id: 'pln_room', title: 'The strongroom', details: { _conditions: JSON.stringify([condition]) } },
+            payload: {
+              op: 'update_plan_item',
+              id: 'pln_room',
+              details: {
+                _conditions: JSON.stringify([condition]),
+                _intent: JSON.stringify({ goal: 'Steal the ledger', obstacle: 'The tide turns', outcome: 'yes_but' }),
+                'How it helps': 'It brings her to the harbour.',
+              },
+            },
+          }),
+        ],
+      }),
+    })
+    const { container } = renderInProject(<ReviewDetail />, at)
+
+    const plan = await screen.findByRole('region', { name: 'Story plan' })
+    const intent = within(plan).getByRole('row', { name: /What the scene is for/ })
+    expect(intent).toHaveTextContent('Wants: Steal the ledger · In the way: The tide turns · How it ends: Yes, but')
+    // Unchanged conditions are not repeated, and no part shows as data.
+    expect(within(plan).queryByRole('row', { name: /What must be true/ })).toBeNull()
+    expect(within(plan).getByRole('row', { name: /How it helps/ })).toHaveTextContent('It brings her to the harbour.')
+    expect(intent.closest('table')).not.toHaveTextContent('{')
+    await expectAccessible(container)
+  })
+
   it('keeps an edited change open with the text when the server rejects it', async () => {
     mockApi({
       ...entries,

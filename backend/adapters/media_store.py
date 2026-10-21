@@ -61,6 +61,7 @@ def _asset_version(row: Any) -> MediaAssetVersion:
         created_revision=row.created_revision,
         retired_revision=row.retired_revision,
         created_at=row.created_at,
+        deleted_at=getattr(row, "deleted_at", None),
     )
 
 
@@ -415,6 +416,157 @@ class PostgresMediaStore:
             workspace_id=workspace_id, project_id=project_id, version_id=version_id
         )
 
+    async def delete_original(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        version_id: str,
+        retired_revision: int | None = None,
+        actor_user_id: str | None = None,
+    ) -> MediaAssetVersion | None:
+        """Mark a version's file deleted (AST-008), retiring it if it was not already.
+
+        The row stays as the tombstone; only the first deletion is recorded."""
+        async with session_scope(self._session_factory) as session:
+            row = (
+                await session.execute(
+                    text(
+                        "UPDATE media_asset_versions SET deleted_at = now(), "
+                        "retired_revision = COALESCE(retired_revision, :rev) "
+                        "WHERE workspace_id=:w AND project_id=:p AND id=:id "
+                        "AND deleted_at IS NULL RETURNING asset_id"
+                    ),
+                    {
+                        "w": workspace_id,
+                        "p": project_id,
+                        "id": version_id,
+                        "rev": retired_revision if retired_revision is not None else 0,
+                    },
+                )
+            ).first()
+            if row is not None:
+                await _record_event(
+                    session,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    asset_id=row.asset_id,
+                    asset_version_id=version_id,
+                    action=MediaLifecycleAction.ORIGINAL_DELETED,
+                    actor_user_id=actor_user_id,
+                    canon_revision=retired_revision,
+                )
+        return await self.get_version(
+            workspace_id=workspace_id, project_id=project_id, version_id=version_id
+        )
+
+    async def hold_for_deletion(
+        self, *, workspace_id: str, project_id: str, asset_id: str, lifecycle: AssetLifecycle
+    ) -> bool:
+        """Mark an asset deleted before its files go (AST-008), only if it is still in
+        ``lifecycle``; nothing is recorded until ``delete_asset``. False when it changed."""
+        async with session_scope(self._session_factory) as session:
+            result = await session.execute(
+                text(
+                    "UPDATE media_assets SET lifecycle='deleted' WHERE workspace_id=:w "
+                    "AND project_id=:p AND id=:id AND lifecycle=:lifecycle"
+                ),
+                {"w": workspace_id, "p": project_id, "id": asset_id, "lifecycle": lifecycle.value},
+            )
+        return bool(result.rowcount)  # type: ignore[attr-defined]
+
+    async def release_hold(
+        self, *, workspace_id: str, project_id: str, asset_id: str, lifecycle: AssetLifecycle
+    ) -> None:
+        """Put back an asset held for deletion whose files were never touched."""
+        async with session_scope(self._session_factory) as session:
+            await session.execute(
+                text(
+                    "UPDATE media_assets SET lifecycle=:lifecycle WHERE workspace_id=:w "
+                    "AND project_id=:p AND id=:id AND lifecycle='deleted' AND NOT EXISTS ("
+                    "SELECT 1 FROM media_lifecycle_events e WHERE e.workspace_id=:w "
+                    "AND e.project_id=:p AND e.asset_id=:id AND e.action='asset_deleted')"
+                ),
+                {"w": workspace_id, "p": project_id, "id": asset_id, "lifecycle": lifecycle.value},
+            )
+
+    async def object_keys_in_use(
+        self, *, workspace_id: str, project_id: str, object_keys: list[str], except_asset_id: str
+    ) -> set[str]:
+        """Which of these stored files a version of another asset (its file not deleted)
+        or a smaller copy of one still uses."""
+        if not object_keys:
+            return set()
+        async with session_scope(self._session_factory) as session:
+            rows = (
+                await session.execute(
+                    text(
+                        "SELECT object_key FROM media_asset_versions WHERE workspace_id=:w "
+                        "AND project_id=:p AND object_key = ANY(:keys) AND asset_id <> :a "
+                        "AND deleted_at IS NULL "
+                        "UNION SELECT v.object_key FROM media_variants v "
+                        "JOIN media_asset_versions av ON av.workspace_id = v.workspace_id "
+                        "AND av.project_id = v.project_id AND av.id = v.asset_version_id "
+                        "WHERE v.workspace_id=:w AND v.project_id=:p "
+                        "AND v.object_key = ANY(:keys) AND av.asset_id <> :a"
+                    ),
+                    {
+                        "w": workspace_id,
+                        "p": project_id,
+                        "keys": list(object_keys),
+                        "a": except_asset_id,
+                    },
+                )
+            ).all()
+        return {row.object_key for row in rows}
+
+    async def delete_asset(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        asset_id: str,
+        retired_revision: int | None = None,
+        actor_user_id: str | None = None,
+    ) -> MediaAsset | None:
+        """Mark an asset deleted once its files are gone (AST-008); recorded once, also
+        after ``hold_for_deletion`` marked it. Like ``delete_original``, a deletion always
+        carries a revision (0 without one)."""
+        async with session_scope(self._session_factory) as session:
+            # One deletion of this asset at a time, so the event is recorded only once.
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+                {"key": f"media_asset_delete:{workspace_id}:{project_id}:{asset_id}"},
+            )
+            result = await session.execute(
+                text(
+                    "UPDATE media_assets SET lifecycle='deleted', "
+                    "retired_revision = COALESCE(retired_revision, :rev) "
+                    "WHERE workspace_id=:w AND project_id=:p AND id=:id AND NOT EXISTS ("
+                    "SELECT 1 FROM media_lifecycle_events e WHERE e.workspace_id=:w "
+                    "AND e.project_id=:p AND e.asset_id=:id AND e.action='asset_deleted')"
+                ),
+                {
+                    "w": workspace_id,
+                    "p": project_id,
+                    "id": asset_id,
+                    "rev": retired_revision if retired_revision is not None else 0,
+                },
+            )
+            if result.rowcount:  # type: ignore[attr-defined]
+                await _record_event(
+                    session,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    asset_id=asset_id,
+                    action=MediaLifecycleAction.ASSET_DELETED,
+                    actor_user_id=actor_user_id,
+                    canon_revision=retired_revision,
+                )
+        return await self.get_asset(
+            workspace_id=workspace_id, project_id=project_id, asset_id=asset_id
+        )
+
     async def import_asset(self, asset: MediaAsset) -> MediaAsset:
         """Insert an archived asset with its preserved id (idempotent)."""
         async with session_scope(self._session_factory) as session:
@@ -457,9 +609,9 @@ class PostgresMediaStore:
                     "INSERT INTO media_asset_versions (workspace_id, project_id, id, asset_id, "
                     "version, object_key, content_type, byte_length, checksum, source, licence, "
                     "attribution, authority, visibility, created_revision, retired_revision, "
-                    "created_at) VALUES (:w, :p, :id, :a, :v, :key, :ct, :bl, :sum, :source, "
-                    ":licence, :attribution, :authority, :visibility, :rev, :rrev, :created_at) "
-                    "ON CONFLICT DO NOTHING"
+                    "created_at, deleted_at) VALUES (:w, :p, :id, :a, :v, :key, :ct, :bl, :sum, "
+                    ":source, :licence, :attribution, :authority, :visibility, :rev, :rrev, "
+                    ":created_at, :deleted_at) ON CONFLICT DO NOTHING"
                 ),
                 {
                     "w": version.workspace_id,
@@ -479,6 +631,7 @@ class PostgresMediaStore:
                     "rev": version.created_revision,
                     "rrev": version.retired_revision,
                     "created_at": version.created_at,
+                    "deleted_at": version.deleted_at,
                 },
             )
             if inserted.rowcount:  # type: ignore[attr-defined]
@@ -951,14 +1104,18 @@ class PostgresMediaProcessingStore:
 
     async def workspace_bytes(self, *, workspace_id: str) -> int:
         """Bytes a workspace stores in pictures and their copies (retired ones too: their
-        bytes are still kept)."""
+        bytes are still kept), counting each stored file once."""
         async with session_scope(self._session_factory) as session:
             total = (
                 await session.execute(
                     text(
-                        "SELECT COALESCE((SELECT sum(byte_length) FROM media_asset_versions "
-                        "WHERE workspace_id=:w), 0) + COALESCE((SELECT sum(byte_length) "
-                        "FROM media_variants WHERE workspace_id=:w), 0)"
+                        # Each stored file once, however many records use it (an archive
+                        # restore can point two versions at one file).
+                        "SELECT COALESCE(sum(b), 0) FROM (SELECT max(byte_length) AS b FROM ("
+                        "SELECT project_id, object_key, byte_length FROM media_asset_versions "
+                        "WHERE workspace_id=:w AND deleted_at IS NULL UNION ALL "
+                        "SELECT project_id, object_key, byte_length FROM media_variants "
+                        "WHERE workspace_id=:w) stored GROUP BY project_id, object_key) files"
                     ),
                     {"w": workspace_id},
                 )

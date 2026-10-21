@@ -79,6 +79,7 @@ from backend.domain.operations import (
     UpdateEntityOp,
     UpdatePlanItemOp,
 )
+from backend.domain.scene_intent import INTENT_KEY, scene_intent
 from backend.domain.threads import ADVANCES_KEY, thread_advances
 from backend.domain.worldtime import (
     Direction,
@@ -295,7 +296,9 @@ def _only_fills(current: PlanItem, change: UpdatePlanItemOp) -> bool:
         return False
     if _changed_since(current, change):
         return False
-    if change.details is not None and not _only_adds_steps(current.details, change.details):
+    if change.details is not None and not _only_adds_steps(
+        current.details, change.details, change.base.intent if change.base else None
+    ):
         return False
     for held_threads, new_threads in (
         (current.sets_up, change.sets_up),
@@ -327,13 +330,41 @@ def _advances_listed(raw: str) -> list[str] | None:
     return list(dict.fromkeys(found))
 
 
-def _only_adds_steps(current: dict[str, str], proposed: dict[str, str]) -> bool:
-    """Whether new details only add threads the item moves along (EXT-001), leaving every
-    other detail exactly as the author has it."""
-    others = {key: value for key, value in current.items() if key != ADVANCES_KEY}
-    if {key: value for key, value in proposed.items() if key != ADVANCES_KEY} != others:
+def _only_adds_steps(
+    current: dict[str, str], proposed: dict[str, str], base_intent: str | None = None
+) -> bool:
+    """Whether new details only add threads the item moves along (EXT-001) and fill in
+    parts of the scene's intent left empty (STY-003), leaving every other detail exactly
+    as the author has it."""
+    filled = (ADVANCES_KEY, INTENT_KEY)
+    others = {key: value for key, value in current.items() if key not in filled}
+    if {key: value for key, value in proposed.items() if key not in filled} != others:
+        return False
+    if not _only_fills_intent(current, proposed, base_intent):
         return False
     return set(thread_advances(current)) <= set(thread_advances(proposed))
+
+
+def _only_fills_intent(
+    current: dict[str, str], proposed: dict[str, str], base: str | None = None
+) -> bool:
+    """Every part of the scene's intent the author has set is kept as it is, and none
+    they have changed or cleared since the suggestion (``base``: the intent as stored
+    then, "" for none) is put back."""
+    if current.get(INTENT_KEY) == proposed.get(INTENT_KEY):
+        return True
+    held, offered = scene_intent(current), scene_intent(proposed)
+    if base is not None and held != scene_intent({INTENT_KEY: base} if base else {}):
+        return False
+    if held is None:
+        return True
+    if offered is None:
+        return False
+    return (
+        (not held.goal or held.goal == offered.goal)
+        and (not held.obstacle or held.obstacle == offered.obstacle)
+        and (held.outcome is None or held.outcome == offered.outcome)
+    )
 
 
 class AuthoritativeValidator:
@@ -1178,6 +1209,19 @@ class AuthoritativeValidator:
                         "plan_changed_since",
                         "The plan for this scene has changed since this was suggested, and "
                         "approving it would undo that. Ask for a new suggestion instead.",
+                    )
+                elif (
+                    operation.position is not None
+                    and operation.base is not None
+                    and operation.base.position is not None
+                    and plan_current.position != operation.base.position
+                ):
+                    blocking(
+                        index,
+                        "plan_changed_since",
+                        "The order of the plan has changed since this was suggested, so the "
+                        "new scenes would not land where they were meant to. Ask for a new "
+                        "suggestion instead.",
                     )
                 else:
                     changed = apply_plan_update(plan_current, operation)

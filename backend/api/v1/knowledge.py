@@ -299,6 +299,8 @@ class GuideModel(BaseModel):
     sections: list[GuideSectionModel]
     # The version of the rules that decided what is left out.
     rules: int
+    # Which part of the guide this is (QRY-002).
+    part: Literal["everything", "characters", "places", "timeline", "recap"] = "everything"
 
 
 @router.get("/knowledge/characters/{entity_id}")
@@ -617,12 +619,17 @@ async def reader_guide(
     scene: str = Query(min_length=1, max_length=200),
     viewpoint: str | None = Query(default=None, max_length=200),
     version: int | None = Query(default=None, ge=1),
+    part: Literal["everything", "characters", "places", "timeline", "recap"] = Query(
+        default="everything"
+    ),
     scope: AccessScope = Depends(get_project_scope),
     service: KnowledgeService = Depends(get_knowledge_service),
 ) -> GuideModel:
     """The story bible a reader could see after a scene, as the story stood at a version.
 
     Without ``version`` it is the latest one; the guide always names the version it shows.
+    ``part`` makes one part of it on its own: the characters, the places, a timeline of
+    the scenes read so far and what happened in them, or a recap scene by scene.
     """
     guide = await service.guide(
         scope,
@@ -631,6 +638,7 @@ async def reader_guide(
         up_to_scene=scene,
         viewpoint=viewpoint,
         version=version,
+        part=part,
     )
     return GuideModel(
         title=guide.title,
@@ -655,4 +663,5 @@ async def reader_guide(
             for section in guide.sections
         ],
         rules=guide.rules,
+        part=part,
     )

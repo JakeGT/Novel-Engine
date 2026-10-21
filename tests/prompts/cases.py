@@ -246,6 +246,13 @@ CASES: dict[str, dict[str, dict[str, Any]]] = {
     "check-continuity": {
         "a scene": {"story": CONTEXT, "content": DRAFT},
     },
+    "check-continuity-group": {
+        "a group": {
+            "story": CONTEXT,
+            "passages": "Tobin waited at Lantern Harbor.\n\n[…]\n\nMara did not come.",
+            "focus": "Where and when people and things are",
+        },
+    },
     "check-plan": {
         "a scene": {"story": PLAN_STORY, "content": DRAFT},
     },
@@ -291,6 +298,31 @@ CASES: dict[str, dict[str, dict[str, Any]]] = {
     },
     "scene-plan-card": {
         "a scene": {"content": DRAFT, "entities": ENTITIES[:4]},
+    },
+    "scene-summary": {
+        "a scene": {"content": DRAFT, "title": "The ledger at dusk"},
+    },
+    "scene-intent": {
+        "a plan card and its prose": {
+            "card": "Title: The ledger at dusk\nWhat happens: Mara tries to steal the ledger "
+            "from Tobin before the tide turns.\nSeen through: Mara Voss\nWhere: Saltmere",
+            "content": DRAFT,
+        },
+        "a plan card alone": {
+            "card": "Title: The ledger at dusk\nWhat happens: Mara tries to steal the ledger.",
+            "content": "",
+        },
+    },
+    "bridge-scenes": {
+        "a scene that needs someone somewhere first": {
+            "story": "Entries (id: name (type)):\n- ent_mara: Mara Voss (Character)\n"
+            "- ent_saltmere: Saltmere (Location)\n\nWhat is recorded about Mara Voss:\n"
+            "- Mara Voss is located at Kestle\n\nThe scenes around the gap, in reading "
+            "order:\n- “The quarrel”: Mara and Tobin fall out.\n- “The ledger at dusk”  "
+            "← the scene that needs it",
+            "need": "“The ledger at dusk” needs this first: Mara Voss must have this: is "
+            "located at Saltmere.",
+        },
     },
     "legacy-character-questions": {
         "a character": {

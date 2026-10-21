@@ -252,14 +252,15 @@ then `pnpm --dir frontend run gen:api`.
 
 ## 10. Data & migrations
 
-- Alembic (PostgreSQL) head: **`0048_media_observations`** (… → `0022_archive_imports` →
+- Alembic (PostgreSQL) head: **`0052_context_layers`** (… → `0022_archive_imports` →
   `0023_session_id_token` → `0024_assist_sessions` → `0025_workspace_ai_settings` →
   `0026_assist_suggestions` → `0027_usage_allowance` → `0028_plan_items` →
   `0029_plan_conversations` → `0030_source_texts` → `0031_story_rules` → `0032_story_time` →
   `0033_context` → `0034_scene_studio` → `0035_scene_readings` → `0036_cached_tokens` →
   `0037_finding_decisions` → `0038_usage_controls` → `0039_check_passes` → `0040_scoped_names` → `0041_claims` →
   `0042_delegation` → `0043_access_keys` → `0044_consistency_runs` → `0045_how_long` → `0046_media_variants` →
-  `0047_embedding_generations` → `0048_media_observations`).
+  `0047_embedding_generations` → `0048_media_observations` → `0049_check_fingerprints` →
+  `0050_read_models` → `0051_planning_help` → `0052_context_layers`).
 - Neo4j ordered migrations: `0001_initial_graph_schema`, `0002_entity_scope_identity`,
   `0003_canon_scope_identity`, `0004_canon_projection_labels` (checksums in
   `plan/phase-2-evidence.md`).
@@ -834,4 +835,36 @@ picture decoding quality) and three check defects the evaluation surfaced ("I" i
 words, "64 years" in a range); all fixed with tests. Known limit: the legacy project transfer
 (`project_transfer.py`, not wired into the app) stores files that picture cleanup would treat as
 strays.
+
+## Context layers, incremental checks, ready views and planning help, seventh batch (2026-10-21)
+
+- **Richer context** (CTX-004–007, migration 0052): saved texts reach the passage index through a
+  waiting list read by the background worker (about two seconds; `/texts-index` shows what is
+  waiting); summaries and events of earlier scenes, the end of the scene before, and passages on
+  the same thread; ranking by the author's importance mark, open continuity warnings, distance and
+  near-duplicates, each item saying what moved it. Model summaries are suggestions until kept, and
+  belong to one line of the story.
+- **Incremental checks** (CON-001, CON-007, CON-013, CON-016; migration 0049): each check records
+  digests of what it read and is worked out again only when they change (`check_cache`; the checks'
+  version follows their source code). Findings can be accepted as intended or superseded;
+  dismissals come back when the facts behind them change; advisory findings can be dismissed in
+  Review; the continuity pass is sent in groups for long scenes, confirmed again at run time if it
+  grew. Runbook `plan/runbooks/incremental-checks.md`.
+- **Ready views and the picture library** (QRY-001, QRY-002, AST-002, AST-007, AST-008; migration
+  0050): six views per line built from the change log with watermarks and replay verification
+  (`make read-models-verify`), used only when verified and current; the reader's guide in parts
+  (characters, places, timeline, recap); streamed picture uploads with a digest check, finding
+  pictures by words, and deleting one picture's file (owners and admins, only when shown nowhere).
+  Runbook `plan/runbooks/story-views.md`.
+- **Planning help** (STY-003–006, SCN-007, CON-004, CON-014; migration 0051): the assistant suggests a
+  scene's goal, obstacle and outcome, and bridge scenes for an unmet condition, all as reviewed
+  plan changes; shared scales such as trust; prose checks for time words against the scene before,
+  things another character holds or has used up, and eye or hair colour against accepted details.
+
+A read-only review found no high issue; medium ones (picture delete safety, checks cached across
+code changes, "check again" stuck, grouped pass spend and resume, the viewpoint warning not reaching
+the model, what-if summaries, prose-check false alarms) were fixed with tests. Also fixed: archives of
+stories with retired or deleted pictures failed to restore (older than this batch), and the passage
+waiting list could hold a text for two minutes (a `SKIP LOCKED` subquery claiming more rows than
+asked). Everything ran against the scripted model and stand-ins only.
 

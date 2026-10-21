@@ -401,6 +401,7 @@ class InMemoryVectorStore:
         self.documents: dict[str, _StoredDocument] = {}
         self.results = list(results or [])
         self.queries: list[str] = []
+        self.filters: list[dict[str, Any]] = []
 
     def add_documents(
         self,
@@ -426,8 +427,10 @@ class InMemoryVectorStore:
         workspace_id: str,
         project_id: str,
         n_results: int = 5,
+        where: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         self.queries.append(query_text)
+        self.filters.append(dict(where or {}))
         scoped = [
             result
             for result in self.results
@@ -437,6 +440,17 @@ class InMemoryVectorStore:
                 and self.documents[result["id"]].project_id == project_id
             )
         ]
+        if where:
+            # Metadata filters, as the real store applies them before ranking (CTX-004).
+            scoped = [
+                result
+                for result in scoped
+                if result.get("id") in self.documents
+                and all(
+                    str(self.documents[result["id"]].metadata.get(key)) in {str(v) for v in values}
+                    for key, values in where.items()
+                )
+            ]
         return scoped[:n_results]
 
     def delete(self, ids: list[str], *, workspace_id: str, project_id: str) -> None:
@@ -2765,6 +2779,18 @@ class InMemoryCanonRepository:
                     parent_branch_id,
                 ):
                     studio.saved_dismissals.append(_replace(dismissal, branch_id=branch_id))
+        # The checks kept as runs come too (consistency_runs is forked).
+        runs = getattr(self, "consistency_runs", None)
+        if runs is not None:
+            from dataclasses import replace as _copy
+
+            for run in list(runs.runs):
+                if (run.workspace_id, run.project_id, run.branch_id) == (
+                    workspace_id,
+                    project_id,
+                    parent_branch_id,
+                ):
+                    runs.runs.append(_copy(run, branch_id=branch_id))
         return head
 
     async def set_branch_status(
@@ -4002,6 +4028,116 @@ class InMemoryMediaStore:
         self.versions[key] = retired
         return retired
 
+    async def delete_original(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        version_id: str,
+        retired_revision: int | None = None,
+        actor_user_id: str | None = None,
+    ) -> MediaAssetVersion | None:
+        key = (workspace_id, project_id, version_id)
+        version = self.versions.get(key)
+        if version is None or version.deleted_at is not None:
+            return version
+        self._record(
+            workspace_id,
+            project_id,
+            version.asset_id,
+            MediaLifecycleAction.ORIGINAL_DELETED,
+            asset_version_id=version_id,
+            actor_user_id=actor_user_id,
+            canon_revision=retired_revision,
+        )
+        gone = version.model_copy(
+            update={
+                "deleted_at": datetime.now(UTC),
+                "retired_revision": version.retired_revision
+                if version.retired_revision is not None
+                else (retired_revision if retired_revision is not None else 0),
+            }
+        )
+        self.versions[key] = gone
+        return gone
+
+    async def delete_asset(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        asset_id: str,
+        retired_revision: int | None = None,
+        actor_user_id: str | None = None,
+    ) -> MediaAsset | None:
+        from backend.domain.media import AssetLifecycle
+
+        key = (workspace_id, project_id, asset_id)
+        asset = self.assets.get(key)
+        if asset is None or self._deletion_recorded(workspace_id, project_id, asset_id):
+            return asset
+        self._record(
+            workspace_id,
+            project_id,
+            asset_id,
+            MediaLifecycleAction.ASSET_DELETED,
+            actor_user_id=actor_user_id,
+            canon_revision=retired_revision,
+        )
+        gone = asset.model_copy(
+            update={
+                "lifecycle": AssetLifecycle.DELETED,
+                "retired_revision": asset.retired_revision
+                if asset.retired_revision is not None
+                else (retired_revision if retired_revision is not None else 0),
+            }
+        )
+        self.assets[key] = gone
+        return gone
+
+    def _deletion_recorded(self, workspace_id: str, project_id: str, asset_id: str) -> bool:
+        return any(
+            (event.workspace_id, event.project_id, event.asset_id)
+            == (workspace_id, project_id, asset_id)
+            and event.action is MediaLifecycleAction.ASSET_DELETED
+            for event in self.events
+        )
+
+    async def hold_for_deletion(self, *, workspace_id, project_id, asset_id, lifecycle) -> bool:
+        from backend.domain.media import AssetLifecycle
+
+        key = (workspace_id, project_id, asset_id)
+        asset = self.assets.get(key)
+        if asset is None or asset.lifecycle is not lifecycle:
+            return False
+        self.assets[key] = asset.model_copy(update={"lifecycle": AssetLifecycle.DELETED})
+        return True
+
+    async def release_hold(self, *, workspace_id, project_id, asset_id, lifecycle) -> None:
+        from backend.domain.media import AssetLifecycle
+
+        key = (workspace_id, project_id, asset_id)
+        asset = self.assets.get(key)
+        if (
+            asset is not None
+            and asset.lifecycle is AssetLifecycle.DELETED
+            and not self._deletion_recorded(workspace_id, project_id, asset_id)
+        ):
+            self.assets[key] = asset.model_copy(update={"lifecycle": lifecycle})
+
+    async def object_keys_in_use(
+        self, *, workspace_id, project_id, object_keys, except_asset_id
+    ) -> set[str]:
+        wanted = set(object_keys)
+        return {
+            version.object_key
+            for (w, p, _), version in self.versions.items()
+            if (w, p) == (workspace_id, project_id)
+            and version.object_key in wanted
+            and version.asset_id != except_asset_id
+            and version.deleted_at is None
+        }
+
     async def create_version(
         self,
         *,
@@ -4798,6 +4934,7 @@ class InMemoryStoryClockStore:
     def __init__(self) -> None:
         self.units: dict[tuple[str, str], str] = {}
         self.how_long: dict[tuple[str, str], tuple[Any, int]] = {}
+        self.scales: dict[tuple[str, str], tuple[Any, int]] = {}
 
     async def get_unit(self, *, workspace_id: str, project_id: str) -> str | None:
         return self.units.get((workspace_id, project_id))
@@ -4817,6 +4954,20 @@ class InMemoryStoryClockStore:
         if version != expected_version:
             return None
         self.how_long[(workspace_id, project_id)] = (copy.deepcopy(table), version + 1)
+        return version + 1
+
+    # The story's shared scales (STY-006), with a version per story.
+    async def get_scales(self, *, workspace_id: str, project_id: str) -> tuple[Any, int]:
+        scales, version = self.scales.get((workspace_id, project_id), ({}, 0))
+        return copy.deepcopy(scales), version
+
+    async def set_scales(
+        self, *, workspace_id: str, project_id: str, scales: Any, expected_version: int
+    ) -> int | None:
+        _, version = self.scales.get((workspace_id, project_id), ({}, 0))
+        if version != expected_version:
+            return None
+        self.scales[(workspace_id, project_id)] = (copy.deepcopy(scales), version + 1)
         return version + 1
 
 
@@ -4852,6 +5003,171 @@ class InMemoryPassageStore:
             for (ws, pj, source_id), items in self.passages.items()
             if ws == workspace_id and pj == project_id and items
         }
+
+
+class InMemoryPassageQueue:
+    """The passage index's waiting list (CTX-005), as PostgreSQL keeps it."""
+
+    def __init__(self, clock: Any = None) -> None:
+        import time as _time
+
+        self._now = clock or _time.monotonic
+        # (workspace, project, source) -> row
+        self.rows: dict[tuple[str, str, str], dict[str, Any]] = {}
+
+    async def request(self, *, workspace_id, project_id, source_id, gone=False) -> None:
+        key = (workspace_id, project_id, source_id)
+        row = self.rows.get(key)
+        if row is None:
+            self.rows[key] = {
+                "gone": gone,
+                "generation": 1,
+                "first": self._now(),
+                "claimed_until": None,
+                "attempts": 0,
+                "error": None,
+            }
+            return
+        if row["attempts"] > 0:
+            # A fresh change is read soon, never after an old failure's wait.
+            row["claimed_until"] = None
+        row.update(gone=gone, generation=row["generation"] + 1, attempts=0, error=None)
+
+    def _ready(self, row: dict[str, Any]) -> bool:
+        return row["claimed_until"] is None or row["claimed_until"] < self._now()
+
+    async def claim(self, *, workspace_id, project_id, limit, lease_seconds) -> list[Any]:
+        from backend.domain.context import WaitingText
+
+        found = sorted(
+            (
+                (row["first"], key[2], row)
+                for key, row in self.rows.items()
+                if key[:2] == (workspace_id, project_id) and self._ready(row)
+            ),
+            key=lambda item: (item[0], item[1]),
+        )[:limit]
+        out = []
+        for _, source_id, row in found:
+            row["claimed_until"] = self._now() + lease_seconds
+            out.append(WaitingText(source_id, row["gone"], row["generation"], row["attempts"]))
+        return sorted(out, key=lambda item: item.source_id)
+
+    async def done(self, *, workspace_id, project_id, source_id, generation) -> bool:
+        key = (workspace_id, project_id, source_id)
+        row = self.rows.get(key)
+        if row is None:
+            return False
+        if row["generation"] == generation:
+            del self.rows[key]
+            return True
+        row["claimed_until"] = None
+        return False
+
+    async def failed(
+        self, *, workspace_id, project_id, source_id, generation, error, retry_after_seconds
+    ) -> bool:
+        row = self.rows.get((workspace_id, project_id, source_id))
+        if row is None:
+            return False
+        if row["generation"] != generation:
+            row["claimed_until"] = None  # a newer change: read it soon
+            return False
+        row["attempts"] += 1
+        row["error"] = error
+        row["claimed_until"] = self._now() + retry_after_seconds
+        return True
+
+    async def waiting(self, *, workspace_id, project_id) -> Any:
+        from backend.domain.context import IndexWaiting
+
+        rows = [row for key, row in self.rows.items() if key[:2] == (workspace_id, project_id)]
+        if not rows:
+            return IndexWaiting()
+        return IndexWaiting(
+            count=len(rows),
+            oldest_seconds=max(0.0, self._now() - min(row["first"] for row in rows)),
+            failing=sum(1 for row in rows if row["attempts"] > 0),
+        )
+
+    async def stories_waiting(self, *, limit) -> list[tuple[str, str]]:
+        oldest: dict[tuple[str, str], float] = {}
+        for key, row in self.rows.items():
+            if self._ready(row):
+                scope = key[:2]
+                oldest[scope] = min(oldest.get(scope, row["first"]), row["first"])
+        return [scope for scope, _ in sorted(oldest.items(), key=lambda item: item[1])][:limit]
+
+
+class InMemorySceneSummaryStore:
+    """Summaries of scenes' prose (CTX-006)."""
+
+    def __init__(self) -> None:
+        self.rows: dict[tuple[str, str, str], Any] = {}
+
+    def _retire_accepted(self, workspace_id, project_id, summary) -> None:
+        from dataclasses import replace as _replace
+
+        from backend.domain.context import SummaryState
+
+        for key, row in list(self.rows.items()):
+            if (
+                key[:2] == (workspace_id, project_id)
+                and row.source_id == summary.source_id
+                and row.branch_id == summary.branch_id
+                and row.state is SummaryState.ACCEPTED
+                and row.id != summary.id
+            ):
+                self.rows[key] = _replace(row, state=SummaryState.REPLACED)
+
+    async def add(self, *, workspace_id, project_id, summary) -> None:
+        from backend.domain.context import SummaryState
+
+        if summary.state is SummaryState.ACCEPTED:
+            self._retire_accepted(workspace_id, project_id, summary)
+        self.rows[(workspace_id, project_id, summary.id)] = summary
+
+    async def decide(
+        self, *, workspace_id, project_id, summary_id, state, body, origin, decided_by, decided_at
+    ) -> Any:
+        from dataclasses import replace as _replace
+
+        from backend.domain.context import SummaryState
+
+        key = (workspace_id, project_id, summary_id)
+        row = self.rows.get(key)
+        if row is None or row.state is not SummaryState.PROPOSED:
+            return None
+        if state is SummaryState.ACCEPTED:
+            self._retire_accepted(workspace_id, project_id, row)
+        updated = _replace(
+            row,
+            state=state,
+            body=body if body is not None else row.body,
+            origin=origin or row.origin,
+            decided_by=decided_by,
+            decided_at=decided_at,
+        )
+        self.rows[key] = updated
+        return updated
+
+    async def get(self, *, workspace_id, project_id, summary_id) -> Any:
+        return self.rows.get((workspace_id, project_id, summary_id))
+
+    async def for_sources(self, *, workspace_id, project_id, source_ids) -> list[Any]:
+        from backend.domain.context import SummaryState
+
+        wanted = set(source_ids)
+        return sorted(
+            (
+                row
+                for key, row in self.rows.items()
+                if key[:2] == (workspace_id, project_id)
+                and row.source_id in wanted
+                and row.state in (SummaryState.PROPOSED, SummaryState.ACCEPTED)
+            ),
+            key=lambda row: (row.created_at, row.id),
+        )
 
 
 class InMemoryManifestStore:
@@ -5373,18 +5689,27 @@ class InMemoryAccessKeyStore:
 
 
 class InMemoryConsistencyRunStore:
-    """Checks kept as runs (CON-001), in memory."""
+    """Checks kept as runs (CON-001), and the check cache (CON-007), in memory."""
 
     def __init__(self) -> None:
         self.runs: list[Any] = []
+        # (workspace, project, plan, check, fingerprint) -> (order, findings)
+        self.cache: dict[tuple[str, str, str, str, str], tuple[int, list[Any]]] = {}
+        self._tick = 0
 
     async def add(self, run: Any) -> bool:
         from dataclasses import replace
         from datetime import UTC, datetime, timedelta
 
         if run.job_id is not None and any(
-            (item.workspace_id, item.project_id, item.job_id)
-            == (run.workspace_id, run.project_id, run.job_id)
+            (item.workspace_id, item.project_id, item.branch_id, item.job_id)
+            == (run.workspace_id, run.project_id, run.branch_id, run.job_id)
+            for item in self.runs
+        ):
+            return False
+        if any(
+            (item.workspace_id, item.project_id, item.branch_id, item.id)
+            == (run.workspace_id, run.project_id, run.branch_id, run.id)
             for item in self.runs
         ):
             return False
@@ -5395,26 +5720,26 @@ class InMemoryConsistencyRunStore:
         self.runs.append(replace(run, created_at=run.created_at or now))
         return True
 
-    async def get(self, *, workspace_id: str, project_id: str, run_id: str) -> Any:
-        return next(
-            (
-                run
-                for run in self.runs
-                if (run.workspace_id, run.project_id, run.id) == (workspace_id, project_id, run_id)
-            ),
-            None,
-        )
+    def _one(self, workspace_id: str, project_id: str, branch_id: str | None, test: Any) -> Any:
+        found = [
+            run
+            for run in self.runs
+            if (run.workspace_id, run.project_id) == (workspace_id, project_id)
+            and (branch_id is None or run.branch_id == branch_id)
+            and test(run)
+        ]
+        found.sort(key=lambda run: run.created_at)
+        return found[0] if found else None
 
-    async def for_job(self, *, workspace_id: str, project_id: str, job_id: str) -> Any:
-        return next(
-            (
-                run
-                for run in self.runs
-                if (run.workspace_id, run.project_id, run.job_id)
-                == (workspace_id, project_id, job_id)
-            ),
-            None,
-        )
+    async def get(
+        self, *, workspace_id: str, project_id: str, run_id: str, branch_id: str | None = None
+    ) -> Any:
+        return self._one(workspace_id, project_id, branch_id, lambda run: run.id == run_id)
+
+    async def for_job(
+        self, *, workspace_id: str, project_id: str, job_id: str, branch_id: str | None = None
+    ) -> Any:
+        return self._one(workspace_id, project_id, branch_id, lambda run: run.job_id == job_id)
 
     async def recent(
         self,
@@ -5436,6 +5761,107 @@ class InMemoryConsistencyRunStore:
         ]
         found.sort(key=lambda run: (run.created_at, run.id), reverse=True)
         return found[:limit]
+
+    async def all_in(
+        self, *, workspace_id: str, project_id: str, branch_id: str, limit: int = 2_000
+    ) -> list[Any]:
+        found = [
+            run
+            for run in self.runs
+            if (run.workspace_id, run.project_id, run.branch_id)
+            == (workspace_id, project_id, branch_id)
+        ]
+        found.sort(key=lambda run: (run.created_at, run.id))
+        return found[:limit]
+
+    async def cached(
+        self, *, workspace_id: str, project_id: str, plan_id: str, keys: list[tuple[str, str]]
+    ) -> dict[tuple[str, str], dict[str, Any]]:
+        found: dict[tuple[str, str], dict[str, Any]] = {}
+        for check, fingerprint in keys:
+            kept = self.cache.get((workspace_id, project_id, plan_id, check, fingerprint))
+            if kept is not None:
+                found[(check, fingerprint)] = {"findings": list(kept[1])}
+        return found
+
+    async def keep_cached(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        entries: list[dict[str, Any]],
+        keep: int,
+    ) -> None:
+        for entry in entries:
+            self._tick += 1
+            key = (workspace_id, project_id, plan_id, entry["check"], entry["fingerprint"])
+            self.cache[key] = (self._tick, list(entry["findings"]))
+            mine = sorted(
+                ((order, k) for k, (order, _) in self.cache.items() if k[:4] == key[:4]),
+                reverse=True,
+            )
+            for _, old in mine[keep:]:
+                del self.cache[old]
+
+    async def delete_project(self, *, workspace_id: str, project_id: str) -> None:
+        self.runs = [
+            run
+            for run in self.runs
+            if (run.workspace_id, run.project_id) != (workspace_id, project_id)
+        ]
+        self.cache = {k: v for k, v in self.cache.items() if k[:2] != (workspace_id, project_id)}
+
+
+class InMemoryReviewDismissalStore:
+    """Advisory findings dismissed on a proposal in review (CON-016), in memory."""
+
+    def __init__(self) -> None:
+        self.dismissals: list[Any] = []
+
+    async def for_mutation(
+        self, *, workspace_id: str, project_id: str, mutation_id: str
+    ) -> list[Any]:
+        return [
+            item
+            for item in self.dismissals
+            if (item.workspace_id, item.project_id, item.mutation_id)
+            == (workspace_id, project_id, mutation_id)
+        ]
+
+    async def add(self, dismissal: Any) -> None:
+        from dataclasses import replace
+
+        self.dismissals = [
+            replace(item, withdrawn_at=dismissal.created_at)
+            if (item.workspace_id, item.project_id, item.mutation_id, item.fingerprint)
+            == (
+                dismissal.workspace_id,
+                dismissal.project_id,
+                dismissal.mutation_id,
+                dismissal.fingerprint,
+            )
+            and item.withdrawn_at is None
+            else item
+            for item in self.dismissals
+        ]
+        self.dismissals.append(dismissal)
+
+    async def withdraw(
+        self, *, workspace_id: str, project_id: str, mutation_id: str, dismissal_id: str, at: Any
+    ) -> bool:
+        from dataclasses import replace
+
+        for index, item in enumerate(self.dismissals):
+            if (item.workspace_id, item.project_id, item.mutation_id, item.id) == (
+                workspace_id,
+                project_id,
+                mutation_id,
+                dismissal_id,
+            ) and item.withdrawn_at is None:
+                self.dismissals[index] = replace(item, withdrawn_at=at)
+                return True
+        return False
 
 
 class InMemoryObservationStore:
@@ -5706,19 +6132,17 @@ class InMemoryMediaProcessingStore:
         return self.segments[key]
 
     async def workspace_bytes(self, *, workspace_id):
-        total = sum(
-            variant.byte_length
-            for (w, _, _), found in self.variants.items()
-            if w == workspace_id
-            for variant in found.values()
-        )
+        # Each stored file once, however many records use it.
+        files: dict[tuple[str, str], int] = {}
+        for (w, p, _), found in self.variants.items():
+            if w == workspace_id:
+                for variant in found.values():
+                    files[(p, variant.object_key)] = variant.byte_length
         if self.media is not None:
-            total += sum(
-                version.byte_length
-                for (w, _, _), version in self.media.versions.items()
-                if w == workspace_id
-            )
-        return total
+            for (w, p, _), version in self.media.versions.items():
+                if w == workspace_id and version.deleted_at is None:
+                    files[(p, version.object_key)] = version.byte_length
+        return sum(files.values())
 
     async def lag(self):
         now = datetime.now(UTC)

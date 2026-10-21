@@ -209,6 +209,8 @@ export const JOB_DOING: Record<string, string> = {
   [PLAN_JOB]: 'The assistant is filling in the plan card from the scene',
   story_audit: 'Auditing this part of the story',
   media_describe: 'The assistant is looking at the picture',
+  scene_intent: 'The assistant is suggesting what the scene is for',
+  bridge_scenes: 'The assistant is thinking of scenes to bridge the gap',
 }
 
 /** Where an audit's results are read (CON-011). */

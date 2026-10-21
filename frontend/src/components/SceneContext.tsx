@@ -13,7 +13,10 @@ import {
 import { fullDate } from '../lib/time'
 import { plural } from '../lib/words'
 import { scopedKey, useCanonWrite, useEntries, useInvalidateProject, useProject } from '../project'
+import { SceneSummaryPanel } from './SceneSummary'
 import { Button, Dialog, ErrorNotice, Loading, WriteProblem } from './ui'
+
+const WAITING_EVERY = 2000
 
 // How much to give, in words, as named choices rather than a number to invent.
 const BUDGETS: { value: number; label: string }[] = [
@@ -40,6 +43,61 @@ const WHAT_CHANGED: Record<string, string> = {
   words: 'its words',
   section: 'where it sits',
   reason: 'why it is given',
+}
+
+// What moved an item up or down (CTX-007), in a few words; the reason says it in full.
+function signalLabel(name: string, effect: number): string {
+  const up = effect > 0
+  switch (name) {
+    case 'importance':
+      return up ? 'Important to you' : 'Marked as less central'
+    case 'continuity':
+      return 'Has an open warning'
+    case 'distance':
+      return 'Further from this scene'
+    case 'diversity':
+      return 'Like another passage'
+    case 'meaning':
+      return 'Close in meaning'
+    case 'thread':
+      return 'On the same thread'
+    case 'out of date':
+      return 'Out of date'
+    default:
+      return up ? 'Ranked higher' : 'Ranked lower'
+  }
+}
+
+/** How each signal moved an item, as small labelled marks; nothing for a fixed score. */
+function RankMarks({ item }: { item: ContextItem }) {
+  const signals = item.signals ?? []
+  if (signals.length === 0) return null
+  return (
+    <span className="rank-marks" aria-label="What moved it up or down">
+      {signals.map((signal, index) => (
+        <span
+          key={`${signal.name}-${index}`}
+          className={`mark rank-mark ${signal.effect > 0 ? 'up' : 'down'}`}
+        >
+          {signal.effect > 0 ? 'Raised: ' : 'Lowered: '}
+          {signalLabel(signal.name, signal.effect)}
+        </span>
+      ))}
+    </span>
+  )
+}
+
+function waitingWords(index: NonNullable<SceneContextData['index']>): string | null {
+  const waiting = index.waiting ?? 0
+  if (waiting === 0) return null
+  const seconds = index.waiting_seconds ?? 0
+  const since = seconds >= 120 ? ` for about ${Math.round(seconds / 60)} minutes` : ''
+  const failing = index.failing ?? 0
+  return (
+    `${plural(waiting, 'text')} you changed ${waiting === 1 ? 'is' : 'are'} still being read in${since}; ` +
+    `what ${waiting === 1 ? 'it says' : 'they say'} may be missing here for now.` +
+    (failing > 0 ? ` ${plural(failing, 'text')} could not be read and will be tried again.` : '')
+  )
 }
 
 const keptLabel = (kept: KeptContext) =>
@@ -204,6 +262,9 @@ export function SceneContextDialog({ scene, onClose }: { scene: PlanItem; onClos
   const context = useQuery({
     queryKey: scopedKey(scope, 'scene-context', scene.id),
     queryFn: () => api.sceneContext(scope, scene.id),
+    // While texts wait to be read in (CTX-005), look again shortly, so what they say
+    // appears here by itself once it is in.
+    refetchInterval: (query) => (query.state.data?.index?.waiting ? WAITING_EVERY : false),
   })
   const [rebuilding, setRebuilding] = useState(false)
   const [rebuildError, setRebuildError] = useState<unknown>(null)
@@ -268,6 +329,7 @@ export function SceneContextDialog({ scene, onClose }: { scene: PlanItem; onClos
           {item.reason} · {plural(item.words, 'word')}
           {item.pinned ? ' · always used' : ''}
         </span>
+        <RankMarks item={item} />
         {item.picture && (
           <span className="small context-reason">
             <Link to={`/projects/${scope.projectId}/pictures/${item.picture.asset_id}`}>
@@ -372,6 +434,11 @@ export function SceneContextDialog({ scene, onClose }: { scene: PlanItem; onClos
               </p>
             )}
             <ErrorNotice error={rebuildError} />
+            {data.index && waitingWords(data.index) && (
+              <p className="notice plain small" role="status">
+                {waitingWords(data.index)}
+              </p>
+            )}
 
             {sectionsOf(data.items).map((group) => (
               <section key={group.title} className="stack tight context-section" aria-label={group.title}>
@@ -391,6 +458,8 @@ export function SceneContextDialog({ scene, onClose }: { scene: PlanItem; onClos
                 ))}
               </section>
             )}
+
+            <SceneSummaryPanel scene={scene} />
 
             <details className="more">
               <summary>Technical details: exactly what would be given</summary>

@@ -62,6 +62,10 @@ class MediaLifecycleAction(StrEnum):
     VERSION_REGISTERED = "version_registered"
     VERSION_IMPORTED = "version_imported"
     VERSION_RETIRED = "version_retired"
+    # A picture's original file deleted before its story (AST-008): the version row stays
+    # as the tombstone (checksum, size, type, when); the file and its copies are gone.
+    ORIGINAL_DELETED = "original_deleted"
+    ASSET_DELETED = "asset_deleted"
 
 
 class MediaLifecycleEvent(BaseModel):
@@ -113,6 +117,8 @@ class MediaAssetVersion(BaseModel):
     created_revision: int
     retired_revision: int | None = None
     created_at: datetime = Field(default_factory=utcnow)
+    # When its file was deleted (AST-008); the row itself is kept as the tombstone.
+    deleted_at: datetime | None = None
 
     model_config = {"frozen": True}
 

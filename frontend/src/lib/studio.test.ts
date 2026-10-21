@@ -39,9 +39,9 @@ describe('studio helpers', () => {
 
   it('puts warnings before notes, then in reading order', () => {
     const ordered = orderChecks([
-      { code: 'a', key: 'ka', severity: 'note', message: 'n', start: 1, end: 2 },
-      { code: 'b', key: 'kb', severity: 'warning', message: 'w2', start: 9, end: 10 },
-      { code: 'c', key: 'kc', severity: 'warning', message: 'w1', start: 3, end: 4 },
+      { code: 'a', key: 'ka', severity: 'note', message: 'n', start: 1, end: 2, came_back: false },
+      { code: 'b', key: 'kb', severity: 'warning', message: 'w2', start: 9, end: 10, came_back: false },
+      { code: 'c', key: 'kc', severity: 'warning', message: 'w1', start: 3, end: 4, came_back: false },
     ])
     expect(ordered.map((check) => check.code)).toEqual(['c', 'b', 'a'])
   })

@@ -1,6 +1,6 @@
 """Which part of the story bible a request is shown, and why (CTX-002, ADR-021 amendment).
 
-Writing a scene has its own policy (``context.py``, ``scene-draft/1``). The other requests
+Writing a scene has its own policy (``context.py``, ``scene-draft/2``). The other requests
 that read the story bible — changing anything by instruction, suggesting missing
 connections, reading the author's text — used to list it up to fixed counts (200 entries,
 300 facts) in whatever order the store returned, so in a large story the very entries a

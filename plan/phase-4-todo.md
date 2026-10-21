@@ -37,8 +37,8 @@
 | --- | --- | --- |
 | A. Context manifest and versioned policy | CTX-001, CTX-002 | Implemented (`backend/domain/context.py`) |
 | B. Deterministic retrieval scoped by branch, time and viewpoint | CTX-002 | Implemented for scenes (`context_service.py`) |
-| C. Derived memory of the author's writing; rebuild; staleness | CTX-004–CTX-006A | Partly: a passage index, rebuildable, updated inline (not through the outbox); search vectors in versioned generations with filters before ranking (batch 6); no summary or event-block layers |
-| D. Ranking, budget, deduplication | CTX-007, CTX-008 | Implemented: fixed scores, word budget, hard items first |
+| C. Derived memory of the author's writing; rebuild; staleness | CTX-004–CTX-006A | Partly: a passage index, rebuildable, read in from its own waiting list by the background worker with lag reported (batch 7); search vectors in versioned generations with filters before ranking, by text and kind too (batches 6, 7); summaries (plan card, or the author's / a kept suggestion with provenance and staleness), event blocks and the end of the scene before (batch 7) |
+| D. Ranking, budget, deduplication | CTX-007, CTX-008 | Implemented: fixed scores, word budget, hard items first; since batch 7, author importance, continuity impact, narrative distance, thread links and diversity, each recorded on the item with its effect and said in its reason; weights not tuned against a real model |
 | E. Context preview, pin and exclude | CTX-009 | Implemented; browser tested |
 | F. Stable-to-volatile rendering | CTX-015 | Implemented; recording the provider's cached-token count is backlog work (see CTX-015) |
 | G. Retrieval and leakage evaluation | CTX-010 | Built (batch 6): a labelled synthetic story with relevance, omission, leakage and what-if cases (`tests/eval/retrieval`); search by meaning off in that set |

@@ -8,8 +8,19 @@ comes back (a review comment goes "outdated" the same way when the line it is on
 changes). A dismissal can also run out after a set time. Undoing one keeps the record
 and marks it withdrawn, so a dismissal is never changed, only replaced.
 
-Only advisory findings in the studio can be dismissed. Nothing here touches the checks
-that guard the story itself, which can never be dismissed or switched off (ADR-013).
+A dismissal also keeps a digest of what the finding said when it was dismissed
+(``depends_on``): the message is worked out from the facts, times, places and people
+the check read, so when those change in a way that matters to it, the finding comes back
+even though its sentence is the same (CON-016). An assistant's note has none: what it
+was worked out from cannot be told without the assistant.
+
+Advisory findings on a proposal in review can be dismissed too (``ReviewDismissal``):
+keyed by the change as it stands (an edit is a new revision of it) and holding what the
+finding said, so an edited change or a story that changed what it says brings it back.
+
+Only advisory findings can be dismissed. Nothing here touches the checks that guard the
+story itself, which can never be dismissed or switched off (ADR-013); a story rule set
+to block is never dismissed either.
 """
 
 from __future__ import annotations
@@ -59,11 +70,52 @@ class FindingDismissal:
     created_by: str | None
     created_at: datetime
     withdrawn_at: datetime | None = None
+    # A digest of what the finding said when dismissed; None for a note, or one dismissed
+    # before this was kept.
+    depends_on: str | None = None
 
     def applies(self, now: datetime) -> bool:
         if self.withdrawn_at is not None:
             return False
         return self.expires_at is None or self.expires_at > now
+
+
+@dataclass(frozen=True)
+class ReviewDismissal:
+    """An advisory finding on a proposal in review, dismissed by the author."""
+
+    workspace_id: str
+    project_id: str
+    id: str
+    mutation_id: str
+    # The change as it stands and the kind of finding (``review_fingerprint``).
+    fingerprint: str
+    # What the finding said (``finding_dependency`` of its message and, for a story rule,
+    # the rule's version).
+    depends_on: str
+    code: str
+    reason: DismissReason
+    note: str
+    created_by: str | None
+    created_at: datetime
+    withdrawn_at: datetime | None = None
+
+    @property
+    def standing(self) -> bool:
+        return self.withdrawn_at is None
+
+
+def review_fingerprint(mutation_id: str, operation: str, code: str, occurrence: int = 0) -> str:
+    """One finding on one change of a proposal: ``operation`` identifies the change as it
+    stands (its id, revision and a digest of its content), or "" for the proposal as a
+    whole. ``occurrence`` tells apart findings of the same kind on the same change (two
+    possible duplicates, say), in the order they are given; the first keeps the key it
+    always had."""
+    parts = ["review", mutation_id, operation, code]
+    if occurrence:
+        parts.append(str(occurrence))
+    raw = "\x1f".join(parts)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 _SENTENCE_END = re.compile(r"[.!?…]+[\"'”’)\]]*(?=\s)|\n\s*\n")
@@ -118,7 +170,9 @@ __all__ = [
     "DismissReason",
     "FindingDismissal",
     "FindingKind",
+    "ReviewDismissal",
     "anchor",
     "expiry",
     "fingerprint",
+    "review_fingerprint",
 ]

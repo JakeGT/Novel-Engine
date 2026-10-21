@@ -5,12 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import get_plan_service
 from backend.api.v1.story_time import RecordModel, record_model
-from backend.domain.arcs import MAX_STAGES, ArcStage, arc_path
+from backend.domain.arcs import MAX_SCALES, MAX_STAGES, ArcStage, ScaleSet, StateScale, arc_path
 from backend.domain.canon.plans import (
     MAX_SUMMARY_LENGTH,
     MAX_TITLE_LENGTH,
@@ -145,6 +145,9 @@ class ArcStageReadingModel(BaseModel):
     fact_id: str | None
     # How its fact stands where it is reached: holds, not_then, gone or unclear.
     fact: str | None
+    # Where the character stands on a shared scale from here, if the stage says.
+    scale_id: str | None = None
+    level: str | None = None
 
 
 class ArcReadingModel(BaseModel):
@@ -152,6 +155,48 @@ class ArcReadingModel(BaseModel):
     # Whose arc it is.
     about: list[str]
     stages: list[ArcStageReadingModel]
+
+
+class ScaleStepModel(BaseModel):
+    scene_id: str
+    scene_number: int
+    level: str
+    # On a scale in order: toward the arc's last level, away from it, the same distance,
+    # or reached. Null when it cannot be said.
+    toward: str | None = None
+
+
+class ScaleRowModel(BaseModel):
+    arc_id: str
+    # Whose arc it is.
+    about: list[str]
+    # Where the arc starts on the scale, and where it ends.
+    start: str | None
+    target: str | None
+    steps: list[ScaleStepModel]
+
+
+class ScaleProgressModel(BaseModel):
+    scale: StateScale
+    rows: list[ScaleRowModel]
+
+
+class ScalesModel(BaseModel):
+    scales: list[StateScale]
+    # Goes up with every save; send it back to save again.
+    version: int
+
+
+class SetScalesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scales: list[StateScale] = Field(max_length=MAX_SCALES)
+    expected_version: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def _unique(self) -> SetScalesRequest:
+        ScaleSet(scales=self.scales)
+        return self
 
 
 class OutlineModel(BaseModel):
@@ -166,6 +211,8 @@ class OutlineModel(BaseModel):
     promises: list[PromiseModel] = Field(default_factory=list)
     # Each arc's stages, where each is reached and whether its fact holds. Derived.
     arcs: list[ArcReadingModel] = Field(default_factory=list)
+    # For each shared scale, where each arc's character stands scene by scene. Derived.
+    scales: list[ScaleProgressModel] = Field(default_factory=list)
 
 
 class SetPathRequest(BaseModel):
@@ -349,13 +396,68 @@ async def get_outline(
                         scene_number=stage.scene_number,
                         fact_id=stage.fact_id,
                         fact=stage.fact,
+                        scale_id=stage.scale_id,
+                        level=stage.level,
                     )
                     for stage in arc.stages
                 ],
             )
             for arc in reading.arcs
         ],
+        scales=[
+            ScaleProgressModel(
+                scale=progress.scale,
+                rows=[
+                    ScaleRowModel(
+                        arc_id=row.arc_id,
+                        about=row.about,
+                        start=row.start,
+                        target=row.target,
+                        steps=[
+                            ScaleStepModel(
+                                scene_id=step.scene_id,
+                                scene_number=step.scene_number,
+                                level=step.level,
+                                toward=step.toward,
+                            )
+                            for step in row.steps
+                        ],
+                    )
+                    for row in progress.rows
+                ],
+            )
+            for progress in reading.scales
+        ],
     )
+
+
+@router.get("/scales", response_model=ScalesModel)
+async def get_scales(
+    project_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    service: PlanService = Depends(get_plan_service),
+) -> ScalesModel:
+    """The story's shared scales (trust, standing…), each with its levels (STY-006)."""
+    scales, version = await service.scales(scope, scope.workspace_id or "", project_id)
+    return ScalesModel(scales=scales.scales, version=version)
+
+
+@router.put("/scales", response_model=ScalesModel)
+async def set_scales(
+    project_id: str,
+    body: SetScalesRequest,
+    scope: AccessScope = Depends(require_project_scope),
+    service: PlanService = Depends(get_plan_service),
+) -> ScalesModel:
+    """Replace the story's shared scales. Shared by every line of the story."""
+    scales, version = await service.set_scales(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        scales=ScaleSet(scales=body.scales),
+        expected_version=body.expected_version,
+    )
+    return ScalesModel(scales=scales.scales, version=version)
 
 
 @router.put("/{plan_id}/path", response_model=PlanItemModel)

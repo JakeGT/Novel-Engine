@@ -159,7 +159,13 @@ def test_removing_a_scene_unplaces_its_stage_and_drafting_is_told_the_change(
     assert removed.status_code == 200, removed.text
     outline = _outline(auth_client, w)
     stages = next(i for i in outline["items"] if i["id"] == arc["id"])["path"]
-    assert stages[2] == {"name": "Leaves", "scene_id": None, "fact_id": None}
+    assert stages[2] == {
+        "name": "Leaves",
+        "scene_id": None,
+        "fact_id": None,
+        "scale_id": None,
+        "level": None,
+    }
     assert not [o for o in outline["open"] if o["code"] == "arc_stage_scene_gone"]
 
 

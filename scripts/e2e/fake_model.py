@@ -186,7 +186,56 @@ def _picture_check(body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# A scene's intent (STY-003): the goal is the plan card's "What happens" line, quoted;
+# what follows "before" or "but" in it is what stands in the way. No outcome is guessed.
+HAPPENS = re.compile(r"^What happens: (.+)$", re.MULTILINE)
+
+
+def _intent(body: dict[str, Any]) -> dict[str, Any]:
+    asked = "\n".join(str(m.get("content", "")) for m in body.get("messages", []))
+    found = HAPPENS.search(asked)
+    if found is None:
+        return {}
+    happens = found.group(1).strip().rstrip(".")
+    parts = re.split(r" before | but ", happens, maxsplit=1)
+    goal, rest = parts[0], (parts[1] if len(parts) > 1 else "")
+
+    # A quote of fewer than three words is thrown away: a short part quotes the whole line.
+    def shown(part: str) -> str:
+        return part if len(part.split()) >= 3 else happens
+
+    answer: dict[str, Any] = {"goal": goal, "goal_words": shown(goal)}
+    if rest:
+        answer.update(obstacle=rest, obstacle_words=shown(rest))
+    return answer
+
+
+# Bridge scenes (STY-004): one scene, seen through the first character listed, at the
+# first place listed, each by the id and name the request gives.
+LISTED_TYPED = re.compile(r"^- (\S+): (.+?) \((Character|Location)\)$", re.MULTILINE)
+
+
+def _bridges(body: dict[str, Any]) -> dict[str, Any]:
+    asked = "\n".join(str(m.get("content", "")) for m in body.get("messages", []))
+    people = [(i, n) for i, n, kind in LISTED_TYPED.findall(asked) if kind == "Character"]
+    places = [(i, n) for i, n, kind in LISTED_TYPED.findall(asked) if kind == "Location"]
+    bridge: dict[str, Any] = {
+        "title": "On the road",
+        "summary": "The journey that gets them where the next scene needs them.",
+        "how_it_helps": "It brings them to where the next scene begins.",
+    }
+    if people:
+        bridge["point_of_view"] = {"id": people[0][0], "name": people[0][1]}
+    if places:
+        bridge["place"] = {"id": places[0][0], "name": places[0][1]}
+    return {"bridges": [bridge]}
+
+
 def _structured(name: str, body: dict[str, Any]) -> dict[str, Any]:
+    if name == "IntentDraft":
+        return _intent(body)
+    if name == "BridgeSheet":
+        return _bridges(body)
     if name == "PictureDescription":
         return _describe(body)
     if name == "PictureNotes":
@@ -202,6 +251,9 @@ def _structured(name: str, body: dict[str, Any]) -> dict[str, Any]:
         return _plan_card(body)
     if name == "ChangePlan":
         return _change(body)
+    if name == "SceneSummaryDraft":
+        # A fixed, plain summary (CTX-006): the author keeps, corrects or turns it down.
+        return {"summary": "Someone arrives at the harbour and is not welcomed."}
     return {}
 
 

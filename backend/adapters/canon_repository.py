@@ -269,6 +269,8 @@ _FORKED_TABLES = (
     "scene_readings",
     # Findings the author dismissed in a scene, so a what-if starts with the same decisions.
     "finding_dismissals",
+    # The checks kept as runs (CON-001), so a what-if starts with the same check history.
+    "consistency_runs",
 )
 
 # A story read: the what-if this request works in, or the main story when none is named.

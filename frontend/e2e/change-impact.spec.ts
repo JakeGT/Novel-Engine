@@ -88,6 +88,11 @@ test('a suggested change shows what depends on it before it is added', async ({ 
     title: 'Odile, a first sketch',
     content: 'Odile Brand kept the guild’s ledger under her bed.\n\nThe tide came in.',
   })
+  // A saved text is read into the index of the author's writing by the background worker
+  // (CTX-005); wait until it is in before asking what a change touches.
+  await expect
+    .poll(async () => (await call(page, 'GET', '/texts-index')).waiting as number, { timeout: 15000 })
+    .toBe(0)
   const proposed = await call(page, 'POST', '/mutations', {
     origin: 'model',
     expected_revision: await head(page),

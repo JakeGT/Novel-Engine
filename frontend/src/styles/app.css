@@ -2035,6 +2035,71 @@ details.more[open] > summary {
   color: var(--ink-3);
 }
 
+/* Adding and finding pictures (AST-007): side by side on a wide page, stacked on a
+   narrow one; the list of everything follows. */
+.media-tools {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: 1.25rem;
+  align-items: start;
+  margin-top: 1.25rem;
+}
+
+.media-add-form {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.media-add-form input[type='file'] {
+  max-width: 100%;
+  font: inherit;
+}
+
+.media-find {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.media-find .field {
+  flex: 1 1 14rem;
+}
+
+/* The Find button lines up with the box, not with its hint. */
+.media-find .actions {
+  padding-top: 1.55rem;
+}
+
+.media-found {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.media-list-head {
+  margin: 2.5rem 0 0.75rem;
+}
+
+.media-found .hint.block {
+  display: block;
+}
+
+/* The file chooser's own button, in the page's type rather than the system's. */
+.media-add-form input[type='file']::file-selector-button {
+  margin-right: 0.75rem;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  font-family: var(--font-ui);
+  cursor: pointer;
+}
+
 /* ---------------------------------------------------------- onboarding --- */
 .onboarding {
   display: grid;
@@ -2953,6 +3018,74 @@ input.when-number,
 .context-row .context-reason {
   display: block;
   margin-top: 0.15rem;
+}
+
+/* What moved an item up or down (CTX-007): words first, a quiet tint for the direction. */
+.rank-marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.3rem;
+}
+
+.mark.rank-mark.up {
+  border-color: transparent;
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.mark.rank-mark.down {
+  border-color: var(--line);
+  background: transparent;
+  color: var(--ink-2);
+}
+
+/* How much an entry matters, on its page (CTX-007). */
+.entry-importance {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.8rem;
+  margin-top: 0.6rem;
+}
+
+.entry-importance .field.inline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.entry-importance .field.inline > span {
+  white-space: nowrap;
+}
+
+/* A scene's summary for later scenes (CTX-006). */
+.scene-summary {
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+}
+
+.scene-summary .summary-body {
+  margin: 0;
+  font-size: 0.98rem;
+  max-width: 68ch;
+}
+
+.scene-summary .summary-suggested {
+  padding: 0.6rem 0.8rem;
+  border-left: 3px solid var(--info);
+  background: var(--info-soft);
+  border-radius: var(--radius-s);
+}
+
+.scene-summary .summary-stale {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.scene-summary textarea {
+  width: 100%;
 }
 
 .context-summary {
@@ -4267,6 +4400,49 @@ textarea.mono {
 .check-run-title {
   font-weight: 600;
 }
+/* How a long scene's check was sent in groups (CON-013), and how often each check is dismissed. */
+.run-coverage ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+}
+.check-calibration {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.check-calibration li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--line);
+}
+.check-calibration-title {
+  margin: 0.75rem 0 0;
+  font-family: var(--font-ui);
+  font-size: 1rem;
+  font-weight: 650;
+}
+.check-calibration-name {
+  font-family: var(--font-ui);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+/* Set aside, not gone: no fill and a dashed rule, like a dismissed check in the studio. */
+.notice.review-dismissed {
+  background: transparent;
+  border-left-style: dashed;
+}
+.review-dismissed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.review-dismissed p {
+  margin: 0;
+}
 .run-findings > summary {
   cursor: pointer;
   color: var(--accent);
@@ -4276,4 +4452,52 @@ textarea.mono {
 }
 .run-findings .findings {
   margin-top: 0.5rem;
+}
+
+/* Planning help and shared scales (STY-003, STY-004, STY-006). */
+.plan-help {
+  margin: 0.35rem 0 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-2);
+  border-radius: 0 var(--radius-s) var(--radius-s) 0;
+  max-width: 44rem;
+}
+.plan-help .studio-job { margin: 0; }
+.plan-conditions .link-button,
+.plan-text > .link-button { margin-top: 0.15rem; justify-self: start; text-align: left; }
+.scale-card {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  background: var(--surface);
+}
+.scale-title { margin: 0; font-size: 1.05rem; }
+.scale-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+.scale-table th,
+.scale-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.4rem 0.6rem 0.4rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.scale-table thead th { color: var(--ink-3); font-weight: 600; font-size: 0.85rem; }
+.scale-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.2rem; }
+.scale-editor { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
+@media (max-width: 640px) {
+  .scale-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .scale-table,
+  .scale-table tbody,
+  .scale-table tr,
+  .scale-table th,
+  .scale-table td { display: block; width: 100%; }
+  .scale-table tr { padding: 0.4rem 0; border-bottom: 1px solid var(--line); }
+  .scale-table th,
+  .scale-table td { border: 0; padding: 0.1rem 0; }
+  .scale-table td:nth-of-type(1)::before { content: 'Starts: '; color: var(--ink-3); }
+  .scale-table td:nth-of-type(3)::before { content: 'Ends: '; color: var(--ink-3); }
 }

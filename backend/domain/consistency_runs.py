@@ -10,10 +10,18 @@ What a run's findings come to now is worked out when it is read, never stored, s
 cannot drift:
 
 * **open**: still found (or, for an assistant's note, nothing says otherwise);
-* **dismissed**: the author dismissed it, with their reason (CON-010, CON-016);
+* **accepted**: the author kept it as written on purpose ("Intended"; a code checker's
+  "accept": the finding is right and the author chose to leave it);
+* **dismissed**: the author said it is not a problem, with their reason (CON-010,
+  CON-016; a code checker's "false positive");
+* **superseded**: still open, and a later check of the same scene found it again, so
+  that later check is the one to read;
 * **fixed**: the words it pointed at changed, or the story changed so that the check no
   longer finds it. An assistant's note can only be fixed by its words changing: knowing
   whether a change to the story answers it would take the assistant again.
+
+A dismissal holds while the words it points at and what the finding says are unchanged;
+when the facts it was worked out from change what it says, it comes back (CON-016).
 
 A run is **out of date** for a scene when that scene's words have changed since, or the
 story bible has changed in what the scene names (its people, places and the scene's own
@@ -26,11 +34,18 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 
-from backend.domain.dismissals import FindingDismissal, anchor
+from backend.domain.dismissals import DismissReason, FindingDismissal, anchor
 
 RunKind = Literal["checks", "assistant", "audit"]
 RunScope = Literal["scene", "part", "story"]
-FindingStatus = Literal["open", "dismissed", "fixed"]
+FindingStatus = Literal["open", "accepted", "dismissed", "superseded", "fixed"]
+FINDING_STATUSES: tuple[FindingStatus, ...] = (
+    "open",
+    "accepted",
+    "dismissed",
+    "superseded",
+    "fixed",
+)
 # What fixed a finding: its words changed, or the story did.
 FixedBy = Literal["words", "story"]
 
@@ -123,6 +138,25 @@ class ConsistencyRun:
     job_id: str | None = None
     created_by: str | None = None
     created_at: datetime | None = None
+    # How much the story checked on its own then, and the versions of the checks and of
+    # the review-bundle policy (CON-001, CON-009).
+    profile: dict[str, Any] = field(default_factory=dict)
+    # A digest of each input the checks read and of each check (CON-007); never words.
+    fingerprints: dict[str, Any] = field(default_factory=dict)
+
+    def scene_fingerprints(self, plan_id: str) -> dict[str, Any]:
+        """What the checks read in one scene, as ``CheckWork.as_json`` kept it."""
+        return dict((self.fingerprints.get("scenes") or {}).get(plan_id) or {})
+
+    def scene_input(self, plan_id: str, name: str) -> str | None:
+        found = (self.scene_fingerprints(plan_id).get("inputs") or {}).get(name)
+        return str(found) if found else None
+
+    @property
+    def rules(self) -> str | None:
+        """The story rules as they stood (``rules_fingerprint``), when it was kept."""
+        found = self.fingerprints.get("rules")
+        return str(found) if found else None
 
     def touches(self, plan_id: str) -> bool:
         return any(item.plan_id == plan_id for item in self.inputs)
@@ -145,6 +179,25 @@ class Judged:
     status: FindingStatus
     fixed_by: FixedBy | None = None
     dismissal: FindingDismissal | None = None
+    # A dismissal that no longer holds because what the finding says has changed.
+    came_back: bool = False
+
+
+def standing(
+    dismissal: FindingDismissal | None, dependency: str | None
+) -> tuple[FindingDismissal | None, bool]:
+    """A dismissal that still holds for a finding saying this now, and whether one came
+    back because what the finding depends on changed since it was dismissed."""
+    if dismissal is None:
+        return None, False
+    if dismissal.depends_on and dependency and dismissal.depends_on != dependency:
+        return None, True
+    return dismissal, False
+
+
+def decided(dismissal: FindingDismissal) -> FindingStatus:
+    """Kept on purpose is accepted; not a problem (or the author's own reason) dismissed."""
+    return "accepted" if dismissal.reason is DismissReason.INTENDED else "dismissed"
 
 
 def judge_check(
@@ -154,11 +207,13 @@ def judge_check(
     now: str | None,
     start: int | None,
     end: int | None,
-    found_now: set[str],
+    found_now: set[str] | dict[str, str | None],
     dismissed: dict[str, FindingDismissal],
 ) -> Judged:
     """A check that needs no model: fixed when it is no longer found, by the words or the
-    story changing; else dismissed when the author said so; else open."""
+    story changing; else accepted or dismissed when the author said so (while what it
+    says is unchanged); else open. ``found_now`` maps each finding found now to its
+    dependency (``finding_dependency``)."""
     if key not in found_now:
         changed = now is None or now != then
         span = anchor(then, start, end)
@@ -166,9 +221,11 @@ def judge_check(
             "words" if changed and (not span or words_gone(then, now, start, end)) else "story"
         )
         return Judged("fixed", by)
-    if key in dismissed:
-        return Judged("dismissed", dismissal=dismissed[key])
-    return Judged("open")
+    dependency = found_now.get(key) if isinstance(found_now, dict) else None
+    holding, came_back = standing(dismissed.get(key), dependency)
+    if holding is not None:
+        return Judged(decided(holding), dismissal=holding)
+    return Judged("open", came_back=came_back)
 
 
 def judge_note(
@@ -184,7 +241,7 @@ def judge_note(
     if words_gone(then, now, start, end):
         return Judged("fixed", "words")
     if key in dismissed:
-        return Judged("dismissed", dismissal=dismissed[key])
+        return Judged(decided(dismissed[key]), dismissal=dismissed[key])
     return Judged("open")
 
 
@@ -233,7 +290,9 @@ def _mentions(value: Any, about: set[str]) -> bool:
 @dataclass
 class SceneTally:
     open: int = 0
+    accepted: int = 0
     dismissed: int = 0
+    superseded: int = 0
     fixed: int = 0
 
     def add(self, status: FindingStatus) -> None:
@@ -252,6 +311,7 @@ class ScenePart:
 
 
 __all__ = [
+    "FINDING_STATUSES",
     "MAX_CHANGES",
     "MAX_HISTORY",
     "MODEL_FREE",
@@ -266,8 +326,10 @@ __all__ = [
     "ScenePart",
     "SceneTally",
     "Staleness",
+    "decided",
     "judge_check",
     "judge_note",
+    "standing",
     "story_change_touches",
     "words_gone",
 ]

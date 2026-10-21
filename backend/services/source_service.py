@@ -304,14 +304,14 @@ class SourceService:
     async def _reindex(
         self, workspace_id: str, project_id: str, source_id: str, *, gone: bool = False
     ) -> None:
-        """Keep the passage index in step. It is derived: a failure never loses the text."""
+        """Keep the passage index in step. It is derived: a failure never loses the text.
+
+        The text is put on the index's waiting list and read in by the background
+        worker (CTX-005), so saving never waits for it."""
         if self.passages is None:
             return
         try:
-            if gone:
-                await self.passages.forget_source(workspace_id, project_id, source_id)  # type: ignore[attr-defined]
-            else:
-                await self.passages.index_source(workspace_id, project_id, source_id)  # type: ignore[attr-defined]
+            await self.passages.request(workspace_id, project_id, source_id, gone=gone)  # type: ignore[attr-defined]
         except Exception as error:  # noqa: BLE001 - the index can be rebuilt; the text is safe
             log_event(logger, "passages.index_failed", error_type=type(error).__name__)
 

@@ -11,15 +11,15 @@ from pydantic import BaseModel, Field
 
 from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import get_media_service
-from backend.domain.errors import ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.media import PROCESSING_FAILURES, MediaSegment, VariantKind
 from backend.services.media_service import (
-    MAX_PICTURE_BYTES,
     PROCESSOR_VERSION,
     LibraryPicture,
     MediaService,
     ProcessingView,
+    ReceivedUpload,
+    receive_picture,
 )
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["media"])
@@ -53,6 +53,8 @@ def _version(version: Any) -> dict[str, Any]:
         "created_revision": version.created_revision,
         "retired_revision": version.retired_revision,
         "created_at": version.created_at,
+        # When its file was deleted (AST-008); the record stays as the tombstone.
+        "deleted_at": getattr(version, "deleted_at", None),
     }
 
 
@@ -280,31 +282,46 @@ async def add_entity_picture(
     The image is stored as a new media asset and linked to the entry as a picture
     of it, in one new revision. Its type is taken from its bytes, not the request.
     """
+    received = await _upload(request)
     result, link, version = await media.add_picture(
         scope,
         scope.workspace_id or "",
         project_id,
         entity_id=entity_id,
-        data=await _upload(request),
+        data=received.data,
         name=name,
         expected_revision=expected_revision,
     )
     response.headers["ETag"] = f'"{result.revision}"'
-    return {"link": _link(link), "version": _version(version)}
+    return {"link": _link(link), "version": _version(version), "received": _received(received)}
 
 
-async def _upload(request: Request) -> bytes:
-    """The request body, refused as soon as it is larger than a picture may be."""
-    declared = request.headers.get("content-length")
-    if declared is not None and declared.isdigit() and int(declared) > MAX_PICTURE_BYTES:
-        raise ValidationError("The picture is too large.")
-    data = bytearray()
-    async for chunk in request.stream():
-        data.extend(chunk)
-        if len(data) > MAX_PICTURE_BYTES:
-            # Stop reading: never buffer an unbounded upload.
-            raise ValidationError("The picture is too large.")
-    return bytes(data)
+async def _upload(request: Request) -> ReceivedUpload:
+    """The request body, read as it streams in (AST-002): refused before reading when its
+    declared length is too large, as soon as too much has arrived, or once its first
+    bytes show it is not a picture; hashed on the way, and checked against a
+    ``Content-Digest`` (or ``Repr-Digest``) the sender gave."""
+    return await receive_picture(
+        request.stream(),
+        declared_length=request.headers.get("content-length"),
+        content_digest=request.headers.get("content-digest") or request.headers.get("repr-digest"),
+    )
+
+
+def _received(received: ReceivedUpload) -> dict[str, Any]:
+    """What arrived, before hidden details were taken out: so the sender can check it.
+    ``digest`` says whether the sender's digest was checked (only sha-256 is)."""
+    answer: dict[str, Any] = {
+        "bytes": received.size,
+        "sha256": received.sha256,
+        "digest": received.digest,
+    }
+    if received.digest == "not_checked":
+        answer["note"] = (
+            "The digest sent was not checked: only a sha-256 digest is checked here. "
+            "Compare the sha-256 above instead."
+        )
+    return answer
 
 
 @router.post("/plan/{plan_id}/pictures", status_code=201)
@@ -323,17 +340,18 @@ async def add_scene_picture(
     The same checks as a picture of an entry; the link points at the scene
     (``target_record_type`` ``plan_item``, role ``DEPICTS``), in one new revision.
     """
+    received = await _upload(request)
     result, link, version = await media.add_scene_picture(
         scope,
         scope.workspace_id or "",
         project_id,
         scene_id=plan_id,
-        data=await _upload(request),
+        data=received.data,
         name=name,
         expected_revision=expected_revision,
     )
     response.headers["ETag"] = f'"{result.revision}"'
-    return {"link": _link(link), "version": _version(version)}
+    return {"link": _link(link), "version": _version(version), "received": _received(received)}
 
 
 ProcessingState = Literal["queued", "processing", "ready", "failed"]
@@ -439,6 +457,78 @@ async def picture_library(
     return PictureLibraryModel(
         items=[_library_picture(picture) for picture in pictures],
         storage=StorageModel(**room),
+    )
+
+
+class FoundPictureModel(LibraryPictureModel):
+    # "words": its name or reviewed description holds every word; "meaning": found by
+    # search by meaning.
+    reason: Literal["words", "meaning"]
+    # "name", "description", "picture" or "caption".
+    matched: str
+    score: float | None = None
+
+
+class PictureSearchModel(BaseModel):
+    items: list[FoundPictureModel]
+    by_meaning: bool
+    # Why search by meaning was not used, in plain words; None when it was.
+    note: str | None = None
+
+
+@router.get("/pictures/search")
+async def search_pictures(
+    project_id: str,
+    q: str = Query(min_length=1, max_length=200),
+    limit: int = Query(default=24, ge=1, le=60),
+    scope: AccessScope = Depends(get_project_scope),
+    media: MediaService = Depends(get_media_service),
+) -> PictureSearchModel:
+    """Pictures of this line of the story for some words: by their name or reviewed
+    description first, then by meaning when that is set up (AST-007)."""
+    found = await media.search_pictures(scope, scope.workspace_id or "", project_id, q, limit)
+    return PictureSearchModel(
+        items=[
+            FoundPictureModel(
+                **_library_picture(item.picture).model_dump(),
+                reason=item.reason,  # type: ignore[arg-type]
+                matched=item.matched,
+                score=item.score,
+            )
+            for item in found.found
+        ],
+        by_meaning=found.by_meaning,
+        note=found.note,
+    )
+
+
+class DeletedPictureModel(BaseModel):
+    asset_id: str
+    lifecycle: str
+    versions: int
+    files_removed: int
+    copies_removed: int
+    bytes_freed: int
+
+
+@router.post("/assets/{asset_id}/delete")
+async def delete_picture(
+    project_id: str,
+    asset_id: str,
+    scope: AccessScope = Depends(require_project_scope),
+    media: MediaService = Depends(get_media_service),
+) -> DeletedPictureModel:
+    """Delete a picture's files before its story is deleted (AST-008). Owners and
+    administrators only, and only once it is shown nowhere. The record stays as a
+    tombstone; the files, their smaller copies and what search had of them are gone."""
+    deleted = await media.delete_picture(scope, scope.workspace_id or "", project_id, asset_id)
+    return DeletedPictureModel(
+        asset_id=deleted.asset.id,
+        lifecycle=deleted.asset.lifecycle.value,
+        versions=deleted.versions,
+        files_removed=deleted.files_removed,
+        copies_removed=deleted.copies_removed,
+        bytes_freed=deleted.bytes_freed,
     )
 
 

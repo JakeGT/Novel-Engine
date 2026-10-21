@@ -186,6 +186,14 @@ _SPECS = (
         _S + "scene_checks:CheckNotes",
     ),
     PromptSpec(
+        "check-continuity-group",
+        1,
+        "Notes quoting some passages of a long scene where they go against the parts of the "
+        "story they bear on, for one kind of question (CON-013).",
+        _S + "scene_checks:continuity_group_messages",
+        _S + "scene_checks:CheckNotes",
+    ),
+    PromptSpec(
         "check-plan",
         1,
         "Notes quoting a scene where it goes against, or leaves out, what its plan asks for.",
@@ -228,6 +236,28 @@ _SPECS = (
         "A scene's plan card (summary, viewpoint, place, who is in it) from its prose.",
         _S + "scene_plan_card:plan_card_messages",
         _S + "scene_plan_card:PlanCardDraft",
+    ),
+    PromptSpec(
+        "scene-summary",
+        1,
+        "A short summary of a scene's prose, kept only when the author accepts it (CTX-006).",
+        _S + "scene_summaries:summary_messages",
+        _S + "scene_summaries:SceneSummaryDraft",
+    ),
+    PromptSpec(
+        "scene-intent",
+        2,
+        "A scene's intent (what its viewpoint character wants, what is in the way, how it "
+        "ends) from its plan card and prose, each part with the words that show it.",
+        _S + "planning_help:scene_intent_messages",
+        _S + "planning_help:IntentDraft",
+    ),
+    PromptSpec(
+        "bridge-scenes",
+        1,
+        "One or two scenes to come before a scene and bring about what it needs first.",
+        _S + "planning_help:bridge_messages",
+        _S + "planning_help:BridgeSheet",
     ),
     PromptSpec(
         "legacy-character-questions",

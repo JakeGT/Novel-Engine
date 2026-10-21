@@ -12,8 +12,9 @@ reports them instead of hiding them, and the pinned test fails if one starts or 
 disagreeing, so a change in coverage is always a decision.
 
 Families: ``continuity`` (backend/domain/continuity.py), ``rules`` (rules.py),
-``knowledge`` (acquisition.py), ``drafting`` (drafting.py) and ``plan`` (reveals,
-thread order and scene conditions). Tags: ``leakage`` marks a case about knowledge or
+``knowledge`` (acquisition.py), ``drafting`` (drafting.py), ``plan`` (reveals,
+thread order and scene conditions) and ``prose`` (the prose against the plan and the
+story bible: appearance, words for when, things in hand, "after" conditions). Tags: ``leakage`` marks a case about knowledge or
 a secret reaching a page or a context it must not.
 """
 
@@ -23,6 +24,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 
 from backend.domain.acquisition import held_at, learned_later, placement, said_before_learned
+from backend.domain.appearance import AppearanceDetail
 from backend.domain.canon.events import EventClaim
 from backend.domain.continuity import (
     HowLong,
@@ -32,10 +34,13 @@ from backend.domain.continuity import (
     continuity_findings,
 )
 from backend.domain.drafting import (
+    AfterShown,
     DraftBrief,
+    Holding,
     LaterKnowledge,
     PlannedReveal,
     SecretToGuard,
+    TimeNeighbour,
     check_draft,
 )
 from backend.domain.knowledge import Reveal
@@ -1216,6 +1221,411 @@ def _plan_cases() -> list[Case]:
     ]
 
 
+# ------------------------------------------------------------------ against the prose
+# STY-005 (an "after" condition the prose never shows), SCN-007 (words for when against
+# story time; using what someone else has or what is used up), CON-004 and CON-014 (eye,
+# hair and beard colours against accepted details, from the story bible or a picture).
+
+_PROSE = DraftBrief(
+    point_of_view="Wren Halloway",
+    point_of_view_names=("Wren Halloway",),
+    place="Kestle Quay",
+    place_names=("Kestle Quay",),
+    people=("Wren Halloway", "Osric Pell"),
+    also={
+        "Wren Halloway": ("Wren",),
+        "Osric Pell": ("Osric", "the lamp-warden"),
+        "Kestle Quay": ("the quay",),
+        "the brass sextant": ("the sextant",),
+    },
+)
+_WREN_LOOKS = AppearanceDetail(
+    "Wren Halloway", ("Wren Halloway", "Wren"), "Grey eyes; short black hair.", "the story bible"
+)
+_WREN_PICTURE = AppearanceDetail(
+    "Wren Halloway",
+    ("Wren Halloway", "Wren"),
+    "Red hair cut short above the ears.",
+    "the picture “Wren at the quay”",
+)
+_WREN_BLUE = AppearanceDetail(
+    "Wren Halloway", ("Wren Halloway", "Wren"), "Blue eyes; brown hair.", "the story bible"
+)
+_SEXTANT_WITH_ADA = Holding(
+    "the brass sextant", ("the brass sextant",), "Ada Quill", ("Ada Quill", "Ada")
+)
+_LEDGER_BURNED = Holding("the tide ledger", ("the tide ledger",), gone="its status is “burned”")
+_AT_LIGHT = AfterShown("Wren Halloway is at Marrow Light", ("Wren Halloway", "Marrow Light"))
+
+
+def _prose(text: str, **changes) -> set[str]:
+    return {
+        item.code for item in check_draft(text, DraftBrief(**{**_PROSE.__dict__, **changes}), [])
+    }
+
+
+def _after_crossing(days: tuple[float, float], same_day: bool | None) -> TimeNeighbour:
+    return TimeNeighbour("The Crossing", days, same_day, "day 5", "day 5")
+
+
+def _prose_cases() -> list[Case]:
+    looks = ["appearance_differs"]
+    when = ["time_words_next_day", "time_words_same_day", "time_words_amount", "time_words_before"]
+    held = ["resource_held_elsewhere", "resource_used_up"]
+    return [
+        _case(
+            "prose/eyes-differ",
+            "prose",
+            "The story bible gives Wren grey eyes; the scene gives her blue ones.",
+            defect=True,
+            codes=looks,
+            run=lambda: _prose(
+                "Wren squinted at the light, her blue eyes stinging.", appearance=[_WREN_LOOKS]
+            ),
+        ),
+        _case(
+            "prose/hair-differs-from-picture",
+            "prose",
+            "Wren's accepted picture shows red hair; the scene says black.",
+            defect=True,
+            codes=looks,
+            run=lambda: _prose(
+                "Osric watched Wren's black hair whip in the wind.", appearance=[_WREN_PICTURE]
+            ),
+        ),
+        _case(
+            "prose/eyes-agree-in-other-words",
+            "prose",
+            "'Slate-coloured' would be grey; 'slate eyes' agrees with grey eyes.",
+            defect=False,
+            codes=looks,
+            run=lambda: _prose("Wren narrowed her slate eyes.", appearance=[_WREN_LOOKS]),
+        ),
+        _case(
+            "prose/hair-dyed",
+            "prose",
+            "Wren has dyed her hair red for a disguise: not a contradiction.",
+            defect=False,
+            codes=looks,
+            run=lambda: _prose(
+                "Wren had dyed her hair red for the crossing.", appearance=[_WREN_LOOKS]
+            ),
+        ),
+        _case(
+            "prose/someone-elses-eyes",
+            "prose",
+            "'Wren stared into his grey eyes': the grey eyes are not hers.",
+            defect=False,
+            codes=looks,
+            run=lambda: _prose("Wren stared into his grey eyes.", appearance=[_WREN_BLUE]),
+        ),
+        _case(
+            "prose/a-green-eyed-boy",
+            "prose",
+            "'The green-eyed boy' in Wren's sentence is someone else.",
+            defect=False,
+            codes=looks,
+            run=lambda: _prose(
+                "Wren smiled at the green-eyed boy on the quay.", appearance=[_WREN_BLUE]
+            ),
+        ),
+        _case(
+            "prose/her-mothers-eyes",
+            "prose",
+            "'Wren's mother had green eyes': the green eyes are her mother's.",
+            defect=False,
+            codes=looks,
+            run=lambda: _prose("Wren's mother had green eyes.", appearance=[_WREN_BLUE]),
+        ),
+        _case(
+            "prose/her-brother-green-eyed",
+            "prose",
+            "'Wren's brother, green-eyed and silent': the brother is green-eyed, not Wren.",
+            defect=False,
+            codes=looks,
+            run=lambda: _prose(
+                "Wren's brother, green-eyed and silent, waited on the quay.",
+                appearance=[_WREN_BLUE],
+            ),
+        ),
+        _case(
+            "prose/her-horses-hair",
+            "prose",
+            "'Wren's old horse had black hair': the horse's, not hers.",
+            defect=False,
+            codes=looks,
+            run=lambda: _prose("Wren's old horse had black hair.", appearance=[_WREN_BLUE]),
+        ),
+        _case(
+            "prose/possessive-with-describing-words",
+            "prose",
+            "'Wren's tired, green eyes' are still Wren's, against her blue ones.",
+            defect=True,
+            codes=looks,
+            run=lambda: _prose("Wren's tired, green eyes narrowed.", appearance=[_WREN_BLUE]),
+        ),
+        _case(
+            "prose/a-black-eye",
+            "prose",
+            "A black eye is a bruise, not an eye colour.",
+            defect=False,
+            codes=looks,
+            run=lambda: _prose(
+                "Wren had a black eye from the fight at the quay.", appearance=[_WREN_BLUE]
+            ),
+        ),
+        _case(
+            "prose/red-eyed",
+            "prose",
+            "Red-eyed from crying or no sleep is not an eye colour.",
+            defect=False,
+            codes=looks,
+            run=lambda: _prose("Wren came down to the quay red-eyed.", appearance=[_WREN_BLUE]),
+        ),
+        _case(
+            "prose/eyes-red-and-swollen",
+            "prose",
+            "Eyes red and swollen from crying are not an eye colour.",
+            defect=False,
+            codes=looks,
+            run=lambda: _prose("Wren's eyes were red and swollen.", appearance=[_WREN_BLUE]),
+        ),
+        _case(
+            "prose/a-hair-ribbon",
+            "prose",
+            "A red hair ribbon says nothing of the colour of the hair.",
+            defect=False,
+            codes=looks,
+            run=lambda: _prose(
+                "Wren tied a red hair ribbon round the oar.", appearance=[_WREN_BLUE]
+            ),
+        ),
+        _case(
+            "prose/hair-gleamed-gold",
+            "prose",
+            "Hair that gleamed gold in the lamplight is a passing look.",
+            defect=False,
+            codes=looks,
+            run=lambda: _prose(
+                "Wren's hair gleamed gold in the lamplight.", appearance=[_WREN_BLUE]
+            ),
+        ),
+        _case(
+            "prose/hair-white-with-frost",
+            "prose",
+            "Hair white with frost is not white hair.",
+            defect=False,
+            codes=looks,
+            run=lambda: _prose("Wren's hair was white with frost.", appearance=[_WREN_BLUE]),
+        ),
+        _case(
+            "prose/eyes-by-pronoun",
+            "prose",
+            "'Her blue eyes' with Wren named only in the sentence before.",
+            defect=True,
+            codes=looks,
+            run=lambda: _prose(
+                "Wren reached the quay. She rubbed her blue eyes.", appearance=[_WREN_LOOKS]
+            ),
+            known_limit="A pronoun is not read as a name; telling whose eyes these are needs a model.",
+        ),
+        _case(
+            "prose/next-morning-same-day",
+            "prose",
+            "The scene opens 'The next morning' but is placed on the same day as the scene before.",
+            defect=True,
+            codes=when,
+            run=lambda: _prose(
+                "The next morning, Wren untied the ferry at Kestle Quay.",
+                previous=_after_crossing((-1, 1), True),
+            ),
+        ),
+        _case(
+            "prose/next-morning-next-day",
+            "prose",
+            "'The next morning', on the day after the scene before.",
+            defect=False,
+            codes=when,
+            run=lambda: _prose(
+                "The next morning, Wren untied the ferry at Kestle Quay.",
+                previous=_after_crossing((0, 2), False),
+            ),
+        ),
+        _case(
+            "prose/that-evening-days-later",
+            "prose",
+            "'Later that day', but the scene is placed four days after the one before.",
+            defect=True,
+            codes=when,
+            run=lambda: _prose(
+                "Later that day, Osric lit the lamp above Kestle Quay.",
+                previous=_after_crossing((3, 5), False),
+            ),
+        ),
+        _case(
+            "prose/a-week-later-fits",
+            "prose",
+            "'A week later', placed six to eight days later.",
+            defect=False,
+            codes=when,
+            run=lambda: _prose(
+                "A week later the fog lifted from Kestle Quay.",
+                previous=_after_crossing((6, 8), False),
+            ),
+        ),
+        _case(
+            "prose/next-morning-promised",
+            "prose",
+            "'Promised to be gone by the next morning' says nothing of when this scene is.",
+            defect=False,
+            codes=when,
+            run=lambda: _prose(
+                "Wren promised to be gone by the next morning.",
+                previous=_after_crossing((-1, 1), True),
+            ),
+        ),
+        _case(
+            "prose/did-not-wait-for-morning",
+            "prose",
+            "'Did not wait for the next morning': the scene is still the same day.",
+            defect=False,
+            codes=when,
+            run=lambda: _prose(
+                "Wren did not wait for the next morning, and untied the ferry.",
+                previous=_after_crossing((-1, 1), True),
+            ),
+        ),
+        _case(
+            "prose/days-on-the-road",
+            "prose",
+            "'Three days on the road' is how long she travelled, not how long since.",
+            defect=False,
+            codes=when,
+            run=lambda: _prose(
+                "Three days on the road had worn Wren thin.",
+                previous=_after_crossing((-1, 1), True),
+            ),
+        ),
+        _case(
+            "prose/dawn-without-a-cue",
+            "prose",
+            "'Dawn found Wren at the quay' on the same day as an evening scene: no 'next' word.",
+            defect=True,
+            codes=when,
+            run=lambda: _prose(
+                "Dawn found Wren at Kestle Quay, still awake.",
+                previous=_after_crossing((-1, 1), True),
+            ),
+            known_limit="Only words that say how a scene follows the last are read ('the next "
+            "morning', 'later that day', 'three days later'); a time of day alone is not.",
+        ),
+        _case(
+            "prose/uses-what-another-has",
+            "prose",
+            "Wren takes a sighting with the sextant, which Ada has at this time and is not here.",
+            defect=True,
+            codes=held,
+            run=lambda: _prose(
+                "Wren lifted the sextant and took a sighting on Marrow Light.",
+                holdings=[_SEXTANT_WITH_ADA],
+            ),
+        ),
+        _case(
+            "prose/holder-hands-it-over",
+            "prose",
+            "Ada hands Wren the sextant in the same sentence: fine.",
+            defect=False,
+            codes=held,
+            run=lambda: _prose(
+                "Wren took the sextant from Ada and lifted it to the light.",
+                holdings=[_SEXTANT_WITH_ADA],
+            ),
+        ),
+        _case(
+            "prose/reads-a-burned-ledger",
+            "prose",
+            "Osric opens the tide ledger, whose status says it was burned before this scene.",
+            defect=True,
+            codes=held,
+            run=lambda: _prose(
+                "Osric opened the tide ledger and ran a finger down the soundings.",
+                holdings=[_LEDGER_BURNED],
+            ),
+        ),
+        _case(
+            "prose/remembers-the-ledger",
+            "prose",
+            "Osric only thinks of the burned ledger.",
+            defect=False,
+            codes=held,
+            run=lambda: _prose(
+                "Osric thought of the tide ledger, and of the fire.", holdings=[_LEDGER_BURNED]
+            ),
+        ),
+        _case(
+            "prose/turned-toward-it",
+            "prose",
+            "Wren turns toward where the sextant hangs; she does not use it.",
+            defect=False,
+            codes=held,
+            run=lambda: _prose(
+                "Wren turned toward the window where the sextant hung.",
+                holdings=[_SEXTANT_WITH_ADA],
+            ),
+        ),
+        _case(
+            "prose/held-her-breath",
+            "prose",
+            "Wren holds her breath and looks at the sextant; she does not hold it.",
+            defect=False,
+            codes=held,
+            run=lambda: _prose(
+                "Wren held her breath and stared at the sextant.", holdings=[_SEXTANT_WITH_ADA]
+            ),
+        ),
+        _case(
+            "prose/uses-it-by-pronoun",
+            "prose",
+            "'She raised it to her eye' — the sextant named only in the sentence before.",
+            defect=True,
+            codes=held,
+            run=lambda: _prose(
+                "The sextant lay on the thwart. Wren raised it to her eye.",
+                holdings=[_SEXTANT_WITH_ADA],
+            ),
+            known_limit="'It' is not read as the thing named before; that needs a model.",
+        ),
+        _case(
+            "prose/after-never-shown",
+            "prose",
+            "The plan says Wren ends the scene at Marrow Light; the light is never named.",
+            defect=True,
+            codes=["after_not_shown"],
+            run=lambda: _prose(
+                "Wren rowed until her arms burned.\n\nThe fog closed in.", after=[_AT_LIGHT]
+            ),
+        ),
+        _case(
+            "prose/after-shown",
+            "prose",
+            "Wren reaches Marrow Light at the end of the scene.",
+            defect=False,
+            codes=["after_not_shown"],
+            run=lambda: _prose("At last Wren tied up beneath Marrow Light.", after=[_AT_LIGHT]),
+        ),
+        _case(
+            "prose/after-named-but-denied",
+            "prose",
+            "Wren and Marrow Light share a sentence, which says she never gets there.",
+            defect=True,
+            codes=["after_not_shown"],
+            run=lambda: _prose("Wren never reached Marrow Light that night.", after=[_AT_LIGHT]),
+            known_limit="Naming both together is read as showing it; whether the sentence "
+            "says it happens is left to the assistant's check of the plan.",
+        ),
+    ]
+
+
 def all_cases() -> list[Case]:
     return [
         *_continuity_cases(),
@@ -1223,6 +1633,7 @@ def all_cases() -> list[Case]:
         *_knowledge_cases(),
         *_drafting_cases(),
         *_plan_cases(),
+        *_prose_cases(),
     ]
 
 

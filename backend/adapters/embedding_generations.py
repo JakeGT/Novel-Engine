@@ -391,6 +391,12 @@ class PgEmbeddingIndexStore:
                 filters.append("AND v.asset_id IS NOT NULL")
             elif gate.assets is False:
                 filters.append("AND v.asset_id IS NULL")
+            # Metadata filters (CTX-004): the key and its values travel as parameters.
+            meta: dict[str, Any] = {}
+            for number, (key, allowed) in enumerate(gate.metadata):
+                filters.append(f"AND v.metadata->>%(mk{number})s = ANY(%(mv{number})s)")
+                meta[f"mk{number}"] = key
+                meta[f"mv{number}"] = list(allowed)
             # Fixed fragments only.
             kinds = sql.SQL(" ".join(filters))  # type: ignore[arg-type]
             query = sql.SQL(
@@ -419,6 +425,7 @@ class PgEmbeddingIndexStore:
                     "kinds": sorted(gate.kinds or ()),
                     "limit": limit,
                     **_gate_params(gate),
+                    **meta,
                 },
             ).fetchall()
         return [

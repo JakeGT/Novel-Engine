@@ -86,8 +86,13 @@ class Container:
     # Checks kept as runs (CON-001).
     consistency_run_store: Any = None
     consistency_runs: Any = None
+    # Advisory findings dismissed on a proposal in review (CON-016).
+    review_dismissals: Any = None
     scene_reading: Any = None
     scene_plan_card: Any = None
+    # The assistant's help with a scene's plan: intent and bridge scenes (STY-003, STY-004).
+    planning_help: Any = None
+    scene_summaries: Any = None
     media_store: Any = None
     archive_service: Any = None
     media_service: Any = None
@@ -120,6 +125,10 @@ class Container:
     embedding_index: Any = None
     embedding_index_service: Any = None
     media_search: Any = None
+    # The story's ready views, their builder and replay checks (QRY-001).
+    read_model_store: Any = None
+    read_models: Any = None
+    read_model_consumer: Any = None
 
     async def aclose(self) -> None:
         if self.job_runner is not None:
@@ -425,13 +434,19 @@ def build_container(settings: Settings | None = None) -> Container:
         journal=container.journal,
         clocks=container.story_clocks,
     )
-    from backend.adapters.passage_store import PostgresManifestStore, PostgresPassageStore
+    from backend.adapters.passage_store import (
+        PostgresManifestStore,
+        PostgresPassageQueue,
+        PostgresPassageStore,
+    )
     from backend.services.context_service import ContextService
     from backend.services.passage_index import PassageIndex
 
     container.passage_store = PostgresPassageStore(database.session_factory)
     container.manifests = PostgresManifestStore(database.session_factory)
     container.passage_index = PassageIndex(
+        # Texts wait here and the background worker reads them in (CTX-005).
+        queue=PostgresPassageQueue(database.session_factory),
         store=container.passage_store,
         sources=container.source_service,
         reader=container.canon_repository,
@@ -493,6 +508,14 @@ def build_container(settings: Settings | None = None) -> Container:
         store=container.consistency_run_store, studio=container.studio_service
     )
     container.studio_service.runs = container.consistency_runs
+    from backend.adapters.review_dismissal_store import PostgresReviewDismissalStore
+    from backend.services.review_dismissals import ReviewDismissalService
+
+    container.review_dismissals = ReviewDismissalService(
+        store=PostgresReviewDismissalStore(database.session_factory),
+        mutations=container.mutation_service,
+        rules=container.rules,
+    )
     # Which scene a text holds, so names are read as that scene reads them (CTX-016).
     container.source_service.studio = container.studio_service
     container.what_if_service = WhatIfService(
@@ -516,8 +539,29 @@ def build_container(settings: Settings | None = None) -> Container:
     from backend.services.projection_worker import ProjectionWorker
 
     container.projection_worker = ProjectionWorker(
-        journal=container.journal, consumer=container.outbox_consumer
+        journal=container.journal,
+        consumer=container.outbox_consumer,
+        passages=container.passage_index,
     )
+    from backend.adapters.read_model_store import PostgresReadModelStore
+    from backend.services.read_models import ReadModelConsumer, ReadModelService
+
+    container.read_model_store = PostgresReadModelStore(database.session_factory)
+    container.read_model_consumer = ReadModelConsumer(
+        store=container.read_model_store, reader=container.canon_repository
+    )
+    container.read_models = ReadModelService(
+        store=container.read_model_store,
+        reader=container.canon_repository,
+        journal=container.journal,
+        tenancy=container.tenancy_service,
+        local_mode=not resolved.is_hosted,
+    )
+    # The views follow the story in the loop that keeps the graph up to date; the
+    # timeline and the reader's journey answer from them once they are verified.
+    container.projection_worker.read_models = container.read_model_consumer
+    container.story_time_service.views = container.read_models
+    container.knowledge_service.views = container.read_models
     from backend.services.canon_history_service import CanonHistoryService
 
     container.canon_history_service = CanonHistoryService(
@@ -639,6 +683,39 @@ def build_container(settings: Settings | None = None) -> Container:
         usage=container.usage_service,
     )
     container.scene_plan_card.register_jobs()
+    from backend.services.planning_help import PlanningHelpService
+
+    container.planning_help = PlanningHelpService(
+        studio=container.studio_service,
+        plan=container.plan_service,
+        sources=container.source_service,
+        mutation=container.mutation_service,
+        canon=container.canon_repository,
+        reader=container.canon_repository,
+        journal=container.journal,
+        runner=container.job_runner,
+        ai=container.ai,
+        settings=resolved,
+        credentials=container.credential_service,
+        usage=container.usage_service,
+    )
+    container.planning_help.register_jobs()
+    from backend.adapters.passage_store import PostgresSceneSummaryStore
+    from backend.services.scene_summaries import SceneSummaryService
+
+    # Summaries of scenes, a layer of the scene's context (CTX-006).
+    container.scene_summaries = SceneSummaryService(
+        store=PostgresSceneSummaryStore(database.session_factory),
+        studio=container.studio_service,
+        sources=container.source_service,
+        runner=container.job_runner,
+        ai=container.ai,
+        settings=resolved,
+        credentials=container.credential_service,
+        usage=container.usage_service,
+    )
+    container.scene_summaries.register_jobs()
+    container.context_service.summaries = container.scene_summaries
     from backend.services.assist_session_service import AssistSessionService
 
     container.assist_session_service = AssistSessionService(
@@ -693,6 +770,11 @@ def build_container(settings: Settings | None = None) -> Container:
     )
     # Smaller copies of pictures stay out of an archive; a restore queues them again.
     container.archive_service.pictures = container.media_service
+    container.archive_service.scene_summaries = container.scene_summaries
+    from backend.services.run_archive import RunArchive
+
+    # Checks kept as runs travel with the archive (CON-001).
+    container.archive_service.check_runs = RunArchive(container.consistency_run_store)
     container.archive_service.picture_notes = container.media_observations
     from backend.services.embedding_index import (
         EmbeddingIndexService,
@@ -713,6 +795,9 @@ def build_container(settings: Settings | None = None) -> Container:
         index=container.embedding_index, embedder=container.multimodal_embedder
     )
     wire_media(container.media_service, container.embedding_index_service)
+    # The media page finds pictures by their reviewed descriptions and by meaning (AST-007).
+    container.media_service.observation_store = container.observation_store
+    container.media_service.search = container.media_search
     # Reviewed captions, and notes an archive restores, reach the index at once.
     wire_observations(container.media_observations, container.embedding_index_service)
     # Pictures found by meaning join the scene's context after the linked ones (CTX-013).

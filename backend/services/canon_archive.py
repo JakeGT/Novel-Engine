@@ -46,8 +46,10 @@ import hashlib
 import json
 import logging
 import re
+from collections.abc import Sequence
+from dataclasses import replace
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from backend.adapters.system import uuid7
 from backend.core.logging import log_event
@@ -64,7 +66,7 @@ from backend.domain.errors import NotFoundError
 from backend.domain.history import CanonTag
 from backend.domain.identity import AccessScope, AuthMode
 from backend.domain.journal import CommitEnvelope, MutationOperation, MutationStatus
-from backend.domain.media import MediaAsset, MediaAssetVersion
+from backend.domain.media import AssetLifecycle, MediaAsset, MediaAssetVersion
 from backend.domain.operations import (
     AssertBeliefOp,
     AssertFactOp,
@@ -77,7 +79,13 @@ from backend.domain.operations import (
 from backend.domain.review import MutationIntent, classify_review
 from backend.domain.rules import RuleBody
 from backend.domain.tenancy import Permission
-from backend.domain.validation import AuthoritativeValidator, RuleEnforcement
+from backend.domain.validation import (
+    AuthoritativeValidator,
+    CanonTxReader,
+    DomainValidationReport,
+    RuleEnforcement,
+    ValidationContext,
+)
 from backend.ports import (
     CanonJournalPort,
     CanonRepositoryPort,
@@ -96,9 +104,11 @@ LEFT_OUT = (
     "Drafts waiting for you to keep or discard: they are working material, not the story.",
     "Proposed changes not yet reviewed and saved.",
     "Assistant jobs, usage records, sign-in details and settings.",
-    "The history of checks (what each read and found): a restored story starts with none.",
+    "The assistant's notes from checks: a restored story keeps its history of checks, with "
+    "what the checks without the assistant found, but not the assistant's notes or the jobs.",
     "The smaller copies of pictures: they are made again from the pictures after a restore.",
     "What the assistant saw in a picture that you had not yet accepted, corrected or rejected.",
+    "Summaries of scenes the assistant suggested that you had not yet kept or turned down.",
 )
 # Rebuildable media an archive leaves out, and how a restore makes it again (ADR-010).
 DERIVED_MEDIA = {
@@ -116,15 +126,79 @@ DERIVED_MEDIA = {
         "is missing).",
     },
 }
+# The story's ready views (QRY-001) are derived from the records and never archived; a
+# restored story's commits reach the outbox and the views are built again from them.
+DERIVED_VIEWS = {
+    "story_views": {
+        "included": False,
+        "rebuilt_by": "read_model_builder",
+        "note": "Where people are, who holds what, the timeline, what each scene shows the "
+        "reader and what leans on what are built again from the story after a restore; "
+        "make read-models-verify checks them against the story's history.",
+    },
+}
 MAX_NAME = 120
 MAX_ENTRIES = 100_000
 MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
-# History in an archive was already accepted once, so a replay checks the story's
-# integrity and never the author's own rules: a rule set to block must not refuse
-# the restore of a story it was never checked against, or a retry of one.
-_REPLAY_VALIDATOR = AuthoritativeValidator()
-
 logger = logging.getLogger(__name__)
+
+# What a picture's retirement or deletion leaves; before it, the picture could be shown.
+_ENDED = (AssetLifecycle.RETIRED, AssetLifecycle.DELETED)
+
+
+class _PicturesAsWhenShown:
+    """A reader that shows the archive's own pictures as they stood when its history
+    showed them: not yet retired or deleted.
+
+    The archive's pictures are restored as they are now (a retired picture retired, a
+    deleted one deleted with its file still gone), so a change that showed one before
+    it was retired would be checked against a later state and refused. Each such change
+    was accepted when it was made, which only an unretired picture allows; retirement
+    revisions cannot place it any more exactly, because they count the line worked in
+    then, which may have been a what-if. Everything else reads through unchanged."""
+
+    def __init__(self, reader: CanonTxReader, asset_ids: frozenset[str]) -> None:
+        self._reader = reader
+        self._asset_ids = asset_ids
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._reader, name)
+
+    async def get_asset(self, asset_id: str) -> MediaAsset | None:
+        asset = await self._reader.get_asset(asset_id)
+        if asset is None or asset.id not in self._asset_ids or asset.lifecycle not in _ENDED:
+            return asset
+        return asset.model_copy(
+            update={"lifecycle": AssetLifecycle.ACTIVE, "retired_revision": None}
+        )
+
+    async def get_asset_version(self, version_id: str) -> MediaAssetVersion | None:
+        version = await self._reader.get_asset_version(version_id)
+        if (
+            version is None
+            or version.asset_id not in self._asset_ids
+            or version.retired_revision is None
+        ):
+            return version
+        return version.model_copy(update={"retired_revision": None, "deleted_at": None})
+
+
+class _ReplayValidator(AuthoritativeValidator):
+    """The check a replayed change passes. History in an archive was already accepted
+    once, so a replay checks the story's integrity and never the author's own rules: a
+    rule set to block must not refuse the restore of a story it was never checked
+    against, or a retry of one. The archive's pictures are read as they stood when its
+    history showed them (``_PicturesAsWhenShown``)."""
+
+    def __init__(self, asset_ids: frozenset[str]) -> None:
+        super().__init__()
+        self._asset_ids = asset_ids
+
+    async def validate(
+        self, operations: Sequence[CanonOperation], *, context: ValidationContext
+    ) -> DomainValidationReport:
+        reader = cast(CanonTxReader, _PicturesAsWhenShown(context.reader, self._asset_ids))
+        return await super().validate(operations, context=replace(context, reader=reader))
 
 
 class ArchiveError(RuntimeError):
@@ -268,6 +342,10 @@ class CanonArchiveService:
         # What a model saw in pictures, as the author reviewed it, and each picture's
         # context choice (AST-005, AST-007); set by the container.
         self.picture_notes: Any = None
+        # Summaries of scenes the author kept (CTX-006); set by the container.
+        self.scene_summaries: Any = None
+        # Checks kept as runs in every line of the story (CON-001); set by the container.
+        self.check_runs: Any = None
 
     # ----------------------------------------------- authorized entry points
     async def _require_owner(self, scope: AccessScope, workspace_id: str, project_id: str) -> None:
@@ -678,7 +756,10 @@ class CanonArchiveService:
                 "versions": [version.model_dump(mode="json") for version in versions],
             },
             "objects": objects,
-            "derived": dict(DERIVED_MEDIA) if self.pictures is not None else {},
+            "derived": {
+                **(dict(DERIVED_MEDIA) if self.pictures is not None else {}),
+                **DERIVED_VIEWS,
+            },
             "sections": {},
         }
         # The author's own writing and rules: theirs to take away, and never canon.
@@ -713,6 +794,13 @@ class CanonArchiveService:
                 )
                 if table and (table.get("travel") or table.get("lasting")):
                     body.setdefault("story_time", {})["how_long"] = table
+            if hasattr(self._clocks, "get_scales"):
+                # The story's shared scales (STY-006), shared like the unit.
+                scales, _version = await self._clocks.get_scales(
+                    workspace_id=workspace_id, project_id=project_id
+                )
+                if scales and scales.get("scales"):
+                    body.setdefault("story_time", {})["scales"] = scales
         if self.pictures is not None:
             # Parts of pictures the author marked; left out when there are none.
             regions = await self.pictures.export_regions(workspace_id, project_id)
@@ -723,6 +811,23 @@ class CanonArchiveService:
             notes = await self.picture_notes.export_notes(workspace_id, project_id)
             if notes:
                 body["picture_notes"] = notes
+        if self.scene_summaries is not None:
+            # Summaries of scenes the author kept; left out when there are none.
+            summaries = await self.scene_summaries.export_summaries(workspace_id, project_id)
+            if summaries:
+                body["scene_summaries"] = summaries
+        if self.check_runs is not None:
+            # The history of checks in every line of the story; left out when there is none.
+            lines = {}
+            main = await self._journal.working_branch(  # type: ignore[attr-defined]
+                workspace_id=workspace_id, project_id=project_id
+            )
+            lines[str(main.id)] = "main"
+            for what_if in what_ifs or []:
+                lines[str(what_if["id"])] = str(what_if["id"])
+            runs = await self.check_runs.export_runs(workspace_id, project_id, lines)
+            if runs:
+                body["check_runs"] = runs
         # Said in the archive itself, so whoever opens it knows what is not there.
         body["left_out"] = list(LEFT_OUT)
         body["checksum"] = _checksum(body)
@@ -853,6 +958,8 @@ class CanonArchiveService:
                 "created_by": item.created_by,
                 "created_at": item.created_at.isoformat(),
                 "withdrawn_at": item.withdrawn_at.isoformat() if item.withdrawn_at else None,
+                # Only when kept, so older archives read the same (CON-016).
+                **({"depends_on": item.depends_on} if item.depends_on else {}),
             }
             for item in await self._studio.dismissals_in(  # type: ignore[attr-defined]
                 workspace_id=workspace_id, project_id=project_id, branch_id=branch_id
@@ -1187,6 +1294,22 @@ class CanonArchiveService:
                     table=table.model_dump(mode="json"),
                     expected_version=0,
                 )
+        scales = (archive.get("story_time") or {}).get("scales")
+        if scales and self._clocks is not None and hasattr(self._clocks, "get_scales"):
+            from backend.domain.arcs import read_scales
+
+            kept = read_scales(scales)
+            _, version = await self._clocks.get_scales(
+                workspace_id=workspace_id, project_id=project_id
+            )
+            # Only into a story with no scales of its own; a restore never overwrites them.
+            if version == 0 and kept.scales:
+                await self._clocks.set_scales(  # type: ignore[attr-defined]
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    scales=kept.model_dump(mode="json"),
+                    expected_version=0,
+                )
         if self._rules is not None:
             for rule in archive.get("story_rules", []):
                 existing = await self._rules.get_rule(  # type: ignore[attr-defined]
@@ -1358,6 +1481,7 @@ class CanonArchiveService:
                     created_by=raw.get("created_by"),
                     created_at=datetime.fromisoformat(raw["created_at"]),
                     withdrawn_at=when(raw.get("withdrawn_at")),
+                    depends_on=raw.get("depends_on"),
                 )
             )
             restored += 1 if added else 0
@@ -1577,6 +1701,20 @@ class CanonArchiveService:
             result["picture_notes"] = await self.picture_notes.restore_notes(
                 target_workspace_id, target_project_id, archive["picture_notes"]
             )
+        # Each archived line (``main`` and every what-if) and the line it is restored as.
+        branches = {"main": await self._root_branch_id(target_workspace_id, target_project_id)}
+        for raw in archive.get("what_ifs", []):
+            branches[raw["id"]] = _dedup_branch_id(
+                archive["checksum"], raw["id"], target_workspace_id, target_project_id
+            )
+        if self.scene_summaries is not None and archive.get("scene_summaries"):
+            result["scene_summaries"] = await self.scene_summaries.restore_summaries(
+                target_workspace_id, target_project_id, archive["scene_summaries"], branches
+            )
+        if self.check_runs is not None and archive.get("check_runs"):
+            result["check_runs"] = await self.check_runs.restore_runs(
+                target_workspace_id, target_project_id, archive["check_runs"], branches
+            )
         result["pictures_queued"] = await self._queue_pictures(
             target_workspace_id, target_project_id, actor_user_id
         )
@@ -1718,11 +1856,21 @@ class CanonArchiveService:
         object_key_map: dict[str, str] = {}
         stored_keys: list[str] = []
         object_count = 0
+        # A file already stored with the same bytes is used again, never a smaller copy:
+        # copies are replaced and removed on their own, which would take a restored
+        # picture's file with them. A reused file is shared by two versions; deleting a
+        # picture (AST-008) keeps a file another picture still uses.
+        copies: set[str] = (
+            await self.pictures.variant_object_keys(target_workspace_id, target_project_id)
+            if self.pictures is not None
+            else set()
+        )
         existing = {
             stat.checksum: stat.key
             for stat in self._objects.list_objects(
                 workspace_id=target_workspace_id, project_id=target_project_id
             )
+            if stat.key not in copies
         }
         for raw in archive["objects"]:
             payload = base64.b64decode(raw["data"], validate=True)
@@ -1836,12 +1984,15 @@ class CanonArchiveService:
                     target_workspace_id, target_project_id, branch_id, plan, revision
                 )
 
+        validator = _ReplayValidator(
+            frozenset(str(raw["id"]) for raw in archive["media"]["assets"])
+        )
         applied = 0
         for item in imported_commits:
             commit_id_map[item["raw"]["commit_id"]] = item["commit_id"]
             await start_what_ifs_at(item["raw"]["revision"] - 1)
             await self._replay_commit(
-                target_workspace_id, target_project_id, branch_id, item, schema_map
+                target_workspace_id, target_project_id, branch_id, item, schema_map, validator
             )
             applied += 1
             await self._canon.update_import(
@@ -1859,7 +2010,12 @@ class CanonArchiveService:
             with working_in(what_if_id):
                 for item in plan["commits"]:
                     await self._replay_commit(
-                        target_workspace_id, target_project_id, what_if_id, item, schema_map
+                        target_workspace_id,
+                        target_project_id,
+                        what_if_id,
+                        item,
+                        schema_map,
+                        validator,
                     )
                     applied += 1
                     await self._canon.update_import(
@@ -1946,6 +2102,7 @@ class CanonArchiveService:
         branch_id: str,
         item: dict[str, Any],
         schema_map: dict[str, str],
+        validator: AuthoritativeValidator,
     ) -> None:
         """Replay one saved change onto one line of the story; a no-op when already there."""
         raw = item["raw"]
@@ -2021,7 +2178,7 @@ class CanonArchiveService:
                 created_at=datetime.fromisoformat(raw["created_at"]),
             ),
             operations=item["operations"],
-            validator=_REPLAY_VALIDATOR,
+            validator=validator,
             origin=source_origin,
         )
 
@@ -2194,6 +2351,10 @@ class CanonArchiveService:
                 or raw.get("reason") not in {item.value for item in DismissReason}
                 or not isinstance(raw.get("note", ""), str)
                 or len(raw.get("note", "")) > MAX_DISMISSAL_NOTE
+                or (
+                    raw.get("depends_on") is not None
+                    and not re.fullmatch(r"[0-9a-f]{64}", str(raw.get("depends_on")))
+                )
             ):
                 raise ArchiveError("a dismissed finding is malformed")
             seen.add(raw["id"])
@@ -2303,6 +2464,16 @@ class CanonArchiveService:
             raise ArchiveError("unsupported archive format version")
         if archive.get("checksum") != _checksum(archive):
             raise ArchiveError("archive checksum mismatch")
+        if archive.get("check_runs") is not None:
+            from backend.services.run_archive import ArchiveRunsError, validate_runs
+
+            lines = {"main"} | {
+                str(raw.get("id")) for raw in archive.get("what_ifs", []) if isinstance(raw, dict)
+            }
+            try:
+                validate_runs(archive["check_runs"], lines)
+            except ArchiveRunsError as error:
+                raise ArchiveError(str(error)) from error
 
         project = archive.get("project") or {}
         source_ws = project.get("workspace_id")

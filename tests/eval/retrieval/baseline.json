@@ -19,7 +19,7 @@
       "omitted_silent": [],
       "precision": 1.0,
       "recall": 1.0,
-      "recall_at_10": 0.857,
+      "recall_at_10": 1.0,
       "recall_at_5": 0.714,
       "relevant": 7,
       "tags": [
@@ -49,7 +49,7 @@
       "tags": [
         "leakage"
       ],
-      "words": 498
+      "words": 512
     },
     {
       "branch": false,
@@ -72,7 +72,7 @@
       "tags": [
         "leakage"
       ],
-      "words": 160
+      "words": 174
     },
     {
       "branch": false,
@@ -96,7 +96,7 @@
         "acquisition",
         "leakage"
       ],
-      "words": 530
+      "words": 544
     },
     {
       "branch": true,
@@ -119,7 +119,7 @@
       "tags": [
         "branch"
       ],
-      "words": 503
+      "words": 517
     },
     {
       "branch": false,
@@ -136,7 +136,7 @@
       "omitted_silent": [],
       "precision": 1.0,
       "recall": 1.0,
-      "recall_at_10": 0.857,
+      "recall_at_10": 1.0,
       "recall_at_5": 0.714,
       "relevant": 7,
       "tags": [
@@ -147,7 +147,7 @@
   ],
   "precision": 1.0,
   "recall": 1.0,
-  "recall_at_10": 0.971,
+  "recall_at_10": 1.0,
   "recall_at_5": 0.793,
   "scenes": 6,
   "semantic_search": false,

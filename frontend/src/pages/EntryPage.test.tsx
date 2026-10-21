@@ -57,6 +57,20 @@ describe('EntryPage', () => {
     await expectAccessible(container)
   })
 
+  it('sets how much an entry matters on its page, saved like any change', async () => {
+    const api = mockApi({ ...base, 'PATCH /entities/ent_mara': { ...mara, attributes: { ...(mara.attributes ?? {}), _importance: 'main' } } })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<EntryPage />, at)
+    const choice = await screen.findByLabelText('How much it matters')
+    expect(screen.getByText(/The assistant gives entries that matter more room in a scene/)).toBeInTheDocument()
+    await user.selectOptions(choice, 'main')
+    await waitFor(() => expect(api.find('PATCH', '/entities/ent_mara')).toHaveLength(1))
+    const body = api.find('PATCH', '/entities/ent_mara')[0].body as { attributes: Record<string, unknown> }
+    expect(body.attributes._importance).toBe('main')
+    expect(body.attributes.role).toBe(mara.attributes?.role)
+    await expectAccessible(container)
+  })
+
   it('edits in a dialog and closes it once saved', async () => {
     const api = mockApi({
       ...base,

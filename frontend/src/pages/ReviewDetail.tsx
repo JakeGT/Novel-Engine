@@ -33,6 +33,7 @@ import {
 import { useConversationFor } from '../lib/conversations'
 import { isKeptNote } from '../lib/kept'
 import { hasChangeForm } from '../lib/facts'
+import { outcomeLabel } from '../lib/plan'
 import { firmness } from '../lib/knowledge'
 import { IMPORTANCE_KEY, NEEDS_DETAIL_KEY, TAGS_KEY, TRUST_KEY } from '../lib/marks'
 import { useStoryClock, whenText } from '../lib/storytime'
@@ -53,6 +54,8 @@ import {
   words,
 } from '../lib/words'
 import { actorLabel, scopedKey, useEntries, useInvalidateProject, useProject } from '../project'
+import { ChangeIssues } from '../components/ReviewFindings'
+import { useReviewFindings, type ReviewFindings } from '../lib/reviewFindings'
 
 const OPEN = new Set(['draft', 'validating', 'needs_review', 'approved'])
 // ``why`` is shown as its own line under the change, not as a field.
@@ -195,7 +198,8 @@ function planRows(operation: MutationOperation, names: Map<string, string>): Row
     if ((key === 'sets_up' || key === 'pays_off') && Array.isArray(value)) return value.map(name)
     return value
   }
-  return Object.keys(PLAN_LABELS)
+  const rows = Object.keys(PLAN_LABELS)
+    .filter((key) => key !== 'details')
     .filter((key) => {
       const value = operation.payload[key]
       if (value === null || value === undefined || value === '') return false
@@ -208,6 +212,76 @@ function planRows(operation: MutationOperation, names: Map<string, string>): Row
       label: PLAN_LABELS[key],
       before: before ? shown(key, before[key]) : undefined,
       after: shown(key, operation.payload[key]),
+    }))
+  return [...rows, ...planDetailRows(operation.payload.details, before?.details, names)]
+}
+
+// The plan's own parts kept in its notes, named as the plan form names them.
+const PLAN_DETAIL_LABELS: Record<string, string> = {
+  _intent: 'What the scene is for',
+  _conditions: 'What must be true',
+  _when: 'When in the story',
+  _reveals: 'What the reader learns',
+  _advances: 'Threads it moves along',
+  _path: 'Stages',
+}
+
+/** A scene's intent (STY-003) in the plan card's words. */
+function intentWords(value: unknown): unknown {
+  if (!isFlat(value)) return value
+  const parts = [
+    value.goal ? `Wants: ${String(value.goal)}` : '',
+    value.obstacle ? `In the way: ${String(value.obstacle)}` : '',
+    value.outcome ? `How it ends: ${outcomeLabel(String(value.outcome)) ?? String(value.outcome)}` : '',
+  ].filter(Boolean)
+  return parts.length ? parts.join(' · ') : 'Nothing decided'
+}
+
+/** A scene's conditions (STY-005), each as a sentence with names, not ids. */
+function conditionWords(value: unknown, names: Map<string, string>): unknown {
+  if (!Array.isArray(value)) return value
+  if (value.length === 0) return 'None'
+  const sentences = value.map((item) => {
+    if (!isFlat(item)) return String(item)
+    const when = `${item.when === 'after' ? 'After' : 'Before'} (${item.strength === 'soft' ? 'preferred' : 'required'})`
+    if (item.words) return `${when}: ${String(item.words)}`
+    const check = isFlat(item.check) ? item.check : {}
+    const pattern = isFlat(check.pattern) ? check.pattern : {}
+    const who = names.get(String(item.entity_id)) ?? 'an entry'
+    const other = pattern.other_id ? (names.get(String(pattern.other_id)) ?? 'something no longer there') : ''
+    const what = `${predicateLabel(String(pattern.predicate ?? ''))} ${other}`.trim()
+    const must = check.kind === 'lacks' ? 'must not have this' : 'must have this'
+    return `${when}: ${who} ${must}: ${what}`
+  })
+  return sentences.join('; ')
+}
+
+/** One row for each part of a plan item's notes that changes. */
+function planDetailRows(value: unknown, was: unknown, names: Map<string, string>): Row[] {
+  if (!isFlat(value)) return []
+  const before = isFlat(was) ? was : null
+  // The plan keeps its own parts as JSON text; read them back before putting them in words.
+  const parsed = (item: unknown): unknown => {
+    if (typeof item !== 'string' || !/^\s*[[{]/.test(item)) return item
+    try {
+      return JSON.parse(item) as unknown
+    } catch {
+      return item
+    }
+  }
+  const shown = (key: string, item: unknown) =>
+    key === '_intent'
+      ? intentWords(parsed(item))
+      : key === '_conditions'
+        ? conditionWords(parsed(item), names)
+        : item
+  return Object.entries(value)
+    .filter(([key, item]) => !(before && same(before[key], item)))
+    .map(([key, item]) => ({
+      key: `details.${key}`,
+      label: PLAN_DETAIL_LABELS[key] ?? (key.startsWith('_') ? words(key.slice(1)) : key),
+      before: before ? (key in before ? shown(key, before[key]) : undefined) : undefined,
+      after: shown(key, item),
     }))
 }
 
@@ -303,10 +377,13 @@ function ChangeCard({
   busy,
   onDecide,
   onRevise,
+  reviewed = null,
 }: {
   operation: MutationOperation
   title: string
   issues: Issue[]
+  /** The advisory findings and their dismissals (CON-016). */
+  reviewed?: ReviewFindings | null
   candidates: Candidate[]
   /** Names of entries and titles of plan items, by id. */
   names: Map<string, string>
@@ -398,18 +475,7 @@ function ChangeCard({
         </p>
       )}
 
-      {issues.map((issue, index) => (
-        <p
-          key={index}
-          className={`notice ${issue.severity === 'blocking' ? 'danger' : 'plain'}`}
-          role={issue.severity === 'blocking' ? 'alert' : 'note'}
-        >
-          <span>
-            <strong>{issue.severity === 'blocking' ? 'This must be fixed first' : 'Worth a look'}:</strong>{' '}
-            {issue.message}
-          </span>
-        </p>
-      ))}
+      <ChangeIssues issues={issues} reviewed={reviewed} editable={editable} />
 
       <FromText evidence={(operation.payload as { evidence?: { source_artefact_id: string; location?: string | null }[] }).evidence} />
 
@@ -562,6 +628,16 @@ export function ReviewDetail() {
     retry: false,
   })
   const [committed, setCommitted] = useState<{ revision: number } | null>(null)
+  // The advisory findings with the author's dismissals, read with the same check (CON-016).
+  const reviewed = useReviewFindings(
+    mutationId,
+    Boolean(pending) && OPEN.has(pending?.status ?? '') && canWrite,
+    [
+      (pending?.operations ?? []).map((item) => `${item.ordinal}.${item.revision}`).join('|'),
+      pending?.head_revision,
+      checked.dataUpdatedAt,
+    ].join(':'),
+  )
 
   // Every review action returns the fresh change set; reload everything that depends on it.
   const session = useConversationFor(mutationId)
@@ -942,6 +1018,7 @@ export function ReviewDetail() {
                       names={names}
                       editable={editable}
                       busy={busy}
+                      reviewed={reviewed}
                       onDecide={(decision, operationNote) =>
                         action.mutate(() =>
                           api.decideOperation(scope, mutationId, operation.ordinal, decision, operationNote),

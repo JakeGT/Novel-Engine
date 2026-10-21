@@ -91,6 +91,18 @@ command prints counts only: never a picture, its name or a stored file's key.
 - `make retention` (and `python -m backend.devtools.retention`) runs both of the above after the
   other retention rules, counting with `--dry-run`; `--skip-media` leaves pictures alone.
 
+## Uploads
+
+A picture upload is read as it streams in: refused at once when its declared length is over
+8 MB, as soon as more than that has arrived, or when its first bytes are not a PNG, JPEG or WebP
+file; and refused (408, "took too long to arrive") when the whole upload has not arrived within
+two minutes (`UPLOAD_DEADLINE_SECONDS` in `backend/services/media_service.py`), so a sender
+trickling bytes cannot hold a connection open. A proxy in front should still enforce its own
+read timeout. Refusals count in `media_uploads_refused_total{reason}` (`too_large`, `too_slow`,
+`storage_full`). A `Content-Digest` (or `Repr-Digest`) with a `sha-256` member must match; one
+with only other methods (`sha-512`, say) is not checked, and the answer says so
+(`received.digest` is `not_checked`, with a note), so the sender can compare `received.sha256`.
+
 ## Archives
 
 Small copies are never put in an archive (the archive says so under `derived` and `left_out`);
@@ -107,3 +119,36 @@ Checked against the code on 2026-10-20. The service calls behind `status`, `back
 `reconcile` and `copies` ran in the automated tests against a disposable PostgreSQL database
 (`tests/integration/test_media_processing_store.py`); the command line itself needs the database
 migrated to `0046_media_variants` or later, and has not yet been run on the hosted stack.
+
+## Deleting one picture's file before its story (AST-008)
+
+An owner or administrator can delete a picture's file from the media page ("Delete this
+picture's file") once the picture is shown on no entry or scene in any line of the story; taking
+it off one is an ordinary reviewed change, and a scene taken out of the plan no longer counts.
+The picture is marked deleted first (from then on it cannot be shown, opened or prepared), where
+it is shown is checked again, and only then are the original, its smaller copies and its search
+rows removed. A stored file another picture still uses (an archive restore can share one between
+two pictures with the same bytes) is kept for that picture, and is counted once toward the room
+used. The record stays as the tombstone (checksum, size, type, `deleted_at`) with
+`original_deleted` and `asset_deleted` in the picture's activity, naming who did it. The room it
+took is free at once. A deletion interrupted part way is finished by asking again
+(`POST /api/v1/projects/<project>/assets/<asset>/delete`). Its reviewed
+descriptions are left out of later archives.
+
+There is no undo. Only an archive saved before the deletion still holds the file, and only a
+restore of it into a new, empty story brings the picture back (there). It cannot be restored
+over the story it came from: that story has its own history since, so the restore is refused.
+An archive saved after the deletion restores too: the changes that once showed the picture are
+checked against the picture as it was when they were made, and the restored picture keeps its
+tombstone (deleted, with its checksum, size, type and `deleted_at`) and no file, because the
+archive holds none. A retired picture restores the same way: its history and links come back,
+and it stays retired (not shown, opened or prepared). Checked on 2026-10-21 against the fakes
+(`tests/contract/test_picture_deletion.py`) and PostgreSQL
+(`tests/integration/test_archive_ended_pictures.py`).
+
+To see what was deleted:
+
+```sh
+docker compose exec -T postgres psql -U novel -d novel -c \
+  "SELECT asset_id, id, byte_length, checksum, deleted_at FROM media_asset_versions WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 20"
+```

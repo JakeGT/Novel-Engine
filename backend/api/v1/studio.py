@@ -80,6 +80,8 @@ class CheckModel(BaseModel):
     # Names this finding when dismissing it; the same finding on the same words keeps it.
     key: str = ""
     dismissal: DismissalModel | None = None
+    # Dismissed before, and back because what it says has changed since (CON-016).
+    came_back: bool = False
 
 
 class AssistantNoteModel(BaseModel):
@@ -323,7 +325,9 @@ def _check_pass(value: str | None) -> CheckPass | None:
 
 def _checks(findings: list[DraftFinding], keys: list[str], state: StudioState) -> list[CheckModel]:
     return [
-        _check(f, key, state.dismissals.get(key))
+        _check(f, key, state.dismissals.get(key)).model_copy(
+            update={"came_back": key in state.came_back}
+        )
         for f, key in zip(findings, keys or [""] * len(findings), strict=False)
     ]
 

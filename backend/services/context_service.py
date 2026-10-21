@@ -13,6 +13,8 @@ scene and changed through the ordinary reviewed path.
 
 from __future__ import annotations
 
+import re
+from collections import OrderedDict
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -22,22 +24,33 @@ from backend.domain.arcs import moves_in_scene
 from backend.domain.branching import working_branch_id
 from backend.domain.canon.assertions import FactVisibility
 from backend.domain.canon.entities import CanonEntity
+from backend.domain.canon.events import CLAIM_KIND, INFERRED_KIND
+from backend.domain.canon.marks import IMPORTANCE_KEY, clean_importance
 from backend.domain.canon.marks import details as plain_details_of
 from backend.domain.canon.naming import normalize_name
 from backend.domain.canon.phrasing import phrase
 from backend.domain.canon.plans import PlanItem, PlanKind
 from backend.domain.context import (
+    CONTINUITY_BOOST,
+    NEAR_SCENES,
+    RULE_BOOST,
     SCENE_DRAFT_POLICY,
     ContextComparison,
     ContextItem,
     ContextManifest,
     ContextSection,
     ContextSettings,
+    Signal,
     assemble,
     compare_contexts,
     context_settings,
+    count_words,
+    distance_signal,
+    diversify,
+    importance_signal,
     stored_manifest,
     with_context_settings,
+    with_signals,
 )
 from backend.domain.context_parts import (
     REPRESENTATION_WORDS,
@@ -50,7 +63,7 @@ from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.knowledge import knowledge_of, reader_journey, reading_order, scene_reveals
 from backend.domain.knowledge import scene_time as scene_when
-from backend.domain.rules import RuleStatus, read_rule
+from backend.domain.rules import RuleStatus, read_rule, violations, world_from_canon
 from backend.domain.scene_conditions import condition_reading, plain_details, scene_conditions
 from backend.domain.scene_intent import intent_sentences, scene_intent
 from backend.domain.sources import SourceKind, SourceText, find_mentions
@@ -70,6 +83,7 @@ from backend.domain.worldtime import (
 )
 from backend.services.knowledge_timing import StoryOrder
 from backend.services.passage_index import IndexStatus
+from backend.services.scene_summaries import plan_card_summary
 from backend.services.story_time_service import (
     anchor_lookup,
     event_times,
@@ -79,8 +93,21 @@ from backend.services.story_time_service import (
 )
 
 MAX_PASSAGES = 40
+# Whole-story continuity findings and the rules' world, kept for this many lines of the
+# story at one version each (CTX-007): every context built at that version reuses them.
+STORY_WIDE_KEPT = 8
 MAX_EVENTS = 40
 PASSAGE_WORDS = 220
+# Earlier scenes given as a summary and an event block (CTX-006), nearest first.
+EARLIER_SCENES = 5
+# How much of the scene before is given as written (CTX-006A), from its end.
+BEFORE_WORDS = 250
+# Passages from each other scene on one of this scene's threads (CTX-006A).
+THREAD_PASSAGES = 2
+# Events listed in one scene's event block.
+BLOCK_EVENTS = 8
+# A continuity warning's words given in a reason, at most.
+FINDING_WORDS = 24
 
 ROLE_WORDS = {
     "point_of_view": "is the scene's point of view",
@@ -166,6 +193,86 @@ def _secret_words(sentence: str, pov: str | None, names: dict[str, str]) -> tupl
     )
 
 
+def ranked(item: ContextItem, signals: list[Signal | None]) -> ContextItem:
+    """The item with these signals applied to its score and said in its reason (CTX-007)."""
+    applied = [signal for signal in signals if signal is not None and signal.effect]
+    if not applied:
+        return item
+    notes = " ".join(signal.note for signal in applied if signal.note)
+    if not notes:
+        return replace(
+            item,
+            score=round(item.score + sum(signal.effect for signal in applied), 3),
+            signals=(*item.signals, *applied),
+        )
+    return replace(
+        item,
+        score=round(item.score + sum(signal.effect for signal in applied), 3),
+        signals=(*item.signals, *applied),
+        reason=f"{item.reason} {notes}",
+    )
+
+
+def _tail(text: str, words: int) -> tuple[str, int]:
+    """The last ``words`` words of a text, and where they start in it."""
+    parts = list(re.finditer(r"\S+", text))
+    if len(parts) <= words:
+        start = parts[0].start() if parts else 0
+        return text[start:].strip(), start
+    start = parts[-words].start()
+    return "… " + text[start:].strip(), start
+
+
+@dataclass
+class _Ranking:
+    """What the ranking signals read, worked out once per context (CTX-007)."""
+
+    # Entry id -> the author's importance mark.
+    importance: dict[str, str]
+    # Record id -> a continuity warning or broken rule about it at or near the scene.
+    impact: dict[str, tuple[str, float]]
+    # Scene id -> its place in reading order.
+    place: dict[str, int]
+    position: int | None
+
+    def distance(self, scene_id: str) -> int | None:
+        """How many scenes back ``scene_id`` is from this one (negative: later)."""
+        if self.position is None or scene_id not in self.place:
+            return None
+        return self.position - self.place[scene_id]
+
+    def importance_of(self, item: ContextItem, about: list[str], names: dict[str, str]):
+        """The strongest importance mark among the entries an item is about."""
+        from backend.domain.context import IMPORTANCE_WEIGHT
+
+        marked = [entity_id for entity_id in about if entity_id in self.importance]
+        if not marked:
+            return None
+        best = max(
+            marked,
+            key=lambda entity_id: (
+                abs(IMPORTANCE_WEIGHT[self.importance[entity_id]] - 1.0),
+                entity_id,
+            ),
+        )
+        return importance_signal(item.score, self.importance[best], names.get(best, "it"))
+
+    def impact_of(self, *record_ids: str) -> Signal | None:
+        for record_id in record_ids:
+            found = self.impact.get(record_id)
+            if found is not None:
+                return Signal("continuity", found[1], found[0])
+        return None
+
+
+@dataclass
+class _StoryWide:
+    """What ranking works out over the whole story, once per line and version."""
+
+    findings: list[Any] | None = None
+    world: Any = None
+
+
 def _usable(source: SourceText, scene_texts: set[str]) -> bool:
     """Whether a text may shape a draft in this line of the story."""
     return source.kind != SourceKind.SCENE or source.id in scene_texts
@@ -207,7 +314,12 @@ class ContextService:
         # Search by meaning for pictures (area B's ``MediaSearchService``); None leaves
         # the scene's context to explicit links only.
         self.search: Any = None
+        # Kept summaries of scenes' prose (CTX-006); set after construction, because the
+        # summaries are built with the studio.
+        self.summaries: Any = None
         self._local_mode = local_mode
+        # (workspace, project, line, version, clock) -> whole-story ranking inputs.
+        self._story_wide: OrderedDict[tuple[Any, ...], _StoryWide] = OrderedDict()
 
     async def _authorize(
         self, scope: AccessScope, workspace_id: str, project_id: str, permission: Permission
@@ -416,6 +528,9 @@ class ContextService:
     async def candidates(
         self, workspace_id: str, project_id: str, scene: PlanItem
     ) -> tuple[list[ContextItem], str | None]:
+        # Which version of the story this is, read before the story: work kept for it is
+        # never older than the version it is kept under.
+        wide = await self._story_wide_for(workspace_id, project_id)
         story = await read_story(self._reader, workspace_id, project_id)
         entities: dict[str, CanonEntity] = story.entities
         names = {entity.id: entity.name for entity in entities.values()}
@@ -442,6 +557,34 @@ class ContextService:
             if ref.entity_id in entities and ref.entity_id not in cast:
                 cast[ref.entity_id] = ref.role
         out: list[ContextItem] = []
+        order = reading_order(items_all)
+        position = next((i for i, item in enumerate(order) if item.id == scene.id), None)
+        rules = (
+            await self._rules.list_rules(workspace_id=workspace_id, project_id=project_id)
+            if self._rules is not None
+            else []
+        )
+        ranking = _Ranking(
+            importance={
+                entity.id: level
+                for entity in entities.values()
+                if (level := clean_importance(entity.attributes.get(IMPORTANCE_KEY)))
+            },
+            impact=await self._impact(
+                workspace_id,
+                project_id,
+                story,
+                items_all,
+                order,
+                position,
+                cast,
+                beliefs,
+                rules,
+                wide,
+            ),
+            place={item.id: index for index, item in enumerate(order)},
+            position=position,
+        )
 
         # The scene itself: always given, last in the rendering.
         when = describe(scene_when(scene.details), unit=unit, event_name=event_names.get)
@@ -799,17 +942,23 @@ class ContextService:
                         score=8,
                     )
                 )
-        order = reading_order(items_all)
-        position = next((i for i, item in enumerate(order) if item.id == scene.id), None)
         if position is not None and position > 0:
             before = order[position - 1]
             summary = f" {before.summary}" if before.summary else ""
+            seen_by = next(iter(before.refs_as("point_of_view")), None)
+            other_eyes = ""
+            if pov and seen_by and seen_by != pov:
+                # In the words given, so the assistant knows it too.
+                other_eyes = (
+                    f" It is seen through {names.get(seen_by, 'someone else')}; "
+                    f"{names.get(pov, 'the viewpoint character')} may not know all of it."
+                )
             out.append(
                 ContextItem(
                     key=f"plan:{before.id}",
                     section=ContextSection.PLAN,
-                    text=f"The scene before: “{before.title}”.{summary}",
-                    reason="It comes just before this one.",
+                    text=f"The scene before: “{before.title}”.{summary}{other_eyes}",
+                    reason="It comes just before this one." + other_eyes,
                     authority="plan",
                     record_type="plan_item",
                     record_id=before.id,
@@ -860,8 +1009,7 @@ class ContextService:
                 )
 
         # The story's rules.
-        if self._rules is not None:
-            rules = await self._rules.list_rules(workspace_id=workspace_id, project_id=project_id)
+        if rules:
             types = {entities[e].type for e in cast}
             for rule in rules:
                 if rule.status is not RuleStatus.ON:
@@ -901,9 +1049,176 @@ class ContextService:
             )
         )
 
-        # The author's own writing that names the scene's people and places.
-        out.extend(await self._writing(workspace_id, project_id, scene, cast, names))
-        return out, pov
+        # Earlier scenes, as summaries and event blocks, and this scene's own events
+        # (CTX-006); the end of the scene before, as written (CTX-006A).
+        out.extend(
+            await self._earlier(
+                workspace_id, project_id, scene, order, position, story.events, names, pov, ranking
+            )
+        )
+
+        # The author's own writing that names the scene's people and places, and
+        # passages from other scenes on the same threads.
+        out.extend(
+            await self._writing(
+                workspace_id, project_id, scene, cast, names, ranking, plan_by_id, order, pov
+            )
+        )
+        out = [self._signals(item, ranking, facts_by_id, cast, names) for item in out]
+        # Many near-copies of one passage say one thing many times: each passage of the
+        # author's writing is ranked against those above it (CTX-007).
+        # A passage inside the end of the scene before is already given as such.
+        tails = {
+            item.record_id: int(item.location.split(":")[1].split("-")[0])
+            for item in out
+            if item.section is ContextSection.BEFORE and item.location
+        }
+        out = [
+            item
+            for item in out
+            if not (
+                item.section is ContextSection.WRITING
+                and item.record_id in tails
+                and item.location
+                and int(item.location.split(":")[1].split("-")[0]) >= tails[item.record_id]
+            )
+        ]
+        prose = [item for item in out if item.authority == "writing"]
+        rest = [item for item in out if item.authority != "writing"]
+        return rest + diversify(prose), pov
+
+    @staticmethod
+    def _signals(
+        item: ContextItem,
+        ranking: _Ranking,
+        facts: dict[str, Any],
+        cast: dict[str, str],
+        names: dict[str, str],
+    ) -> ContextItem:
+        """The author's importance and open continuity findings, on items about the story's
+        records (CTX-007). The scene's own items and hard items are given whatever their
+        score, so they are left as they are; passages are ranked where they are found."""
+        if item.section is ContextSection.SCENE or item.hard or item.authority == "writing":
+            return item
+        about: list[str] = []
+        related: list[str] = [item.record_id]
+        if item.record_type == "entity":
+            about = [item.record_id]
+        elif item.record_type == "fact" and item.record_id in facts:
+            proposition = facts[item.record_id].proposition
+            ends = [proposition.subject_id, getattr(proposition.object, "entity_id", None)]
+            about = [entity_id for entity_id in ends if entity_id and entity_id in cast]
+        signals: list[Signal | None] = []
+        if item.section is not ContextSection.SECRETS:
+            signals.append(ranking.importance_of(item, about, names))
+        signals.append(ranking.impact_of(*related))
+        return ranked(item, signals)
+
+    async def _impact(
+        self,
+        workspace_id: str,
+        project_id: str,
+        story: Any,
+        items: list[PlanItem],
+        order: list[PlanItem],
+        position: int | None,
+        cast: dict[str, str],
+        beliefs: list[Any],
+        rules: list[Any],
+        wide: _StoryWide | None = None,
+    ) -> dict[str, tuple[str, float]]:
+        """Records with an open continuity warning at or near this scene, and entries a
+        story rule does not hold for (CTX-007): record id -> (why, by how much).
+
+        The whole-story work (every continuity finding, the rules' world) is done once per
+        line of the story and version of it, and reused by every context built there."""
+        found: dict[str, tuple[str, float]] = {}
+        wide = wide or _StoryWide()
+        if position is not None and any(scene_when(item.details) is not None for item in order):
+            from backend.services.continuity_service import story_continuity
+
+            near = {
+                item.id
+                for item in order[max(0, position - NEAR_SCENES) : position + NEAR_SCENES + 1]
+            }
+            if wide.findings is None:
+                try:
+                    wide.findings = list(
+                        await story_continuity(
+                            self._reader,
+                            self._clocks,
+                            workspace_id,
+                            project_id,
+                            story=story,
+                            items=items,
+                        )
+                    )
+                except Exception:  # noqa: BLE001 - ranking is extra; the context stands without it
+                    wide.findings = []
+            for finding in wide.findings:
+                if finding.severity != "warning" or not near & set(finding.scene_ids):
+                    continue
+                words = _trim(finding.message, FINDING_WORDS).rstrip(".")
+                note = f"There is a continuity warning about it near this scene: {words}."
+                for record in finding.records:
+                    found.setdefault(record.id, (note, CONTINUITY_BOOST))
+                    if record.entry_id:
+                        found.setdefault(record.entry_id, (note, CONTINUITY_BOOST))
+        active = [rule for rule in rules if rule.status is RuleStatus.ON]
+        if active and cast:
+            if wide.world is None:
+                wide.world = world_from_canon(
+                    story.entities.values(), story.facts, beliefs, story.events
+                )
+            world = wide.world
+            for rule in active:
+                broken = violations(rule.id, rule.body, world, only=list(cast), limit=5)
+                if not broken:
+                    continue
+                who = _listing([item.entity_name for item in broken[:3]])
+                found.setdefault(
+                    rule.id,
+                    (f"It does not hold for {who}, who is in the scene.", RULE_BOOST),
+                )
+                for item in broken:
+                    found.setdefault(
+                        item.entity_id,
+                        ("One of your story rules does not hold for it.", RULE_BOOST),
+                    )
+        return found
+
+    async def _story_wide_for(self, workspace_id: str, project_id: str) -> _StoryWide:
+        """The whole-story ranking inputs for the line worked in at its version now.
+
+        Keyed by the line, its version and the story clock's settings, so any change to
+        the story, its plan or its clock makes a new entry; where the version cannot be
+        read, nothing is kept."""
+        if self._journal is None or not hasattr(self._reader, "get_head"):
+            return _StoryWide()
+        try:
+            branch = await self._journal.working_branch(
+                workspace_id=workspace_id, project_id=project_id
+            )
+            head = await self._reader.get_head(
+                workspace_id=workspace_id, project_id=project_id, branch_id=branch.id
+            )
+            clock: tuple[Any, ...] = ()
+            if self._clocks is not None:
+                from backend.services.continuity_service import how_long_of, unit_of
+
+                _, how_long_version = await how_long_of(self._clocks, workspace_id, project_id)
+                clock = (await unit_of(self._clocks, workspace_id, project_id), how_long_version)
+        except Exception:  # noqa: BLE001 - nothing kept; worked out afresh
+            return _StoryWide()
+        key = (workspace_id, project_id, str(branch.id), int(head), *clock)
+        wide = self._story_wide.get(key)
+        if wide is None:
+            wide = self._story_wide[key] = _StoryWide()
+            while len(self._story_wide) > STORY_WIDE_KEPT:
+                self._story_wide.popitem(last=False)
+        else:
+            self._story_wide.move_to_end(key)
+        return wide
 
     async def _pictures(
         self,
@@ -1152,6 +1467,179 @@ class ContextService:
         ]
         return await self.pictures.deliver(scope, workspace_id, project_id, parts, limits)
 
+    async def _line_links(self, workspace_id: str, project_id: str) -> dict[str, str]:
+        """Scene id -> the text holding its prose, in the line of the story worked in."""
+        if self.studio is None or self._journal is None:
+            return {}
+        branch = await self._journal.working_branch(
+            workspace_id=workspace_id, project_id=project_id
+        )
+        links = await self.studio.manuscripts_for(
+            workspace_id=workspace_id, project_id=project_id, branch_id=branch.id
+        )
+        return {plan_id: source_id for plan_id, source_id in links}
+
+    async def _latest(self, workspace_id: str, project_id: str, source_id: str) -> Any:
+        try:
+            _, version, _ = await self._sources.version(workspace_id, project_id, source_id)
+        except NotFoundError:
+            return None
+        return version
+
+    async def _earlier(
+        self,
+        workspace_id: str,
+        project_id: str,
+        scene: PlanItem,
+        order: list[PlanItem],
+        position: int | None,
+        events: list[Any],
+        names: dict[str, str],
+        pov: str | None,
+        ranking: _Ranking,
+    ) -> list[ContextItem]:
+        """Earlier scenes as summaries and event blocks, this scene's own events, and the
+        end of the scene before as written (CTX-006, CTX-006A)."""
+        out: list[ContextItem] = []
+        by_scene: dict[str, list[Any]] = {}
+        for event in events:
+            if event.retired_revision is not None or event.kind in (CLAIM_KIND, INFERRED_KIND):
+                continue
+            if event.scene_id:
+                by_scene.setdefault(event.scene_id, []).append(event)
+        own = by_scene.get(scene.id, [])
+        if own:
+            listed = "; ".join(event.name.rstrip(".") for event in own[:BLOCK_EVENTS])
+            more = len(own) - BLOCK_EVENTS
+            out.append(
+                ContextItem(
+                    key=f"events:{scene.id}",
+                    section=ContextSection.SCENE,
+                    text=f"What you recorded happens in this scene: {listed}"
+                    + (f"; and {count_words(more, 'more', 'more')}." if more > 0 else "."),
+                    reason="You placed these events in this scene.",
+                    authority="event",
+                    record_type="plan_item",
+                    record_id=scene.id,
+                    score=80,
+                )
+            )
+        if position is None or position == 0:
+            return out
+        earlier = [
+            order[i] for i in range(position - 1, max(-1, position - 1 - EARLIER_SCENES), -1)
+        ]
+        links = await self._line_links(workspace_id, project_id)
+        kept: dict[str, Any] = {}
+        if self.summaries is not None:
+            sources = [links[item.id] for item in earlier if item.id in links]
+            kept = await self.summaries.kept_for(workspace_id, project_id, sources)
+        who = names.get(pov) if pov else None
+        for distance, before in enumerate(earlier, start=1):
+            seen_by = next(iter(before.refs_as("point_of_view")), None)
+            caveat: list[Signal | None] = []
+            other_eyes = ""
+            if pov and seen_by and seen_by != pov:
+                other_eyes = (
+                    f" It is seen through {names.get(seen_by, 'someone else')}; "
+                    f"{who or 'the viewpoint character'} may not know all of it."
+                )
+            # The warning goes in the words given, not only the reason: the reason is
+            # for the author, and the assistant reads only the text.
+            eyes = f" ({other_eyes.strip()})" if other_eyes else ""
+            source_id = links.get(before.id)
+            summary = kept.get(source_id) if source_id else None
+            if summary is not None:
+                latest = await self._latest(workspace_id, project_id, summary.source_id)
+                stale = latest is None or latest.id != summary.version_id
+                by = {
+                    "author": "your own summary",
+                    "model": "a summary the assistant suggested and you kept",
+                    "model_corrected": "a summary the assistant suggested and you corrected",
+                }[summary.origin.value]
+                item = ContextItem(
+                    key=f"summary:{before.id}",
+                    section=ContextSection.EARLIER,
+                    text=f"“{before.title}”, as written: {summary.body}{eyes}",
+                    reason=f"It is {by} of “{before.title}”.{other_eyes}",
+                    authority="summary",
+                    record_type="scene_summary",
+                    record_id=summary.id,
+                    score=5.0,
+                )
+                if stale:
+                    caveat.append(
+                        Signal(
+                            "out of date",
+                            -1.5,
+                            "The scene has been rewritten since; this summary is of an "
+                            "earlier version.",
+                        )
+                    )
+                out.append(ranked(item, [distance_signal(item.score, distance, ""), *caveat]))
+            elif distance >= 2:
+                card = plan_card_summary(before, names, seen_by)
+                if card:
+                    item = ContextItem(
+                        key=f"summary:{before.id}",
+                        section=ContextSection.EARLIER,
+                        text=f"“{before.title}”, as planned: {card}{eyes}",
+                        reason=f"It is what the plan card of “{before.title}” says happens."
+                        + other_eyes,
+                        authority="plan",
+                        record_type="plan_item",
+                        record_id=before.id,
+                        score=4.0,
+                    )
+                    out.append(ranked(item, [distance_signal(item.score, distance, "")]))
+            placed = by_scene.get(before.id, [])
+            if placed:
+                listed = "; ".join(event.name.rstrip(".") for event in placed[:BLOCK_EVENTS])
+                more = len(placed) - BLOCK_EVENTS
+                item = ContextItem(
+                    key=f"events:{before.id}",
+                    section=ContextSection.EARLIER,
+                    text=f"In “{before.title}”: {listed}"
+                    + (f"; and {count_words(more, 'more', 'more')}." if more > 0 else ".")
+                    + eyes,
+                    reason=f"These are the events you placed in “{before.title}”.{other_eyes}",
+                    authority="event",
+                    record_type="plan_item",
+                    record_id=before.id,
+                    score=4.5,
+                )
+                out.append(ranked(item, [distance_signal(item.score, distance, "")]))
+        # The end of the scene before, as written: local prose continuity.
+        before = earlier[0]
+        seen_by = next(iter(before.refs_as("point_of_view")), None)
+        other_eyes = ""
+        if pov and seen_by and seen_by != pov:
+            other_eyes = (
+                f" It is seen through {names.get(seen_by, 'someone else')}; "
+                f"{who or 'the viewpoint character'} may not know all of it."
+            )
+        eyes = f" ({other_eyes.strip()})" if other_eyes else ""
+        source_id = links.get(before.id)
+        if source_id is not None and source_id != links.get(scene.id):
+            version = await self._latest(workspace_id, project_id, source_id)
+            if version is not None and version.content.strip():
+                words, start = _tail(version.content, BEFORE_WORDS)
+                out.append(
+                    ContextItem(
+                        key=f"before:{before.id}",
+                        section=ContextSection.BEFORE,
+                        text=f"From the end of “{before.title}”: {words}{eyes}",
+                        reason=f"It is how the scene before, “{before.title}”, ends, as you "
+                        f"wrote it.{other_eyes}",
+                        authority="writing",
+                        record_type="source_version",
+                        record_id=version.id,
+                        location=f"chars:{start}-{len(version.content)}",
+                        score=7.0,
+                    )
+                )
+        return out
+
     async def _writing(
         self,
         workspace_id: str,
@@ -1159,32 +1647,97 @@ class ContextService:
         scene: PlanItem,
         cast: dict[str, str],
         names: dict[str, str],
+        ranking: _Ranking | None = None,
+        plan_by_id: dict[str, PlanItem] | None = None,
+        order: list[PlanItem] | None = None,
+        pov: str | None = None,
     ) -> list[ContextItem]:
-        if self._passage_store is None or self._sources is None or not cast:
+        if self._passage_store is None or self._sources is None:
             return []
+        ranking = ranking or _Ranking(importance={}, impact={}, place={}, position=None)
         usable, own = await self._scene_texts(workspace_id, project_id, scene)
-        passages = await self._passage_store.mentioning(
-            workspace_id=workspace_id,
-            project_id=project_id,
-            entity_ids=list(cast),
-            limit=MAX_PASSAGES * 4,
-        )
+        links = await self._line_links(workspace_id, project_id)
+        scene_of = {source_id: plan_id for plan_id, source_id in links.items()}
+        passages: list[Any] = []
+        if cast:
+            passages = await self._passage_store.mentioning(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                entity_ids=list(cast),
+                limit=MAX_PASSAGES * 4,
+            )
         # The shared index reads each text as its own line does. When some answer holds only
         # in a what-if, a stretch of scenes or one viewpoint, each passage is read again as
         # this line reads it (CTX-016), and texts using such a phrase are looked at too.
         line = None
         if hasattr(self._sources, "line_names"):
             line = await self._sources.line_names(workspace_id, project_id)
-        if line is not None:
+        if line is not None and cast:
             passages = await self._with_limited_phrases(
                 workspace_id, project_id, passages, line.phrases_for(cast), usable
             )
+        # Other scenes on one of this scene's threads (CTX-006A): what was set up, moved
+        # or resolved there is what this scene picks up.
+        threads = self._threads_of(scene)
+        on_thread: dict[str, str] = {}
+        if threads and plan_by_id is not None and order is not None:
+            # Only scenes before this one: a later scene's prose (a payoff, say) is not
+            # what this scene picks up, and would give away what is still to come.
+            ids = [item.id for item in order]
+            here = ids.index(scene.id) if scene.id in ids else 0
+            for other in order[:here]:
+                if other.id not in links:
+                    continue
+                touching = [
+                    (thread_id, verb)
+                    for thread_id, verb in self._threads_of(other).items()
+                    if thread_id in threads
+                ]
+                if not touching:
+                    continue
+                thread_id, verb = touching[0]
+                thread = plan_by_id.get(thread_id)
+                if thread is None or not thread.is_active:
+                    continue
+                along = " along" if verb == "moves" else ""
+                on_thread[links[other.id]] = (
+                    f"It is from “{other.title}”, which {verb} the thread “{thread.title}”{along}."
+                )
+        texts: dict[str, Any] = {}
+        all_texts = await self._sources.all_texts(workspace_id, project_id)
+        # Search by meaning only among this line's texts (CTX-004): another line's scene
+        # prose is never scored, so it never takes a place from this line's.
+        allowed = {text.id for text in all_texts if _usable(text, usable)}
         semantic: dict[str, float] = {}
         if self._passages is not None:
             semantic = await self._passages.semantic_scores(
-                workspace_id, project_id, f"{scene.title}. {scene.summary}"
+                workspace_id,
+                project_id,
+                f"{scene.title}. {scene.summary}",
+                source_ids=allowed,
             )
-        texts: dict[str, Any] = {}
+        seen = {passage.key for passage in passages}
+        thread_keys: set[str] = set()
+        for source_id in on_thread:
+            if source_id == own:
+                continue
+            found = await self._passage_store.for_source(
+                workspace_id=workspace_id, project_id=project_id, source_id=source_id
+            )
+            # The passages naming most of the scene's people, then those closest in
+            # meaning, then the first: at most a few from each scene.
+            found.sort(
+                key=lambda passage: (
+                    -len(set(passage.entity_ids) & set(cast)),
+                    -semantic.get(passage.key, 0.0),
+                    passage.number,
+                )
+            )
+            for passage in found[:THREAD_PASSAGES]:
+                thread_keys.add(passage.key)
+                if passage.key not in seen:
+                    seen.add(passage.key)
+                    passages.append(passage)
         out: list[ContextItem] = []
         for passage in passages:
             if passage.source_id not in texts:
@@ -1209,32 +1762,78 @@ class ContextService:
                     if len(mention.entity_ids) == 1
                 )
             shared = list(dict.fromkeys(entity_id for entity_id in named_here if entity_id in cast))
-            if line is not None and not shared:
+            threaded = passage.key in thread_keys
+            if line is not None and not shared and not threaded:
                 continue  # in this line of the story the passage names nobody in the scene
             named = ", ".join(names.get(entity_id, "") for entity_id in shared[:3])
-            out.append(
-                ContextItem(
-                    key=passage.key,
-                    section=ContextSection.WRITING,
-                    text=f"From “{source.title}”: {_trim(words, PASSAGE_WORDS)}",
-                    reason=f"It mentions {named}." if named else "It is from your writing.",
-                    authority="writing",
-                    record_type="source_version",
-                    record_id=version.id,
-                    location=f"chars:{passage.start}-{passage.end}",
-                    score=1 + len(shared) + 3 * semantic.get(passage.key, 0.0),
-                )
+            reasons = [f"It mentions {named}."] if named else []
+            if threaded:
+                reasons.append(on_thread[passage.source_id])
+            item = ContextItem(
+                key=passage.key,
+                section=ContextSection.WRITING,
+                text=f"From “{source.title}”: {_trim(words, PASSAGE_WORDS)}",
+                reason=" ".join(reasons) or "It is from your writing.",
+                authority="writing",
+                record_type="source_version",
+                record_id=version.id,
+                location=f"chars:{passage.start}-{passage.end}",
+                score=1 + len(shared),
             )
+            signals: list[Signal | None] = []
+            if threaded:
+                signals.append(Signal("thread", 2.0, ""))
+            similarity = semantic.get(passage.key, 0.0)
+            if similarity > 0:
+                signals.append(
+                    Signal(
+                        "meaning", round(3 * similarity, 3), "It is close in meaning to this scene."
+                    )
+                )
+            signals.append(ranking.importance_of(item, shared, names))
+            signals.append(ranking.impact_of(*shared))
+            # Prose from a scene far back, or later in the story, counts for less.
+            scene_id = scene_of.get(passage.source_id)
+            distance = ranking.distance(scene_id) if scene_id else None
+            if distance is not None and distance != 0:
+                base = with_signals(item.score, [x for x in signals if x is not None])
+                signals.append(
+                    # The item's text already says which scene it is from.
+                    distance_signal(base, distance, "")
+                    if plan_by_id and scene_id in plan_by_id
+                    else None
+                )
+            out.append(ranked(item, signals))
         out.sort(key=lambda item: (-item.score, item.key))
         out = out[:MAX_PASSAGES]
         # A sample of the author's voice, even when it names nobody in the scene: writers
         # report that re-feeding representative passages keeps voice from drifting.
         sample = await self._voice_sample(
-            workspace_id, project_id, {item.key for item in out}, usable, own
+            workspace_id,
+            project_id,
+            {item.key for item in out},
+            usable,
+            own,
+            pov,
+            links,
+            order,
+            scene.id,
         )
         if sample is not None:
             out.append(sample)
         return out
+
+    @staticmethod
+    def _threads_of(item: PlanItem) -> dict[str, str]:
+        """Thread id -> how this scene touches it: opens, moves or resolves."""
+        found: dict[str, str] = {}
+        for thread_id in item.sets_up:
+            found.setdefault(thread_id, "opens")
+        for thread_id in thread_advances(item.details):
+            found.setdefault(thread_id, "moves")
+        for thread_id in item.pays_off:
+            found.setdefault(thread_id, "resolves")
+        return found
 
     async def _with_limited_phrases(
         self,
@@ -1301,18 +1900,82 @@ class ContextService:
         taken: set[str],
         usable: set[str],
         own: str | None,
+        pov: str | None = None,
+        links: dict[str, str] | None = None,
+        order: list[PlanItem] | None = None,
+        scene_id: str | None = None,
     ) -> ContextItem | None:
         texts = [
             text
             for text in await self._sources.all_texts(workspace_id, project_id)
             if _usable(text, usable)
         ]
+        # Prose from later in the story never reaches an earlier scene's draft: a payoff's
+        # words would give away what this scene only sets up. A scene text is used only
+        # when its scene comes before this one in reading order; writing outside the plan
+        # (and, last of all, the scene's own words) stays usable.
+        if scene_id is not None:
+            place = {
+                links[item.id]: index
+                for index, item in enumerate(order or [])
+                if links and item.id in links
+            }
+            here = next(
+                (index for index, item in enumerate(order or []) if item.id == scene_id), None
+            )
+            texts = [
+                text
+                for text in texts
+                if text.kind != SourceKind.SCENE
+                or text.id == own
+                or (here is not None and place.get(text.id, here) < here)
+            ]
         # The scene's own words are what is being rewritten: a sample of the author's
         # voice comes from elsewhere when there is anything else.
         others = [text for text in texts if text.id != own]
         texts = others or texts
         if not texts:
             return None
+        # Prose from scenes seen through the same eyes is the closest voice (CTX-004:
+        # search by meaning filtered to those scenes' texts, when it is available).
+        same_eyes: set[str] = set()
+        if pov and links and order:
+            same_eyes = {
+                links[item.id]
+                for item in order
+                if item.id in links and pov in item.refs_as("point_of_view")
+            } & {text.id for text in texts}
+        reason = "A sample of your voice, from your most recent writing."
+        if same_eyes and self._passages is not None:
+            found = await self._passages.semantic_scores(
+                workspace_id,
+                project_id,
+                " ".join(text.title for text in texts if text.id in same_eyes),
+                source_ids=same_eyes,
+                limit=3,
+            )
+            for key in sorted(found, key=lambda key: (-found[key], key)):
+                if key in taken:
+                    continue
+                _, source_id, number = key.split(":", 2)
+                passages = await self._passage_store.for_source(
+                    workspace_id=workspace_id, project_id=project_id, source_id=source_id
+                )
+                chosen = next((p for p in passages if str(p.number) == number), None)
+                text = next((t for t in texts if t.id == source_id), None)
+                if chosen is not None and text is not None:
+                    return await self._sample(
+                        workspace_id,
+                        project_id,
+                        text,
+                        chosen,
+                        "A sample of your voice, from a scene seen through the same eyes.",
+                    )
+        if same_eyes:
+            texts = [text for text in texts if text.id in same_eyes]
+            reason = (
+                "A sample of your voice, from your most recent scene seen through the same eyes."
+            )
         newest = max(texts, key=lambda text: (text.created_at, text.id))
         indexed = await self._passage_store.for_source(
             workspace_id=workspace_id, project_id=project_id, source_id=newest.id
@@ -1322,22 +1985,24 @@ class ContextService:
         last = indexed[-1]
         if last.key in taken:
             return None
-        try:
-            _, version, _ = await self._sources.version(workspace_id, project_id, newest.id)
-        except NotFoundError:
+        return await self._sample(workspace_id, project_id, newest, last, reason)
+
+    async def _sample(
+        self, workspace_id: str, project_id: str, text: Any, passage: Any, reason: str
+    ) -> ContextItem | None:
+        version = await self._latest(workspace_id, project_id, text.id)
+        if version is None or version.id != passage.version_id:
             return None
-        if version.id != last.version_id:
-            return None
-        words = version.content[last.start : last.end]
+        words = version.content[passage.start : passage.end]
         return ContextItem(
-            key=last.key,
+            key=passage.key,
             section=ContextSection.WRITING,
-            text=f"From “{newest.title}”: {_trim(words, PASSAGE_WORDS)}",
-            reason="A sample of your voice, from your most recent writing.",
+            text=f"From “{text.title}”: {_trim(words, PASSAGE_WORDS)}",
+            reason=reason,
             authority="writing",
             record_type="source_version",
             record_id=version.id,
-            location=f"chars:{last.start}-{last.end}",
+            location=f"chars:{passage.start}-{passage.end}",
             score=2.5,
         )
 

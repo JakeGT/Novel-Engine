@@ -135,6 +135,9 @@ class StoryTimeService:
         self._clocks = clocks
         self._tenancy = tenancy
         self._local_mode = local_mode
+        # The story's ready views (QRY-001), set by the container: the timeline answers
+        # from its view once that is verified and current, else it is worked out here.
+        self.views: Any = None
 
     async def _authorize(
         self, scope: AccessScope, workspace_id: str, project_id: str, permission: Permission
@@ -163,8 +166,12 @@ class StoryTimeService:
 
     async def timeline(self, scope: AccessScope, workspace_id: str, project_id: str) -> Timeline:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
-        story = await read_story(self._reader, workspace_id, project_id)
         unit = await self.unit(workspace_id, project_id)
+        if self.views is not None:
+            ready = await self.views.timeline(workspace_id, project_id, unit)
+            if ready is not None:
+                return ready  # type: ignore[no-any-return]
+        story = await read_story(self._reader, workspace_id, project_id)
         return build_timeline(story, unit)
 
     async def moment(

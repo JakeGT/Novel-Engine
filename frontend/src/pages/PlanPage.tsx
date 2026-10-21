@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { api, type AssistSession, type ConditionState, type PlanItem, type PlanKind } from '../api/client'
 import { ArcPathDialog, ArcStages } from '../components/ArcPath'
+import { SuggestBridges, SuggestIntent } from '../components/PlanHelp'
+import { StoryScales } from '../components/StoryScales'
 import { AuditDialog } from '../components/AuditDialog'
 import { ClaimDialog } from '../components/ClaimDialog'
 import { RecordLinks } from '../components/ContinuityChecks'
@@ -362,6 +364,7 @@ export function PlanPage() {
           <h3 className="plan-title">{item.title}</h3>
           {item.summary && <p className="plan-summary">{item.summary}</p>}
           {intentOf(item)}
+          {item.kind === 'scene' && canWrite && <SuggestIntent scene={item} />}
           {about(item)}
           {Object.keys(item.details).length > 0 && (
             <p className="plan-about">
@@ -383,6 +386,11 @@ export function PlanPage() {
                     </span>{' '}
                     {entry.reading} <Badge tone={badge.tone}>{badge.label}</Badge>
                     {entry.note && <span className="condition-note"> {entry.note}</span>}
+                    {canWrite && entry.when === 'before' && entry.strength === 'hard' && entry.status === 'not_met' && (
+                      <div>
+                        <SuggestBridges scene={item} index={entry.index ?? index} />
+                      </div>
+                    )}
                   </li>
                 )
               })}
@@ -612,6 +620,8 @@ export function PlanPage() {
                 </ul>
               )}
             </section>
+
+            <StoryScales progress={outline.data?.scales ?? []} byId={byId} />
 
             <PlanPromises promises={promises} byId={byId} clueText={clueText} />
           </>

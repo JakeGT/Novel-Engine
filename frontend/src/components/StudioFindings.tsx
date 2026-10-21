@@ -129,7 +129,7 @@ function DismissForm({
         </select>
         <span className="hint">
           {anchored
-            ? 'It comes back by itself if the words it points at change.'
+            ? 'It comes back by itself if the words it points at, or what it says, change.'
             : 'It is about the scene as a whole, so it stays dismissed for this scene.'}
         </span>
       </div>
@@ -331,6 +331,11 @@ export function Checks({
                 {check.severity === 'warning' ? 'Worth checking' : 'Note'}
               </Badge>
               <p>{check.message}</p>
+              {check.came_back && (
+                <p className="hint">
+                  Back again: what it says has changed since you dismissed it, so it is worth another look.
+                </p>
+              )}
               <Passage text={text} span={point(check.start, check.end)} onShow={onShow} />
             </Finding>
           ))}

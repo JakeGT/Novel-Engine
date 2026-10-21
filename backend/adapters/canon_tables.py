@@ -11,6 +11,8 @@ CANON_PROJECT_TABLES: tuple[str, ...] = (
     # Derived search vectors of every generation (CTX-012); the generations themselves
     # are install-wide and hold no project data.
     "embedding_vectors",
+    # The story's ready views (QRY-001): derived, purged with the story, never archived.
+    "read_models",
     "archive_imports",
     "delegation_seen",
     "delegation_records",
@@ -18,13 +20,20 @@ CANON_PROJECT_TABLES: tuple[str, ...] = (
     "story_clocks",
     "assistant_settings",
     "consistency_runs",
+    # What each check that needs no model found for one fingerprint (CON-007): derived.
+    "check_cache",
     "finding_dismissals",
+    # Advisory findings on a proposal in review the author dismissed (CON-016).
+    "review_dismissals",
     "scene_readings",
     "draft_findings",
     "scene_drafts",
     "jobs",
     "story_voices",
     "text_passages",
+    # The passage index's waiting list (CTX-005) and summaries of scenes (CTX-006).
+    "passage_index_waiting",
+    "scene_summaries",
     "context_manifests",
     "media_lifecycle_events",
     "media_observations",

@@ -55,3 +55,43 @@ async def test_the_table_is_saved_with_a_version_and_a_stale_save_is_refused(clo
         == 1
     )
     assert await clocks.get_unit(workspace_id=WS, project_id="other") == "day"
+
+
+SCALES = {"scales": [{"id": "trust", "name": "Trust", "levels": ["None", "Some"], "ordered": True}]}
+
+
+@pytest.mark.asyncio
+async def test_the_shared_scales_are_saved_with_their_own_version(clocks) -> None:
+    """STY-006, migration 0051: the scales sit beside the unit and the travel table, each
+    with its own version, and a stale save is refused."""
+    ws, pr = "ws_scales", "pr_scales"
+    assert await clocks.get_scales(workspace_id=ws, project_id=pr) == ({}, 0)
+    assert (
+        await clocks.set_scales(workspace_id=ws, project_id=pr, scales=SCALES, expected_version=0)
+        == 1
+    )
+    assert await clocks.get_scales(workspace_id=ws, project_id=pr) == (SCALES, 1)
+    assert (
+        await clocks.set_scales(workspace_id=ws, project_id=pr, scales={}, expected_version=0)
+        is None
+    )
+    assert (
+        await clocks.set_scales(workspace_id=ws, project_id=pr, scales={}, expected_version=3)
+        is None
+    )
+    assert (
+        await clocks.set_scales(workspace_id=ws, project_id=pr, scales={}, expected_version=1) == 2
+    )
+    # A story that already has a unit and a travel table starts its scales at version 0,
+    # and saving them leaves the others alone.
+    await clocks.set_unit(workspace_id=ws, project_id="other", unit="day")
+    await clocks.set_how_long(workspace_id=ws, project_id="other", table=TABLE, expected_version=0)
+    assert await clocks.get_scales(workspace_id=ws, project_id="other") == ({}, 0)
+    assert (
+        await clocks.set_scales(
+            workspace_id=ws, project_id="other", scales=SCALES, expected_version=0
+        )
+        == 1
+    )
+    assert await clocks.get_unit(workspace_id=ws, project_id="other") == "day"
+    assert await clocks.get_how_long(workspace_id=ws, project_id="other") == (TABLE, 1)

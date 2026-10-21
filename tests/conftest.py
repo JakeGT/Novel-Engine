@@ -77,6 +77,7 @@ def _build_fake_container(settings, tmp_path):
         InMemoryManifestStore,
         InMemoryMediaStore,
         InMemoryObjectStore,
+        InMemoryPassageQueue,
         InMemoryPassageStore,
         InMemoryProviderUsageStore,
         InMemoryRateLimiter,
@@ -266,6 +267,7 @@ def _build_fake_container(settings, tmp_path):
 
     passage_store = InMemoryPassageStore()
     manifests = InMemoryManifestStore()
+    passage_queue = InMemoryPassageQueue()
     passage_index = PassageIndex(
         store=passage_store,
         sources=source_service,
@@ -273,6 +275,10 @@ def _build_fake_container(settings, tmp_path):
         journal=journal,
         embeddings=embeddings,
         vectors=vectors,
+        queue=passage_queue,
+        # No background worker runs in these tests: waiting texts are read in as soon as
+        # they are asked for, through the same waiting list (CTX-005).
+        deliver_now=True,
     )
     source_service.passages = passage_index
     context_service = ContextService(
@@ -326,6 +332,13 @@ def _build_fake_container(settings, tmp_path):
     consistency_run_store = InMemoryConsistencyRunStore()
     consistency_runs = ConsistencyRunService(store=consistency_run_store, studio=studio_service)
     studio_service.runs = consistency_runs
+    canon_repository.consistency_runs = consistency_run_store
+    from backend.services.review_dismissals import ReviewDismissalService
+    from tests.doubles import InMemoryReviewDismissalStore
+
+    review_dismissals = ReviewDismissalService(
+        store=InMemoryReviewDismissalStore(), mutations=mutation_service, rules=rules
+    )
     source_service.studio = studio_service
     from backend.services.assistant_settings_service import AssistantSettingsService, AssistBudget
     from tests.doubles import InMemoryAssistantSettingsStore
@@ -388,6 +401,38 @@ def _build_fake_container(settings, tmp_path):
         usage=usage_service,
     )
     scene_plan_card.register_jobs()
+    from backend.services.planning_help import PlanningHelpService
+
+    planning_help = PlanningHelpService(
+        studio=studio_service,
+        plan=plan_service,
+        sources=source_service,
+        mutation=mutation_service,
+        canon=canon_repository,
+        reader=canon_repository,
+        journal=journal,
+        runner=job_runner,
+        ai=ai,
+        settings=settings,
+        credentials=credential_service,
+        usage=usage_service,
+    )
+    planning_help.register_jobs()
+    from backend.services.scene_summaries import SceneSummaryService
+    from tests.doubles import InMemorySceneSummaryStore
+
+    scene_summaries = SceneSummaryService(
+        store=InMemorySceneSummaryStore(),
+        studio=studio_service,
+        sources=source_service,
+        runner=job_runner,
+        ai=ai,
+        settings=settings,
+        credentials=credential_service,
+        usage=usage_service,
+    )
+    scene_summaries.register_jobs()
+    context_service.summaries = scene_summaries
     equivalence_service = CanonEquivalenceService(
         canon=canon_repository, journal=journal, writer=canon_writer
     )
@@ -454,6 +499,7 @@ def _build_fake_container(settings, tmp_path):
         local_mode=not settings.is_hosted,
     )
     media_observations.register_jobs()
+    media_service.observation_store = observation_store
     context_service.pictures = media_observations
     from backend.services.canon_archive import CanonArchiveService
 
@@ -477,7 +523,27 @@ def _build_fake_container(settings, tmp_path):
     )
     archive_service.pictures = media_service
     archive_service.picture_notes = media_observations
+    archive_service.scene_summaries = scene_summaries
+    from backend.services.run_archive import RunArchive
+
+    archive_service.check_runs = RunArchive(consistency_run_store)
+    from backend.services.read_models import ReadModelConsumer, ReadModelService
+    from tests.read_model_doubles import InMemoryReadModelStore
+
+    read_model_store = InMemoryReadModelStore(journal)
+    read_models = ReadModelService(
+        store=read_model_store,
+        reader=canon_repository,
+        journal=journal,
+        tenancy=tenancy_service,
+        local_mode=not settings.is_hosted,
+    )
+    story_time_service.views = read_models
+    knowledge_service.views = read_models
     return Container(
+        read_model_store=read_model_store,
+        read_models=read_models,
+        read_model_consumer=ReadModelConsumer(store=read_model_store, reader=canon_repository),
         settings=settings,
         graph=graph,
         vectors=vectors,
@@ -539,8 +605,11 @@ def _build_fake_container(settings, tmp_path):
         studio_service=studio_service,
         consistency_run_store=consistency_run_store,
         consistency_runs=consistency_runs,
+        review_dismissals=review_dismissals,
         scene_reading=scene_reading,
         scene_plan_card=scene_plan_card,
+        planning_help=planning_help,
+        scene_summaries=scene_summaries,
         canon_character_workflow=canon_character_workflow,
         equivalence_service=equivalence_service,
         assist_sessions=assist_sessions,

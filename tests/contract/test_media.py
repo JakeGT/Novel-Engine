@@ -196,7 +196,8 @@ def test_picture_uploads_are_checked_and_scoped(auth_client, fake_container) -> 
     huge = auth_client.post(
         url, params={"expected_revision": 1}, content=PNG + b"\x00" * MAX_PICTURE_BYTES
     )
-    assert huge.status_code == 400 and "too large" in huge.json()["detail"]
+    # Refused as soon as it passes the limit, with the status for content too large (AST-002).
+    assert huge.status_code == 413 and "too large" in huge.json()["detail"]
 
     missing = auth_client.post(
         f"{base}/entities/ent_nope/pictures", params={"expected_revision": 1}, content=PNG

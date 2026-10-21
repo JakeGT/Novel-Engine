@@ -7,6 +7,13 @@ fails is tried again later, waiting longer each time, so one broken story neithe
 the others nor fills the logs, and stories waiting out a failure never take the places of
 stories that are ready. Where the journal offers a lock per story (PostgreSQL), a story
 another server is delivering right now is left to it.
+
+The same loop also reads texts waiting for the passage index (CTX-005) when one is
+given: ``passages`` is the ``PassageIndex``, which keeps its own waiting list, claims
+and retries. It also builds the story's ready views (QRY-001) for every line of the story
+the outbox says moved on, when ``read_models`` is set: a ``ReadModelConsumer`` with its own
+watermarks, so the graph's delivery marks never decide what the views see. Those builds take
+the same per-story lock and stop starting new lines after a short budget each poll.
 """
 
 from __future__ import annotations
@@ -24,12 +31,19 @@ POLL_SECONDS = 2.0
 MAX_BACKOFF_SECONDS = 300.0
 # How many stories that are ready to try are asked for each round.
 BATCH = 50
+# How long each poll may spend building the story's ready views (QRY-001).
+READ_MODEL_BUDGET_SECONDS = 2.0
 
 
 class ProjectionWorker:
-    def __init__(self, *, journal: Any, consumer: Any, autostart: bool = True) -> None:
+    def __init__(
+        self, *, journal: Any, consumer: Any, autostart: bool = True, passages: Any = None
+    ) -> None:
         self._journal = journal
         self._consumer = consumer
+        self._passages = passages
+        # The story's ready views (QRY-001): a ``ReadModelConsumer``, set by the container.
+        self.read_models: Any = None
         self.autostart = autostart
         self._task: asyncio.Task[None] | None = None
         # (workspace, project) -> (next attempt at, current wait)
@@ -86,6 +100,20 @@ class ProjectionWorker:
             workspace_id=workspace_id, project_id=project_id, branch_id=branch_id
         )
 
+    async def run_read_models(self) -> int:
+        """Build the ready views waiting, one story at a time under the same per-story
+        lock as graph delivery (so two servers never build one story at once), and for
+        at most ``READ_MODEL_BUDGET_SECONDS`` a poll, so graph delivery and the passage
+        index are never kept waiting behind a long rebuild."""
+        if self.read_models is None:
+            return 0
+        return int(
+            await self.read_models.run_once(
+                lock=getattr(self._journal, "story_lock", None),
+                budget_seconds=READ_MODEL_BUDGET_SECONDS,
+            )
+        )
+
     async def _loop(self) -> None:
         while True:
             try:
@@ -97,6 +125,26 @@ class ProjectionWorker:
                     level=logging.WARNING,
                     error_type=type(error).__name__,
                 )
+            if self._passages is not None:
+                try:
+                    await self._passages.deliver_waiting()
+                except Exception as error:  # noqa: BLE001 - the loop must survive a bad poll
+                    log_event(
+                        logger,
+                        "passages.worker.poll_error",
+                        level=logging.WARNING,
+                        error_type=type(error).__name__,
+                    )
+            if self.read_models is not None:
+                try:
+                    await self.run_read_models()
+                except Exception as error:  # noqa: BLE001 - the loop must survive a bad poll
+                    log_event(
+                        logger,
+                        "read_models.worker.poll_error",
+                        level=logging.WARNING,
+                        error_type=type(error).__name__,
+                    )
             await asyncio.sleep(POLL_SECONDS)
 
     def start(self) -> None:

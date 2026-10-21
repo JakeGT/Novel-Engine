@@ -99,7 +99,13 @@ test('threads move along, scenes say what the viewpoint wants, and a kept draft 
   await page.goto(`/projects/${PROJECT}/plan`)
   const needs = page.locator('details.card').filter({ hasText: 'the plan still needs' })
   await needs.locator('summary').click()
-  await expect(needs.getByText('This thread opens and resolves, but no scene in between moves it along.')).toBeVisible()
+  // Other tests share this story, so the gap is found by this thread's title.
+  await expect(
+    needs
+      .getByRole('listitem')
+      .filter({ hasText: 'Who cut the mooring lines?' })
+      .getByText('This thread opens and resolves, but no scene in between moves it along.'),
+  ).toBeVisible()
   await shot(page, '01-gap', needs)
 
   // Saying the middle scene moves it along, by hand.
@@ -121,7 +127,14 @@ test('threads move along, scenes say what the viewpoint wants, and a kept draft 
     'Moves along The harbourmaster’s ledger',
     'Resolves Bram at the bollard',
   ])
-  await expect(page.getByText('This thread opens and resolves, but no scene in between moves it along.')).toHaveCount(0)
+  await expect(
+    page
+      .locator('details.card')
+      .filter({ hasText: 'the plan still needs' })
+      .getByRole('listitem')
+      .filter({ hasText: 'Who cut the mooring lines?' })
+      .getByText('This thread opens and resolves, but no scene in between moves it along.'),
+  ).toHaveCount(0)
   await shot(page, '03-thread-steps', page.locator('section[aria-labelledby="threads-heading"]'))
   const card = page.getByLabel('What the viewpoint wants in The harbourmaster’s ledger')
   await expect(card).toContainText('No, and')

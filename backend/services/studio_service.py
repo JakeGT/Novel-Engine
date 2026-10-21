@@ -85,6 +85,7 @@ from backend.domain.usage_controls import (
     SCENE_ALLOWANCE_SECONDS,
     AssistantSettings,
     CheckProfile,
+    NeedsConfirmation,
 )
 from backend.ports import AIInvalidOutputError
 from backend.services.job_runner import JobContext, JobSubmission
@@ -122,6 +123,8 @@ class StudioState:
     draft_note_keys: dict[str, list[str]] = field(default_factory=dict)
     # Standing, unexpired dismissals of this scene, by fingerprint.
     dismissals: dict[str, FindingDismissal] = field(default_factory=dict)
+    # Findings dismissed before and back because what they say has changed (CON-016).
+    came_back: set[str] = field(default_factory=set)
     # How much checking runs on its own in this story, and what it has used here (CON-009).
     checking: Checking | None = None
     # What saving or keeping just now did about an automatic check (see ``AUTOMATIC``).
@@ -227,6 +230,9 @@ class CheckPlan:
     point_of_view: str | None
     materials: tuple[PassMaterial, ...]
     estimates: tuple[PassEstimate, ...]
+    # Passes sent in groups because the scene and its story are large (CON-013), or
+    # sent whole with why; the estimates above already count the groups.
+    groups: dict[CheckPass, Any] = field(default_factory=dict)
 
     def estimate(self) -> Estimate:
         return Estimate(
@@ -435,6 +441,27 @@ class StudioService:
             plan_id=state.scene.id,
         )
         state.dismissals = {item.fingerprint: item for item in standing if item.applies(now)}
+        # A check's dismissal holds while what it says is unchanged: when the facts it was
+        # worked out from change it, the finding comes back (CON-016).
+        from backend.domain.consistency_runs import standing as holds
+        from backend.services.consistency_runs import dependency_of
+
+        checks = list(zip(state.check_keys, state.checks, strict=False))
+        for draft in state.drafts:
+            checks += list(
+                zip(
+                    state.draft_check_keys.get(draft.id, []),
+                    state.draft_checks.get(draft.id, []),
+                    strict=False,
+                )
+            )
+        for key, check in checks:
+            kept, came_back = holds(state.dismissals.get(key), dependency_of(check))
+            if came_back:
+                state.dismissals.pop(key, None)
+                state.came_back.add(key)
+            elif kept is not None:
+                state.came_back.discard(key)
         # A note dismissed under the older fingerprint stays dismissed while it is the only
         # note on the page that fingerprint fits.
         old = [_old_note_key(text, note) for text, note, _ in notes]
@@ -482,6 +509,27 @@ class StudioService:
         if len(standing) >= MAX_DISMISSALS_PER_SCENE:
             raise ValidationError("This scene has as many dismissed findings as it can hold.")
         kind, code = found
+        # What a check's finding says, so it comes back when the facts behind it change.
+        from backend.services.consistency_runs import dependency_of
+
+        depends_on = next(
+            (
+                dependency_of(check)
+                for check_keys, checks in (
+                    (state.check_keys, state.checks),
+                    *(
+                        (
+                            state.draft_check_keys.get(draft.id, []),
+                            state.draft_checks.get(draft.id, []),
+                        )
+                        for draft in state.drafts
+                    ),
+                )
+                for check_key_, check in zip(check_keys, checks, strict=False)
+                if check_key_ == key
+            ),
+            None,
+        )
         await self._store.add_dismissal(
             FindingDismissal(
                 workspace_id=workspace_id,
@@ -497,6 +545,7 @@ class StudioService:
                 expires_at=expires_at,
                 created_by=scope.actor_user_id,
                 created_at=now,
+                depends_on=depends_on,
             )
         )
         # The reason the author typed is their writing too: only its kind is logged.
@@ -543,9 +592,17 @@ class StudioService:
         return None if branch.is_root else str(branch.id)
 
     async def brief(
-        self, workspace_id: str, project_id: str, scene: PlanItem, words: int | None = None
+        self,
+        workspace_id: str,
+        project_id: str,
+        scene: PlanItem,
+        words: int | None = None,
+        *,
+        continuity: bool = True,
     ) -> DraftBrief:
-        """What the checks need to know about the scene, from the story as it is."""
+        """What the checks need to know about the scene, from the story as it is.
+        ``continuity`` False leaves out the continuity findings, which read the whole of
+        story time (the incremental checks work them out only when that changed)."""
         story = await read_story(self._reader, workspace_id, project_id)
         names_of = {
             entity.id: tuple(name for name in (entity.name, *entity.aliases) if name)
@@ -616,7 +673,25 @@ class StudioService:
             if revealed is not None and reveal.how == "shown":
                 text, names = sentence(revealed.proposition)
                 brief.reveals.append(PlannedReveal(text, names))
-        brief.continuity = await self._continuity(workspace_id, project_id, scene, story)
+        if continuity:
+            brief.continuity = await self._continuity(workspace_id, project_id, scene, story)
+        # Checks against the prose itself (STY-005, SCN-007, CON-004, CON-014).
+        from backend.services.continuity_service import unit_of
+        from backend.services.prose_signals import add_prose_signals
+
+        await add_prose_signals(
+            brief,
+            reader=self._reader,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            scene=scene,
+            story=story,
+            first=first,
+            names_of=names_of,
+            items=items,
+            unit=await unit_of(getattr(self._plan, "clocks", None), workspace_id, project_id),
+            pictures=getattr(self._context, "pictures", None),
+        )
         return brief
 
     async def _continuity(
@@ -1058,6 +1133,9 @@ class StudioService:
                     "branch_id": None if branch.is_root else branch.id,
                     "draft_id": draft_id,
                     "passes": [item.value for item in chosen],
+                    # What the author confirmed (None when no confirming was needed): the
+                    # check is planned again as it runs, and stops if it would need more.
+                    "confirmed_tokens": confirmed_tokens,
                 },
             ),
         )
@@ -1086,11 +1164,23 @@ class StudioService:
         # A pass with nothing to look at (the pictures pass on a scene without usable
         # pictures) is estimated at nothing, and the runner makes no call for it.
         materials = tuple(pass_material(item, context.manifest, voice) for item in passes)
+        # A long scene against a large story is checked for continuity in groups (CON-013).
+        from backend.services.scene_checks import plan_groups
+
+        groups = await plan_groups(
+            self, workspace_id, project_id, context.scene, content, context.manifest, materials
+        )
         return CheckPlan(
             manifest=context.manifest,
             point_of_view=pov,
             materials=materials,
-            estimates=tuple(estimate_pass(material, content) for material in materials),
+            estimates=tuple(
+                groups[material.check].estimate
+                if material.check in groups and groups[material.check].grouped
+                else estimate_pass(material, content)
+                for material in materials
+            ),
+            groups=groups,
         )
 
     async def review_estimate(
@@ -1139,6 +1229,41 @@ class StudioService:
             estimated_tokens=estimated_tokens,
             confirmed_tokens=confirmed_tokens,
             doing=doing,
+        )
+
+    async def confirm_again(
+        self,
+        workspace_id: str,
+        project_id: str,
+        payload: dict[str, Any],
+        *,
+        estimated_tokens: int,
+        doing: str,
+    ) -> None:
+        """At run time, before anything is sent: work confirmed (or too small to need it)
+        when it was asked for is planned again as it runs, and the scene or the story may
+        have changed meanwhile (a pass may now be sent in groups). When the new estimate
+        is above the threshold and above what was confirmed (``payload["confirmed_tokens"]``),
+        it stops, and the author is asked again by starting it again."""
+        if self.controls is None or "confirmed_tokens" not in payload:
+            return  # work asked for before this was kept is not stopped for it
+        threshold = (await self.controls.limits(workspace_id, project_id)).confirm_above_tokens
+        confirmed = payload.get("confirmed_tokens")
+        if threshold is None or estimated_tokens <= threshold:
+            return
+        if confirmed is not None and estimated_tokens <= int(confirmed):
+            return
+        agreed = (
+            f"the {int(confirmed):,} you confirmed"
+            if confirmed is not None
+            else f"the {threshold:,} you asked to be asked about first"
+        )
+        raise NeedsConfirmation(
+            f"{doing} needs confirmation again: it would now use about {estimated_tokens:,} "
+            f"tokens, more than {agreed}. Nothing was sent; start it again to confirm the "
+            "new size.",
+            estimated_tokens=estimated_tokens,
+            threshold_tokens=threshold,
         )
 
     # ------------------------------------------------------ checking on its own
@@ -1259,6 +1384,8 @@ class StudioService:
                         "trigger": trigger,
                         "passes": [item.value for item in PASS_ORDER],
                         "estimated_tokens": estimate.total,
+                        # Nobody confirmed it: it stops if it would now need confirming.
+                        "confirmed_tokens": None,
                     },
                     idempotency_key=f"auto:{plan_id}:{line or 'main'}:after:{latest}",
                 ),
@@ -1490,6 +1617,18 @@ class StudioService:
         plan = await self.check_plan(
             scope, workspace_id, project_id, payload["plan_id"], content, chosen
         )
+        await self.confirm_again(
+            workspace_id,
+            project_id,
+            payload,
+            estimated_tokens=plan.estimate().total,
+            doing="Checking this draft" if draft_id else "Checking this scene",
+        )
+        # What an earlier run of this job stored (a job taken over or tried again), so a
+        # pass, or a group of one, it finished is not asked again or stored twice.
+        earlier = await self._store.findings_for_job(
+            workspace_id=workspace_id, project_id=project_id, job_id=job.id
+        )
 
         def call_key(check: CheckPass) -> str:
             # One key per call and per attempt: a run taken over never collides with the
@@ -1510,6 +1649,8 @@ class StudioService:
             call_key=call_key,
             remaining_tokens=lambda index: sum(item.total for item in plan.estimates[index:]),
             progress=(30, 95),
+            groups=plan.groups,
+            earlier=earlier,
         )
         await ctx.step("Finishing", 98)
         log_event(

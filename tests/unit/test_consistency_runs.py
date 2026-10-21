@@ -1,4 +1,5 @@
-"""Judging a run's findings now (CON-001): open, dismissed or fixed, and out of date."""
+"""Judging a run's findings now (CON-001): open, accepted, dismissed or fixed, and out of
+date; a dismissal comes back when what the finding says changes (CON-016)."""
 
 from datetime import UTC, datetime
 
@@ -22,7 +23,11 @@ THEN = "Tobin waited. The air was palpable. Mara did not come."
 SPAN = (THEN.index("palpable"), THEN.index("palpable") + len("palpable"))
 
 
-def _dismissal(key: str) -> FindingDismissal:
+def _dismissal(
+    key: str,
+    reason: DismissReason = DismissReason.INTENDED,
+    depends_on: str | None = None,
+) -> FindingDismissal:
     return FindingDismissal(
         workspace_id="w",
         project_id="p",
@@ -32,11 +37,12 @@ def _dismissal(key: str) -> FindingDismissal:
         fingerprint=key,
         kind=FindingKind.CHECK,
         code="stock_phrase",
-        reason=DismissReason.INTENDED,
+        reason=reason,
         note="",
         expires_at=None,
         created_by=None,
         created_at=datetime.now(UTC),
+        depends_on=depends_on,
     )
 
 
@@ -53,7 +59,14 @@ def test_a_check_is_fixed_by_its_words_or_by_the_story():
     dismissed = judge_check(
         now=THEN, found_now={"k"}, **{**common, "dismissed": {"k": _dismissal("k")}}
     )
-    assert dismissed.status == "dismissed" and dismissed.dismissal is not None
+    # Kept on purpose is "accepted"; the check being wrong here is "dismissed".
+    assert dismissed.status == "accepted" and dismissed.dismissal is not None
+    wrong = judge_check(
+        now=THEN,
+        found_now={"k"},
+        **{**common, "dismissed": {"k": _dismissal("k", DismissReason.NOT_A_PROBLEM)}},
+    )
+    assert wrong.status == "dismissed"
     # A finding about the whole scene, gone after the words changed: the words fixed it.
     whole = judge_check(
         key="k", then=THEN, now=THEN + " More.", start=None, end=None, found_now=set(), dismissed={}
@@ -99,3 +112,25 @@ def test_inputs_and_findings_keep_their_shape_through_json():
         inputs=(item,),
     )
     assert run.touches("s") and not run.touches("other")
+
+
+def test_a_dismissal_comes_back_when_what_the_finding_says_changes():
+    common = {"key": "k", "then": THEN, "start": SPAN[0], "end": SPAN[1], "now": THEN}
+    held = {"k": _dismissal("k", DismissReason.NOT_A_PROBLEM, depends_on="a" * 64)}
+    same = judge_check(found_now={"k": "a" * 64}, dismissed=held, **common)
+    assert same.status == "dismissed" and not same.came_back
+    changed = judge_check(found_now={"k": "b" * 64}, dismissed=held, **common)
+    assert changed.status == "open" and changed.came_back
+    # One dismissed before dependencies were kept still holds.
+    older = {"k": _dismissal("k", DismissReason.NOT_A_PROBLEM)}
+    assert judge_check(found_now={"k": "b" * 64}, dismissed=older, **common).status == "dismissed"
+
+
+def test_the_calibration_note_says_a_rate_only_with_enough_and_changes_nothing():
+    from backend.services.consistency_runs import _calibration_note
+
+    assert "Too few" in _calibration_note(3, 2, 0, None)
+    said = _calibration_note(10, 6, 1, 0.6)
+    assert "not a problem 6 times (60%)" in said and "on purpose once" in said
+    assert "nothing changes unless you change it" in said
+    assert "often wrong" not in _calibration_note(10, 1, 0, 0.1)

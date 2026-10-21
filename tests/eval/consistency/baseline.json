@@ -1,5 +1,5 @@
 {
-  "cases": 74,
+  "cases": 109,
   "false_positives": [],
   "families": {
     "continuity": {
@@ -50,6 +50,18 @@
       "true_negative": 4,
       "true_positive": 5
     },
+    "prose": {
+      "clean": 23,
+      "defects": 12,
+      "f1": 0.8,
+      "false_negative": 4,
+      "false_positive": 0,
+      "false_positive_rate": 0.0,
+      "precision": 1.0,
+      "recall": 0.667,
+      "true_negative": 23,
+      "true_positive": 8
+    },
     "rules": {
       "clean": 7,
       "defects": 7,
@@ -70,19 +82,23 @@
   },
   "missed": [
     "continuity/two-places-place-only-in-words",
-    "drafting/secret-by-pronoun"
+    "drafting/secret-by-pronoun",
+    "prose/after-named-but-denied",
+    "prose/dawn-without-a-cue",
+    "prose/eyes-by-pronoun",
+    "prose/uses-it-by-pronoun"
   ],
   "overall": {
-    "clean": 32,
-    "defects": 42,
-    "f1": 0.975,
-    "false_negative": 2,
+    "clean": 55,
+    "defects": 54,
+    "f1": 0.941,
+    "false_negative": 6,
     "false_positive": 0,
     "false_positive_rate": 0.0,
     "precision": 1.0,
-    "recall": 0.952,
-    "true_negative": 32,
-    "true_positive": 40
+    "recall": 0.889,
+    "true_negative": 55,
+    "true_positive": 48
   },
   "set": "saltglass-consistency/1"
 }

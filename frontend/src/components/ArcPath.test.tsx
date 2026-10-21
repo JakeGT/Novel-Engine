@@ -190,6 +190,36 @@ describe('CharacterArcs', () => {
     expect(within(picker).getByRole('option', { selected: true })).toHaveTextContent('Mara Venn knows Tobin Ashe')
   })
 
+  it('puts a stage on one of the story’s shared scales', async () => {
+    const api = mockApi({
+      ...base,
+      'GET /plan': outline,
+      'GET /plan/scales': {
+        scales: [{ id: 'trust', name: 'Trust', levels: ['None', 'Wary', 'Complete'], ordered: true, one_step: false, about: '' }],
+        version: 1,
+      },
+      'PUT /plan/pln_arc/path': arc,
+    })
+    const user = userEvent.setup()
+    renderInProject(<CharacterArcs entity={mara} />, at)
+
+    await user.click(await screen.findByRole('button', { name: 'Change the stages of Learning to trust' }))
+    const dialog = screen.getByRole('dialog', { name: 'Stages of “Learning to trust”' })
+    const two = within(dialog).getByRole('group', { name: /Stage 2/ })
+    const picker = await within(two).findByLabelText('On a shared scale (optional)')
+    await user.selectOptions(picker, 'trust\u0000Wary')
+    await user.click(within(dialog).getByRole('button', { name: 'Save the stages' }))
+    await waitFor(() => expect(api.find('PUT', '/plan/pln_arc/path')).toHaveLength(1))
+    const sent = api.find('PUT', '/plan/pln_arc/path')[0].body as { stages: unknown[] }
+    expect(sent.stages[1]).toEqual({
+      name: 'Trusts Tobin',
+      scene_id: 'pln_bridge',
+      fact_id: 'fct_trust',
+      scale_id: 'trust',
+      level: 'Wary',
+    })
+  })
+
   it('keeps each stage, and focus, with the stage as it moves', async () => {
     mockApi({ ...base, 'GET /plan': outline })
     const user = userEvent.setup()

@@ -199,6 +199,8 @@ class Guide:
     leaves_out: str = ""
     sections: list[GuideSection] = field(default_factory=list)
     rules: int = GUIDE_RULES
+    # Which part of the guide (QRY-002): everything, characters, places, timeline, recap.
+    part: str = "everything"
 
     @property
     def seen_as(self) -> str:
@@ -240,6 +242,7 @@ def guide_markdown(guide: Guide) -> str:
         f"scene: {_yaml(guide.scene_title)}",
         f"seen_as: {_yaml(guide.viewpoint_name or 'the reader')}",
         f"guide_rules: {guide.rules}",
+        f"part: {guide.part}",
         "---",
         "",
         f"# {guide.title}",
@@ -282,6 +285,9 @@ class KnowledgeService:
     ) -> None:
         self._clocks = clocks
         self._reader = reader
+        # The story's ready views (QRY-001), set by the container: the reader's journey
+        # answers from its view once that is verified and current.
+        self.views: Any = None
         self._mutation = mutation
         self._journal = journal
         self._schema_store = schema_store
@@ -340,6 +346,10 @@ class KnowledgeService:
     async def journey(self, scope: AccessScope, workspace_id: str, project_id: str) -> Journey:
         """The plan's scenes in reading order, with what the reader has been shown."""
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        if self.views is not None:
+            ready = await self.views.journey(workspace_id, project_id)
+            if ready is not None:
+                return ready  # type: ignore[no-any-return]
         state = await self._live(workspace_id, project_id)
         return _journey_of(state)
 
@@ -401,6 +411,7 @@ class KnowledgeService:
         up_to_scene: str,
         viewpoint: str | None = None,
         version: int | None = None,
+        part: str = "everything",
     ) -> Guide:
         """A story bible a reader could see after a scene, or as one character knows it.
 
@@ -408,7 +419,13 @@ class KnowledgeService:
         the scene, and entries that have not appeared. With a viewpoint, only what that
         character knows is kept. With a version, the story is read as it stood then, and
         the guide names that version, the line of the story, the scene and the viewpoint.
+        ``part`` makes one part of it on its own: characters, places, a timeline of the
+        scenes read so far, or a recap scene by scene (``reader_exports``).
         """
+        from backend.services import reader_exports
+
+        if part not in reader_exports.PARTS:
+            raise ValidationError("Choose everything, characters, places, timeline or recap.")
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
         state, line, bound = await self._state_at(workspace_id, project_id, version)
         story = state.story
@@ -466,17 +483,20 @@ class KnowledgeService:
         names = journey.names
         who = names.get(viewpoint or "", "")
         scene_title = step.scene.title
-        title = (
-            f"As {who} knows it, after “{scene_title}” — version {bound}"
-            if viewpoint
-            else f"The story so far, after “{scene_title}” — version {bound}"
-        )
-        leaves_out = (
-            "Leaves out secrets not yet shown to the reader, anything dated after this "
-            "scene, and anyone who has not yet appeared."
-            if not viewpoint
-            else f"Only what {who} knows."
-        )
+        if part == "everything":
+            title = (
+                f"As {who} knows it, after “{scene_title}” — version {bound}"
+                if viewpoint
+                else f"The story so far, after “{scene_title}” — version {bound}"
+            )
+        else:
+            label = reader_exports.PART_TITLES[part]
+            title = (
+                f"{label}, as {who} knows it, after “{scene_title}” — version {bound}"
+                if viewpoint
+                else f"{label}, after “{scene_title}” — version {bound}"
+            )
+        leaves_out = reader_exports.leaves_out(part, who if viewpoint else None)
         by_subject: dict[str, list[Fact]] = {}
         for fact in kept:
             by_subject.setdefault(fact.proposition.subject_id, []).append(fact)
@@ -495,6 +515,36 @@ class KnowledgeService:
                 )
             ]
             sections[-1].entries.append(GuideEntry(entity.name, lines))
+        steps_so_far = journey.steps[: step.number]
+        if part in reader_exports.PART_TYPES:
+            sections = [
+                section
+                for section in sections
+                if section.entity_type == reader_exports.PART_TYPES[part]
+            ]
+        elif part == "timeline":
+            from backend.services.continuity_service import unit_of
+
+            made = reader_exports.timeline_sections(
+                steps_so_far,
+                story.events,
+                times,
+                lambda when: time_of(when, times),
+                await unit_of(self._clocks, workspace_id, project_id),
+                {key: value for key, value in names.items() if key in appeared},
+                viewpoint,
+            )
+            sections = [_guide_section(section) for section in made]
+        elif part == "recap":
+            made = reader_exports.recap_sections(
+                steps_so_far,
+                {fact.id: fact for fact in story.facts if fact.closed_revision is None},
+                appeared,
+                {key: value for key, value in names.items() if key in appeared},
+                known,
+                _sentence,
+            )
+            sections = [_guide_section(section) for section in made]
         guide = Guide(
             title=title,
             markdown="",
@@ -508,6 +558,7 @@ class KnowledgeService:
             viewpoint_name=who or None,
             leaves_out=leaves_out,
             sections=sections,
+            part=part,
         )
         return replace(guide, markdown=guide_markdown(guide))
 
@@ -1182,6 +1233,14 @@ def _how_words(learned: Learned, names: dict[str, str]) -> str:
     if learned.how == "event":
         return f"From {event}"
     return "Recorded with no telling or event behind it"
+
+
+def _guide_section(section: Any) -> GuideSection:
+    return GuideSection(
+        section.entity_type,
+        section.heading,
+        [GuideEntry(entry.name, list(entry.lines)) for entry in section.entries],
+    )
 
 
 def _plural(entity_type: str) -> str:

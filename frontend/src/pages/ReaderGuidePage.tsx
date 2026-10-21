@@ -1,13 +1,54 @@
 import { useQuery } from '@tanstack/react-query'
 import { useId } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { api, type ReaderGuide } from '../api/client'
+import { api, type GuidePart, type ReaderGuide } from '../api/client'
 import { Button, EmptyState, ErrorNotice, Loading } from '../components/ui'
 import { guideFileName } from '../lib/guide'
 import { fullDate } from '../lib/time'
 import { scopedKey, useEntries, useProject } from '../project'
 
 type Guide = ReaderGuide
+
+/** The parts a guide can be made of on its own (QRY-002), in the author's words. */
+const PARTS: { value: GuidePart; label: string; hint: string }[] = [
+  { value: 'everything', label: 'Everything', hint: 'People, places and everything else a reader could know.' },
+  { value: 'characters', label: 'Characters', hint: 'Only the people, with what a reader could know about each.' },
+  { value: 'places', label: 'Places', hint: 'Only the places, with what a reader could know about each.' },
+  {
+    value: 'timeline',
+    label: 'Timeline of the scenes so far',
+    hint: 'The scenes read so far and what happened in them, in story-time order. Events the story has not told yet stay out.',
+  },
+  {
+    value: 'recap',
+    label: 'Recap, scene by scene',
+    hint: 'Each scene so far: whose eyes, where, who is there, and what it shows the reader. Hints and your own plan notes stay out.',
+  },
+]
+const PART_EYEBROW: Record<GuidePart, string> = {
+  everything: 'Reader’s guide',
+  characters: 'Reader’s guide · characters',
+  places: 'Reader’s guide · places',
+  timeline: 'Reader’s guide · timeline',
+  recap: 'Reader’s guide · recap',
+}
+const NOTHING_YET: Record<GuidePart, { title: string; body: string }> = {
+  everything: {
+    title: 'Nobody has appeared yet',
+    body: 'No one and nowhere has come into the story by this scene, so there is nothing a reader could know.',
+  },
+  characters: { title: 'No one has appeared yet', body: 'No character has come into the story by this scene.' },
+  places: { title: 'No place has appeared yet', body: 'No place has come into the story by this scene.' },
+  timeline: {
+    title: 'Nothing placed yet',
+    body: 'No scene read so far is placed in story time, and nothing happened in one. Give a scene a time in the plan to place it.',
+  },
+  recap: { title: 'No scenes yet', body: 'There are no scenes up to this one to recap.' },
+}
+
+function isPart(value: string): value is GuidePart {
+  return PARTS.some((part) => part.value === value)
+}
 
 const REVOKE_AFTER = 60_000
 // How many versions the picker lists; it says so when there are more.
@@ -35,15 +76,19 @@ export function ReaderGuidePage() {
   const viewpoint = params.get('as') ?? ''
   const versionText = params.get('version') ?? ''
   const version = /^\d+$/.test(versionText) ? Number(versionText) : undefined
+  const partText = params.get('part') ?? ''
+  const part: GuidePart = isPart(partText) ? partText : 'everything'
   const entries = useEntries(scope)
   const characters = entries.items.filter((item) => item.lifecycle === 'active' && item.type === 'Character')
   const whoId = useId()
   const versionId = useId()
+  const partId = useId()
 
   const guide = useQuery({
     // The latest guide changes with every saved change; an earlier version never does.
-    queryKey: scopedKey(scope, 'reader-guide', planId, viewpoint, version ?? `latest-${headRevision}`),
-    queryFn: () => api.readerGuide(scope, planId, viewpoint || undefined, version),
+    queryKey: scopedKey(scope, 'reader-guide', planId, viewpoint, version ?? `latest-${headRevision}`, part),
+    queryFn: () =>
+      api.readerGuide(scope, planId, viewpoint || undefined, version, part === 'everything' ? undefined : part),
     enabled: Boolean(planId),
   })
   const revisions = useQuery({
@@ -73,14 +118,33 @@ export function ReaderGuidePage() {
           </p>
           <h1>Reader’s guide</h1>
           <p className="lede">
-            Everything a reader could know after this scene. Print it, save it as a PDF from the print window,
-            or download it as a Markdown file any editor can open.
+            Everything a reader could know after this scene, or one part of it: the characters, the places, a
+            timeline or a recap. Print it, save it as a PDF from the print window, or download it as a Markdown
+            file any editor can open.
           </p>
         </div>
       </div>
 
       <section className="card guide-controls no-print" aria-label="Which guide">
         <div className="guide-choices">
+          <div className="field">
+            <label htmlFor={partId}>What to include</label>
+            <select
+              id={partId}
+              value={part}
+              aria-describedby={`${partId}-hint`}
+              onChange={(event) => choose('part', event.target.value === 'everything' ? '' : event.target.value)}
+            >
+              {PARTS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            <span id={`${partId}-hint`} className="hint">
+              {PARTS.find((item) => item.value === part)?.hint}
+            </span>
+          </div>
           <div className="field">
             <label htmlFor={whoId}>Whose guide</label>
             <select id={whoId} value={viewpoint} onChange={(event) => choose('as', event.target.value)}>
@@ -140,11 +204,13 @@ export function ReaderGuidePage() {
 /** The guide itself, laid out like a page of a story bible. This is what prints. */
 export function GuideSheet({ guide }: { guide: Guide }) {
   const titleId = useId()
+  const part: GuidePart = guide.part ?? 'everything'
+  const nothing = NOTHING_YET[part]
   // The page's own title is the h1; the guide's title sits under it, and is what prints.
   return (
     <article className="guide-sheet" aria-labelledby={titleId}>
       <header className="guide-head">
-        <p className="eyebrow">Reader’s guide</p>
+        <p className="eyebrow">{PART_EYEBROW[part]}</p>
         <h2 id={titleId} className="guide-title">
           {guide.title}
         </h2>
@@ -152,8 +218,8 @@ export function GuideSheet({ guide }: { guide: Guide }) {
         <p className="guide-leaves-out">{guide.leaves_out}</p>
       </header>
       {guide.sections.length === 0 ? (
-        <EmptyState icon="book" title="Nobody has appeared yet">
-          No one and nowhere has come into the story by this scene, so there is nothing a reader could know.
+        <EmptyState icon="book" title={nothing.title}>
+          {nothing.body}
         </EmptyState>
       ) : (
         guide.sections.map((section, index) => (

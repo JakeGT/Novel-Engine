@@ -1,12 +1,17 @@
-"""Checks kept as runs, and what they come to now (CON-001).
+"""Checks kept as runs, and what they come to now (CON-001, CON-007, CON-016).
 
 A run is recorded when the studio's checks that need no model run on a saved or kept
-version (one per version and story version), when a check with the assistant reads the
-scene, and when an audit starts reading. It is read back judged against the story as it
-is now: each finding open, dismissed (with the author's reason) or fixed (its words or
-the story changed), and each scene marked out of date when its words, or what it names in
-the story bible, changed since. Nothing is stored about that, so it cannot drift; nothing
-here ever blocks a change or calls a model.
+version (once per set of inputs), when a check with the assistant reads the scene, and
+when an audit starts reading. Each run keeps the story's checking profile and a
+fingerprint of every input its checks read (``backend.domain.check_fingerprints``); the
+checks themselves run incrementally (``SceneCheckRunner``), so a check whose inputs did
+not change is not worked out again.
+
+A run is read back judged against the story as it is now: each finding open, accepted,
+dismissed, superseded (found again by a later check) or fixed, and each scene marked out
+of date when its words, what it names in the story bible, or the story rules changed
+since. Nothing about that is stored, so it cannot drift; nothing here ever blocks a
+change or calls a model.
 """
 
 from __future__ import annotations
@@ -19,6 +24,14 @@ from typing import Any, Literal
 from backend.adapters.system import uuid7
 from backend.core.logging import log_event
 from backend.domain.canon.plans import PlanItem, PlanKind
+from backend.domain.check_fingerprints import (
+    CHECKS_VERSION,
+    check_for,
+    code_words,
+    finding_dependency,
+    prose_fingerprint,
+    rules_fingerprint,
+)
 from backend.domain.consistency_runs import (
     MAX_CHANGES,
     MAX_HISTORY,
@@ -36,7 +49,7 @@ from backend.domain.consistency_runs import (
     judge_note,
     story_change_touches,
 )
-from backend.domain.dismissals import FindingDismissal
+from backend.domain.dismissals import DismissReason, FindingDismissal
 from backend.domain.drafting import DraftFinding, Severity
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
@@ -44,10 +57,19 @@ from backend.domain.jobs import Job
 from backend.domain.knowledge import SCENE_TIME_KEY
 from backend.domain.studio import AssistantFinding
 from backend.domain.tenancy import Permission
+from backend.services.incremental_checks import CheckWork, SceneCheckRunner
 
 logger = logging.getLogger(__name__)
 
 MAX_QUOTED = 400
+# How many runs the calibration note reads, newest first, in one line of the story.
+CALIBRATION_RUNS = 200
+# A rate is said only once a check has found something at least this many times
+# (a check that spoke twice and was dismissed once says nothing yet).
+MIN_CALIBRATION_FINDINGS = 5
+# At or above this share dismissed as "not a problem", the note says the check is often
+# wrong for this story. Nothing changes on its own: thresholds are the author's choice.
+OFTEN_DISMISSED = 0.5
 
 
 @dataclass(frozen=True)
@@ -67,6 +89,10 @@ class FindingView:
     check_pass: str | None = None
     # Still open, but the scene changed since the run: it may no longer hold.
     stale: bool = False
+    # Dismissed before, and back because what it says has changed since.
+    came_back: bool = False
+    # For a check that needs no model, the named check it belongs to.
+    check: str | None = None
 
 
 @dataclass
@@ -77,10 +103,29 @@ class RunView:
     status: str
     scenes: list[ScenePart] = field(default_factory=list)
     findings: list[FindingView] = field(default_factory=list)
+    # How a check with the assistant was sent, pass by pass (CON-013), from its job.
+    coverage: dict[str, Any] = field(default_factory=dict)
 
     @property
     def stale(self) -> bool:
         return any(part.staleness.stale for part in self.scenes)
+
+
+@dataclass(frozen=True)
+class CalibrationLine:
+    """How often the author dismissed one check's findings in this line of the story."""
+
+    code: str
+    words: str
+    source: Literal["check", "note"]
+    # Distinct findings it gave, in the runs read.
+    found: int
+    # Dismissed as not a problem (or with the author's own reason), and kept on purpose.
+    dismissed: int
+    accepted: int
+    # The share dismissed as not a problem, once there is enough to say it.
+    rate: float | None
+    note: str
 
 
 @dataclass
@@ -91,7 +136,8 @@ class _Now:
     source_id: str | None = None
     version_id: str | None = None
     content: str | None = None
-    found: set[str] = field(default_factory=set)
+    # Each finding found now (by fingerprint) and what it depends on.
+    found: dict[str, str | None] = field(default_factory=dict)
     dismissed: dict[str, FindingDismissal] = field(default_factory=dict)
 
 
@@ -126,12 +172,19 @@ def _as_finding(check: RecordedCheck) -> DraftFinding:
     )
 
 
+def dependency_of(finding: DraftFinding) -> str:
+    """What a check's finding depends on (CON-016)."""
+    return finding_dependency(finding.code, finding.subject, finding.message)
+
+
 class ConsistencyRunService:
     """Records runs and reads them back judged; built on the studio (``StudioService``)."""
 
     def __init__(self, *, store: Any, studio: Any) -> None:
         self._store = store
         self._studio = studio
+        # The studio's checks that need no model, worked out only where inputs changed.
+        self.checks = SceneCheckRunner(studio=studio, cache=store)
 
     # ------------------------------------------------------------------ helpers
 
@@ -146,12 +199,43 @@ class ConsistencyRunService:
 
     async def _checks_of(
         self, workspace_id: str, project_id: str, scene: PlanItem, source_id: str, content: str
-    ) -> list[DraftFinding]:
-        studio = self._studio
-        brief = await studio.brief(workspace_id, project_id, scene)
-        return await studio._check(  # type: ignore[no-any-return]
-            workspace_id, project_id, source_id, content, brief, scene_id=scene.id
-        )
+    ) -> CheckWork:
+        return await self.checks.run(workspace_id, project_id, scene, source_id or None, content)
+
+    async def _rules(self, workspace_id: str, project_id: str) -> list[Any] | None:
+        rules = getattr(getattr(self._studio, "_context", None), "_rules", None)
+        if rules is None:
+            return None
+        return list(await rules.list_rules(workspace_id=workspace_id, project_id=project_id))
+
+    async def _rules_fingerprint(self, workspace_id: str, project_id: str) -> str | None:
+        listed = await self._rules(workspace_id, project_id)
+        return rules_fingerprint(listed) if listed is not None else None
+
+    async def _profile(self, workspace_id: str, project_id: str) -> dict[str, Any]:
+        """How much the story checks on its own now, and the versions of the checks."""
+        from backend.domain.review_bundles import POLICY_VERSION
+
+        profile: dict[str, Any] = {"checks": CHECKS_VERSION, "bundles": POLICY_VERSION}
+        controls = getattr(self._studio, "controls", None)
+        if controls is not None:
+            try:
+                settings = await controls.for_story(workspace_id, project_id)
+                profile["checking"] = settings.check_profile.value
+            except Exception as error:  # noqa: BLE001 - the profile is extra to the record
+                log_event(logger, "checks.profile_unread", error_type=type(error).__name__)
+        return profile
+
+    async def _fingerprints(
+        self, workspace_id: str, project_id: str, works: dict[str, CheckWork]
+    ) -> dict[str, Any]:
+        found: dict[str, Any] = {
+            "scenes": {plan_id: work.as_json() for plan_id, work in works.items()}
+        }
+        rules = await self._rules_fingerprint(workspace_id, project_id)
+        if rules is not None:
+            found["rules"] = rules
+        return found
 
     # ---------------------------------------------------------------- recording
 
@@ -165,8 +249,9 @@ class ConsistencyRunService:
         asked: bool = False,
     ) -> ConsistencyRun | None:
         """Keep what the checks that need no model find in the scene's current text, once
-        per version of the text and of the story. ``asked`` when the author asked for it,
-        so nothing written is said plainly rather than skipped."""
+        per set of inputs: when nothing any check reads has changed since the last record,
+        that record is the answer. ``asked`` when the author asked for it, so nothing
+        written is said plainly rather than skipped."""
         studio = self._studio
         if asked:
             await studio._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
@@ -178,6 +263,7 @@ class ConsistencyRunService:
             return None
         _, current, _ = await studio._sources.version(workspace_id, project_id, text.id)
         branch_id, head = await self._line(workspace_id, project_id)
+        work = await self._checks_of(workspace_id, project_id, scene, text.id, current.content)
         latest = await self._store.recent(
             workspace_id=workspace_id,
             project_id=project_id,
@@ -186,14 +272,18 @@ class ConsistencyRunService:
             kind="checks",
             limit=1,
         )
+        rules = await self._rules_fingerprint(workspace_id, project_id)
+        # The same run only for the same words, checks, version of the story and rules: a
+        # run judged out of date (the rules changed since, say) is never the answer.
         if (
             latest
-            and latest[0].story_revision == head
             and latest[0].inputs
             and latest[0].inputs[0].version_id == current.id
+            and latest[0].scene_fingerprints(plan_id).get("checks") == work.checks
+            and latest[0].story_revision == head
+            and latest[0].rules == rules
         ):
             return latest[0]  # type: ignore[no-any-return]
-        found = await self._checks_of(workspace_id, project_id, scene, text.id, current.content)
         run = ConsistencyRun(
             workspace_id=workspace_id,
             project_id=project_id,
@@ -205,11 +295,20 @@ class ConsistencyRunService:
             story_revision=head,
             inputs=(RunInput(plan_id=plan_id, source_id=text.id, version_id=current.id),),
             passes=(MODEL_FREE,),
-            findings=_recorded(plan_id, found),
+            findings=_recorded(plan_id, work.findings),
             created_by=scope.actor_user_id,
+            profile=await self._profile(workspace_id, project_id),
+            fingerprints=await self._fingerprints(workspace_id, project_id, {plan_id: work}),
         )
         await self._store.add(run)
-        log_event(logger, "checks.run_recorded", kind="checks", findings=len(found))
+        log_event(
+            logger,
+            "checks.run_recorded",
+            kind="checks",
+            findings=len(work.findings),
+            ran=len(work.ran),
+            reused=len(work.reused),
+        )
         return run
 
     async def record_assistant(
@@ -233,7 +332,7 @@ class ConsistencyRunService:
         if scene is None:
             return
         branch_id, head = await self._line(workspace_id, project_id)
-        found = await self._checks_of(workspace_id, project_id, scene, source_id or "", content)
+        work = await self._checks_of(workspace_id, project_id, scene, source_id or "", content)
         added = await self._store.add(
             ConsistencyRun(
                 workspace_id=workspace_id,
@@ -253,9 +352,11 @@ class ConsistencyRunService:
                     ),
                 ),
                 passes=(MODEL_FREE, *passes),
-                findings=_recorded(plan_id, found),
+                findings=_recorded(plan_id, work.findings),
                 job_id=job.id,
                 created_by=job.actor_user_id,
+                profile=await self._profile(workspace_id, project_id),
+                fingerprints=await self._fingerprints(workspace_id, project_id, {plan_id: work}),
             )
         )
         if added:
@@ -265,8 +366,9 @@ class ConsistencyRunService:
         """An audit, as it starts reading: once per job, the exact versions it reads and
         what the checks that need no model find in each."""
         workspace_id, project_id = job.workspace_id, job.project_id
+        branch_id, head = await self._line(workspace_id, project_id)
         if await self._store.for_job(
-            workspace_id=workspace_id, project_id=project_id, job_id=job.id
+            workspace_id=workspace_id, project_id=project_id, job_id=job.id, branch_id=branch_id
         ):
             return
         studio = self._studio
@@ -280,6 +382,7 @@ class ConsistencyRunService:
             scope_kind = "scene" if part is not None and part.kind is PlanKind.SCENE else "part"
         inputs: list[RunInput] = []
         found: list[RecordedCheck] = []
+        works: dict[str, CheckWork] = {}
         for entry in payload.get("scenes") or []:
             item = RunInput(
                 plan_id=str(entry.get("plan_id") or ""),
@@ -292,13 +395,11 @@ class ConsistencyRunService:
             )
             content = await self._then(workspace_id, project_id, item)
             if scene is not None and scene.is_active and content is not None:
-                found += _recorded(
-                    item.plan_id,
-                    await self._checks_of(
-                        workspace_id, project_id, scene, item.source_id or "", content
-                    ),
+                work = await self._checks_of(
+                    workspace_id, project_id, scene, item.source_id or "", content
                 )
-        branch_id, head = await self._line(workspace_id, project_id)
+                works[item.plan_id] = work
+                found += _recorded(item.plan_id, work.findings)
         await self._store.add(
             ConsistencyRun(
                 workspace_id=workspace_id,
@@ -314,6 +415,8 @@ class ConsistencyRunService:
                 findings=tuple(found),
                 job_id=job.id,
                 created_by=job.actor_user_id,
+                profile=await self._profile(workspace_id, project_id),
+                fingerprints=await self._fingerprints(workspace_id, project_id, works),
             )
         )
         log_event(logger, "checks.run_recorded", kind="audit", scenes=len(inputs))
@@ -323,7 +426,8 @@ class ConsistencyRunService:
     async def history(
         self, scope: AccessScope, workspace_id: str, project_id: str, plan_id: str
     ) -> list[RunView]:
-        """The runs that read this scene, newest first, each judged for this scene."""
+        """The runs that read this scene, newest first, each judged for this scene; an open
+        finding a newer run found again is superseded."""
         studio = self._studio
         await studio._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
         await studio._scene(scope, workspace_id, project_id, plan_id)
@@ -336,32 +440,95 @@ class ConsistencyRunService:
             limit=MAX_HISTORY,
         )
         cache: dict[str, _Now] = {}
-        return [
-            await self._judge(workspace_id, project_id, run, only=plan_id, cache=cache)
-            for run in runs
-        ]
+        later: dict[str, set[str]] = {}
+        views: list[RunView] = []
+        for run in runs:
+            view = await self._judge(
+                workspace_id, project_id, run, only=plan_id, cache=cache, later=later
+            )
+            for key in await self._keys_of(workspace_id, project_id, run, plan_id):
+                later.setdefault(plan_id, set()).add(key)
+            views.append(view)
+        return views
+
+    async def _later_keys(
+        self, workspace_id: str, project_id: str, run: ConsistencyRun
+    ) -> dict[str, set[str]]:
+        """For each scene a run read, what newer runs of that scene found."""
+        found: dict[str, set[str]] = {}
+        for item in run.inputs:
+            newer = await self._store.recent(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                branch_id=run.branch_id,
+                plan_id=item.plan_id,
+                limit=MAX_HISTORY,
+            )
+            keys: set[str] = set()
+            for other in newer:
+                if other.id == run.id or (
+                    run.created_at is not None
+                    and other.created_at is not None
+                    and other.created_at <= run.created_at
+                ):
+                    continue
+                keys |= await self._keys_of(workspace_id, project_id, other, item.plan_id)
+            found[item.plan_id] = keys
+        return found
+
+    async def _keys_of(
+        self, workspace_id: str, project_id: str, run: ConsistencyRun, plan_id: str
+    ) -> set[str]:
+        """The fingerprint of every finding a run gave in one scene."""
+        from backend.services.studio_service import check_key, note_key
+
+        keys: set[str] = set()
+        for item in run.inputs:
+            if item.plan_id != plan_id:
+                continue
+            words = await self._then(workspace_id, project_id, item)
+            if words is None:
+                continue
+            keys |= {
+                check_key(words, _as_finding(check))
+                for check in run.findings
+                if check.plan_id == plan_id
+            }
+            if run.job_id is not None:
+                target = item.draft_id or item.version_id
+                notes = await self._studio._store.findings_for_job(
+                    workspace_id=workspace_id, project_id=project_id, job_id=run.job_id
+                )
+                keys |= {note_key(words, note) for note in notes if note.target_id == target}
+        return keys
 
     async def get(
         self, scope: AccessScope, workspace_id: str, project_id: str, run_id: str
     ) -> RunView:
         studio = self._studio
         await studio._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
-        run = await self._store.get(workspace_id=workspace_id, project_id=project_id, run_id=run_id)
-        if run is None or run.branch_id != (await self._line(workspace_id, project_id))[0]:
+        branch_id, _ = await self._line(workspace_id, project_id)
+        run = await self._store.get(
+            workspace_id=workspace_id, project_id=project_id, run_id=run_id, branch_id=branch_id
+        )
+        if run is None:
             raise NotFoundError("That check was not found.")
-        return await self._judge(workspace_id, project_id, run, only=None, cache={})
+        later = await self._later_keys(workspace_id, project_id, run)
+        return await self._judge(workspace_id, project_id, run, only=None, cache={}, later=later)
 
     async def for_job(
         self, scope: AccessScope, workspace_id: str, project_id: str, job_id: str
     ) -> RunView:
         studio = self._studio
         await studio._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        branch_id, _ = await self._line(workspace_id, project_id)
         run = await self._store.for_job(
-            workspace_id=workspace_id, project_id=project_id, job_id=job_id
+            workspace_id=workspace_id, project_id=project_id, job_id=job_id, branch_id=branch_id
         )
-        if run is None or run.branch_id != (await self._line(workspace_id, project_id))[0]:
+        if run is None:
             raise NotFoundError("That check has no record yet.")
-        return await self._judge(workspace_id, project_id, run, only=None, cache={})
+        later = await self._later_keys(workspace_id, project_id, run)
+        return await self._judge(workspace_id, project_id, run, only=None, cache={}, later=later)
 
     async def _now(self, workspace_id: str, project_id: str, plan_id: str) -> _Now:
         studio = self._studio
@@ -375,10 +542,12 @@ class ConsistencyRunService:
         if text is not None:
             _, current, _ = await studio._sources.version(workspace_id, project_id, text.id)
             now.source_id, now.version_id, now.content = text.id, current.id, current.content
-            found = await self._checks_of(workspace_id, project_id, scene, text.id, current.content)
+            work = await self._checks_of(workspace_id, project_id, scene, text.id, current.content)
             from backend.services.studio_service import check_key
 
-            now.found = {check_key(current.content, item) for item in found}
+            now.found = {
+                check_key(current.content, item): dependency_of(item) for item in work.findings
+            }
         branch_id, _ = await self._line(workspace_id, project_id)
         moment = datetime.now(UTC)
         standing = await studio._store.dismissals(
@@ -419,11 +588,15 @@ class ConsistencyRunService:
 
     async def _rules_changed(self, workspace_id: str, project_id: str, run: ConsistencyRun) -> bool:
         """Whether one of the author's rules was written or changed since the run: a rule
-        is about the whole story, so every scene's findings may hold differently."""
-        rules = getattr(getattr(self._studio, "_context", None), "_rules", None)
-        if rules is None or run.created_at is None:
+        is about the whole story, so every scene's findings may hold differently. A run
+        that kept the rules' fingerprint is compared with it; an older one by time."""
+        listed = await self._rules(workspace_id, project_id)
+        if listed is None:
             return False
-        listed = await rules.list_rules(workspace_id=workspace_id, project_id=project_id)
+        if run.rules is not None:
+            return rules_fingerprint(listed) != run.rules
+        if run.created_at is None:
+            return False
         return any(
             (
                 getattr(rule, "updated_at", None)
@@ -509,13 +682,12 @@ class ConsistencyRunService:
                 named |= {ref.entity_id for ref in item.refs}
         return named
 
-    async def _status(self, workspace_id: str, project_id: str, run: ConsistencyRun) -> str:
+    async def _job(self, workspace_id: str, project_id: str, run: ConsistencyRun) -> Job | None:
         if run.job_id is None:
-            return "done"
-        job = await self._studio._jobs.get(
+            return None
+        return await self._studio._jobs.get(  # type: ignore[no-any-return]
             workspace_id=workspace_id, project_id=project_id, job_id=run.job_id
         )
-        return "done" if job is None else str(job.status.value)
 
     async def _title(self, workspace_id: str, project_id: str, run: ConsistencyRun) -> str:
         if run.plan_id is None:
@@ -533,13 +705,16 @@ class ConsistencyRunService:
         *,
         only: str | None,
         cache: dict[str, _Now],
+        later: dict[str, set[str]] | None = None,
     ) -> RunView:
         from backend.services.studio_service import check_key, note_key
 
+        job = await self._job(workspace_id, project_id, run)
         view = RunView(
             run=run,
             title=await self._title(workspace_id, project_id, run),
-            status=await self._status(workspace_id, project_id, run),
+            status="done" if job is None else str(job.status.value),
+            coverage=_coverage(job),
         )
         notes: list[AssistantFinding] = []
         if run.job_id is not None:
@@ -556,6 +731,7 @@ class ConsistencyRunService:
                 cache[item.plan_id] = await self._now(workspace_id, project_id, item.plan_id)
             now = cache[item.plan_id]
             then = await self._then(workspace_id, project_id, item)
+            again = (later or {}).get(item.plan_id, set())
             part = ScenePart(
                 input=item,
                 title=now.scene.title if now.scene is not None else "A scene no longer in the plan",
@@ -566,11 +742,16 @@ class ConsistencyRunService:
                 current = then  # a draft is judged against itself while it waits
                 part.staleness = Staleness(gone=then is None)
             else:
+                recorded = run.scene_input(item.plan_id, "prose")
+                if recorded is not None and now.content is not None:
+                    # By the words themselves: a copy of the same words (a what-if's own
+                    # copy of the scene) has not changed.
+                    changed = prose_fingerprint(now.content) != recorded
+                else:
+                    changed = now.version_id is not None and now.version_id != item.version_id
                 part.staleness = Staleness(
                     gone=now.scene is None or now.content is None or then is None,
-                    words_changed=(
-                        now.version_id is not None and now.version_id != item.version_id
-                    ),
+                    words_changed=changed,
                 )
             part.staleness.story_changed = await self._story_touches(
                 workspace_id,
@@ -586,20 +767,23 @@ class ConsistencyRunService:
                 if check.plan_id != item.plan_id:
                     continue
                 finding = _as_finding(check)
+                key = check_key(words, finding)
                 judged = (
                     judge_check(
-                        key=check_key(words, finding),
+                        key=key,
                         then=words,
                         now=current,
                         start=check.start,
                         end=check.end,
-                        found_now=now.found if not item.draft_id else {check_key(words, finding)},
+                        found_now=now.found if not item.draft_id else {key: dependency_of(finding)},
                         dismissed=now.dismissed,
                     )
                     if then is not None
                     else None
                 )
                 status: FindingStatus = judged.status if judged else "open"
+                if status == "open" and key in again:
+                    status = "superseded"
                 part.tally.add(status)
                 view.findings.append(
                     FindingView(
@@ -615,21 +799,27 @@ class ConsistencyRunService:
                         # A check that needs no model is worked out again now, so an open one
                         # still holds; only one that could not be (its words are gone) may not.
                         stale=status == "open" and judged is None and part.staleness.stale,
+                        came_back=bool(judged and judged.came_back),
+                        check=check_for(check.code).name,
                     )
                 )
             target = item.draft_id or item.version_id
             for note in notes:
                 if note.target_id != target:
                     continue
-                judged = judge_note(
-                    key=note_key(words, note),
+                key = note_key(words, note)
+                judged_note = judge_note(
+                    key=key,
                     then=words,
                     now=current,
                     start=note.start,
                     end=note.end,
                     dismissed=now.dismissed,
                 )
-                part.tally.add(judged.status)
+                status = judged_note.status
+                if status == "open" and key in again:
+                    status = "superseded"
+                part.tally.add(status)
                 view.findings.append(
                     FindingView(
                         plan_id=item.plan_id,
@@ -638,17 +828,140 @@ class ConsistencyRunService:
                         severity="note",
                         message=note.message,
                         quoted=_quoted(words, note.start, note.end),
-                        status=judged.status,
-                        fixed_by=judged.fixed_by,
-                        dismissal=judged.dismissal,
+                        status=status,
+                        fixed_by=judged_note.fixed_by,
+                        dismissal=judged_note.dismissal,
                         check_pass=note.check_pass,
-                        stale=judged.status == "open" and part.staleness.stale,
+                        stale=status == "open" and part.staleness.stale,
                     )
                 )
             view.scenes.append(part)
         return view
 
+    # -------------------------------------------------------------- calibration
+
+    async def calibration(
+        self, scope: AccessScope, workspace_id: str, project_id: str
+    ) -> list[CalibrationLine]:
+        """How often each check's findings were dismissed in this line of the story: a note
+        for the author, never a change to what the checks do (plan/13: calibration is an
+        explicit choice, never silent learning)."""
+        studio = self._studio
+        await studio._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        branch_id, _ = await self._line(workspace_id, project_id)
+        runs = await self._store.recent(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            branch_id=branch_id,
+            limit=CALIBRATION_RUNS,
+        )
+        found: dict[tuple[str, str], set[tuple[Any, ...]]] = {}
+        seen_jobs: set[str] = set()
+        for run in runs:
+            for check in run.findings:
+                found.setdefault(("check", check.code), set()).add(
+                    (check.plan_id, check.subject, check.message)
+                )
+            if run.job_id is not None and run.job_id not in seen_jobs:
+                seen_jobs.add(run.job_id)
+                for note in await studio._store.findings_for_job(
+                    workspace_id=workspace_id, project_id=project_id, job_id=run.job_id
+                ):
+                    found.setdefault(("note", note.category), set()).add(
+                        (note.target_id, note.start, note.end)
+                    )
+        dismissals = await studio._store.dismissals_in(
+            workspace_id=workspace_id, project_id=project_id, branch_id=branch_id
+        )
+        decided: dict[tuple[str, str], list[FindingDismissal]] = {}
+        for dismissal in dismissals:
+            if dismissal.withdrawn_at is not None:
+                continue
+            decided.setdefault((dismissal.kind.value, dismissal.code), []).append(dismissal)
+        from backend.domain.check_passes import PASS_LABELS, CheckPass
+
+        lines: list[CalibrationLine] = []
+        for source, code in sorted(set(found) | set(decided)):
+            count = len(found.get((source, code), set()))
+            mine = decided.get((source, code), [])
+            accepted = sum(1 for item in mine if item.reason is DismissReason.INTENDED)
+            dismissed = len(mine) - accepted
+            # A dismissal of a finding older than the runs read still counts it as found.
+            count = max(count, len(mine))
+            if source == "note":
+                try:
+                    words = PASS_LABELS[CheckPass(code)]
+                except ValueError:
+                    words = code.replace("_", " ").capitalize()
+            else:
+                words = code_words(code)
+            rate = dismissed / count if count >= MIN_CALIBRATION_FINDINGS else None
+            lines.append(
+                CalibrationLine(
+                    code=code,
+                    words=words,
+                    source="note" if source == "note" else "check",
+                    found=count,
+                    dismissed=dismissed,
+                    accepted=accepted,
+                    rate=rate,
+                    note=_calibration_note(count, dismissed, accepted, rate),
+                )
+            )
+        lines.sort(key=lambda line: (-(line.rate or 0.0), -line.found, line.words))
+        return lines
+
+
+def _times(number: int) -> str:
+    return "once" if number == 1 else "twice" if number == 2 else f"{number} times"
+
+
+def _calibration_note(found: int, dismissed: int, accepted: int, rate: float | None) -> str:
+    if found == 0:
+        return "Nothing found yet."
+    said = f"Found something {_times(found)}."
+    if rate is None:
+        return (
+            f"{said} Too few to say how often it is wrong here "
+            f"(at least {MIN_CALIBRATION_FINDINGS} are needed)."
+        )
+    parts = [said]
+    if dismissed:
+        parts.append(f"You said it was not a problem {_times(dismissed)} ({round(rate * 100)}%).")
+    if accepted:
+        parts.append(f"You kept it as written on purpose {_times(accepted)}.")
+    if rate >= OFTEN_DISMISSED:
+        parts.append(
+            "It is often wrong for this story. It still runs: nothing changes unless you change it."
+        )
+    return " ".join(parts)
+
+
+def _coverage(job: Job | None) -> dict[str, Any]:
+    """How each pass of a check with the assistant was sent (CON-013), from its result."""
+    if job is None or not isinstance(job.result, dict):
+        return {}
+    found: dict[str, Any] = {}
+    for check_pass, outcome in (job.result.get("passes") or {}).items():
+        if isinstance(outcome, dict) and isinstance(outcome.get("bundles"), dict):
+            found[str(check_pass)] = outcome["bundles"]
+    for scene in job.result.get("scenes") or []:
+        for check_pass, outcome in (
+            (scene.get("passes") or {}).items() if isinstance(scene, dict) else ()
+        ):
+            if isinstance(outcome, dict) and isinstance(outcome.get("bundles"), dict):
+                found.setdefault(f"{scene.get('plan_id')}:{check_pass}", outcome["bundles"])
+    return found
+
 
 RUN_KINDS: tuple[RunKind, ...] = ("checks", "assistant", "audit")
 
-__all__ = ["RUN_KINDS", "ConsistencyRunService", "FindingView", "RunView"]
+__all__ = [
+    "MIN_CALIBRATION_FINDINGS",
+    "RUN_KINDS",
+    "CalibrationLine",
+    "ConsistencyRunService",
+    "FindingView",
+    "RunView",
+    "dependency_of",
+]

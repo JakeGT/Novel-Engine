@@ -23,6 +23,7 @@ from backend.domain.canon.events import EventClaim, EventParticipant
 from backend.domain.canon.plans import PlanItem, PlanKind, PlanRef
 from backend.domain.canon.propositions import EntityRefObject, Proposition
 from backend.domain.canon.revisions import OriginKind
+from backend.domain.scene_intent import INTENT_KEY
 from backend.domain.threads import thread_advances
 from backend.domain.worldtime import WorldTime
 
@@ -213,6 +214,12 @@ class PlanBase(BaseModel):
     sets_up: list[str] = Field(default_factory=list)
     pays_off: list[str] = Field(default_factory=list)
     advances: list[str] = Field(default_factory=list)
+    # The scene's intent as stored then ("" for none), so a part the author has since
+    # cleared or changed is never put back. ``None`` on older suggestions.
+    intent: str | None = None
+    # Where the item stood among its siblings, on a change that moves it to make room
+    # (a bridge scene): approving is refused if the order has changed since.
+    position: int | None = None
 
     @classmethod
     def of(cls, item: PlanItem) -> PlanBase:
@@ -221,6 +228,7 @@ class PlanBase(BaseModel):
             sets_up=list(item.sets_up),
             pays_off=list(item.pays_off),
             advances=thread_advances(item.details),
+            intent=item.details.get(INTENT_KEY, ""),
         )
 
 

@@ -1251,7 +1251,17 @@ class MediaObservationService:
     async def export_notes(self, workspace_id: str, project_id: str) -> dict[str, Any]:
         """What an archive carries: every observation the author decided on (accepted,
         corrected or rejected), and each picture's context choice other than the default.
-        Proposals nobody reviewed are left out; a restored story can describe again."""
+        Proposals nobody reviewed are left out; a restored story can describe again. So
+        is everything about a picture whose file was deleted (AST-008): what was said
+        about it goes with it, and only its tombstone stays."""
+        assets = [
+            asset
+            for asset in await self._media._media.list_assets(  # noqa: SLF001
+                workspace_id=workspace_id, project_id=project_id, limit=100_000
+            )
+            if asset.lifecycle is not AssetLifecycle.DELETED
+        ]
+        kept_assets = {asset.id for asset in assets}
         observations = [
             observation
             for observation in await self._store.all(
@@ -1259,10 +1269,8 @@ class MediaObservationService:
             )
             if observation.state
             in (ObservationState.ACCEPTED, ObservationState.CORRECTED, ObservationState.REJECTED)
+            and observation.asset_id in kept_assets
         ]
-        assets = await self._media._media.list_assets(  # noqa: SLF001
-            workspace_id=workspace_id, project_id=project_id, limit=100_000
-        )
         choices = await self._store.get_choices(
             workspace_id=workspace_id,
             project_id=project_id,

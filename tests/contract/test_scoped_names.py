@@ -241,25 +241,26 @@ def test_the_studios_checks_read_names_as_the_scene_does(auth_client, fake_conta
 
 
 def test_the_scenes_context_takes_passages_as_this_line_reads_them(auth_client, fake_container):
-    w, (dawn, noon, _dusk) = _story(auth_client, fake_container)
+    w, (dawn, _noon, dusk) = _story(auth_client, fake_container)
     _write(auth_client, w, dawn, "The stranger mended nets by the harbour wall.")
     branch = auth_client.post(f"{w['base']}/what-ifs", json={"name": "Roe stays"}).json()["id"]
     said = _decide(auth_client, w, branch, phrase="the stranger", verdict="is", entity_id=w["roe"])
     assert said.status_code == 201, said.text
 
-    # Noon has Roe in it, and not Mara. In the what-if, Dawn's passage names Roe; in the main story it
-    # names nobody.
-    assert any("stranger mended nets" in text for text in _writing(auth_client, w, noon, branch))
-    assert not any("stranger mended nets" in text for text in _writing(auth_client, w, noon))
+    # Dusk has Roe in it, and not Old Ashe; it is two scenes on from Dawn, because the end of
+    # the scene just before is always given as written (CTX-006A). In the what-if, Dawn's
+    # passage names Roe; in the main story it names nobody.
+    assert any("stranger mended nets" in text for text in _writing(auth_client, w, dusk, branch))
+    assert not any("stranger mended nets" in text for text in _writing(auth_client, w, dusk))
 
-    # And the other way: the main story says "the stranger" is Roe, the what-if says Mara.
+    # And the other way: the main story says "the stranger" is Roe, the what-if says Old Ashe.
     _decide(
         auth_client, w, phrase="the stranger", verdict="is", entity_id=w["roe"], what_if_only=False
     )
-    assert any("stranger mended nets" in text for text in _writing(auth_client, w, noon))
-    _decide(auth_client, w, branch, phrase="the stranger", verdict="is", entity_id=w["mara"])
+    assert any("stranger mended nets" in text for text in _writing(auth_client, w, dusk))
+    _decide(auth_client, w, branch, phrase="the stranger", verdict="is", entity_id=w["father"])
     assert not any(
-        "stranger mended nets" in text for text in _writing(auth_client, w, noon, branch)
+        "stranger mended nets" in text for text in _writing(auth_client, w, dusk, branch)
     )
 
 

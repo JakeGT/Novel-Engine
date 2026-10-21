@@ -325,8 +325,11 @@ __all__ = [
     "GEMMA_DIMENSIONS",
     "CaptionSource",
     "PictureSource",
+    "METADATA_FILTER_KEYS",
     "SearchGate",
     "StoredHit",
+    "metadata_filter",
+    "metadata_matches",
     "VectorRow",
     "GEMMA_TASKS",
     "GEMMA_TASK_SET",
@@ -401,6 +404,36 @@ class SearchGate:
     point_of_view: bool = False
     point_of_view_id: str | None = None
     branch_id: str | None = None
+    # Metadata filters on a document row (CTX-004), applied in the same scan: each pair
+    # is a metadata key from ``METADATA_FILTER_KEYS`` and the values it may take. A row
+    # without the key, or with another value, is never scored.
+    metadata: tuple[tuple[str, tuple[str, ...]], ...] = ()
+
+
+# Which metadata keys a search may filter on: what a row records about where its words
+# come from (the text and its kind).
+METADATA_FILTER_KEYS = frozenset({"source_id", "source_kind"})
+
+
+def metadata_filter(
+    where: dict[str, Sequence[str]] | None,
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """A search's metadata filters in a fixed order; an unknown key is refused."""
+    if not where:
+        return ()
+    unknown = set(where) - METADATA_FILTER_KEYS
+    if unknown:
+        raise ValueError(f"cannot filter a search on {sorted(unknown)}")
+    return tuple((key, tuple(sorted({str(v) for v in where[key]}))) for key in sorted(where))
+
+
+def metadata_matches(metadata: dict, gate: SearchGate) -> bool:
+    """Whether a row's metadata passes the gate's metadata filters."""
+    for key, values in gate.metadata:
+        found = metadata.get(key)
+        if found is None or str(found) not in values:
+            return False
+    return True
 
 
 @dataclass(frozen=True)

@@ -1,4 +1,5 @@
-"""PostgreSQL store for checks kept as runs (CON-001, migration 0044)."""
+"""PostgreSQL store for checks kept as runs (CON-001, migrations 0044 and 0049), and the
+cache of what each check that needs no model found for one fingerprint (CON-007)."""
 
 from __future__ import annotations
 
@@ -12,13 +13,14 @@ from backend.domain.consistency_runs import ConsistencyRun, RecordedCheck, RunIn
 
 _RUN = (
     "SELECT workspace_id, project_id, id, branch_id, kind, scope, plan_id, story_revision, "
-    "inputs, passes, findings, job_id, created_by, created_at FROM consistency_runs"
+    "inputs, passes, findings, job_id, created_by, created_at, profile, fingerprints "
+    "FROM consistency_runs"
 )
 
 
-def _load(value: Any) -> Any:
+def _load(value: Any, empty: Any = None) -> Any:
     if value is None:
-        return []
+        return [] if empty is None else empty
     return json.loads(value) if isinstance(value, str) else value
 
 
@@ -38,7 +40,30 @@ def _run(row: Any) -> ConsistencyRun:
         job_id=row[11],
         created_by=row[12],
         created_at=row[13],
+        profile=dict(_load(row[14], {})),
+        fingerprints=dict(_load(row[15], {})),
     )
+
+
+def run_row(run: ConsistencyRun) -> dict[str, Any]:
+    return {
+        "w": run.workspace_id,
+        "p": run.project_id,
+        "id": run.id,
+        "b": run.branch_id,
+        "kind": run.kind,
+        "scope": run.scope,
+        "plan": run.plan_id,
+        "rev": run.story_revision,
+        "inputs": json.dumps([item.as_json() for item in run.inputs]),
+        "passes": json.dumps(list(run.passes)),
+        "findings": json.dumps([item.as_json() for item in run.findings]),
+        "job": run.job_id,
+        "by": run.created_by,
+        "at": run.created_at,
+        "profile": json.dumps(run.profile),
+        "fingerprints": json.dumps(run.fingerprints),
+    }
 
 
 class PostgresConsistencyRunStore:
@@ -46,54 +71,54 @@ class PostgresConsistencyRunStore:
         self._session_factory = session_factory
 
     async def add(self, run: ConsistencyRun) -> bool:
-        """Keep a run. A second run for the same job is not kept (False)."""
+        """Keep a run. A second run for the same job in the same line is not kept (False);
+        ``created_at`` given (an archive's run) is kept as it was."""
         async with session_scope(self._session_factory) as db:
             result = await db.execute(
                 text(
                     "INSERT INTO consistency_runs (workspace_id, project_id, id, branch_id, kind, "
                     "scope, plan_id, story_revision, inputs, passes, findings, job_id, "
-                    "created_by) VALUES (:w, :p, :id, :b, :kind, :scope, :plan, :rev, "
-                    "CAST(:inputs AS JSONB), CAST(:passes AS JSONB), CAST(:findings AS JSONB), "
-                    ":job, :by) ON CONFLICT DO NOTHING"
+                    "created_by, created_at, profile, fingerprints) VALUES (:w, :p, :id, :b, "
+                    ":kind, :scope, :plan, :rev, CAST(:inputs AS JSONB), CAST(:passes AS JSONB), "
+                    "CAST(:findings AS JSONB), :job, :by, COALESCE(:at, now()), "
+                    "CAST(:profile AS JSONB), CAST(:fingerprints AS JSONB)) ON CONFLICT DO NOTHING"
                 ),
-                {
-                    "w": run.workspace_id,
-                    "p": run.project_id,
-                    "id": run.id,
-                    "b": run.branch_id,
-                    "kind": run.kind,
-                    "scope": run.scope,
-                    "plan": run.plan_id,
-                    "rev": run.story_revision,
-                    "inputs": json.dumps([item.as_json() for item in run.inputs]),
-                    "passes": json.dumps(list(run.passes)),
-                    "findings": json.dumps([item.as_json() for item in run.findings]),
-                    "job": run.job_id,
-                    "by": run.created_by,
-                },
+                run_row(run),
             )
         return bool(getattr(result, "rowcount", 1))
 
     async def get(
-        self, *, workspace_id: str, project_id: str, run_id: str
+        self, *, workspace_id: str, project_id: str, run_id: str, branch_id: str | None = None
     ) -> ConsistencyRun | None:
+        clause = " AND branch_id = :b" if branch_id is not None else ""
         async with session_scope(self._session_factory) as db:
             row = (
                 await db.execute(
-                    text(_RUN + " WHERE workspace_id = :w AND project_id = :p AND id = :id"),
-                    {"w": workspace_id, "p": project_id, "id": run_id},
+                    text(
+                        _RUN
+                        + " WHERE workspace_id = :w AND project_id = :p AND id = :id"
+                        + clause  # noqa: S608 - fixed clause
+                        + " ORDER BY created_at LIMIT 1"
+                    ),
+                    {"w": workspace_id, "p": project_id, "id": run_id, "b": branch_id},
                 )
             ).first()
         return _run(row) if row is not None else None
 
     async def for_job(
-        self, *, workspace_id: str, project_id: str, job_id: str
+        self, *, workspace_id: str, project_id: str, job_id: str, branch_id: str | None = None
     ) -> ConsistencyRun | None:
+        clause = " AND branch_id = :b" if branch_id is not None else ""
         async with session_scope(self._session_factory) as db:
             row = (
                 await db.execute(
-                    text(_RUN + " WHERE workspace_id = :w AND project_id = :p AND job_id = :job"),
-                    {"w": workspace_id, "p": project_id, "job": job_id},
+                    text(
+                        _RUN
+                        + " WHERE workspace_id = :w AND project_id = :p AND job_id = :job"
+                        + clause  # noqa: S608 - fixed clause
+                        + " ORDER BY created_at LIMIT 1"
+                    ),
+                    {"w": workspace_id, "p": project_id, "job": job_id, "b": branch_id},
                 )
             ).first()
         return _run(row) if row is not None else None
@@ -130,5 +155,106 @@ class PostgresConsistencyRunStore:
             ).all()
         return [_run(row) for row in rows]
 
+    async def all_in(
+        self, *, workspace_id: str, project_id: str, branch_id: str, limit: int = 2_000
+    ) -> list[ConsistencyRun]:
+        """Every run in one line of the story, oldest first (for the project archive)."""
+        async with session_scope(self._session_factory) as db:
+            rows = (
+                await db.execute(
+                    text(
+                        _RUN + " WHERE workspace_id = :w AND project_id = :p AND branch_id = :b "
+                        "ORDER BY created_at, id LIMIT :n"
+                    ),
+                    {"w": workspace_id, "p": project_id, "b": branch_id, "n": limit},
+                )
+            ).all()
+        return [_run(row) for row in rows]
 
-__all__ = ["PostgresConsistencyRunStore"]
+    # ------------------------------------------------------------------ cache
+
+    async def cached(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        keys: list[tuple[str, str]],
+    ) -> dict[tuple[str, str], dict[str, Any]]:
+        """What each check found for these fingerprints, where it is kept."""
+        if not keys:
+            return {}
+        async with session_scope(self._session_factory) as db:
+            rows = (
+                await db.execute(
+                    text(
+                        "SELECT check_name, fingerprint, findings FROM check_cache "
+                        "WHERE workspace_id = :w AND project_id = :p AND plan_id = :plan "
+                        "AND (check_name, fingerprint) IN "
+                        "(SELECT * FROM jsonb_to_recordset(CAST(:keys AS JSONB)) "
+                        "AS k(c TEXT, f TEXT))"
+                    ),
+                    {
+                        "w": workspace_id,
+                        "p": project_id,
+                        "plan": plan_id,
+                        "keys": json.dumps([{"c": c, "f": f} for c, f in keys]),
+                    },
+                )
+            ).all()
+        return {
+            (row[0], row[1]): {
+                "findings": [RecordedCheck.from_json(item) for item in _load(row[2])]
+            }
+            for row in rows
+        }
+
+    async def keep_cached(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        entries: list[dict[str, Any]],
+        keep: int,
+    ) -> None:
+        """Keep what each check found; only the newest ``keep`` of each check stay."""
+        if not entries:
+            return
+        async with session_scope(self._session_factory) as db:
+            for entry in entries:
+                await db.execute(
+                    text(
+                        "INSERT INTO check_cache (workspace_id, project_id, plan_id, check_name, "
+                        "fingerprint, findings) VALUES (:w, :p, :plan, :c, :f, "
+                        "CAST(:found AS JSONB)) ON CONFLICT (workspace_id, project_id, plan_id, "
+                        "check_name, fingerprint) DO UPDATE SET created_at = now()"
+                    ),
+                    {
+                        "w": workspace_id,
+                        "p": project_id,
+                        "plan": plan_id,
+                        "c": entry["check"],
+                        "f": entry["fingerprint"],
+                        "found": json.dumps([item.as_json() for item in entry["findings"]]),
+                    },
+                )
+                await db.execute(
+                    text(
+                        "DELETE FROM check_cache WHERE workspace_id = :w AND project_id = :p "
+                        "AND plan_id = :plan AND check_name = :c AND fingerprint NOT IN ("
+                        "SELECT fingerprint FROM check_cache WHERE workspace_id = :w "
+                        "AND project_id = :p AND plan_id = :plan AND check_name = :c "
+                        "ORDER BY created_at DESC LIMIT :keep)"
+                    ),
+                    {
+                        "w": workspace_id,
+                        "p": project_id,
+                        "plan": plan_id,
+                        "c": entry["check"],
+                        "keep": keep,
+                    },
+                )
+
+
+__all__ = ["PostgresConsistencyRunStore", "run_row"]

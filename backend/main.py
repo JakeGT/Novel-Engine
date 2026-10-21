@@ -33,13 +33,16 @@ from backend.api.v1.media import router as media_router
 from backend.api.v1.pictures import router as pictures_router
 from backend.api.v1.plan import router as plan_router
 from backend.api.v1.plan_assist import router as plan_assist_router
+from backend.api.v1.plan_help import router as plan_help_router
 from backend.api.v1.projection import router as projection_router
+from backend.api.v1.review_dismissals import router as review_dismissals_router
 from backend.api.v1.router import router as v1_router
 from backend.api.v1.rules import router as rules_router
 from backend.api.v1.schema_versions import router as schema_versions_router
 from backend.api.v1.sources import router as sources_router
 from backend.api.v1.sources_assist import router as sources_assist_router
 from backend.api.v1.story_time import router as story_time_router
+from backend.api.v1.story_views import router as story_views_router
 from backend.api.v1.studio import router as studio_router
 from backend.api.v1.tenancy import router as tenancy_router
 from backend.api.v1.what_ifs import router as what_ifs_router
@@ -162,6 +165,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.include_router(canon_assist_router, prefix="/api/v1")
     app.include_router(plan_router, prefix="/api/v1")
     app.include_router(plan_assist_router, prefix="/api/v1")
+    app.include_router(plan_help_router, prefix="/api/v1")
     app.include_router(sources_router, prefix="/api/v1")
     app.include_router(sources_assist_router, prefix="/api/v1")
     app.include_router(rules_router, prefix="/api/v1")
@@ -172,6 +176,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.include_router(studio_router, prefix="/api/v1")
     app.include_router(audits_router, prefix="/api/v1")
     app.include_router(consistency_runs_router, prefix="/api/v1")
+    app.include_router(review_dismissals_router, prefix="/api/v1")
     app.include_router(canon_archive_router, prefix="/api/v1")
     app.include_router(impact_router, prefix="/api/v1")
     app.include_router(delegation_router, prefix="/api/v1")
@@ -184,6 +189,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     )
     app.include_router(media_router, prefix="/api/v1")
     app.include_router(pictures_router, prefix="/api/v1")
+    app.include_router(story_views_router, prefix="/api/v1")
     app.include_router(projection_router, prefix="/api/v1")
     app.include_router(access_keys_router, prefix="/api/v1")
     # Other assistants, with an access key (QRY-003). JSON-RPC, so not in the OpenAPI document.

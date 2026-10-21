@@ -7,6 +7,7 @@ import { ArchiveEntry } from '../components/ArchiveEntry'
 import { EntryImpact } from '../components/ChangeImpact'
 import { CharacterArcs } from '../components/ArcPath'
 import { EntityForm } from '../components/EntityForm'
+import { EntryImportance } from '../components/EntryImportance'
 import { BeliefsPanel } from '../components/BeliefsPanel'
 import { ClaimsPanel } from '../components/ClaimsPanel'
 import { TrustPanel } from '../components/TrustPanel'
@@ -241,6 +242,7 @@ export function EntryPage() {
               <div style={{ marginTop: '0.5rem' }}>
                 <EntryMarks entity={entity} limit={6} />
               </div>
+              {editable && <EntryImportance entity={entity} />}
             </div>
             {editable && (
               <div className="actions">

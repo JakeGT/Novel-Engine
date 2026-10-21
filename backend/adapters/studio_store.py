@@ -60,7 +60,7 @@ def _finding(row: Any) -> AssistantFinding:
 
 _DISMISSAL = (
     "SELECT workspace_id, project_id, branch_id, id, plan_id, fingerprint, kind, code, reason, "
-    "note, expires_at, created_by, created_at, withdrawn_at FROM finding_dismissals"
+    "note, expires_at, created_by, created_at, withdrawn_at, depends_on FROM finding_dismissals"
 )
 
 
@@ -80,6 +80,7 @@ def _dismissal(row: Any) -> FindingDismissal:
         created_by=row[11],
         created_at=row[12],
         withdrawn_at=row[13],
+        depends_on=row[14],
     )
 
 
@@ -492,8 +493,8 @@ class PostgresStudioStore:
                 text(
                     "INSERT INTO finding_dismissals (workspace_id, project_id, branch_id, id, "
                     "plan_id, fingerprint, kind, code, reason, note, expires_at, created_by, "
-                    "created_at) VALUES (:w, :p, :b, :id, :plan, :f, :kind, :code, :reason, "
-                    ":note, :expires, :by, :at)"
+                    "created_at, depends_on) VALUES (:w, :p, :b, :id, :plan, :f, :kind, :code, "
+                    ":reason, :note, :expires, :by, :at, :depends)"
                 ),
                 {
                     "w": dismissal.workspace_id,
@@ -509,6 +510,7 @@ class PostgresStudioStore:
                     "expires": dismissal.expires_at,
                     "by": dismissal.created_by,
                     "at": dismissal.created_at,
+                    "depends": dismissal.depends_on,
                 },
             )
 
@@ -647,8 +649,9 @@ class PostgresStudioStore:
                 text(
                     "INSERT INTO finding_dismissals (workspace_id, project_id, branch_id, id, "
                     "plan_id, fingerprint, kind, code, reason, note, expires_at, created_by, "
-                    "created_at, withdrawn_at) VALUES (:w, :p, :b, :id, :plan, :f, :kind, :code, "
-                    ":reason, :note, :expires, :by, :at, :withdrawn) ON CONFLICT DO NOTHING"
+                    "created_at, withdrawn_at, depends_on) VALUES (:w, :p, :b, :id, :plan, :f, "
+                    ":kind, :code, :reason, :note, :expires, :by, :at, :withdrawn, :depends) "
+                    "ON CONFLICT DO NOTHING"
                 ),
                 {
                     "w": dismissal.workspace_id,
@@ -665,6 +668,7 @@ class PostgresStudioStore:
                     "by": dismissal.created_by,
                     "at": dismissal.created_at,
                     "withdrawn": dismissal.withdrawn_at,
+                    "depends": dismissal.depends_on,
                 },
             )
             return bool(result.rowcount)  # type: ignore[attr-defined]

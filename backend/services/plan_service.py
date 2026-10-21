@@ -24,14 +24,22 @@ from backend.domain.arcs import (
     ArcReading,
     ArcStage,
     FactStanding,
+    ScaleProgress,
+    ScaleSet,
     arc_findings,
     arc_path,
     arcs_with_paths,
+    lapse_findings,
     path_fits,
     read_arcs,
+    read_scales,
+    scale_findings,
+    scale_progress,
+    scale_removal_problem,
     with_path,
     without_scenes,
 )
+from backend.domain.branching import working_in
 from backend.domain.canon.assertions import Belief, Fact
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.events import CLAIM_KIND, CLAIM_NARRATOR, CLAIM_SPEAKER, Event
@@ -45,7 +53,7 @@ from backend.domain.canon.plans import (
     PlanRef,
 )
 from backend.domain.canon.propositions import Proposition
-from backend.domain.errors import NotFoundError, ValidationError
+from backend.domain.errors import ConflictError, NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.knowledge import (
     MAX_REVEALS,
@@ -133,6 +141,8 @@ class PlanReading:
     promises: list[Promise]
     # Each arc's stages: where each is reached and whether its fact holds (STY-006).
     arcs: list[ArcReading] = field(default_factory=list)
+    # Where each arc's character stands on each shared scale, scene by scene (STY-006).
+    scales: list[ScaleProgress] = field(default_factory=list)
 
 
 def _label(item: PlanItem) -> str:
@@ -333,12 +343,19 @@ class PlanService:
             )
             names = {entity.id: entity.name for entity in story.entities.values()}
             if arc_facts:
-                arc_readings = read_arcs(items, scenes, fact_standing_in(story))
+                standing = fact_standing_in(story)
+                arc_readings = read_arcs(items, scenes, standing)
                 facts_by_id = {fact.id: fact for fact in story.facts}
 
                 def fact_words(fact_id: str) -> str:
                     fact = facts_by_id.get(fact_id)
                     return fact_sentence(fact, names) if fact is not None else "its fact"
+
+                # Whether each stage's fact still holds until the next stage (STY-006).
+                found += [
+                    OpenItem(item.plan_id, item.code, item.message, item.kind)
+                    for item in lapse_findings(arc_readings, scenes, standing, titles, fact_words)
+                ]
 
             if checked:
                 found += [
@@ -364,12 +381,101 @@ class PlanService:
             OpenItem(item.plan_id, item.code, item.message, item.kind)
             for item in arc_findings(arc_readings, scenes, titles, fact_words)
         ]
+        scales = ScaleSet()
+        if any(stage.scale_id for arc in arc_readings for stage in arc.stages):
+            scales, _ = await self._read_scales(workspace_id, project_id)
+            found += [
+                OpenItem(item.plan_id, item.code, item.message, item.kind)
+                for item in scale_findings(arc_readings, scales, titles)
+            ]
         # In outline order, then threads, so the list reads like the page.
         place = {item.id: index for index, item in enumerate(outline_order(items))}
         found.sort(key=lambda item: place.get(item.plan_id, len(place)))
         return PlanReading(
-            items=items, open=found, conditions=states, promises=promised, arcs=arc_readings
+            items=items,
+            open=found,
+            conditions=states,
+            promises=promised,
+            arcs=arc_readings,
+            scales=scale_progress(arc_readings, scales),
         )
+
+    # ------------------------------------------------------------------ scales (STY-006)
+    async def scales(
+        self, scope: AccessScope, workspace_id: str, project_id: str
+    ) -> tuple[ScaleSet, int]:
+        """The story's shared scales and their version (0 when none were ever saved)."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        return await self._read_scales(workspace_id, project_id)
+
+    async def _read_scales(self, workspace_id: str, project_id: str) -> tuple[ScaleSet, int]:
+        if self.clocks is None or not hasattr(self.clocks, "get_scales"):
+            return ScaleSet(), 0
+        raw, version = await self.clocks.get_scales(
+            workspace_id=workspace_id, project_id=project_id
+        )
+        return read_scales(raw), version
+
+    async def _arcs_on_every_line(
+        self, workspace_id: str, project_id: str
+    ) -> list[tuple[str, list[ArcStage]]]:
+        """Each arc's title and stages, on the main story and every what-if: the scales
+        are shared by all of them."""
+        journal = getattr(self._mutation, "_journal", None)
+        branches = (
+            await journal.list_branches(workspace_id=workspace_id, project_id=project_id)
+            if journal is not None and hasattr(journal, "list_branches")
+            else []
+        )
+        lines = [None, *(branch.id for branch in branches if not branch.is_root)]
+        found: list[tuple[str, list[ArcStage]]] = []
+        for line in lines:
+            with working_in(line):
+                items = await self._items(workspace_id, project_id)
+            found.extend(
+                (item.title, arc_path(item.details))
+                for item in items
+                if item.is_active and item.kind is PlanKind.ARC
+            )
+        return found
+
+    async def set_scales(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        *,
+        scales: ScaleSet,
+        expected_version: int,
+    ) -> tuple[ScaleSet, int]:
+        """Replace the story's scales. A scale or level an arc's stage stands on, on any line
+        of the story, cannot be removed."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        if self.clocks is None or not hasattr(self.clocks, "set_scales"):
+            raise ValidationError("Scales cannot be kept here.")
+        kept, _version = await self._read_scales(workspace_id, project_id)
+        new = scales.by_id()
+        drops = any(
+            scale.id not in new or any(new[scale.id].rank(level) is None for level in scale.levels)
+            for scale in kept.scales
+        )
+        if drops:
+            problem = scale_removal_problem(
+                kept, scales, await self._arcs_on_every_line(workspace_id, project_id)
+            )
+            if problem is not None:
+                raise ValidationError(problem)
+        version = await self.clocks.set_scales(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            scales=scales.model_dump(mode="json"),
+            expected_version=expected_version,
+        )
+        if version is None:
+            raise ConflictError(
+                "Someone else changed the scales since you opened them. Look again, then save."
+            )
+        return scales, version
 
     async def _continuity_findings(
         self, workspace_id: str, project_id: str, items: list[PlanItem], story: Story
@@ -743,6 +849,16 @@ class PlanService:
             )
             if fact is None or fact.closed_revision is not None:
                 raise ValidationError("A stage can only be tied to a fact that is in the story.")
+        on_scale = [stage for stage in stages if stage.scale_id is not None]
+        if on_scale:
+            known, _ = await self._read_scales(workspace_id, project_id)
+            by_id = known.by_id()
+            for stage in on_scale:
+                scale = by_id.get(stage.scale_id or "")
+                if scale is None:
+                    raise ValidationError("A stage can only stand on one of the story's scales.")
+                if scale.rank(stage.level) is None:
+                    raise ValidationError(f"{scale.name} has no level called “{stage.level}”.")
         if not path_fits(stages):
             raise ValidationError(
                 "That is more than one arc can keep. Shorten the stage names or use fewer stages."

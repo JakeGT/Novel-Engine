@@ -19,9 +19,13 @@ retired versions.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import hashlib
+import hmac
 import logging
-from collections.abc import Awaitable, Callable
+import re
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, nullcontext
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -36,8 +40,9 @@ from backend.adapters.image_processor import (
 from backend.adapters.system import uuid7
 from backend.core.logging import log_event
 from backend.core.metrics import metrics
+from backend.domain.branching import working_in
 from backend.domain.canon.plans import PlanKind
-from backend.domain.errors import NotFoundError, ValidationError
+from backend.domain.errors import ConflictError, DomainError, NotFoundError, ValidationError
 from backend.domain.identity import AccessScope, AuthMode, utcnow
 from backend.domain.image_metadata import ImageMetadataError, strip_metadata
 from backend.domain.media import (
@@ -71,6 +76,10 @@ from backend.ports import (
 from backend.services.mutation_service import CommitResult, MutationService
 
 MAX_PICTURE_BYTES = 8 * 1024 * 1024
+# How long one upload may take to arrive whole. A sender trickling bytes would otherwise
+# hold a connection and a growing buffer for as long as it liked; behind a proxy that
+# enforces its own read timeout this is a second line, not the only one.
+UPLOAD_DEADLINE_SECONDS = 120.0
 PICTURE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp"})
 # A picture shown on a scene links to the plan item that is the scene.
 SCENE_TARGET = "plan_item"
@@ -131,6 +140,161 @@ class MaintenanceReport:
     skipped: dict[str, int] = field(default_factory=dict)
 
 
+class PictureTooLarge(DomainError):
+    """An upload larger than a picture may be, refused before it is read whole (AST-002)."""
+
+    status_code = 413
+    code = "too_large"
+    title = "Too large"
+
+
+class PictureTooSlow(DomainError):
+    """An upload that did not arrive whole in time (AST-002)."""
+
+    status_code = 408
+    code = "too_slow"
+    title = "Too slow"
+
+
+@dataclass(frozen=True)
+class ReceivedUpload:
+    """The bytes as they arrived, with the SHA-256 worked out while they streamed in."""
+
+    data: bytes
+    sha256: str
+    # The sender's digest: "matched" (a sha-256 one agreed), "none" (none was sent) or
+    # "not_checked" (only methods this server does not check were sent).
+    digest: str = "none"
+
+    @property
+    def size(self) -> int:
+        return len(self.data)
+
+
+# RFC 9530 Content-Digest / Repr-Digest: ``sha-256=:<base64>:`` among other members.
+_DIGEST_MEMBER = re.compile(r"(?:^|,)\s*sha-256\s*=\s*:([A-Za-z0-9+/=]+):", re.IGNORECASE)
+_TOO_LARGE = f"The picture is too large (the limit is {MAX_PICTURE_BYTES // (1024 * 1024)} MB)."
+_TOO_SLOW = "The picture took too long to arrive. Check the connection and add it again."
+_NOT_A_PICTURE = "Only PNG, JPEG, and WebP pictures can be added."
+# Enough leading bytes to tell a PNG, a JPEG or a WebP file from anything else.
+_SIGNATURE_BYTES = 12
+
+
+def _declared_digest(header: str | None) -> bytes | None:
+    if not header:
+        return None
+    found = _DIGEST_MEMBER.search(header)
+    if found is None:
+        return None
+    try:
+        return base64.b64decode(found.group(1), validate=True)
+    except (ValueError, binascii.Error):
+        raise ValidationError("The upload's digest could not be read.") from None
+
+
+async def receive_picture(
+    chunks: AsyncIterator[bytes],
+    *,
+    declared_length: str | None = None,
+    content_digest: str | None = None,
+    max_bytes: int = MAX_PICTURE_BYTES,
+    deadline_seconds: float | None = UPLOAD_DEADLINE_SECONDS,
+) -> ReceivedUpload:
+    """Read an upload as it streams in (AST-002).
+
+    Refused before anything is read when its declared length is over the limit, as soon
+    as more than the limit has arrived, and once its first bytes show it is not a PNG,
+    JPEG or WebP file, so a large or wrong upload is never held whole. The SHA-256 is
+    worked out chunk by chunk; when the sender gave one (``Content-Digest`` or
+    ``Repr-Digest``, RFC 9530) the two must agree. A digest by another method only
+    (``sha-512``, say) is not checked, and the answer says so (``digest``). The whole
+    upload must arrive within ``deadline_seconds``.
+    """
+    if declared_length is not None:
+        if not declared_length.isdigit():
+            raise ValidationError("The upload's length could not be read.")
+        if int(declared_length) > max_bytes:
+            metrics.increment(
+                "media_uploads_refused_total",
+                "Picture uploads refused, by reason.",
+                reason="too_large",
+            )
+            raise PictureTooLarge(_TOO_LARGE)
+    expected = _declared_digest(content_digest)
+    hasher = hashlib.sha256()
+    data = bytearray()
+    checked = False
+    try:
+        async with asyncio.timeout(deadline_seconds):
+            async for chunk in chunks:
+                if not chunk:
+                    continue
+                data.extend(chunk)
+                if len(data) > max_bytes:
+                    metrics.increment(
+                        "media_uploads_refused_total",
+                        "Picture uploads refused, by reason.",
+                        reason="too_large",
+                    )
+                    raise PictureTooLarge(_TOO_LARGE)
+                hasher.update(chunk)
+                if not checked and len(data) >= _SIGNATURE_BYTES:
+                    checked = True
+                    if sniff_image_type(bytes(data[:_SIGNATURE_BYTES])) is None:
+                        raise ValidationError(_NOT_A_PICTURE)
+    except TimeoutError:
+        metrics.increment(
+            "media_uploads_refused_total", "Picture uploads refused, by reason.", reason="too_slow"
+        )
+        raise PictureTooSlow(_TOO_SLOW) from None
+    if not data:
+        raise ValidationError("The picture is empty.")
+    if expected is not None and not hmac.compare_digest(expected, hasher.digest()):
+        raise ValidationError("The picture did not arrive whole. Add it again.")
+    digest = "matched" if expected is not None else "not_checked" if content_digest else "none"
+    return ReceivedUpload(data=bytes(data), sha256=hasher.hexdigest(), digest=digest)
+
+
+@dataclass(frozen=True)
+class FoundPicture:
+    """A picture found for words: by its name or reviewed description, or by meaning."""
+
+    picture: LibraryPicture
+    # "words": the words are in its name or description; "meaning": search by meaning.
+    reason: str
+    # What matched: "name", "description", "picture" or "caption".
+    matched: str
+    score: float | None = None
+
+
+@dataclass(frozen=True)
+class PictureSearch:
+    found: list[FoundPicture]
+    # Whether search by meaning was used, and when not, why in plain words.
+    by_meaning: bool
+    note: str | None = None
+
+
+@dataclass(frozen=True)
+class DeletedPicture:
+    """What deleting a picture's files removed; counts only, never names or content."""
+
+    asset: MediaAsset
+    versions: int
+    files_removed: int
+    copies_removed: int
+    bytes_freed: int
+
+
+_WORD = re.compile(r"[\w’']+", re.UNICODE)
+MAX_QUERY = 200
+
+
+def query_words(query: str) -> list[str]:
+    """The words of a search, lower-cased, in order, each once."""
+    return list(dict.fromkeys(word.lower() for word in _WORD.findall(query) if len(word) > 1))
+
+
 def sniff_image_type(data: bytes) -> str | None:
     """The image type shown by the file's own leading bytes, or ``None``."""
     if data.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -172,6 +336,10 @@ class MediaService:
         self._quota_bytes = max(0, int(quota_bytes))
         self._orphan_grace = orphan_grace
         self._removed_hooks: list[VersionsRemovedHook] = []
+        # Set by the container: reviewed descriptions to find pictures by (AST-007), and
+        # search by meaning (``MediaSearchService``), when it is set up.
+        self.observation_store: Any = None
+        self.search: Any = None
         # One lock per workspace around "is there room?" and the write that takes it.
         self._quota_locks: dict[str, asyncio.Lock] = {}
 
@@ -362,6 +530,233 @@ class MediaService:
             raise NotFoundError("Asset version not found.")
         await self._versions_removed(workspace_id, project_id, [version_id])
         return retired
+
+    # ------------------------------------------------- deleting a picture (AST-008)
+    async def _shown_anywhere(self, workspace_id: str, project_id: str, asset_id: str) -> int:
+        """How many entries and scenes show a picture now, in every line of the story.
+
+        Counted as the library counts it: a picture on a scene taken out of the plan is
+        not shown, so it can be deleted once that is its only place."""
+        lines: list[str | None] = [None]
+        if self._journal is not None and hasattr(self._journal, "list_branches"):
+            lines += [
+                branch.id
+                for branch in await self._journal.list_branches(
+                    workspace_id=workspace_id, project_id=project_id
+                )
+                if not branch.is_root
+            ]
+        shown = 0
+        for line in lines:
+            with working_in(line):
+                links = await self._reader.list_links(
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    asset_id=asset_id,
+                    limit=MAX_LIBRARY_LINKS,
+                )
+                for link in links:
+                    if link.asset_id != asset_id or not link.is_active:
+                        continue
+                    if link.target_record_type == SCENE_TARGET:
+                        scene = await self._reader.get_plan_item(
+                            workspace_id=workspace_id,
+                            project_id=project_id,
+                            plan_id=link.target_record_id,
+                        )
+                        if scene is not None and not scene.is_active:
+                            continue
+                    shown += 1
+        return shown
+
+    async def delete_picture(
+        self, scope: AccessScope, workspace_id: str, project_id: str, asset_id: str
+    ) -> DeletedPicture:
+        """Delete a picture's files before its story is deleted (AST-008).
+
+        For an owner or administrator, and only once the picture is shown on no entry or
+        scene in any line of the story (taking it off one is an ordinary reviewed
+        change). The picture is first marked deleted, so from then on it cannot be
+        linked, opened or prepared; where it is shown is checked again, and only then
+        are every version's original and smaller copies removed from storage. A stored
+        file another picture still uses (an archive restore can share one) is kept.
+        Derived indexes are told to forget the versions (``on_versions_removed``). What
+        stays is the tombstone: each version's row (its checksum, size and type, with
+        when its file was deleted) and an audit event naming who did it. History that
+        mentions the picture keeps its name; the picture can no longer be opened.
+
+        A deletion stopped part way (the server stopped, say) is finished by asking
+        again; a picture whose every file is already gone is not found.
+        """
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_ADMIN)
+        asset = await self._media.get_asset(
+            workspace_id=workspace_id, project_id=project_id, asset_id=asset_id
+        )
+        if asset is None:
+            raise NotFoundError("That picture was not found.")
+        versions = await self._media.list_versions(
+            workspace_id=workspace_id, project_id=project_id, asset_id=asset_id
+        )
+        live = [version for version in versions if version.deleted_at is None]
+        if asset.lifecycle is AssetLifecycle.DELETED and not live:
+            raise NotFoundError("That picture was not found.")
+        self._refuse_if_shown(await self._shown_anywhere(workspace_id, project_id, asset_id))
+        # Marked first: nothing can link, open or prepare it while its files go.
+        if not await self._media.hold_for_deletion(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            asset_id=asset_id,
+            lifecycle=asset.lifecycle,
+        ):
+            raise ConflictError("This picture changed just now. Look again, then delete it.")
+        shown = await self._shown_anywhere(workspace_id, project_id, asset_id)
+        if shown:
+            # Shown somewhere since the first look: put it back as it was.
+            if asset.lifecycle is not AssetLifecycle.DELETED:
+                await self._media.release_hold(
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    asset_id=asset_id,
+                    lifecycle=asset.lifecycle,
+                )
+            self._refuse_if_shown(shown)
+        revision = await self._retired_revision(workspace_id, project_id)
+        copies_of: dict[str, list[MediaVariant]] = {}
+        if self._processing is not None and live:
+            copies_of = await self._processing.list_variants(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                version_ids=[version.id for version in live],
+            )
+        keys = {version.object_key for version in live} | {
+            copy.object_key for found in copies_of.values() for copy in found
+        }
+        # A file another picture still uses stays: only this picture's records go.
+        kept = await self._media.object_keys_in_use(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            object_keys=sorted(keys),
+            except_asset_id=asset_id,
+        )
+        removed: set[str] = set()
+        files = copies = freed = 0
+        for version in live:
+            if self._processing is not None:
+                for key in await self._processing.remove_variants(
+                    workspace_id=workspace_id, project_id=project_id, version_id=version.id
+                ):
+                    if key in kept or key in removed:
+                        continue
+                    removed.add(key)
+                    if self._objects.delete(key, workspace_id=workspace_id, project_id=project_id):
+                        copies += 1
+            key = version.object_key
+            if key not in kept and key not in removed:
+                removed.add(key)
+                if self._objects.delete(key, workspace_id=workspace_id, project_id=project_id):
+                    files += 1
+                    freed += version.byte_length
+            await self._media.delete_original(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                version_id=version.id,
+                retired_revision=revision,
+                actor_user_id=scope.actor_user_id,
+            )
+        gone = await self._media.delete_asset(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            asset_id=asset_id,
+            retired_revision=revision,
+            actor_user_id=scope.actor_user_id,
+        )
+        await self._versions_removed(workspace_id, project_id, [v.id for v in versions])
+        metrics.increment("media_pictures_deleted_total", "Pictures whose files were deleted.")
+        log_event(
+            logger,
+            "media.picture_deleted",
+            versions=len(versions),
+            files=files,
+            copies=copies,
+            bytes=freed,
+            kept=len(kept),
+        )
+        return DeletedPicture(
+            asset=gone or asset,
+            versions=len(versions),
+            files_removed=files,
+            copies_removed=copies,
+            bytes_freed=freed,
+        )
+
+    @staticmethod
+    def _refuse_if_shown(shown: int) -> None:
+        if shown:
+            places = "one entry or scene" if shown == 1 else f"{shown} entries or scenes"
+            raise ConflictError(
+                f"This picture is still shown on {places}. Take it off them first; "
+                "then its file can be deleted."
+            )
+
+    # ---------------------------------------------- finding pictures (AST-007)
+    async def search_pictures(
+        self, scope: AccessScope, workspace_id: str, project_id: str, query: str, limit: int = 24
+    ) -> PictureSearch:
+        """Pictures of this line of the story for some words.
+
+        First those whose name or reviewed description (an accepted or corrected
+        caption or detail) holds every word, then those found by meaning when search by
+        meaning is set up, without repeats. Only pictures the library offers are found,
+        so a picture of another line, a retired one or a deleted one never is. The words
+        are never logged.
+        """
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        cleaned = " ".join(query.split())[:MAX_QUERY]
+        words = query_words(cleaned)
+        if not words:
+            raise ValidationError("Type a word or two to look for.")
+        library = await self.picture_library(scope, workspace_id, project_id)
+        by_id = {picture.asset.id: picture for picture in library}
+        described: dict[str, list[str]] = {}
+        if self.observation_store is not None and by_id:
+            for seen in await self.observation_store.for_assets(
+                workspace_id=workspace_id, project_id=project_id, asset_ids=list(by_id)
+            ):
+                if seen.state.value not in ("accepted", "corrected"):
+                    continue
+                text_of = seen.corrected_text if seen.state.value == "corrected" else seen.text
+                if text_of:
+                    described.setdefault(seen.asset_id, []).append(text_of.lower())
+        found: list[FoundPicture] = []
+        for picture in library:
+            name = picture.asset.name.lower()
+            about = " ".join(described.get(picture.asset.id, []))
+            if all(word in name for word in words):
+                found.append(FoundPicture(picture, "words", "name"))
+            elif about and all(word in f"{name} {about}" for word in words):
+                found.append(FoundPicture(picture, "words", "description"))
+        note: str | None = "Search by meaning is not set up here."
+        by_meaning = False
+        if self.search is not None and len(found) < limit:
+            result = await self.search.pictures_for(
+                workspace_id, project_id, query=cleaned, limit=limit
+            )
+            by_meaning, note = bool(result.semantic), result.reason
+            already = {item.picture.asset.id for item in found}
+            for candidate in result.pictures:
+                match = by_id.get(candidate.asset_id)
+                if match is None or candidate.asset_id in already:
+                    continue
+                already.add(candidate.asset_id)
+                found.append(
+                    FoundPicture(match, "meaning", candidate.matched or "picture", candidate.score)
+                )
+        metrics.increment(
+            "media_picture_searches_total",
+            "Searches for pictures by words, by whether meaning was used.",
+            by_meaning=str(by_meaning).lower(),
+        )
+        return PictureSearch(found=found[:limit], by_meaning=by_meaning, note=note)
 
     # ---------------------------------------------------------------- pictures
     async def add_picture(
@@ -1205,6 +1600,10 @@ class MediaService:
                 content_hash=version.checksum,
                 processor_version=PROCESSOR_VERSION,
             )
+            if await self._deleted_meanwhile(workspace_id, project_id, version.id):
+                # Its picture was deleted while it was being prepared: keep nothing.
+                await self._drop_copies(workspace_id, project_id, version.id, stored)
+                return {"outcome": "gone"}
             replaced = await self._processing.complete(
                 workspace_id=workspace_id,
                 project_id=project_id,
@@ -1237,6 +1636,10 @@ class MediaService:
             raise
         for key in replaced:
             self._objects.delete(key, workspace_id=workspace_id, project_id=project_id)
+        if await self._deleted_meanwhile(workspace_id, project_id, version.id):
+            # Deleted between the last look and the copies being recorded: remove them.
+            await self._drop_copies(workspace_id, project_id, version.id, [])
+            return {"outcome": "gone"}
         metrics.observe(
             "media_processing_seconds",
             "Time to prepare one picture, from start to stored copies.",
@@ -1249,6 +1652,30 @@ class MediaService:
             "height": processed.height,
             "copies": len(variants),
         }
+
+    async def _deleted_meanwhile(self, workspace_id: str, project_id: str, version_id: str) -> bool:
+        """Whether a version's file, or its picture, has been deleted (AST-008)."""
+        version = await self._media.get_version(
+            workspace_id=workspace_id, project_id=project_id, version_id=version_id
+        )
+        if version is None or version.deleted_at is not None:
+            return True
+        asset = await self._media.get_asset(
+            workspace_id=workspace_id, project_id=project_id, asset_id=version.asset_id
+        )
+        return asset is None or asset.lifecycle is AssetLifecycle.DELETED
+
+    async def _drop_copies(
+        self, workspace_id: str, project_id: str, version_id: str, stored: list[str]
+    ) -> None:
+        """Remove copies just stored and any recorded for a deleted version."""
+        assert self._processing is not None
+        recorded = await self._processing.remove_variants(
+            workspace_id=workspace_id, project_id=project_id, version_id=version_id
+        )
+        for key in {*stored, *recorded}:
+            self._objects.delete(key, workspace_id=workspace_id, project_id=project_id)
+        self._count("gone")
 
     async def _failed(
         self, workspace_id: str, project_id: str, version_id: str, code: str
@@ -1559,6 +1986,14 @@ def format_asset_link_id() -> str:
 
 
 __all__ = [
+    "DeletedPicture",
+    "FoundPicture",
+    "PictureSearch",
+    "PictureTooLarge",
+    "PictureTooSlow",
+    "ReceivedUpload",
+    "query_words",
+    "receive_picture",
     "MEDIA_PROCESS_KIND",
     "LibraryPicture",
     "MaintenanceReport",

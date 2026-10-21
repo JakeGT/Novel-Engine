@@ -31,6 +31,7 @@ function guide(overrides: Partial<ReaderGuide> = {}): ReaderGuide {
       { heading: 'Places', entries: [{ name: 'Lantern Harbor', lines: [] }] },
     ],
     rules: 1,
+    part: 'everything',
     ...overrides,
   }
 }
@@ -94,6 +95,47 @@ describe('ReaderGuidePage', () => {
 
     await userEvent.selectOptions(screen.getByLabelText('Whose guide'), 'ent_tobin')
     await waitFor(() => expect(api.find('GET', '/reader/guide').at(-1)?.search.get('viewpoint')).toBe('ent_tobin'))
+  })
+
+  it('makes one part of the guide on its own: characters, places, a timeline or a recap', async () => {
+    const api = mockApi({
+      ...base,
+      'GET /reader/guide': (call: { search: URLSearchParams }) => {
+        const part = (call.search.get('part') ?? 'everything') as ReaderGuide['part']
+        if (part === 'timeline') {
+          return guide({
+            part,
+            title: 'Timeline so far, after “The Docks” — version 3',
+            sections: [{ heading: 'In story time', entries: [{ name: 'Scene 1: The Docks', lines: ['When: year 5'] }] }],
+          })
+        }
+        if (part === 'recap') return guide({ part, title: 'Recap so far, after “The Docks” — version 3', sections: [] })
+        return guide()
+      },
+    })
+    const { container } = renderInProject(<ReaderGuidePage />, route)
+    await screen.findByRole('article')
+    const parts = screen.getByLabelText('What to include')
+    expect(within(parts).getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Everything',
+      'Characters',
+      'Places',
+      'Timeline of the scenes so far',
+      'Recap, scene by scene',
+    ])
+    await userEvent.selectOptions(parts, 'timeline')
+    const sheet = await screen.findByRole('article', { name: /Timeline so far/ })
+    expect(within(sheet).getByText('Reader’s guide · timeline')).toBeInTheDocument()
+    expect(within(sheet).getByText('When: year 5')).toBeInTheDocument()
+    expect(screen.getByText(/Events the story has not told yet stay out/)).toBeInTheDocument()
+    expect(api.find('GET', '/reader/guide').at(-1)?.search.get('part')).toBe('timeline')
+    await expectAccessible(container)
+
+    await userEvent.selectOptions(parts, 'recap')
+    expect(await screen.findByText('No scenes yet')).toBeInTheDocument()
+    await userEvent.selectOptions(parts, 'everything')
+    await screen.findByRole('article', { name: /The story so far/ })
+    expect(api.find('GET', '/reader/guide').at(-1)?.search.get('part')).toBeNull()
   })
 
   it('prints the page and downloads the Markdown file', async () => {

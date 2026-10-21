@@ -6,6 +6,7 @@ import asyncio
 
 import pytest
 
+from backend.domain.check_fingerprints import CHECKS_VERSION
 from backend.services.scene_checks import CheckNote, CheckNotes
 from tests.contract.test_context import _head
 from tests.contract.test_story_audit import _answer, _story
@@ -52,7 +53,8 @@ def test_saving_keeps_a_run_of_the_checks_and_reads_it_back_judged(auth_client, 
         json={"key": key, "reason": "intended"},
     )
     judged = _stock(_runs(auth_client, w, scene)[0])
-    assert judged["status"] == "dismissed" and judged["dismissal"]["reason"] == "intended"
+    # Kept on purpose ("Intended") is accepted: the finding is right, left as written.
+    assert judged["status"] == "accepted" and judged["dismissal"]["reason"] == "intended"
 
     # The words change: a second run, and in the first the finding is fixed by the words.
     second = _save(
@@ -174,26 +176,44 @@ def test_an_audit_is_one_run_over_its_scenes_listed_in_each_scenes_history(
     assert auth_client.get(f"{w['base']}/checks/runs/nope").status_code == 404
 
 
-def test_runs_belong_to_their_line_of_the_story(auth_client, fake_container):
+def test_a_what_if_starts_with_the_runs_of_its_line_and_keeps_its_own(auth_client, fake_container):
     w, scene = _scene_world(auth_client, fake_container)
-    _save(auth_client, w, scene, PROSE, None)
+    first = _save(auth_client, w, scene, PROSE, None).json()
     (run,) = _runs(auth_client, w, scene)
     branch = auth_client.post(f"{w['base']}/what-ifs", json={"name": "Mara comes"}).json()["id"]
     inside = auth_client.get(
         f"{w['base']}/plan/{scene['id']}/checks/runs", headers={"X-Story-Branch": branch}
     )
-    assert inside.status_code == 200 and inside.json()["items"] == []
+    # The what-if starts with the same check history (consistency_runs is forked), and the
+    # same words are not out of date there.
+    assert inside.status_code == 200, inside.text
+    (copied,) = inside.json()["items"]
+    assert copied["id"] == run["id"] and copied["stale"] is False
     assert (
         auth_client.get(
             f"{w['base']}/checks/runs/{run['id']}", headers={"X-Story-Branch": branch}
         ).status_code
-        == 404
+        == 200
     )
-    # Nothing written: asking for a record says so plainly.
-    empty = auth_client.post(
+    # A save in the what-if keeps a run there only.
+    _save(
+        auth_client,
+        w,
+        scene,
+        PROSE.replace("Mara did not come.", "Mara came."),
+        first["version_id"],
+        branch,
+    )
+    assert len(_runs_in(auth_client, w, scene, branch)) == 2
+    assert [r["id"] for r in _runs(auth_client, w, scene)] == [run["id"]]
+
+
+def _runs_in(client, w, scene, branch) -> list[dict]:
+    got = client.get(
         f"{w['base']}/plan/{scene['id']}/checks/runs", headers={"X-Story-Branch": branch}
     )
-    assert empty.status_code in (201, 400)
+    assert got.status_code == 200, got.text
+    return got.json()["items"]
 
 
 def test_an_event_changed_by_id_alone_marks_the_runs_of_its_scenes_out_of_date(
@@ -258,3 +278,43 @@ def test_another_scene_with_the_same_people_moving_in_time_marks_the_run_out_of_
     _at(auth_client, w, shared, 4)
     (run,) = _runs(auth_client, w, scene)
     assert run["stale"] is True
+
+
+def test_an_open_finding_found_again_by_a_later_check_is_superseded(auth_client, fake_container):
+    w, scene = _scene_world(auth_client, fake_container)
+    first = _save(auth_client, w, scene, PROSE, None).json()
+    # Another sentence changes; the stock phrase stays where it was.
+    _save(
+        auth_client,
+        w,
+        scene,
+        PROSE.replace("Mara did not come.", "Nobody came."),
+        first["version_id"],
+    )
+    newest, oldest = _runs(auth_client, w, scene)
+    assert _stock(newest)["status"] == "open"
+    assert _stock(oldest)["status"] == "superseded"
+    assert oldest["scenes"][0]["superseded"] >= 1
+    # The run read on its own says the same.
+    alone = auth_client.get(f"{w['base']}/checks/runs/{oldest['id']}").json()
+    assert _stock(alone)["status"] == "superseded"
+    # Its profile and which checks it worked out are kept with it.
+    assert oldest["profile"]["checks"] == CHECKS_VERSION
+    assert {c["name"] for c in newest["scenes"][0]["checks"] if not c["reused"]} >= {"stock"}
+
+
+def test_how_often_each_check_is_dismissed_is_told_per_check(auth_client, fake_container):
+    w, scene = _scene_world(auth_client, fake_container)
+    first = _save(auth_client, w, scene, PROSE, None).json()
+    key = next(c for c in first["checks"] if c["code"] == "stock_phrase")["key"]
+    auth_client.post(
+        f"{w['base']}/plan/{scene['id']}/studio/dismissals",
+        json={"key": key, "reason": "not_a_problem"},
+    )
+    got = auth_client.get(f"{w['base']}/checks/calibration")
+    assert got.status_code == 200, got.text
+    stock = next(line for line in got.json()["items"] if line["code"] == "stock_phrase")
+    assert stock["words"] == "Stock phrasing" and stock["source"] == "check"
+    assert stock["found"] == 1 and stock["dismissed"] == 1 and stock["accepted"] == 0
+    # Too few to say a rate: it says so plainly.
+    assert stock["rate"] is None and "Too few" in stock["note"]

@@ -1,19 +1,116 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type CheckRunFinding } from '../api/client'
-import { findingStatus, runLabel } from '../lib/checkRuns'
+import { api, type CheckRun, type CheckRunFinding } from '../api/client'
+import { findingStatus, profileText, runLabel, tallyText, workText } from '../lib/checkRuns'
 import { AUDIT_STATUS } from '../lib/studio'
 import { fullDate, timeAgo } from '../lib/time'
 import { scopedKey, useProject } from '../project'
 import { Badge, Button, ErrorNotice, Loading } from './ui'
 
-const TONE: Record<string, 'ok' | 'neutral' | 'warn'> = { open: 'warn', dismissed: 'neutral', fixed: 'ok' }
+const TONE: Record<string, 'ok' | 'neutral' | 'warn'> = {
+  open: 'warn',
+  accepted: 'neutral',
+  dismissed: 'neutral',
+  superseded: 'neutral',
+  fixed: 'ok',
+}
 
-function Tally({ open, dismissed, fixed }: { open: number; dismissed: number; fixed: number }) {
-  if (open + dismissed + fixed === 0) return <span>Nothing found</span>
+function Tally(part: { open: number; accepted?: number; dismissed: number; superseded?: number; fixed: number }) {
+  return <span>{tallyText(part)}</span>
+}
+
+/** How one pass was sent, when it could be sent in groups (CON-013). */
+interface Sent {
+  sent: 'groups' | 'whole'
+  why?: string
+  groups?: number
+  complete?: boolean
+  lines?: string[]
+  passages?: { start: number; end: number; checks: string[] }[]
+}
+
+const PASS_WORDS: Record<string, string> = { continuity: 'Continuity with the story bible' }
+
+/** For a check with the assistant: how a long scene was sent, and what each passage got. */
+function Coverage({ run }: { run: CheckRun }) {
+  const entries = Object.entries((run.coverage ?? {}) as Record<string, Sent>)
+  if (entries.length === 0) return null
   return (
-    <span>
-      {open} open · {dismissed} dismissed · {fixed} fixed
-    </span>
+    <div className="stack tight run-coverage">
+      {entries.map(([name, sent]) => {
+        const label = PASS_WORDS[name.split(':').pop() ?? name] ?? 'A pass'
+        if (sent.sent !== 'groups') {
+          return (
+            <p className="small" key={name}>
+              {label}: sent as one request. {sent.why}
+            </p>
+          )
+        }
+        const kinds = new Map<string, number>()
+        for (const passage of sent.passages ?? []) {
+          for (const kind of passage.checks) kinds.set(kind, (kinds.get(kind) ?? 0) + 1)
+        }
+        return (
+          <details className="run-findings" key={name}>
+            <summary>
+              {label}: sent in {sent.groups} groups.{' '}
+              {sent.complete ? 'Every passage got every check it needs.' : 'Not every passage got every check it needs.'}
+            </summary>
+            <ul className="small plain-list">
+              {(sent.lines ?? []).map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+              {[...kinds.entries()].map(([kind, count]) => (
+                <li key={kind}>
+                  {kind}: {count === 1 ? '1 passage' : `${count} passages`}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )
+      })}
+    </div>
+  )
+}
+
+/** How often the author dismissed each check's findings in this story (CON-016). */
+function Calibration() {
+  const { scope } = useProject()
+  const found = useQuery({ queryKey: scopedKey(scope, 'check-calibration'), queryFn: () => api.checkCalibration(scope) })
+  const items = (found.data?.items ?? []).filter((item) => item.found > 0)
+  return (
+    <section className="stack tight" aria-labelledby="check-calibration-heading">
+      <div>
+        <h3 id="check-calibration-heading" className="check-calibration-title">
+          How often you dismiss each check
+        </h3>
+        <p className="muted small">
+          Across this story, so you can tell which checks are often wrong for it. A note for you: nothing about the
+          checks changes on its own.
+        </p>
+      </div>
+      {/* A note beside the history, not something to act on: said quietly when it cannot be read. */}
+      {found.isError && <p className="muted small">How often each check is dismissed could not be read just now.</p>}
+      {found.data && items.length === 0 && <p className="muted small">No check has found anything yet.</p>}
+      {items.length > 0 && (
+        <ul className="check-calibration">
+          {items.map((item) => (
+            <li key={`${item.source}-${item.code}`}>
+              <span className="check-calibration-name">{item.words}</span>
+              <span className="small">
+                {[
+                  `Found ${item.found}`,
+                  item.dismissed > 0 ? `not a problem ${item.dismissed}` : '',
+                  item.accepted > 0 ? `kept on purpose ${item.accepted}` : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
+              <span className="small muted">{item.note}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   )
 }
 
@@ -111,7 +208,7 @@ export function CheckHistory({
                     {run.status !== 'done' && run.status !== 'succeeded' && (
                       <span>{AUDIT_STATUS[run.status] ?? run.status}</span>
                     )}
-                    {part && <Tally open={part.open} dismissed={part.dismissed} fixed={part.fixed} />}
+                    {part && <Tally {...part} />}
                   </span>
                   {part?.stale ? (
                     <span className="small">
@@ -122,6 +219,12 @@ export function CheckHistory({
                       <Badge tone="ok">Up to date</Badge>
                     </span>
                   )}
+                  <Coverage run={run} />
+                  {part && (workText(part) || profileText(run.profile ?? {})) && (
+                    <p className="small muted">
+                      {[workText(part), profileText(run.profile ?? {})].filter(Boolean).join(' ')}
+                    </p>
+                  )}
                   <Findings findings={run.findings} />
                 </div>
               </li>
@@ -129,6 +232,7 @@ export function CheckHistory({
           })}
         </ol>
       )}
+      <Calibration />
     </section>
   )
 }
@@ -171,7 +275,7 @@ export function AuditRecord({ jobId, refresh }: { jobId: string; refresh: string
                 <td>{part.title}</td>
                 <td data-label="Since">{part.stale ? part.reasons.join(' ') : 'Up to date'}</td>
                 <td data-label="Findings">
-                  <Tally open={part.open} dismissed={part.dismissed} fixed={part.fixed} />
+                  <Tally {...part} />
                 </td>
               </tr>
             ))}

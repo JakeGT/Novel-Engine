@@ -128,3 +128,63 @@ worked out on read, never stored, and never block.
 
 Merging a what-if into another what-if, field-level merges, alias memory scoped by time or
 viewpoint, and media applicability by time.
+
+## Amendment 2026-10-20: ready views of the story, and the guide in parts (QRY-001, QRY-002)
+
+**Ready views.** Six views are kept per line of the story in `read_models` (migration
+`0050_read_models`): location, possession, relationship, timeline, reader disclosure and
+dependency (`backend/domain/read_views.py`). Rows hold record ids, predicates and story times
+only, never names or the author's words, sorted deterministically and checksummed. They are
+built by `ReadModelConsumer` (`backend/services/read_models.py`), which the projection worker's
+loop runs: it finds lines whose latest `canon.commit` outbox message is past their watermark,
+reads the line's current records between two reads of its head (a commit landing in between
+means the build is dropped and redone next round), and stores every view at that head. Its
+progress is its own watermark per line, never the outbox's `published_at`, which belongs to the
+graph's delivery: each consumer of the outbox keeps its own checkpoint, as event-sourced
+projections do, so one never hides messages from the other. A save never moves a watermark back.
+A line builds from scratch each time (bounded like every on-read computation, 10,000 records):
+incremental maintenance was not worth its risk at novel sizes; the gain is that the work is done
+once per commit instead of once per read.
+
+**Trust by replay.** `ReadModelService.verify` (`make read-models-verify`) rebuilds each stored
+view from the record history (`story_at`, the journal's replay) at the stored watermark and
+compares checksums, counting differing rows. Two independent paths (today's tables and the
+history) must agree. The on-read computations remain the source of truth: a view answers reads
+only when its builder has been verified for that line (`verify_outcome = matched` with the same
+`BUILDER_VERSION`) and its watermark is the line's head; otherwise reads are worked out as
+before. A rebuilt view stays trusted while the builder version is unchanged; raising the version
+or a differing replay withdraws trust (`--repair` forgets the line). The timeline
+(`StoryTimeService.timeline`) and the reader's journey (`KnowledgeService.journey`) answer from
+their views when they can, and also fall back if the records read differ in ids from the view's.
+New questions answer from the views with the same fallback, each saying which it used and at
+which version: `GET /story-views/where`, `/holders`, `/relationships`, `/dependents`,
+`/disclosures`, and `GET /story-views` for each view's state.
+
+Times in the views are those the timeline uses, exact as stated; the continuity checks' reading
+of a whole unit of a coarse clock stays theirs. Views are derived: purged with the story
+(`canon_tables.py`), never archived (the archive's `derived.story_views` says so and how they are
+rebuilt), never copied into a what-if (each line builds its own on its first commit; until then
+reads are worked out), and rebuilt after a restore from the replayed commits' outbox messages.
+
+**The guide in parts.** `/reader/guide?part=` makes characters, places, a timeline or a recap on
+their own (`backend/services/reader_exports.py`), each under the guide's rules, with `part:` in
+the Markdown header; the page has "What to include". The timeline holds only scenes read so far
+and the events tied to them, in story-time order: an event dated earlier but not told in any
+scene read so far stays out, since the story may not have told the reader of it. The recap gives
+whose eyes, where, who is there and what each scene shows plainly, and never the plan's summary
+(the author's note may name what the reader has not been shown) or hints.
+
+**Sharing by link stays out.** A link anyone holding it can open is a capability: URLs leak
+through history, referrers, logs and forwarding, so such a link needs its own expiry, revocation,
+audit and a narrower read than a member's, and a leaked link to a reader's guide is a leaked
+story. That design is not done; print and download share the guide instead.
+
+Ran against the in-memory doubles and a disposable PostgreSQL only; no measurement of read speed
+on a large story was made.
+
+Sources: [W3C TAG, Good Practices for Capability URLs](https://www.w3.org/2001/tag/doc/capability-urls/)
+(capability URLs cannot generally be kept secret; leaks of shared-document links);
+[evoq projections](https://evoq.hexdocs.pm/evoq_projection.html) and
+[Cratis Chronicle, rebuilding a read model](https://www.cratis.io/chronicle/scenarios/rebuild-a-read-model/)
+(idempotent projections with their own checkpoints; rebuild by clearing and replaying, then
+checking the result; rebuild time grows with history).
