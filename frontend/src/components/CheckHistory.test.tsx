@@ -25,6 +25,7 @@ function run(overrides: Partial<CheckRun>): CheckRun {
         plan_id: 'pln_1',
         title: 'The Docks',
         in_plan: true,
+        pictures: [],
         source_id: 'txt_1',
         version_id: 'ver_1',
         draft_id: null,
@@ -75,6 +76,7 @@ const older = run({
       plan_id: 'pln_1',
       title: 'The Docks',
       in_plan: true,
+      pictures: [],
       source_id: 'txt_1',
       version_id: 'ver_0',
       draft_id: null,
@@ -161,6 +163,80 @@ const CALIBRATION = {
     { code: 'new_name', words: 'A new name', source: 'check', found: 0, dismissed: 0, accepted: 0, rate: null, note: 'Nothing found yet.' },
   ],
 }
+
+const pictured = run({
+  id: 'run_2',
+  kind: 'assistant',
+  passes: ['model_free', 'pictures'],
+  job_id: 'job_2',
+  status: 'succeeded',
+  stale: true,
+  scenes: [
+    {
+      ...run({}).scenes[0],
+      open: 1,
+      pictures: [
+        {
+          asset_id: 'ast_1',
+          version_id: 'av_1',
+          label: '“Mara on the quay”, version 1',
+          choice: 'send',
+          changed: 'A newer version of it has been added since.',
+        },
+        { asset_id: 'ast_2', version_id: 'av_2', label: '“The docks”, version 1', choice: 'describe', changed: null },
+      ],
+    },
+  ],
+  findings: [
+    {
+      plan_id: 'pln_1',
+      source: 'note',
+      code: 'pictures',
+      severity: 'note',
+      message: 'Her picture shows a blue coat. Compared with the picture “Mara on the quay”, version 1.',
+      quoted: 'her red coat',
+      status: 'open',
+      fixed_by: null,
+      dismissal: null,
+      check_pass: 'pictures',
+      stale: true,
+      came_back: false,
+      picture: {
+        asset_id: 'ast_1',
+        version_id: 'av_1',
+        label: '“Mara on the quay”, version 1',
+        choice: 'send',
+        changed: 'A newer version of it has been added since.',
+      },
+    },
+  ],
+})
+
+describe('CheckHistory pictures', () => {
+  it('says which pictures a check compared the scene with and which have changed since', async () => {
+    mockApi({
+      'GET /plan/pln_1/checks/runs': { items: [pictured] },
+      'GET /checks/calibration': { items: [] },
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<CheckHistory planId="pln_1" versions={new Map()} refresh="a" />)
+    const section = await screen.findByRole('region', { name: 'Check history' })
+    expect(await within(section).findByText('Compared with 2 pictures:')).toBeInTheDocument()
+    expect(within(section).getByText(/“Mara on the quay”, version 1 \(the picture itself\)/)).toBeInTheDocument()
+    expect(within(section).getByText(/— A newer version of it has been added since\./)).toBeInTheDocument()
+    expect(within(section).getByText(/“The docks”, version 1 \(its description\)/)).toBeInTheDocument()
+    // The scene's words have not changed, but a picture has: the run is out of date.
+    expect(within(section).getByText('Out of date')).toBeInTheDocument()
+    expect(within(section).getByText('A picture it read has changed.')).toBeInTheDocument()
+    await user.click(within(section).getByText('Show the finding'))
+    expect(
+      within(section).getByText(
+        'The picture it was compared with has changed since: A newer version of it has been added since.',
+      ),
+    ).toBeInTheDocument()
+    await expectAccessible(container)
+  })
+})
 
 describe('CheckHistory', () => {
   it('lists each check with the version it read, whether it is out of date, and what became of it', async () => {

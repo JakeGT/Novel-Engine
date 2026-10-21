@@ -313,3 +313,159 @@ describe('AuditPage', () => {
     expect(await screen.findByText(/That audit was not found/)).toBeInTheDocument()
   })
 })
+
+describe('After an audit: drift, correction plans and schedules', () => {
+  const at = { path: 'audits/:jobId', at: 'audits/job_a' }
+  const usual = {
+    enough: true,
+    scenes: 3,
+    words: 2400,
+    own_only: true,
+    drafts_left_out: 0,
+    left_out: [],
+    sentence_mean: 12,
+    dialogue_share: 0.2,
+    adverb_rate: 4,
+    person: 'third',
+    tense: 'past',
+    needs_scenes: 3,
+    needs_words: 2000,
+  }
+  const stats = {
+    words: 900,
+    sentences: 60,
+    english: true,
+    sentence_mean: 13,
+    sentence_median: 12,
+    sentence_long: 22,
+    sentence_spread: 5,
+    bands: [5, 10, 30, 10, 4, 1],
+    dialogue_share: 0.2,
+    adverb_rate: 4,
+    adverbs: [],
+    echoes: [],
+    person: 'third',
+    tense: 'past',
+    past_share: 0.95,
+  }
+  const drift = {
+    voice: [
+      { plan_id: 'pln_s1', title: 'The lamp room at night', version_number: 3, stats, notes: [] },
+      {
+        plan_id: 'pln_s2',
+        title: 'The chart room',
+        version_number: 1,
+        stats: { ...stats, sentence_mean: 25 },
+        notes: [{ code: 'voice_sentence_length', message: 'Sentences here run about 25 words on average; yours usually run about 12.', start: null, end: null }],
+      },
+    ],
+    usual,
+    trends: [],
+    relationships: [
+      {
+        names: ['Ines', 'Her father'],
+        together: ['pln_s1'],
+        recorded: ['Ines distrusts Her father'],
+        notes: ['Ines and Her father share 2 scenes up to “The lamp room at night”, then none of the last 4, while the story bible still says “Ines distrusts Her father”.'],
+      },
+    ],
+  }
+  const plan = {
+    id: 'cpl_1',
+    summary: 'Hold back what Ines knows.',
+    items: [
+      {
+        plan_id: 'pln_s1',
+        title: 'The lamp room at night',
+        change: 'Let Ines only suspect the chart.',
+        why: 'She cannot know yet.',
+        cited: ['Ines cannot know her father drew it yet.'],
+        decision: 'waiting',
+      },
+    ],
+    dropped: 1,
+    created_at: '2026-10-18T10:05:00Z',
+  }
+
+  it('shows voice and relationships across the scenes, free', async () => {
+    mockApi({
+      'GET /audits/job_a': report,
+      'GET /audits/job_a/drift': drift,
+      'GET /audits/job_a/corrections': { plans: [], jobs: [] },
+      'GET /audits/job_a/corrections/estimate': { total_tokens: 2100, findings: 3, scenes: 2 },
+    })
+    const { container } = renderInProject(<AuditPage />, at)
+    const section = await screen.findByRole('region', { name: 'Voice and relationships across these scenes' })
+    const table = await within(section).findByRole('table', { name: 'Each scene’s voice, in reading order' })
+    expect(within(table).getByRole('row', { name: /The chart room about 25 words/ })).toHaveTextContent('yours usually run about 12')
+    expect(within(section).getByText(/then none of the last 4/)).toBeInTheDocument()
+    await expectAccessible(container)
+  })
+
+  it('plans corrections with the cost first and keeps or skips each step', async () => {
+    let planned = false
+    const api = mockApi({
+      'GET /audits/job_a': report,
+      'GET /audits/job_a/drift': drift,
+      'GET /audits/job_a/corrections': () => (planned ? { plans: [plan], jobs: [] } : { plans: [], jobs: [] }),
+      'GET /audits/job_a/corrections/estimate': { total_tokens: 2100, findings: 3, scenes: 2 },
+      'POST /audits/job_a/corrections': () => {
+        planned = true
+        return reply(202, job({ id: 'job_c', kind: 'correction_plan', status: 'queued' }))
+      },
+      'PUT /corrections/cpl_1/items/0': { ...plan, items: [{ ...plan.items[0], decision: 'kept' }] },
+    })
+    const user = userEvent.setup()
+    renderInProject(<AuditPage />, at)
+    const section = await screen.findByRole('region', { name: 'Correction plan' })
+    expect(await within(section).findByText('Reads 3 findings across 2 scenes: about 2,100 tokens.')).toBeInTheDocument()
+    await user.click(within(section).getByRole('button', { name: 'Plan the corrections' }))
+    await waitFor(() => expect(api.find('POST', '/audits/job_a/corrections')).toHaveLength(1))
+    expect(await within(section).findByText('Let Ines only suspect the chart.')).toBeInTheDocument()
+    expect(within(section).getByText(/1 suggestion left out for citing no finding/)).toBeInTheDocument()
+    expect(within(section).getByRole('link', { name: 'Open “The lamp room at night” in the studio' })).toHaveAttribute(
+      'href',
+      '/projects/prj_1/plan/pln_s1/write',
+    )
+    const step = within(section).getByRole('group', { name: 'Step 1: Let Ines only suspect the chart.' })
+    await user.click(within(step).getByRole('button', { name: 'Do this' }))
+    await waitFor(() => expect(api.find('PUT', '/corrections/cpl_1/items/0')).toHaveLength(1))
+    expect(api.find('PUT', '/corrections/cpl_1/items/0')[0].body).toEqual({ decision: 'kept' })
+  })
+
+  it('sets up an audit to run on a schedule with the most it may use', async () => {
+    const api = mockApi({
+      'GET /audits/estimate': estimate,
+      'GET /audits': { items: [] },
+      'GET /audit-schedules': { items: [], max_every_days: 90, max_tokens: 2000000 },
+      'PUT /audit-schedules': {
+        id: 'sch_1',
+        plan_id: 'pln_b1',
+        passes: ['clarity'],
+        every_days: 7,
+        max_tokens: 20000,
+        enabled: true,
+        next_run_at: '2026-10-25T10:00:00Z',
+        last_run_at: null,
+        last_job_id: null,
+        last_outcome: null,
+      },
+    })
+    const user = userEvent.setup()
+    renderInProject(<AuditDialog item={beat} onClose={vi.fn()} />)
+    const dialog = await screen.findByRole('dialog', { name: 'Audit “She finds the false chart”' })
+    await user.click(await within(dialog).findByText('Run this audit on a schedule'))
+    const most = within(dialog).getByLabelText('At most this many tokens each time')
+    expect(most).toHaveValue(20000)
+    await user.selectOptions(within(dialog).getByLabelText('How often'), '7')
+    await user.click(within(dialog).getByRole('button', { name: 'Run it on this schedule' }))
+    await waitFor(() => expect(api.find('PUT', '/audit-schedules')).toHaveLength(1))
+    expect(api.find('PUT', '/audit-schedules')[0].body).toEqual({
+      plan_id: 'pln_b1',
+      passes: ['viewpoint', 'continuity', 'plan', 'voice', 'clarity'],
+      every_days: 7,
+      max_tokens: 20000,
+    })
+    expect(await within(dialog).findByText(/Scheduled. The first run is/)).toBeInTheDocument()
+  })
+})

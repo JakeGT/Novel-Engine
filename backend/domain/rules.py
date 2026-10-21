@@ -32,7 +32,7 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
 from typing import Literal
@@ -54,6 +54,8 @@ from backend.domain.operations import (
     CloseFactOp,
     CreateEntityOp,
     CreateEventOp,
+    MergeEntitiesOp,
+    RestoreEntityOp,
     RetireEntityOp,
     RetireEventOp,
     UpdateEntityOp,
@@ -374,6 +376,8 @@ class World:
     beliefs: dict[str, WorldBelief] = field(default_factory=dict)
     # Each event's time, so a fact timed from an event can be placed.
     events: dict[str, StoryTime | None] = field(default_factory=dict)
+    # Entries retired from the story, so one brought back (undoing a merge) is seen again.
+    retired: dict[str, WorldEntry] = field(default_factory=dict)
 
     def copy(self) -> World:
         return World(
@@ -381,6 +385,7 @@ class World:
             facts=dict(self.facts),
             beliefs=dict(self.beliefs),
             events=dict(self.events),
+            retired=dict(self.retired),
         )
 
 
@@ -425,10 +430,11 @@ def world_from_canon(
 ) -> World:
     world = World()
     for entity in entities:
+        entry = WorldEntry(entity.id, entity.type, entity.name, _tags(entity.attributes))
         if entity.is_active:
-            world.entries[entity.id] = WorldEntry(
-                entity.id, entity.type, entity.name, _tags(entity.attributes)
-            )
+            world.entries[entity.id] = entry
+        else:
+            world.retired[entity.id] = entry
     for fact in facts:
         if fact.closed_revision is not None:
             continue
@@ -471,7 +477,13 @@ def apply_operations(world: World, operations: Sequence[CanonOperation]) -> Worl
                     current.tags if operation.attributes is None else _tags(operation.attributes),
                 )
         elif isinstance(operation, RetireEntityOp):
-            after.entries.pop(operation.id, None)
+            gone = after.entries.pop(operation.id, None)
+            if gone is not None:
+                after.retired[operation.id] = gone
+        elif isinstance(operation, RestoreEntityOp):
+            back = after.retired.pop(operation.id, None)
+            if back is not None:
+                after.entries[operation.id] = back
         elif isinstance(operation, AssertFactOp):
             obj = operation.proposition.object
             after.facts[operation.id] = WorldFact(
@@ -510,6 +522,33 @@ def apply_operations(world: World, operations: Sequence[CanonOperation]) -> Worl
                 after.events[operation.id] = operation.when
         elif isinstance(operation, RetireEventOp):
             after.events.pop(operation.id, None)
+        elif isinstance(operation, MergeEntitiesOp):
+            # What names the merged entry names the kept one (backend/domain/merge.py).
+            merged, kept = operation.id, operation.into
+            gone = after.entries.pop(merged, None)
+            if gone is not None:
+                after.retired[merged] = gone
+
+            def swap(entry_id: str | None, merged: str = merged, kept: str = kept) -> str | None:
+                return kept if entry_id == merged else entry_id
+
+            for fact_id, fact in list(after.facts.items()):
+                if merged not in (fact.subject_id, fact.object_id):
+                    continue
+                if fact_id in operation.drop_facts:
+                    after.facts.pop(fact_id)
+                    continue
+                after.facts[fact_id] = replace(
+                    fact, subject_id=swap(fact.subject_id) or kept, object_id=swap(fact.object_id)
+                )
+            for belief_id, belief in list(after.beliefs.items()):
+                if merged in (belief.holder_id, belief.subject_id, belief.object_id):
+                    after.beliefs[belief_id] = replace(
+                        belief,
+                        holder_id=swap(belief.holder_id) or kept,
+                        subject_id=swap(belief.subject_id) or kept,
+                        object_id=swap(belief.object_id),
+                    )
     return after
 
 
@@ -959,6 +998,8 @@ _WORLD_CHANGES = (
     CreateEntityOp,
     UpdateEntityOp,
     RetireEntityOp,
+    RestoreEntityOp,
+    MergeEntitiesOp,
     AssertFactOp,
     AmendFactOp,
     CloseFactOp,
@@ -1011,7 +1052,17 @@ def affected_entries(
                 affected.add(fact.object_id)
 
     for operation in operations:
-        if isinstance(operation, (CreateEntityOp, UpdateEntityOp, RetireEntityOp)):
+        if isinstance(operation, MergeEntitiesOp):
+            for entry_id in (operation.id, operation.into):
+                affected.add(entry_id)
+                for index in (before_index, after_index):
+                    for fact in index.touching.get(entry_id, ()):
+                        ends(fact)
+                    for belief in index.believed_about.get(entry_id, ()):
+                        affected.add(belief.holder_id)
+        elif isinstance(
+            operation, (CreateEntityOp, UpdateEntityOp, RetireEntityOp, RestoreEntityOp)
+        ):
             affected.add(operation.id)
             for index in (before_index, after_index):
                 for fact in index.touching.get(operation.id, ()):

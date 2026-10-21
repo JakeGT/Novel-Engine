@@ -50,6 +50,15 @@ async def resolve_provider(
         provider = route.provider.id
         # The workspace's own choice of model, read by the gateway for this request.
         set_request_model(route.model)
+    else:
+        # A self-hosted copy uses the operator's model, unless the workspace chose a model
+        # on a computer it connected (SCN-002A).
+        device_route = getattr(credentials, "device_route", None)
+        route = await device_route(scope, workspace_id) if device_route is not None else None
+        if route is not None:
+            api_key, provider_base_url = route.api_key, route.provider.base_url
+            provider = route.provider.id
+            set_request_model(route.model)
 
     await usage.ensure_within_limits(
         workspace_id=workspace_id,

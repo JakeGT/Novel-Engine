@@ -101,7 +101,12 @@ def test_a_proposal_shows_what_depends_on_it_before_it_is_approved(auth_client, 
         "thread:Is Mara in the guild?",
         "rule:Guilds have members",
         "draft:The Docks",
+        # What a character knows of it (CON-017).
+        "belief:Tobin Ashe",
     }
+    assert affected["belief:Tobin Ashe"]["reasons"] == [
+        "Believes something about Mara: Mara is located at Saltmere"
+    ]
     assert affected["scene:The Docks"]["reasons"] == ["Mara is in it"]
     assert affected["scene:The Market"]["reasons"] == [
         "It shows the reader: Mara is a member of Harbor Guild"
@@ -125,7 +130,7 @@ def test_a_proposal_shows_what_depends_on_it_before_it_is_approved(auth_client, 
     gaps = " ".join(impact["not_checked"])
     assert "without a name or alias" in gaps
     assert "A scene condition written in your own words" in gaps
-    assert "Checks and notes in the scene studio" in gaps
+    assert "What the checks in the scene studio would find" in gaps
     # No model was asked to work any of this out.
     assert len(fake_container.ai.calls) == calls
 

@@ -13,6 +13,10 @@ const KIND: Record<ImpactDependent['kind'], string> = {
   thread: 'Thread',
   rule: 'Story rule',
   draft: 'Kept drafts',
+  belief: 'What they believe',
+  event: 'Event',
+  picture: 'Picture',
+  finding: 'In the studio',
   scene_text: 'Scene’s written text',
   text: 'Your writing',
 }
@@ -29,7 +33,15 @@ function where(projectId: string, item: ImpactDependent): string | null {
     case 'rule':
       return `/projects/${projectId}/rules`
     case 'draft':
+    case 'finding':
       return item.plan_id ? scenePath(projectId, item.plan_id) : null
+    case 'belief':
+      // The character who holds the beliefs: their entry lists what they believe.
+      return `/projects/${projectId}/entries/${encodeURIComponent(item.id)}`
+    case 'event':
+      return `/projects/${projectId}/timeline`
+    case 'picture':
+      return `/projects/${projectId}/pictures/${encodeURIComponent(item.id)}`
     case 'scene_text':
       if (!item.plan_id) return null
       return scenePath(
@@ -101,12 +113,12 @@ export function ImpactView({ impact, links = true }: { impact: Impact; links?: b
         <p>
           {impact.about.length === 0
             ? 'Every change is skipped, so nothing in your story is touched.'
-            : 'Nothing in your plan, story rules or kept drafts depends on it, and none of your writing names it.'}
+            : 'Nothing in your plan, story rules, kept drafts, beliefs, events, pictures or studio checks depends on it, and none of your writing names it.'}
         </p>
       )}
       <Dependents
         label="Affected"
-        hint="Your plan, rules or kept drafts name what changes."
+        hint="Your plan, rules, kept drafts, what characters believe, events, pictures or the studio’s checks name what changes."
         items={impact.affected}
         links={links}
       />
@@ -144,8 +156,9 @@ export function MutationImpact({ mutationId, version }: { mutationId: string; ve
         <div>
           <h2 id="impact-heading">What this change touches</h2>
           <p className="muted small">
-            Worked out from your plan, story rules, kept drafts and the names found in your writing,
-            for the changes you are keeping. The assistant is not asked.
+            Worked out from your plan, story rules, kept drafts, beliefs, events, pictures, the
+            studio’s checks and the names found in your writing, for the changes you are keeping.
+            The assistant is not asked.
           </p>
         </div>
       </div>

@@ -39,6 +39,7 @@ from backend.domain.canon.plans import (
     PlanRef,
 )
 from backend.domain.canon.revisions import OriginKind
+from backend.domain.conversations import quotes
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.journal import MutationSet
@@ -60,6 +61,7 @@ from backend.services.canon_character_workflow import (
 from backend.services.canon_creation_workflow import _QUESTION_ID, MAX_NAME_LENGTH
 from backend.services.canon_revise_workflow import CanonLinkWorkflow
 from backend.services.mutation_service import ValidationReport
+from backend.services.plan_drafts import DraftPlanEntry, DraftPlanItem, DraftPlanRef
 
 logger = logging.getLogger(__name__)
 
@@ -88,30 +90,6 @@ DEPTHS: dict[str, str] = {
         "view and a place only where the author has said them."
     ),
 }
-
-
-class DraftPlanRef(BaseModel):
-    ref: str = Field(description="The id of an existing entry, or the ref of a new one")
-    role: str = Field(description="One of: point_of_view, place, participant, about")
-
-
-class DraftPlanItem(BaseModel):
-    ref: str = Field(description="A short local handle for this item")
-    kind: str = Field(description="One of: story, arc, beat, scene, thread")
-    title: str
-    summary: str = Field(default="", description="What is meant to happen, in a sentence or two")
-    parent_ref: str | None = Field(
-        default=None, description="The id of an existing plan item, or the ref of a drafted one"
-    )
-    entries: list[DraftPlanRef] = Field(default_factory=list)
-    sets_up: list[str] = Field(default_factory=list, description="Threads this opens")
-    pays_off: list[str] = Field(default_factory=list, description="Threads this resolves")
-
-
-class DraftPlanEntry(BaseModel):
-    ref: str
-    type: str = Field(description="One of the allowed entry types")
-    name: str
 
 
 class PlanDraft(BaseModel):
@@ -144,6 +122,56 @@ class DirectionSheet(BaseModel):
 
 
 @dataclass(frozen=True)
+class Grounding:
+    """Whether one suggested part of the plan quotes the author's material (AST-EXP-013)."""
+
+    title: str
+    # The author's words it quotes, when they were found in what the assistant was given.
+    quote: str | None
+    grounded: bool
+
+
+def author_material(plan: list[PlanItem], entities: list[CanonEntity], *said: str) -> str:
+    """The author's own words a quote may come from (AST-EXP-013): what they said and
+    answered (``said``), the plan's cards (titles, summaries, details) and the entries'
+    names and notes. Never the listing the assistant was shown: the app wrote that
+    (its headings, its ids, how it phrases facts), so quoting it is not quoting the author.
+    """
+    parts = [text for text in said if text]
+    for item in plan:
+        parts.extend([item.title, item.summary, *item.details.values()])
+    for entity in entities:
+        parts.extend([entity.name, *entity.aliases])
+        parts.extend(value for value in entity.attributes.values() if isinstance(value, str))
+    # One line each, so a quote is never found across two of them.
+    return "\n".join(part.replace("\n", " ") for part in parts if part)
+
+
+def grounding_of(
+    draft: PlanDraft, operations: list[CanonOperation], material: str
+) -> list[Grounding]:
+    """For each part of the plan that would be added, whether it quotes the material
+    (the author's own words: ``author_material``).
+
+    A quote counts only when it is found, as written, in the author's material (spacing,
+    case and curly quotes aside); anything else is the assistant's own.
+    """
+    created = [op for op in operations if isinstance(op, CreatePlanItemOp)]
+    by_title: dict[tuple[str, str], DraftPlanItem] = {}
+    for item in draft.items:
+        by_title.setdefault((item.kind.strip().lower(), normalize_name(item.title)), item)
+    found: list[Grounding] = []
+    for op in created:
+        source = by_title.get((op.kind.value, normalize_name(op.title)))
+        quote = (source.quote.strip() if source is not None else "")[:300]
+        grounded = quotes(quote, material)
+        found.append(
+            Grounding(title=op.title, quote=quote if grounded else None, grounded=grounded)
+        )
+    return found
+
+
+@dataclass(frozen=True)
 class OfferedDirection:
     title: str
     what_happens: str
@@ -152,6 +180,8 @@ class OfferedDirection:
     adds: int
     # Sent back unchanged by the author who picks it; checked again when it is.
     draft: PlanDraft
+    # Which of its parts quote what the story already holds (AST-EXP-013).
+    grounding: list[Grounding] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -163,6 +193,16 @@ class PlanProposalResult:
     validation: ValidationReport
     notes: list[str] = field(default_factory=list)
     discarded: list[DiscardedItem] = field(default_factory=list)
+    # Each suggested part of the plan, and whether it quotes the author's material.
+    grounding: list[Grounding] = field(default_factory=list)
+
+    @property
+    def grounded(self) -> int:
+        return sum(1 for item in self.grounding if item.grounded)
+
+    @property
+    def invented(self) -> int:
+        return sum(1 for item in self.grounding if not item.grounded)
 
 
 def plan_operations(
@@ -449,11 +489,13 @@ class PlanWorkflow(CanonLinkWorkflow):
         session_id: str,
         expected_revision: int,
         reason: str,
+        material: str = "",
     ) -> PlanProposalResult:
         _predicates, entity_types = await self._vocabulary(workspace_id, project_id)
         operations, discarded = plan_operations(
             draft, plan=plan, entities=entities, entity_types=entity_types, session_id=session_id
         )
+        grounding = grounding_of(draft, operations, material)
         if not any(isinstance(operation, CreatePlanItemOp) for operation in operations):
             raise ValidationError(
                 "Nothing could be added to the plan from that. It may already be planned, or "
@@ -481,6 +523,8 @@ class PlanWorkflow(CanonLinkWorkflow):
             mutation_id=mutation.id,
             operations=len(operations),
             discarded=len(discarded),
+            grounded=sum(1 for item in grounding if item.grounded),
+            invented=sum(1 for item in grounding if not item.grounded),
         )
         return PlanProposalResult(
             session_id=session_id,
@@ -491,6 +535,7 @@ class PlanWorkflow(CanonLinkWorkflow):
             # What the author has not decided is said, never filled in.
             notes=[f"Left open: {gap.strip()[:300]}" for gap in draft.gaps if gap.strip()][:12],
             discarded=discarded,
+            grounding=grounding,
         )
 
     async def plan_proposal(
@@ -536,6 +581,9 @@ class PlanWorkflow(CanonLinkWorkflow):
             session_id=session_id or f"pnv_{uuid7()}",
             expected_revision=expected_revision,
             reason="planned by conversation, awaiting review",
+            material=author_material(
+                plan, entities, description, *(answer.answer for answer in answered)
+            ),
         )
 
     async def plan_directions(
@@ -582,6 +630,7 @@ class PlanWorkflow(CanonLinkWorkflow):
             # A direction that would add nothing usable is not offered.
             if not direction.title.strip() or adds == 0:
                 continue
+            grounding = grounding_of(draft, operations, author_material(plan, entities))
             offered.append(
                 OfferedDirection(
                     title=direction.title.strip()[:200],
@@ -593,6 +642,7 @@ class PlanWorkflow(CanonLinkWorkflow):
                     ][:6],
                     adds=len(operations),
                     draft=draft,
+                    grounding=grounding,
                 )
             )
         if not offered:
@@ -628,6 +678,8 @@ class PlanWorkflow(CanonLinkWorkflow):
             session_id=f"pdr_{uuid7()}",
             expected_revision=expected_revision,
             reason="a direction the author picked, awaiting review",
+            # A quote sent back is checked again against the author's words as they are now.
+            material=author_material(plan, entities),
         )
 
 
@@ -676,6 +728,9 @@ def plan_draft_messages(
         "refer to it by its ref. Do not describe it.\n"
         "- when something sets up a question or a promise, draft a thread for it "
         "and list it in sets_up; list it in pays_off where it is answered.\n"
+        "- in each item's `quote`, copy exactly the author's words it comes from (from "
+        "what they said, their answers or the story bible); leave it empty when the item "
+        "is your own suggestion. Never make a quote up.\n"
         "- `understood` restates what is being planned in one plain sentence.\n" + DEPTHS[depth]
     )
     user = (
@@ -703,6 +758,8 @@ def plan_next_messages(context: str, entity_types: set[str]) -> Messages:
         "place, participant, about.\n"
         "- if a direction needs someone or somewhere new, add it to that "
         f"direction's new_entries with a type from {sorted(entity_types)}.\n"
+        "- in each item's `quote`, copy exactly the words of the story bible or the plan "
+        "it builds on; leave it empty when it is new. Never make a quote up.\n"
         "- do not contradict anything recorded as fact."
     )
     user = context
@@ -715,12 +772,15 @@ __all__ = [
     "Direction",
     "DirectionSheet",
     "DraftPlanEntry",
+    "Grounding",
     "DraftPlanItem",
     "DraftPlanRef",
     "OfferedDirection",
     "PlanDraft",
     "PlanProposalResult",
     "PlanWorkflow",
+    "author_material",
+    "grounding_of",
     "plan_draft_messages",
     "plan_next_messages",
     "plan_operations",

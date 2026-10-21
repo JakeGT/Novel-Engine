@@ -222,6 +222,87 @@ list is kept, so nothing is estimated in money and thresholds are in tokens.
   the partial result its handler recorded (`JobContext.partial`). The checks that need no model are
   worked out when the results are read, for free; an audit with no passes calls no model at all.
 
+## Amendment 2026-10-21: voice, correction plans, scheduled audits, a what-if's differences, proposals from findings (CON-018, CON-011, CON-010, CON-017)
+
+Batch 8, area C. Everything below ran against the in-memory stores, PostgreSQL, the scripted
+model and the local stand-in only; no real model's output was measured.
+
+**Voice in numbers, no model (CON-018).** `backend/domain/voice.py` measures a text: sentence
+length (mean, middle, long end, spread, and bands as a writing tool's length graph shows them),
+dialogue share (curly, straight and guillemet quotes; curly single quotes only at a word's edge,
+so apostrophes stay words), words ending in -ly in the narration (with a list of words that only
+look like adverbs), echoes (a content word three or more times within 50 words, as ProWritingAid's
+"echoes" report flags close repeats), words a scene leans on far more than the book, who tells it
+("I" or "he/she" in the narration; dialogue is masked out, which also settles the "I in dialogue"
+problem the evaluation found earlier) and tense (a subject pronoun and the verb after it). The
+author's **usual** is the same measures over their other scenes (`voice_service.py`): by default
+the scenes whose newest version they wrote themselves, so kept drafts from the assistant do not
+set the bar while there are enough of the author's own; the author can leave a scene out (a
+letter, a dream; `voice_baselines`, carried by the archive). A scene is compared with the usual
+made from the *other* scenes. A measure drifts only when its **modified z-score** (median and
+median absolute deviation, Iglewicz and Hoaglin, as the NIST handbook recommends, cut-off 3.5) is
+far out *and* the difference is large enough to read (for example four words of sentence length,
+fifteen points of dialogue). The mix of about sixty everyday words is compared with **Burrows's
+Delta** (mean absolute z-score of the most frequent words, leave-one-out against the usual) and
+is said to be a rough sign below a few thousand words, since stylometry finds about 2,000-5,000
+words the least for a reliable reading (Eder). Gates: 300 words a scene, three scenes and 2,000
+words for the usual, 1,500 words and five scenes for Delta; English-only measures are skipped for
+other languages. Results are notes in the studio's margin ("How it sounds"), never errors, and
+never part of the incremental checks' cache, because they depend on other scenes.
+
+**Correction plans (CON-011).** From a finished audit, "Plan the corrections" is one job, its
+cost shown first and confirmed above the threshold like any request (`correction_plans.py`,
+prompt `plan-corrections/1`). The assistant is given the audit's findings with handles (S2, N5,
+C3, P1), fenced as material, never a whole scene; a step is kept only if it names a scene the
+audit read and cites a finding it was given. The plan is a list to keep or skip; nothing in the
+story changes and no prose is written. A plan does keep some of the story: each step's scene
+title and the words of the findings it cites (quoting up to 160 characters of the scene), so it
+is deleted with the story, never logged and not archived. A step's decision is set in place
+with one `jsonb_set`, so two decisions made at once both stand.
+
+**Scheduled audits (CON-011).** `audit_schedules` holds the author's opt-in: part, passes, every
+1-90 days and the most one run may use. The job runner gained a small periodic hook
+(`JobRunner.every`) run by the clock between jobs, busy or not, with at most five schedules
+started per look; due schedules are claimed with an `UPDATE ... FROM (SELECT
+... FOR UPDATE SKIP LOCKED)` that moves `next_run_at` on in the same statement, so two servers
+never start the same run, and an unrecorded claim comes due again after 30 minutes. A run is the
+author's own audit, checked again for access, the part and the what-if still existing, the most
+they set (which stands for their confirmation, and is itself confirmed when the schedule is set
+up, and is a hard limit while the audit runs: it stops, keeping what it finished, once a scene
+planned again takes it above that), the story's threshold, a provider, their allowance and the
+three-job cap; inputs unchanged since the last audit that succeeded (a digest of the exact
+versions and passes) skip the run. The audit's idempotency key is the schedule and the run
+after the last one recorded, so a claim taken again after a stop reuses the audit it started. Schedules are not archived or forked:
+a restored or forked story never starts spending on its own.
+
+**A what-if's differences (CON-011).** `what_if_audit.py` compares both lines as they stand: the
+story bible (entries, facts, events), the plan, scenes whose words differ (with the what-if
+version's voice), and continuity findings and plan problems found in one and not the other. It is
+the content-level complement to the existing change-log comparison used for bringing changes back.
+
+**Relationship drift over a range (CON-011).** `backend/domain/drift.py`: for each pair of
+characters across the audit's scenes, a change in what the story bible says holds between them
+while they are apart, and a pair that stops sharing scenes for about an act while a relationship
+still holds. How they *feel* in the prose needs a model and is not read.
+
+**Proposals from findings, and why there is no agent patch (CON-010).** "Settle it in the story
+bible…" offers "Make this true in the story" (add what the passage says) and "Change the story
+bible instead" (end or change the records the finding is about). The finding is looked up again
+on the server and fenced; the God Hand drafts the change and it waits in review with the model as
+its origin. There is deliberately no "rewrite this passage for me": the author's prose is the
+evidence the checks read and the thing the product protects, and a controlled study found that
+AI writing suggestions pull writers toward the model's own style (Agarwal, Naaman and Vashistha,
+2025). plan/13 already says agent corrections must never overwrite accepted prose; a correction
+plan says *what* to change and the author words it.
+
+**Wider impact (CON-017).** "What this change touches" now also lists what characters believe or
+know (beliefs held by or about a changed entry, and beliefs matching a changed fact), events a
+changed entry takes part in or happens at (and events the change itself moves or removes),
+pictures linked to a changed entry, and checks and notes in the studio whose words name a changed
+entry (from each scene's newest kept check run and the assistant's notes on its saved words). The
+"not checked" list still says what the checks would find after the change and who learns what
+from whom are not worked out.
+
 ## Known limits
 
 - The per-job token limit is checked for each call (with the estimate of what remains), not against
@@ -251,3 +332,9 @@ scheduling; notifying the author when a job finishes beyond the studio polling i
 - Liu et al., "Lost in the Middle: How Language Models Use Long Contexts", TACL 2024.
 - OpenRouter usage accounting (`usage.cost`, always included): <https://openrouter.ai/docs/use-cases/usage-accounting>
 - Estimating a request before sending it, and asking above a soft threshold: <https://www.yottalabs.ai/post/estimate-llm-request-cost-before-sending>
+- NIST/SEMATECH e-Handbook, detection of outliers (modified z-score, 3.5): <https://itl.nist.gov/div898/handbook/eda/section3/eda35h.htm>
+- Burrows's Delta explained (Evert et al., "Understanding and explaining Delta measures", DSH 2017): <https://www.doi.org/10.1093/LLC/FQX023>; Stein and Argamon, a mathematical explanation: <https://dh-abstracts.library.virginia.edu/works/639>
+- Eder, "Does size matter? Authorship attribution, small samples, big problem" (DSH 2015), as summarised in his DH2017 abstract: <https://dh2017.adho.org/abstracts/341/341.pdf> and DH2010: <https://dh2010.cch.kcl.ac.uk/academic-programme/abstracts/papers/html/ab-744.html>
+- ProWritingAid's repeats/echoes and sentence length reports: <https://prowritingaid.com/art/1067/using-prowritingaid-for-deep-edits.aspx>
+- Agarwal, Naaman, Vashistha, "AI Suggestions Homogenize Writing Toward Western Styles and Diminish Cultural Nuances": <https://arxiv.org/abs/2409.11360v2>
+- Claiming due rows in one statement with `SKIP LOCKED`: <https://www.netdata.cloud/academy/update-skip-locked/>

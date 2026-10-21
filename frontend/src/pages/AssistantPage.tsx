@@ -1,6 +1,7 @@
 import { AllowanceCard } from '../components/Allowance'
 import { SpendingCard, WorkspaceLimitsCard } from '../components/AssistantSpending'
 import { WorkspaceKeptCard } from '../components/KeptForYou'
+import { MyComputerCard } from '../components/MyComputer'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { api, isApiError, type AiChoice, type AiProvider } from '../api/client'
@@ -182,7 +183,9 @@ export function AssistantPage() {
   const [secret, setSecret] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
   const picked = catalogue.find((item) => item.id === provider)
-  const providerLabel = (id: string) => catalogue.find((item) => item.id === id)?.label ?? id
+  const providerLabel = (id: string) =>
+    id === 'my_computer' ? 'your own computer' : (catalogue.find((item) => item.id === id)?.label ?? id)
+  const onComputer = choice.data?.provider === 'my_computer'
 
   const refresh = () =>
     Promise.all([
@@ -226,8 +229,9 @@ export function AssistantPage() {
         <div className="section-gap">
           <EmptyState icon="spark" title="Set up on this computer">
             On a self-hosted copy, the AI assistant is configured by whoever runs the server, not
-            from this page.
+            from this page, unless you connect a model on your own computer below.
           </EmptyState>
+          <MyComputerCard workspaceId={null} />
           <SpendingCard />
         </div>
       </>
@@ -275,7 +279,7 @@ export function AssistantPage() {
 
         {credentials.isSuccess && providers.isSuccess && (
           <>
-            {choice.isSuccess && choice.data.provider && connected.length > 0 && (
+            {choice.isSuccess && choice.data.provider && !onComputer && connected.length > 0 && (
               <ModelInUse
                 // Start again from what is saved whenever that changes.
                 key={`${choice.data.provider}:${choice.data.model}:${connected.join(',')}`}
@@ -285,6 +289,8 @@ export function AssistantPage() {
                 choice={choice.data}
               />
             )}
+
+            <MyComputerCard workspaceId={workspaceId} />
 
             {connected.length > 0 && workspaceId && <AllowanceCard workspaceId={workspaceId} />}
             {connected.length > 0 && workspaceId && <WorkspaceLimitsCard workspaceId={workspaceId} />}

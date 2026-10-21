@@ -65,6 +65,10 @@ class ReadPassageModel(BaseModel):
     # scene's reading only); they wait for review with the rest (EXT-001).
     events: int = 0
     thread_steps: int = 0
+    # How many are changes of state (a thing held or lost, a place reached or left, a
+    # status or a relationship beginning or ending), and new threads a scene opens.
+    state_changes: int = 0
+    new_threads: int = 0
     # What part of the story bible the assistant was shown (CTX-002).
     context: ContextUsedModel | None = None
     # The longest stretch read in one go.
@@ -156,5 +160,7 @@ async def read_passage_with_assistant(
         ],
         events=result.events,
         thread_steps=result.thread_steps,
+        state_changes=result.state_changes,
+        new_threads=result.new_threads,
         context=context_used(result.context),
     )

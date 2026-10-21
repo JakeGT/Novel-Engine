@@ -8,9 +8,12 @@ import {
   type MutationDetail as Detail,
   type MutationOperation,
   type MutationValidation,
+  type PlanGrounding,
   type WorldTime,
 } from '../api/client'
 import { AskForChanges } from '../components/AskForChanges'
+import { MergeWhat } from '../components/MergeDialog'
+import { GroundingList } from '../components/SuggestionRecord'
 import { FromText } from '../components/FromText'
 import { ChangeEditor, type Candidate } from '../components/ChangeEditor'
 import { MutationImpact } from '../components/ChangeImpact'
@@ -75,7 +78,10 @@ const GROUPS: { label: string; one: string; types: string[] }[] = [
   { label: 'Events', one: 'event', types: ['create_event', 'amend_event', 'retire_event'] },
   // What the author means to happen. Kept as its own group: it is not part of the story bible.
   { label: 'Story plan', one: 'part of the plan', types: ['create_plan_item', 'update_plan_item', 'retire_plan_item'] },
+  // A merge is one change: what it moves is shown with it, worked out from the story now.
+  { label: 'Merged', one: 'merge', types: ['merge_entities'] },
   { label: 'Archived', one: 'archived', types: ['retire_entity'] },
+  { label: 'Brought back', one: 'entry brought back', types: ['restore_entity'] },
 ]
 
 function groupOperations(
@@ -303,6 +309,8 @@ function fieldRows(
   describeTime: (value: WorldTime) => string = (value) => JSON.stringify(value),
 ): Row[] {
   if (PLAN_OPERATIONS.has(operation.operation_type)) return planRows(operation, names)
+  // A merge says what it does in sentences (MergeWhat), not field by field.
+  if (operation.operation_type === 'merge_entities') return []
   const before = operation.target_before ?? null
   return Object.entries(operation.payload)
     .filter(([key, value]) => !HIDDEN_KEYS.has(key) && value !== null && value !== undefined)
@@ -477,6 +485,10 @@ function ChangeCard({
 
       <ChangeIssues issues={issues} reviewed={reviewed} editable={editable} />
 
+      {operation.operation_type === 'merge_entities' && (
+        <MergeWhat payload={operation.payload} open={editable} />
+      )}
+
       <FromText evidence={(operation.payload as { evidence?: { source_artefact_id: string; location?: string | null }[] }).evidence} />
 
       {form && (
@@ -597,6 +609,8 @@ export function ReviewDetail() {
     understood?: string
     notes?: string[]
     discarded?: { kind: string; reason: string }[]
+    /** Plan suggestions: whether each part quotes the author's words (AST-EXP-013). */
+    grounding?: PlanGrounding[]
   }
 
   const detail = useQuery({
@@ -797,6 +811,7 @@ export function ReviewDetail() {
                 )}
               </div>
             )}
+            {(arrival.grounding ?? []).length > 0 && <GroundingList items={arrival.grounding ?? []} />}
             {leftOut.length > 0 && (
               <details className="more">
                 <summary>

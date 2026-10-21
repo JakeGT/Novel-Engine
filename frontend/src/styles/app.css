@@ -4401,7 +4401,8 @@ textarea.mono {
   font-weight: 600;
 }
 /* How a long scene's check was sent in groups (CON-013), and how often each check is dismissed. */
-.run-coverage ul {
+.run-coverage ul,
+.run-pictures ul {
   margin: 0.25rem 0 0;
   padding-left: 1.1rem;
 }
@@ -4500,4 +4501,395 @@ textarea.mono {
   .scale-table td { border: 0; padding: 0.1rem 0; }
   .scale-table td:nth-of-type(1)::before { content: 'Starts: '; color: var(--ink-3); }
   .scale-table td:nth-of-type(3)::before { content: 'Ends: '; color: var(--ink-3); }
+}
+
+/* A model on the author's own computer (SCN-002A). */
+.computer-steps {
+  margin: 0.75rem 0 1rem;
+  padding-left: 1.25rem;
+  list-style: decimal;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.computer-command {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.4rem 0 0.25rem;
+}
+
+.computer-command code {
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.computer-code {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.computer-code .field {
+  flex: 0 1 14rem;
+  margin: 0;
+}
+
+.computer-confirm {
+  margin-top: 1rem;
+}
+
+.computer-meta {
+  display: block;
+}
+
+.row.computer-row {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+/* On a phone, Disconnect drops below the computer's controls, away from them. */
+.row.computer-row > .grow {
+  flex: 1 1 16rem;
+}
+
+.computer-use {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.computer-use .field {
+  flex: 0 1 18rem;
+  margin: 0;
+}
+
+.computer-stopped {
+  margin-top: 0.75rem;
+}
+
+.computer-stopped summary {
+  cursor: pointer;
+  min-height: 24px;
+}
+
+/* ------------------------------ voice, settling findings, audits (CON-018/010/011) --- */
+.finding-settle {
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  color: var(--ink-2);
+  min-height: 24px;
+}
+
+.settle-form {
+  justify-self: stretch;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+}
+
+.settle-form .segmented {
+  flex-wrap: wrap;
+  justify-self: start;
+}
+
+.settle-form .segmented button {
+  padding: 0.2rem 0.65rem;
+}
+
+.finding.note {
+  border-left-color: var(--line-strong);
+}
+
+.hint.block {
+  display: block;
+}
+
+.voice-subtitle {
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin: 0;
+}
+
+.voice-measures {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-measures th,
+.voice-measures td {
+  text-align: left;
+  padding: 0.25rem 0.5rem 0.25rem 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.voice-measures thead th {
+  font-weight: 600;
+  color: var(--ink-2);
+  font-size: 0.8rem;
+}
+
+.voice-measures tbody th {
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.voice-echoes,
+.voice-bands {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.25rem;
+  font-family: var(--font-ui);
+}
+
+.voice-bands li {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-band-bar {
+  height: 0.55rem;
+  background: var(--surface-3);
+  border-radius: var(--radius-s);
+  overflow: hidden;
+}
+
+.voice-band-bar span {
+  display: block;
+  height: 100%;
+  background: var(--ink-3);
+}
+
+.voice-band-count {
+  color: var(--ink-2);
+}
+
+.audit-extra {
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.audit-extra > h2 {
+  font-size: 1.15rem;
+  margin: 0;
+}
+
+.drift-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-ui);
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.drift-table th,
+.drift-table td {
+  text-align: left;
+  padding: 0.35rem 0.6rem 0.35rem 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.drift-table thead th {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.correction-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.correction-step {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+}
+
+.correction-step.skipped {
+  opacity: 0.72;
+  border-style: dashed;
+}
+
+.correction-step .cites {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--ink-2);
+}
+
+.schedule-form {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  align-items: end;
+}
+
+.difference-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+  font-family: var(--font-ui);
+  font-size: 0.9rem;
+}
+
+.difference-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.6rem;
+  align-items: baseline;
+}
+
+/* Batch 8 B: merging entries, the kept conversation with the assistant, starting from a
+   premise, and the record of how suggestions fared (AST-EXP-005, -007, -013, -017). */
+.choice-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.15rem;
+  max-height: 17rem;
+  overflow-y: auto;
+}
+
+.choice-list li {
+  padding: 0.4rem 0.55rem;
+  border-radius: var(--radius-m);
+}
+
+.choice-list li:has(input:checked) {
+  background: var(--accent-soft);
+}
+
+.plain-list {
+  margin: 0.25rem 0 0;
+  padding-left: 1.15rem;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.merge-preview .props {
+  margin: 0;
+}
+
+.thread {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.turn {
+  padding: 0.55rem 0.8rem;
+  border-radius: var(--radius-l);
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.turn.author {
+  background: var(--surface-2);
+  margin-left: min(3rem, 8%);
+}
+
+.turn.assistant {
+  margin-right: min(3rem, 8%);
+}
+
+.turn .who {
+  display: block;
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  font-weight: 650;
+  color: var(--ink-3);
+  margin-bottom: 0.15rem;
+}
+
+.turn p {
+  margin: 0;
+}
+
+.turn ul {
+  margin: 0.3rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.thread-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.premise-questions {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.run-records {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+  font-family: var(--font-ui);
+  font-size: 0.88rem;
+}
+
+.run-records li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.6rem;
+  align-items: baseline;
+}
+
+.grounding {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.grounding li {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.grounding q {
+  font-style: italic;
+  color: var(--ink-2);
 }

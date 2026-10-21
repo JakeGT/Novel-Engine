@@ -456,6 +456,11 @@ class AIUnsupportedInputError(AIError):
     too many or too large pictures). Raised before anything is sent or spent."""
 
 
+class AIDeviceUnavailableError(AIProviderError):
+    """The person's own computer did not answer (SCN-002A): offline, disconnected, or too
+    slow. Its message is written here in plain words and is safe to show."""
+
+
 @runtime_checkable
 class AIGateway(Protocol):
     def is_available(self) -> bool: ...
@@ -1595,3 +1600,88 @@ class AccessKeyStorePort(Protocol):
     async def delete_workspace(self, workspace_id: str) -> int: ...
 
     async def delete_project(self, workspace_id: str, project_id: str) -> int: ...
+
+
+@runtime_checkable
+class ConnectorStorePort(Protocol):
+    """Computers connected to a workspace, codes waiting to be confirmed, and the queue of
+    model requests for each computer (SCN-002A, ADR-025). Only credential digests are
+    stored; a request's words are cleared as soon as its answer has been read."""
+
+    async def add_code(self, code: Any) -> bool:
+        """Store a new registration code; False when its user code is already taken."""
+        ...
+
+    async def code_by_device_hash(self, device_code_hash: str) -> Any | None: ...
+
+    async def code_by_user_code(self, user_code: str) -> Any | None: ...
+
+    async def decide_code(
+        self, *, user_code: str, approve: bool, workspace_id: str, decided_by: str, at: datetime
+    ) -> Any | None:
+        """Approve or deny a pending, unexpired code; None when there is no such code."""
+        ...
+
+    async def touch_code(self, *, device_code_hash: str, at: datetime, interval: int) -> None: ...
+
+    async def issue_code(self, *, device_code_hash: str, device: Any) -> bool:
+        """Mark an approved code used and create its device, at once; False if not approved."""
+        ...
+
+    async def device(self, device_id: str) -> Any | None: ...
+
+    async def device_by_credential(self, credential_hash: str) -> Any | None: ...
+
+    async def devices(self, workspace_id: str) -> list[Any]: ...
+
+    async def seen(
+        self, *, device_id: str, at: datetime, version: str, capabilities: dict | None
+    ) -> None: ...
+
+    async def rotate(
+        self,
+        *,
+        device_id: str,
+        expected_hash: str,
+        new_hash: str,
+        previous_hash: str,
+        at: datetime,
+        grace_until: datetime,
+    ) -> bool:
+        """Replace the credential when the current one is still ``expected_hash``."""
+        ...
+
+    async def revoke(
+        self, *, workspace_id: str, device_id: str, reason: str, by: str | None, at: datetime
+    ) -> Any | None: ...
+
+    async def set_in_use(self, *, workspace_id: str, device_id: str | None) -> None: ...
+
+    async def in_use(self, workspace_id: str) -> Any | None: ...
+
+    async def enqueue(self, request: Any) -> None: ...
+
+    async def take_next(self, *, device_id: str, at: datetime) -> Any | None: ...
+
+    async def request(self, request_id: str) -> Any | None: ...
+
+    async def answer(
+        self,
+        *,
+        device_id: str,
+        request_id: str,
+        status: str,
+        result: dict | None,
+        result_status: int | None,
+        failure: str | None,
+        model: str | None,
+        prompt_tokens: int | None,
+        completion_tokens: int | None,
+        at: datetime,
+    ) -> bool: ...
+
+    async def close(self, *, request_id: str, failure: str | None, at: datetime) -> None:
+        """Clear a request's words and answer; a request still open becomes expired."""
+        ...
+
+    async def delete_workspace(self, workspace_id: str) -> int: ...

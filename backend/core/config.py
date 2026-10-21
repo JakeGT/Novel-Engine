@@ -108,6 +108,10 @@ class Settings(BaseSettings):
     MEDIA_WORKER_MEMORY_BYTES: int = 1024 * 1024 * 1024
     MEDIA_WORKER_CPU_SECONDS: int = 20
     MEDIA_WORKER_TIMEOUT_SECONDS: float = 30.0
+    # The worker's sandbox beyond those limits (Landlock, seccomp, its own network):
+    # "best" uses what this machine has, "require" prepares no picture without
+    # Landlock and seccomp, "off" applies none. See plan/runbooks/media-processing.md.
+    MEDIA_WORKER_SANDBOX: Literal["best", "require", "off"] = "best"
     # How many pictures are decoded at once in one API/worker process.
     MEDIA_WORKER_CONCURRENCY: int = 2
     # Everything a workspace stores (pictures and their smaller copies); 0 means no limit.
@@ -155,6 +159,9 @@ class Settings(BaseSettings):
     PROVIDER_PERIOD_TOKEN_LIMIT: int = 2_000_000
     PROVIDER_PERIOD_COST_LIMIT: float = 0.0
     PROVIDER_PERIOD_SECONDS: int = 60 * 60 * 24
+    # How long a request may run on an author's own computer before the site stops waiting
+    # (SCN-002A). Local models can be slow; ten minutes unless the operator says otherwise.
+    CONNECTOR_ANSWER_SECONDS: int = 600
 
     @property
     def is_production(self) -> bool:
@@ -186,16 +193,29 @@ class Settings(BaseSettings):
 
     @property
     def previous_credential_keks(self) -> dict[int, str]:
+        """``CREDENTIAL_PREVIOUS_KEKS`` as {version: key}. An entry that is not
+        ``version:key`` with a whole positive version and a key, or that lists a version
+        twice with different keys, is refused (``ValueError``) rather than dropped: a
+        dropped key leaves every stored key on that version unopenable. The message names
+        the entry's place in the list (1 for the first), never what it holds."""
         keys: dict[int, str] = {}
-        for pair in self.CREDENTIAL_PREVIOUS_KEKS.split(","):
+        for position, pair in enumerate(self.CREDENTIAL_PREVIOUS_KEKS.split(","), start=1):
             entry = pair.strip()
-            if not entry or ":" not in entry:
-                continue
-            version, _, kek = entry.partition(":")
-            try:
-                keys[int(version.strip())] = kek.strip()
-            except ValueError:
-                continue
+            if not entry:
+                continue  # an empty place, such as a trailing comma
+            version, colon, kek = entry.partition(":")
+            version, kek = version.strip(), kek.strip()
+            if not colon or not version.isdigit() or int(version) < 1 or not kek:
+                raise ValueError(
+                    f"Entry {position} of CREDENTIAL_PREVIOUS_KEKS is not in the form "
+                    "version:key (a whole number from 1, a colon, then the key)."
+                )
+            if keys.get(int(version), kek) != kek:
+                raise ValueError(
+                    f"Entry {position} of CREDENTIAL_PREVIOUS_KEKS lists version {int(version)} "
+                    "again with a different key. Give each older key its own version."
+                )
+            keys[int(version)] = kek
         return keys
 
     def _postgres_dsn(self, scheme: str) -> str:

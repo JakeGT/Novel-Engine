@@ -42,10 +42,13 @@ DAILY_LIMIT = 50
 
 # How a suggestion reached the story. ``session``: the author asked the assistant in the
 # app. ``client``: another assistant connected with an access key (QRY-003). ``text``: facts
-# read from a text the author added. Only ``session`` can be kept; ``client`` never is.
+# read from a text the author added. ``premise``: entries suggested from the author's
+# premise, the start of the story, which the author always reviews (AST-EXP-005). Only
+# ``session`` can be kept; ``client`` and ``premise`` never are.
 VIA_SESSION = "session"
 VIA_CLIENT = "client"
 VIA_TEXT = "text"
+VIA_PREMISE = "premise"
 
 # How a suggestion was decided, as ``delegation_records.how`` says it.
 HOW_BY_HAND = "by_hand"
@@ -84,6 +87,8 @@ KIND_DESCRIPTIONS: dict[str, str] = {
 NEVER_KEPT_WORDS: dict[str, str] = {
     "update_entity": "a change to an entry's name or to details it already has",
     "retire_entity": "archiving an entry",
+    "merge_entities": "merging two entries",
+    "restore_entity": "bringing back an archived entry",
     "close_fact": "ending a fact",
     "amend_fact": "changing when a fact is true or who may know it",
     "assert_belief": "what a character believes",
@@ -332,6 +337,11 @@ def decide(
         return Refusal("revert", "It undoes earlier changes, so it waits for you.")
     if proposal.via == VIA_TEXT:
         return Refusal("text", "It was read from a text you added, so it waits for you.")
+    if proposal.via == VIA_PREMISE:
+        return Refusal(
+            "premise",
+            "It was suggested from your premise, the start of your story: it waits for you.",
+        )
     if proposal.via != VIA_SESSION:
         # Connected assistants only ever suggest (QRY-003, ADR-024): never kept for you.
         return Refusal(
@@ -399,6 +409,7 @@ __all__ = [
     "KIND_NAMES",
     "SIZE_LIMIT",
     "VIA_CLIENT",
+    "VIA_PREMISE",
     "VIA_SESSION",
     "DelegationKind",
     "DelegationSettings",

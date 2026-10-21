@@ -54,3 +54,16 @@ async def test_concurrent_allows_respect_limit(limiter) -> None:
         *(rate_limiter.allow("accept:contended", limit=1, window_seconds=60) for _ in range(5))
     )
     assert sum(results) == 1
+
+
+@pytest.mark.asyncio
+async def test_exhausted_says_whether_the_budget_is_used_without_using_any(limiter) -> None:
+    rate_limiter, _engine = limiter
+
+    assert await rate_limiter.exhausted("wrong:user-9", limit=2, window_seconds=60) is False
+    assert await rate_limiter.allow("wrong:user-9", limit=2, window_seconds=60) is True
+    # Asking never counts as a try.
+    for _ in range(3):
+        assert await rate_limiter.exhausted("wrong:user-9", limit=2, window_seconds=60) is False
+    assert await rate_limiter.allow("wrong:user-9", limit=2, window_seconds=60) is True
+    assert await rate_limiter.exhausted("wrong:user-9", limit=2, window_seconds=60) is True

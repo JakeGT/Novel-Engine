@@ -20,7 +20,7 @@ from backend.domain.canon.ids import format_canon_id
 from backend.domain.canon.registry import CORE_ENTITY_TYPES, CORE_PREDICATES
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
-from backend.domain.operations import CanonOperation
+from backend.domain.operations import CanonOperation, RestoreEntityOp
 from backend.domain.rules import (
     MAX_EXAMPLES,
     MAX_RULES,
@@ -422,6 +422,16 @@ class RuleService:
         if not rules:
             return []
         before, complete = await self._world_for(context, rules)
+        # An entry brought back (undoing a merge) is read so the rules see it again.
+        for operation in operations:
+            if (
+                isinstance(operation, RestoreEntityOp)
+                and operation.id not in before.entries
+                and operation.id not in before.retired
+            ):
+                restored = await context.reader.get_entity(operation.id)
+                if restored is not None:
+                    before.retired.update(world_from_canon([restored], []).retired)
         after = apply_operations(before, operations)
         # Every entry, not a shown handful: a rule blocks only on the whole answer.
         # Entries these changes cannot reach keep their standing, so only the

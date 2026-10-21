@@ -73,6 +73,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ai/connector/codes/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check Code */
+        post: operations["check_code_api_v1_ai_connector_codes_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/connector/codes/decide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decide Code */
+        post: operations["decide_code_api_v1_ai_connector_codes_decide_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/connector/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Devices */
+        get: operations["list_devices_api_v1_ai_connector_devices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/connector/devices/{device_id}/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disconnect Device */
+        post: operations["disconnect_device_api_v1_ai_connector_devices__device_id__disconnect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/connector/devices/{device_id}/use": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Use Device */
+        post: operations["use_device_api_v1_ai_connector_devices__device_id__use_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/connector/use": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Stop Using */
+        delete: operations["stop_using_api_v1_ai_connector_use_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ai/kept-for-you": {
         parameters: {
             query?: never;
@@ -256,6 +358,111 @@ export interface paths {
          *     generic graph, so hosted deployments must use the canonical proposal workflow.
          */
         post: operations["character_process_answers_api_v1_characters_process_answers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connector/codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Code */
+        post: operations["start_code_api_v1_connector_codes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connector/poll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Poll */
+        post: operations["poll_api_v1_connector_poll_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connector/requests/{request_id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Answer */
+        post: operations["answer_api_v1_connector_requests__request_id__answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connector/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rotate */
+        post: operations["rotate_api_v1_connector_rotate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connector/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Exchange Code */
+        post: operations["exchange_code_api_v1_connector_token_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connector/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Connector Version
+         * @description Which connector versions this site works with. Nothing is ever downloaded.
+         */
+        get: operations["connector_version_api_v1_connector_version_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1139,6 +1346,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/assist/premise": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Premise Round
+         * @description One round of starting from a premise: open questions, and entries to review.
+         */
+        post: operations["premise_round_api_v1_projects__project_id__assist_premise_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/assist/proposals": {
         parameters: {
             query?: never;
@@ -1210,6 +1437,26 @@ export interface paths {
          * @description Draft a rule from a sentence. Keeps nothing: the author decides whether to add it.
          */
         post: operations["draft_rule_api_v1_projects__project_id__assist_rules_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/assist/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Runs
+         * @description Recent runs of suggestions, newest first, each with what became of it.
+         */
+        get: operations["list_runs_api_v1_projects__project_id__assist_runs_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1334,6 +1581,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/assist/threads/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Thread
+         * @description The caller's own kept conversation of this kind, in the line they work in.
+         */
+        get: operations["get_thread_api_v1_projects__project_id__assist_threads__kind__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Clear Thread
+         * @description Erase the caller's kept conversation and start again. Suggested changes it led to
+         *     stay in review, and saved ones stay in the story; the words its conversations kept
+         *     (the premise, the instructions, the answers) are erased with it.
+         */
+        delete: operations["clear_thread_api_v1_projects__project_id__assist_threads__kind__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/assistant-settings": {
         parameters: {
             query?: never;
@@ -1350,6 +1623,51 @@ export interface paths {
         put: operations["set_story_settings_api_v1_projects__project_id__assistant_settings_put"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/audit-schedules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Schedules
+         * @description The audits set to run on a schedule in this line of the story.
+         */
+        get: operations["list_schedules_api_v1_projects__project_id__audit_schedules_get"];
+        /**
+         * Save Schedule
+         * @description Run an audit of a part of the story every few days, using at most ``max_tokens`` each
+         *     time. A most above the size the author asked to confirm is confirmed first (``409``).
+         */
+        put: operations["save_schedule_api_v1_projects__project_id__audit_schedules_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/audit-schedules/{schedule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove Schedule
+         * @description Stop a scheduled audit. Audits it already ran are kept.
+         */
+        delete: operations["remove_schedule_api_v1_projects__project_id__audit_schedules__schedule_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1413,6 +1731,72 @@ export interface paths {
          * @description An audit's results, scene by scene, with the checks that need no model.
          */
         get: operations["audit_api_v1_projects__project_id__audits__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/audits/{job_id}/corrections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Corrections
+         * @description The correction plans made from this audit, newest first.
+         */
+        get: operations["corrections_api_v1_projects__project_id__audits__job_id__corrections_get"];
+        put?: never;
+        /**
+         * Plan Corrections
+         * @description Ask the assistant which scenes to change and why, from this audit's findings. Above
+         *     the size the author asked to confirm, refused with ``409 needs_confirmation``.
+         */
+        post: operations["plan_corrections_api_v1_projects__project_id__audits__job_id__corrections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/audits/{job_id}/corrections/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Corrections Estimate
+         * @description What planning the corrections would send, before anything is. Calls no model.
+         */
+        get: operations["corrections_estimate_api_v1_projects__project_id__audits__job_id__corrections_estimate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/audits/{job_id}/drift": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Audit Drift
+         * @description Voice against the author's usual, and how each pair of characters drifts, across the
+         *     exact versions the audit read, in reading order. Worked out now, for free.
+         */
+        get: operations["audit_drift_api_v1_projects__project_id__audits__job_id__drift_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1609,6 +1993,26 @@ export interface paths {
         /** Get Run */
         get: operations["get_run_api_v1_projects__project_id__checks_runs__run_id__get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/corrections/{plan_id}/items/{index}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Decide Step
+         * @description Keep or skip one step of a correction plan. Nothing in the story changes.
+         */
+        put: operations["decide_step_api_v1_projects__project_id__corrections__plan_id__items__index__put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -2442,6 +2846,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/merges": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose Merge
+         * @description Send a merge to review. It is saved only once the author approves it.
+         */
+        post: operations["propose_merge_api_v1_projects__project_id__merges_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/merges/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Merge
+         * @description What merging one entry into another would do now. Changes nothing.
+         */
+        post: operations["preview_merge_api_v1_projects__project_id__merges_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/mutations": {
         parameters: {
             query?: never;
@@ -3180,6 +3624,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/findings/proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Finding Proposal
+         * @description Turn a finding into a story-bible change for review: make what the passage says true,
+         *     or change the story bible's records instead. Above the size the author asked to confirm,
+         *     refused with ``409 needs_confirmation`` until confirmed. Nothing changes until approved.
+         */
+        post: operations["finding_proposal_api_v1_projects__project_id__plan__plan_id__findings_proposal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/findings/proposal-estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Finding Proposal Estimate
+         * @description What drafting a story-bible change from this finding would use. Calls no model.
+         */
+        post: operations["finding_proposal_estimate_api_v1_projects__project_id__plan__plan_id__findings_proposal_estimate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/plan/{plan_id}/intent/estimate": {
         parameters: {
             query?: never;
@@ -3565,6 +4051,46 @@ export interface paths {
          * @description Keep a suggested summary (as it is, or corrected), or turn it down.
          */
         post: operations["decide_scene_summary_api_v1_projects__project_id__plan__plan_id__summary__summary_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/voice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Scene Voice
+         * @description How the scene's saved words sound against the author's usual. Calls no model.
+         */
+        get: operations["scene_voice_api_v1_projects__project_id__plan__plan_id__voice_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/voice/usual": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Count Scene
+         * @description Leave the scene out of the author's usual voice, or count it again.
+         */
+        put: operations["count_scene_api_v1_projects__project_id__plan__plan_id__voice_usual_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4314,6 +4840,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/voice/book": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Book Voice
+         * @description Every written scene's voice in reading order, against the author's usual.
+         */
+        get: operations["book_voice_api_v1_projects__project_id__voice_book_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/what-ifs": {
         parameters: {
             query?: never;
@@ -4394,6 +4940,26 @@ export interface paths {
         put?: never;
         /** Set Aside What If */
         post: operations["set_aside_what_if_api_v1_projects__project_id__what_ifs__branch_id__set_aside_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/what-ifs/{what_if_id}/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Audit What If
+         * @description An audit of the differences between a what-if and the main story.
+         */
+        get: operations["audit_what_if_api_v1_projects__project_id__what_ifs__what_if_id__audit_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4925,10 +5491,14 @@ export interface components {
         };
         /** AmendEventOp */
         AmendEventOp: {
+            /** Cause Ids */
+            cause_ids?: string[] | null;
             /** Evidence */
             evidence?: components["schemas"]["EvidenceRef"][];
             /** Id */
             id: string;
+            /** Location Ids */
+            location_ids?: string[] | null;
             /** Name */
             name?: string | null;
             /**
@@ -4936,6 +5506,10 @@ export interface components {
              * @enum {string}
              */
             op: "amend_event";
+            /** Outcome Ids */
+            outcome_ids?: string[] | null;
+            /** Participants */
+            participants?: components["schemas"]["EventParticipant"][] | null;
             /** When */
             when?: (components["schemas"]["Unknown"] | components["schemas"]["At"] | components["schemas"]["Between"] | components["schemas"]["Relative"]) | null;
             /** World Position */
@@ -5283,6 +5857,19 @@ export interface components {
             /** Start */
             start?: number | null;
         };
+        /**
+         * AuditDriftModel
+         * @description How voice and relationships move across the scenes an audit read. Calls no model.
+         */
+        AuditDriftModel: {
+            /** Relationships */
+            relationships: components["schemas"]["PairModel"][];
+            /** Trends */
+            trends: string[];
+            usual: components["schemas"]["UsualModel"];
+            /** Voice */
+            voice: components["schemas"]["VoiceRowModel"][];
+        };
         /** AuditEstimateModel */
         AuditEstimateModel: {
             /** Max Scenes */
@@ -5455,6 +6042,32 @@ export interface components {
             /** Latest */
             latest?: number | null;
         };
+        /** BookSceneModel */
+        BookSceneModel: {
+            /** Notes */
+            notes: components["schemas"]["VoiceNoteModel"][];
+            /** Own */
+            own: boolean;
+            /** Plan Id */
+            plan_id: string;
+            stats: components["schemas"]["VoiceStatsModel"];
+            /** Title */
+            title: string;
+            /** Version Number */
+            version_number: number;
+        };
+        /** BookVoiceModel */
+        BookVoiceModel: {
+            /** Band Labels */
+            band_labels: string[];
+            /** Scenes */
+            scenes: components["schemas"]["BookSceneModel"][];
+            /** Stopped */
+            stopped: boolean;
+            /** Unwritten */
+            unwritten: number;
+            usual: components["schemas"]["UsualModel"];
+        };
         /** BooleanObject */
         BooleanObject: {
             /**
@@ -5608,11 +6221,21 @@ export interface components {
         ChangeProposalModel: {
             /** Back To Version */
             back_to_version?: number | null;
+            /**
+             * Candidates
+             * @default 0
+             */
+            candidates: number;
             context?: components["schemas"]["ContextUsedModel"] | null;
             /** Discarded */
             discarded: components["schemas"]["DiscardedItemModel"][];
             /** Elsewhere */
             elsewhere?: components["schemas"]["ElsewhereModel"][];
+            /**
+             * From Candidates
+             * @default 0
+             */
+            from_candidates: number;
             invite?: components["schemas"]["InviteModel"] | null;
             /** Mutation Id */
             mutation_id: string | null;
@@ -5622,6 +6245,8 @@ export interface components {
             operation_count: number;
             /** Questions */
             questions: string[];
+            /** Run Id */
+            run_id?: string | null;
             /** Session Id */
             session_id: string;
             /** Status */
@@ -5954,6 +6579,11 @@ export interface components {
             /** Speaker Id */
             speaker_id?: string | null;
         };
+        /** ClearedModel */
+        ClearedModel: {
+            /** Cleared */
+            cleared: boolean;
+        };
         /** CloseBeliefOp */
         CloseBeliefOp: {
             /** Evidence */
@@ -5997,6 +6627,62 @@ export interface components {
             main_version: number;
             what_if: components["schemas"]["WhatIfModel"];
         };
+        /** ComputerCapabilitiesModel */
+        ComputerCapabilitiesModel: {
+            /** Models */
+            models?: components["schemas"]["ComputerModelInfo"][];
+            /**
+             * Server
+             * @default openai-compatible
+             */
+            server: string;
+            /**
+             * Structured Output
+             * @default false
+             */
+            structured_output: boolean;
+        };
+        /** ComputerCodeCheckRequest */
+        ComputerCodeCheckRequest: {
+            /** Code */
+            code: string;
+        };
+        /** ComputerCodeDecisionRequest */
+        ComputerCodeDecisionRequest: {
+            /** Approve */
+            approve: boolean;
+            /** Code */
+            code: string;
+        };
+        /**
+         * ComputerCodeModel
+         * @description What is about to be connected, shown before the person confirms (RFC 8628 5.4).
+         */
+        ComputerCodeModel: {
+            /**
+             * Asked At
+             * Format: date-time
+             */
+            asked_at: string;
+            /** Connector Version */
+            connector_version: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Name */
+            name: string;
+            /** Status */
+            status: string;
+        };
+        /** ComputerModelInfo */
+        ComputerModelInfo: {
+            /** Context Tokens */
+            context_tokens?: number | null;
+            /** Name */
+            name: string;
+        };
         /** ConditionStateModel */
         ConditionStateModel: {
             /** Holds */
@@ -6029,6 +6715,115 @@ export interface components {
             strength: string;
             /** When */
             when: string;
+        };
+        /** ConnectedComputerModel */
+        ConnectedComputerModel: {
+            /**
+             * Connected At
+             * Format: date-time
+             */
+            connected_at: string;
+            /** Connector Version */
+            connector_version: string;
+            /** Disconnected At */
+            disconnected_at: string | null;
+            /** Disconnected Because */
+            disconnected_because: string | null;
+            /** Id */
+            id: string;
+            /** In Use */
+            in_use: boolean;
+            /** Last Seen At */
+            last_seen_at: string | null;
+            /** Models */
+            models: components["schemas"]["ComputerModelInfo"][];
+            /** Name */
+            name: string;
+            /** Online */
+            online: boolean;
+            /** Server */
+            server: string;
+            /** Status */
+            status: string;
+            /** Structured Output */
+            structured_output: boolean;
+            /** Up To Date */
+            up_to_date: boolean;
+        };
+        /** ConnectorAnswerRequest */
+        ConnectorAnswerRequest: {
+            /** Body */
+            body?: {
+                [key: string]: unknown;
+            } | null;
+            /** Failure */
+            failure?: string | null;
+            /** Status */
+            status?: number | null;
+        };
+        /**
+         * ConnectorCodeModel
+         * @description RFC 8628 section 3.2.
+         */
+        ConnectorCodeModel: {
+            /** Device Code */
+            device_code: string;
+            /** Expires In */
+            expires_in: number;
+            /** Interval */
+            interval: number;
+            /** User Code */
+            user_code: string;
+            /** Verification Uri */
+            verification_uri: string;
+        };
+        /** ConnectorCodeRequest */
+        ConnectorCodeRequest: {
+            /** Name */
+            name: string;
+            /** Version */
+            version: string;
+        };
+        /** ConnectorPollModel */
+        ConnectorPollModel: {
+            /** Minimum Version */
+            minimum_version: string;
+            request: components["schemas"]["RelayedRequestModel"] | null;
+            /** Rotate */
+            rotate: boolean;
+        };
+        /** ConnectorPollRequest */
+        ConnectorPollRequest: {
+            capabilities?: components["schemas"]["ComputerCapabilitiesModel"] | null;
+            /**
+             * Take
+             * @default true
+             */
+            take: boolean;
+            /**
+             * Wait
+             * @default 25
+             */
+            wait: number;
+        };
+        /** ConnectorTokenRequest */
+        ConnectorTokenRequest: {
+            /** Device Code */
+            device_code: string;
+            /**
+             * Grant Type
+             * @default urn:ietf:params:oauth:grant-type:device_code
+             */
+            grant_type: string;
+        };
+        /** ConnectorVersionModel */
+        ConnectorVersionModel: {
+            /** Latest */
+            latest: string;
+            /** Minimum */
+            minimum: string;
+            /** Protocol */
+            protocol: number;
         };
         /**
          * ContextChoice
@@ -6205,6 +7000,16 @@ export interface components {
          * @description What part of the story bible the assistant was shown, by which policy (CTX-002).
          */
         ContextUsedModel: {
+            /**
+             * By Meaning
+             * @default false
+             */
+            by_meaning: boolean;
+            /**
+             * Found By Meaning
+             * @default 0
+             */
+            found_by_meaning: number;
             /** Left Out */
             left_out: {
                 [key: string]: number;
@@ -6244,6 +7049,58 @@ export interface components {
              * @default 0
              */
             not_shown: number;
+        };
+        /** CorrectionEstimateModel */
+        CorrectionEstimateModel: {
+            /** Findings */
+            findings: number;
+            /** Scenes */
+            scenes: number;
+            /** Total Tokens */
+            total_tokens: number;
+        };
+        /** CorrectionItemModel */
+        CorrectionItemModel: {
+            /** Change */
+            change: string;
+            /** Cited */
+            cited: string[];
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "waiting" | "kept" | "skipped";
+            /** Plan Id */
+            plan_id: string;
+            /** Title */
+            title: string;
+            /** Why */
+            why: string;
+        };
+        /** CorrectionPlanModel */
+        CorrectionPlanModel: {
+            /** Created At */
+            created_at?: string | null;
+            /** Dropped */
+            dropped: number;
+            /** Id */
+            id: string;
+            /** Items */
+            items: components["schemas"]["CorrectionItemModel"][];
+            /** Summary */
+            summary: string;
+        };
+        /** CorrectionsModel */
+        CorrectionsModel: {
+            /** Jobs */
+            jobs: components["schemas"]["JobModel"][];
+            /** Plans */
+            plans: components["schemas"]["CorrectionPlanModel"][];
+        };
+        /** CountRequest */
+        CountRequest: {
+            /** Left Out */
+            left_out: boolean;
         };
         /** CoverageModel */
         CoverageModel: {
@@ -6470,6 +7327,14 @@ export interface components {
          * @enum {string}
          */
         CredentialProvider: "openrouter" | "anthropic" | "openai" | "google" | "xai" | "mistral" | "deepseek";
+        /** DecideStepRequest */
+        DecideStepRequest: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "waiting" | "kept" | "skipped";
+        };
         /** DecideSummaryRequest */
         DecideSummaryRequest: {
             /** Accept */
@@ -6517,7 +7382,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "scene" | "plan" | "thread" | "rule" | "draft" | "scene_text" | "text";
+            kind: "scene" | "plan" | "thread" | "rule" | "draft" | "belief" | "event" | "picture" | "finding" | "scene_text" | "text";
             /**
              * Level
              * @enum {string}
@@ -6577,6 +7442,8 @@ export interface components {
             /** Adds */
             adds: number;
             draft: components["schemas"]["PlanDraft"];
+            /** Grounding */
+            grounding?: components["schemas"]["GroundingModel"][];
             /** Title */
             title: string;
             /** What Happens */
@@ -6721,6 +7588,12 @@ export interface components {
              */
             pays_off?: string[];
             /**
+             * Quote
+             * @description The author's own words this item comes from, copied exactly from what you were given; empty when it is your own suggestion
+             * @default
+             */
+            quote: string;
+            /**
              * Ref
              * @description A short local handle for this item
              */
@@ -6774,6 +7647,17 @@ export interface components {
         DraftRuleRequest: {
             /** Sentence */
             sentence: string;
+        };
+        /** EchoModel */
+        EchoModel: {
+            /** End */
+            end: number;
+            /** Start */
+            start: number;
+            /** Times */
+            times: number;
+            /** Word */
+            word: string;
         };
         /**
          * EdgeCreate
@@ -6844,6 +7728,13 @@ export interface components {
             place: string;
             /** What */
             what: string;
+        };
+        /** EndedModel */
+        EndedModel: {
+            /** Reason */
+            reason: string;
+            /** Sentence */
+            sentence: string;
         };
         /** Entity */
         Entity: {
@@ -7205,6 +8096,51 @@ export interface components {
          * @enum {string}
          */
         FactVisibility: "ordinary" | "common" | "secret";
+        /** FindingProposalEstimateModel */
+        FindingProposalEstimateModel: {
+            /** Has Passage */
+            has_passage: boolean;
+            /** Total Tokens */
+            total_tokens: number;
+        };
+        /** FindingProposalModel */
+        FindingProposalModel: {
+            /** Mutation Id */
+            mutation_id: string | null;
+            /** Notes */
+            notes: string[];
+            /** Operation Count */
+            operation_count: number;
+            /** Questions */
+            questions: string[];
+            /** Understood */
+            understood: string;
+        };
+        /** FindingProposalRequest */
+        FindingProposalRequest: {
+            /**
+             * Choice
+             * @enum {string}
+             */
+            choice: "make_true" | "change_bible";
+            /** Key */
+            key: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "check" | "note";
+        };
+        /** FindingRef */
+        FindingRef: {
+            /** Key */
+            key: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "check" | "note";
+        };
         /** FoundPictureModel */
         FoundPictureModel: {
             /** Asset Id */
@@ -7249,6 +8185,18 @@ export interface components {
             edges: components["schemas"]["EdgeUpdateItem"][];
             /** Nodes */
             nodes: components["schemas"]["NodeUpdateItem"][];
+        };
+        /**
+         * GroundingModel
+         * @description Whether one suggested part of the plan quotes the author's material (AST-EXP-013).
+         */
+        GroundingModel: {
+            /** Grounded */
+            grounded: boolean;
+            /** Quote */
+            quote: string | null;
+            /** Title */
+            title: string;
         };
         /** GuideEntryModel */
         GuideEntryModel: {
@@ -7454,6 +8402,18 @@ export interface components {
             email: string | null;
             /** Role */
             role: string;
+        };
+        /** IssuedCredentialModel */
+        IssuedCredentialModel: {
+            /** Credential */
+            credential: string;
+            /** Device Id */
+            device_id: string;
+            /**
+             * Token Type
+             * @default Bearer
+             */
+            token_type: string;
         };
         /** JobModel */
         JobModel: {
@@ -7829,6 +8789,130 @@ export interface components {
             start: number;
             /** Status */
             status: string;
+        };
+        /**
+         * MergeEntitiesOp
+         * @description Merge one entry (``id``) into another (``into``), reviewed as one change.
+         *
+         *     What a merge moves is worked out when it is kept, from the story as it is then
+         *     (``backend/domain/merge.py``): facts and beliefs naming the merged entry are ended
+         *     and stated again about the kept one, events, plan items and pictures point at the
+         *     kept one, its names become the kept one's other names, and it is retired. The
+         *     commit records those ordinary changes; this operation is what the author reviews.
+         *     ``drop_facts`` and ``drop_beliefs`` are ended rather than moved (a value the kept
+         *     entry already has for something that holds one at a time). ``name``, ``aliases``
+         *     and ``attributes`` replace what is worked out for the kept entry when given.
+         */
+        MergeEntitiesOp: {
+            /** Aliases */
+            aliases?: string[] | null;
+            /** Attributes */
+            attributes?: {
+                [key: string]: unknown;
+            } | null;
+            /** Drop Beliefs */
+            drop_beliefs?: string[];
+            /** Drop Facts */
+            drop_facts?: string[];
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceRef"][];
+            /** Id */
+            id: string;
+            /** Into */
+            into: string;
+            /** Name */
+            name?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "merge_entities";
+        };
+        /** MergePreviewModel */
+        MergePreviewModel: {
+            /** Aliases */
+            aliases: string[];
+            /** Beliefs Ended */
+            beliefs_ended: components["schemas"]["EndedModel"][];
+            /** Beliefs Moved */
+            beliefs_moved: string[];
+            /** Change Count */
+            change_count: number;
+            /** Details */
+            details: {
+                [key: string]: unknown;
+            };
+            /** Entry Type */
+            entry_type: string;
+            /** Events */
+            events: string[];
+            /** Facts Ended */
+            facts_ended: components["schemas"]["EndedModel"][];
+            /** Facts Moved */
+            facts_moved: string[];
+            /** Keep Id */
+            keep_id: string;
+            /** Keep Name */
+            keep_name: string;
+            /** Merged Id */
+            merged_id: string;
+            /** Merged Name */
+            merged_name: string;
+            /** Name */
+            name: string;
+            /**
+             * Names Left Out
+             * @default 0
+             */
+            names_left_out: number;
+            /** Pictures Ended */
+            pictures_ended: number;
+            /** Pictures Moved */
+            pictures_moved: number;
+            /** Plan Items */
+            plan_items: string[];
+            /** Still Naming */
+            still_naming: string[];
+        };
+        /** MergePreviewRequest */
+        MergePreviewRequest: {
+            /** Drop Beliefs */
+            drop_beliefs?: string[];
+            /** Drop Facts */
+            drop_facts?: string[];
+            /** Entity Id */
+            entity_id: string;
+            /** Into */
+            into: string;
+            /** Name */
+            name?: string | null;
+            /**
+             * Suggested
+             * @default false
+             */
+            suggested: boolean;
+        };
+        /** MergeProposalModel */
+        MergeProposalModel: {
+            /** Mutation Id */
+            mutation_id: string;
+            /** Status */
+            status: string;
+            /** Validation Issues */
+            validation_issues: components["schemas"]["ProposalIssueModel"][];
+            /** Validation Ok */
+            validation_ok: boolean;
+        };
+        /** MergeProposalRequest */
+        MergeProposalRequest: {
+            /** Entity Id */
+            entity_id: string;
+            /** Expected Revision */
+            expected_revision: number;
+            /** Into */
+            into: string;
+            /** Name */
+            name?: string | null;
         };
         /** MissingModel */
         MissingModel: {
@@ -8272,6 +9356,17 @@ export interface components {
             /** Threads */
             threads?: components["schemas"]["ThreadProgressModel"][];
         };
+        /** PairModel */
+        PairModel: {
+            /** Names */
+            names: string[];
+            /** Notes */
+            notes: string[];
+            /** Recorded */
+            recorded: string[];
+            /** Together */
+            together: string[];
+        };
         /**
          * PassEstimateModel
          * @description One pass of a check with the assistant: what it looks at and roughly what it uses.
@@ -8546,6 +9641,18 @@ export interface components {
         PlanProposalModel: {
             /** Discarded */
             discarded: components["schemas"]["DiscardedItemModel"][];
+            /**
+             * Grounded
+             * @default 0
+             */
+            grounded: number;
+            /** Grounding */
+            grounding?: components["schemas"]["GroundingModel"][];
+            /**
+             * Invented
+             * @default 0
+             */
+            invented: number;
             /** Mutation Id */
             mutation_id: string;
             /** Notes */
@@ -8614,6 +9721,16 @@ export interface components {
             /** Temporal Allowed */
             temporal_allowed: boolean;
         };
+        /** PremiseAnswerModel */
+        PremiseAnswerModel: {
+            /**
+             * Answer
+             * @default
+             */
+            answer: string;
+            /** Question */
+            question: string;
+        };
         /** PremiseModel */
         PremiseModel: {
             /** Id */
@@ -8625,6 +9742,43 @@ export interface components {
             kind: "fact" | "belief" | "gone";
             /** Sentence */
             sentence: string;
+        };
+        /** PremiseRequest */
+        PremiseRequest: {
+            /** Answers */
+            answers?: components["schemas"]["PremiseAnswerModel"][];
+            /** Expected Revision */
+            expected_revision: number;
+            /**
+             * Premise
+             * @default
+             */
+            premise: string;
+        };
+        /** PremiseRoundModel */
+        PremiseRoundModel: {
+            /** Discarded */
+            discarded: components["schemas"]["DiscardedItemModel"][];
+            /** Mutation Id */
+            mutation_id: string | null;
+            /** Operation Count */
+            operation_count: number;
+            /** Questions */
+            questions: string[];
+            /** Session Id */
+            session_id: string | null;
+            /** Status */
+            status: string | null;
+            /** Suggestions */
+            suggestions?: components["schemas"]["SchemaSuggestionModel"][];
+            /** Thread Id */
+            thread_id: string;
+            /** Understood */
+            understood: string;
+            /** Validation Issues */
+            validation_issues: components["schemas"]["ProposalIssueModel"][];
+            /** Validation Ok */
+            validation_ok: boolean;
         };
         /**
          * ProcessingModel
@@ -8740,7 +9894,7 @@ export interface components {
              */
             idempotency_key: string;
             /** Operations */
-            operations: (components["schemas"]["CreateEntityOp"] | components["schemas"]["UpdateEntityOp"] | components["schemas"]["RetireEntityOp"] | components["schemas"]["AssertFactOp"] | components["schemas"]["CloseFactOp"] | components["schemas"]["AmendFactOp"] | components["schemas"]["AssertBeliefOp"] | components["schemas"]["CloseBeliefOp"] | components["schemas"]["CreateEventOp"] | components["schemas"]["AmendEventOp"] | components["schemas"]["RetireEventOp"] | components["schemas"]["LinkAssetOp"] | components["schemas"]["RetireAssetLinkOp"] | components["schemas"]["CreatePlanItemOp"] | components["schemas"]["UpdatePlanItemOp"] | components["schemas"]["RetirePlanItemOp"])[];
+            operations: (components["schemas"]["CreateEntityOp"] | components["schemas"]["UpdateEntityOp"] | components["schemas"]["RetireEntityOp"] | components["schemas"]["RestoreEntityOp"] | components["schemas"]["MergeEntitiesOp"] | components["schemas"]["AssertFactOp"] | components["schemas"]["CloseFactOp"] | components["schemas"]["AmendFactOp"] | components["schemas"]["AssertBeliefOp"] | components["schemas"]["CloseBeliefOp"] | components["schemas"]["CreateEventOp"] | components["schemas"]["AmendEventOp"] | components["schemas"]["RetireEventOp"] | components["schemas"]["LinkAssetOp"] | components["schemas"]["RetireAssetLinkOp"] | components["schemas"]["CreatePlanItemOp"] | components["schemas"]["UpdatePlanItemOp"] | components["schemas"]["RetirePlanItemOp"])[];
             /**
              * Origin
              * @default author
@@ -8875,10 +10029,20 @@ export interface components {
             more: boolean;
             /** Mutation Id */
             mutation_id: string | null;
+            /**
+             * New Threads
+             * @default 0
+             */
+            new_threads: number;
             /** Operation Count */
             operation_count: number;
             /** Start */
             start: number;
+            /**
+             * State Changes
+             * @default 0
+             */
+            state_changes: number;
             /**
              * Thread Steps
              * @default 0
@@ -9018,6 +10182,19 @@ export interface components {
              */
             offset: number;
         };
+        /** RelayedRequestModel */
+        RelayedRequestModel: {
+            /** Body */
+            body?: {
+                [key: string]: unknown;
+            } | null;
+            /** Id */
+            id: string;
+            /** Method */
+            method: string;
+            /** Path */
+            path: string;
+        };
         /** RemovePlanItemRequest */
         RemovePlanItemRequest: {
             /** Expected Revision */
@@ -9046,6 +10223,23 @@ export interface components {
             /** Revision */
             revision: number;
         };
+        /**
+         * RestoreEntityOp
+         * @description Bring a retired entry back into the story, as it was when it was retired.
+         *
+         *     Proposed by undoing a merge; like every change it is reviewed and validated.
+         */
+        RestoreEntityOp: {
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceRef"][];
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "restore_entity";
+        };
         /** RetargetRequest */
         RetargetRequest: {
             /** Expected Revision */
@@ -9069,6 +10263,8 @@ export interface components {
             evidence?: components["schemas"]["EvidenceRef"][];
             /** Id */
             id: string;
+            /** Merged Into */
+            merged_into?: string | null;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -9248,7 +10444,7 @@ export interface components {
         /** ReviseOperationRequest */
         ReviseOperationRequest: {
             /** Operation */
-            operation: components["schemas"]["CreateEntityOp"] | components["schemas"]["UpdateEntityOp"] | components["schemas"]["RetireEntityOp"] | components["schemas"]["AssertFactOp"] | components["schemas"]["CloseFactOp"] | components["schemas"]["AmendFactOp"] | components["schemas"]["AssertBeliefOp"] | components["schemas"]["CloseBeliefOp"] | components["schemas"]["CreateEventOp"] | components["schemas"]["AmendEventOp"] | components["schemas"]["RetireEventOp"] | components["schemas"]["LinkAssetOp"] | components["schemas"]["RetireAssetLinkOp"] | components["schemas"]["CreatePlanItemOp"] | components["schemas"]["UpdatePlanItemOp"] | components["schemas"]["RetirePlanItemOp"];
+            operation: components["schemas"]["CreateEntityOp"] | components["schemas"]["UpdateEntityOp"] | components["schemas"]["RetireEntityOp"] | components["schemas"]["RestoreEntityOp"] | components["schemas"]["MergeEntitiesOp"] | components["schemas"]["AssertFactOp"] | components["schemas"]["CloseFactOp"] | components["schemas"]["AmendFactOp"] | components["schemas"]["AssertBeliefOp"] | components["schemas"]["CloseBeliefOp"] | components["schemas"]["CreateEventOp"] | components["schemas"]["AmendEventOp"] | components["schemas"]["RetireEventOp"] | components["schemas"]["LinkAssetOp"] | components["schemas"]["RetireAssetLinkOp"] | components["schemas"]["CreatePlanItemOp"] | components["schemas"]["UpdatePlanItemOp"] | components["schemas"]["RetirePlanItemOp"];
             /** Reason */
             reason?: string | null;
         };
@@ -9426,6 +10622,7 @@ export interface components {
             fixed_by?: ("words" | "story") | null;
             /** Message */
             message: string;
+            picture?: components["schemas"]["RunPictureModel"] | null;
             /** Plan Id */
             plan_id: string;
             /**
@@ -9505,6 +10702,22 @@ export interface components {
             /** Title */
             title: string;
         };
+        /**
+         * RunPictureModel
+         * @description A picture a check with the assistant compared the scene with (CON-001).
+         */
+        RunPictureModel: {
+            /** Asset Id */
+            asset_id: string;
+            /** Changed */
+            changed?: string | null;
+            /** Choice */
+            choice: string;
+            /** Label */
+            label: string;
+            /** Version Id */
+            version_id: string;
+        };
         /** RunSceneModel */
         RunSceneModel: {
             /**
@@ -9527,6 +10740,11 @@ export interface components {
             in_plan: boolean;
             /** Open */
             open: number;
+            /**
+             * Pictures
+             * @default []
+             */
+            pictures: components["schemas"]["RunPictureModel"][];
             /** Plan Id */
             plan_id: string;
             /** Reasons */
@@ -9710,6 +10928,94 @@ export interface components {
             state: string;
             /** Version Id */
             version_id: string;
+        };
+        /** SceneVoiceModel */
+        SceneVoiceModel: {
+            /** Band Labels */
+            band_labels: string[];
+            /** Counted */
+            counted: boolean;
+            /** Left Out */
+            left_out: boolean;
+            /**
+             * Measures Version
+             * @default voice/1
+             */
+            measures_version: string;
+            /**
+             * Min Words
+             * @default 300
+             */
+            min_words: number;
+            /** Not Compared */
+            not_compared: string | null;
+            /** Notes */
+            notes: components["schemas"]["VoiceNoteModel"][];
+            /** Plan Id */
+            plan_id: string;
+            stats: components["schemas"]["VoiceStatsModel"] | null;
+            /** Title */
+            title: string;
+            usual: components["schemas"]["UsualModel"];
+            /** Version Id */
+            version_id: string | null;
+            /** Version Number */
+            version_number: number | null;
+        };
+        /** ScheduleListModel */
+        ScheduleListModel: {
+            /** Items */
+            items: components["schemas"]["ScheduleModel"][];
+            /**
+             * Max Every Days
+             * @default 90
+             */
+            max_every_days: number;
+            /**
+             * Max Tokens
+             * @default 2000000
+             */
+            max_tokens: number;
+        };
+        /** ScheduleModel */
+        ScheduleModel: {
+            /** Enabled */
+            enabled: boolean;
+            /** Every Days */
+            every_days: number;
+            /** Id */
+            id: string;
+            /** Last Job Id */
+            last_job_id?: string | null;
+            /** Last Outcome */
+            last_outcome?: string | null;
+            /** Last Run At */
+            last_run_at?: string | null;
+            /** Max Tokens */
+            max_tokens: number;
+            /**
+             * Next Run At
+             * Format: date-time
+             */
+            next_run_at: string;
+            /** Passes */
+            passes: components["schemas"]["CheckPass"][];
+            /** Plan Id */
+            plan_id: string;
+        };
+        /** ScheduleRequest */
+        ScheduleRequest: {
+            /** Every Days */
+            every_days: number;
+            /** Max Tokens */
+            max_tokens: number;
+            /** Passes */
+            passes?: components["schemas"]["CheckPass"][];
+            /**
+             * Plan Id
+             * @default
+             */
+            plan_id: string;
         };
         /** SchemaDefinitionRequest */
         SchemaDefinitionRequest: {
@@ -10084,6 +11390,49 @@ export interface components {
             /** Words */
             words: number;
         };
+        /** SuggestionRunListModel */
+        SuggestionRunListModel: {
+            /** Items */
+            items: components["schemas"]["SuggestionRunModel"][];
+        };
+        /** SuggestionRunModel */
+        SuggestionRunModel: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decided */
+            decided: boolean;
+            /** Details */
+            details: {
+                [key: string]: number;
+            };
+            /** Grounded */
+            grounded: number | null;
+            /** Groundedness */
+            groundedness: number | null;
+            /** Id */
+            id: string;
+            /** Invented */
+            invented: number | null;
+            /** Kept */
+            kept: number | null;
+            /** Kept For You */
+            kept_for_you?: number | null;
+            /** Kind */
+            kind: string;
+            /** Mutation Id */
+            mutation_id: string | null;
+            /** Precision */
+            precision: number | null;
+            /** Prompt Version */
+            prompt_version: string | null;
+            /** Source */
+            source: string;
+            /** Suggested */
+            suggested: number;
+        };
         /** TellRequest */
         TellRequest: {
             /** Expected Revision */
@@ -10165,6 +11514,24 @@ export interface components {
             title: string;
             /** Versions */
             versions: number;
+        };
+        /** ThreadModel */
+        ThreadModel: {
+            /** Id */
+            id: string | null;
+            /** Kind */
+            kind: string;
+            /** Open Questions */
+            open_questions?: string[];
+            /**
+             * Tokens Used
+             * @default 0
+             */
+            tokens_used: number;
+            /** Turns */
+            turns: components["schemas"]["TurnModel"][];
+            /** Updated At */
+            updated_at?: string | null;
         };
         /** ThreadProgressModel */
         ThreadProgressModel: {
@@ -10253,6 +11620,34 @@ export interface components {
             speakers?: {
                 [key: string]: "believes" | "doubts" | "disbelieves";
             };
+        };
+        /** TurnAnswerModel */
+        TurnAnswerModel: {
+            /** Answer */
+            answer: string;
+            /** Question */
+            question: string;
+        };
+        /** TurnModel */
+        TurnModel: {
+            /** Answers */
+            answers: components["schemas"]["TurnAnswerModel"][];
+            /** Body */
+            body: string;
+            /** Created At */
+            created_at: string | null;
+            /** Mutation Id */
+            mutation_id: string | null;
+            /** Notes */
+            notes: string[];
+            /** Operation Count */
+            operation_count: number;
+            /** Position */
+            position: number;
+            /** Questions */
+            questions: string[];
+            /** Role */
+            role: string;
         };
         /** UndoModel */
         UndoModel: {
@@ -10364,6 +11759,49 @@ export interface components {
             summary?: string | null;
             /** Title */
             title?: string | null;
+        };
+        /** UseComputerRequest */
+        UseComputerRequest: {
+            /** Model */
+            model: string;
+        };
+        /**
+         * UsualModel
+         * @description The author's usual, and what it was made from.
+         */
+        UsualModel: {
+            /** Adverb Rate */
+            adverb_rate: number | null;
+            /** Dialogue Share */
+            dialogue_share: number | null;
+            /** Drafts Left Out */
+            drafts_left_out: number;
+            /** Enough */
+            enough: boolean;
+            /** Left Out */
+            left_out: string[];
+            /**
+             * Needs Scenes
+             * @default 3
+             */
+            needs_scenes: number;
+            /**
+             * Needs Words
+             * @default 2000
+             */
+            needs_words: number;
+            /** Own Only */
+            own_only: boolean;
+            /** Person */
+            person: string;
+            /** Scenes */
+            scenes: number;
+            /** Sentence Mean */
+            sentence_mean: number | null;
+            /** Tense */
+            tense: string;
+            /** Words */
+            words: number;
         };
         /** ValidationError */
         ValidationError: {
@@ -10489,6 +11927,102 @@ export interface components {
              */
             notes: string;
         };
+        /** VoiceNoteModel */
+        VoiceNoteModel: {
+            /** Code */
+            code: string;
+            /** End */
+            end?: number | null;
+            /** Message */
+            message: string;
+            /** Start */
+            start?: number | null;
+        };
+        /** VoiceRowModel */
+        VoiceRowModel: {
+            /** Notes */
+            notes: components["schemas"]["VoiceNoteModel"][];
+            /** Plan Id */
+            plan_id: string;
+            stats: components["schemas"]["VoiceStatsModel"];
+            /** Title */
+            title: string;
+            /** Version Number */
+            version_number: number;
+        };
+        /** VoiceStatsModel */
+        VoiceStatsModel: {
+            /** Adverb Rate */
+            adverb_rate: number | null;
+            /** Adverbs */
+            adverbs: string[];
+            /** Bands */
+            bands: number[];
+            /** Dialogue Share */
+            dialogue_share: number;
+            /** Echoes */
+            echoes: components["schemas"]["EchoModel"][];
+            /** English */
+            english: boolean;
+            /** Past Share */
+            past_share: number | null;
+            /** Person */
+            person: string;
+            /** Sentence Long */
+            sentence_long: number;
+            /** Sentence Mean */
+            sentence_mean: number;
+            /** Sentence Median */
+            sentence_median: number;
+            /** Sentence Spread */
+            sentence_spread: number;
+            /** Sentences */
+            sentences: number;
+            /** Tense */
+            tense: string;
+            /** Words */
+            words: number;
+        };
+        /**
+         * WhatIfAuditModel
+         * @description What differs between a what-if and the main story, worked out now. Calls no model.
+         */
+        WhatIfAuditModel: {
+            /** Bible */
+            bible: components["schemas"]["WhatIfDifferenceModel"][];
+            /** Gone Findings */
+            gone_findings: string[];
+            /** Left Out */
+            left_out: string[];
+            /** New Findings */
+            new_findings: string[];
+            /** Plan */
+            plan: components["schemas"]["WhatIfDifferenceModel"][];
+            /** Same */
+            same: boolean;
+            /** Scenes */
+            scenes: components["schemas"]["WhatIfSceneModel"][];
+            /** What If Id */
+            what_if_id: string;
+            /** What If Name */
+            what_if_name: string;
+        };
+        /** WhatIfDifferenceModel */
+        WhatIfDifferenceModel: {
+            /**
+             * Change
+             * @enum {string}
+             */
+            change: "added" | "removed" | "changed";
+            /** Detail */
+            detail: string;
+            /** Kind */
+            kind: string;
+            /** Plan Id */
+            plan_id?: string | null;
+            /** Title */
+            title: string;
+        };
         /** WhatIfModel */
         WhatIfModel: {
             /** Changes */
@@ -10510,6 +12044,19 @@ export interface components {
             status: string;
             /** Version */
             version: number;
+        };
+        /** WhatIfSceneModel */
+        WhatIfSceneModel: {
+            /** Main Words */
+            main_words: number;
+            /** Plan Id */
+            plan_id: string;
+            /** Title */
+            title: string;
+            /** Voice */
+            voice: string[];
+            /** What If Words */
+            what_if_words: number;
         };
         /** WitnessRequest */
         WitnessRequest: {
@@ -10779,6 +12326,176 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    check_code_api_v1_ai_connector_codes_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComputerCodeCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComputerCodeModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_code_api_v1_ai_connector_codes_decide_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComputerCodeDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComputerCodeModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_devices_api_v1_ai_connector_devices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectedComputerModel"][];
+                };
+            };
+        };
+    };
+    disconnect_device_api_v1_ai_connector_devices__device_id__disconnect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectedComputerModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    use_device_api_v1_ai_connector_devices__device_id__use_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UseComputerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectedComputerModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_using_api_v1_ai_connector_use_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -11144,6 +12861,196 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_code_api_v1_connector_codes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectorCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorCodeModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    poll_api_v1_connector_poll_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-connector-version"?: string;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectorPollRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorPollModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    answer_api_v1_connector_requests__request_id__answer_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-connector-version"?: string;
+            };
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectorAnswerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rotate_api_v1_connector_rotate_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-connector-version"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    exchange_code_api_v1_connector_token_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectorTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssuedCredentialModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connector_version_api_v1_connector_version_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorVersionModel"];
                 };
             };
         };
@@ -13183,6 +15090,43 @@ export interface operations {
             };
         };
     };
+    premise_round_api_v1_projects__project_id__assist_premise_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PremiseRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PremiseRoundModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     assist_proposal_api_v1_projects__project_id__assist_proposals_post: {
         parameters: {
             query?: never;
@@ -13318,6 +15262,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RuleDraftModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_runs_api_v1_projects__project_id__assist_runs_get: {
+        parameters: {
+            query?: {
+                kind?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SuggestionRunListModel"];
                 };
             };
             /** @description Validation Error */
@@ -13538,6 +15516,70 @@ export interface operations {
             };
         };
     };
+    get_thread_api_v1_projects__project_id__assist_threads__kind__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_thread_api_v1_projects__project_id__assist_threads__kind__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClearedModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_story_settings_api_v1_projects__project_id__assistant_settings_get: {
         parameters: {
             query?: never;
@@ -13592,6 +15634,104 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["StoryAssistantSettingsModel"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_schedules_api_v1_projects__project_id__audit_schedules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleListModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_schedule_api_v1_projects__project_id__audit_schedules_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_schedule_api_v1_projects__project_id__audit_schedules__schedule_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                schedule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -13728,6 +15868,136 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuditModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    corrections_api_v1_projects__project_id__audits__job_id__corrections_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CorrectionsModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    plan_corrections_api_v1_projects__project_id__audits__job_id__corrections_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
+            path: {
+                project_id: string;
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    corrections_estimate_api_v1_projects__project_id__audits__job_id__corrections_estimate_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CorrectionEstimateModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    audit_drift_api_v1_projects__project_id__audits__job_id__drift_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditDriftModel"];
                 };
             };
             /** @description Validation Error */
@@ -14139,6 +16409,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_step_api_v1_projects__project_id__corrections__plan_id__items__index__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+                index: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecideStepRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CorrectionPlanModel"];
                 };
             };
             /** @description Validation Error */
@@ -15936,6 +18243,76 @@ export interface operations {
             };
         };
     };
+    propose_merge_api_v1_projects__project_id__merges_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergeProposalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergeProposalModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_merge_api_v1_projects__project_id__merges_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MergePreviewModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_mutations_api_v1_projects__project_id__mutations_get: {
         parameters: {
             query?: {
@@ -17436,6 +19813,80 @@ export interface operations {
             };
         };
     };
+    finding_proposal_api_v1_projects__project_id__plan__plan_id__findings_proposal_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+            };
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FindingProposalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FindingProposalModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finding_proposal_estimate_api_v1_projects__project_id__plan__plan_id__findings_proposal_estimate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FindingRef"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FindingProposalEstimateModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     intent_estimate_api_v1_projects__project_id__plan__plan_id__intent_estimate_get: {
         parameters: {
             query?: never;
@@ -18162,6 +20613,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SceneSummariesModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scene_voice_api_v1_projects__project_id__plan__plan_id__voice_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneVoiceModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    count_scene_api_v1_projects__project_id__plan__plan_id__voice_usual_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CountRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneVoiceModel"];
                 };
             };
             /** @description Validation Error */
@@ -19757,6 +22276,37 @@ export interface operations {
             };
         };
     };
+    book_voice_api_v1_projects__project_id__voice_book_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookVoiceModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_what_ifs_api_v1_projects__project_id__what_ifs_get: {
         parameters: {
             query?: never;
@@ -19948,6 +22498,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WhatIfModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    audit_what_if_api_v1_projects__project_id__what_ifs__what_if_id__audit_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                what_if_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WhatIfAuditModel"];
                 };
             };
             /** @description Validation Error */

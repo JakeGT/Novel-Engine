@@ -1,9 +1,21 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useId, useState, type ReactNode } from 'react'
-import type { AssistantNote, DismissAsk, DraftCheck, FindingDismissal } from '../api/client'
-import { excerpt, NOTE_KINDS, orderChecks, orderNotes, type Span, type useDismissals } from '../lib/studio'
+import { Link } from 'react-router-dom'
+import {
+  api,
+  isApiError,
+  type AssistantNote,
+  type DismissAsk,
+  type DraftCheck,
+  type FindingDismissal,
+  type FindingRef,
+  type SceneVoice,
+} from '../api/client'
+import { excerpt, NOTE_KINDS, orderChecks, orderNotes, tokenCount, type Span, type useDismissals } from '../lib/studio'
 import { fullDate } from '../lib/time'
 import { plural } from '../lib/words'
-import { Badge, Button, ErrorNotice } from './ui'
+import { scopedKey, useProject } from '../project'
+import { Badge, Button, ErrorNotice, Loading } from './ui'
 
 // The checks and the assistant's notes in the studio's margin, each of which the author
 // can dismiss with a short reason (CON-010, CON-016). A dismissal belongs to this scene
@@ -162,6 +174,7 @@ function Finding({
   onOpen,
   onClose,
   dismissals,
+  proposal,
 }: {
   item: Item
   className: string
@@ -170,11 +183,14 @@ function Finding({
   onOpen: () => void
   onClose: () => void
   dismissals: Dismissals | null
+  /** The scene and the finding, when it can be settled in the story bible (CON-010). */
+  proposal?: { planId: string; ref: FindingRef } | null
 }) {
   const formId = useId()
   return (
     <li className={className}>
       {children}
+      {proposal && <SettleInBible planId={proposal.planId} findingRef={proposal.ref} anchored={item.start != null} />}
       {dismissals && item.key && (
         <>
           {!open && (
@@ -288,6 +304,7 @@ export function Checks({
   stale,
   empty,
   dismissals,
+  planId = null,
 }: {
   checks: DraftCheck[]
   text: string
@@ -297,6 +314,8 @@ export function Checks({
   empty: boolean
   /** Null when the author cannot change this story. */
   dismissals: Dismissals | null
+  /** The scene, when these are about its saved words and can be settled in the story bible. */
+  planId?: string | null
 }) {
   const [open, setOpen] = useState<string | null>(null)
   const [active, dismissed] = split(orderChecks(checks).map((check) => ({ ...check, key: check.key ?? '' })))
@@ -326,6 +345,7 @@ export function Checks({
               onOpen={() => setOpen(`${check.key}-${index}`)}
               onClose={() => setOpen(null)}
               dismissals={dismissals}
+              proposal={planId && check.key && !stale ? { planId, ref: { kind: 'check', key: check.key } } : null}
             >
               <Badge tone={check.severity === 'warning' ? 'warn' : 'neutral'}>
                 {check.severity === 'warning' ? 'Worth checking' : 'Note'}
@@ -356,6 +376,7 @@ export function Notes({
   stale,
   action,
   dismissals,
+  planId = null,
 }: {
   notes: AssistantNote[]
   text: string
@@ -364,6 +385,8 @@ export function Notes({
   stale: boolean
   action: ReactNode
   dismissals: Dismissals | null
+  /** The scene, when these are about its saved words and can be settled in the story bible. */
+  planId?: string | null
 }) {
   const [open, setOpen] = useState<string | null>(null)
   const [active, dismissed] = split(orderNotes(notes).map((note) => ({ ...note, key: note.key ?? '' })))
@@ -388,6 +411,7 @@ export function Notes({
               onOpen={() => setOpen(note.id)}
               onClose={() => setOpen(null)}
               dismissals={dismissals}
+              proposal={planId && !stale ? { planId, ref: { kind: 'note', key: note.id } } : null}
             >
               <Badge tone="info">{NOTE_KINDS[note.category] ?? 'Note'}</Badge>
               <p>{note.message}</p>
@@ -402,5 +426,308 @@ export function Notes({
       <Dismissed items={dismissed} noun={['note', 'notes']} dismissals={dismissals} />
       {action}
     </section>
+  )
+}
+
+// --- settling a finding in the story bible (CON-010) ---------------------------------
+
+type Choice = 'make_true' | 'change_bible'
+
+/**
+ * "Settle it in the story bible…": instead of changing the words, the author has the
+ * assistant draft a change to the story bible, which waits in review. The cost is shown
+ * before anything is sent, and the words are never rewritten.
+ */
+function SettleInBible({ planId, findingRef, anchored }: { planId: string; findingRef: FindingRef; anchored: boolean }) {
+  const { scope } = useProject()
+  const id = useId()
+  const [open, setOpen] = useState(false)
+  const [choice, setChoice] = useState<Choice>(anchored ? 'make_true' : 'change_bible')
+  const estimate = useQuery({
+    queryKey: scopedKey(scope, 'finding-proposal-estimate', planId, findingRef.kind, findingRef.key),
+    queryFn: () => api.findingProposalEstimate(scope, planId, findingRef),
+    enabled: open,
+    retry: false,
+  })
+  const draft = useMutation({ mutationFn: () => api.findingProposal(scope, planId, findingRef, choice) })
+  const passage = estimate.data ? estimate.data.has_passage : anchored
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="link-button small finding-settle"
+        aria-expanded={false}
+        aria-controls={id}
+        onClick={() => setOpen(true)}
+      >
+        Settle it in the story bible…
+      </button>
+    )
+  }
+  const result = draft.data
+  return (
+    <div id={id} className="settle-form stack tight" role="group" aria-label="Settle it in the story bible">
+      <p className="small">
+        The assistant drafts a change to your story bible for you to review. Your words are not changed.
+      </p>
+      <div className="segmented" role="group" aria-label="What to change">
+        <button
+          type="button"
+          aria-pressed={choice === 'make_true'}
+          disabled={!passage}
+          onClick={() => setChoice('make_true')}
+        >
+          Make this true in the story
+        </button>
+        <button type="button" aria-pressed={choice === 'change_bible'} onClick={() => setChoice('change_bible')}>
+          Change the story bible instead
+        </button>
+      </div>
+      <p className="hint" id={`${id}-cost`}>
+        {choice === 'make_true'
+          ? 'Adds what the passage says, and leaves everything else as it is.'
+          : 'Ends or changes what the story bible says here, so it agrees with your words.'}{' '}
+        {!passage && 'This one is about the scene as a whole, so there is no passage to make true. '}
+        {estimate.data && `About ${tokenCount(estimate.data.total_tokens)} tokens.`}
+      </p>
+      {estimate.isPending && <Loading>Working out what it would use…</Loading>}
+      <ErrorNotice error={estimate.error} prefix="Could not work out what it would use" />
+      {result ? (
+        result.mutation_id ? (
+          <p className="small" role="status">
+            Drafted: {result.understood || 'a change to your story bible'}.{' '}
+            <Link to={`/projects/${scope.projectId}/review/${encodeURIComponent(result.mutation_id)}`}>
+              Review the change
+            </Link>
+          </p>
+        ) : (
+          <div className="small" role="status">
+            <p>The assistant needs to know more before it can draft this:</p>
+            <ul>
+              {result.questions.map((question) => (
+                <li key={question}>{question}</li>
+              ))}
+            </ul>
+          </div>
+        )
+      ) : draft.error && isApiError(draft.error, 'not_confirmed') ? (
+        <p className="hint" role="status">
+          Not drafted, as you chose. Nothing was spent.
+        </p>
+      ) : (
+        <ErrorNotice error={draft.error} prefix="Not drafted" />
+      )}
+      <div className="actions">
+        {!result && (
+          <Button
+            size="sm"
+            variant="primary"
+            icon="spark"
+            aria-describedby={`${id}-cost`}
+            disabled={draft.isPending || (choice === 'make_true' && !passage)}
+            onClick={() => draft.mutate()}
+          >
+            {draft.isPending ? 'Drafting…' : 'Draft the change'}
+          </Button>
+        )}
+        <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
+          {result ? 'Close' : 'Cancel'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+// --- how the scene sounds (CON-018) --------------------------------------------------
+
+const PERSON: Record<string, string> = {
+  first: 'with “I”',
+  second: 'with “you”',
+  third: 'with “he” or “she”',
+  unclear: 'not clear',
+}
+const TENSE: Record<string, string> = {
+  past: 'past',
+  present: 'present',
+  mixed: 'past and present',
+  unclear: 'not clear',
+}
+
+function percent(value: number | null | undefined): string {
+  return value == null ? '—' : `${Math.round(value * 100)}%`
+}
+
+function round(value: number | null | undefined): string {
+  return value == null ? '—' : String(Math.round(value))
+}
+
+/**
+ * How the scene's saved words sound against the author's usual: a few measures worked
+ * out from the words alone, notes where the scene departs a long way from the other
+ * scenes, and a choice to leave a scene out of the usual (a letter, a dream).
+ */
+export function Voice({
+  planId,
+  versionId,
+  text,
+  point,
+  onShow,
+  stale,
+  canWrite,
+}: {
+  planId: string
+  versionId: string | null
+  text: string
+  point: Point
+  onShow: (span: Span) => void
+  stale: boolean
+  canWrite: boolean
+}) {
+  const { scope } = useProject()
+  const client = useQueryClient()
+  const key = scopedKey(scope, 'scene-voice', planId, versionId ?? '')
+  const voice = useQuery({ queryKey: key, queryFn: () => api.sceneVoice(scope, planId), retry: false })
+  const count = useMutation({
+    mutationFn: (leftOut: boolean) => api.setVoiceLeftOut(scope, planId, leftOut),
+    onSuccess: (found) => client.setQueryData(key, found),
+  })
+  // Only a reading of this scene's voice counts (it always carries the usual).
+  const found: SceneVoice | undefined = voice.data?.usual ? voice.data : undefined
+  return (
+    <section className="stack tight voice-panel" aria-labelledby="voice-heading">
+      <div>
+        <h2 id="voice-heading" className="studio-side-title">
+          How it sounds
+        </h2>
+        <p className="hint">
+          {found && found.usual.enough
+            ? `Against your usual, from ${plural(found.usual.scenes, 'other scene')}${found.usual.own_only ? ' you wrote yourself' : ''}. No assistant needed.`
+            : 'Against your usual voice in your other scenes. No assistant needed.'}
+        </p>
+      </div>
+      {voice.isPending && <Loading>Measuring…</Loading>}
+      {/* Extra to the scene: a failure is said quietly and never stops the writing. */}
+      {voice.isError && <p className="muted small">How it sounds could not be worked out just now.</p>}
+      {found && (
+        <>
+          {stale && found.stats && <p className="hint">This is about the saved text.</p>}
+          {found.not_compared && <p className="muted small">{found.not_compared}</p>}
+          {found.notes.length > 0 && (
+            <ul className="findings">
+              {found.notes.map((note, index) => (
+                <li className="finding note" key={`${note.code}-${index}`}>
+                  <Badge>Voice</Badge>
+                  <p>{note.message}</p>
+                  <Passage text={text} span={point(note.start, note.end)} onShow={onShow} />
+                </li>
+              ))}
+            </ul>
+          )}
+          {!found.not_compared && found.notes.length === 0 && (
+            <p className="muted small">It sounds like your other scenes.</p>
+          )}
+          {found.stats && <Measures voice={found} />}
+          {found.stats && found.stats.echoes.length > 0 && (
+            <div className="stack tight">
+              <h3 className="voice-subtitle">Repeated close together</h3>
+              <ul className="voice-echoes small">
+                {found.stats.echoes.map((echo) => {
+                  const span = point(echo.start, echo.end)
+                  return (
+                    <li key={`${echo.word}-${echo.start}`}>
+                      “{echo.word}” {echo.times} times within 50 words
+                      {span && (
+                        <>
+                          {' '}
+                          <button type="button" className="link-button" onClick={() => onShow(span)}>
+                            Show in the text
+                          </button>
+                        </>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+          {canWrite && found.stats && (
+            <label className="check small">
+              <input
+                type="checkbox"
+                checked={!found.left_out}
+                disabled={count.isPending}
+                onChange={(event) => count.mutate(!event.target.checked)}
+              />
+              <span>
+                Count this scene in your usual
+                <span className="hint block">
+                  Leave out a scene meant to sound different, such as a letter or a dream.
+                  {!found.left_out && !found.counted && ' Kept drafts count only while you have too few scenes of your own.'}
+                </span>
+              </span>
+            </label>
+          )}
+          <ErrorNotice error={count.error} prefix="Not changed" />
+        </>
+      )}
+    </section>
+  )
+}
+
+function Measures({ voice }: { voice: SceneVoice }) {
+  const stats = voice.stats
+  if (!stats) return null
+  const usual = voice.usual
+  const most = Math.max(1, ...stats.bands)
+  const rows: [string, string, string][] = [
+    ['Sentence length', `about ${round(stats.sentence_mean)} words`, usual.enough ? `about ${round(usual.sentence_mean)}` : '—'],
+    ['Dialogue', percent(stats.dialogue_share), usual.enough ? percent(usual.dialogue_share) : '—'],
+  ]
+  if (stats.english) {
+    rows.push(
+      ['Words ending in ‑ly', `${round(stats.adverb_rate)} in 1,000`, usual.enough ? `${round(usual.adverb_rate)} in 1,000` : '—'],
+      ['Told', PERSON[stats.person] ?? stats.person, usual.enough ? (PERSON[usual.person] ?? usual.person) : '—'],
+      ['Tense', TENSE[stats.tense] ?? stats.tense, usual.enough ? (TENSE[usual.tense] ?? usual.tense) : '—'],
+    )
+  }
+  return (
+    <div className="stack tight">
+      <table className="voice-measures small">
+        <caption className="sr-only">This scene and your usual</caption>
+        <thead>
+          <tr>
+            <th scope="col">
+              <span className="sr-only">Measure</span>
+            </th>
+            <th scope="col">This scene</th>
+            <th scope="col">Your usual</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([label, scene, mine]) => (
+            <tr key={label}>
+              <th scope="row">{label}</th>
+              <td>{scene}</td>
+              <td>{mine}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <details className="more">
+        <summary>Sentence lengths in this scene</summary>
+        <ul className="voice-bands small">
+          {stats.bands.map((value, index) => (
+            <li key={voice.band_labels[index]}>
+              <span className="voice-band-label">{voice.band_labels[index]}</span>
+              <span className="voice-band-bar" aria-hidden="true">
+                <span style={{ width: `${(value / most) * 100}%` }} />
+              </span>
+              <span className="voice-band-count">{plural(value, 'sentence')}</span>
+            </li>
+          ))}
+        </ul>
+      </details>
+      {!stats.english && <p className="hint">Some measures are worked out only for writing in English.</p>}
+    </div>
   )
 }

@@ -47,6 +47,14 @@ export type AssistBrief = Schemas['AssistBriefRequest']
 export type AssistQuestionSheet = Schemas['AssistQuestionSheetModel']
 export type AssistProposalRequest = Schemas['AssistProposalRequest']
 export type ChangeProposal = Schemas['ChangeProposalModel']
+export type AssistThread = Schemas['ThreadModel']
+export type ThreadKind = 'change' | 'premise'
+export type ThreadTurn = Schemas['TurnModel']
+export type PremiseRound = Schemas['PremiseRoundModel']
+export type SuggestionRun = Schemas['SuggestionRunModel']
+export type SuggestionRunKind = 'links' | 'plan_draft' | 'plan_next' | 'premise'
+export type MergePreview = Schemas['MergePreviewModel']
+export type PlanGrounding = Schemas['GroundingModel']
 export type PlanItem = Schemas['PlanItemModel']
 export type PlanRef = Schemas['PlanRefModel']
 export type SceneCondition = Schemas['SceneCondition']
@@ -135,6 +143,9 @@ export type DraftAsk = Schemas['DraftRequest']
 export type StoryAssistantSettings = Schemas['StoryAssistantSettingsModel']
 export type SetAssistantSettings = Schemas['SetAssistantSettingsRequest']
 export type WorkspaceLimits = Schemas['WorkspaceLimitsModel']
+/** A computer connected through the connector, and a code waiting to be confirmed (SCN-002A). */
+export type ConnectedComputer = Schemas['ConnectedComputerModel']
+export type ComputerCode = Schemas['ComputerCodeModel']
 /** Keep the safe ones for me: which suggestions are kept without asking (AST-EXP-015). */
 export type KeptSettings = Schemas['KeptSettingsModel']
 export type KeepRule = Schemas['KeepRuleModel']
@@ -148,6 +159,24 @@ export type PassEstimate = Schemas['PassEstimateModel']
 export type AuditEstimate = Schemas['AuditEstimateModel']
 export type Audit = Schemas['AuditModel']
 export type AuditScene = Schemas['AuditSceneModel']
+// The author's voice, drift across an audit, correction plans, scheduled audits, a
+// what-if's differences and proposals from findings (CON-018, CON-011, CON-010).
+export type SceneVoice = Schemas['SceneVoiceModel']
+export type VoiceStats = Schemas['VoiceStatsModel']
+export type VoiceUsual = Schemas['UsualModel']
+export type VoiceNote = Schemas['VoiceNoteModel']
+export type BookVoice = Schemas['BookVoiceModel']
+export type AuditDrift = Schemas['AuditDriftModel']
+export type Corrections = Schemas['CorrectionsModel']
+export type CorrectionPlan = Schemas['CorrectionPlanModel']
+export type CorrectionEstimate = Schemas['CorrectionEstimateModel']
+export type AuditSchedule = Schemas['ScheduleModel']
+export type AuditSchedules = Schemas['ScheduleListModel']
+export type AuditScheduleAsk = Schemas['ScheduleRequest']
+export type WhatIfAudit = Schemas['WhatIfAuditModel']
+export type FindingRef = Schemas['FindingRef']
+export type FindingProposal = Schemas['FindingProposalModel']
+export type FindingProposalEstimate = Schemas['FindingProposalEstimateModel']
 
 export interface Scope {
   workspaceId: string | null
@@ -605,6 +634,32 @@ export const api = {
       workspaceId,
     }),
 
+  // --- a model on the author's own computer (SCN-002A; hosted and local) ---------
+  /** What a code typed in the app is about to connect, before saying yes. */
+  checkComputerCode: (workspaceId: string | null | undefined, code: string) =>
+    request<ComputerCode>('/api/v1/ai/connector/codes/check', { method: 'POST', workspaceId, json: { code } }),
+  decideComputerCode: (workspaceId: string | null | undefined, code: string, approve: boolean) =>
+    request<ComputerCode>('/api/v1/ai/connector/codes/decide', {
+      method: 'POST',
+      workspaceId,
+      json: { code, approve },
+    }),
+  computers: (workspaceId: string | null | undefined) =>
+    request<ConnectedComputer[]>('/api/v1/ai/connector/devices', { workspaceId }),
+  useComputer: (workspaceId: string | null | undefined, deviceId: string, model: string) =>
+    request<ConnectedComputer>(`/api/v1/ai/connector/devices/${id(deviceId)}/use`, {
+      method: 'POST',
+      workspaceId,
+      json: { model },
+    }),
+  stopUsingComputer: (workspaceId: string | null | undefined) =>
+    request<void>('/api/v1/ai/connector/use', { method: 'DELETE', workspaceId }),
+  disconnectComputer: (workspaceId: string | null | undefined, deviceId: string) =>
+    request<ConnectedComputer>(`/api/v1/ai/connector/devices/${id(deviceId)}/disconnect`, {
+      method: 'POST',
+      workspaceId,
+    }),
+
   // --- access keys for other assistants (QRY-003; hosted and local) -------------
   listAccessKeys: (workspaceId?: string | null) =>
     request<AccessKey[]>('/api/v1/access-keys', { workspaceId }),
@@ -953,6 +1008,41 @@ export const api = {
   audits: (scope: Scope, planId: string) =>
     get<{ items: StudioJob[] }>(scope, '/audits', { plan_id: planId }),
   audit: (scope: Scope, jobId: string) => get<Audit>(scope, `/audits/${id(jobId)}`),
+  /** Voice and relationships across the scenes an audit read. Calls no model. */
+  auditDrift: (scope: Scope, jobId: string) => get<AuditDrift>(scope, `/audits/${id(jobId)}/drift`),
+  corrections: (scope: Scope, jobId: string) =>
+    get<Corrections>(scope, `/audits/${id(jobId)}/corrections`),
+  correctionsEstimate: (scope: Scope, jobId: string) =>
+    get<CorrectionEstimate>(scope, `/audits/${id(jobId)}/corrections/estimate`),
+  /** Ask the assistant which scenes to change and why, from an audit's findings. */
+  planCorrections: (scope: Scope, jobId: string) =>
+    send<StudioJob>(scope, 'POST', `/audits/${id(jobId)}/corrections`),
+  decideCorrection: (scope: Scope, planId: string, index: number, decision: 'waiting' | 'kept' | 'skipped') =>
+    send<CorrectionPlan>(scope, 'PUT', `/corrections/${id(planId)}/items/${index}`, {
+      decision,
+    } satisfies Schemas['DecideStepRequest']),
+  auditSchedules: (scope: Scope) => get<AuditSchedules>(scope, '/audit-schedules'),
+  saveAuditSchedule: (scope: Scope, ask: AuditScheduleAsk) =>
+    send<AuditSchedule>(scope, 'PUT', '/audit-schedules', ask),
+  removeAuditSchedule: (scope: Scope, scheduleId: string) =>
+    send<void>(scope, 'DELETE', `/audit-schedules/${id(scheduleId)}`),
+  /** What differs between a what-if and the main story, with the checks. Calls no model. */
+  whatIfAudit: (scope: Scope, branchId: string) => get<WhatIfAudit>(scope, `/what-ifs/${id(branchId)}/audit`),
+  /** How the scene's saved words sound against the author's usual. Calls no model. */
+  sceneVoice: (scope: Scope, planId: string) => get<SceneVoice>(scope, `/plan/${id(planId)}/voice`),
+  setVoiceLeftOut: (scope: Scope, planId: string, leftOut: boolean) =>
+    send<SceneVoice>(scope, 'PUT', `/plan/${id(planId)}/voice/usual`, {
+      left_out: leftOut,
+    } satisfies Schemas['CountRequest']),
+  bookVoice: (scope: Scope) => get<BookVoice>(scope, '/voice/book'),
+  findingProposalEstimate: (scope: Scope, planId: string, ref: FindingRef) =>
+    send<FindingProposalEstimate>(scope, 'POST', `/plan/${id(planId)}/findings/proposal-estimate`, ref),
+  /** Turn a finding into a story-bible change for review. Nothing changes until approved. */
+  findingProposal: (scope: Scope, planId: string, ref: FindingRef, choice: 'make_true' | 'change_bible') =>
+    send<FindingProposal>(scope, 'POST', `/plan/${id(planId)}/findings/proposal`, {
+      ...ref,
+      choice,
+    } satisfies Schemas['FindingProposalRequest']),
   /** Read the scene's saved text into suggested changes to the story, for review. */
   startReading: (scope: Scope, planId: string) =>
     send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/studio/readings`),
@@ -1017,6 +1107,24 @@ export const api = {
   /** Revise a set of suggested changes by asking; it stays waiting for review. */
   assistRevision: (scope: Scope, body: Schemas['RevisionRequest']) =>
     send<Schemas['RevisionModel']>(scope, 'POST', '/assist/revisions', body),
+  /** The signed-in author's kept conversation of one kind: Change anything, or a premise. */
+  assistThread: (scope: Scope, kind: ThreadKind) =>
+    get<AssistThread>(scope, `/assist/threads/${id(kind)}`),
+  /** Erase that conversation and start again. Suggested and saved changes stay. */
+  clearAssistThread: (scope: Scope, kind: ThreadKind) =>
+    send<Schemas['ClearedModel']>(scope, 'DELETE', `/assist/threads/${id(kind)}`),
+  /** One round of starting from a premise: open questions, and entries to review. */
+  premiseRound: (scope: Scope, body: Schemas['PremiseRequest']) =>
+    send<PremiseRound>(scope, 'POST', '/assist/premise', body),
+  /** Recent runs of suggestions, with how many the author kept and how many quote them. */
+  suggestionRuns: (scope: Scope, kind: SuggestionRunKind, limit = 5) =>
+    get<{ items: SuggestionRun[] }>(scope, '/assist/runs', { kind, limit }),
+  /** What merging one entry into another would do now. Changes nothing. */
+  mergePreview: (scope: Scope, body: Schemas['MergePreviewRequest']) =>
+    send<MergePreview>(scope, 'POST', '/merges/preview', body),
+  /** Send a merge to review; it is saved only once approved. */
+  proposeMerge: (scope: Scope, body: Schemas['MergeProposalRequest']) =>
+    send<Schemas['MergeProposalModel']>(scope, 'POST', '/merges', body),
   // --- conversations with the assistant, kept so they can be resumed and read back ---
   /** The signed-in author's unfinished conversations in this project. */
   openAssistSessions: (scope: Scope) =>

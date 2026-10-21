@@ -17,6 +17,11 @@ User=jaket
 Environment=BACKUP_KEEP=14
 # Paths with a space must be quoted.
 ExecStart="/home/jaket/Projects/Novel Engine/deploy/hosted/backup.sh"
+# Copy the new backup off the host before pruning (see README, "Copying backups off the
+# host"): remove the # from one of the two Environment lines and from the ExecStart line.
+#Environment=BACKUP_COPY_TO=/mnt/offsite/novel-engine
+#Environment="BACKUP_COPY_COMMAND=restic -r sftp:backup@offsite:/novel-engine backup \"$1\""
+#ExecStart="/home/jaket/Projects/Novel Engine/deploy/hosted/copy-off.sh"
 ExecStart="/home/jaket/Projects/Novel Engine/deploy/hosted/prune-backups.sh"
 # A oneshot service has no time limit unless one is set here, so a dump that hangs
 # (a stuck database, a full disk) is stopped after 2 hours and shows in systemctl --failed.

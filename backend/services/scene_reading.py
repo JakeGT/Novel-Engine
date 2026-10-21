@@ -302,6 +302,8 @@ class SceneReadingService:
         starts = scene_time(scene.details)
         guesses = 0
         timed = 0
+        # Changes of state suggested, and new threads the scene opens (EXT-001).
+        state_changes = 0
         # What the whole reading found, so passages do not suggest the same event twice
         # and the scene's thread steps become one change at the end: suggested passage by
         # passage, each would replace the scene's threads as it read them and approving
@@ -360,6 +362,7 @@ class SceneReadingService:
                     )
                     await self._store.save_reading(mine)
                 timed += result.timed
+                state_changes += result.state_changes
                 events.update(result.event_keys)
                 steps.extend(result.found_steps)
                 for guess in result.guesses:
@@ -383,7 +386,7 @@ class SceneReadingService:
                     break
                 start = result.end
         if steps:
-            await ctx.step("Suggesting the threads the scene moves", 96)
+            await ctx.step("Suggesting the threads the scene moves or opens", 96)
             async with ctx.holding():
                 # The scene as it is now, so the change adds to what the author has.
                 scene = await self._studio._scene(  # noqa: SLF001
@@ -418,6 +421,8 @@ class SceneReadingService:
             "guesses": guesses,
             # Suggested facts that start at the scene's time.
             "timed": timed,
+            "state_changes": state_changes,
+            "new_threads": sum(1 for step in steps if step.step == "opens"),
         }
 
 

@@ -69,9 +69,19 @@ class TenancyService:
         self._accept_rate_window_seconds = accept_rate_window_seconds
         self._accept_hits: dict[str, list[float]] = {}
         self._member_keys: MemberKeys | None = None
+        self._member_devices: MemberKeys | None = None
+        self._member_threads: MemberKeys | None = None
 
     def attach_member_keys(self, keys: MemberKeys) -> None:
         self._member_keys = keys
+
+    def attach_member_devices(self, devices: MemberKeys) -> None:
+        """Computers a member connected (SCN-002A): disconnected when they are removed."""
+        self._member_devices = devices
+
+    def attach_member_threads(self, threads: MemberKeys) -> None:
+        """The assistant threads a member kept (AST-EXP-017): erased when they are removed."""
+        self._member_threads = threads
 
     async def _revoke_sessions(self, *user_ids: str) -> None:
         """Invalidate active sessions after a privilege change so roles re-evaluate."""
@@ -292,6 +302,10 @@ class TenancyService:
             target_id=user_id,
             detail={"role": role.value},
         )
+        if self._member_devices is not None and not role_allows(role, Permission.WORKSPACE_ADMIN):
+            # Only owners and admins may connect a computer: one who is no longer either
+            # keeps none (SCN-002A).
+            await self._member_devices.withdraw_for_member(scope, workspace_id, user_id)
         return membership
 
     async def remove_member(self, scope: AccessScope, workspace_id: str, user_id: str) -> bool:
@@ -309,6 +323,11 @@ class TenancyService:
             if self._member_keys is not None:
                 # For good: coming back later does not bring a key back (ADR-024).
                 await self._member_keys.withdraw_for_member(scope, workspace_id, user_id)
+            if self._member_devices is not None:
+                await self._member_devices.withdraw_for_member(scope, workspace_id, user_id)
+            if self._member_threads is not None:
+                # Their conversations with the assistant were private to them: erased.
+                await self._member_threads.withdraw_for_member(scope, workspace_id, user_id)
         return removed
 
     async def transfer_ownership(

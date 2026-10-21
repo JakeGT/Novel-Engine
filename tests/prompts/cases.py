@@ -142,6 +142,37 @@ CASES: dict[str, dict[str, dict[str, Any]]] = {
             "instruction": "Rename Tobin to Tobias.",
             "recent_versions": None,
         },
+        "with earlier turns": {
+            "story": STORY
+            + "\n\nThe plan (what the author intends to happen; never a fact):"
+            + "\n- pln_1: scene “The quay” with Mara Voss (ent_mara, point_of_view)",
+            "predicates": PREDICATES,
+            "entity_types": ENTITY_TYPES,
+            "instruction": "Merge her with the Fox.",
+            "recent_versions": None,
+            "earlier": "The author said: Mara is Tobin's sister.\nYou understood: Mara and "
+            "Tobin are siblings.",
+        },
+    },
+    "premise-round": {
+        "a first round": {
+            "premise": "A lamplighter in Saltmere finds her brother's name in a ledger.",
+            "answered": [],
+            "existing": "",
+            "waiting": "",
+            "earlier": "",
+            "predicates": PREDICATES,
+            "entity_types": ENTITY_TYPES,
+        },
+        "answering in turn": {
+            "premise": "A lamplighter in Saltmere finds her brother's name in a ledger.",
+            "answered": [("Who keeps the ledger?", "The Lamplighters' guild.")],
+            "existing": "- ent_saltmere: Saltmere (Location)",
+            "waiting": "- Her brother (Character)",
+            "earlier": "You asked: Who keeps the ledger?",
+            "predicates": PREDICATES,
+            "entity_types": ENTITY_TYPES,
+        },
     },
     "revise-proposal": {
         "two changes": {
@@ -153,6 +184,11 @@ CASES: dict[str, dict[str, dict[str, Any]]] = {
     },
     "suggest-links": {
         "a small story": {"story": STORY, "linking": LINKING},
+        "with pairs close in meaning": {
+            "story": STORY,
+            "linking": LINKING,
+            "candidates": "- Mara Voss (ent_mara) and The Lamplighters (ent_guild)",
+        },
     },
     "plan-questions": {
         "arcs": {"context": STORY, "description": "A smuggler's daughter.", "depth": "arcs"},
@@ -322,6 +358,14 @@ CASES: dict[str, dict[str, dict[str, Any]]] = {
             "← the scene that needs it",
             "need": "“The ledger at dusk” needs this first: Mara Voss must have this: is "
             "located at Saltmere.",
+        },
+    },
+    "plan-corrections": {
+        "an audit of two scenes": {
+            "findings": "S1: “At the harbour”\n  N1: Mara is in Kestle at this time (about "
+            "“Mara stood on the quay”)\n  C1: The scene names Lantern Harbor, which the story "
+            "bible does not know.\nS2: “Walking home”\n  N2: The ledger is paid off here but "
+            "never set up earlier.\n  P1: This scene reveals the secret before it is set up.",
         },
     },
     "legacy-character-questions": {

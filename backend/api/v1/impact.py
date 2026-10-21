@@ -1,6 +1,7 @@
 """What a change touches, before it is approved (CON-017).
 
-Worked out on read from the plan, story rules, kept drafts and the passage index.
+Worked out on read from the plan, story rules, kept drafts, beliefs, events, pictures,
+the studio's kept checks and notes, and the passage index.
 Nothing here calls a model or changes the story.
 """
 
@@ -34,12 +35,28 @@ def get_impact_service(container: Container = Depends(get_container)) -> ImpactS
         studio=container.studio_store,
         tenancy=container.tenancy_service,
         local_mode=not container.settings.is_hosted,
+        runs=container.consistency_run_store,
+        media=container.media_store,
     )
 
 
 class DependentModel(BaseModel):
-    # scene, plan, thread, rule, draft, scene_text or text.
-    kind: Literal["scene", "plan", "thread", "rule", "draft", "scene_text", "text"]
+    # scene, plan, thread, rule, draft, belief (what a character believes or knows; ``id``
+    # is the character), event, picture (``id`` is the picture), finding (checks and notes in
+    # a scene's studio; ``plan_id`` is the scene), scene_text or text.
+    kind: Literal[
+        "scene",
+        "plan",
+        "thread",
+        "rule",
+        "draft",
+        "belief",
+        "event",
+        "picture",
+        "finding",
+        "scene_text",
+        "text",
+    ]
     # affected: the story's own records name it. may_be_affected: writing mentions it.
     level: Literal["affected", "may_be_affected"]
     id: str

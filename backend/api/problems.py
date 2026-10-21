@@ -17,7 +17,7 @@ from backend.domain.review import IllegalTransition
 from backend.domain.schemas import SchemaCompatibilityError, SchemaGovernanceError
 from backend.domain.tenancy import InvitationNotFound, TenancyError
 from backend.domain.validation import CanonValidationError
-from backend.ports import AIError
+from backend.ports import AIDeviceUnavailableError, AIError
 from backend.services.mutation_service import ReviewRequiredError
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
@@ -97,6 +97,23 @@ def register_exception_handlers(app: FastAPI) -> None:
                 title="HTTP error",
                 code=f"http_{exc.status_code}",
                 detail=str(exc.detail),
+                correlation_id=_correlation_id(request),
+            ),
+        )
+
+    @app.exception_handler(AIDeviceUnavailableError)
+    async def _handle_device_unavailable(
+        request: Request, exc: AIDeviceUnavailableError
+    ) -> JSONResponse:
+        # The author's own computer did not answer (SCN-002A). The message is written by
+        # this site in plain words, never the model server's own text.
+        return _problem_response(
+            503,
+            problem_body(
+                status=503,
+                title="Your computer did not answer",
+                code="device_unavailable",
+                detail=str(exc),
                 correlation_id=_correlation_id(request),
             ),
         )

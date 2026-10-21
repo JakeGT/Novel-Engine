@@ -36,6 +36,7 @@ from backend.domain.operations import (
     CreateEventOp,
     CreatePlanItemOp,
     LinkAssetOp,
+    RestoreEntityOp,
     RetireAssetLinkOp,
     RetireEntityOp,
     RetireEventOp,
@@ -182,6 +183,20 @@ class Neo4jCanonWriter:
                     """
                     MATCH (n:CanonEntity {workspace_id: $workspace_id, project_id: $project_id, id: $id})
                     SET n.lifecycle = 'retired', n.retired_revision = $revision,
+                        n.commit_id = $commit_id, n.revision = $revision
+                    RETURN n.id AS id
+                    """,
+                    id=operation.id,
+                    **ctx,
+                ),
+                operation.id,
+            )
+        elif isinstance(operation, RestoreEntityOp):
+            self._require(
+                tx.run(
+                    """
+                    MATCH (n:CanonEntity {workspace_id: $workspace_id, project_id: $project_id, id: $id})
+                    SET n.lifecycle = 'active', n.retired_revision = null,
                         n.commit_id = $commit_id, n.revision = $revision
                     RETURN n.id AS id
                     """,
@@ -369,6 +384,14 @@ class Neo4jCanonWriter:
                         SET e.world_position = $world_position)
                     FOREACH (_ IN CASE WHEN $set_time THEN [1] ELSE [] END |
                         SET e.world_time = $world_time)
+                    FOREACH (_ IN CASE WHEN $set_participants THEN [1] ELSE [] END |
+                        SET e.participants = $participants)
+                    FOREACH (_ IN CASE WHEN $set_locations THEN [1] ELSE [] END |
+                        SET e.locations = $locations)
+                    FOREACH (_ IN CASE WHEN $set_causes THEN [1] ELSE [] END |
+                        SET e.causes = $causes)
+                    FOREACH (_ IN CASE WHEN $set_outcomes THEN [1] ELSE [] END |
+                        SET e.outcomes = $outcomes)
                     RETURN e.id AS id
                     """,
                     id=operation.id,
@@ -376,10 +399,42 @@ class Neo4jCanonWriter:
                     world_position=operation.world_position,
                     set_time=operation.when is not None,
                     world_time=_time(operation.when, clear_unknown=True),
+                    set_participants=operation.participants is not None,
+                    participants=_dumps(
+                        [
+                            {"entity_id": p.entity_id, "role": p.role}
+                            for p in operation.participants or []
+                        ]
+                    ),
+                    set_locations=operation.location_ids is not None,
+                    locations=_dumps(list(operation.location_ids or [])),
+                    set_causes=operation.cause_ids is not None,
+                    causes=_dumps(list(operation.cause_ids or [])),
+                    set_outcomes=operation.outcome_ids is not None,
+                    outcomes=_dumps(list(operation.outcome_ids or [])),
                     **ctx,
                 ),
                 operation.id,
             )
+            if operation.participants is not None:
+                # Who took part changed (a merge): the edges follow the stored list.
+                tx.run(
+                    """
+                    MATCH (e:CanonEvent {workspace_id: $workspace_id, project_id: $project_id, id: $id})
+                    OPTIONAL MATCH (:CanonEntity)-[old:PARTICIPATED_IN]->(e)
+                    DELETE old
+                    WITH DISTINCT e
+                    UNWIND $participant_edges AS pe
+                    OPTIONAL MATCH (p:CanonEntity {workspace_id: $workspace_id, project_id: $project_id, id: pe.entity_id})
+                    FOREACH (_ IN CASE WHEN p IS NULL THEN [] ELSE [1] END |
+                        MERGE (p)-[r:PARTICIPATED_IN]->(e) SET r.role = pe.role)
+                    """,
+                    id=operation.id,
+                    participant_edges=[
+                        {"entity_id": p.entity_id, "role": p.role} for p in operation.participants
+                    ],
+                    **ctx,
+                )
         elif isinstance(operation, RetireEventOp):
             self._require(
                 tx.run(

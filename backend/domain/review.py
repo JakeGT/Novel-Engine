@@ -43,8 +43,9 @@ class ReviewReason(StrEnum):
 # Origins whose proposals may commit without a separate approval when low-impact.
 DIRECT_COMMIT_ORIGINS = frozenset({OriginKind.AUTHOR.value, OriginKind.MIGRATION.value})
 
-# Operations that remove an identity-bearing record from active canon.
-DESTRUCTIVE_OPERATIONS = frozenset({"retire_entity", "retire_event"})
+# Operations that remove an identity-bearing record from active canon. A merge retires
+# the entry merged away and moves everything that named it (AST-EXP-017).
+DESTRUCTIVE_OPERATIONS = frozenset({"retire_entity", "retire_event", "merge_entities"})
 
 # More operations than this in one set is a bulk change needing explicit approval.
 BULK_OPERATION_THRESHOLD = 25

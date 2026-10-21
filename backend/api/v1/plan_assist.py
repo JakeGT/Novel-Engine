@@ -15,6 +15,7 @@ from backend.api.auth import require_project_scope
 from backend.api.dependencies import (
     get_assist_session_service,
     get_canon_character_workflow,
+    get_conversation_service,
     get_credential_service,
     get_settings,
     get_usage_service,
@@ -29,13 +30,17 @@ from backend.api.v1.canon_characters import CharacterAnswerModel, CharacterQuest
 from backend.api.v1.router import _provider_context
 from backend.core.config import Settings
 from backend.domain.assist import AssistAnswer, AssistKind, AssistQuestion
+from backend.domain.conversations import RunKind
 from backend.domain.identity import AccessScope
+from backend.domain.prompts import prompt_version
 from backend.services.assist_session_service import AssistSessionService
 from backend.services.assistant_settings_service import AssistBudget
 from backend.services.canon_character_workflow import MAX_ANSWERS, CharacterAnswer
+from backend.services.conversation_service import ConversationService
 from backend.services.credential_service import CredentialService
 from backend.services.plan_workflow import (
     MAX_DESCRIPTION_LENGTH,
+    Grounding,
     PlanDraft,
     PlanProposalResult,
     PlanWorkflow,
@@ -62,6 +67,20 @@ class PlanProposalRequest(PlanBriefRequest):
     expected_revision: int = Field(ge=0)
 
 
+class GroundingModel(BaseModel):
+    """Whether one suggested part of the plan quotes the author's material (AST-EXP-013)."""
+
+    title: str
+    # The author's words it quotes, when they were found in what the assistant was given.
+    quote: str | None
+    # False: the assistant's own suggestion, not from anything the author wrote.
+    grounded: bool
+
+
+def _grounding(items: list[Grounding]) -> list[GroundingModel]:
+    return [GroundingModel(title=i.title, quote=i.quote, grounded=i.grounded) for i in items]
+
+
 class PlanProposalModel(BaseModel):
     mutation_id: str
     operation_count: int
@@ -71,6 +90,11 @@ class PlanProposalModel(BaseModel):
     notes: list[str]
     discarded: list[DiscardedItemModel]
     validation_ok: bool
+    # Each suggested part of the plan and whether it quotes the author's material, and
+    # how many do and do not (AST-EXP-013). Kept per run (``/assist/runs``).
+    grounding: list[GroundingModel] = Field(default_factory=list)
+    grounded: int = 0
+    invented: int = 0
 
 
 class DirectionsRequest(BaseModel):
@@ -87,6 +111,8 @@ class DirectionModel(BaseModel):
     adds: int
     # Sent back as it is to choose this direction; checked again when it is.
     draft: PlanDraft
+    # Which of its parts build on what the story already holds (AST-EXP-013).
+    grounding: list[GroundingModel] = Field(default_factory=list)
 
 
 class DirectionsModel(BaseModel):
@@ -111,6 +137,30 @@ def _proposal(result: PlanProposalResult) -> PlanProposalModel:
             DiscardedItemModel(kind=item.kind, reason=item.reason) for item in result.discarded
         ],
         validation_ok=result.validation.ok,
+        grounding=_grounding(result.grounding),
+        grounded=result.grounded,
+        invented=result.invented,
+    )
+
+
+async def _record_plan_run(
+    runs: ConversationService,
+    scope: AccessScope,
+    project_id: str,
+    result: PlanProposalResult,
+    prompt: str | None,
+) -> None:
+    await runs.record_run(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        kind=RunKind.PLAN_DRAFT,
+        suggested=result.operation_count,
+        mutation_id=result.mutation.id,
+        prompt_version=prompt,
+        grounded=result.grounded,
+        invented=result.invented,
+        details={"discarded": len(result.discarded)},
     )
 
 
@@ -179,6 +229,7 @@ async def plan_proposal(
     body: PlanProposalRequest,
     workflow: PlanWorkflow = Depends(get_canon_character_workflow),
     sessions: AssistSessionService = Depends(get_assist_session_service),
+    runs: ConversationService = Depends(get_conversation_service),
     credentials: CredentialService = Depends(get_credential_service),
     usage: ProviderUsageService = Depends(get_usage_service),
     settings: Settings = Depends(get_settings),
@@ -249,6 +300,7 @@ async def plan_proposal(
         session.id,
         mutation_id=result.mutation.id,
     )
+    await _record_plan_run(runs, scope, project_id, result, prompt_version("plan-draft"))
     return _proposal(result)
 
 
@@ -257,6 +309,7 @@ async def plan_directions(
     project_id: str,
     body: DirectionsRequest,
     workflow: PlanWorkflow = Depends(get_canon_character_workflow),
+    runs: ConversationService = Depends(get_conversation_service),
     credentials: CredentialService = Depends(get_credential_service),
     usage: ProviderUsageService = Depends(get_usage_service),
     settings: Settings = Depends(get_settings),
@@ -287,6 +340,18 @@ async def plan_directions(
     )
     if credential_id:
         await credentials.mark_used(scope.workspace_id or "", credential_id)
+    grounding = [item for direction in offered for item in direction.grounding]
+    await runs.record_run(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        kind=RunKind.PLAN_NEXT,
+        suggested=len(grounding),
+        prompt_version=prompt_version("plan-next"),
+        grounded=sum(1 for item in grounding if item.grounded),
+        invented=sum(1 for item in grounding if not item.grounded),
+        details={"directions": len(offered)},
+    )
     return DirectionsModel(
         directions=[
             DirectionModel(
@@ -295,6 +360,7 @@ async def plan_directions(
                 what_it_changes=item.what_it_changes,
                 adds=item.adds,
                 draft=item.draft,
+                grounding=_grounding(item.grounding),
             )
             for item in offered
         ]
@@ -306,6 +372,7 @@ async def choose_direction(
     project_id: str,
     body: ChooseDirectionRequest,
     workflow: PlanWorkflow = Depends(get_canon_character_workflow),
+    runs: ConversationService = Depends(get_conversation_service),
     scope: AccessScope = Depends(require_project_scope),
 ) -> PlanProposalModel:
     """The direction the author picked, checked again, as plan items to review. No model call."""
@@ -316,4 +383,5 @@ async def choose_direction(
         body.draft,
         expected_revision=body.expected_revision,
     )
+    await _record_plan_run(runs, scope, project_id, result, prompt_version("plan-next"))
     return _proposal(result)

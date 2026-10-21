@@ -18,6 +18,7 @@ import { PicturePage } from './pages/PicturePage'
 import { Overview } from './pages/Overview'
 import { PeoplePage } from './pages/PeoplePage'
 import { PlanPage } from './pages/PlanPage'
+import { PremisePage } from './pages/PremisePage'
 import { ReaderGuidePage } from './pages/ReaderGuidePage'
 import { RulesPage } from './pages/RulesPage'
 import { StudioPage } from './pages/StudioPage'
@@ -26,6 +27,7 @@ import { NamesPage } from './pages/NamesPage'
 import { TextsPage } from './pages/TextsPage'
 import { TimelinePage } from './pages/TimelinePage'
 import { WhatIfPage, WhatIfsPage } from './pages/WhatIfsPage'
+import { WhatIfAuditPage } from './pages/WhatIfAuditPage'
 import { ProjectLayout } from './pages/ProjectLayout'
 import { ReviewDetail } from './pages/ReviewDetail'
 import { ReviewQueue } from './pages/ReviewQueue'
@@ -60,6 +62,7 @@ export default function App() {
               <Route path="review/kept" element={<KeptPage />} />
               <Route path="review/:mutationId" element={<ReviewDetail />} />
               <Route path="plan" element={<PlanPage />} />
+              <Route path="premise" element={<PremisePage />} />
               <Route path="plan/:planId/write" element={<StudioPage />} />
               <Route path="plan/:planId/guide" element={<ReaderGuidePage />} />
               <Route path="audits/:jobId" element={<AuditPage />} />
@@ -67,6 +70,7 @@ export default function App() {
               <Route path="timeline" element={<TimelinePage />} />
               <Route path="what-ifs" element={<WhatIfsPage />} />
               <Route path="what-ifs/:branchId" element={<WhatIfPage />} />
+              <Route path="what-ifs/:branchId/audit" element={<WhatIfAuditPage />} />
               <Route path="texts" element={<TextsPage />} />
               <Route path="texts/:sourceId" element={<TextPage />} />
               <Route path="names" element={<NamesPage />} />

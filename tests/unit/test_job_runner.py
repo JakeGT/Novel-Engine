@@ -501,3 +501,34 @@ def test_hosted_access_is_checked_when_asked_and_again_when_run() -> None:
     # Nobody without access can ask in the first place.
     with pytest.raises(DomainError):
         _submit(runner, scope=hosted)
+
+
+def test_periodic_work_runs_between_jobs_while_more_are_waiting() -> None:
+    # Audits the author scheduled are started on time even when the queue never empties.
+    runner, store = _runner()
+    waiting_at_each_look: list[int] = []
+
+    async def work(ctx):
+        return {}
+
+    async def look():
+        waiting_at_each_look.append(
+            sum(1 for job in store.jobs.values() if job.status is JobStatus.QUEUED)
+        )
+
+    runner.register("work", work)
+    runner.every(0, look)
+    for _ in range(3):
+        _submit(runner)
+
+    async def go() -> None:
+        task = asyncio.create_task(runner._loop())  # noqa: SLF001 - the loop itself
+        while any(job.status is JobStatus.QUEUED for job in store.jobs.values()):
+            await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(go())
+    assert waiting_at_each_look[:3] == [2, 1, 0]

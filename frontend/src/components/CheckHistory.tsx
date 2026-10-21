@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type CheckRun, type CheckRunFinding } from '../api/client'
+import { api, type CheckRun, type CheckRunFinding, type CheckRunScene } from '../api/client'
 import { findingStatus, profileText, runLabel, tallyText, workText } from '../lib/checkRuns'
 import { AUDIT_STATUS } from '../lib/studio'
 import { fullDate, timeAgo } from '../lib/time'
@@ -72,6 +72,38 @@ function Coverage({ run }: { run: CheckRun }) {
   )
 }
 
+/** The pictures a check against the scene's pictures was given, and what changed since (CON-001). */
+function PicturesRead({ part }: { part: CheckRunScene }) {
+  const pictures = part.pictures ?? []
+  if (pictures.length === 0) return null
+  return (
+    <div className="stack tight run-pictures">
+      <p className="small">
+        Compared with {pictures.length === 1 ? 'one picture' : `${pictures.length} pictures`}:
+      </p>
+      <ul className="small plain-list">
+        {pictures.map((picture) => (
+          <li key={picture.asset_id}>
+            {picture.label} ({picture.choice === 'send' ? 'the picture itself' : 'its description'})
+            {picture.changed ? <span className="muted"> — {picture.changed}</span> : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/** Whether a scene of a run is out of date, counting its pictures, and why. */
+function sinceWords(part: CheckRunScene): { stale: boolean; words: string } {
+  const changed = (part.pictures ?? []).filter((picture) => picture.changed)
+  const pictureWords =
+    changed.length === 0 ? '' : changed.length === 1 ? 'A picture it read has changed.' : 'Pictures it read have changed.'
+  return {
+    stale: part.stale || changed.length > 0,
+    words: [part.stale ? part.reasons.join(' ') : '', pictureWords].filter(Boolean).join(' '),
+  }
+}
+
 /** How often the author dismissed each check's findings in this story (CON-016). */
 function Calibration() {
   const { scope } = useProject()
@@ -129,6 +161,11 @@ function Findings({ findings }: { findings: CheckRunFinding[] }) {
             {finding.quoted && (
               <p className="finding-passage">
                 <q>{finding.quoted}</q>
+              </p>
+            )}
+            {finding.picture?.changed && (
+              <p className="small muted">
+                The picture it was compared with has changed since: {finding.picture.changed}
               </p>
             )}
           </li>
@@ -193,6 +230,7 @@ export function CheckHistory({
         <ol className="rows check-runs">
           {items.map((run) => {
             const part = run.scenes[0]
+            const since = part ? sinceWords(part) : { stale: false, words: '' }
             const number = part?.version_id ? versions.get(part.version_id) : undefined
             return (
               <li className="row check-run" key={run.id}>
@@ -210,9 +248,9 @@ export function CheckHistory({
                     )}
                     {part && <Tally {...part} />}
                   </span>
-                  {part?.stale ? (
+                  {since.stale ? (
                     <span className="small">
-                      <Badge tone="neutral">Out of date</Badge> {part.reasons.join(' ')}
+                      <Badge tone="neutral">Out of date</Badge> {since.words}
                     </span>
                   ) : (
                     <span className="small">
@@ -220,6 +258,7 @@ export function CheckHistory({
                     </span>
                   )}
                   <Coverage run={run} />
+                  {part && <PicturesRead part={part} />}
                   {part && (workText(part) || profileText(run.profile ?? {})) && (
                     <p className="small muted">
                       {[workText(part), profileText(run.profile ?? {})].filter(Boolean).join(' ')}

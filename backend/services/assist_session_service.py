@@ -178,6 +178,46 @@ class AssistSessionService:
         )
         return session.model_copy(update={"status": AssistStatus.CLOSED, "updated_at": self._now()})
 
+    async def erase_words(
+        self, scope: AccessScope, workspace_id: str, project_id: str, session_ids: list[str]
+    ) -> int:
+        """Erase what the author said in these conversations of theirs (their thread was
+        cleared): an unfinished one goes; one behind suggested changes stays as their
+        evidence, with its words blanked. Anyone else's is left alone."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        erased = 0
+        for session_id in dict.fromkeys(session_ids):
+            session = await self._store.get(
+                workspace_id=workspace_id, project_id=project_id, session_id=session_id
+            )
+            if session is None or session.actor_user_id != scope.actor_user_id:
+                continue
+            if session.status is AssistStatus.OPEN:
+                await self._store.delete(
+                    workspace_id=workspace_id, project_id=project_id, session_id=session_id
+                )
+            else:
+                await self._store.save(
+                    session.model_copy(
+                        update={
+                            "description": "",
+                            "questions": [
+                                item.model_copy(update={"question": ""})
+                                for item in session.questions
+                            ],
+                            "answers": [
+                                item.model_copy(update={"question": "", "answer": ""})
+                                for item in session.answers
+                            ],
+                            "understood": "",
+                            "notes": [],
+                            "updated_at": self._now(),
+                        }
+                    )
+                )
+            erased += 1
+        return erased
+
     async def list_open(
         self, scope: AccessScope, workspace_id: str, project_id: str
     ) -> list[AssistSession]:

@@ -605,6 +605,11 @@ class CanonHistoryService:
                     {"op": _CREATION_INVERSE[version.operation_type], "id": version.record_id},
                 )
                 continue
+            if version.operation_type == "retire_entity" and version.change.get("merged_into"):
+                # Retired by a merge (AST-EXP-017): undoing the merge brings it back,
+                # before the facts and beliefs about it are stated again.
+                compensate(version, {"op": "restore_entity", "id": version.record_id})
+                continue
             if version.operation_type in _NO_INVERSE_REASON:
                 manual(version, _NO_INVERSE_REASON[version.operation_type])
                 continue
@@ -658,6 +663,22 @@ class CanonHistoryService:
                         "confidence": fact.confidence,
                         "valid_from": fact.valid_from.isoformat() if fact.valid_from else None,
                         "valid_until": fact.valid_until.isoformat() if fact.valid_until else None,
+                        # Its story time and secrecy come back with it.
+                        **(
+                            {"starts": fact.starts.model_dump(mode="json")}
+                            if fact.starts is not None
+                            else {}
+                        ),
+                        **(
+                            {"ends": fact.ends.model_dump(mode="json")}
+                            if fact.ends is not None
+                            else {}
+                        ),
+                        **(
+                            {"visibility": fact.visibility.value}
+                            if fact.visibility is not FactVisibility.ORDINARY
+                            else {}
+                        ),
                     },
                 )
             elif version.operation_type == "close_belief":
@@ -912,6 +933,13 @@ def _inverse_amend(version: RecordVersion, before: Event) -> tuple[dict, str | N
         inverse["world_position"] = before.world_position
     if change.get("when") is not None:
         inverse["when"] = _time_or_clear(before.when)
+    if change.get("participants") is not None:
+        inverse["participants"] = [p.model_dump(mode="json") for p in before.participants]
+    if change.get("location_ids") is not None:
+        inverse["location_ids"] = list(before.location_ids)
+    for key in ("cause_ids", "outcome_ids"):
+        if change.get(key) is not None:
+            inverse[key] = list(getattr(before, key))
     if len(inverse) == 2:
         return inverse, "the amendment changed nothing"
     return inverse, None
@@ -1009,6 +1037,10 @@ def _replay_entity(version: RecordVersion, current: CanonEntity | None) -> Canon
     if op == "retire_entity":
         return current.model_copy(
             update={"lifecycle": EntityLifecycle.RETIRED, "retired_revision": version.revision}
+        )
+    if op == "restore_entity":
+        return current.model_copy(
+            update={"lifecycle": EntityLifecycle.ACTIVE, "retired_revision": None}
         )
     return current
 
@@ -1109,6 +1141,15 @@ def _replay_event(version: RecordVersion, current: Event | None) -> Event | None
             update["world_position"] = change["world_position"]
         if change.get("when") is not None:
             update["when"] = _stored_time(change["when"])
+        if change.get("participants") is not None:
+            update["participants"] = [
+                EventParticipant.model_validate(p) for p in change["participants"]
+            ]
+        if change.get("location_ids") is not None:
+            update["location_ids"] = list(change["location_ids"])
+        for key in ("cause_ids", "outcome_ids"):
+            if change.get(key) is not None:
+                update[key] = list(change[key])
         return current.model_copy(update=update)
     if op == "retire_event":
         return current.model_copy(update={"retired_revision": version.revision})

@@ -38,7 +38,7 @@ from backend.domain.jobs import (
     LeaseLost,
 )
 from backend.domain.tenancy import Permission
-from backend.ports import AIInvalidOutputError, AIProviderError
+from backend.ports import AIDeviceUnavailableError, AIInvalidOutputError, AIProviderError
 
 logger = logging.getLogger(__name__)
 
@@ -180,6 +180,9 @@ class JobRunner:
         self._wake = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
         self.autostart = autostart
+        # Work the loop does now and then, between jobs, such as starting audits the
+        # author scheduled (CON-011): (every so many seconds, what, next due).
+        self._periodic: list[list[Any]] = []
 
     def register(self, kind: str, handler: Handler, *, keeps_partial: bool = False) -> None:
         self._handlers[kind] = handler
@@ -187,6 +190,34 @@ class JobRunner:
             self._keeps_partial.add(kind)
         else:
             self._keeps_partial.discard(kind)
+
+    def every(self, seconds: float, work: Callable[[], Awaitable[Any]]) -> None:
+        """Run ``work`` about every ``seconds``, between jobs whether or not more are
+        waiting, so a busy queue never holds it back for longer than one job takes.
+        ``work`` should do a bounded amount each time, since jobs wait while it runs. A
+        failure is logged by kind and tried again next time; it never stops the loop."""
+        self._periodic.append([seconds, work, 0.0])
+
+    async def run_periodic(self, *, now: float | None = None) -> int:
+        """Run the periodic work that is due. Returns how many ran."""
+        clock = asyncio.get_running_loop().time() if now is None else now
+        ran = 0
+        for entry in self._periodic:
+            seconds, work, due = entry
+            if clock < due:
+                continue
+            entry[2] = clock + seconds
+            ran += 1
+            try:
+                await work()
+            except Exception as error:  # noqa: BLE001 - the loop must survive it
+                log_event(
+                    logger,
+                    "job.periodic.error",
+                    level=logging.WARNING,
+                    error_type=type(error).__name__,
+                )
+        return ran
 
     async def submit(
         self, scope: AccessScope, workspace_id: str, project_id: str, submission: JobSubmission
@@ -313,13 +344,17 @@ class JobRunner:
                     else "Something went wrong. Nothing was saved from this run."
                 ),
             )
-            for kind, known_code, known_message in _FAILURES:
-                if isinstance(error, kind):
-                    code, message = known_code, known_message
-                    break
+            if isinstance(error, AIDeviceUnavailableError):
+                # The author's own computer did not answer (SCN-002A): its plain words say why.
+                code, message = "device", str(error)[:300]
             else:
-                if isinstance(error, DomainError):
-                    code, message = "refused", str(error)[:300]
+                for kind, known_code, known_message in _FAILURES:
+                    if isinstance(error, kind):
+                        code, message = known_code, known_message
+                        break
+                else:
+                    if isinstance(error, DomainError):
+                        code, message = "refused", str(error)[:300]
             if code == "internal":
                 # The kind of error only: its message may quote the author's words.
                 log_event(
@@ -356,15 +391,22 @@ class JobRunner:
             done.append(finished)
         return done
 
+    async def _cycle(self) -> Job | None:
+        """One turn of the loop: a job if one is waiting, then the periodic work that is
+        due, which goes by the clock rather than waiting for the queue to empty."""
+        try:
+            finished = await self.run_once()
+        except Exception as error:  # noqa: BLE001 - the loop must survive a bad poll
+            log_event(
+                logger, "job.loop.error", level=logging.WARNING, error_type=type(error).__name__
+            )
+            finished = None
+        await self.run_periodic()
+        return finished
+
     async def _loop(self) -> None:
         while True:
-            try:
-                finished = await self.run_once()
-            except Exception as error:  # noqa: BLE001 - the loop must survive a bad poll
-                log_event(
-                    logger, "job.loop.error", level=logging.WARNING, error_type=type(error).__name__
-                )
-                finished = None
+            finished = await self._cycle()
             if finished is None:
                 self._wake.clear()
                 try:

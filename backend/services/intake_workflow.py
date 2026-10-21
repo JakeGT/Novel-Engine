@@ -20,6 +20,19 @@ the scene's time). Reading a scene also finds thread steps: when the passage mov
 along or settles a thread the plan already has, the scene's plan says so. Both quote the
 passage like facts, and both wait for review in the same set of suggested changes.
 
+Reading also finds changes of state (EXT-001): someone comes to hold or loses a thing,
+moves to or leaves a place, becomes or stops being injured, captive, dead and the like,
+or a relationship begins or ends. A beginning is a fact like any other (in a timed scene
+it starts at the scene's time when its kind of fact can take a time); an ending the
+passage states outright ends the fact the story already records, at the scene's time
+when its kind can take one and otherwise by closing it (a reading with no story time
+leaves a timed kind alone: the fact may be from later in the story). In a timed scene a change whose kind of fact cannot take a time is also
+suggested as an event at the scene's time (becoming dead as a death, with whoever died), so
+the change is placed in story time. Reading a scene may also open a thread: a question or
+promise the plan's threads do not cover becomes a new thread the scene opens, in the
+same one change to the scene's plan as its thread steps. All of it quotes the passage
+and waits for review.
+
 What the model is shown of the story bible follows the ``read-text`` listing policy
 (CTX-002): the entries the passage names, then their neighbours, then the rest by
 importance, within a word budget, with what was left out counted and said.
@@ -48,7 +61,14 @@ from backend.domain.bible_listing import (
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.events import Event, EventParticipant
 from backend.domain.canon.naming import normalize_name
-from backend.domain.canon.plans import MAX_THREAD_LINKS, PlanItem, PlanKind
+from backend.domain.canon.plans import (
+    MAX_SUMMARY_LENGTH,
+    MAX_THREAD_LINKS,
+    MAX_TITLE_LENGTH,
+    PlanItem,
+    PlanKind,
+)
+from backend.domain.canon.propositions import ObjectKind
 from backend.domain.canon.registry import PredicateSpec
 from backend.domain.canon.revisions import OriginKind
 from backend.domain.errors import ValidationError
@@ -56,10 +76,13 @@ from backend.domain.identity import AccessScope
 from backend.domain.journal import MutationSet
 from backend.domain.operations import (
     MAX_EVIDENCE_PER_OPERATION,
+    AmendFactOp,
     AssertFactOp,
     CanonOperation,
+    CloseFactOp,
     CreateEntityOp,
     CreateEventOp,
+    CreatePlanItemOp,
     EvidenceRef,
     PlanBase,
     UpdatePlanItemOp,
@@ -101,6 +124,7 @@ from backend.services.schema_suggestions import (
     SuggestedType,
     clean_suggestions,
 )
+from backend.services.story_time_service import event_times, fact_span, time_of
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +139,24 @@ MAX_EVENTS = 20
 MAX_PARTICIPANTS = 20
 MAX_THREAD_SUMMARY = 160
 STEPS = ("advances", "resolves")
+# What a change of state can be about (EXT-001).
+STATE_KINDS = ("possession", "location", "status", "relationship")
+# Kinds of fact a possession, a relationship and a status are recorded with, beyond any
+# whose object fits (an Object held, a Character or Faction known).
+POSSESSION_PREDICATES = frozenset({"OWNS", "HOLDS", "CARRIES", "POSSESSES", "WIELDS"})
+RELATIONSHIP_PREDICATES = frozenset({"RELATED_TO", "KNOWS", "MEMBER_OF"})
+# Status words that mean a death, and words that mean a lasting condition (as the
+# continuity checks read them).
+DEATH_WORDS = frozenset(
+    {"dead", "deceased", "killed", "died", "drowned", "perished", "slain", "murdered"}
+)
+STATE_EVENT_KINDS = {
+    "possession": "possession",
+    "location": "journey",
+    "status": "condition",
+    "relationship": "relationship",
+}
+MAX_NEW_THREADS = 3
 
 
 class ReadEntity(DraftEntity):
@@ -179,6 +221,41 @@ class ReadThreadStep(BaseModel):
     quote: str = Field(description="The exact words from the passage that do it")
 
 
+class ReadStateChange(BaseModel):
+    kind: str = Field(description="possession, location, status or relationship")
+    change: str = Field(
+        default="starts",
+        description="starts when the passage shows it beginning; ends when it shows it stopping",
+    )
+    subject: str = Field(
+        description=(
+            "Id of a listed entry, or ref of an entity in this answer, whose state changes: "
+            "who holds the thing, who moves, whose status changes, or one side of the "
+            "relationship"
+        )
+    )
+    predicate: str = Field(description="One of the listed predicates that records the state")
+    object: str | None = Field(
+        default=None,
+        description=(
+            "Possession, location and relationship: the id or ref of the thing held, the "
+            "place, or the other side"
+        ),
+    )
+    value: str | None = Field(
+        default=None, description="Status only: one or two words, such as injured or dead"
+    )
+    name: str = Field(default="", description="A short name for the change, a few words")
+    quote: str = Field(description="The exact words from the passage that show the change")
+    stated: bool = True
+
+
+class ReadNewThread(BaseModel):
+    title: str = Field(description="A short title for the question or promise, a few words")
+    summary: str = Field(default="", description="One plain sentence: what is left open")
+    quote: str = Field(description="The exact words from the passage that open it")
+
+
 class ReadReference(BaseModel):
     phrase: str = Field(description="A nickname or description the passage uses, as written")
     ref: str = Field(description="The id of the existing entry it means")
@@ -193,6 +270,8 @@ class PassageDraft(BaseModel):
     references: list[ReadReference] = Field(default_factory=list)
     events: list[ReadEvent] = Field(default_factory=list)
     thread_steps: list[ReadThreadStep] = Field(default_factory=list)
+    state_changes: list[ReadStateChange] = Field(default_factory=list)
+    new_threads: list[ReadNewThread] = Field(default_factory=list)
     suggested_types: list[SuggestedType] = Field(default_factory=list)
     suggested_fact_kinds: list[SuggestedFactKind] = Field(default_factory=list)
 
@@ -231,6 +310,10 @@ class PassageResult:
     # How many events and thread steps are suggested (EXT-001).
     events: int = 0
     thread_steps: int = 0
+    # How many changes of state are suggested: beginnings, endings and the events that
+    # place them in story time; and how many new threads the scene opens (EXT-001).
+    state_changes: int = 0
+    new_threads: int = 0
     # What part of the story bible the model was shown, by which policy (CTX-002).
     context: Listing | None = None
     # With ``steps_later``: the thread steps found, for one change at the end of a reading.
@@ -420,6 +503,7 @@ class IntakeWorkflow(PlanWorkflow):
                 predicates,
                 entity_types,
                 threads=bool(listing.section("threads")),
+                opens=scene is not None,
             ),
             response_format=SceneDraft if timed_scene else PassageDraft,
             prompt_version=READ_SCENE_PROMPT_VERSION if timed_scene else READ_PROMPT_VERSION,
@@ -484,6 +568,47 @@ class IntakeWorkflow(PlanWorkflow):
                     )
                 )
 
+        # A change of state that begins here is a fact read like the others (in a timed
+        # scene it starts at the scene's time); one that ends is matched against what the
+        # story records once the rest is drafted (EXT-001).
+        endings: list[tuple[str, ReadStateChange]] = []
+        beginnings: set[str] = set()
+        state_seen: list[tuple[str, ReadStateChange]] = []
+        for number, change in enumerate(draft.state_changes[:MAX_PROPOSED_ITEMS]):
+            key = f"s{number}"
+            problem = _state_problem(change, predicates)
+            if problem is not None:
+                discarded.append(DiscardedItem("state", problem))
+                continue
+            if not locate("state", change.quote, key, stated=change.stated):
+                continue
+            if change.change.strip().lower() == "ends":
+                if not change.stated:
+                    # Ending what the story records takes the passage saying so outright.
+                    discarded.append(
+                        DiscardedItem(
+                            "state",
+                            f"{_change_label(change)}: the passage only hints that it ends",
+                        )
+                    )
+                    continue
+                state_seen.append((key, change))
+                endings.append((key, change))
+                continue
+            state_seen.append((key, change))
+            beginnings.add(key)
+            changing.add(key)
+            scalar = predicates[change.predicate].object_shape is not ObjectKind.ENTITY_REF
+            kept_facts.append(
+                DraftFact(
+                    subject_ref=change.subject.strip(),
+                    predicate=change.predicate,
+                    object_ref=None if scalar else (change.object or "").strip() or None,
+                    object_value=(change.value or "").strip() or None if scalar else None,
+                    question_id=key,
+                )
+            )
+
         operations, dropped = self._draft_operations(
             CreationDraft(entities=kept_entities, facts=kept_facts, beliefs=kept_beliefs),
             brief=CreationBrief(),
@@ -506,6 +631,9 @@ class IntakeWorkflow(PlanWorkflow):
             for operation in operations
             if isinstance(operation, AssertFactOp) and operation.starts is not None
         )
+        # The beginnings that survived drafting, by their key, said why for the reviewer.
+        begun = {began for operation in operations if (began := _state_key(operation, beginnings))}
+        operations = [_why_begins(operation, beginnings) for operation in operations]
         operations = [
             self._pointed(operation, version.id, places, named_at) for operation in operations
         ]
@@ -526,6 +654,41 @@ class IntakeWorkflow(PlanWorkflow):
             scene=scene,
             proposed=proposed_events,
         )
+        refs = _ref_map(kept_entities, operations, entities)
+        ending_ops = await self._endings(
+            endings,
+            refs=refs,
+            predicates=predicates,
+            operations=operations,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            starts=starts,
+            version_id=version.id,
+            places=places,
+            discarded=discarded,
+        )
+        ended = {key for key, _ in ending_ops}
+        state_events: list[CanonOperation] = []
+        if starts is not None:
+            state_events = _state_events(
+                # A beginning is placed in time even when its fact could not be drafted
+                # (a status whose values the author picks by hand); an ending only when
+                # the story recorded what ends.
+                [item for item in state_seen if item[0] in beginnings or item[0] in ended],
+                refs=refs,
+                names={entity.id: entity.name for entity in entities}
+                | {op.id: op.name for op in operations if isinstance(op, CreateEntityOp)},
+                predicates=predicates,
+                starts=starts,
+                scene=scene,
+                version_id=version.id,
+                places=places,
+                taken={normalize_name(event.name) for event in known_events}
+                | {normalize_name(op.name) for op in event_ops if isinstance(op, CreateEventOp)},
+            )
+        operations = [*operations, *(op for _, op in ending_ops)]
+        state_count = len(begun) + len(ending_ops) + len(state_events)
+        event_ops = [*event_ops, *state_events]
         found_steps = _check_steps(
             draft.thread_steps,
             scene=scene,
@@ -534,11 +697,20 @@ class IntakeWorkflow(PlanWorkflow):
             bounds=bounds,
             discarded=discarded,
         )
-        step_op: UpdatePlanItemOp | None = None
+        opened = _new_threads(
+            draft.new_threads,
+            scene=scene,
+            threads=threads,
+            content=content,
+            bounds=bounds,
+            discarded=discarded,
+        )
+        found_steps = [*found_steps, *opened]
+        step_ops: list[CanonOperation] = []
         steps = len(found_steps) if steps_later else 0
         if found_steps and scene is not None and not steps_later:
-            step_op, steps = thread_steps_change(found_steps, scene=scene, version_id=version.id)
-        operations = [*operations, *event_ops, *([step_op] if step_op is not None else [])]
+            step_ops, steps = thread_steps_change(found_steps, scene=scene, version_id=version.id)
+        operations = [*operations, *event_ops, *step_ops]
         implied = sum(
             1
             for operation in operations
@@ -574,6 +746,8 @@ class IntakeWorkflow(PlanWorkflow):
             timed=timed,
             events=len(event_ops),
             thread_steps=steps,
+            state_changes=state_count,
+            new_threads=len(opened),
             prompt_version=READ_SCENE_PROMPT_VERSION if timed_scene else READ_PROMPT_VERSION,
             context_policy=listing.policy_version,
             listed=listing.listed,
@@ -593,6 +767,8 @@ class IntakeWorkflow(PlanWorkflow):
             timed=timed,
             events=len(event_ops),
             thread_steps=steps,
+            state_changes=state_count,
+            new_threads=len(opened),
             context=listing,
             found_steps=found_steps if steps_later else [],
             event_keys=[
@@ -645,19 +821,132 @@ class IntakeWorkflow(PlanWorkflow):
         """The thread steps a whole reading found, as one change to the scene's plan made
         from the scene as it is now. None when there is nothing new to add."""
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
-        operation, steps = thread_steps_change(found, scene=scene, version_id=version_id)
-        if operation is None:
+        operations, steps = thread_steps_change(found, scene=scene, version_id=version_id)
+        if not operations:
             return None, 0
         mutation, _ = await self._queue(
             scope,
             workspace_id,
             project_id,
-            [operation],
+            operations,
             expected_revision,
             "read from the author's text: the threads the scene moves, awaiting review",
         )
         log_event(logger, "intake.workflow.read_steps", mutation_id=mutation.id, steps=steps)
         return mutation, steps
+
+    async def _endings(
+        self,
+        endings: list[tuple[str, ReadStateChange]],
+        *,
+        refs: dict[str, tuple[str, str]],
+        predicates: dict[str, PredicateSpec],
+        operations: list[CanonOperation],
+        workspace_id: str,
+        project_id: str,
+        starts: WorldTime | None,
+        version_id: str,
+        places: dict[str, str],
+        discarded: list[DiscardedItem],
+    ) -> list[tuple[str, CanonOperation]]:
+        """Changes of state the passage shows ending, against what the story records.
+
+        The fact that says so is ended at the scene's time when its kind can take a time
+        and it began before the scene, or closed when its kind takes no time; nothing is
+        suggested when the story records no such fact, it has already ended, another
+        suggestion here already ends it, or its kind takes a time and the reading has
+        none (the fact may be one from later in the story)."""
+        if not endings:
+            return []
+        touched = {
+            operation.id
+            for operation in operations
+            if isinstance(operation, CloseFactOp | AmendFactOp)
+        }
+        times: dict[str, Any] | None = None
+        out: list[tuple[str, CanonOperation]] = []
+        for key, change in endings:
+            label = _change_label(change)
+            subject = refs.get(change.subject.strip())
+            spec = predicates[change.predicate]
+            scalar = spec.object_shape is not ObjectKind.ENTITY_REF
+            target = None if scalar else refs.get((change.object or "").strip())
+            if (
+                subject is None
+                or subject[0].startswith("tmp:")
+                or (not scalar and (target is None or target[0].startswith("tmp:")))
+            ):
+                discarded.append(
+                    DiscardedItem("state", f"{label}: the story records nothing for it to end")
+                )
+                continue
+            current = await self._reader.list_facts(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                subject_id=subject[0],
+                predicate=change.predicate,
+                limit=50,
+            )
+            wanted = normalize_name(change.value or "")
+            matching = [
+                fact
+                for fact in current
+                if fact.id not in touched
+                and (
+                    getattr(fact.proposition.object, "entity_id", None) == target[0]
+                    if target is not None
+                    else normalize_name(str(getattr(fact.proposition.object, "value", "")))
+                    == wanted
+                )
+            ]
+            if not matching:
+                discarded.append(
+                    DiscardedItem("state", f"{label}: the story records nothing for it to end")
+                )
+                continue
+            evidence = [EvidenceRef(source_artefact_id=version_id, location=places.get(key))]
+            why = "The passage shows this coming to an end."
+            if spec.temporal_allowed and starts is None:
+                discarded.append(
+                    DiscardedItem(
+                        "state",
+                        f"{label}: the passage has no story time, so when it ends cannot be placed",
+                    )
+                )
+                continue
+            for fact in matching:
+                touched.add(fact.id)
+                if not spec.temporal_allowed:
+                    out.append((key, CloseFactOp(id=fact.id, evidence=evidence, why=why)))
+                    continue
+                if times is None:
+                    events = await self._reader.list_events(
+                        workspace_id=workspace_id, project_id=project_id, limit=10_000
+                    )
+                    times = event_times([e for e in events if e.retired_revision is None])
+                moment = time_of(starts, times)
+                span = fact_span(fact, times)
+                if moment is None:
+                    discarded.append(
+                        DiscardedItem(
+                            "state",
+                            f"{label}: the scene's time cannot be placed, so when it ends "
+                            "cannot be either",
+                        )
+                    )
+                elif span.end is not None and span.end.hi <= moment.lo:
+                    discarded.append(DiscardedItem("state", f"{label}: it had already ended"))
+                elif moment.lo == moment.hi and (
+                    span.start is None or (span.start.hi <= moment.lo and span.start.lo < moment.lo)
+                ):
+                    out.append((key, AmendFactOp(id=fact.id, ends=starts, evidence=evidence)))
+                else:
+                    discarded.append(
+                        DiscardedItem(
+                            "state", f"{label}: when it began cannot be placed before this scene"
+                        )
+                    )
+        return out
 
     async def _read_listing(
         self,
@@ -747,6 +1036,196 @@ class IntakeWorkflow(PlanWorkflow):
         return found
 
 
+def _state_problem(change: ReadStateChange, predicates: dict[str, PredicateSpec]) -> str | None:
+    """Why a change of state cannot be used as it is, in plain words, or None."""
+    label = _change_label(change)
+    kind = change.kind.strip().lower()
+    if kind not in STATE_KINDS:
+        return f"{label}: {kind[:40]!r} is not a kind of change"
+    if change.change.strip().lower() not in ("starts", "ends"):
+        return f"{label}: a change either starts or ends"
+    spec = predicates.get(change.predicate)
+    if spec is None:
+        return f"{label}: the story has no kind of fact {change.predicate[:60]!r}"
+    entity = spec.object_shape is ObjectKind.ENTITY_REF
+    if kind == "status":
+        if entity or not (change.value or "").strip():
+            return f"{label}: a status needs a word for it, such as injured"
+        return None
+    if not entity or not (change.object or "").strip():
+        return f"{label}: it needs the other entry (the thing, the place or the person)"
+    fits = {
+        "possession": change.predicate in POSSESSION_PREDICATES or "Object" in spec.object_types,
+        "location": "Location" in spec.object_types,
+        "relationship": change.predicate in RELATIONSHIP_PREDICATES
+        or bool(spec.object_types & {"Character", "Faction"}),
+    }
+    if not fits[kind]:
+        return f"{label}: {change.predicate} does not record a {kind}"
+    return None
+
+
+def _change_label(change: ReadStateChange) -> str:
+    return (" ".join(change.name.split()) or change.kind.strip() or "a change")[:80]
+
+
+def _state_key(operation: CanonOperation, keys: set[str]) -> str | None:
+    """The change of state a drafted fact came from, while it still points at its key."""
+    if not isinstance(operation, AssertFactOp):
+        return None
+    for ref in operation.evidence:
+        key = (ref.location or "").removeprefix("question:")
+        if ref.location and ref.location.startswith("question:") and key in keys:
+            return key
+    return None
+
+
+def _why_begins(operation: CanonOperation, keys: set[str]) -> CanonOperation:
+    if _state_key(operation, keys) is None or not isinstance(operation, AssertFactOp):
+        return operation
+    if operation.why:
+        return operation
+    return operation.model_copy(update={"why": "The passage shows this beginning."})
+
+
+def _ref_map(
+    drafted: list[DraftEntity], operations: list[CanonOperation], entities: list[CanonEntity]
+) -> dict[str, tuple[str, str]]:
+    """Every ref an answer may use: a listed entry's id, or a ref of an entry the answer
+    adds (to the new entry) or names again (to the entry already in the story)."""
+    active = {entity.id: entity for entity in entities if entity.is_active}
+    created = {
+        (op.type, normalize_name(op.name)): (op.id, op.type)
+        for op in operations
+        if isinstance(op, CreateEntityOp)
+    }
+    by_label: dict[tuple[str, str], CanonEntity] = {}
+    for entity in active.values():
+        for label in (entity.name, *entity.aliases):
+            by_label.setdefault((entity.type, normalize_name(label)), entity)
+    refs: dict[str, tuple[str, str]] = {
+        entity_id: (entity_id, entity.type) for entity_id, entity in active.items()
+    }
+    for entry in drafted:
+        key = (entry.type, normalize_name(entry.name))
+        if key in created:
+            refs[entry.ref] = created[key]
+        elif key in by_label:
+            refs[entry.ref] = (by_label[key].id, by_label[key].type)
+    return refs
+
+
+def _state_events(
+    changes: list[tuple[str, ReadStateChange]],
+    *,
+    refs: dict[str, tuple[str, str]],
+    names: dict[str, str],
+    predicates: dict[str, PredicateSpec],
+    starts: WorldTime,
+    scene: PlanItem | None,
+    version_id: str,
+    places: dict[str, str],
+    taken: set[str],
+) -> list[CanonOperation]:
+    """Changes of state a timed scene shows, placed in story time as events (EXT-001).
+
+    Only for a kind of fact that cannot take a time itself (the fact then says what is
+    so, the event when it changed); a death is an event of kind death with whoever died.
+    """
+    out: list[CanonOperation] = []
+    for number, (key, change) in enumerate(changes[:MAX_EVENTS]):
+        spec = predicates[change.predicate]
+        if spec.temporal_allowed:
+            continue
+        subject = refs.get(change.subject.strip())
+        if subject is None:
+            continue
+        kind = STATE_EVENT_KINDS[change.kind.strip().lower()]
+        role = "participant"
+        if (
+            kind == "condition"
+            and change.change.strip().lower() == "starts"
+            and normalize_name(change.value or "") in DEATH_WORDS
+        ):
+            # Only becoming dead is a death; stopping being dead (coming back) is not.
+            kind, role = "death", "died"
+        people = [EventParticipant(entity_id=subject[0], role=role)]
+        location_ids: list[str] = []
+        other = refs.get((change.object or "").strip())
+        if other is not None and other[0] != subject[0]:
+            if other[1] == "Location":
+                location_ids.append(other[0])
+            else:
+                people.append(EventParticipant(entity_id=other[0], role="participant"))
+        name = " ".join(change.name.split())[:MAX_NAME_LENGTH]
+        if not name:
+            who = names.get(subject[0], "Someone")
+            name = f"{who}: {'death' if kind == 'death' else kind} ({change.change.strip()})"
+        if normalize_name(name) in taken:
+            continue
+        taken.add(normalize_name(name))
+        out.append(
+            CreateEventOp(
+                id=f"tmp:state-event-{number}",
+                kind=kind,
+                name=name[:MAX_NAME_LENGTH],
+                participants=people,
+                location_ids=location_ids,
+                when=starts,
+                scene_id=scene.id if scene is not None else None,
+                evidence=[EvidenceRef(source_artefact_id=version_id, location=places.get(key))],
+            )
+        )
+    return out
+
+
+def _new_threads(
+    items: list[ReadNewThread],
+    *,
+    scene: PlanItem | None,
+    threads: list[PlanItem],
+    content: str,
+    bounds: tuple[int, int],
+    discarded: list[DiscardedItem],
+) -> list[FoundStep]:
+    """Threads a scene's passage opens that the plan does not have (EXT-001), as steps
+    ``opens`` of a new thread: one change to the plan, with the scene's other steps."""
+    if not items:
+        return []
+    if scene is None:
+        discarded.append(DiscardedItem("thread", "only reading a scene can open a thread"))
+        return []
+    have = {normalize_name(thread.title) for thread in threads}
+    found: list[FoundStep] = []
+    for item in items[:MAX_NEW_THREADS]:
+        title = " ".join(item.title.split())[:MAX_TITLE_LENGTH]
+        if not title:
+            discarded.append(DiscardedItem("thread", "a new thread needs a title"))
+            continue
+        if normalize_name(title) in have:
+            discarded.append(DiscardedItem("thread", f"{title[:80]}: the plan has it already"))
+            continue
+        where = (
+            find_quote(content, item.quote[:MAX_QUOTE], within=bounds)
+            if item.quote.strip()
+            else None
+        )
+        if where is None:
+            discarded.append(DiscardedItem("thread", f"{title[:80]}: not in the passage"))
+            continue
+        have.add(normalize_name(title))
+        found.append(
+            FoundStep(
+                thread="",
+                step="opens",
+                location=location_for(*where),
+                title=title,
+                summary=" ".join(item.summary.split())[:MAX_SUMMARY_LENGTH],
+            )
+        )
+    return found
+
+
 def _read_events(
     items: list[ReadEvent],
     *,
@@ -772,22 +1251,7 @@ def _read_events(
     of the same reading proposed (``proposed``: the same name and the same people).
     """
     active = {entity.id: entity for entity in entities if entity.is_active}
-    created = {
-        (op.type, normalize_name(op.name)): (op.id, op.type)
-        for op in operations
-        if isinstance(op, CreateEntityOp)
-    }
-    by_label: dict[tuple[str, str], CanonEntity] = {}
-    for entity in active.values():
-        for label in (entity.name, *entity.aliases):
-            by_label.setdefault((entity.type, normalize_name(label)), entity)
-    refs: dict[str, tuple[str, str]] = {}
-    for entry in drafted:
-        key = (entry.type, normalize_name(entry.name))
-        if key in created:
-            refs[entry.ref] = created[key]
-        elif key in by_label:
-            refs[entry.ref] = (by_label[key].id, by_label[key].type)
+    refs = _ref_map(drafted, operations, entities)
     event_ids = {event.id for event in known_events}
     taken = {normalize_name(event.name) for event in known_events}
     out: list[CanonOperation] = []
@@ -873,6 +1337,9 @@ class FoundStep:
     thread: str
     step: str
     location: str
+    # A thread the scene opens that the plan does not have yet (step ``opens``).
+    title: str = ""
+    summary: str = ""
 
 
 def _check_steps(
@@ -922,19 +1389,29 @@ def _check_steps(
 
 def thread_steps_change(
     found: list[FoundStep], *, scene: PlanItem, version_id: str
-) -> tuple[UpdatePlanItemOp | None, int]:
+) -> tuple[list[CanonOperation], int]:
     """The thread steps a reading found, as one change to the scene's plan (EXT-001).
 
     A step the plan already records is not added again, and a thread settled here is not
     also moved along here. The change only adds (``only_fills``) and keeps the scene's
     plan as it read it (``base``): approving it is refused if the author has since
-    changed the scene's plan another way, rather than undoing their work.
+    changed the scene's plan another way, rather than undoing their work. A thread the
+    scene opens that the plan does not have is added to the plan in the same change, and
+    the scene opens it.
     """
     advancing = thread_advances(scene.details)
     resolved = list(scene.pays_off)
     moves: list[str] = []
     settles: list[str] = []
+    room_to_open = max(0, MAX_THREAD_LINKS - len(scene.sets_up) - len(resolved))
+    opening: list[FoundStep] = []
     for item in found:
+        if item.step == "opens":
+            if len(opening) < min(room_to_open, MAX_NEW_THREADS) and normalize_name(
+                item.title
+            ) not in {normalize_name(o.title) for o in opening}:
+                opening.append(item)
+            continue
         if item.step == "resolves":
             if item.thread not in resolved and item.thread not in settles:
                 settles.append(item.thread)
@@ -944,29 +1421,45 @@ def thread_steps_change(
     moves = [thread for thread in moves if thread not in settles]
     room = max(0, MAX_THREAD_LINKS - len(advancing))
     moves = moves[:room]
-    settles = settles[: max(0, MAX_THREAD_LINKS - len(resolved) - len(scene.sets_up))]
-    if not moves and not settles:
-        return None, 0
+    settles = settles[
+        : max(0, MAX_THREAD_LINKS - len(resolved) - len(scene.sets_up) - len(opening))
+    ]
+    if not moves and not settles and not opening:
+        return [], 0
+    created = [
+        CreatePlanItemOp(
+            id=f"tmp:thread-{number}",
+            kind=PlanKind.THREAD,
+            title=item.title,
+            summary=item.summary,
+            evidence=[EvidenceRef(source_artefact_id=version_id, location=item.location)],
+        )
+        for number, item in enumerate(opening)
+    ]
     evidence: list[EvidenceRef] = []
     cited: set[tuple[str, str]] = set()
     for item in found:
-        kept = item.thread in settles if item.step == "resolves" else item.thread in moves
-        if not kept or (item.thread, item.step) in cited:
+        if item.step == "opens":
+            kept = item in opening
+            mark = (item.title, item.step)
+        else:
+            kept = item.thread in settles if item.step == "resolves" else item.thread in moves
+            mark = (item.thread, item.step)
+        if not kept or mark in cited:
             continue
-        cited.add((item.thread, item.step))
+        cited.add(mark)
         if len(evidence) < MAX_EVIDENCE_PER_OPERATION:
             evidence.append(EvidenceRef(source_artefact_id=version_id, location=item.location))
-    return (
-        UpdatePlanItemOp(
-            id=scene.id,
-            details=with_advances(scene.details, [*advancing, *moves]) if moves else None,
-            pays_off=[*resolved, *settles] if settles else None,
-            evidence=evidence,
-            only_fills=True,
-            base=PlanBase.of(scene),
-        ),
-        len(moves) + len(settles),
+    change = UpdatePlanItemOp(
+        id=scene.id,
+        details=with_advances(scene.details, [*advancing, *moves]) if moves else None,
+        pays_off=[*resolved, *settles] if settles else None,
+        sets_up=[*scene.sets_up, *(op.id for op in created)] if created else None,
+        evidence=evidence,
+        only_fills=True,
+        base=PlanBase.of(scene),
     )
+    return [*created, change], len(moves) + len(settles) + len(created)
 
 
 def _from_scene_time(
@@ -1003,10 +1496,11 @@ def read_scene_messages(
     entity_types: set[str],
     *,
     threads: bool = False,
+    opens: bool = False,
 ) -> Messages:
     """The ``read-scene`` prompt: ``read-passage`` for a scene set at a known story time."""
     return read_passage_messages(
-        about, passage, predicates, entity_types, in_scene=True, threads=threads
+        about, passage, predicates, entity_types, in_scene=True, threads=threads, opens=opens
     )
 
 
@@ -1018,9 +1512,11 @@ def read_passage_messages(
     *,
     in_scene: bool = False,
     threads: bool = False,
+    opens: bool = False,
 ) -> Messages:
     """The ``read-passage`` prompt: ``about`` lists the entries the passage may name, the
-    events already recorded, and (``threads``, reading a scene) the plan's threads."""
+    events already recorded, and (``threads``, reading a scene) the plan's threads.
+    ``opens`` (reading a scene) asks for threads the passage opens that the plan lacks."""
     predicate_lines = "\n".join(
         f"- {spec.predicate}: subject is one of {sorted(spec.subject_types)}; object is "
         f"{spec.object_shape.value}"
@@ -1059,11 +1555,27 @@ def read_passage_messages(
         "or refs of entities you create), and the quote that shows it. Give `when` only "
         "when the passage says when it happens; never invent a time. Do not add an event "
         "that is already listed.\n"
+        "- add a state change when the passage shows a state beginning or ending: someone "
+        "comes to hold or loses a thing (kind possession), arrives at or leaves a place "
+        "(location), becomes or stops being injured, ill, captive, dead and the like "
+        "(status, with the word as value), or a relationship begins or ends "
+        "(relationship). Give change starts or ends, the subject, the predicate that "
+        "records it, the other entry as object (not for a status), a short name and the "
+        "quote. A thing handed from one to another is two changes: one ends, one starts. "
+        "What was already so is a fact, not a change; do not give the same thing as both.\n"
         + (
             "- the plan's threads are listed. When the passage clearly moves one along, add a "
             "thread step with its id, step advances, and the quote that does it; when it "
             "settles one, step resolves. Never add a step for a thread that is not listed.\n"
             if threads
+            else ""
+        )
+        + (
+            "- when the passage clearly raises a new question or makes a promise the story "
+            "must answer later, and no listed thread covers it, add it to new_threads with a "
+            "short title, one plain sentence of summary and the quote. At most three; leave "
+            "it empty when nothing new is opened.\n"
+            if opens
             else ""
         )
         + (

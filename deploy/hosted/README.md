@@ -13,7 +13,7 @@ Status: deployed on 2026-10-10. The owner signed in through Authentik and create
 | Stores | This stack's own Postgres 17 + pgvector and Neo4j, on `novel-engine-data` only, no ports |
 | Identity | Authentik application `novel-engine`; callback `https://novel-engine.jaketalling.com/auth/callback`, post-logout `https://novel-engine.jaketalling.com/` |
 | Secrets | `./secrets/` (git-ignored, directory mode 0700), created by `./init-secrets.sh` |
-| Backup | `./backup.sh`: Postgres dump + stored objects. Neo4j is rebuilt from Postgres. Nightly with `systemd/` or cron, old ones removed by `./prune-backups.sh` (see "Scheduled backups") |
+| Backup | `./backup.sh`: Postgres dump + stored objects. Neo4j is rebuilt from Postgres. Nightly with `systemd/` or cron, old ones removed by `./prune-backups.sh` (see "Scheduled backups"); `./copy-off.sh` copies the newest one off the host (an example to adapt) |
 | Restore | `./restore.sh backups/novel-engine-<timestamp>`: checks every file against the manifest first, asks before replacing anything |
 
 ## 1. Build the image
@@ -185,10 +185,34 @@ Without systemd, the same with cron (`crontab -e` as the user who owns the check
 
 To see what would be removed without removing it: `./prune-backups.sh --keep 14 --dry-run`.
 
-These backups sit on the same disk as the data. Copy `backups/` somewhere else as well (another
+These backups sit on the same disk as the data. Copy them somewhere else as well (another
 machine or storage you trust); a backup on a failed disk is no backup. The credential key is
 never in a backup: keep it in the password manager. The recovery runbooks are in
 `plan/runbooks/`.
+
+### Copying backups off the host
+
+`./copy-off.sh` is an example to adapt. It takes the newest complete backup, checks every file
+against its `MANIFEST` (a damaged backup is never copied), and then either:
+
+- copies it into a folder on other storage, `BACKUP_COPY_TO=/mnt/offsite/novel-engine` (a
+  mounted disk or a network share): in under a temporary name, checked again there, then given
+  its own name, so a copy cut short is never taken for a complete one; or
+- runs your own command with the backup folder as `$1`, `BACKUP_COPY_COMMAND`, for example
+  `restic -r sftp:backup@offsite:/novel-engine backup "$1"` or
+  `rclone copy "$1" offsite-crypt:novel-engine/"$(basename "$1")"`.
+
+`./copy-off.sh --dry-run` says what it would do. It exits non-zero when anything fails, so in the
+systemd service put it between the backup and the pruning (an `ExecStart=` line, with
+`Environment=BACKUP_COPY_TO=...` or `BACKUP_COPY_COMMAND=...`; the example unit has it commented
+out); with cron, `./backup.sh && ./copy-off.sh && ./prune-backups.sh --keep 14`. A failed copy
+then stops the pruning and shows in `systemctl --failed`.
+
+A backup holds every story and the encrypted provider keys: send it only somewhere encrypted at
+rest (restic encrypts; with rclone use a `crypt` remote). Keep the off-site history where this
+host cannot delete it — an append-only restic REST server, or storage with object lock — and
+prune it there, not from here. Keep three copies on two kinds of storage, one of them away from
+the host. The first real copy is an owner step: record it in `plan/phase-2-evidence.md`.
 
 ## What an anonymous visitor can reach
 

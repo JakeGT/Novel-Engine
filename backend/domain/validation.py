@@ -72,12 +72,15 @@ from backend.domain.operations import (
     CreateEventOp,
     CreatePlanItemOp,
     LinkAssetOp,
+    MergeEntitiesOp,
+    RestoreEntityOp,
     RetireAssetLinkOp,
     RetireEntityOp,
     RetireEventOp,
     RetirePlanItemOp,
     UpdateEntityOp,
     UpdatePlanItemOp,
+    operation_reference_ids,
 )
 from backend.domain.scene_intent import INTENT_KEY, scene_intent
 from backend.domain.threads import ADVANCES_KEY, thread_advances
@@ -248,6 +251,14 @@ class CanonTxReader(Protocol):
 
     async def live_events(self, limit: int) -> list[Event]:
         """The events not retired on this branch, at most ``limit`` (for story rules)."""
+        ...
+
+    async def live_plan_items(self, limit: int) -> list[PlanItem]:
+        """The plan items not removed on this branch, at most ``limit`` (for a merge)."""
+        ...
+
+    async def live_asset_links(self, limit: int) -> list[AssetLink]:
+        """The picture links not retired on this branch, at most ``limit`` (for a merge)."""
         ...
 
 
@@ -453,6 +464,69 @@ class AuthoritativeValidator:
             if link_id not in links:
                 links[link_id] = await context.reader.get_link(link_id)
             return links[link_id]
+
+        def event_names(record: Event, entity_id: str) -> bool:
+            return (
+                any(p.entity_id == entity_id for p in record.participants)
+                or entity_id in record.location_ids
+                or entity_id in record.cause_ids
+                or entity_id in record.outcome_ids
+            )
+
+        def proposition_names(proposition: Any, entity_id: str) -> bool:
+            obj = proposition.object
+            return proposition.subject_id == entity_id or (
+                isinstance(obj, EntityRefObject) and obj.entity_id == entity_id
+            )
+
+        async def released_earlier(earlier: Sequence[CanonOperation], entity_id: str) -> int:
+            """How many of the records now naming ``entity_id`` (as counted by
+            ``count_active_references``) the changes before it in this set end or move."""
+            released: set[tuple[str, str]] = set()
+            for change in earlier:
+                if isinstance(change, CloseFactOp):
+                    stored_fact = await context.reader.get_fact(change.id)
+                    if (
+                        stored_fact is not None
+                        and stored_fact.closed_revision is None
+                        and proposition_names(stored_fact.proposition, entity_id)
+                    ):
+                        released.add(("fact", change.id))
+                elif isinstance(change, CloseBeliefOp):
+                    stored_belief = await context.reader.get_belief(change.id)
+                    if (
+                        stored_belief is not None
+                        and stored_belief.closed_revision is None
+                        and (
+                            stored_belief.holder_entity_id == entity_id
+                            or proposition_names(stored_belief.proposition, entity_id)
+                        )
+                    ):
+                        released.add(("belief", change.id))
+                elif isinstance(change, RetireAssetLinkOp):
+                    stored_link = await context.reader.get_link(change.id)
+                    if (
+                        stored_link is not None
+                        and stored_link.retired_revision is None
+                        and stored_link.target_record_id == entity_id
+                    ):
+                        released.add(("asset_link", change.id))
+                elif isinstance(change, AmendEventOp | RetireEventOp):
+                    stored_event = await context.reader.get_event(change.id)
+                    if (
+                        stored_event is None
+                        or stored_event.retired_revision is not None
+                        or not event_names(stored_event, entity_id)
+                    ):
+                        continue
+                    final = events.get(change.id, stored_event)
+                    if (
+                        final is None
+                        or final.retired_revision is not None
+                        or not event_names(final, entity_id)
+                    ):
+                        released.add(("event", change.id))
+            return len(released)
 
         def blocking(index: int, code: str, message: str) -> None:
             findings.append(ValidationFinding(ValidationSeverity.INTEGRITY, code, message, index))
@@ -814,10 +888,23 @@ class AuthoritativeValidator:
                         f"predicate {spec.predicate!r} does not accept target type {target.type!r}",
                     )
 
+        # Entries a change in this batch names, so a merge does not leave one pointing
+        # at the entry it retires (AST-EXP-017).
+        named_in_batch: set[str] = set()
         for index, operation in enumerate(operations):
             if not 0.0 <= getattr(operation, "confidence", 1.0) <= 1.0:
                 blocking(index, "invalid_confidence", "confidence must be between 0 and 1")
             await validate_evidence(index, operation)
+            if isinstance(operation, RetireEntityOp) and operation.merged_into is not None:
+                if operation.id in named_in_batch:
+                    blocking(
+                        index,
+                        "merge_overlap",
+                        "a change in this set names the entry being merged away; ask for it "
+                        "again once the merge is kept",
+                    )
+            elif not isinstance(operation, (RetireEntityOp, MergeEntitiesOp)):
+                named_in_batch.update(operation_reference_ids(operation))
 
             if isinstance(operation, CreateEntityOp):
                 if operation.id in created_record_ids or await entity(operation.id) is not None:
@@ -909,8 +996,25 @@ class AuthoritativeValidator:
                     entities[operation.id] = updated
             elif isinstance(operation, RetireEntityOp):
                 current = await require_active_entity(index, operation.id, "entity")
+                if operation.merged_into is not None:
+                    kept = await require_active_entity(index, operation.merged_into, "entity")
+                    if kept is not None and current is not None and kept.type != current.type:
+                        blocking(index, "invalid_merge", "only entries of one type are merged")
                 if current is not None:
                     references = await context.reader.count_active_references(operation.id)
+                    if operation.merged_into is not None:
+                        # A merge moves what named the entry earlier in this same set;
+                        # anything still naming it (a what-if brought back after the main
+                        # story named it again) would be left pointing at a retired entry.
+                        references -= await released_earlier(operations[:index], operation.id)
+                        if references > 0:
+                            blocking(
+                                index,
+                                "merge_leaves_references",
+                                f"{references} record(s) still name the entry being merged "
+                                "away; ask for the merge again so they move too",
+                            )
+                        references = 0
                     if references:
                         # Retirement preserves history; existing references stay
                         # readable. The reviewer is told what still points here.
@@ -924,6 +1028,61 @@ class AuthoritativeValidator:
                     entities[operation.id] = current.model_copy(
                         update={"lifecycle": EntityLifecycle.RETIRED}
                     )
+            elif isinstance(operation, RestoreEntityOp):
+                current = await entity(operation.id)
+                if current is None:
+                    blocking(index, "unknown_reference", f"unknown entity {operation.id!r}")
+                elif current.lifecycle is EntityLifecycle.ACTIVE:
+                    blocking(index, "active_entity", f"entity {operation.id!r} is not retired")
+                else:
+                    restored = current.model_copy(
+                        update={"lifecycle": EntityLifecycle.ACTIVE, "retired_revision": None}
+                    )
+                    # Coming back must not make two entries share a name or handle.
+                    await validate_handles(
+                        index,
+                        operation.id,
+                        restored.type,
+                        name=restored.name,
+                        slug=restored.slug,
+                        aliases=restored.aliases,
+                        external_ids=restored.external_ids,
+                        check_name=True,
+                        check_slug=restored.slug is not None,
+                        check_external_ids=False,
+                    )
+                    entities[operation.id] = restored
+            elif isinstance(operation, MergeEntitiesOp):
+                # A merge reaches the validator only when it could not be worked out
+                # into the changes it makes (backend/domain/merge.py): say why.
+                merged = await require_active_entity(index, operation.id, "entity")
+                kept = await require_active_entity(index, operation.into, "entity")
+                if merged is not None and kept is not None:
+                    if merged.id == kept.id:
+                        blocking(index, "invalid_merge", "an entry cannot be merged with itself")
+                    elif merged.type != kept.type:
+                        blocking(index, "invalid_merge", "only entries of one type are merged")
+                    elif (
+                        sum(
+                            1
+                            for other in operations
+                            if isinstance(other, MergeEntitiesOp) and other.into == operation.into
+                        )
+                        > 1
+                    ):
+                        blocking(
+                            index,
+                            "merge_overlap",
+                            "only one entry can be merged into the same entry in a set of "
+                            "changes; merge the others into it once this merge is kept",
+                        )
+                    else:
+                        blocking(
+                            index,
+                            "merge_overlap",
+                            "an entry is merged only once in a set of changes, and an entry "
+                            "merged away cannot also be the one kept",
+                        )
             elif isinstance(operation, AssertFactOp):
                 if operation.id in created_record_ids or await fact(operation.id) is not None:
                     blocking(index, "duplicate_id", f"record id {operation.id!r} already exists")
@@ -1155,8 +1314,38 @@ class AuthoritativeValidator:
                 elif event_current.retired_revision is not None:
                     blocking(index, "retired_event", f"event {operation.id!r} is retired")
                 else:
+                    for participant in operation.participants or []:
+                        await require_active_entity(index, participant.entity_id, "participant")
+                    for place in operation.location_ids or []:
+                        await require_active_entity(index, place, "location")
+                    for ref in (*(operation.cause_ids or []), *(operation.outcome_ids or [])):
+                        referenced_entity = await entity(ref)
+                        referenced_event = await event(ref)
+                        if referenced_entity is None and referenced_event is None:
+                            blocking(index, "unknown_reference", f"unknown event reference {ref!r}")
+                        elif (
+                            referenced_entity is not None and not referenced_entity.is_active
+                        ) or (
+                            referenced_event is not None
+                            and referenced_event.retired_revision is not None
+                        ):
+                            blocking(
+                                index, "retired_reference", f"event reference {ref!r} is retired"
+                            )
                     events[operation.id] = event_current.model_copy(
                         update={
+                            "participants": event_current.participants
+                            if operation.participants is None
+                            else list(operation.participants),
+                            "location_ids": event_current.location_ids
+                            if operation.location_ids is None
+                            else list(operation.location_ids),
+                            "cause_ids": event_current.cause_ids
+                            if operation.cause_ids is None
+                            else list(operation.cause_ids),
+                            "outcome_ids": event_current.outcome_ids
+                            if operation.outcome_ids is None
+                            else list(operation.outcome_ids),
                             "name": event_current.name
                             if operation.name is None
                             else operation.name,

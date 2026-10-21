@@ -65,6 +65,12 @@ for authors and for whoever runs an install. Version numbers start when the owne
 - **Checks only re-run what changed**, findings can be marked intended, and dismissed findings
   come back when what they depended on changes.
 - **The reader's guide in parts**: characters, places, timeline or a recap.
+- **Use a model on your own computer from a hosted site**: a small connector program and a code
+  you confirm in Settings; disconnect any time.
+- **Start from your story**: tell the assistant about your story; it asks what it needs to know.
+- **Merge two entries** in one reviewed step, with undo.
+- **How it sounds**: your scene's voice against your usual one; audits on a schedule; correction
+  plans; compare a what-if with the main story.
 - **Photos lose their hidden details** (location, camera) when uploaded.
 - **Use a model on your own computer** (Ollama, LM Studio) on a self-hosted install, so nothing
   about your story leaves it.
@@ -72,7 +78,7 @@ for authors and for whoever runs an install. Version numbers start when the owne
 ### For whoever runs it
 
 - **Upgrading:** take a backup first (`deploy/hosted/backup.sh` on the hosted profile). The server
-  applies migrations on start; this release adds migrations up to `0052_context_layers`. `0047` moves search vectors into a
+  applies migrations on start; this release adds migrations up to `0055_voice_and_audits`. Key rotation: `python -m backend.devtools.rekey`. `0047` moves search vectors into a
   new table; run `make reindex-status` afterwards.
 - **Readiness** now answers `ready`, `degraded` (200) or `unavailable` (503, a required store is
   down); a watcher that looked for `degraded` on a store outage must look for `unavailable`.

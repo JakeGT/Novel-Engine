@@ -89,6 +89,41 @@ class UpdateEntityOp(_Operation):
 
 class RetireEntityOp(_Operation):
     op: Literal["retire_entity"] = "retire_entity"
+    # Set when the entry is retired because it was merged into another (AST-EXP-017):
+    # the kept entry's id. Omitted while unset (ADR-015). Undoing such a retirement
+    # brings the entry back (``restore_entity``).
+    merged_into: str | None = None
+
+
+class RestoreEntityOp(_Operation):
+    """Bring a retired entry back into the story, as it was when it was retired.
+
+    Proposed by undoing a merge; like every change it is reviewed and validated.
+    """
+
+    op: Literal["restore_entity"] = "restore_entity"
+
+
+class MergeEntitiesOp(_Operation):
+    """Merge one entry (``id``) into another (``into``), reviewed as one change.
+
+    What a merge moves is worked out when it is kept, from the story as it is then
+    (``backend/domain/merge.py``): facts and beliefs naming the merged entry are ended
+    and stated again about the kept one, events, plan items and pictures point at the
+    kept one, its names become the kept one's other names, and it is retired. The
+    commit records those ordinary changes; this operation is what the author reviews.
+    ``drop_facts`` and ``drop_beliefs`` are ended rather than moved (a value the kept
+    entry already has for something that holds one at a time). ``name``, ``aliases``
+    and ``attributes`` replace what is worked out for the kept entry when given.
+    """
+
+    op: Literal["merge_entities"] = "merge_entities"
+    into: str
+    name: str | None = None
+    aliases: list[str] | None = None
+    attributes: dict[str, Any] | None = None
+    drop_facts: list[str] = Field(default_factory=list, max_length=500)
+    drop_beliefs: list[str] = Field(default_factory=list, max_length=500)
 
 
 class AssertFactOp(_Operation):
@@ -161,6 +196,13 @@ class AmendEventOp(_Operation):
     world_position: str | None = None
     # ``None`` leaves the time as it is; an unknown time clears it.
     when: WorldTime | None = None
+    # Who takes part and where, replaced wholesale; ``None`` leaves them as they are.
+    # Used by a merge (AST-EXP-017). Omitted while unset (ADR-015, per operation).
+    participants: list[EventParticipant] | None = None
+    location_ids: list[str] | None = None
+    # What causes it and what follows from it, replaced wholesale the same way.
+    cause_ids: list[str] | None = None
+    outcome_ids: list[str] | None = None
 
 
 class RetireEventOp(_Operation):
@@ -263,6 +305,8 @@ CanonOperation = Annotated[
     CreateEntityOp
     | UpdateEntityOp
     | RetireEntityOp
+    | RestoreEntityOp
+    | MergeEntitiesOp
     | AssertFactOp
     | CloseFactOp
     | AmendFactOp
@@ -326,6 +370,17 @@ def operation_reference_ids(operation: CanonOperation) -> list[str]:
         if operation.asset_version_id is not None:
             refs.append(operation.asset_version_id)
         return refs
+    if isinstance(operation, MergeEntitiesOp):
+        return [operation.into]
+    if isinstance(operation, RetireEntityOp) and operation.merged_into:
+        return [operation.merged_into]
+    if isinstance(operation, AmendEventOp):
+        return [
+            *(p.entity_id for p in operation.participants or []),
+            *(operation.location_ids or []),
+            *(operation.cause_ids or []),
+            *(operation.outcome_ids or []),
+        ]
     if isinstance(operation, CreatePlanItemOp | UpdatePlanItemOp):
         return [
             *([operation.parent_id] if operation.parent_id else []),
@@ -344,8 +399,50 @@ def _rewrite(operation: CanonOperation, mapping: dict[str, str]) -> CanonOperati
             return mapping[value]
         return value
 
-    if isinstance(operation, (UpdateEntityOp, RetireEntityOp)):
+    if isinstance(operation, (UpdateEntityOp, RestoreEntityOp)):
         return operation.model_copy(update={"id": resolve(operation.id)})
+    if isinstance(operation, RetireEntityOp):
+        return operation.model_copy(
+            update={
+                "id": resolve(operation.id),
+                "merged_into": (
+                    resolve(operation.merged_into) if operation.merged_into is not None else None
+                ),
+            }
+        )
+    if isinstance(operation, MergeEntitiesOp):
+        return operation.model_copy(
+            update={"id": resolve(operation.id), "into": resolve(operation.into)}
+        )
+    if isinstance(operation, AmendEventOp):
+        return operation.model_copy(
+            update={
+                "id": resolve(operation.id),
+                "participants": (
+                    [
+                        p.model_copy(update={"entity_id": resolve(p.entity_id)})
+                        for p in operation.participants
+                    ]
+                    if operation.participants is not None
+                    else None
+                ),
+                "location_ids": (
+                    [resolve(x) for x in operation.location_ids]
+                    if operation.location_ids is not None
+                    else None
+                ),
+                "cause_ids": (
+                    [resolve(x) for x in operation.cause_ids]
+                    if operation.cause_ids is not None
+                    else None
+                ),
+                "outcome_ids": (
+                    [resolve(x) for x in operation.outcome_ids]
+                    if operation.outcome_ids is not None
+                    else None
+                ),
+            }
+        )
     if isinstance(operation, AssertFactOp):
         prop = _rewrite_proposition(operation.proposition, resolve)
         return operation.model_copy(update={"id": resolve(operation.id), "proposition": prop})
@@ -478,7 +575,16 @@ _CANONICAL_OMIT_WHEN_UNSET = (
     "premises",
     "known_by",
     "applies_from",
+    "merged_into",
 )
+
+# Fields added to one kind of operation whose name another kind already uses with a
+# value that must stay in the canonical form (``participants`` and ``location_ids`` of
+# an event's creation, even when empty). Omitted only on that kind, and only while unset
+# (``None``), so an explicit empty list on it is still recorded.
+_CANONICAL_OMIT_WHEN_NONE_BY_OP: dict[str, tuple[str, ...]] = {
+    "amend_event": ("participants", "location_ids", "cause_ids", "outcome_ids"),
+}
 
 
 def canonical_operation(operation: CanonOperation) -> dict[str, Any]:
@@ -486,6 +592,9 @@ def canonical_operation(operation: CanonOperation) -> dict[str, Any]:
     payload = operation.model_dump(mode="json")
     for key in _CANONICAL_OMIT_WHEN_UNSET:
         if key in payload and not payload[key]:
+            del payload[key]
+    for key in _CANONICAL_OMIT_WHEN_NONE_BY_OP.get(operation.op, ()):
+        if key in payload and payload[key] is None:
             del payload[key]
     return payload
 
@@ -516,9 +625,11 @@ __all__ = [
     "CreatePlanItemOp",
     "EvidenceRef",
     "LinkAssetOp",
+    "MergeEntitiesOp",
     "OperationValidationError",
     "OriginKind",
     "PlanBase",
+    "RestoreEntityOp",
     "RetireAssetLinkOp",
     "RetireEntityOp",
     "RetireEventOp",

@@ -1,7 +1,7 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { useRef, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useId, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { api, isApiError, type PlanItem } from '../api/client'
+import { api, isApiError, type AuditSchedule, type CheckPass, type PlanItem } from '../api/client'
 import {
   AUDIT_STATUS,
   auditPath,
@@ -117,6 +117,7 @@ export function AuditDialog({ item, onClose }: { item: PlanItem; onClose: () => 
             Cancel
           </Button>
         </div>
+        {found && !blocked && <ScheduleSection item={item} passes={passes} cost={cost} />}
         {earlier.data && earlier.data.items.length > 0 && (
           <section className="stack tight" aria-labelledby="earlier-audits">
             <h3 id="earlier-audits" className="audit-group-title">
@@ -134,5 +135,154 @@ export function AuditDialog({ item, onClose }: { item: PlanItem; onClose: () => 
         )}
       </div>
     </Dialog>
+  )
+}
+
+const EVERY: { days: number; label: string }[] = [
+  { days: 1, label: 'Every day' },
+  { days: 3, label: 'Every 3 days' },
+  { days: 7, label: 'Every week' },
+  { days: 14, label: 'Every 2 weeks' },
+  { days: 30, label: 'Every 30 days' },
+]
+
+function suggestedMost(cost: number | null): number {
+  if (!cost) return 0
+  // Room for the scenes to grow a little before a run would stop for being too big.
+  return Math.ceil((cost * 1.5) / 1000) * 1000
+}
+
+/**
+ * "Run this audit on a schedule" (CON-011): the same audit every few days, as you, using
+ * at most what you set each time. A run with nothing changed since the last one is
+ * skipped and spends nothing; each run is checked against your limits like any other.
+ */
+function ScheduleSection({ item, passes, cost }: { item: PlanItem; passes: CheckPass[]; cost: number | null }) {
+  const { scope, canWrite } = useProject()
+  const schedules = useQuery({ queryKey: scopedKey(scope, 'audit-schedules'), queryFn: () => api.auditSchedules(scope) })
+  if (!canWrite || !schedules.data) return null
+  const current = schedules.data.items.find((entry) => entry.plan_id === item.id)
+  return <ScheduleForm item={item} passes={passes} cost={cost} current={current} />
+}
+
+function ScheduleForm({
+  item,
+  passes,
+  cost,
+  current,
+}: {
+  item: PlanItem
+  passes: CheckPass[]
+  cost: number | null
+  current: AuditSchedule | undefined
+}) {
+  const { scope } = useProject()
+  const client = useQueryClient()
+  const id = useId()
+  const key = scopedKey(scope, 'audit-schedules')
+  const [every, setEvery] = useState<number>(current?.every_days ?? 7)
+  const [most, setMost] = useState<string>(() => String(current?.max_tokens || suggestedMost(cost)))
+  const mostValue = Number(most)
+  const free = passes.length === 0
+  const tooSmall = !free && cost !== null && mostValue < cost
+  const invalid = !free && (!Number.isFinite(mostValue) || mostValue <= 0)
+  const save = useMutation({
+    mutationFn: () =>
+      api.saveAuditSchedule(scope, {
+        plan_id: item.id,
+        passes,
+        every_days: every,
+        max_tokens: free ? 0 : Math.round(mostValue),
+      }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: key }),
+  })
+  const stop = useMutation({
+    mutationFn: (scheduleId: string) => api.removeAuditSchedule(scope, scheduleId),
+    onSuccess: () => void client.invalidateQueries({ queryKey: key }),
+  })
+  return (
+    <details className="more">
+      <summary>
+        Run this audit on a schedule
+        {current && <span className="muted"> · {EVERY.find((e) => e.days === current.every_days)?.label.toLowerCase() ?? `every ${current.every_days} days`}</span>}
+      </summary>
+      <div className="stack tight">
+        <p className="hint">
+          The same audit, with the checks chosen above, every few days as you. A run with nothing
+          changed since the last one is skipped and spends nothing.
+        </p>
+        {current && (
+          <p className="small" role="status">
+            {current.enabled ? `Next run ${fullDate(current.next_run_at)}.` : 'Turned off.'}{' '}
+            {current.last_outcome && `Last time: ${current.last_outcome}`}{' '}
+            {current.last_job_id && (
+              <Link to={auditPath(scope.projectId, current.last_job_id)}>Open the last audit</Link>
+            )}
+          </p>
+        )}
+        <div className="schedule-form">
+          <div className="field">
+            <label htmlFor={`${id}-every`}>How often</label>
+            <select id={`${id}-every`} value={every} onChange={(event) => setEvery(Number(event.target.value))}>
+              {EVERY.map((entry) => (
+                <option key={entry.days} value={entry.days}>
+                  {entry.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          {!free && (
+            <div className="field">
+              <label htmlFor={`${id}-most`}>At most this many tokens each time</label>
+              <input
+                id={`${id}-most`}
+                type="number"
+                inputMode="numeric"
+                min={1}
+                step={1000}
+                value={most}
+                aria-invalid={invalid || tooSmall ? true : undefined}
+                aria-describedby={`${id}-most-hint`}
+                onChange={(event) => setMost(event.target.value)}
+              />
+              <span id={`${id}-most-hint`} className={tooSmall || invalid ? 'field-error' : 'hint'}>
+                {invalid
+                  ? 'Say the most each run may use.'
+                  : tooSmall
+                    ? `An audit now would use about ${tokenCount(cost ?? 0)} tokens, so it would not run.`
+                    : 'A run that would use more does not start, and says so here.'}
+              </span>
+            </div>
+          )}
+        </div>
+        {free && <p className="hint">On a schedule, too, only the checks without the assistant run. Nothing is spent.</p>}
+        {save.error && isApiError(save.error, 'not_confirmed') ? (
+          <p className="hint" role="status">
+            Not set up, as you chose.
+          </p>
+        ) : (
+          <ErrorNotice error={save.error} prefix="The schedule was not saved" />
+        )}
+        <div className="actions">
+          <Button disabled={save.isPending || invalid} onClick={() => save.mutate()}>
+            {save.isPending ? 'Saving…' : current ? 'Change the schedule' : 'Run it on this schedule'}
+          </Button>
+        </div>
+        {save.data && (
+          <p className="small" role="status">
+            Scheduled. The first run is {fullDate(save.data.next_run_at)}.
+          </p>
+        )}
+        {current && (
+          <div className="actions schedule-stop">
+            <Button size="sm" variant="danger-quiet" disabled={stop.isPending} onClick={() => stop.mutate(current.id)}>
+              {stop.isPending ? 'Stopping…' : 'Stop the schedule'}
+            </Button>
+            <span className="hint">Audits it already ran are kept.</span>
+          </div>
+        )}
+        <ErrorNotice error={stop.error} prefix="The schedule was not stopped" />
+      </div>
+    </details>
   )
 }

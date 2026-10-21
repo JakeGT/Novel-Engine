@@ -41,8 +41,10 @@ from backend.domain.journal import (
     RevisionConflict,
 )
 from backend.domain.media import AssetLink, MediaAsset, MediaAssetVersion
+from backend.domain.merge import expand_merges
 from backend.domain.operations import (
     CanonOperation,
+    MergeEntitiesOp,
     canonicalize_operations,
     operation_reference_ids,
     operations_checksum,
@@ -167,6 +169,9 @@ MACHINE_ORIGIN = OriginKind.MACHINE.value
 _TARGET_RECORD = {
     "update_entity": "entity",
     "retire_entity": "entity",
+    "restore_entity": "entity",
+    # A merge is shown against the entry it merges away.
+    "merge_entities": "entity",
     "close_fact": "fact",
     "amend_fact": "fact",
     "close_belief": "belief",
@@ -374,6 +379,30 @@ class _RepositoryReader:
                 workspace_id=self._workspace_id, project_id=self._project_id, limit=limit
             )
         )
+
+    async def live_plan_items(self, limit: int) -> list[PlanItem]:
+        return list(
+            await self._repository.list_plan_items(
+                workspace_id=self._workspace_id, project_id=self._project_id, limit=limit
+            )
+        )
+
+    async def live_asset_links(self, limit: int) -> list[AssetLink]:
+        return list(
+            await self._repository.list_links(
+                workspace_id=self._workspace_id, project_id=self._project_id, limit=limit
+            )
+        )
+
+
+def story_reader(
+    repository: CanonRepositoryPort,
+    workspace_id: str,
+    project_id: str,
+    media: MediaStorePort | None = None,
+) -> _RepositoryReader:
+    """Reads of one story, in the line the request works in, outside a commit."""
+    return _RepositoryReader(repository, workspace_id, project_id, media)
 
 
 class MutationService:
@@ -701,8 +730,15 @@ class MutationService:
 
     async def _validate(self, mutation: MutationSet, mutation_id: str) -> ValidationReport:
         accepted = await self._effective(mutation_id)
-        ordinals = [item.ordinal for item in accepted]
-        operations = [parse_operation(item.payload) for item in accepted]
+        reader = _RepositoryReader(
+            self._repository, mutation.workspace_id, mutation.project_id, self._media
+        )
+        # A merge is checked as the changes it would make now (backend/domain/merge.py);
+        # a finding about one of them is shown against the merge.
+        operations, origin = await expand_merges(
+            [parse_operation(item.payload) for item in accepted], reader
+        )
+        ordinals = [accepted[position].ordinal for position in origin]
         issues: list[ValidationIssue] = []
         head = await self._repository.get_head(
             workspace_id=mutation.workspace_id,
@@ -719,9 +755,6 @@ class MutationService:
             )
         if not operations:
             issues.append(ValidationIssue(-1, "empty_mutation", "no accepted operations remain"))
-        reader = _RepositoryReader(
-            self._repository, mutation.workspace_id, mutation.project_id, self._media
-        )
         compiled = None
         if mutation.schema_version_id is not None:
             version = (
@@ -1049,6 +1082,22 @@ class MutationService:
                 )
 
         operations = [parse_operation(item.payload) for item in accepted]
+        if any(isinstance(operation, MergeEntitiesOp) for operation in operations):
+            # A merge is kept as the changes it makes, worked out from the story at this
+            # version in the merge's own line; the commit works them out again in its
+            # transaction and refuses the commit if they differ.
+            branch = await self._journal.get_branch(
+                workspace_id=mutation.workspace_id,
+                project_id=mutation.project_id,
+                branch_id=mutation.branch_id,
+            )
+            with working_in(None if branch is None or branch.is_root else branch.id):
+                operations, _origin = await expand_merges(
+                    operations,
+                    _RepositoryReader(
+                        self._repository, mutation.workspace_id, mutation.project_id, self._media
+                    ),
+                )
         resolved, _mapping = resolve_temporary_ids(
             operations, new_id=lambda kind, tmp: _deterministic_id(mutation_id, kind, tmp)
         )
@@ -1141,4 +1190,5 @@ __all__ = [
     "ReviewRequiredError",
     "ValidationIssue",
     "ValidationReport",
+    "story_reader",
 ]

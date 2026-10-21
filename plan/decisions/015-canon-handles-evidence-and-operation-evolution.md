@@ -79,3 +79,21 @@ additions stay optional.
 bytes), `tests/application/test_provenance_and_history_authz.py`,
 `tests/integration/test_canon_identity_and_equivalence.py`, and
 `tests/integration/test_phase_upgrade_migrations.py`.
+
+## Amendment 2026-10-21: fields omitted per operation, and operations expanded at commit
+
+- `retire_entity.merged_into` is registered in the omit-when-unset list like every earlier
+  addition.
+- `amend_event` gained `participants`, `location_ids`, `cause_ids` and `outcome_ids` (a merge
+  moves every one that names the merged entry). Their names are already used by
+  `create_event`, whose canonical form has always kept them even when empty, so they cannot join
+  the shared omit list. A second, per-operation list (`_CANONICAL_OMIT_WHEN_NONE_BY_OP`) omits
+  them only on `amend_event` and only when `None`; an explicit empty list is recorded. A unit test
+  (`tests/unit/test_merge.py`) pins that earlier forms are unchanged.
+- `merge_entities` is reviewed as one operation but never reaches an envelope: it is replaced
+  before temporary ids are resolved by the ordinary operations it makes, worked out from the
+  story at the expected head, by the same function in the mutation service and inside the commit
+  transaction, which refuses the commit when the two differ (ADR-017 amendment). New temporary
+  ids for the facts, beliefs and links it states are `tmp:merge-<position>-…`, so they resolve
+  deterministically like any other.
+- `restore_entity` is new and carries no extra fields.

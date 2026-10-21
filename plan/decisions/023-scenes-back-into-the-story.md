@@ -110,3 +110,39 @@ in the same set of suggested changes. Pasted text lists no threads and gets no s
 - Novelcrafter Codex (detection links names to existing entries): https://www.novelcrafter.com/features/codex
 - LinkML term validator on checking model-chosen identifiers:
   https://linkml.io/linkml-term-validator/anti-hallucination/
+
+## Amendment (2026-10-21): changes of state and new threads (EXT-001)
+
+Reading also suggests **changes of state** (`state_changes`): someone comes to hold or loses a
+thing (possession), arrives at or leaves a place (location), becomes or stops being injured,
+captive, dead and the like (status, with the word), or a relationship begins or ends. Each names
+the subject, the kind of fact that records it (a listed predicate that fits the kind: an
+object-pointing one for possession, a place-pointing one for location, a character- or
+group-pointing one for relationships, a value for status), the other entry, whether it starts or
+ends, a short name and the quote; anything else is set aside with a plain reason.
+
+- A **beginning** is drafted like any other fact; in a timed scene it starts at the scene's time
+  when its kind of fact can take a time (and a one-at-a-time value ends the old one then, as
+  before). It carries "The passage shows this beginning." for the reviewer.
+- An **ending** ends the fact the story records: at the scene's time (`amend_fact` with `ends`)
+  when its kind can take a time and it began before the scene, or closed (`close_fact`, "The
+  passage shows this coming to an end.") otherwise, as an untimed reading would. Nothing is
+  suggested when the story records no such fact, it had already ended by then, or another
+  suggestion here already ends it.
+- In a **timed scene**, a change whose kind of fact cannot take a time (in the core schema
+  everything but where someone is) is also suggested as an event at the scene's time, in the
+  scene, naming who it touches: kind `possession`, `relationship` or `condition`, and a death as
+  kind `death` with whoever died in the part `died`, which is how the continuity checks
+  already recognise a death. A status whose values the author picks by hand (the core
+  `HAS_STATUS` list) is suggested as the event only. Pasted text and untimed scenes get no such
+  events: there is no time to place them at.
+
+Reading a scene may also **open a thread** (`new_threads`, at most three): a question or promise
+the plan's threads do not cover becomes a new thread (`create_plan_item`, its title, a one-line
+summary, the quote) that the scene opens (`sets_up`), in the same one `only_fills` change to the
+scene's plan as its thread steps, so approving it is still refused if the author has changed the
+scene's plan since. A title the plan already has, or one not in the passage, is set aside;
+pasted text opens none. `read-passage` is at version 3 and `read-scene` at version 4.
+
+Checked with the scripted model and the browser stand-in only; how often a real model finds the
+right changes is unmeasured.

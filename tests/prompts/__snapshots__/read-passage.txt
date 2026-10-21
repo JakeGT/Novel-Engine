@@ -1,6 +1,6 @@
 # Prompt snapshot. Change it only with: uv run python -m tests.prompts.snapshots --update
 id: read-passage
-version: 2
+version: 3
 
 ##### case: a passage
 
@@ -15,6 +15,7 @@ Read a passage of an author's own story and record what it establishes, as struc
 - when the passage calls a listed entry by a nickname or a description (“the Fox”, “the old captain”) and it is clear who is meant, add it to references with the phrase as written and that entry's id. If it is not clear, leave it out.
 - what a narrator states is a fact. What a character says, thinks or assumes is a belief held by that character, which may be false.
 - add an event for something that happens in the passage (a meeting, a fight, a journey, a death): a short name, the people and places taking part (listed ids, or refs of entities you create), and the quote that shows it. Give `when` only when the passage says when it happens; never invent a time. Do not add an event that is already listed.
+- add a state change when the passage shows a state beginning or ending: someone comes to hold or loses a thing (kind possession), arrives at or leaves a place (location), becomes or stops being injured, ill, captive, dead and the like (status, with the word as value), or a relationship begins or ends (relationship). Give change starts or ends, the subject, the predicate that records it, the other entry as object (not for a status), a short name and the quote. A thing handed from one to another is two changes: one ends, one starts. What was already so is a fact, not a change; do not give the same thing as both.
 - entity types must be one of: ['Character', 'Faction', 'Location', 'Object']
 - use only these predicates, respecting subject and object types:
 - LOCATED_AT: subject is one of ['Character', 'Object']; object is entity_ref of type ['Location']
@@ -326,6 +327,32 @@ Mara Voss walked the sea wall at Saltmere. The Fox, they called her.
       "title": "ReadFact",
       "type": "object"
     },
+    "ReadNewThread": {
+      "properties": {
+        "quote": {
+          "description": "The exact words from the passage that open it",
+          "title": "Quote",
+          "type": "string"
+        },
+        "summary": {
+          "default": "",
+          "description": "One plain sentence: what is left open",
+          "title": "Summary",
+          "type": "string"
+        },
+        "title": {
+          "description": "A short title for the question or promise, a few words",
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "quote"
+      ],
+      "title": "ReadNewThread",
+      "type": "object"
+    },
     "ReadReference": {
       "properties": {
         "phrase": {
@@ -344,6 +371,81 @@ Mara Voss walked the sea wall at Saltmere. The Fox, they called her.
         "ref"
       ],
       "title": "ReadReference",
+      "type": "object"
+    },
+    "ReadStateChange": {
+      "properties": {
+        "change": {
+          "default": "starts",
+          "description": "starts when the passage shows it beginning; ends when it shows it stopping",
+          "title": "Change",
+          "type": "string"
+        },
+        "kind": {
+          "description": "possession, location, status or relationship",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "description": "A short name for the change, a few words",
+          "title": "Name",
+          "type": "string"
+        },
+        "object": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Possession, location and relationship: the id or ref of the thing held, the place, or the other side",
+          "title": "Object"
+        },
+        "predicate": {
+          "description": "One of the listed predicates that records the state",
+          "title": "Predicate",
+          "type": "string"
+        },
+        "quote": {
+          "description": "The exact words from the passage that show the change",
+          "title": "Quote",
+          "type": "string"
+        },
+        "stated": {
+          "default": true,
+          "title": "Stated",
+          "type": "boolean"
+        },
+        "subject": {
+          "description": "Id of a listed entry, or ref of an entity in this answer, whose state changes: who holds the thing, who moves, whose status changes, or one side of the relationship",
+          "title": "Subject",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Status only: one or two words, such as injured or dead",
+          "title": "Value"
+        }
+      },
+      "required": [
+        "kind",
+        "subject",
+        "predicate",
+        "quote"
+      ],
+      "title": "ReadStateChange",
       "type": "object"
     },
     "ReadThreadStep": {
@@ -594,11 +696,25 @@ Mara Voss walked the sea wall at Saltmere. The Fox, they called her.
       "title": "Facts",
       "type": "array"
     },
+    "new_threads": {
+      "items": {
+        "$ref": "#/$defs/ReadNewThread"
+      },
+      "title": "New Threads",
+      "type": "array"
+    },
     "references": {
       "items": {
         "$ref": "#/$defs/ReadReference"
       },
       "title": "References",
+      "type": "array"
+    },
+    "state_changes": {
+      "items": {
+        "$ref": "#/$defs/ReadStateChange"
+      },
+      "title": "State Changes",
       "type": "array"
     },
     "suggested_fact_kinds": {

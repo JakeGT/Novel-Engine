@@ -483,6 +483,20 @@
       "AmendEventOp": {
         "additionalProperties": false,
         "properties": {
+          "cause_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cause Ids"
+          },
           "evidence": {
             "items": {
               "$ref": "#/components/schemas/EvidenceRef"
@@ -494,6 +508,20 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "location_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Ids"
           },
           "name": {
             "anyOf": [
@@ -511,6 +539,34 @@
             "default": "amend_event",
             "title": "Op",
             "type": "string"
+          },
+          "outcome_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome Ids"
+          },
+          "participants": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/EventParticipant"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Participants"
           },
           "when": {
             "anyOf": [
@@ -1926,6 +1982,43 @@
         "title": "AuditCheckModel",
         "type": "object"
       },
+      "AuditDriftModel": {
+        "description": "How voice and relationships move across the scenes an audit read. Calls no model.",
+        "properties": {
+          "relationships": {
+            "items": {
+              "$ref": "#/components/schemas/PairModel"
+            },
+            "title": "Relationships",
+            "type": "array"
+          },
+          "trends": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Trends",
+            "type": "array"
+          },
+          "usual": {
+            "$ref": "#/components/schemas/UsualModel"
+          },
+          "voice": {
+            "items": {
+              "$ref": "#/components/schemas/VoiceRowModel"
+            },
+            "title": "Voice",
+            "type": "array"
+          }
+        },
+        "required": [
+          "voice",
+          "usual",
+          "trends",
+          "relationships"
+        ],
+        "title": "AuditDriftModel",
+        "type": "object"
+      },
       "AuditEstimateModel": {
         "properties": {
           "max_scenes": {
@@ -2431,6 +2524,84 @@
         "title": "Between",
         "type": "object"
       },
+      "BookSceneModel": {
+        "properties": {
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/VoiceNoteModel"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "own": {
+            "title": "Own",
+            "type": "boolean"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/VoiceStatsModel"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version_number": {
+            "title": "Version Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "plan_id",
+          "title",
+          "version_number",
+          "own",
+          "stats",
+          "notes"
+        ],
+        "title": "BookSceneModel",
+        "type": "object"
+      },
+      "BookVoiceModel": {
+        "properties": {
+          "band_labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Band Labels",
+            "type": "array"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/components/schemas/BookSceneModel"
+            },
+            "title": "Scenes",
+            "type": "array"
+          },
+          "stopped": {
+            "title": "Stopped",
+            "type": "boolean"
+          },
+          "unwritten": {
+            "title": "Unwritten",
+            "type": "integer"
+          },
+          "usual": {
+            "$ref": "#/components/schemas/UsualModel"
+          }
+        },
+        "required": [
+          "scenes",
+          "usual",
+          "unwritten",
+          "stopped",
+          "band_labels"
+        ],
+        "title": "BookVoiceModel",
+        "type": "object"
+      },
       "BooleanObject": {
         "additionalProperties": false,
         "properties": {
@@ -2889,6 +3060,11 @@
             ],
             "title": "Back To Version"
           },
+          "candidates": {
+            "default": 0,
+            "title": "Candidates",
+            "type": "integer"
+          },
           "context": {
             "anyOf": [
               {
@@ -2912,6 +3088,11 @@
             },
             "title": "Elsewhere",
             "type": "array"
+          },
+          "from_candidates": {
+            "default": 0,
+            "title": "From Candidates",
+            "type": "integer"
           },
           "invite": {
             "anyOf": [
@@ -2951,6 +3132,17 @@
             },
             "title": "Questions",
             "type": "array"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
           },
           "session_id": {
             "title": "Session Id",
@@ -3926,6 +4118,19 @@
         "title": "ClaimRequest",
         "type": "object"
       },
+      "ClearedModel": {
+        "properties": {
+          "cleared": {
+            "title": "Cleared",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cleared"
+        ],
+        "title": "ClearedModel",
+        "type": "object"
+      },
       "CloseBeliefOp": {
         "additionalProperties": false,
         "properties": {
@@ -4049,6 +4254,129 @@
         "title": "ComparisonModel",
         "type": "object"
       },
+      "ComputerCapabilitiesModel": {
+        "properties": {
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ComputerModelInfo"
+            },
+            "maxItems": 200,
+            "title": "Models",
+            "type": "array"
+          },
+          "server": {
+            "default": "openai-compatible",
+            "maxLength": 40,
+            "title": "Server",
+            "type": "string"
+          },
+          "structured_output": {
+            "default": false,
+            "title": "Structured Output",
+            "type": "boolean"
+          }
+        },
+        "title": "ComputerCapabilitiesModel",
+        "type": "object"
+      },
+      "ComputerCodeCheckRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "ComputerCodeCheckRequest",
+        "type": "object"
+      },
+      "ComputerCodeDecisionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "approve": {
+            "title": "Approve",
+            "type": "boolean"
+          },
+          "code": {
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "approve"
+        ],
+        "title": "ComputerCodeDecisionRequest",
+        "type": "object"
+      },
+      "ComputerCodeModel": {
+        "description": "What is about to be connected, shown before the person confirms (RFC 8628 5.4).",
+        "properties": {
+          "asked_at": {
+            "format": "date-time",
+            "title": "Asked At",
+            "type": "string"
+          },
+          "connector_version": {
+            "title": "Connector Version",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "connector_version",
+          "asked_at",
+          "expires_at",
+          "status"
+        ],
+        "title": "ComputerCodeModel",
+        "type": "object"
+      },
+      "ComputerModelInfo": {
+        "properties": {
+          "context_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Tokens"
+          },
+          "name": {
+            "maxLength": 200,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ComputerModelInfo",
+        "type": "object"
+      },
       "ConditionStateModel": {
         "properties": {
           "holds": {
@@ -4113,6 +4441,312 @@
           "holds"
         ],
         "title": "ConditionStateModel",
+        "type": "object"
+      },
+      "ConnectedComputerModel": {
+        "properties": {
+          "connected_at": {
+            "format": "date-time",
+            "title": "Connected At",
+            "type": "string"
+          },
+          "connector_version": {
+            "title": "Connector Version",
+            "type": "string"
+          },
+          "disconnected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disconnected At"
+          },
+          "disconnected_because": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disconnected Because"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "in_use": {
+            "title": "In Use",
+            "type": "boolean"
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ComputerModelInfo"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "online": {
+            "title": "Online",
+            "type": "boolean"
+          },
+          "server": {
+            "title": "Server",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "structured_output": {
+            "title": "Structured Output",
+            "type": "boolean"
+          },
+          "up_to_date": {
+            "title": "Up To Date",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "online",
+          "last_seen_at",
+          "connected_at",
+          "connector_version",
+          "up_to_date",
+          "server",
+          "models",
+          "structured_output",
+          "in_use",
+          "disconnected_because",
+          "disconnected_at"
+        ],
+        "title": "ConnectedComputerModel",
+        "type": "object"
+      },
+      "ConnectorAnswerRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "maximum": 599.0,
+                "minimum": 100.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "title": "ConnectorAnswerRequest",
+        "type": "object"
+      },
+      "ConnectorCodeModel": {
+        "description": "RFC 8628 section 3.2.",
+        "properties": {
+          "device_code": {
+            "title": "Device Code",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "interval": {
+            "title": "Interval",
+            "type": "integer"
+          },
+          "user_code": {
+            "title": "User Code",
+            "type": "string"
+          },
+          "verification_uri": {
+            "title": "Verification Uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_code",
+          "user_code",
+          "verification_uri",
+          "expires_in",
+          "interval"
+        ],
+        "title": "ConnectorCodeModel",
+        "type": "object"
+      },
+      "ConnectorCodeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version"
+        ],
+        "title": "ConnectorCodeRequest",
+        "type": "object"
+      },
+      "ConnectorPollModel": {
+        "properties": {
+          "minimum_version": {
+            "title": "Minimum Version",
+            "type": "string"
+          },
+          "request": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RelayedRequestModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rotate": {
+            "title": "Rotate",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "request",
+          "rotate",
+          "minimum_version"
+        ],
+        "title": "ConnectorPollModel",
+        "type": "object"
+      },
+      "ConnectorPollRequest": {
+        "properties": {
+          "capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComputerCapabilitiesModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "take": {
+            "default": true,
+            "title": "Take",
+            "type": "boolean"
+          },
+          "wait": {
+            "default": 25,
+            "maximum": 25.0,
+            "minimum": 0.0,
+            "title": "Wait",
+            "type": "number"
+          }
+        },
+        "title": "ConnectorPollRequest",
+        "type": "object"
+      },
+      "ConnectorTokenRequest": {
+        "properties": {
+          "device_code": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Device Code",
+            "type": "string"
+          },
+          "grant_type": {
+            "default": "urn:ietf:params:oauth:grant-type:device_code",
+            "title": "Grant Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_code"
+        ],
+        "title": "ConnectorTokenRequest",
+        "type": "object"
+      },
+      "ConnectorVersionModel": {
+        "properties": {
+          "latest": {
+            "title": "Latest",
+            "type": "string"
+          },
+          "minimum": {
+            "title": "Minimum",
+            "type": "string"
+          },
+          "protocol": {
+            "title": "Protocol",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "minimum",
+          "latest",
+          "protocol"
+        ],
+        "title": "ConnectorVersionModel",
         "type": "object"
       },
       "ContextChoice": {
@@ -4557,6 +5191,16 @@
       "ContextUsedModel": {
         "description": "What part of the story bible the assistant was shown, by which policy (CTX-002).",
         "properties": {
+          "by_meaning": {
+            "default": false,
+            "title": "By Meaning",
+            "type": "boolean"
+          },
+          "found_by_meaning": {
+            "default": 0,
+            "title": "Found By Meaning",
+            "type": "integer"
+          },
           "left_out": {
             "additionalProperties": {
               "type": "integer"
@@ -4660,6 +5304,156 @@
           "always"
         ],
         "title": "ContinuityModel",
+        "type": "object"
+      },
+      "CorrectionEstimateModel": {
+        "properties": {
+          "findings": {
+            "title": "Findings",
+            "type": "integer"
+          },
+          "scenes": {
+            "title": "Scenes",
+            "type": "integer"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_tokens",
+          "findings",
+          "scenes"
+        ],
+        "title": "CorrectionEstimateModel",
+        "type": "object"
+      },
+      "CorrectionItemModel": {
+        "properties": {
+          "change": {
+            "title": "Change",
+            "type": "string"
+          },
+          "cited": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Cited",
+            "type": "array"
+          },
+          "decision": {
+            "enum": [
+              "waiting",
+              "kept",
+              "skipped"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "why": {
+            "title": "Why",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_id",
+          "title",
+          "change",
+          "why",
+          "cited",
+          "decision"
+        ],
+        "title": "CorrectionItemModel",
+        "type": "object"
+      },
+      "CorrectionPlanModel": {
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "dropped": {
+            "title": "Dropped",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CorrectionItemModel"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "summary",
+          "items",
+          "dropped"
+        ],
+        "title": "CorrectionPlanModel",
+        "type": "object"
+      },
+      "CorrectionsModel": {
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/JobModel"
+            },
+            "title": "Jobs",
+            "type": "array"
+          },
+          "plans": {
+            "items": {
+              "$ref": "#/components/schemas/CorrectionPlanModel"
+            },
+            "title": "Plans",
+            "type": "array"
+          }
+        },
+        "required": [
+          "plans",
+          "jobs"
+        ],
+        "title": "CorrectionsModel",
+        "type": "object"
+      },
+      "CountRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "left_out": {
+            "title": "Left Out",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "left_out"
+        ],
+        "title": "CountRequest",
         "type": "object"
       },
       "CoverageModel": {
@@ -5288,6 +6082,25 @@
         "title": "CredentialProvider",
         "type": "string"
       },
+      "DecideStepRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "enum": [
+              "waiting",
+              "kept",
+              "skipped"
+            ],
+            "title": "Decision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "title": "DecideStepRequest",
+        "type": "object"
+      },
       "DecideSummaryRequest": {
         "additionalProperties": false,
         "properties": {
@@ -5409,6 +6222,10 @@
               "thread",
               "rule",
               "draft",
+              "belief",
+              "event",
+              "picture",
+              "finding",
               "scene_text",
               "text"
             ],
@@ -5589,6 +6406,13 @@
           },
           "draft": {
             "$ref": "#/components/schemas/PlanDraft"
+          },
+          "grounding": {
+            "items": {
+              "$ref": "#/components/schemas/GroundingModel"
+            },
+            "title": "Grounding",
+            "type": "array"
           },
           "title": {
             "title": "Title",
@@ -5941,6 +6765,12 @@
             "title": "Pays Off",
             "type": "array"
           },
+          "quote": {
+            "default": "",
+            "description": "The author's own words this item comes from, copied exactly from what you were given; empty when it is your own suggestion",
+            "title": "Quote",
+            "type": "string"
+          },
           "ref": {
             "description": "A short local handle for this item",
             "title": "Ref",
@@ -6034,6 +6864,34 @@
           "sentence"
         ],
         "title": "DraftRuleRequest",
+        "type": "object"
+      },
+      "EchoModel": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "integer"
+          },
+          "start": {
+            "title": "Start",
+            "type": "integer"
+          },
+          "times": {
+            "title": "Times",
+            "type": "integer"
+          },
+          "word": {
+            "title": "Word",
+            "type": "string"
+          }
+        },
+        "required": [
+          "word",
+          "times",
+          "start",
+          "end"
+        ],
+        "title": "EchoModel",
         "type": "object"
       },
       "EdgeCreate": {
@@ -6177,6 +7035,24 @@
           "what"
         ],
         "title": "ElsewhereModel",
+        "type": "object"
+      },
+      "EndedModel": {
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "sentence": {
+            "title": "Sentence",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sentence",
+          "reason"
+        ],
+        "title": "EndedModel",
         "type": "object"
       },
       "Entity": {
@@ -7240,6 +8116,129 @@
         "title": "FactVisibility",
         "type": "string"
       },
+      "FindingProposalEstimateModel": {
+        "properties": {
+          "has_passage": {
+            "title": "Has Passage",
+            "type": "boolean"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_tokens",
+          "has_passage"
+        ],
+        "title": "FindingProposalEstimateModel",
+        "type": "object"
+      },
+      "FindingProposalModel": {
+        "properties": {
+          "mutation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mutation Id"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "operation_count": {
+            "title": "Operation Count",
+            "type": "integer"
+          },
+          "questions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Questions",
+            "type": "array"
+          },
+          "understood": {
+            "title": "Understood",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mutation_id",
+          "understood",
+          "questions",
+          "notes",
+          "operation_count"
+        ],
+        "title": "FindingProposalModel",
+        "type": "object"
+      },
+      "FindingProposalRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "choice": {
+            "enum": [
+              "make_true",
+              "change_bible"
+            ],
+            "title": "Choice",
+            "type": "string"
+          },
+          "key": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "check",
+              "note"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "key",
+          "choice"
+        ],
+        "title": "FindingProposalRequest",
+        "type": "object"
+      },
+      "FindingRef": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "check",
+              "note"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "key"
+        ],
+        "title": "FindingRef",
+        "type": "object"
+      },
       "FoundPictureModel": {
         "properties": {
           "asset_id": {
@@ -7364,6 +8363,37 @@
           "edges"
         ],
         "title": "GraphUpdateResponse",
+        "type": "object"
+      },
+      "GroundingModel": {
+        "description": "Whether one suggested part of the plan quotes the author's material (AST-EXP-013).",
+        "properties": {
+          "grounded": {
+            "title": "Grounded",
+            "type": "boolean"
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "quote",
+          "grounded"
+        ],
+        "title": "GroundingModel",
         "type": "object"
       },
       "GuideEntryModel": {
@@ -7962,6 +8992,29 @@
           "email"
         ],
         "title": "InviteModel",
+        "type": "object"
+      },
+      "IssuedCredentialModel": {
+        "properties": {
+          "credential": {
+            "title": "Credential",
+            "type": "string"
+          },
+          "device_id": {
+            "title": "Device Id",
+            "type": "string"
+          },
+          "token_type": {
+            "default": "Bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "credential"
+        ],
+        "title": "IssuedCredentialModel",
         "type": "object"
       },
       "JobModel": {
@@ -8985,6 +10038,349 @@
           "entity_ids"
         ],
         "title": "MentionModel",
+        "type": "object"
+      },
+      "MergeEntitiesOp": {
+        "additionalProperties": false,
+        "description": "Merge one entry (``id``) into another (``into``), reviewed as one change.\n\nWhat a merge moves is worked out when it is kept, from the story as it is then\n(``backend/domain/merge.py``): facts and beliefs naming the merged entry are ended\nand stated again about the kept one, events, plan items and pictures point at the\nkept one, its names become the kept one's other names, and it is retired. The\ncommit records those ordinary changes; this operation is what the author reviews.\n``drop_facts`` and ``drop_beliefs`` are ended rather than moved (a value the kept\nentry already has for something that holds one at a time). ``name``, ``aliases``\nand ``attributes`` replace what is worked out for the kept entry when given.",
+        "properties": {
+          "aliases": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aliases"
+          },
+          "attributes": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attributes"
+          },
+          "drop_beliefs": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Drop Beliefs",
+            "type": "array"
+          },
+          "drop_facts": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Drop Facts",
+            "type": "array"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRef"
+            },
+            "maxItems": 10,
+            "title": "Evidence",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "into": {
+            "title": "Into",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "op": {
+            "const": "merge_entities",
+            "default": "merge_entities",
+            "title": "Op",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "into"
+        ],
+        "title": "MergeEntitiesOp",
+        "type": "object"
+      },
+      "MergePreviewModel": {
+        "properties": {
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Aliases",
+            "type": "array"
+          },
+          "beliefs_ended": {
+            "items": {
+              "$ref": "#/components/schemas/EndedModel"
+            },
+            "title": "Beliefs Ended",
+            "type": "array"
+          },
+          "beliefs_moved": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Beliefs Moved",
+            "type": "array"
+          },
+          "change_count": {
+            "title": "Change Count",
+            "type": "integer"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "entry_type": {
+            "title": "Entry Type",
+            "type": "string"
+          },
+          "events": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "facts_ended": {
+            "items": {
+              "$ref": "#/components/schemas/EndedModel"
+            },
+            "title": "Facts Ended",
+            "type": "array"
+          },
+          "facts_moved": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Facts Moved",
+            "type": "array"
+          },
+          "keep_id": {
+            "title": "Keep Id",
+            "type": "string"
+          },
+          "keep_name": {
+            "title": "Keep Name",
+            "type": "string"
+          },
+          "merged_id": {
+            "title": "Merged Id",
+            "type": "string"
+          },
+          "merged_name": {
+            "title": "Merged Name",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "names_left_out": {
+            "default": 0,
+            "title": "Names Left Out",
+            "type": "integer"
+          },
+          "pictures_ended": {
+            "title": "Pictures Ended",
+            "type": "integer"
+          },
+          "pictures_moved": {
+            "title": "Pictures Moved",
+            "type": "integer"
+          },
+          "plan_items": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Plan Items",
+            "type": "array"
+          },
+          "still_naming": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Still Naming",
+            "type": "array"
+          }
+        },
+        "required": [
+          "keep_id",
+          "keep_name",
+          "merged_id",
+          "merged_name",
+          "entry_type",
+          "name",
+          "aliases",
+          "details",
+          "facts_moved",
+          "facts_ended",
+          "beliefs_moved",
+          "beliefs_ended",
+          "events",
+          "plan_items",
+          "pictures_moved",
+          "pictures_ended",
+          "still_naming",
+          "change_count"
+        ],
+        "title": "MergePreviewModel",
+        "type": "object"
+      },
+      "MergePreviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "drop_beliefs": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Drop Beliefs",
+            "type": "array"
+          },
+          "drop_facts": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Drop Facts",
+            "type": "array"
+          },
+          "entity_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "into": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Into",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "suggested": {
+            "default": false,
+            "title": "Suggested",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "entity_id",
+          "into"
+        ],
+        "title": "MergePreviewRequest",
+        "type": "object"
+      },
+      "MergeProposalModel": {
+        "properties": {
+          "mutation_id": {
+            "title": "Mutation Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "validation_issues": {
+            "items": {
+              "$ref": "#/components/schemas/ProposalIssueModel"
+            },
+            "title": "Validation Issues",
+            "type": "array"
+          },
+          "validation_ok": {
+            "title": "Validation Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "mutation_id",
+          "status",
+          "validation_ok",
+          "validation_issues"
+        ],
+        "title": "MergeProposalModel",
+        "type": "object"
+      },
+      "MergeProposalRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "entity_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "into": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Into",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "entity_id",
+          "into",
+          "expected_revision"
+        ],
+        "title": "MergeProposalRequest",
         "type": "object"
       },
       "MissingModel": {
@@ -10441,6 +11837,46 @@
         "title": "OutlineModel",
         "type": "object"
       },
+      "PairModel": {
+        "properties": {
+          "names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Names",
+            "type": "array"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "recorded": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recorded",
+            "type": "array"
+          },
+          "together": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Together",
+            "type": "array"
+          }
+        },
+        "required": [
+          "names",
+          "together",
+          "recorded",
+          "notes"
+        ],
+        "title": "PairModel",
+        "type": "object"
+      },
       "PassEstimateModel": {
         "description": "One pass of a check with the assistant: what it looks at and roughly what it uses.",
         "properties": {
@@ -11238,6 +12674,23 @@
             "title": "Discarded",
             "type": "array"
           },
+          "grounded": {
+            "default": 0,
+            "title": "Grounded",
+            "type": "integer"
+          },
+          "grounding": {
+            "items": {
+              "$ref": "#/components/schemas/GroundingModel"
+            },
+            "title": "Grounding",
+            "type": "array"
+          },
+          "invented": {
+            "default": 0,
+            "title": "Invented",
+            "type": "integer"
+          },
           "mutation_id": {
             "title": "Mutation Id",
             "type": "string"
@@ -11429,6 +12882,28 @@
         "title": "PredicateModel",
         "type": "object"
       },
+      "PremiseAnswerModel": {
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Answer",
+            "type": "string"
+          },
+          "question": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "title": "PremiseAnswerModel",
+        "type": "object"
+      },
       "PremiseModel": {
         "properties": {
           "id": {
@@ -11455,6 +12930,130 @@
           "sentence"
         ],
         "title": "PremiseModel",
+        "type": "object"
+      },
+      "PremiseRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/PremiseAnswerModel"
+            },
+            "maxItems": 20,
+            "title": "Answers",
+            "type": "array"
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "premise": {
+            "default": "",
+            "maxLength": 8000,
+            "title": "Premise",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "title": "PremiseRequest",
+        "type": "object"
+      },
+      "PremiseRoundModel": {
+        "properties": {
+          "discarded": {
+            "items": {
+              "$ref": "#/components/schemas/DiscardedItemModel"
+            },
+            "title": "Discarded",
+            "type": "array"
+          },
+          "mutation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mutation Id"
+          },
+          "operation_count": {
+            "title": "Operation Count",
+            "type": "integer"
+          },
+          "questions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Questions",
+            "type": "array"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/SchemaSuggestionModel"
+            },
+            "title": "Suggestions",
+            "type": "array"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "understood": {
+            "title": "Understood",
+            "type": "string"
+          },
+          "validation_issues": {
+            "items": {
+              "$ref": "#/components/schemas/ProposalIssueModel"
+            },
+            "title": "Validation Issues",
+            "type": "array"
+          },
+          "validation_ok": {
+            "title": "Validation Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "thread_id",
+          "understood",
+          "questions",
+          "mutation_id",
+          "status",
+          "operation_count",
+          "discarded",
+          "validation_ok",
+          "validation_issues",
+          "session_id"
+        ],
+        "title": "PremiseRoundModel",
         "type": "object"
       },
       "ProcessingModel": {
@@ -11750,6 +13349,8 @@
                   "create_event": "#/components/schemas/CreateEventOp",
                   "create_plan_item": "#/components/schemas/CreatePlanItemOp",
                   "link_asset": "#/components/schemas/LinkAssetOp",
+                  "merge_entities": "#/components/schemas/MergeEntitiesOp",
+                  "restore_entity": "#/components/schemas/RestoreEntityOp",
                   "retire_asset_link": "#/components/schemas/RetireAssetLinkOp",
                   "retire_entity": "#/components/schemas/RetireEntityOp",
                   "retire_event": "#/components/schemas/RetireEventOp",
@@ -11768,6 +13369,12 @@
                 },
                 {
                   "$ref": "#/components/schemas/RetireEntityOp"
+                },
+                {
+                  "$ref": "#/components/schemas/RestoreEntityOp"
+                },
+                {
+                  "$ref": "#/components/schemas/MergeEntitiesOp"
                 },
                 {
                   "$ref": "#/components/schemas/AssertFactOp"
@@ -12181,12 +13788,22 @@
             ],
             "title": "Mutation Id"
           },
+          "new_threads": {
+            "default": 0,
+            "title": "New Threads",
+            "type": "integer"
+          },
           "operation_count": {
             "title": "Operation Count",
             "type": "integer"
           },
           "start": {
             "title": "Start",
+            "type": "integer"
+          },
+          "state_changes": {
+            "default": 0,
+            "title": "State Changes",
             "type": "integer"
           },
           "thread_steps": {
@@ -12569,6 +14186,41 @@
         "title": "Relative",
         "type": "object"
       },
+      "RelayedRequestModel": {
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "method",
+          "path"
+        ],
+        "title": "RelayedRequestModel",
+        "type": "object"
+      },
       "RemovePlanItemRequest": {
         "additionalProperties": false,
         "properties": {
@@ -12668,6 +14320,35 @@
         "title": "RemovedModel",
         "type": "object"
       },
+      "RestoreEntityOp": {
+        "additionalProperties": false,
+        "description": "Bring a retired entry back into the story, as it was when it was retired.\n\nProposed by undoing a merge; like every change it is reviewed and validated.",
+        "properties": {
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRef"
+            },
+            "maxItems": 10,
+            "title": "Evidence",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "op": {
+            "const": "restore_entity",
+            "default": "restore_entity",
+            "title": "Op",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "RestoreEntityOp",
+        "type": "object"
+      },
       "RetargetRequest": {
         "additionalProperties": false,
         "properties": {
@@ -12725,6 +14406,17 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "merged_into": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merged Into"
           },
           "op": {
             "const": "retire_entity",
@@ -13158,6 +14850,8 @@
                 "create_event": "#/components/schemas/CreateEventOp",
                 "create_plan_item": "#/components/schemas/CreatePlanItemOp",
                 "link_asset": "#/components/schemas/LinkAssetOp",
+                "merge_entities": "#/components/schemas/MergeEntitiesOp",
+                "restore_entity": "#/components/schemas/RestoreEntityOp",
                 "retire_asset_link": "#/components/schemas/RetireAssetLinkOp",
                 "retire_entity": "#/components/schemas/RetireEntityOp",
                 "retire_event": "#/components/schemas/RetireEventOp",
@@ -13176,6 +14870,12 @@
               },
               {
                 "$ref": "#/components/schemas/RetireEntityOp"
+              },
+              {
+                "$ref": "#/components/schemas/RestoreEntityOp"
+              },
+              {
+                "$ref": "#/components/schemas/MergeEntitiesOp"
               },
               {
                 "$ref": "#/components/schemas/AssertFactOp"
@@ -13748,6 +15448,16 @@
             "title": "Message",
             "type": "string"
           },
+          "picture": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunPictureModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "plan_id": {
             "title": "Plan Id",
             "type": "string"
@@ -13941,6 +15651,46 @@
         "title": "RunModel",
         "type": "object"
       },
+      "RunPictureModel": {
+        "description": "A picture a check with the assistant compared the scene with (CON-001).",
+        "properties": {
+          "asset_id": {
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "changed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed"
+          },
+          "choice": {
+            "title": "Choice",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "version_id": {
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset_id",
+          "version_id",
+          "label",
+          "choice"
+        ],
+        "title": "RunPictureModel",
+        "type": "object"
+      },
       "RunSceneModel": {
         "properties": {
           "accepted": {
@@ -13982,6 +15732,14 @@
           "open": {
             "title": "Open",
             "type": "integer"
+          },
+          "pictures": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RunPictureModel"
+            },
+            "title": "Pictures",
+            "type": "array"
           },
           "plan_id": {
             "title": "Plan Id",
@@ -14563,6 +16321,255 @@
           "created_at"
         ],
         "title": "SceneSummaryModel",
+        "type": "object"
+      },
+      "SceneVoiceModel": {
+        "properties": {
+          "band_labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Band Labels",
+            "type": "array"
+          },
+          "counted": {
+            "title": "Counted",
+            "type": "boolean"
+          },
+          "left_out": {
+            "title": "Left Out",
+            "type": "boolean"
+          },
+          "measures_version": {
+            "default": "voice/1",
+            "title": "Measures Version",
+            "type": "string"
+          },
+          "min_words": {
+            "default": 300,
+            "title": "Min Words",
+            "type": "integer"
+          },
+          "not_compared": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Not Compared"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/VoiceNoteModel"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "stats": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceStatsModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "usual": {
+            "$ref": "#/components/schemas/UsualModel"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          },
+          "version_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Number"
+          }
+        },
+        "required": [
+          "plan_id",
+          "title",
+          "version_id",
+          "version_number",
+          "stats",
+          "usual",
+          "notes",
+          "counted",
+          "left_out",
+          "not_compared",
+          "band_labels"
+        ],
+        "title": "SceneVoiceModel",
+        "type": "object"
+      },
+      "ScheduleListModel": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduleModel"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "max_every_days": {
+            "default": 90,
+            "title": "Max Every Days",
+            "type": "integer"
+          },
+          "max_tokens": {
+            "default": 2000000,
+            "title": "Max Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ScheduleListModel",
+        "type": "object"
+      },
+      "ScheduleModel": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "every_days": {
+            "title": "Every Days",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Job Id"
+          },
+          "last_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Outcome"
+          },
+          "last_run_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Run At"
+          },
+          "max_tokens": {
+            "title": "Max Tokens",
+            "type": "integer"
+          },
+          "next_run_at": {
+            "format": "date-time",
+            "title": "Next Run At",
+            "type": "string"
+          },
+          "passes": {
+            "items": {
+              "$ref": "#/components/schemas/CheckPass"
+            },
+            "title": "Passes",
+            "type": "array"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "plan_id",
+          "passes",
+          "every_days",
+          "max_tokens",
+          "enabled",
+          "next_run_at"
+        ],
+        "title": "ScheduleModel",
+        "type": "object"
+      },
+      "ScheduleRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "every_days": {
+            "maximum": 90.0,
+            "minimum": 1.0,
+            "title": "Every Days",
+            "type": "integer"
+          },
+          "max_tokens": {
+            "maximum": 2000000.0,
+            "minimum": 0.0,
+            "title": "Max Tokens",
+            "type": "integer"
+          },
+          "passes": {
+            "items": {
+              "$ref": "#/components/schemas/CheckPass"
+            },
+            "maxItems": 6,
+            "title": "Passes",
+            "type": "array"
+          },
+          "plan_id": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Plan Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "every_days",
+          "max_tokens"
+        ],
+        "title": "ScheduleRequest",
         "type": "object"
       },
       "SchemaDefinitionRequest": {
@@ -15648,6 +17655,164 @@
         "title": "StudioModel",
         "type": "object"
       },
+      "SuggestionRunListModel": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SuggestionRunModel"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SuggestionRunListModel",
+        "type": "object"
+      },
+      "SuggestionRunModel": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decided": {
+            "title": "Decided",
+            "type": "boolean"
+          },
+          "details": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Details",
+            "type": "object"
+          },
+          "grounded": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grounded"
+          },
+          "groundedness": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Groundedness"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "invented": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invented"
+          },
+          "kept": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kept"
+          },
+          "kept_for_you": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kept For You"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "mutation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mutation Id"
+          },
+          "precision": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precision"
+          },
+          "prompt_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Version"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "suggested": {
+            "title": "Suggested",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "source",
+          "suggested",
+          "kept",
+          "precision",
+          "grounded",
+          "invented",
+          "groundedness",
+          "decided",
+          "mutation_id",
+          "prompt_version",
+          "created_at",
+          "details"
+        ],
+        "title": "SuggestionRunModel",
+        "type": "object"
+      },
       "TellRequest": {
         "additionalProperties": false,
         "properties": {
@@ -15930,6 +18095,63 @@
         "title": "TextModel",
         "type": "object"
       },
+      "ThreadModel": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "open_questions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Open Questions",
+            "type": "array"
+          },
+          "tokens_used": {
+            "default": 0,
+            "title": "Tokens Used",
+            "type": "integer"
+          },
+          "turns": {
+            "items": {
+              "$ref": "#/components/schemas/TurnModel"
+            },
+            "title": "Turns",
+            "type": "array"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "turns"
+        ],
+        "title": "ThreadModel",
+        "type": "object"
+      },
       "ThreadProgressModel": {
         "properties": {
           "steps": {
@@ -16173,6 +18395,101 @@
           "expected_revision"
         ],
         "title": "TrustRequest",
+        "type": "object"
+      },
+      "TurnAnswerModel": {
+        "properties": {
+          "answer": {
+            "title": "Answer",
+            "type": "string"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "answer"
+        ],
+        "title": "TurnAnswerModel",
+        "type": "object"
+      },
+      "TurnModel": {
+        "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/TurnAnswerModel"
+            },
+            "title": "Answers",
+            "type": "array"
+          },
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "mutation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mutation Id"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "operation_count": {
+            "title": "Operation Count",
+            "type": "integer"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "questions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Questions",
+            "type": "array"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "position",
+          "role",
+          "body",
+          "questions",
+          "answers",
+          "notes",
+          "mutation_id",
+          "operation_count",
+          "created_at"
+        ],
+        "title": "TurnModel",
         "type": "object"
       },
       "UndoModel": {
@@ -16556,6 +18873,120 @@
         "title": "UpdatePlanItemOp",
         "type": "object"
       },
+      "UseComputerRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "title": "UseComputerRequest",
+        "type": "object"
+      },
+      "UsualModel": {
+        "description": "The author's usual, and what it was made from.",
+        "properties": {
+          "adverb_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adverb Rate"
+          },
+          "dialogue_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dialogue Share"
+          },
+          "drafts_left_out": {
+            "title": "Drafts Left Out",
+            "type": "integer"
+          },
+          "enough": {
+            "title": "Enough",
+            "type": "boolean"
+          },
+          "left_out": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Left Out",
+            "type": "array"
+          },
+          "needs_scenes": {
+            "default": 3,
+            "title": "Needs Scenes",
+            "type": "integer"
+          },
+          "needs_words": {
+            "default": 2000,
+            "title": "Needs Words",
+            "type": "integer"
+          },
+          "own_only": {
+            "title": "Own Only",
+            "type": "boolean"
+          },
+          "person": {
+            "title": "Person",
+            "type": "string"
+          },
+          "scenes": {
+            "title": "Scenes",
+            "type": "integer"
+          },
+          "sentence_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentence Mean"
+          },
+          "tense": {
+            "title": "Tense",
+            "type": "string"
+          },
+          "words": {
+            "title": "Words",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enough",
+          "scenes",
+          "words",
+          "own_only",
+          "drafts_left_out",
+          "left_out",
+          "sentence_mean",
+          "dialogue_share",
+          "adverb_rate",
+          "person",
+          "tense"
+        ],
+        "title": "UsualModel",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -16905,6 +19336,303 @@
         "title": "VoiceModel",
         "type": "object"
       },
+      "VoiceNoteModel": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "VoiceNoteModel",
+        "type": "object"
+      },
+      "VoiceRowModel": {
+        "properties": {
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/VoiceNoteModel"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/VoiceStatsModel"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version_number": {
+            "title": "Version Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "plan_id",
+          "title",
+          "version_number",
+          "stats",
+          "notes"
+        ],
+        "title": "VoiceRowModel",
+        "type": "object"
+      },
+      "VoiceStatsModel": {
+        "properties": {
+          "adverb_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adverb Rate"
+          },
+          "adverbs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Adverbs",
+            "type": "array"
+          },
+          "bands": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Bands",
+            "type": "array"
+          },
+          "dialogue_share": {
+            "title": "Dialogue Share",
+            "type": "number"
+          },
+          "echoes": {
+            "items": {
+              "$ref": "#/components/schemas/EchoModel"
+            },
+            "title": "Echoes",
+            "type": "array"
+          },
+          "english": {
+            "title": "English",
+            "type": "boolean"
+          },
+          "past_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Past Share"
+          },
+          "person": {
+            "title": "Person",
+            "type": "string"
+          },
+          "sentence_long": {
+            "title": "Sentence Long",
+            "type": "number"
+          },
+          "sentence_mean": {
+            "title": "Sentence Mean",
+            "type": "number"
+          },
+          "sentence_median": {
+            "title": "Sentence Median",
+            "type": "number"
+          },
+          "sentence_spread": {
+            "title": "Sentence Spread",
+            "type": "number"
+          },
+          "sentences": {
+            "title": "Sentences",
+            "type": "integer"
+          },
+          "tense": {
+            "title": "Tense",
+            "type": "string"
+          },
+          "words": {
+            "title": "Words",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "words",
+          "sentences",
+          "english",
+          "sentence_mean",
+          "sentence_median",
+          "sentence_long",
+          "sentence_spread",
+          "bands",
+          "dialogue_share",
+          "adverb_rate",
+          "adverbs",
+          "echoes",
+          "person",
+          "tense",
+          "past_share"
+        ],
+        "title": "VoiceStatsModel",
+        "type": "object"
+      },
+      "WhatIfAuditModel": {
+        "description": "What differs between a what-if and the main story, worked out now. Calls no model.",
+        "properties": {
+          "bible": {
+            "items": {
+              "$ref": "#/components/schemas/WhatIfDifferenceModel"
+            },
+            "title": "Bible",
+            "type": "array"
+          },
+          "gone_findings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Gone Findings",
+            "type": "array"
+          },
+          "left_out": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Left Out",
+            "type": "array"
+          },
+          "new_findings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "New Findings",
+            "type": "array"
+          },
+          "plan": {
+            "items": {
+              "$ref": "#/components/schemas/WhatIfDifferenceModel"
+            },
+            "title": "Plan",
+            "type": "array"
+          },
+          "same": {
+            "title": "Same",
+            "type": "boolean"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/components/schemas/WhatIfSceneModel"
+            },
+            "title": "Scenes",
+            "type": "array"
+          },
+          "what_if_id": {
+            "title": "What If Id",
+            "type": "string"
+          },
+          "what_if_name": {
+            "title": "What If Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "what_if_id",
+          "what_if_name",
+          "same",
+          "bible",
+          "plan",
+          "scenes",
+          "new_findings",
+          "gone_findings",
+          "left_out"
+        ],
+        "title": "WhatIfAuditModel",
+        "type": "object"
+      },
+      "WhatIfDifferenceModel": {
+        "properties": {
+          "change": {
+            "enum": [
+              "added",
+              "removed",
+              "changed"
+            ],
+            "title": "Change",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "change",
+          "title",
+          "detail"
+        ],
+        "title": "WhatIfDifferenceModel",
+        "type": "object"
+      },
       "WhatIfModel": {
         "properties": {
           "changes": {
@@ -16958,6 +19686,42 @@
           "created_at"
         ],
         "title": "WhatIfModel",
+        "type": "object"
+      },
+      "WhatIfSceneModel": {
+        "properties": {
+          "main_words": {
+            "title": "Main Words",
+            "type": "integer"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "voice": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Voice",
+            "type": "array"
+          },
+          "what_if_words": {
+            "title": "What If Words",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "plan_id",
+          "title",
+          "main_words",
+          "what_if_words",
+          "voice"
+        ],
+        "title": "WhatIfSceneModel",
         "type": "object"
       },
       "WitnessRequest": {
@@ -17528,6 +20292,221 @@
         ]
       }
     },
+    "/api/v1/ai/connector/codes/check": {
+      "post": {
+        "operationId": "check_code_api_v1_ai_connector_codes_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComputerCodeCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComputerCodeModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Check Code",
+        "tags": [
+          "connector"
+        ]
+      }
+    },
+    "/api/v1/ai/connector/codes/decide": {
+      "post": {
+        "operationId": "decide_code_api_v1_ai_connector_codes_decide_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComputerCodeDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComputerCodeModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide Code",
+        "tags": [
+          "connector"
+        ]
+      }
+    },
+    "/api/v1/ai/connector/devices": {
+      "get": {
+        "operationId": "list_devices_api_v1_ai_connector_devices_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConnectedComputerModel"
+                  },
+                  "title": "Response List Devices Api V1 Ai Connector Devices Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Devices",
+        "tags": [
+          "connector"
+        ]
+      }
+    },
+    "/api/v1/ai/connector/devices/{device_id}/disconnect": {
+      "post": {
+        "operationId": "disconnect_device_api_v1_ai_connector_devices__device_id__disconnect_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectedComputerModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Disconnect Device",
+        "tags": [
+          "connector"
+        ]
+      }
+    },
+    "/api/v1/ai/connector/devices/{device_id}/use": {
+      "post": {
+        "operationId": "use_device_api_v1_ai_connector_devices__device_id__use_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UseComputerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectedComputerModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Use Device",
+        "tags": [
+          "connector"
+        ]
+      }
+    },
+    "/api/v1/ai/connector/use": {
+      "delete": {
+        "operationId": "stop_using_api_v1_ai_connector_use_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Stop Using",
+        "tags": [
+          "connector"
+        ]
+      }
+    },
     "/api/v1/ai/kept-for-you": {
       "get": {
         "description": "Whether a workspace owner turned off keeping suggestions for every story.",
@@ -18009,6 +20988,307 @@
         "tags": [
           "legacy",
           "characters"
+        ]
+      }
+    },
+    "/api/v1/connector/codes": {
+      "post": {
+        "operationId": "start_code_api_v1_connector_codes_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorCodeModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Code",
+        "tags": [
+          "connector"
+        ]
+      }
+    },
+    "/api/v1/connector/poll": {
+      "post": {
+        "operationId": "poll_api_v1_connector_poll_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-connector-version",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Connector-Version",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorPollRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorPollModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Poll",
+        "tags": [
+          "connector"
+        ]
+      }
+    },
+    "/api/v1/connector/requests/{request_id}/answer": {
+      "post": {
+        "operationId": "answer_api_v1_connector_requests__request_id__answer_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-connector-version",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Connector-Version",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorAnswerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Answer",
+        "tags": [
+          "connector"
+        ]
+      }
+    },
+    "/api/v1/connector/rotate": {
+      "post": {
+        "operationId": "rotate_api_v1_connector_rotate_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-connector-version",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "X-Connector-Version",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rotate",
+        "tags": [
+          "connector"
+        ]
+      }
+    },
+    "/api/v1/connector/token": {
+      "post": {
+        "operationId": "exchange_code_api_v1_connector_token_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedCredentialModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exchange Code",
+        "tags": [
+          "connector"
+        ]
+      }
+    },
+    "/api/v1/connector/version": {
+      "get": {
+        "description": "Which connector versions this site works with. Nothing is ever downloaded.",
+        "operationId": "connector_version_api_v1_connector_version_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorVersionModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Connector Version",
+        "tags": [
+          "connector"
         ]
       }
     },
@@ -21197,6 +24477,77 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/assist/premise": {
+      "post": {
+        "description": "One round of starting from a premise: open questions, and entries to review.",
+        "operationId": "premise_round_api_v1_projects__project_id__assist_premise_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PremiseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PremiseRoundModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Premise Round",
+        "tags": [
+          "canon-assist"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/assist/proposals": {
       "post": {
         "operationId": "assist_proposal_api_v1_projects__project_id__assist_proposals_post",
@@ -21476,6 +24827,78 @@
         "summary": "Draft Rule",
         "tags": [
           "rules"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/assist/runs": {
+      "get": {
+        "description": "Recent runs of suggestions, newest first, each with what became of it.",
+        "operationId": "list_runs_api_v1_projects__project_id__assist_runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 20,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestionRunListModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Runs",
+        "tags": [
+          "canon-assist"
         ]
       }
     },
@@ -21845,6 +25268,108 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/assist/threads/{kind}": {
+      "delete": {
+        "description": "Erase the caller's kept conversation and start again. Suggested changes it led to\nstay in review, and saved ones stay in the story; the words its conversations kept\n(the premise, the instructions, the answers) are erased with it.",
+        "operationId": "clear_thread_api_v1_projects__project_id__assist_threads__kind__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClearedModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clear Thread",
+        "tags": [
+          "canon-assist"
+        ]
+      },
+      "get": {
+        "description": "The caller's own kept conversation of this kind, in the line they work in.",
+        "operationId": "get_thread_api_v1_projects__project_id__assist_threads__kind__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Thread",
+        "tags": [
+          "canon-assist"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/assistant-settings": {
       "get": {
         "description": "How much checking runs on its own in this story, and when to ask before spending.",
@@ -21935,6 +25460,163 @@
         "summary": "Set Story Settings",
         "tags": [
           "assistant-settings"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/audit-schedules": {
+      "get": {
+        "description": "The audits set to run on a schedule in this line of the story.",
+        "operationId": "list_schedules_api_v1_projects__project_id__audit_schedules_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleListModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Schedules",
+        "tags": [
+          "audits"
+        ]
+      },
+      "put": {
+        "description": "Run an audit of a part of the story every few days, using at most ``max_tokens`` each\ntime. A most above the size the author asked to confirm is confirmed first (``409``).",
+        "operationId": "save_schedule_api_v1_projects__project_id__audit_schedules_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Schedule",
+        "tags": [
+          "audits"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/audit-schedules/{schedule_id}": {
+      "delete": {
+        "description": "Stop a scheduled audit. Audits it already ran are kept.",
+        "operationId": "remove_schedule_api_v1_projects__project_id__audit_schedules__schedule_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "schedule_id",
+            "required": true,
+            "schema": {
+              "title": "Schedule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Schedule",
+        "tags": [
+          "audits"
         ]
       }
     },
@@ -22199,6 +25881,230 @@
           }
         },
         "summary": "Audit",
+        "tags": [
+          "audits"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/audits/{job_id}/corrections": {
+      "get": {
+        "description": "The correction plans made from this audit, newest first.",
+        "operationId": "corrections_api_v1_projects__project_id__audits__job_id__corrections_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectionsModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Corrections",
+        "tags": [
+          "audits"
+        ]
+      },
+      "post": {
+        "description": "Ask the assistant which scenes to change and why, from this audit's findings. Above\nthe size the author asked to confirm, refused with ``409 needs_confirmation``.",
+        "operationId": "plan_corrections_api_v1_projects__project_id__audits__job_id__corrections_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Plan Corrections",
+        "tags": [
+          "audits"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/audits/{job_id}/corrections/estimate": {
+      "get": {
+        "description": "What planning the corrections would send, before anything is. Calls no model.",
+        "operationId": "corrections_estimate_api_v1_projects__project_id__audits__job_id__corrections_estimate_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectionEstimateModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Corrections Estimate",
+        "tags": [
+          "audits"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/audits/{job_id}/drift": {
+      "get": {
+        "description": "Voice against the author's usual, and how each pair of characters drifts, across the\nexact versions the audit read, in reading order. Worked out now, for free.",
+        "operationId": "audit_drift_api_v1_projects__project_id__audits__job_id__drift_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditDriftModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Audit Drift",
         "tags": [
           "audits"
         ]
@@ -22916,6 +26822,77 @@
         "summary": "Get Run",
         "tags": [
           "checks"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/corrections/{plan_id}/items/{index}": {
+      "put": {
+        "description": "Keep or skip one step of a correction plan. Nothing in the story changes.",
+        "operationId": "decide_step_api_v1_projects__project_id__corrections__plan_id__items__index__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "index",
+            "required": true,
+            "schema": {
+              "title": "Index",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideStepRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectionPlanModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide Step",
+        "tags": [
+          "audits"
         ]
       }
     },
@@ -25973,6 +29950,112 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/merges": {
+      "post": {
+        "description": "Send a merge to review. It is saved only once the author approves it.",
+        "operationId": "propose_merge_api_v1_projects__project_id__merges_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergeProposalModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propose Merge",
+        "tags": [
+          "canon-entities"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/merges/preview": {
+      "post": {
+        "description": "What merging one entry into another would do now. Changes nothing.",
+        "operationId": "preview_merge_api_v1_projects__project_id__merges_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergePreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergePreviewModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Merge",
+        "tags": [
+          "canon-entities"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/mutations": {
       "get": {
         "operationId": "list_mutations_api_v1_projects__project_id__mutations_get",
@@ -28546,6 +32629,148 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/findings/proposal": {
+      "post": {
+        "description": "Turn a finding into a story-bible change for review: make what the passage says true,\nor change the story bible's records instead. Above the size the author asked to confirm,\nrefused with ``409 needs_confirmation`` until confirmed. Nothing changes until approved.",
+        "operationId": "finding_proposal_api_v1_projects__project_id__plan__plan_id__findings_proposal_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FindingProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FindingProposalModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Finding Proposal",
+        "tags": [
+          "voice"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/findings/proposal-estimate": {
+      "post": {
+        "description": "What drafting a story-bible change from this finding would use. Calls no model.",
+        "operationId": "finding_proposal_estimate_api_v1_projects__project_id__plan__plan_id__findings_proposal_estimate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FindingRef"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FindingProposalEstimateModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Finding Proposal Estimate",
+        "tags": [
+          "voice"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/plan/{plan_id}/intent/estimate": {
       "get": {
         "description": "What suggesting this scene's intent would use, before anything is sent. A read,\nso no CSRF token; only someone who may change the plan is answered.",
@@ -29945,6 +34170,120 @@
         "summary": "Decide Scene Summary",
         "tags": [
           "context"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/voice": {
+      "get": {
+        "description": "How the scene's saved words sound against the author's usual. Calls no model.",
+        "operationId": "scene_voice_api_v1_projects__project_id__plan__plan_id__voice_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneVoiceModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scene Voice",
+        "tags": [
+          "voice"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/voice/usual": {
+      "put": {
+        "description": "Leave the scene out of the author's usual voice, or count it again.",
+        "operationId": "count_scene_api_v1_projects__project_id__plan__plan_id__voice_usual_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneVoiceModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Count Scene",
+        "tags": [
+          "voice"
         ]
       }
     },
@@ -32462,6 +36801,49 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/voice/book": {
+      "get": {
+        "description": "Every written scene's voice in reading order, against the author's usual.",
+        "operationId": "book_voice_api_v1_projects__project_id__voice_book_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookVoiceModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Book Voice",
+        "tags": [
+          "voice"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/what-ifs": {
       "get": {
         "operationId": "list_what_ifs_api_v1_projects__project_id__what_ifs_get",
@@ -32777,6 +37159,58 @@
         "summary": "Set Aside What If",
         "tags": [
           "what-ifs"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/what-ifs/{what_if_id}/audit": {
+      "get": {
+        "description": "An audit of the differences between a what-if and the main story.",
+        "operationId": "audit_what_if_api_v1_projects__project_id__what_ifs__what_if_id__audit_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "what_if_id",
+            "required": true,
+            "schema": {
+              "title": "What If Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhatIfAuditModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Audit What If",
+        "tags": [
+          "audits"
         ]
       }
     },

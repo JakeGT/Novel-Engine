@@ -106,6 +106,11 @@ class Container:
     canon_character_workflow: Any = None
     assist_sessions: Any = None
     assist_session_service: Any = None
+    # The assistant's kept threads and the record of suggestion runs (AST-EXP-005/007/013/017).
+    conversation_store: Any = None
+    conversation_service: Any = None
+    # Merging two entries by hand: a preview, then a reviewed change (AST-EXP-017).
+    merge_service: Any = None
     ai_settings: Any = None
     allowances: Any = None
     # How much the assistant may do and spend on its own (CON-009, OPS-002, AST-EXP-011).
@@ -119,6 +124,9 @@ class Container:
     # Personal access keys for other assistants, and the MCP endpoint's check (QRY-003).
     access_keys: Any = None
     access_key_service: Any = None
+    # A model on the author's own computer (SCN-002A).
+    connector_store: Any = None
+    connector_service: Any = None
     # Search by meaning in model generations (CTX-011/CTX-012): the typed embedder, the
     # generation store, building/switching, and picture search for the context.
     multimodal_embedder: Any = None
@@ -129,6 +137,13 @@ class Container:
     read_model_store: Any = None
     read_models: Any = None
     read_model_consumer: Any = None
+    # The author's voice, audits on a schedule, correction plans, what-if comparisons and
+    # proposals from findings (CON-018, CON-011, CON-010).
+    voice_service: Any = None
+    audit_schedules: Any = None
+    correction_plans: Any = None
+    what_if_audit: Any = None
+    finding_proposals: Any = None
 
     async def aclose(self) -> None:
         if self.job_runner is not None:
@@ -318,6 +333,21 @@ def build_container(settings: Settings | None = None) -> Container:
         # AI_MODEL has always been the hosted OpenRouter model; it stays its suggestion.
         default_models={"openrouter": resolved.AI_MODEL} if resolved.is_hosted else {},
     )
+    from backend.adapters.connector_store import PostgresConnectorStore
+    from backend.services.connector_service import ConnectorService
+
+    container.connector_store = PostgresConnectorStore(database.session_factory)
+    purger.attach_connector(container.connector_store)
+    container.connector_service = ConnectorService(
+        container.connector_store,
+        tenancy=container.tenancy_service,
+        rate_limiter=container.rate_limiter,
+        ai_settings=container.ai_settings,
+        settings=resolved,
+        answer_seconds=resolved.CONNECTOR_ANSWER_SECONDS,
+    )
+    container.credential_service.attach_devices(container.connector_service)
+    container.ai.attach_devices(container.connector_service)  # type: ignore[attr-defined]
     container.usage_service = ProviderUsageService(
         container.usage,
         allowances=container.allowances,
@@ -600,6 +630,7 @@ def build_container(settings: Settings | None = None) -> Container:
                 memory_bytes=resolved.MEDIA_WORKER_MEMORY_BYTES,
                 cpu_seconds=resolved.MEDIA_WORKER_CPU_SECONDS,
                 timeout_seconds=resolved.MEDIA_WORKER_TIMEOUT_SECONDS,
+                sandbox=resolved.MEDIA_WORKER_SANDBOX,
             ),
             concurrency=resolved.MEDIA_WORKER_CONCURRENCY,
         )
@@ -723,6 +754,28 @@ def build_container(settings: Settings | None = None) -> Container:
         tenancy=container.tenancy_service,
         local_mode=not resolved.is_hosted,
     )
+    from backend.adapters.conversation_store import PostgresConversationStore
+    from backend.services.conversation_service import ConversationService
+
+    container.conversation_store = PostgresConversationStore(database.session_factory)
+    container.conversation_service = ConversationService(
+        container.conversation_store,
+        journal=container.journal,
+        tenancy=container.tenancy_service,
+        local_mode=not resolved.is_hosted,
+    )
+    # Link suggestions and Change anything find entries by meaning when a model for
+    # search is configured (AST-EXP-007, AST-EXP-017); without one they use the listing.
+    container.canon_character_workflow.embedder = container.multimodal_embedder
+    from backend.services.merge_service import MergeService
+
+    container.merge_service = MergeService(
+        mutation=container.mutation_service,
+        reader=container.canon_repository,
+        schema_store=container.schema_versions,
+        tenancy=container.tenancy_service,
+        local_mode=not resolved.is_hosted,
+    )
     from backend.adapters.assistant_settings_store import PostgresAssistantSettingsStore
     from backend.services.assistant_settings_service import AssistantSettingsService, AssistBudget
 
@@ -771,6 +824,8 @@ def build_container(settings: Settings | None = None) -> Container:
     # Smaller copies of pictures stay out of an archive; a restore queues them again.
     container.archive_service.pictures = container.media_service
     container.archive_service.scene_summaries = container.scene_summaries
+    # The assistant's kept threads travel with the archive (AST-EXP-017).
+    container.archive_service.assistant_threads = container.conversation_service
     from backend.services.run_archive import RunArchive
 
     # Checks kept as runs travel with the archive (CON-001).
@@ -802,4 +857,18 @@ def build_container(settings: Settings | None = None) -> Container:
     wire_observations(container.media_observations, container.embedding_index_service)
     # Pictures found by meaning join the scene's context after the linked ones (CTX-013).
     container.context_service.search = container.media_search
+    from backend.adapters.voice_audit_store import (
+        PostgresAuditScheduleStore,
+        PostgresCorrectionPlanStore,
+        PostgresVoiceBaselineStore,
+    )
+    from backend.services.voice_audit_wiring import wire_voice_and_audits
+
+    wire_voice_and_audits(
+        container,
+        baselines=PostgresVoiceBaselineStore(database.session_factory),
+        schedules=PostgresAuditScheduleStore(database.session_factory),
+        corrections=PostgresCorrectionPlanStore(database.session_factory),
+        model=resolved.AI_MODEL,
+    )
     return container

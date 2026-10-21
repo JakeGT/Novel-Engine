@@ -19,6 +19,22 @@ class PostgresRateLimiter:
     def __init__(self, session_factory: Any) -> None:
         self._session_factory = session_factory
 
+    async def exhausted(self, key: str, *, limit: int, window_seconds: int) -> bool:
+        """Whether ``key`` has used its whole budget in the window, without using any of it:
+        lets a caller refuse even a correct guess once the wrong ones ran out."""
+        cutoff = datetime.now(UTC) - timedelta(seconds=window_seconds)
+        async with session_scope(self._session_factory) as session:
+            count = (
+                await session.execute(
+                    text(
+                        "SELECT count(*) FROM rate_limit_hits "
+                        "WHERE key = :key AND occurred_at >= :cutoff"
+                    ),
+                    {"key": key, "cutoff": cutoff},
+                )
+            ).scalar() or 0
+        return int(count) >= limit
+
     async def allow(self, key: str, *, limit: int, window_seconds: int) -> bool:
         cutoff = datetime.now(UTC) - timedelta(seconds=window_seconds)
         async with session_scope(self._session_factory) as session:

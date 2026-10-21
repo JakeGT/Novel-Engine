@@ -87,7 +87,7 @@ from backend.domain.usage_controls import (
     CheckProfile,
     NeedsConfirmation,
 )
-from backend.ports import AIInvalidOutputError
+from backend.ports import AIError, AIInvalidOutputError
 from backend.services.job_runner import JobContext, JobSubmission
 from backend.services.knowledge_timing import StoryOrder, scene_signals, where_learned
 from backend.services.provider_route import resolve_provider
@@ -1245,10 +1245,25 @@ class StudioService:
         have changed meanwhile (a pass may now be sent in groups). When the new estimate
         is above the threshold and above what was confirmed (``payload["confirmed_tokens"]``),
         it stops, and the author is asked again by starting it again."""
+        confirmed = payload.get("confirmed_tokens")
+        if (
+            payload.get("schedule_id")
+            and confirmed is not None
+            and estimated_tokens > int(confirmed)
+        ):
+            # A scheduled run has nobody there to ask: the most the author set for one run
+            # is a hard limit, whatever the story's threshold (CON-011). It stops here and
+            # keeps what it finished.
+            raise NeedsConfirmation(
+                f"{doing} stopped: it would now use about {estimated_tokens:,} tokens, more "
+                f"than the {int(confirmed):,} you set as the most for one run. Nothing more "
+                "was sent; what it finished is kept.",
+                estimated_tokens=estimated_tokens,
+                threshold_tokens=int(confirmed),
+            )
         if self.controls is None or "confirmed_tokens" not in payload:
             return  # work asked for before this was kept is not stopped for it
         threshold = (await self.controls.limits(workspace_id, project_id)).confirm_above_tokens
-        confirmed = payload.get("confirmed_tokens")
         if threshold is None or estimated_tokens <= threshold:
             return
         if confirmed is not None and estimated_tokens <= int(confirmed):
@@ -1417,9 +1432,17 @@ class StudioService:
                 return False
             try:
                 route = await self._credentials.resolve_route_for_use(scope, workspace_id)
-            except (CapabilityUnavailableError, DomainError):
+            except (CapabilityUnavailableError, DomainError, AIError):
                 return False
             return route is not None
+        device_route = getattr(self._credentials, "device_route", None)
+        if device_route is not None:
+            # A computer the workspace connected and chose (SCN-002A).
+            try:
+                if await device_route(scope, workspace_id) is not None:
+                    return True
+            except (DomainError, AIError):
+                return False
         available = getattr(self._ai, "is_available", None)
         return bool(available()) if callable(available) else True
 

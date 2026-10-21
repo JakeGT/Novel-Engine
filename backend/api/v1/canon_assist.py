@@ -21,6 +21,7 @@ from backend.api.dependencies import (
     get_assist_session_service,
     get_canon_character_workflow,
     get_canon_history_service,
+    get_conversation_service,
     get_credential_service,
     get_schema_service,
     get_settings,
@@ -48,8 +49,10 @@ from backend.domain.assist import (
     SchemaSuggestion,
 )
 from backend.domain.bible_listing import Listing
+from backend.domain.conversations import RunKind, RunSource, ThreadKind, recall_text, recalled
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
+from backend.domain.prompts import prompt_version
 from backend.services.assist_session_service import AssistSessionService
 from backend.services.assistant_settings_service import (
     REPLY_TOKENS,
@@ -67,6 +70,11 @@ from backend.services.canon_revise_workflow import (
     CanonLinkWorkflow,
     CanonReviseWorkflow,
     estimate_reading,
+)
+from backend.services.conversation_service import (
+    ConversationService,
+    assistant_turn,
+    author_turn,
 )
 from backend.services.credential_service import CredentialService
 from backend.services.schema_service import SchemaService
@@ -342,15 +350,23 @@ class ContextUsedModel(BaseModel):
     # shown, and how many were left out for room. Nothing left out means it saw them all.
     listed: dict[str, int]
     left_out: dict[str, int]
+    # Whether search by meaning was used, and how many entries the request did not name
+    # it found and listed first (AST-EXP-007, AST-EXP-017).
+    by_meaning: bool = False
+    found_by_meaning: int = 0
 
 
-def context_used(listing: Listing | None) -> ContextUsedModel | None:
+def context_used(
+    listing: Listing | None, *, by_meaning: bool = False, found_by_meaning: int = 0
+) -> ContextUsedModel | None:
     if listing is None:
         return None
     return ContextUsedModel(
         policy_version=listing.policy_version,
         listed=dict(listing.listed),
         left_out=dict(listing.left_out),
+        by_meaning=by_meaning,
+        found_by_meaning=found_by_meaning,
     )
 
 
@@ -379,6 +395,11 @@ class ChangeProposalModel(BaseModel):
     context: ContextUsedModel | None = None
     validation_ok: bool
     validation_issues: list[ProposalIssueModel]
+    # Missing connections only: pairs looked at first because they were close in
+    # meaning, how many suggestions came from them, and the run kept for its precision.
+    candidates: int = 0
+    from_candidates: int = 0
+    run_id: str | None = None
 
 
 @router.post("/changes", response_model=ChangeProposalModel)
@@ -387,6 +408,7 @@ async def assist_change(
     body: ChangeRequest,
     workflow: CanonChangeWorkflow = Depends(get_canon_character_workflow),
     sessions: AssistSessionService = Depends(get_assist_session_service),
+    threads: ConversationService = Depends(get_conversation_service),
     credentials: CredentialService = Depends(get_credential_service),
     usage: ProviderUsageService = Depends(get_usage_service),
     history: Any = Depends(get_canon_history_service),
@@ -422,6 +444,9 @@ async def assist_change(
         )
     # Enough of the history for "undo that" and "go back to yesterday" to be worked out.
     versions = await history.list_revisions(scope, scope.workspace_id or "", project_id, limit=20)
+    # The author's kept conversation, so "her" and "that" mean what they meant before.
+    thread = await threads.thread(scope, scope.workspace_id or "", project_id, ThreadKind.CHANGE)
+    earlier = recall_text(recalled(thread.turns)) if thread is not None else ""
     try:
         result = await workflow.change_by_instruction(
             scope,
@@ -437,6 +462,7 @@ async def assist_change(
                 + (" (itself an undo)" if item.intent == "revert" else "")
                 for item in versions
             ],
+            earlier=earlier or None,
             credential=api_key,
             provider_base_url=provider_base_url,
             usage_sink=usage_sink,
@@ -477,6 +503,23 @@ async def assist_change(
     elif not result.questions and not result.suggestions:
         # Only pointed somewhere else: there is nothing here to pick up again.
         await sessions.close(scope, scope.workspace_id or "", project_id, session.id)
+    await threads.record(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        ThreadKind.CHANGE,
+        [
+            author_turn(body.instruction),
+            assistant_turn(
+                result.understood,
+                questions=result.questions,
+                notes=result.notes,
+                mutation_id=result.mutation.id if result.mutation is not None else None,
+                operation_count=result.operation_count,
+                session_id=session.id,
+            ),
+        ],
+    )
     issues = result.validation.issues if result.validation is not None else []
     return ChangeProposalModel(
         mutation_id=result.mutation.id if result.mutation is not None else None,
@@ -494,7 +537,11 @@ async def assist_change(
             if result.invite is not None
             else None
         ),
-        context=context_used(result.context),
+        context=context_used(
+            result.context,
+            by_meaning=result.by_meaning,
+            found_by_meaning=result.found_by_meaning,
+        ),
         discarded=[
             DiscardedItemModel(kind=item.kind, reason=item.reason) for item in result.discarded
         ],
@@ -561,6 +608,7 @@ async def assist_links(
     project_id: str,
     body: LinkRequest,
     workflow: CanonLinkWorkflow = Depends(get_canon_character_workflow),
+    runs: ConversationService = Depends(get_conversation_service),
     credentials: CredentialService = Depends(get_credential_service),
     usage: ProviderUsageService = Depends(get_usage_service),
     settings: Settings = Depends(get_settings),
@@ -592,6 +640,22 @@ async def assist_links(
     if credential_id:
         await credentials.mark_used(scope.workspace_id or "", credential_id)
     assert result.mutation is not None and result.validation is not None
+    # Kept so how many of these the author keeps can be shown (AST-EXP-007).
+    run = await runs.record_run(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        kind=RunKind.LINKS,
+        suggested=result.operation_count,
+        mutation_id=result.mutation.id,
+        source=RunSource.MEANING if result.candidates else RunSource.LISTING,
+        prompt_version=prompt_version("suggest-links"),
+        details={
+            "candidates": result.candidates,
+            "from_candidates": result.from_candidates,
+            "discarded": len(result.discarded),
+        },
+    )
     return ChangeProposalModel(
         mutation_id=result.mutation.id,
         status=result.mutation.status.value,
@@ -600,7 +664,10 @@ async def assist_links(
         understood=result.understood,
         questions=[],
         notes=result.notes,
-        context=context_used(result.context),
+        context=context_used(result.context, by_meaning=result.by_meaning),
+        candidates=result.candidates,
+        from_candidates=result.from_candidates,
+        run_id=run.id,
         discarded=[
             DiscardedItemModel(kind=item.kind, reason=item.reason) for item in result.discarded
         ],

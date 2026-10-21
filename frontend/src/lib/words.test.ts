@@ -68,3 +68,33 @@ describe('author-facing wording', () => {
     expect(dayLabel('2026-10-10T08:00:00Z', now)).toBe('Today')
   })
 })
+
+describe('changes to an existing fact name the fact', () => {
+  const names = new Map([
+    ['ent_ida', 'Ida Marsh'],
+    ['ent_weir', 'Fennick Weir'],
+  ])
+  const before = {
+    proposition: {
+      subject_id: 'ent_ida',
+      predicate: 'LOCATED_AT',
+      object: { kind: 'entity_ref', entity_id: 'ent_weir' },
+    },
+  }
+
+  it('says which fact ends or changes when', () => {
+    expect(
+      describeOperation({ operation_type: 'close_fact', payload: { id: 'fct_1' }, target_before: before }, names),
+    ).toMatch(/^End a fact: Ida Marsh .* Fennick Weir$/)
+    expect(
+      describeOperation(
+        { operation_type: 'amend_fact', payload: { id: 'fct_1', ends: { kind: 'at', at: 3 } }, target_before: before },
+        names,
+      ),
+    ).toMatch(/^Say when a fact is true: Ida Marsh .* Fennick Weir$/)
+  })
+
+  it('keeps the plain words when the fact is not known', () => {
+    expect(describeOperation({ operation_type: 'close_fact', payload: { id: 'fct_1' } }, names)).toBe('End a fact')
+  })
+})

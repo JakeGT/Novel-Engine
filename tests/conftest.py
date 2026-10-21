@@ -151,6 +151,21 @@ def _build_fake_container(settings, tmp_path):
     credential_service = CredentialService(
         vault, tenancy=tenancy_service, ai_settings=ai_settings, ai=ai
     )
+    from backend.services.connector_service import ConnectorService
+    from tests.doubles import InMemoryConnectorStore
+
+    connector_store = InMemoryConnectorStore()
+    purger.attach_connector(connector_store)
+    connector_service = ConnectorService(
+        connector_store,
+        tenancy=tenancy_service,
+        rate_limiter=rate_limiter,
+        ai_settings=ai_settings,
+        settings=settings,
+        step_seconds=0.01,
+        long_poll_seconds=0.2,
+    )
+    credential_service.attach_devices(connector_service)
     from backend.services.access_key_service import AccessKeyService
     from tests.doubles import InMemoryAccessKeyStore
 
@@ -358,6 +373,17 @@ def _build_fake_container(settings, tmp_path):
     )
     from backend.services.assist_session_service import AssistSessionService
     from backend.services.canon_equivalence import CanonEquivalenceService
+    from backend.services.conversation_service import ConversationService
+    from backend.services.merge_service import MergeService
+    from tests.doubles import InMemoryConversationStore
+
+    conversation_store = InMemoryConversationStore()
+    conversation_service = ConversationService(
+        conversation_store,
+        journal=journal,
+        tenancy=tenancy_service,
+        local_mode=not settings.is_hosted,
+    )
     from backend.services.rule_workflow import RuleWorkflow
 
     canon_character_workflow = RuleWorkflow(
@@ -524,6 +550,7 @@ def _build_fake_container(settings, tmp_path):
     archive_service.pictures = media_service
     archive_service.picture_notes = media_observations
     archive_service.scene_summaries = scene_summaries
+    archive_service.assistant_threads = conversation_service
     from backend.services.run_archive import RunArchive
 
     archive_service.check_runs = RunArchive(consistency_run_store)
@@ -540,7 +567,7 @@ def _build_fake_container(settings, tmp_path):
     )
     story_time_service.views = read_models
     knowledge_service.views = read_models
-    return Container(
+    container = Container(
         read_model_store=read_model_store,
         read_models=read_models,
         read_model_consumer=ReadModelConsumer(store=read_model_store, reader=canon_repository),
@@ -565,6 +592,8 @@ def _build_fake_container(settings, tmp_path):
         credential_service=credential_service,
         access_keys=access_keys,
         access_key_service=access_key_service,
+        connector_store=connector_store,
+        connector_service=connector_service,
         usage=usage_store,
         usage_service=usage_service,
         objects=objects,
@@ -617,12 +646,36 @@ def _build_fake_container(settings, tmp_path):
         assist_session_service=AssistSessionService(
             assist_sessions, tenancy=tenancy_service, local_mode=not settings.is_hosted
         ),
+        conversation_store=conversation_store,
+        conversation_service=conversation_service,
+        merge_service=MergeService(
+            mutation=mutation_service,
+            reader=canon_repository,
+            schema_store=schema_versions,
+            tenancy=tenancy_service,
+            local_mode=not settings.is_hosted,
+        ),
         assistant_settings_store=assistant_settings_store,
         assistant_settings=assistant_settings,
         assist_budget=AssistBudget(assistant_settings, assist_sessions),
         delegation_store=delegation_store,
         delegation_service=delegation_service,
     )
+    from backend.services.voice_audit_wiring import wire_voice_and_audits
+    from tests.voice_doubles import (
+        InMemoryAuditScheduleStore,
+        InMemoryCorrectionPlanStore,
+        InMemoryVoiceBaselineStore,
+    )
+
+    # The author's voice, audits on a schedule and correction plans (CON-018, CON-011).
+    wire_voice_and_audits(
+        container,
+        baselines=InMemoryVoiceBaselineStore(),
+        schedules=InMemoryAuditScheduleStore(),
+        corrections=InMemoryCorrectionPlanStore(),
+    )
+    return container
 
 
 @pytest.fixture

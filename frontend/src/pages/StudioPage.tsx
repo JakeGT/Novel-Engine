@@ -14,7 +14,7 @@ import { CheckingDialog, CheckingStatus } from '../components/AssistantSpending'
 import { CheckHistory } from '../components/CheckHistory'
 import { PassChoices } from '../components/CheckPasses'
 import { SceneContextDialog } from '../components/SceneContext'
-import { Checks, Notes } from '../components/StudioFindings'
+import { Checks, Notes, Voice } from '../components/StudioFindings'
 import { MentionTextarea } from '../components/MentionTextarea'
 import { ScenePictureStrip, ScenePicturesPanel } from '../components/ScenePictures'
 import { DraftForm, JobOutcome, JobProgress } from '../components/StudioWork'
@@ -655,6 +655,7 @@ export function StudioPage() {
               stale={!shown && dirty}
               empty={!shown && nothingSaved}
               dismissals={canWrite ? checkDismissals : null}
+              planId={canWrite && !shown ? planId : null}
             />
             <Notes
               notes={target.notes}
@@ -663,6 +664,7 @@ export function StudioPage() {
               onShow={onShow}
               stale={!shown && dirty}
               dismissals={canWrite ? noteDismissals : null}
+              planId={canWrite && !shown ? planId : null}
               action={
                 canWrite ? (
                   <div className="stack tight">
@@ -728,6 +730,18 @@ export function StudioPage() {
                 ) : null
               }
             />
+            {/* How the saved words sound against the author's usual (CON-018). */}
+            {!shown && !nothingSaved && (
+              <Voice
+                planId={planId}
+                versionId={data.version_id ?? null}
+                text={target.liveText}
+                point={point}
+                onShow={onShow}
+                stale={dirty}
+                canWrite={canWrite}
+              />
+            )}
           </aside>
         </div>
       </div>

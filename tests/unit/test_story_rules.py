@@ -372,3 +372,50 @@ def test_checking_rules_over_a_large_story_is_quick() -> None:
         violations(rule.id, rule.body, world)
     elapsed = time.perf_counter() - started
     assert elapsed < 5.0, f"checking ten rules took {elapsed:.1f}s"
+
+
+def test_an_entry_brought_back_is_seen_by_the_rules_again() -> None:
+    import asyncio
+
+    from backend.domain.canon.entities import CanonEntity, EntityLifecycle
+    from backend.domain.operations import RestoreEntityOp
+    from backend.domain.rules import affected_entries, world_from_canon
+    from backend.domain.validation import ValidationContext
+
+    gone = CanonEntity(
+        id="zeal",
+        workspace_id="w",
+        project_id="p",
+        branch_id="b",
+        type="Faction",
+        name="Zealots",
+        schema_version_id="",
+        created_revision=1,
+        lifecycle=EntityLifecycle.RETIRED,
+        retired_revision=2,
+    )
+    world = world_from_canon([gone], [])
+    restore = [RestoreEntityOp(id="zeal")]
+    after = apply_operations(world, restore)
+    assert "zeal" not in world.entries and after.entries["zeal"].name == "Zealots"
+    assert "zeal" in affected_entries(world, after, restore)
+    # A retirement keeps the entry aside, so bringing it back in the same set works too.
+    assert "ring" in apply_operations(_world(), [RetireEntityOp(id="ring")]).retired
+
+    # Through the commit's rules, a faction brought back with nobody in it breaks one.
+    class _Reader:
+        async def get_entity(self, entity_id: str):
+            return gone if entity_id == "zeal" else None
+
+    service = _service(World(entries={"ines": WorldEntry("ines", "Character", "Ines")}), [])
+    service._store = _Rules([_rule(HAS_MEMBER)])  # noqa: SLF001
+    context = ValidationContext(
+        workspace_id="w",
+        project_id="p",
+        branch_id="b",
+        schema_version_id=None,
+        head_revision=2,
+        reader=_Reader(),  # type: ignore[arg-type]
+    )
+    (finding,) = asyncio.run(service.evaluate(restore, context=context))
+    assert "Zealots" in finding.message

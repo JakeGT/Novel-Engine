@@ -451,5 +451,33 @@ def _picture_capability(container: Container) -> dict[str, object]:
         "formats": {key: bool(found.get(key)) for key in ("png", "jpeg", "webp")},
         "processor_version": PROCESSOR_VERSION,
         "isolated": True,
+        "sandbox": _picture_sandbox(container) if available else None,
         "reason": reason,
     }
+
+
+def _picture_sandbox(container: Container) -> dict[str, object] | None:
+    """Which sandbox layers the picture worker gets here (AST-006): the level ("full",
+    "partial", "limits_only" or "unknown"), each layer, what a worker was refused, and a
+    plain reason when it is less than full. Asked once and remembered."""
+    processor = getattr(container, "image_processor", None)
+    status_of = getattr(processor, "sandbox_status", None)
+    if status_of is None:
+        return None
+    status = dict(status_of())
+    level = status.get("level")
+    reasons = {
+        "full": None,
+        "partial": (
+            "Pictures are opened with only part of the sandbox this machine could give "
+            "(Landlock or seccomp is missing); the limits still apply."
+        ),
+        "limits_only": (
+            "Pictures are opened with memory, time and file limits only: this machine "
+            "gives no Landlock or seccomp sandbox, or it is switched off."
+        ),
+    }
+    status["reason"] = reasons.get(
+        str(level), "Whether pictures are opened in a sandbox could not be found out."
+    )
+    return status

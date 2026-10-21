@@ -85,6 +85,52 @@ READ = {
 }
 
 
+# Changes of state and a new thread (EXT-001), answered only for the words the browser test
+# writes for it, so no other test's reading changes: "<someone> came to <a place> at dusk."
+# is a location that begins (from the scene's time in a timed scene), and "Nobody could say
+# who had taken <something>." opens a thread when a scene is read (only a scene's reading
+# asks for new threads).
+ARRIVES = re.compile(
+    r"([A-Z][\w']*(?: [A-Z][\w']*)*) came to ((?:The )?[A-Z][\w']*(?: [A-Z][\w']*)*) at dusk"
+)
+OPENS = re.compile(r"Nobody could say who had taken [^.]+\.")
+# How the reading request lists an entry: "- id | Type | Name".
+READ_LISTED = re.compile(
+    r"^- (\S+) \| (?:Character|Location) \| (.+?)(?: \(also called: .*\))?$", re.MULTILINE
+)
+
+
+def _read(body: dict[str, Any]) -> dict[str, Any]:
+    """The reading answer: ``READ``, plus the changes of state and the thread above."""
+    messages = [str(message.get("content", "")) for message in body.get("messages", [])]
+    asked = "\n".join(messages)
+    answer: dict[str, Any] = dict(READ)
+    ids = {name: entry_id for entry_id, name in READ_LISTED.findall(asked)}
+    arrives = ARRIVES.search(asked)
+    if arrives and arrives.group(1) in ids and arrives.group(2) in ids:
+        answer["state_changes"] = [
+            {
+                "kind": "location",
+                "change": "starts",
+                "subject": ids[arrives.group(1)],
+                "predicate": "LOCATED_AT",
+                "object": ids[arrives.group(2)],
+                "name": f"{arrives.group(1)} comes to {arrives.group(2)}",
+                "quote": arrives.group(0),
+            }
+        ]
+    opens = OPENS.search(asked)
+    if opens and messages and "add it to new_threads" in messages[0]:
+        answer["new_threads"] = [
+            {
+                "title": "The missing sack",
+                "summary": "Someone has taken a sack, and nobody knows who.",
+                "quote": opens.group(0),
+            }
+        ]
+    return answer
+
+
 # Filling in a plan card from the prose (Phase 6): the browser test's two names, by the
 # ids the request lists for them, each quoting its own name in the scene.
 CARD_NAMES = {"point_of_view": "Wren Hollis", "place": "The Old Mill"}
@@ -106,11 +152,30 @@ def _plan_card(body: dict[str, Any]) -> dict[str, Any]:
 ASKED_NAME = re.compile(r"[Aa]dd a character called ([A-Z][A-Za-z' -]*[A-Za-z])")
 
 
+# "Merge Wren H. into Wren Hollis." merges the first named entry into the second, by the
+# ids the story bible lists for them (AST-EXP-017).
+ASKED_MERGE = re.compile(r"[Mm]erge (.+?) into (.+?)[.!]?$", re.MULTILINE)
+LISTED_ID = re.compile(r"^- (\S+): (.+?) \([A-Za-z]+\)", re.MULTILINE)
+
+
 def _change(body: dict[str, Any]) -> dict[str, Any]:
     asked = "\n".join(
         str(m.get("content", "")) for m in body.get("messages", []) if m.get("role") == "user"
     )
-    found = ASKED_NAME.findall(asked)
+    # Only the new instruction is acted on; earlier turns of the kept conversation are
+    # material above it.
+    instruction = asked.rsplit("Instruction:\n", 1)[-1]
+    merge = ASKED_MERGE.search(instruction)
+    if merge is not None:
+        ids = {name: entry_id for entry_id, name in LISTED_ID.findall(asked)}
+        gone, kept = merge.group(1).strip(), merge.group(2).strip()
+        if gone in ids and kept in ids:
+            return {
+                "understood": f"{gone} and {kept} are the same; keep {kept}.",
+                "merge_entities": [{"merge": ids[gone], "keep": ids[kept]}],
+            }
+        return {"understood": "Unclear.", "questions": [f"Which entry is {gone}?"]}
+    found = ASKED_NAME.findall(instruction)
     if not found:
         return {"understood": "Nothing to change.", "questions": ["What should change?"]}
     name = found[-1]
@@ -231,6 +296,115 @@ def _bridges(body: dict[str, Any]) -> dict[str, Any]:
     return {"bridges": [bridge]}
 
 
+# Starting from a premise (AST-EXP-005): the first round suggests the people and places
+# the premise names and asks two questions; a round with answers suggests a person for
+# each name given in them and asks nothing more.
+PREMISE_PERSON = re.compile(r"(?<!The )\b((?!The\b)[A-Z][a-z]+ [A-Z][a-z]+)\b")
+PREMISE_PLACE = re.compile(r"\b(The [A-Z][a-z]+(?: [A-Z][a-z]+)?)\b")
+ANSWER_LINE = re.compile(r"^A: (.+)$", re.MULTILINE)
+CAPITALISED = re.compile(r"\b[A-Z][a-z]+\b")
+
+
+def _answer_names(answers: str) -> list[str]:
+    """Capitalised words in the answers that do not start a sentence."""
+    names: list[str] = []
+    for line in ANSWER_LINE.findall(answers):
+        for found in CAPITALISED.finditer(line):
+            before = line[: found.start()].rstrip()
+            if before and not before.endswith((".", "!", "?")):
+                names.append(found.group(0))
+    return names
+
+
+def _between(text: str, label: str) -> str:
+    start = re.search(rf"<<<{label}-\d+>>>\n", text)
+    end = re.search(rf"\n<<<END {label}-\d+>>>", text)
+    return text[start.end() : end.start()] if start and end else ""
+
+
+def _premise(body: dict[str, Any]) -> dict[str, Any]:
+    asked = "\n".join(
+        str(m.get("content", "")) for m in body.get("messages", []) if m.get("role") == "user"
+    )
+    premise = _between(asked, "PREMISE")
+    answers = _between(asked, "ANSWERS")
+    if answers:
+        names = [name for name in _answer_names(answers) if name not in premise]
+        return {
+            "understood": "The answers name more of the people in the story.",
+            "questions": [],
+            "entities": [
+                {"ref": f"p{i}", "type": "Character", "name": name, "needs_more": True}
+                for i, name in enumerate(dict.fromkeys(names))
+            ],
+        }
+    people = list(dict.fromkeys(PREMISE_PERSON.findall(premise)))
+    places = list(dict.fromkeys(PREMISE_PLACE.findall(premise)))
+    entities = [
+        {"ref": f"c{i}", "type": "Character", "name": name} for i, name in enumerate(people)
+    ] + [{"ref": f"l{i}", "type": "Location", "name": name} for i, name in enumerate(places)]
+    facts = (
+        [{"subject_ref": "c0", "predicate": "LOCATED_AT", "object_ref": "l0"}]
+        if people and places
+        else []
+    )
+    return {
+        "understood": "A story about " + (people[0] if people else "someone") + ".",
+        "questions": [
+            "What is her brother's name?",
+            "Who owns " + (places[0] if places else "the place") + "?",
+        ],
+        "entities": entities,
+        "facts": facts,
+    }
+
+
+# Missing connections (AST-EXP-007): the first two characters listed know each other.
+LISTED_CHARACTER = re.compile(r"^- (\S+): (.+?) \(Character\)", re.MULTILINE)
+
+
+def _links(body: dict[str, Any]) -> dict[str, Any]:
+    asked = "\n".join(str(m.get("content", "")) for m in body.get("messages", []))
+    people = LISTED_CHARACTER.findall(asked)
+    if len(people) < 2:
+        return {"links": []}
+    return {
+        "links": [
+            {
+                "subject_ref": people[0][0],
+                "predicate": "KNOWS",
+                "object_ref": people[1][0],
+                "why": f"{people[0][1]} and {people[1][1]} are named together.",
+            }
+        ]
+    }
+
+
+# Planning (AST-EXP-013): one arc that quotes the author's first sentence, and one beat
+# that is the stand-in's own idea, so a page can show both kinds.
+SAYS = re.compile(r"What the author says:\n(.+?)(?:\n|$)")
+
+
+def _plan_draft(body: dict[str, Any]) -> dict[str, Any]:
+    asked = "\n".join(str(m.get("content", "")) for m in body.get("messages", []))
+    said = SAYS.search(asked)
+    first = said.group(1).split(". ")[0].strip().rstrip(".") if said else ""
+    return {
+        "understood": "An arc and its first turn.",
+        "items": [
+            {"ref": "a1", "kind": "arc", "title": "The search", "quote": first},
+            {
+                "ref": "b1",
+                "kind": "beat",
+                "title": "A letter arrives",
+                "parent_ref": "a1",
+                "quote": "",
+            },
+        ],
+        "gaps": ["How the search ends."],
+    }
+
+
 def _structured(name: str, body: dict[str, Any]) -> dict[str, Any]:
     if name == "IntentDraft":
         return _intent(body)
@@ -245,12 +419,17 @@ def _structured(name: str, body: dict[str, Any]) -> dict[str, Any]:
     if "Review" in name:
         return REVIEW
     if name in ("PassageDraft", "SceneDraft"):
-        # A timed scene is read with the same answer: it has no facts, so nothing is timed.
-        return READ
+        return _read(body)
     if name == "PlanCardDraft":
         return _plan_card(body)
     if name == "ChangePlan":
         return _change(body)
+    if name == "PremiseRound":
+        return _premise(body)
+    if name == "LinkPlan":
+        return _links(body)
+    if name == "PlanDraft":
+        return _plan_draft(body)
     if name == "SceneSummaryDraft":
         # A fixed, plain summary (CTX-006): the author keeps, corrects or turns it down.
         return {"summary": "Someone arrives at the harbour and is not welcomed."}

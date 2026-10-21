@@ -6,6 +6,7 @@ import { planKindLabel, plural } from '../lib/words'
 import { scopedKey, useInvalidateProject, useProject } from '../project'
 import { AllowanceNote } from './Allowance'
 import { AssistantProblem } from './AssistFlow'
+import { GroundingList, SuggestionRecord } from './SuggestionRecord'
 import { Button, Dialog, Field } from './ui'
 
 type Sheet = { session_id: string; questions: { id: string; question: string }[] }
@@ -76,7 +77,13 @@ export function PlanAssist({
       await invalidate()
       onClose()
       navigate(`/projects/${scope.projectId}/review/${result.mutation_id}`, {
-        state: { fromAssistant: true, understood: result.understood, notes: result.notes, discarded: result.discarded },
+        state: {
+          fromAssistant: true,
+          understood: result.understood,
+          notes: result.notes,
+          discarded: result.discarded,
+          grounding: result.grounding,
+        },
       })
     },
   })
@@ -161,6 +168,8 @@ export function PlanAssist({
         )}
 
         <AllowanceNote reads="story" sessionId={sheet?.session_id} />
+        {/* How much of what the assistant planned before came from the author (AST-EXP-013). */}
+        <SuggestionRecord kind="plan_draft" title="Earlier plan suggestions" />
         <AssistantProblem error={ask.error ?? draft.error} onManual={onManual} />
         <div className="actions end">
           {onManual && (
@@ -200,7 +209,13 @@ export function NextDirections({ about, onClose }: { about?: PlanItem; onClose: 
       await invalidate()
       onClose()
       navigate(`/projects/${scope.projectId}/review/${result.mutation_id}`, {
-        state: { fromAssistant: true, understood: result.understood, notes: result.notes, discarded: result.discarded },
+        state: {
+          fromAssistant: true,
+          understood: result.understood,
+          notes: result.notes,
+          discarded: result.discarded,
+          grounding: result.grounding,
+        },
       })
     },
   })
@@ -251,6 +266,15 @@ export function NextDirections({ about, onClose }: { about?: PlanItem; onClose: 
                   </Button>
                   <span className="hint">Suggests {plural(direction.adds, 'change')} for you to review.</span>
                 </div>
+                {(direction.grounding ?? []).length > 0 && (
+                  <details className="more">
+                    <summary>
+                      Builds on what you wrote: {(direction.grounding ?? []).filter((item) => item.grounded).length} of{' '}
+                      {plural((direction.grounding ?? []).length, 'part')}
+                    </summary>
+                    <GroundingList items={direction.grounding ?? []} />
+                  </details>
+                )}
               </li>
             ))}
           </ol>

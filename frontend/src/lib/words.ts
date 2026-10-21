@@ -242,11 +242,18 @@ export function describeOperation(operation: OperationLike, names: Names): strin
     case 'update_entity':
       return `Update “${target()}”`
     case 'retire_entity':
-      return `Archive “${target()}”`
+      return payload.merged_into
+        ? `Archive “${target()}”, merged into “${nameOf(names, String(payload.merged_into))}”`
+        : `Archive “${target()}”`
+    case 'restore_entity':
+      return `Bring back “${target()}”`
+    case 'merge_entities':
+      return `Merge “${target()}” into “${nameOf(names, String(payload.into ?? ''))}”`
     case 'assert_fact':
       return `Add fact: ${sentence(payload, names)}`
     case 'close_fact':
-      return 'End a fact'
+      // Say which fact: the record as it stands now holds its sentence.
+      return before.proposition ? `End a fact: ${sentence(before, names)}` : 'End a fact'
     case 'amend_fact': {
       const parts: string[] = []
       if (payload.starts || payload.ends) parts.push('say when a fact is true')
@@ -254,12 +261,15 @@ export function describeOperation(operation: OperationLike, names: Names): strin
       if (payload.visibility === 'common') parts.push('mark a fact as known to everyone')
       if (payload.visibility === 'ordinary') parts.push('stop treating a fact as a secret')
       const text = parts.join(' and ') || 'change when a fact is true'
-      return text.charAt(0).toUpperCase() + text.slice(1)
+      const which = before.proposition ? `: ${sentence(before, names)}` : ''
+      return text.charAt(0).toUpperCase() + text.slice(1) + which
     }
     case 'assert_belief':
       return `${nameOf(names, String(payload.holder_entity_id ?? ''))} believes: ${sentence(payload, names)}`
     case 'close_belief':
-      return 'End a belief'
+      return before.proposition
+        ? `End a belief: ${nameOf(names, String(before.holder_entity_id ?? ''))} believes ${sentence(before, names)}`
+        : 'End a belief'
     case 'create_event':
       return `Add event “${String(payload.name ?? '')}”`
     case 'amend_event':

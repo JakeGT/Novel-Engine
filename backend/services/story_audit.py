@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from backend.core.logging import log_event
+from backend.domain.branching import working_in
 from backend.domain.canon.plans import PlanItem, PlanKind
 from backend.domain.check_passes import CheckPass, PassEstimate
 from backend.domain.drafting import DraftFinding
@@ -108,6 +109,15 @@ class AuditSceneReport:
 
 
 @dataclass
+class AuditDrift:
+    """Voice and relationships across the scenes an audit read (CON-011, CON-018)."""
+
+    job: Job
+    voice: Any
+    relationships: list[Any]
+
+
+@dataclass
 class AuditReport:
     job: Job
     item: PlanItem | None
@@ -128,6 +138,8 @@ class StoryAudit:
 
     def __init__(self, studio: Any) -> None:
         self._studio = studio
+        # The author's voice across the book (CON-018); set by the container.
+        self.voice: Any = None
         # (story, version of it, scene, text version, passes) -> (kept until, estimates).
         self._estimates: dict[tuple[Any, ...], tuple[float, tuple[PassEstimate, ...]]] = {}
 
@@ -242,6 +254,8 @@ class StoryAudit:
         passes: Any = None,
         confirmed_tokens: int | None = None,
         idempotency_key: str = "",
+        schedule_id: str | None = None,
+        found: AuditEstimate | None = None,
     ) -> Job:
         studio = self._studio
         await studio._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
@@ -253,7 +267,8 @@ class StoryAudit:
         )
         if existing is not None:
             return existing  # type: ignore[no-any-return]
-        found = await self.estimate(scope, workspace_id, project_id, plan_id, passes)
+        if found is None:
+            found = await self.estimate(scope, workspace_id, project_id, plan_id, passes)
         written = found.written
         if not written:
             raise ValidationError(
@@ -305,6 +320,8 @@ class StoryAudit:
                     # read, and the audit stops if it would need more than confirmed.
                     "confirmed_tokens": confirmed_tokens,
                     "scene_tokens": {entry.scene.id: entry.tokens for entry in written},
+                    # Started by a schedule the author set up (CON-011), not by a request.
+                    **({"schedule_id": schedule_id} if schedule_id else {}),
                 },
                 idempotency_key=idempotency_key,
             ),
@@ -460,6 +477,93 @@ class StoryAudit:
         )
         return {"scenes": done}
 
+    # ------------------------------------------------------------------ drift
+
+    async def drift(
+        self, scope: AccessScope, workspace_id: str, project_id: str, job_id: str
+    ) -> AuditDrift:
+        """Voice and relationships across the exact versions an audit read, in reading
+        order, worked out now and for free: the voice against the author's usual, with
+        how it moves from the first scenes to the last, and how each pair of characters
+        drifts (``backend.domain.drift``)."""
+        studio = self._studio
+        await studio._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        job = await studio._jobs.get(
+            workspace_id=workspace_id, project_id=project_id, job_id=job_id
+        )
+        if job is None or job.kind != AUDIT_JOB:
+            raise NotFoundError("That audit was not found.")
+        entries = [dict(entry) for entry in job.payload.get("scenes") or []]
+        if self.voice is None:
+            raise NotFoundError("Voice is not measured here.")
+        # Read in the line of the story the audit read, whichever one is open now.
+        with working_in(job.payload.get("branch_id")):
+            voice = await self.voice.for_versions(workspace_id, project_id, entries)
+            relationships = await self._relationships(workspace_id, project_id, entries)
+        return AuditDrift(job=job, voice=voice, relationships=relationships)
+
+    async def _relationships(
+        self, workspace_id: str, project_id: str, entries: list[dict[str, Any]]
+    ) -> list[Any]:
+        from backend.domain.canon.phrasing import phrase
+        from backend.domain.drift import PairFact, RangeScene, relationship_drift
+        from backend.domain.sources import find_mentions
+        from backend.services.plan_service import fact_standing_in
+        from backend.services.story_time_service import read_story
+
+        studio = self._studio
+        story = await read_story(studio._reader, workspace_id, project_id)
+        characters = {
+            entity.id: entity.name
+            for entity in story.entities.values()
+            if entity.type == "Character" and entity.is_active
+        }
+        facts = []
+        for fact in story.facts:
+            other = getattr(fact.proposition.object, "entity_id", None)
+            subject = fact.proposition.subject_id
+            if fact.closed_revision is not None or other is None:
+                continue
+            if subject in characters and other in characters:
+                facts.append(
+                    PairFact(
+                        fact.id,
+                        (subject, other),
+                        f"{characters[subject]} {phrase(fact.proposition.predicate)} "
+                        f"{characters[other]}",
+                    )
+                )
+        scenes: list[RangeScene] = []
+        items: list[PlanItem] = []
+        for entry in entries:
+            scene = await studio._reader.get_plan_item(
+                workspace_id=workspace_id, project_id=project_id, plan_id=str(entry.get("plan_id"))
+            )
+            if scene is None or not scene.is_active:
+                continue
+            present = {
+                ref.entity_id
+                for ref in scene.refs
+                if ref.role in ("point_of_view", "participant") and ref.entity_id in characters
+            }
+            try:
+                _, version, _ = await studio._sources.version(
+                    workspace_id, project_id, entry.get("source_id") or "", entry.get("version_id")
+                )
+                names, _, _ = await studio._sources.index_for(
+                    workspace_id, project_id, version.source_id, scene_id=scene.id
+                )
+                for mention in find_mentions(version.content, names):
+                    present.update(i for i in mention.entity_ids if i in characters)
+            except NotFoundError:
+                pass
+            scenes.append(RangeScene(scene.id, scene.title, frozenset(present)))
+            items.append(scene)
+        standing_of = fact_standing_in(story)
+        return relationship_drift(
+            scenes, facts, characters, lambda fact_id, index: standing_of(fact_id, items[index])
+        )
+
     # ----------------------------------------------------------------- results
 
     async def recent(
@@ -569,6 +673,7 @@ class StoryAudit:
 
 
 __all__ = [
+    "AuditDrift",
     "MAX_AUDIT_SCENES",
     "WHOLE_PLAN",
     "AuditEstimate",

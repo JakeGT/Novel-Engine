@@ -14,7 +14,8 @@ disagreeing, so a change in coverage is always a decision.
 Families: ``continuity`` (backend/domain/continuity.py), ``rules`` (rules.py),
 ``knowledge`` (acquisition.py), ``drafting`` (drafting.py), ``plan`` (reveals,
 thread order and scene conditions) and ``prose`` (the prose against the plan and the
-story bible: appearance, words for when, things in hand, "after" conditions). Tags: ``leakage`` marks a case about knowledge or
+story bible: appearance, words for when, things in hand, "after" conditions) and ``voice``
+(how a scene sounds against the author's usual, backend/domain/voice.py). Tags: ``leakage`` marks a case about knowledge or
 a secret reaching a page or a context it must not.
 """
 
@@ -1626,6 +1627,217 @@ def _prose_cases() -> list[Case]:
     ]
 
 
+# ----------------------------------------------------------------------- voice
+
+# The author's usual: four scenes of the Saltglass Ferry told close on Wren, in the past
+# tense, sentences of a dozen words or so and a little dialogue.
+_USUAL_LINES = [
+    "Wren walked down to the ferry before the light came up over the estuary.",
+    "She counted the crates on the deck and found one more than the manifest said.",
+    "Tobin was waiting by the rail with his collar turned up against the wind.",
+    '"You are late," he said, and she shrugged and set her bag down beside him.',
+    "They watched the gulls fight over a crust somebody had dropped on the boards.",
+    "He had brought bread, and she took half of it without asking.",
+    "The tide was turning, and the smell of it reached them before the sound did.",
+    "It was cold, but neither of them wanted to be the first to say so.",
+    "When the bell rang across the water she stood and brushed the salt from her coat.",
+    "He did not ask where she was going, and she did not tell him.",
+]
+
+
+def _voice_text(lines: list[str], words: int, seed: int) -> str:
+    import random
+
+    rng = random.Random(seed)
+    text = ""
+    while len(text.split()) < words:
+        text += " ".join(rng.sample(lines, k=rng.randint(min(4, len(lines)), len(lines)))) + " "
+    return text
+
+
+def _voice(scene: str) -> Run:
+    def run() -> set[str]:
+        from backend.domain.voice import baseline, drift, measure
+
+        usual = baseline([measure(_voice_text(_USUAL_LINES, 1600, seed)) for seed in range(6)])
+        return {note.code for note in drift(measure(scene), usual)}
+
+    return run
+
+
+def _voice_cases() -> list[Case]:
+    first = [
+        line.replace("She ", "I ").replace("she ", "I ").replace("Wren ", "I ")
+        for line in _USUAL_LINES
+    ]
+    present = [
+        "Wren walks down to the ferry before the light comes up over the estuary.",
+        "She counts the crates on the deck and finds one more than the manifest says.",
+        "Tobin waits by the rail with his collar turned up against the wind.",
+        '"You are late," he says, and she shrugs and sets her bag down beside him.',
+        "They watch the gulls fight over a crust somebody drops on the boards.",
+        "He brings bread, and she takes half of it without asking.",
+    ]
+    long = [
+        "Wren walked down to the ferry before the light came up over the estuary, and she "
+        "counted the crates on the deck, finding one more than the manifest said, which "
+        "meant that somebody had loaded it in the night without telling the harbourmaster.",
+        "Tobin was waiting by the rail with his collar turned up against the wind, and when "
+        "she came up beside him he only nodded, as though they had arranged to meet there "
+        "and had nothing to say that the morning had not already said for them.",
+    ]
+    talk = [
+        '"Where were you?" Tobin said.',
+        '"Out," Wren said.',
+        '"Out where, exactly, at that hour, with the tide running the way it was?"',
+        '"Just out. By the water. Counting crates, if you must know."',
+        '"And how many were there?"',
+        '"One more than there should have been."',
+    ]
+    adverbs = [
+        "Wren walked slowly and quietly down to the ferry, carefully avoiding the puddles.",
+        "She counted the crates nervously and found, surprisingly, one more than expected.",
+        "Tobin was waiting patiently by the rail, his collar turned up tightly.",
+        '"You are late," he said softly, and she shrugged wearily and sat down heavily.',
+    ]
+    leaning = [
+        line.replace("walked", "glanced")
+        .replace("watched", "glanced at")
+        .replace("counted", "glanced at")
+        for line in _USUAL_LINES
+    ]
+    slip = (
+        _voice_text(_USUAL_LINES, 500, 41)
+        + " She opens the hatch and climbs down. "
+        + _voice_text(_USUAL_LINES, 300, 42)
+    )
+    stranger = (
+        "Upon arrival, an assessment of conditions aboard the vessel was undertaken by "
+        "personnel; findings indicated deterioration of fittings, necessitating remediation "
+        "within specified timeframes, pursuant to regulations governing passenger craft. "
+        "Therefore it is to be noted that all of the cargo is to be inspected by us. "
+    )
+    in_dialogue_i = [
+        '"I will not wait," Wren said, and she sat down by the rail.',
+        '"I am cold," she said. "I want to go home." Tobin nodded.',
+        *_USUAL_LINES[:6],
+    ]
+    general_truth = (
+        _voice_text(_USUAL_LINES, 400, 7)
+        + " Tides are older than ferries. "
+        + _voice_text(_USUAL_LINES, 300, 8)
+    )
+    return [
+        _case(
+            "voice/told-with-i",
+            "voice",
+            "a scene told with “I” in a book told with “she”",
+            defect=True,
+            codes={"voice_person"},
+            run=_voice(_voice_text(first, 600, 1)),
+        ),
+        _case(
+            "voice/present-tense",
+            "voice",
+            "a scene in the present in a book in the past",
+            defect=True,
+            codes={"voice_tense"},
+            run=_voice(_voice_text(present, 600, 2)),
+        ),
+        _case(
+            "voice/long-sentences",
+            "voice",
+            "sentences twice as long as the author's usual",
+            defect=True,
+            codes={"voice_sentence_length", "voice_sentence_variety"},
+            run=_voice(_voice_text(long, 600, 3)),
+        ),
+        _case(
+            "voice/all-dialogue",
+            "voice",
+            "a scene almost all dialogue in a book with little",
+            defect=True,
+            codes={"voice_dialogue"},
+            run=_voice(_voice_text(talk, 500, 4)),
+        ),
+        _case(
+            "voice/many-adverbs",
+            "voice",
+            "words ending in -ly three times as often as usual",
+            defect=True,
+            codes={"voice_adverbs"},
+            run=_voice(_voice_text(adverbs, 500, 5)),
+        ),
+        _case(
+            "voice/leans-on-a-word",
+            "voice",
+            "a scene that keeps using “glanced”",
+            defect=True,
+            codes={"voice_leans_on"},
+            run=_voice(_voice_text(leaning, 600, 6)),
+        ),
+        _case(
+            "voice/tense-slip",
+            "voice",
+            "one sentence slips into the present in past narration",
+            defect=True,
+            codes={"voice_tense_slip"},
+            run=_voice(slip),
+        ),
+        _case(
+            "voice/someone-elses-words",
+            "voice",
+            "a scene in an official register, as if by someone else",
+            defect=True,
+            codes={"voice_everyday_words", "voice_sentence_length", "voice_leans_on"},
+            run=_voice(_voice_text([stranger], 1600, 9)),
+        ),
+        _case(
+            "voice/short-scene-in-first-person",
+            "voice",
+            "a 60-word note told with “I”",
+            defect=True,
+            codes={"voice_person"},
+            run=_voice(" ".join(first[:5])),
+            known_limit="A scene under 300 words is never compared: too few words to say how it sounds.",
+        ),
+        _case(
+            "voice/same-voice",
+            "voice",
+            "a new scene in the author's usual voice",
+            defect=False,
+            codes={
+                "voice_person",
+                "voice_tense",
+                "voice_sentence_length",
+                "voice_dialogue",
+                "voice_adverbs",
+                "voice_leans_on",
+                "voice_everyday_words",
+                "voice_tense_slip",
+                "voice_echoes",
+            },
+            run=_voice(_voice_text(_USUAL_LINES, 900, 99)),
+        ),
+        _case(
+            "voice/i-only-in-dialogue",
+            "voice",
+            "“I” said aloud, never in the narration",
+            defect=False,
+            codes={"voice_person", "voice_person_mixed"},
+            run=_voice(_voice_text(in_dialogue_i, 600, 10)),
+        ),
+        _case(
+            "voice/general-truth",
+            "voice",
+            "a present-tense truth about tides, in past narration",
+            defect=False,
+            codes={"voice_tense", "voice_tense_mixed"},
+            run=_voice(general_truth),
+        ),
+    ]
+
+
 def all_cases() -> list[Case]:
     return [
         *_continuity_cases(),
@@ -1634,6 +1846,7 @@ def all_cases() -> list[Case]:
         *_drafting_cases(),
         *_plan_cases(),
         *_prose_cases(),
+        *_voice_cases(),
     ]
 
 

@@ -78,5 +78,10 @@ def test_factory_does_not_require_a_developer_dotenv(settings_factory) -> None:
 def test_previous_credential_keks_parsing() -> None:
     from backend.core.config import Settings
 
-    settings = Settings(_env_file=None, CREDENTIAL_PREVIOUS_KEKS="1:abc, 2:def ,bad,")
+    settings = Settings(_env_file=None, CREDENTIAL_PREVIOUS_KEKS="1:abc, 2:def ,")
     assert settings.previous_credential_keks == {1: "abc", 2: "def"}
+    # A malformed entry is refused by its place, never dropped and never quoted.
+    settings = Settings(_env_file=None, CREDENTIAL_PREVIOUS_KEKS="1:abc, 2:def ,bad,")
+    with pytest.raises(ValueError, match="Entry 3 of CREDENTIAL_PREVIOUS_KEKS") as refused:
+        _ = settings.previous_credential_keks
+    assert "bad" not in str(refused.value) and "abc" not in str(refused.value)

@@ -8,6 +8,11 @@ table cannot be forgotten by one of them. Each table carries ``workspace_id`` an
 from __future__ import annotations
 
 CANON_PROJECT_TABLES: tuple[str, ...] = (
+    # The assistant's kept threads and their turns (AST-EXP-005, AST-EXP-017), and the
+    # record of each run of suggestions (AST-EXP-007, AST-EXP-013).
+    "assistant_turns",
+    "assistant_threads",
+    "suggestion_runs",
     # Derived search vectors of every generation (CTX-012); the generations themselves
     # are install-wide and hold no project data.
     "embedding_vectors",
@@ -20,6 +25,10 @@ CANON_PROJECT_TABLES: tuple[str, ...] = (
     "story_clocks",
     "assistant_settings",
     "consistency_runs",
+    # The author's usual voice, audits on a schedule and correction plans (CON-018, CON-011).
+    "voice_baselines",
+    "audit_schedules",
+    "correction_plans",
     # What each check that needs no model found for one fingerprint (CON-007): derived.
     "check_cache",
     "finding_dismissals",

@@ -413,3 +413,55 @@ search by meaning was exercised with a stand-in only.
 Sources: [RFC 9530, Digest Fields](https://rfc-editor.org/rfc/rfc9530) (`Content-Digest` and
 `Repr-Digest`, structured byte sequences); [MDN, 413 Content Too Large](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/413)
 (the RFC 9110 name for 413).
+
+## Amendment 2026-10-21: the picture worker's sandbox, and pictures in check runs (AST-006, CON-001)
+
+**Sandbox.** The worker already ran as a fresh `python -I` process with rlimits and an empty
+environment. It now also shuts itself in after the limits and after loading everything decoding
+needs (it decodes a few tiny pictures it makes itself first, so no import happens later), using
+only the standard library (`ctypes`), each layer only where the machine has it and never
+breaking the worker where it does not:
+
+1. `prctl(PR_SET_NO_NEW_PRIVS)`, which the next two need without privilege.
+2. `unshare(CLONE_NEWUSER | CLONE_NEWNET)`: a network of its own. Docker's default seccomp
+   profile refuses this without `CAP_SYS_ADMIN`, so on the hosted stack it is usually off; the
+   seccomp layer covers sockets.
+3. Landlock with an empty ruleset handling every filesystem right the kernel's ABI knows (up to
+   ABI 5: execute, read, write, make, remove, refer, truncate, device ioctl), TCP bind and connect
+   from ABI 4, and signal and abstract-socket scoping from ABI 6: no path at all can be opened.
+4. A seccomp filter written as classic BPF for x86-64 and arm64 (others get none rather than a
+   wrong one): any other ABI on the same kernel (32-bit calls, x32) is stopped; opening, making,
+   removing, linking, renaming and changing files by path, sockets, `execve`, `fork`/`vfork`, a
+   `clone` without `CLONE_THREAD`, `clone3` (`ENOSYS`, so the C library falls back to `clone`),
+   `ptrace`, `process_vm_*`, `kill`, mounting, namespaces, `bpf`, `perf_event_open`, `io_uring`,
+   keys, modules, `kexec`, `reboot` and the like fail with `EPERM`.
+
+Standard input, output and error were opened before and keep working (Landlock does not reach
+descriptors already open). `MEDIA_WORKER_SANDBOX` is `best` (default), `require` (no picture is
+decoded without both Landlock and seccomp; the author sees "cannot be prepared on this
+installation right now") or `off`. `SubprocessImageProcessor.sandbox_status()` asks one worker,
+once, which layers took hold and whether it could read a file, create one, open a socket or start
+a process; `/health/capabilities` reports it under `pictures.sandbox` with a plain reason when
+less than full, each decode logs its level, and a less-than-full result logs a warning. Measured
+overhead on a 2000×1500 JPEG: none outside noise (about 90 ms either way). Not covered:
+`stat`-family calls (neither Landlock nor the filter refuses asking whether a path exists),
+kernel bugs, and hosted malware scanning. The libseccomp Python bindings were considered; they
+are not installed and would add a native dependency, so the filter is written here and tested.
+
+**Pictures in check runs (CON-001).** A check with the assistant that includes the pictures pass
+records, in the run's fingerprints, the pictures that pass reads for the scene (asset, version,
+the name it was given, send or describe, a digest of the accepted description; never the picture
+or its words). Read back, each picture says in plain words what has changed since (a newer
+version; its accepted description; no longer given with the scene or now left out; given another
+way), the run is out of date when any has, and each note of the pictures pass names the picture
+it was compared with and is out of date when that picture (or, if it names none, any of them)
+changed. `GET /checks/runs/...` returns them (`scenes[].pictures`, `findings[].picture`).
+
+Sources: [Linux kernel, Landlock](https://docs.kernel.org/userspace-api/landlock.html) (ABI
+versions and rights; descriptors opened before are not restricted; `stat` cannot be restricted);
+[Linux kernel, seccomp filter](https://docs.kernel.org/userspace-api/seccomp_filter.html)
+(no_new_privs, checking `arch`, `SECCOMP_RET_ERRNO`);
+[moby default seccomp profile](https://github.com/moby/profiles/blob/main/seccomp/default.json)
+(allows `landlock_*`, `prctl` and `seccomp`; `unshare` and `clone3` gated on `CAP_SYS_ADMIN`);
+[Docker, seccomp security profiles](https://docs.docker.com/engine/security/seccomp/);
+[Pillow security handbook](https://pillow.readthedocs.io/en/latest/handbook/security.html).

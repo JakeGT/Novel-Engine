@@ -10,6 +10,13 @@ with no model:
 - story rules that are about a changed entry, before or after the change;
 - kept drafts whose recorded context included a changed entry, fact or part of the
   plan (the context manifest lists every record it gave);
+- what characters believe and know: beliefs held by a changed entry or about it, and
+  beliefs that match a changed fact (which is what the story counts as knowing it);
+- events a changed entry takes part in or happens at, and changed or removed events;
+- pictures linked to a changed entry (their accepted descriptions are compared with
+  the words, CON-004);
+- checks and notes in the scene studio that name a changed entry, from each scene's
+  newest kept check and the assistant's notes on its saved words (CON-001);
 - the author's writing, through the passage index, which keeps the entries each
   passage names (never the words).
 
@@ -23,10 +30,13 @@ references and matches in comments and text.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
+from backend.domain.canon.assertions import Belief
+from backend.domain.canon.events import Event
 from backend.domain.canon.phrasing import phrase
 from backend.domain.canon.plans import PlanItem, PlanKind
 from backend.domain.knowledge import scene_reveals
@@ -42,6 +52,8 @@ from backend.domain.operations import (
     CreateEventOp,
     CreatePlanItemOp,
     LinkAssetOp,
+    MergeEntitiesOp,
+    RestoreEntityOp,
     RetireEntityOp,
     RetireEventOp,
     RetirePlanItemOp,
@@ -62,7 +74,19 @@ from backend.domain.threads import thread_advances
 from backend.domain.validation import RuleEnforcement
 
 Level = Literal["affected", "may_be_affected"]
-Kind = Literal["scene", "plan", "thread", "rule", "draft", "scene_text", "text"]
+Kind = Literal[
+    "scene",
+    "plan",
+    "thread",
+    "rule",
+    "draft",
+    "belief",
+    "event",
+    "picture",
+    "finding",
+    "scene_text",
+    "text",
+]
 
 # Enough to act on; past this the answer says it stopped.
 MAX_DEPENDENTS = 200
@@ -85,6 +109,8 @@ class Touched:
     plans: dict[str, str] = field(default_factory=dict)
     # Threads a new or changed part of the plan would open, move along or resolve, and why.
     threads: dict[str, list[str]] = field(default_factory=dict)
+    # Events the change itself changes or removes, and how.
+    events: dict[str, str] = field(default_factory=dict)
     # What the change does, in the author's words: "Mara is changed".
     about: list[str] = field(default_factory=list)
     # New entries are not in the index yet.
@@ -99,7 +125,7 @@ class Touched:
 
     @property
     def ids(self) -> set[str]:
-        return set(self.entries) | set(self.facts) | set(self.plans)
+        return set(self.entries) | set(self.facts) | set(self.plans) | set(self.events)
 
 
 @dataclass(frozen=True)
@@ -113,6 +139,11 @@ class StoryFacts:
     # event id -> the entries it involves
     events: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     plans: Mapping[str, PlanItem] = field(default_factory=dict)
+    # The beliefs and events themselves, for what they say (CON-017).
+    belief_records: Mapping[str, Belief] = field(default_factory=dict)
+    event_records: Mapping[str, Event] = field(default_factory=dict)
+    # Every name an entry goes by (its name and other names).
+    names_of: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
     def name(self, entry_id: str) -> str:
         return self.names.get(entry_id, "an entry")
@@ -207,6 +238,14 @@ def touched_by(operations: Sequence[CanonOperation], story: StoryFacts) -> Touch
         elif isinstance(operation, RetireEntityOp):
             existing(operation.id)
             touched.say(f"{name(operation.id)} is archived")
+        elif isinstance(operation, RestoreEntityOp):
+            existing(operation.id)
+            touched.say(f"{name(operation.id)} is brought back")
+        elif isinstance(operation, MergeEntitiesOp):
+            # Everything that names either entry depends on a merge.
+            existing(operation.id)
+            existing(operation.into)
+            touched.say(f"{name(operation.id)} is merged into {name(operation.into)}")
         elif isinstance(operation, AssertFactOp):
             proposition = operation.proposition
             other_id = getattr(proposition.object, "entity_id", None)
@@ -247,6 +286,11 @@ def touched_by(operations: Sequence[CanonOperation], story: StoryFacts) -> Touch
         elif isinstance(operation, (AmendEventOp, RetireEventOp)):
             for entry_id in story.events.get(operation.id, ()):
                 existing(entry_id)
+            touched.events[operation.id] = (
+                "The change moves or changes it"
+                if isinstance(operation, AmendEventOp)
+                else "The change removes it"
+            )
             touched.say(
                 "An event changes" if isinstance(operation, AmendEventOp) else "An event is removed"
             )
@@ -515,6 +559,191 @@ def text_dependents(touched: Touched, mentions: Iterable[Mention]) -> list[Depen
     return list(found.values())
 
 
+def _proposition_reading(proposition: object, story: StoryFacts) -> str:
+    other_id = getattr(getattr(proposition, "object", None), "entity_id", None)
+    value = getattr(getattr(proposition, "object", None), "value", None)
+    other = story.name(other_id) if other_id else ("" if value is None else str(value))
+    subject = story.name(str(getattr(proposition, "subject_id", "")))
+    return f"{subject} {phrase(str(getattr(proposition, 'predicate', '')))} {other}".strip()
+
+
+def _same_claim(belief: Belief, fact: WorldFact) -> bool:
+    proposition = belief.proposition
+    other = getattr(proposition.object, "entity_id", None)
+    value = getattr(proposition.object, "value", None)
+    return (
+        proposition.subject_id == fact.subject_id
+        and proposition.predicate == fact.predicate
+        and (other == fact.object_id if fact.object_id is not None else value == fact.value)
+    )
+
+
+def belief_dependents(touched: Touched, story: StoryFacts) -> list[Dependent]:
+    """What characters believe or know that a change touches, one row per character."""
+    ids = set(touched.entries)
+    facts = [story.facts[fact_id] for fact_id in touched.facts if fact_id in story.facts]
+    by_holder: dict[str, Dependent] = {}
+    for belief in story.belief_records.values():
+        if belief.closed_revision is not None:
+            continue
+        reasons: list[str] = []
+        reading = _proposition_reading(belief.proposition, story)
+        about = {belief.proposition.subject_id} | (
+            {getattr(belief.proposition.object, "entity_id", None)} - {None}
+        )
+        if any(_same_claim(belief, fact) for fact in facts):
+            reasons.append(f"Knows what changes: {reading}")
+        elif belief.holder_entity_id in ids:
+            reasons.append(f"Believes: {reading}")
+        elif about & ids:
+            reasons.append(
+                f"Believes something about {touched.entries[str(next(iter(about & ids)))]}: {reading}"
+            )
+        if not reasons:
+            continue
+        holder = belief.holder_entity_id
+        current = by_holder.get(holder)
+        if current is None:
+            by_holder[holder] = Dependent(
+                kind="belief",
+                level="affected",
+                id=holder,
+                title=story.name(holder),
+                reasons=reasons,
+            )
+        else:
+            current.reasons = _unique([*current.reasons, *reasons])
+    for dependent in by_holder.values():
+        if len(dependent.reasons) > 4:
+            more = len(dependent.reasons) - 3
+            dependent.reasons = [*dependent.reasons[:3], f"and {more} more"]
+    return list(by_holder.values())
+
+
+def event_dependents(
+    touched: Touched, story: StoryFacts, changed_events: Mapping[str, str] | None = None
+) -> list[Dependent]:
+    """Events a changed entry takes part in or happens at, and events the change itself
+    changes or removes (``changed_events``: event id -> how)."""
+    ids = set(touched.entries)
+    found: list[Dependent] = []
+    for event in story.event_records.values():
+        if event.retired_revision is not None:
+            continue
+        reasons: list[str] = []
+        how = (changed_events or {}).get(event.id)
+        if how:
+            reasons.append(how)
+        for participant in event.participants:
+            if participant.entity_id in ids:
+                reasons.append(f"{touched.entries[participant.entity_id]} takes part in it")
+        for place in event.location_ids:
+            if place in ids:
+                reasons.append(f"It happens at {touched.entries[place]}")
+        if reasons:
+            found.append(
+                Dependent(
+                    kind="event",
+                    level="affected",
+                    id=event.id,
+                    title=event.name,
+                    reasons=_unique(reasons),
+                )
+            )
+    return found
+
+
+@dataclass(frozen=True)
+class PictureLink:
+    asset_id: str
+    title: str
+    entity_id: str
+    role: str
+
+
+_PICTURE_ROLE = {
+    "DEPICTS": "A picture of {name}",
+    "SET_AT": "A picture of somewhere {name} is",
+    "MAP_OF": "A map of {name}",
+    "VOICE_OF": "A recording of {name}",
+}
+
+
+def picture_dependents(touched: Touched, links: Iterable[PictureLink]) -> list[Dependent]:
+    """Pictures linked to a changed entry: what they show, and their accepted
+    descriptions, are compared with the words (CON-004, CON-014)."""
+    by_asset: dict[str, Dependent] = {}
+    for link in links:
+        if link.entity_id not in touched.entries:
+            continue
+        name = touched.entries[link.entity_id]
+        reason = _PICTURE_ROLE.get(link.role, "A picture linked to {name}").format(name=name)
+        current = by_asset.get(link.asset_id)
+        if current is None:
+            by_asset[link.asset_id] = Dependent(
+                kind="picture",
+                level="affected",
+                id=link.asset_id,
+                title=link.title,
+                reasons=[reason, "What it shows is compared with the words of scenes"],
+            )
+        elif reason not in current.reasons:
+            current.reasons.insert(0, reason)
+    return list(by_asset.values())
+
+
+@dataclass(frozen=True)
+class StudioFinding:
+    """A check or note the studio shows for a scene, in this line of the story."""
+
+    plan_id: str
+    title: str
+    message: str
+    # check (worked out without the assistant) or note (from the assistant)
+    source: Literal["check", "note"]
+
+
+def finding_dependents(
+    touched: Touched, findings: Iterable[StudioFinding], names_of: Mapping[str, Sequence[str]]
+) -> list[Dependent]:
+    """Checks and notes in the studio whose words name a changed entry (by its name or
+    another name), one row per scene. They are worked out again when it is next checked."""
+    patterns = {
+        entry_id: re.compile(
+            r"(?<!\w)(" + "|".join(re.escape(name) for name in names if name) + r")(?!\w)",
+            re.IGNORECASE,
+        )
+        for entry_id in touched.entries
+        if (names := [n for n in names_of.get(entry_id, (touched.entries[entry_id],)) if n])
+    }
+    by_scene: dict[str, Dependent] = {}
+    for finding in findings:
+        if not any(pattern.search(finding.message) for pattern in patterns.values()):
+            continue
+        said = finding.message if len(finding.message) <= 160 else finding.message[:159] + "…"
+        reason = (
+            f"A check says: “{said}”" if finding.source == "check" else f"A note says: “{said}”"
+        )
+        current = by_scene.get(finding.plan_id)
+        if current is None:
+            by_scene[finding.plan_id] = Dependent(
+                kind="finding",
+                level="affected",
+                id=finding.plan_id,
+                title=finding.title,
+                reasons=[reason],
+                plan_id=finding.plan_id,
+            )
+        elif reason not in current.reasons:
+            current.reasons.append(reason)
+    for dependent in by_scene.values():
+        dependent.count = len(dependent.reasons)
+        if len(dependent.reasons) > 3:
+            more = len(dependent.reasons) - 3
+            dependent.reasons = [*dependent.reasons[:3], f"and {more} more"]
+    return list(by_scene.values())
+
+
 # ------------------------------------------------------------------------ the answer
 
 
@@ -526,9 +755,24 @@ def assemble(
     drafts: Sequence[Dependent],
     texts: Sequence[Dependent],
     not_checked: Sequence[str],
+    others: Sequence[Dependent] = (),
 ) -> Impact:
-    order = {"scene": 0, "plan": 1, "thread": 2, "rule": 3, "draft": 4, "scene_text": 5, "text": 6}
-    affected = sorted([*plan, *rules, *drafts], key=lambda d: (order[d.kind], d.title.casefold()))
+    order = {
+        "scene": 0,
+        "plan": 1,
+        "thread": 2,
+        "rule": 3,
+        "draft": 4,
+        "belief": 5,
+        "event": 6,
+        "picture": 7,
+        "finding": 8,
+        "scene_text": 9,
+        "text": 10,
+    }
+    affected = sorted(
+        [*plan, *rules, *drafts, *others], key=lambda d: (order[d.kind], d.title.casefold())
+    )
     merged: dict[tuple[str, str], Dependent] = {}
     for dependent in texts:
         same = merged.get((dependent.kind, dependent.id))
@@ -568,10 +812,13 @@ def standing_gaps(touched: Touched) -> list[str]:
     if touched.new_entries:
         gaps.append("Writing is not searched for new entries until they are added.")
     gaps.append(
-        "Checks and notes in the scene studio. They are worked out again the next time a "
-        "scene is checked."
+        "What the checks in the scene studio would find after the change, and notes that "
+        "do not name it. They are worked out again the next time a scene is checked."
     )
-    gaps.append("What characters believe or know about it, and events it is part of.")
+    gaps.append(
+        "Who learns it from whom, and what a character could work out from it: only "
+        "beliefs recorded in the story bible are looked at."
+    )
     return gaps
 
 
@@ -589,6 +836,12 @@ def _and(names: Sequence[str]) -> str:
 
 
 __all__ = [
+    "PictureLink",
+    "StudioFinding",
+    "belief_dependents",
+    "event_dependents",
+    "finding_dependents",
+    "picture_dependents",
     "Dependent",
     "Impact",
     "KeptDraft",

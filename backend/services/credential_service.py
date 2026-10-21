@@ -11,6 +11,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from backend.domain.connector import MY_COMPUTER
 from backend.domain.credentials import Credential, CredentialProvider, CredentialStatus
 from backend.domain.errors import CapabilityUnavailableError, ValidationError
 from backend.domain.identity import AccessScope, AuthMode
@@ -64,6 +65,11 @@ class CredentialService:
         self._ai = ai
         # Operator overrides of the suggested model per provider (e.g. from AI_MODEL).
         self._default_models = default_models or {}
+        # Computers connected to a workspace (SCN-002A): a route of their own.
+        self._devices: Any = None
+
+    def attach_devices(self, devices: Any) -> None:
+        self._devices = devices
 
     @property
     def is_configured(self) -> bool:
@@ -221,9 +227,19 @@ class CredentialService:
         spec = provider_spec(provider)
         return self._default_models.get(provider) or (spec.default_model if spec else None)
 
+    async def device_route(self, scope: AccessScope, workspace_id: str) -> ProviderRoute | None:
+        """The workspace's own computer, when it chose one (any deployment); else None."""
+        if self._devices is None:
+            return None
+        await self._require_use(scope, workspace_id)
+        route: ProviderRoute | None = await self._devices.route(scope, workspace_id)
+        return route
+
     async def _choice(self, workspace_id: str) -> tuple[AiChoice, dict[str, Credential]]:
         active = await self._active_by_provider(workspace_id)
         stored = await self._ai_settings.get(workspace_id) if self._ai_settings else None
+        if stored is not None and stored[0] == MY_COMPUTER:
+            return AiChoice(provider=MY_COMPUTER, model=stored[1], chosen=True), active
         if stored is not None and stored[0] in active:
             return AiChoice(provider=stored[0], model=stored[1], chosen=True), active
         if not active:
@@ -295,8 +311,13 @@ class CredentialService:
         before looking at the vault, so the answer is not a key-existence oracle.
         """
         await self._require_use(scope, workspace_id)
+        if self._devices is not None:
+            # The workspace chose a model on its own computer (raises when it is gone).
+            device_route: ProviderRoute | None = await self._devices.route(scope, workspace_id)
+            if device_route is not None:
+                return device_route
         choice, active = await self._choice(workspace_id)
-        if choice.provider is None:
+        if choice.provider is None or choice.provider == MY_COMPUTER:
             return None
         spec = provider_spec(choice.provider)
         if spec is None:

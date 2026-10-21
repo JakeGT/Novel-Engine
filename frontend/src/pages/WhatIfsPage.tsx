@@ -229,11 +229,17 @@ export function WhatIfPage() {
           <h1>{data ? `“${data.what_if.name}”` : 'What-if'}</h1>
           <p className="lede">Compared with your story since the what-if started.</p>
         </div>
-        {data && working?.id !== data.what_if.id && data.what_if.status === 'active' && (
+        {data && (
           <div className="actions">
-            <Button onClick={() => work({ id: data.what_if.id, name: data.what_if.name })}>
-              Work in this what-if
-            </Button>
+            {/* What differs in the story itself, with the checks (CON-011). */}
+            <Link className="btn" to={`/projects/${scope.projectId}/what-ifs/${encodeURIComponent(branchId)}/audit`}>
+              Audit the differences
+            </Link>
+            {working?.id !== data.what_if.id && data.what_if.status === 'active' && (
+              <Button onClick={() => work({ id: data.what_if.id, name: data.what_if.name })}>
+                Work in this what-if
+              </Button>
+            )}
           </div>
         )}
       </div>

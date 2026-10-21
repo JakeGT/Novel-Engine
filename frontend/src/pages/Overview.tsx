@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import { OpenConversations } from '../components/Conversations'
+import { useKeptThread } from '../lib/threads'
 import { EntryMarks } from '../components/EntryMarks'
 import { Icon } from '../components/icons'
 import { Portrait } from '../components/Pictures'
@@ -19,11 +20,37 @@ const STARTERS = [
   {
     type: undefined,
     title: 'Describe your story',
-    text: 'Write a paragraph. The assistant drafts the people, places and links for you to review.',
+    text: 'Write a paragraph. The assistant asks what it needs and drafts the people, places and links for you to review.',
   },
   { type: 'Character', title: 'Add a character', text: 'Who is this story about?' },
   { type: 'Location', title: 'Add a place', text: 'Where does it happen?' },
 ] as const
+
+/** A premise conversation with questions still open: picked up where it was left. */
+function PremiseNudge() {
+  const { scope } = useProject()
+  const thread = useKeptThread('premise')
+  const open = thread.data?.open_questions ?? []
+  if (open.length === 0) return null
+  return (
+    <section className="card quiet" aria-labelledby="premise-heading">
+      <div className="card-head">
+        <div>
+          <h2 id="premise-heading">Your story is waiting for answers</h2>
+          <p className="muted small">
+            The assistant asked {plural(open.length, 'question')} about your story. Answer them to
+            fill in more of the story bible.
+          </p>
+        </div>
+      </div>
+      <div>
+        <Link className="btn" to={`/projects/${scope.projectId}/premise`}>
+          Carry on with your story
+        </Link>
+      </div>
+    </section>
+  )
+}
 
 /** The project's front door: what is in the bible, what needs attention, what to do next. */
 export function Overview() {
@@ -83,6 +110,18 @@ export function Overview() {
             <div className="tiles" style={{ marginTop: '1.5rem' }}>
               {STARTERS.map((starter) => {
                 const look = typeLook(starter.type ?? 'Concept')
+                if (!starter.type) {
+                  // A whole story is a conversation: questions answered in turn (AST-EXP-005).
+                  return (
+                    <Link key={starter.title} className="tile" to={`${base}/premise`}>
+                      <span className={`avatar tint-${look.tint}`} aria-hidden="true">
+                        <Icon name="spark" />
+                      </span>
+                      <strong>{starter.title}</strong>
+                      <span className="muted small">{starter.text}</span>
+                    </Link>
+                  )
+                }
                 return (
                   <button
                     key={starter.title}
@@ -108,6 +147,7 @@ export function Overview() {
         </section>
 
         <OpenConversations />
+        {canWrite && <PremiseNudge />}
 
         {noKey && (
           <section className="card quiet" aria-labelledby="key-heading">
@@ -193,6 +233,7 @@ export function Overview() {
       </section>
 
       <OpenConversations />
+      {canWrite && <PremiseNudge />}
 
       {(todo.data?.items.length ?? 0) > 0 && (
         <section className="card" aria-labelledby="todo-heading">

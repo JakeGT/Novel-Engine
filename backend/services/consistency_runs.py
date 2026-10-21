@@ -12,10 +12,19 @@ dismissed, superseded (found again by a later check) or fixed, and each scene ma
 of date when its words, what it names in the story bible, or the story rules changed
 since. Nothing about that is stored, so it cannot drift; nothing here ever blocks a
 change or calls a model.
+
+Pictures (CON-001). A check with the assistant that compares the scene with its pictures
+also keeps which pictures it was given (each picture and version, how it was to be
+given, and a digest of its accepted description; never the picture or the words).
+Read back, each picture says whether it has changed since (a newer version, an accepted
+description changed, no longer given with the scene, now left out), and each note of
+that pass names the picture it was compared with and is out of date when that picture
+(or, when it names none, any of them) changed.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -32,6 +41,7 @@ from backend.domain.check_fingerprints import (
     prose_fingerprint,
     rules_fingerprint,
 )
+from backend.domain.check_passes import CheckPass, pass_material
 from backend.domain.consistency_runs import (
     MAX_CHANGES,
     MAX_HISTORY,
@@ -93,6 +103,88 @@ class FindingView:
     came_back: bool = False
     # For a check that needs no model, the named check it belongs to.
     check: str | None = None
+    # For a note of the pictures pass, the picture it was compared with (CON-001).
+    picture: PictureRead | None = None
+
+
+@dataclass(frozen=True)
+class PictureRead:
+    """A picture a check with the assistant compared the scene with, as it was then."""
+
+    asset_id: str
+    version_id: str
+    # The picture's name as the check was given it.
+    label: str
+    # How it was to be given: send (the picture itself) or describe (its description).
+    choice: str
+    # A digest of its accepted description then; "" when it had none.
+    described: str = ""
+    # Plain words when it differs now; None when it is as it was (or cannot be told).
+    changed: str | None = None
+
+    def as_json(self) -> dict[str, str]:
+        return {
+            "asset_id": self.asset_id,
+            "version_id": self.version_id,
+            "label": self.label,
+            "choice": self.choice,
+            "described": self.described,
+        }
+
+    @staticmethod
+    def from_json(raw: dict[str, Any]) -> PictureRead:
+        return PictureRead(
+            asset_id=str(raw.get("asset_id") or ""),
+            version_id=str(raw.get("version_id") or ""),
+            label=str(raw.get("label") or ""),
+            choice=str(raw.get("choice") or ""),
+            described=str(raw.get("described") or ""),
+        )
+
+
+def _digest(words: str) -> str:
+    return hashlib.sha256(words.strip().encode("utf-8")).hexdigest()[:16] if words.strip() else ""
+
+
+def picture_changes(then: list[PictureRead], now: list[PictureRead]) -> list[PictureRead]:
+    """The pictures a run read, each with what has changed about it since, in plain words."""
+    current = {item.asset_id: item for item in now}
+    out: list[PictureRead] = []
+    for item in then:
+        found = current.get(item.asset_id)
+        changed: str | None = None
+        if found is None:
+            changed = "It is no longer given with the scene, or is now left out."
+        elif found.version_id != item.version_id:
+            changed = "A newer version of it has been added since."
+        elif found.described != item.described:
+            changed = "Its accepted description has changed since."
+        elif found.choice != item.choice:
+            changed = "It is now given another way (the picture itself or its description)."
+        out.append(
+            PictureRead(
+                asset_id=item.asset_id,
+                version_id=item.version_id,
+                label=item.label,
+                choice=item.choice,
+                described=item.described,
+                changed=changed,
+            )
+        )
+    return out
+
+
+def compared_with(message: str, pictures: list[PictureRead]) -> PictureRead | None:
+    """The picture a note of the pictures pass names ("Compared with the picture …")."""
+    marker = "Compared with the picture "
+    if marker not in message:
+        return None
+    named = message.rsplit(marker, 1)[1].rstrip(".").strip()
+    for item in pictures:
+        label = item.label[:120].strip()
+        if label and (named == label or named.startswith(label) or label.startswith(named)):
+            return item
+    return None
 
 
 @dataclass
@@ -105,10 +197,14 @@ class RunView:
     findings: list[FindingView] = field(default_factory=list)
     # How a check with the assistant was sent, pass by pass (CON-013), from its job.
     coverage: dict[str, Any] = field(default_factory=dict)
+    # The pictures the pictures pass was given, by scene, each saying what changed since.
+    pictures: dict[str, list[PictureRead]] = field(default_factory=dict)
 
     @property
     def stale(self) -> bool:
-        return any(part.staleness.stale for part in self.scenes)
+        return any(part.staleness.stale for part in self.scenes) or any(
+            item.changed for items in self.pictures.values() for item in items
+        )
 
 
 @dataclass(frozen=True)
@@ -333,6 +429,13 @@ class ConsistencyRunService:
             return
         branch_id, head = await self._line(workspace_id, project_id)
         work = await self._checks_of(workspace_id, project_id, scene, source_id or "", content)
+        fingerprints = await self._fingerprints(workspace_id, project_id, {plan_id: work})
+        if CheckPass.PICTURES.value in passes:
+            pictures = await self._pictures_read(
+                job.envelope().scope(), workspace_id, project_id, plan_id
+            )
+            if pictures is not None:
+                fingerprints["pictures"] = {plan_id: [item.as_json() for item in pictures]}
         added = await self._store.add(
             ConsistencyRun(
                 workspace_id=workspace_id,
@@ -356,11 +459,36 @@ class ConsistencyRunService:
                 job_id=job.id,
                 created_by=job.actor_user_id,
                 profile=await self._profile(workspace_id, project_id),
-                fingerprints=await self._fingerprints(workspace_id, project_id, {plan_id: work}),
+                fingerprints=fingerprints,
             )
         )
         if added:
             log_event(logger, "checks.run_recorded", kind="assistant", passes=len(passes))
+
+    async def _pictures_read(
+        self, scope: AccessScope, workspace_id: str, project_id: str, plan_id: str
+    ) -> list[PictureRead] | None:
+        """The pictures the pictures pass reads for this scene now, as the scene's context
+        gives them (left-out pictures are not read). None when that cannot be told."""
+        context = getattr(self._studio, "_context", None)
+        if context is None or not hasattr(context, "for_scene"):
+            return None
+        try:
+            built = await context.for_scene(scope, workspace_id, project_id, plan_id)
+        except Exception as error:  # noqa: BLE001 - the record is extra to the check
+            log_event(logger, "checks.pictures_unread", error_type=type(error).__name__)
+            return None
+        material = pass_material(CheckPass.PICTURES, built.manifest)
+        return [
+            PictureRead(
+                asset_id=part.asset_id,
+                version_id=part.version_id,
+                label=part.label[:120],
+                choice=part.choice.value,
+                described=_digest(part.fallback_text),
+            )
+            for part in material.pictures
+        ]
 
     async def record_audit(self, job: Job) -> None:
         """An audit, as it starts reading: once per job, the exact versions it reads and
@@ -441,10 +569,18 @@ class ConsistencyRunService:
         )
         cache: dict[str, _Now] = {}
         later: dict[str, set[str]] = {}
+        pictures_now: dict[str, list[PictureRead] | None] = {}
         views: list[RunView] = []
         for run in runs:
             view = await self._judge(
-                workspace_id, project_id, run, only=plan_id, cache=cache, later=later
+                workspace_id,
+                project_id,
+                run,
+                only=plan_id,
+                cache=cache,
+                later=later,
+                scope=scope,
+                pictures_now=pictures_now,
             )
             for key in await self._keys_of(workspace_id, project_id, run, plan_id):
                 later.setdefault(plan_id, set()).add(key)
@@ -514,7 +650,9 @@ class ConsistencyRunService:
         if run is None:
             raise NotFoundError("That check was not found.")
         later = await self._later_keys(workspace_id, project_id, run)
-        return await self._judge(workspace_id, project_id, run, only=None, cache={}, later=later)
+        return await self._judge(
+            workspace_id, project_id, run, only=None, cache={}, later=later, scope=scope
+        )
 
     async def for_job(
         self, scope: AccessScope, workspace_id: str, project_id: str, job_id: str
@@ -528,7 +666,9 @@ class ConsistencyRunService:
         if run is None:
             raise NotFoundError("That check has no record yet.")
         later = await self._later_keys(workspace_id, project_id, run)
-        return await self._judge(workspace_id, project_id, run, only=None, cache={}, later=later)
+        return await self._judge(
+            workspace_id, project_id, run, only=None, cache={}, later=later, scope=scope
+        )
 
     async def _now(self, workspace_id: str, project_id: str, plan_id: str) -> _Now:
         studio = self._studio
@@ -627,8 +767,9 @@ class ConsistencyRunService:
             lookup = (
                 (change.record_type in ("fact", "belief") and "proposition" not in change.change)
                 or (
-                    # Amending or removing an event names only the event.
-                    change.record_type == "event" and "participants" not in change.change
+                    # Amending or removing an event names only the event (an amendment
+                    # that moves who took part, from a merge, names them itself).
+                    change.record_type == "event" and not change.change.get("participants")
                 )
                 or (
                     # Another scene's time or place moving can change what this one can be.
@@ -706,6 +847,8 @@ class ConsistencyRunService:
         only: str | None,
         cache: dict[str, _Now],
         later: dict[str, set[str]] | None = None,
+        scope: AccessScope | None = None,
+        pictures_now: dict[str, list[PictureRead] | None] | None = None,
     ) -> RunView:
         from backend.services.studio_service import check_key, note_key
 
@@ -753,6 +896,24 @@ class ConsistencyRunService:
                     gone=now.scene is None or now.content is None or then is None,
                     words_changed=changed,
                 )
+            recorded_pictures = (run.fingerprints.get("pictures") or {}).get(item.plan_id)
+            read: list[PictureRead] = []
+            if isinstance(recorded_pictures, list):
+                then_pictures = [PictureRead.from_json(raw) for raw in recorded_pictures]
+                found_now: list[PictureRead] | None = None
+                if scope is not None:
+                    seen = pictures_now if pictures_now is not None else {}
+                    if item.plan_id not in seen:
+                        seen[item.plan_id] = await self._pictures_read(
+                            scope, workspace_id, project_id, item.plan_id
+                        )
+                    found_now = seen[item.plan_id]
+                read = (
+                    picture_changes(then_pictures, found_now)
+                    if found_now is not None
+                    else then_pictures
+                )
+                view.pictures[item.plan_id] = read
             part.staleness.story_changed = await self._story_touches(
                 workspace_id,
                 project_id,
@@ -820,6 +981,15 @@ class ConsistencyRunService:
                 if status == "open" and key in again:
                     status = "superseded"
                 part.tally.add(status)
+                picture: PictureRead | None = None
+                pictures_moved = False
+                if note.check_pass == CheckPass.PICTURES.value and read:
+                    picture = compared_with(note.message, read)
+                    pictures_moved = (
+                        bool(picture.changed)
+                        if picture is not None
+                        else any(entry.changed for entry in read)
+                    )
                 view.findings.append(
                     FindingView(
                         plan_id=item.plan_id,
@@ -832,7 +1002,8 @@ class ConsistencyRunService:
                         fixed_by=judged_note.fixed_by,
                         dismissal=judged_note.dismissal,
                         check_pass=note.check_pass,
-                        stale=status == "open" and part.staleness.stale,
+                        stale=status == "open" and (part.staleness.stale or pictures_moved),
+                        picture=picture,
                     )
                 )
             view.scenes.append(part)
@@ -962,6 +1133,9 @@ __all__ = [
     "CalibrationLine",
     "ConsistencyRunService",
     "FindingView",
+    "PictureRead",
     "RunView",
+    "compared_with",
+    "picture_changes",
     "dependency_of",
 ]

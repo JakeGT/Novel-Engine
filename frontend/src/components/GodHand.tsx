@@ -8,6 +8,7 @@ import { scopedKey, useInvalidateProject, useProject } from '../project'
 import { AssistantProblem } from './AssistFlow'
 import { SetupSuggestions } from './Conversations'
 import { RestoreDialog } from './RestoreDialog'
+import { KeptThread } from './KeptThread'
 import { Button, Dialog, Field } from './ui'
 
 // Where the things an author may ask for, that are not story changes, are done.
@@ -23,7 +24,8 @@ const EXAMPLES = [
   'Mara is Tobin’s sister, not his rival.',
   'Move the Harbor Guild to Saltmere.',
   'Rename Lantern Harbor to Lanternhaven.',
-  'These two are the same person — merge them.',
+  'Mara V. and Mara are the same person — merge them.',
+  'Rename the scene at the quay to “The night quay”.',
 ]
 
 /**
@@ -84,6 +86,8 @@ export function GodHand({
     },
     onSuccess: async (result) => {
       void queryClient.invalidateQueries({ queryKey: scopedKey(scope, 'assist-sessions') })
+      // The kept conversation now ends with this exchange.
+      void queryClient.invalidateQueries({ queryKey: scopedKey(scope, 'assist-thread', 'change') })
       if (!result.mutation_id) {
         // Ambiguous: nothing was proposed. Show what the assistant needs to know.
         setQuestions(result.questions)
@@ -167,6 +171,8 @@ export function GodHand({
           own words. The assistant works out everything that follows from it and shows you each
           change before anything is saved.
         </p>
+        {/* What was said before is remembered, so "her" and "that one" still make sense. */}
+        <KeptThread kind="change" onLeave={onClose} />
         <Field label="What should change?" error={problem}>
           {(props) => (
             <textarea

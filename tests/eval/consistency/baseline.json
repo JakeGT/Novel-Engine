@@ -1,5 +1,5 @@
 {
-  "cases": 109,
+  "cases": 121,
   "false_positives": [],
   "families": {
     "continuity": {
@@ -73,6 +73,18 @@
       "recall": 1.0,
       "true_negative": 7,
       "true_positive": 7
+    },
+    "voice": {
+      "clean": 3,
+      "defects": 9,
+      "f1": 0.941,
+      "false_negative": 1,
+      "false_positive": 0,
+      "false_positive_rate": 0.0,
+      "precision": 1.0,
+      "recall": 0.889,
+      "true_negative": 3,
+      "true_positive": 8
     }
   },
   "leakage": {
@@ -86,19 +98,20 @@
     "prose/after-named-but-denied",
     "prose/dawn-without-a-cue",
     "prose/eyes-by-pronoun",
-    "prose/uses-it-by-pronoun"
+    "prose/uses-it-by-pronoun",
+    "voice/short-scene-in-first-person"
   ],
   "overall": {
-    "clean": 55,
-    "defects": 54,
+    "clean": 58,
+    "defects": 63,
     "f1": 0.941,
-    "false_negative": 6,
+    "false_negative": 7,
     "false_positive": 0,
     "false_positive_rate": 0.0,
     "precision": 1.0,
     "recall": 0.889,
-    "true_negative": 55,
-    "true_positive": 48
+    "true_negative": 58,
+    "true_positive": 56
   },
   "set": "saltglass-consistency/1"
 }

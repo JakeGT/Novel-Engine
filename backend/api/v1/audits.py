@@ -6,6 +6,9 @@ with ``POST /jobs/{id}/cancel``.
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Header, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -21,9 +24,27 @@ from backend.api.v1.studio import (
     _job,
     _note,
 )
+from backend.api.v1.voice import (
+    UsualModel,
+    VoiceNoteModel,
+    VoiceStatsModel,
+    note_model,
+    stats_model,
+    usual_model,
+)
 from backend.container import Container
+from backend.domain.audit_plans import (
+    MAX_EVERY_DAYS,
+    MAX_SCHEDULE_TOKENS,
+    MIN_EVERY_DAYS,
+    OUTCOME_WORDS,
+    AuditSchedule,
+    CorrectionPlan,
+)
 from backend.domain.check_passes import PASS_DESCRIPTIONS, PASS_LABELS, CheckPass
 from backend.domain.identity import AccessScope
+from backend.services.audit_schedules import AuditScheduleService
+from backend.services.correction_plans import CorrectionPlanService
 from backend.services.story_audit import MAX_AUDIT_SCENES, StoryAudit
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["audits"])
@@ -251,6 +272,348 @@ async def audit(
         unwritten=[
             AuditUnwrittenModel(plan_id=item.id, title=item.title) for item in found.unwritten
         ],
+    )
+
+
+# ------------------------------------------------------- drift across the scenes read
+
+
+class VoiceRowModel(BaseModel):
+    plan_id: str
+    title: str
+    version_number: int
+    stats: VoiceStatsModel
+    notes: list[VoiceNoteModel]
+
+
+class PairModel(BaseModel):
+    names: list[str]
+    # The scenes of the audit that have them both.
+    together: list[str]
+    # What the story bible records between them now.
+    recorded: list[str]
+    notes: list[str]
+
+
+class AuditDriftModel(BaseModel):
+    """How voice and relationships move across the scenes an audit read. Calls no model."""
+
+    voice: list[VoiceRowModel]
+    usual: UsualModel
+    trends: list[str]
+    relationships: list[PairModel]
+
+
+@router.get("/audits/{job_id}/drift")
+async def audit_drift(
+    project_id: str,
+    job_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    audits: StoryAudit = Depends(get_audits),
+) -> AuditDriftModel:
+    """Voice against the author's usual, and how each pair of characters drifts, across the
+    exact versions the audit read, in reading order. Worked out now, for free."""
+    found = await audits.drift(scope, scope.workspace_id or "", project_id, job_id)
+    return AuditDriftModel(
+        voice=[
+            VoiceRowModel(
+                plan_id=reading.plan_id,
+                title=reading.title,
+                version_number=reading.version_number,
+                stats=stats_model(reading.stats),
+                notes=[note_model(note) for note in notes],
+            )
+            for reading, notes in found.voice.rows
+        ],
+        usual=usual_model(found.voice.usual),
+        trends=[trend.message for trend in found.voice.trends],
+        relationships=[
+            PairModel(
+                names=list(row.names),
+                together=row.together,
+                recorded=row.recorded,
+                notes=row.notes,
+            )
+            for row in found.relationships
+        ],
+    )
+
+
+# ------------------------------------------------------------------ correction plans
+
+
+def get_corrections(container: Container = Depends(get_container)) -> CorrectionPlanService:
+    return container.correction_plans  # type: ignore[no-any-return]
+
+
+class CorrectionItemModel(BaseModel):
+    plan_id: str
+    title: str
+    change: str
+    why: str
+    # What each finding it answers said, when the plan was made.
+    cited: list[str]
+    # waiting, kept or skipped.
+    decision: Literal["waiting", "kept", "skipped"]
+
+
+class CorrectionPlanModel(BaseModel):
+    id: str
+    summary: str
+    items: list[CorrectionItemModel]
+    # Steps the assistant suggested that were thrown away (no finding, or a scene the
+    # audit did not read).
+    dropped: int
+    created_at: datetime | None = None
+
+
+class CorrectionsModel(BaseModel):
+    plans: list[CorrectionPlanModel]
+    # Planning asked for and not yet finished (or just finished), newest first.
+    jobs: list[JobModel]
+
+
+class CorrectionEstimateModel(BaseModel):
+    total_tokens: int
+    findings: int
+    scenes: int
+
+
+def _plan_model(plan: CorrectionPlan) -> CorrectionPlanModel:
+    return CorrectionPlanModel(
+        id=plan.id,
+        summary=plan.summary,
+        items=[
+            CorrectionItemModel(
+                plan_id=item.plan_id,
+                title=item.title,
+                change=item.change,
+                why=item.why,
+                cited=list(item.cited),
+                decision=item.decision,
+            )
+            for item in plan.items
+        ],
+        dropped=plan.dropped,
+        created_at=plan.created_at,
+    )
+
+
+@router.get("/audits/{job_id}/corrections")
+async def corrections(
+    project_id: str,
+    job_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    service: CorrectionPlanService = Depends(get_corrections),
+) -> CorrectionsModel:
+    """The correction plans made from this audit, newest first."""
+    plans, jobs = await service.plans(scope, scope.workspace_id or "", project_id, job_id)
+    return CorrectionsModel(
+        plans=[_plan_model(plan) for plan in plans], jobs=[_job(j) for j in jobs]
+    )
+
+
+@router.get("/audits/{job_id}/corrections/estimate")
+async def corrections_estimate(
+    project_id: str,
+    job_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    service: CorrectionPlanService = Depends(get_corrections),
+) -> CorrectionEstimateModel:
+    """What planning the corrections would send, before anything is. Calls no model."""
+    found = await service.estimate(scope, scope.workspace_id or "", project_id, job_id)
+    return CorrectionEstimateModel(**found)
+
+
+@router.post("/audits/{job_id}/corrections", status_code=status.HTTP_202_ACCEPTED)
+async def plan_corrections(
+    project_id: str,
+    job_id: str,
+    scope: AccessScope = Depends(require_project_scope),
+    service: CorrectionPlanService = Depends(get_corrections),
+    confirmed: int | None = Depends(confirmed_tokens),
+) -> JobModel:
+    """Ask the assistant which scenes to change and why, from this audit's findings. Above
+    the size the author asked to confirm, refused with ``409 needs_confirmation``."""
+    job = await service.start(
+        scope, scope.workspace_id or "", project_id, job_id, confirmed_tokens=confirmed
+    )
+    return _job(job)
+
+
+class DecideStepRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    decision: Literal["waiting", "kept", "skipped"]
+
+
+@router.put("/corrections/{plan_id}/items/{index}")
+async def decide_step(
+    project_id: str,
+    plan_id: str,
+    index: int,
+    body: DecideStepRequest,
+    scope: AccessScope = Depends(require_project_scope),
+    service: CorrectionPlanService = Depends(get_corrections),
+) -> CorrectionPlanModel:
+    """Keep or skip one step of a correction plan. Nothing in the story changes."""
+    plan = await service.decide(
+        scope, scope.workspace_id or "", project_id, plan_id, index, body.decision
+    )
+    return _plan_model(plan)
+
+
+# --------------------------------------------------------------------- schedules
+
+
+def get_schedules(container: Container = Depends(get_container)) -> AuditScheduleService:
+    return container.audit_schedules  # type: ignore[no-any-return]
+
+
+class ScheduleModel(BaseModel):
+    id: str
+    plan_id: str
+    passes: list[CheckPass]
+    every_days: int
+    max_tokens: int
+    enabled: bool
+    next_run_at: datetime
+    last_run_at: datetime | None = None
+    last_job_id: str | None = None
+    # What the last run came to, as a sentence.
+    last_outcome: str | None = None
+
+
+class ScheduleListModel(BaseModel):
+    items: list[ScheduleModel]
+    max_every_days: int = MAX_EVERY_DAYS
+    max_tokens: int = MAX_SCHEDULE_TOKENS
+
+
+class ScheduleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    plan_id: str = Field(default="", max_length=200)
+    passes: list[CheckPass] = Field(default_factory=list, max_length=len(CheckPass))
+    every_days: int = Field(ge=MIN_EVERY_DAYS, le=MAX_EVERY_DAYS)
+    max_tokens: int = Field(ge=0, le=MAX_SCHEDULE_TOKENS)
+
+
+def _schedule_model(item: AuditSchedule) -> ScheduleModel:
+    return ScheduleModel(
+        id=item.id,
+        plan_id=item.plan_id,
+        passes=[CheckPass(value) for value in item.passes if value in CheckPass._value2member_map_],
+        every_days=item.every_days,
+        max_tokens=item.max_tokens,
+        enabled=item.enabled,
+        next_run_at=item.next_run_at,
+        last_run_at=item.last_run_at,
+        last_job_id=item.last_job_id,
+        last_outcome=OUTCOME_WORDS.get(item.last_outcome or "") if item.last_outcome else None,
+    )
+
+
+@router.get("/audit-schedules")
+async def list_schedules(
+    project_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    schedules: AuditScheduleService = Depends(get_schedules),
+) -> ScheduleListModel:
+    """The audits set to run on a schedule in this line of the story."""
+    items = await schedules.list(scope, scope.workspace_id or "", project_id)
+    return ScheduleListModel(items=[_schedule_model(item) for item in items])
+
+
+@router.put("/audit-schedules")
+async def save_schedule(
+    project_id: str,
+    body: ScheduleRequest,
+    scope: AccessScope = Depends(require_project_scope),
+    schedules: AuditScheduleService = Depends(get_schedules),
+    confirmed: int | None = Depends(confirmed_tokens),
+) -> ScheduleModel:
+    """Run an audit of a part of the story every few days, using at most ``max_tokens`` each
+    time. A most above the size the author asked to confirm is confirmed first (``409``)."""
+    saved = await schedules.save(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        plan_id=body.plan_id,
+        passes=body.passes,
+        every_days=body.every_days,
+        max_tokens=body.max_tokens,
+        confirmed_tokens=confirmed,
+    )
+    return _schedule_model(saved)
+
+
+@router.delete("/audit-schedules/{schedule_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_schedule(
+    project_id: str,
+    schedule_id: str,
+    scope: AccessScope = Depends(require_project_scope),
+    schedules: AuditScheduleService = Depends(get_schedules),
+) -> None:
+    """Stop a scheduled audit. Audits it already ran are kept."""
+    await schedules.remove(scope, scope.workspace_id or "", project_id, schedule_id)
+
+
+# ------------------------------------------------------------ comparing a what-if
+
+
+class WhatIfDifferenceModel(BaseModel):
+    # entry, fact, event or plan
+    kind: str
+    # added (in the what-if only), removed (in the main story only) or changed
+    change: Literal["added", "removed", "changed"]
+    title: str
+    detail: str
+    plan_id: str | None = None
+
+
+class WhatIfSceneModel(BaseModel):
+    plan_id: str
+    title: str
+    main_words: int
+    what_if_words: int
+    voice: list[str]
+
+
+class WhatIfAuditModel(BaseModel):
+    """What differs between a what-if and the main story, worked out now. Calls no model."""
+
+    what_if_id: str
+    what_if_name: str
+    same: bool
+    bible: list[WhatIfDifferenceModel]
+    plan: list[WhatIfDifferenceModel]
+    scenes: list[WhatIfSceneModel]
+    # Continuity findings and plan problems found only in the what-if, or only in the main story.
+    new_findings: list[str]
+    gone_findings: list[str]
+    left_out: list[str]
+
+
+@router.get("/what-ifs/{what_if_id}/audit")
+async def audit_what_if(
+    project_id: str,
+    what_if_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    container: Container = Depends(get_container),
+) -> WhatIfAuditModel:
+    """An audit of the differences between a what-if and the main story."""
+    found = await container.what_if_audit.compare(
+        scope, scope.workspace_id or "", project_id, what_if_id
+    )
+    return WhatIfAuditModel(
+        what_if_id=found.what_if_id,
+        what_if_name=found.what_if_name,
+        same=found.same,
+        bible=[WhatIfDifferenceModel(**item.__dict__) for item in found.bible],
+        plan=[WhatIfDifferenceModel(**item.__dict__) for item in found.plan],
+        scenes=[WhatIfSceneModel(**item.__dict__) for item in found.scenes],
+        new_findings=found.new_findings,
+        gone_findings=found.gone_findings,
+        left_out=found.left_out,
     )
 
 

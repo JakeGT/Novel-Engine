@@ -424,6 +424,7 @@ _RECORD_OF = {
     "create_entity": "entity",
     "update_entity": "entity",
     "retire_entity": "entity",
+    "restore_entity": "entity",
     "assert_fact": "fact",
     "close_fact": "fact",
     "amend_fact": "fact",

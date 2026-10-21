@@ -47,6 +47,7 @@ from backend.domain.journal import (
     RevisionConflict,
 )
 from backend.domain.media import AssetLifecycle, AssetLink, LinkRole, MediaAsset, MediaAssetVersion
+from backend.domain.merge import expand_merges
 from backend.domain.operations import (
     AmendEventOp,
     AmendFactOp,
@@ -59,6 +60,7 @@ from backend.domain.operations import (
     CreateEventOp,
     CreatePlanItemOp,
     LinkAssetOp,
+    RestoreEntityOp,
     RetireAssetLinkOp,
     RetireEntityOp,
     RetireEventOp,
@@ -152,6 +154,7 @@ _RECORD_TYPE = {
     "create_entity": "entity",
     "update_entity": "entity",
     "retire_entity": "entity",
+    "restore_entity": "entity",
     "assert_fact": "fact",
     "close_fact": "fact",
     "amend_fact": "fact",
@@ -762,6 +765,40 @@ class _TxCanonReader:
         ).all()
         return [_event(row) for row in rows]
 
+    async def live_plan_items(self, limit: int) -> list[PlanItem]:
+        rows = (
+            await self._session.execute(
+                text(
+                    "SELECT * FROM plan_items WHERE workspace_id = :w AND project_id = :p "
+                    "AND branch_id = :b AND retired_revision IS NULL ORDER BY id LIMIT :limit"
+                ),
+                {
+                    "w": self._workspace_id,
+                    "p": self._project_id,
+                    "b": self._branch_id,
+                    "limit": limit,
+                },
+            )
+        ).all()
+        return [_plan_item(row) for row in rows]
+
+    async def live_asset_links(self, limit: int) -> list[AssetLink]:
+        rows = (
+            await self._session.execute(
+                text(
+                    "SELECT * FROM asset_links WHERE workspace_id = :w AND project_id = :p "
+                    "AND branch_id = :b AND retired_revision IS NULL ORDER BY id LIMIT :limit"
+                ),
+                {
+                    "w": self._workspace_id,
+                    "p": self._project_id,
+                    "b": self._branch_id,
+                    "limit": limit,
+                },
+            )
+        ).all()
+        return [_link(row) for row in rows]
+
 
 async def _refuse_if_kept_rule_off(session: Any, mutation: Any, revision: int) -> None:
     """Inside the commit transaction: a pending "kept for you" needs its rule still on.
@@ -932,8 +969,16 @@ class PostgresCanonRepository:
                         for row in decision_rows
                     ],
                 )
-                resolved_stored, _ = resolve_temporary_ids(
+                # A merge is kept as the changes it makes, worked out from the story at
+                # this version exactly as the envelope's were (backend/domain/merge.py).
+                stored_operations, _origin = await expand_merges(
                     [parse_operation(item.payload) for item in accepted],
+                    _TxCanonReader(
+                        session, envelope.workspace_id, envelope.project_id, envelope.branch_id
+                    ),
+                )
+                resolved_stored, _ = resolve_temporary_ids(
+                    stored_operations,
                     new_id=lambda kind, temporary_id: format_canon_id(
                         kind,
                         hashlib.sha256(
@@ -1387,6 +1432,15 @@ class PostgresCanonRepository:
                 {**scope, "id": operation.id, "rev": revision},
                 operation.id,
             )
+        elif isinstance(operation, RestoreEntityOp):
+            await self._update(
+                session,
+                "UPDATE canon_entities SET lifecycle = 'active', retired_revision = NULL "
+                "WHERE workspace_id = :w AND project_id = :p AND branch_id = :b AND id = :id "
+                "AND lifecycle = 'retired'",
+                {**scope, "id": operation.id},
+                operation.id,
+            )
         elif isinstance(operation, AssertFactOp):
             await session.execute(
                 text(
@@ -1520,7 +1574,11 @@ class PostgresCanonRepository:
                 "UPDATE canon_events SET name = COALESCE(:name, name), "
                 "world_position = COALESCE(:world_position, world_position), "
                 "world_time = CASE WHEN :set_time THEN CAST(:world_time AS JSONB) "
-                "ELSE world_time END "
+                "ELSE world_time END, "
+                "participants = COALESCE(CAST(:participants AS JSONB), participants), "
+                "location_ids = COALESCE(CAST(:locations AS JSONB), location_ids), "
+                "cause_ids = COALESCE(CAST(:causes AS JSONB), cause_ids), "
+                "outcome_ids = COALESCE(CAST(:outcomes AS JSONB), outcome_ids) "
                 "WHERE workspace_id = :w AND project_id = :p AND branch_id = :b AND id = :id",
                 {
                     **scope,
@@ -1529,6 +1587,24 @@ class PostgresCanonRepository:
                     "world_position": operation.world_position,
                     "set_time": operation.when is not None,
                     "world_time": _time_json(operation.when, clear_unknown=True),
+                    "participants": (
+                        json.dumps([p.model_dump(mode="json") for p in operation.participants])
+                        if operation.participants is not None
+                        else None
+                    ),
+                    "locations": (
+                        json.dumps(operation.location_ids)
+                        if operation.location_ids is not None
+                        else None
+                    ),
+                    "causes": (
+                        json.dumps(operation.cause_ids) if operation.cause_ids is not None else None
+                    ),
+                    "outcomes": (
+                        json.dumps(operation.outcome_ids)
+                        if operation.outcome_ids is not None
+                        else None
+                    ),
                 },
                 operation.id,
             )

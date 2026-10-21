@@ -4,9 +4,9 @@ export UV_CACHE_DIR
 # pnpm run/exec verify dependencies against the configured store; keep it the one frontend-install used.
 export pnpm_config_store_dir = $(PNPM_STORE_DIR)
 
-TYPE_CHECK_TARGETS = backend
+TYPE_CHECK_TARGETS = backend connector
 
-.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify verify seed reset-dev diagnostics retention media read-models read-models-verify reindex reindex-refresh reindex-status reindex-activate reindex-rollback reindex-cancel eval-media eval eval-model reconcile project watch archive audit api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check secret-scan frontend-install frontend-api-check frontend-lint frontend-typecheck frontend-test frontend-build frontend-e2e-install e2e check
+.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify verify seed reset-dev diagnostics retention rekey media read-models read-models-verify reindex reindex-refresh reindex-status reindex-activate reindex-rollback reindex-cancel eval-media eval eval-model reconcile project watch archive audit api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check secret-scan frontend-install frontend-api-check frontend-lint frontend-typecheck frontend-test frontend-build frontend-e2e-install e2e check
 
 help:
 	@echo "install             Install runtime Python dependencies"
@@ -22,6 +22,7 @@ help:
 	@echo "reset-dev           Reset development stores (guarded; refuses production)"
 	@echo "diagnostics         Print a redacted diagnostics/support bundle"
 	@echo "retention           Purge expired sign-ins and assistant leftovers (RETENTION_ARGS='--days 30 --dry-run')"
+	@echo "rekey               Re-lock stored provider keys under a new credential key (REKEY_ARGS='rekey --apply')"
 	@echo "media               Picture upkeep: status, backfill, reconcile, copies (MEDIA_ARGS='status')"
 	@echo "read-models         The story's ready views: status, build or forget (READ_MODELS_ARGS=build)"
 	@echo "read-models-verify  Rebuild each ready view from the story's history and compare (READ_MODELS_ARGS=--repair)"
@@ -97,6 +98,9 @@ diagnostics:
 
 retention:
 	uv run --locked python -m backend.devtools.retention $(RETENTION_ARGS)
+
+rekey:
+	uv run --locked python -m backend.devtools.rekey $(or $(REKEY_ARGS),status)
 
 media:
 	uv run --locked python -m backend.devtools.media $(or $(MEDIA_ARGS),status)
@@ -182,10 +186,10 @@ import-check:
 	uv run --locked python -c "import backend.main; print('import ok')"
 
 lint:
-	uv run --locked ruff check backend tests
+	uv run --locked ruff check backend connector tests
 
 format-check:
-	uv run --locked ruff format --check backend tests
+	uv run --locked ruff format --check backend connector tests
 
 secret-scan:
 	uv run --locked python -m scripts.ci.secret_scan

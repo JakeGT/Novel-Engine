@@ -24,6 +24,7 @@ from backend.domain.canon.plans import PlanKind
 from backend.domain.errors import NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.knowledge import reading_order
+from backend.domain.merge import follow_merges, merged_into
 from backend.domain.operations import EvidenceRef
 from backend.domain.sources import (
     MAX_EXAMPLE_LENGTH,
@@ -255,6 +256,29 @@ class SourceService:
         if source is None or source.removed_at is not None:
             raise NotFoundError("That text was not found.")
         return source  # type: ignore[no-any-return]
+
+    async def _following_merges(
+        self,
+        workspace_id: str,
+        project_id: str,
+        bindings: list[AliasBinding],
+        entities: list[CanonEntity],
+    ) -> list[AliasBinding]:
+        """Remembered answers, one naming an entry since merged into another read as
+        naming the kept one (AST-EXP-017); undoing the merge needs nothing more."""
+        named = {value for item in bindings for value in (item.entity_id, item.viewpoint_id)}
+        named.discard(None)
+        active = {entity.id for entity in entities if entity.is_active}
+        if named <= active:
+            return bindings
+        targets = await merged_into(
+            self._reader,  # type: ignore[arg-type]
+            workspace_id=workspace_id,
+            project_id=project_id,
+            entity_ids=[value for value in named if value is not None],
+            active=active,
+        )
+        return follow_merges(bindings, targets)
 
     async def _all_entities(self, workspace_id: str, project_id: str) -> list[CanonEntity]:
         return list(
@@ -549,6 +573,7 @@ class SourceService:
         if not _limited(bindings):
             return None
         entities = await self._all_entities(workspace_id, project_id)
+        bindings = await self._following_merges(workspace_id, project_id, bindings, entities)
         scenes = reading_order(
             await self._reader.list_plan_items(workspace_id=workspace_id, project_id=project_id)
         )
@@ -598,8 +623,13 @@ class SourceService:
         own_line: bool = False,
     ) -> tuple[NameIndex, list[CanonEntity], list[AliasBinding], NamePlace]:
         entities = await self._all_entities(workspace_id, project_id)
-        bindings = await self._store.list_bindings(  # type: ignore[attr-defined]
-            workspace_id=workspace_id, project_id=project_id
+        bindings = await self._following_merges(
+            workspace_id,
+            project_id,
+            await self._store.list_bindings(  # type: ignore[attr-defined]
+                workspace_id=workspace_id, project_id=project_id
+            ),
+            entities,
         )
         place = NamePlace(source_id=source_id or None, branch_id=working_branch_id())
         # Only an answer limited to some scenes needs to know which scene this is.
@@ -755,8 +785,12 @@ class SourceService:
         everything = await self._store.list_bindings(  # type: ignore[attr-defined]
             workspace_id=workspace_id, project_id=project_id
         )
-        bindings = [item for item in everything if item.verdict is not Verdict.SUGGESTED]
         entities = await self._all_entities(workspace_id, project_id)
+        bindings = [
+            item
+            for item in await self._following_merges(workspace_id, project_id, everything, entities)
+            if item.verdict is not Verdict.SUGGESTED
+        ]
         wanted = {item.entity_id for item in bindings} | {item.viewpoint_id for item in bindings}
         names = {entity.id: entity.name for entity in entities if entity.id in wanted}
 

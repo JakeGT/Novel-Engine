@@ -87,3 +87,106 @@ the plain-language test over rendered screens, both paths tested for every capab
 kept-rate of drafted changes. Revisit if authors routinely abandon interviews, discard most of
 what the assistant drafts, or stay at Level 1–2 on long projects because later levels never
 become visible at the right moment.
+
+## Amendment 2026-10-21: merging, kept conversations, premise rounds, and measuring suggestions (batch 8 B)
+
+Accepted for implementation by the agent working AST-EXP-005, -007, -013 and -017; to be
+reviewed by the owner. Everything below has run against the scripted model, the local stand-in
+model and the stand-in embedder only.
+
+### 1. A merge is its own reviewed operation, worked out when it is kept
+
+`merge_entities` (`backend/domain/operations.py`) names the entry that goes and the one that
+stays. The author reviews it as one change, with a preview in sentences of everything it would
+move or end (`POST /merges/preview`, the review card, the merge dialog on the entry page). When
+it is kept, `backend/domain/merge.py` expands it, inside the commit and again for the envelope
+outside it from the same locked version, into ordinary changes: the kept entry's names and
+details, every current fact and belief naming the merged entry ended and stated again about the
+kept one (with its story time, secrecy and confidence; duplicates, self-references and values a
+one-at-a-time kind already holds are ended instead), events, plan items and picture links
+re-pointed, and the merged entry retired with `merged_into`. Changes made earlier in the same set
+are taken as they will be; a change in the same set that names the merged entry is refused.
+
+Why expand at commit rather than when suggested: a fact added after the suggestion still moves;
+and every reader of the change log (history, undo, what-ifs and bringing them back, exports and
+restore, the graph projection, ready views) keeps reading only operations it already
+understands. The envelope holds the expanded operations; the journal keeps the merge the author
+reviewed. Two operations were added for this: `restore_entity` (undoing a merge brings the entry
+back; ordinary archiving still is not undone automatically) and `participants`/`location_ids`
+on `amend_event`. Envelope stability (ADR-015): `merged_into` joins the omit-when-unset list;
+the two event fields are omitted only on `amend_event` and only when `None`, because
+`create_event` has always recorded an empty `participants`. Undo is one step: the history
+revert restores the entry first, then states its facts and beliefs again (with their times and
+secrecy) and puts names, details, events and plan references back.
+
+Research: Wikidata merges leave a redirect but undoing one means restoring the item and
+reassigning every link by hand, and bot rewrites of statements pointing at the merged item are a
+separate process ([T237262](https://phabricator.wikimedia.org/T237262),
+[T237899](https://phabricator.wikimedia.org/T237899),
+[T40664](https://phabricator.wikimedia.org/T40664)). Here the moves are part of the same reviewed
+commit and undone by the same revert, so no reference is left pointing at a retired entry and
+none has to be put back by hand.
+
+### 2. Change anything keeps one conversation per author, per story line
+
+`assistant_threads` and `assistant_turns` (migration `0054_conversations`) keep the author's
+instructions and the assistant's restatements, questions and the suggested changes they led to.
+The last eight turns (at most 6000 characters; the newest turn is always there, cut down to that
+bound when it is longer on its own) are put back into the prompt inside markers (`fence()`), with
+a rule that only the new instruction is acted on. A thread keeps its newest 200 turns, except
+that a premise thread never lets go of the author's turns that tell the story (each round is read
+from them). "Clear and start again" erases the thread and the words its conversations kept (an
+unfinished one is erased; one behind suggested changes stays as evidence with its words blanked);
+suggested and saved changes stay. Threads are private to their author, kept apart per what-if,
+purged with the story and erased when their author is removed from the workspace. The project
+archive carries only the exporting author's own threads, and restoring one gives every thread in
+it to the author restoring it (who an archive names is not trusted: its checksum is not a
+signature), so an archive can never write into someone else's thread. Each instruction is
+still its own conversation for spending (AST-EXP-011); a premise thread counts as one
+conversation for its budget (`assistant_threads.tokens_used`).
+
+When the story is larger than its listing and a model for search is configured, entries the
+instruction is about by meaning are listed first (`backend/services/meaning.py`; embedded on the
+server from names and details only, cached in memory by content; no provider spend). Change
+anything can now also change, add and remove plan items, kept apart from facts.
+
+### 3. Starting from a premise is rounds of questions and suggested entries
+
+`POST /assist/premise` (`premise-round` prompt): the author's story and answers go inside
+markers; the assistant returns at most five open questions (about the story bible, never plot
+the author has not chosen) and the entries, facts and beliefs the words state, as one reviewed
+proposal per round. Entries suggested in an earlier round that still wait for review are never
+suggested again. Each round with suggestions keeps an assist session as its evidence, begun
+before the round so every suggestion cites it by its own id. Suggestions from a premise are never
+kept by a keep-for-me rule (`via=premise`): the start of the story is always reviewed.
+
+### 4. Suggestions are measured by what authors do with them, and by whether they quote
+
+`suggestion_runs` records each run with counts only. Link suggestions record how many were
+suggested, whether candidate pairs came from search by meaning or the listing, and, once the
+proposal is saved or turned down, how many were kept (precision). What a keep-for-me rule kept
+is counted apart ("kept for you", `details.kept_for_you`) and gives no precision: the author
+decided nothing. Plan suggestions carry a `quote` per item; a deterministic check counts an item
+as grounded only when the quote is found, as written (case, spacing and curly quotes aside, at
+least 12 characters), in the author's own material: what they said and answered, the plan's
+cards and the entries' names and notes, never the listing the app wrote for the assistant;
+otherwise it is the assistant's own (invented). Both are shown per run, for the line of the
+story the author works in.
+
+Research: kept-rate is a noisy proxy for quality and should not become an optimisation target
+([Mozannar et al., "When to Show a Suggestion?"](https://arxiv.org/html/2306.04930v3)); it is
+recorded and shown here, never used to change what is suggested. Exact-match quote checks catch
+fabricated quotes cheaply but say nothing about whether the claim follows; entailment or a judge
+is needed for that ([survey, arXiv 2508.15396](https://arxiv.org/pdf/2508.15396);
+[ACL 2024 long.806](https://aclanthology.org/2024.acl-long.806)). Groundedness here therefore
+means "quotes the author's material", not "is right".
+
+### Limits
+
+- Claims (what a character said) that name a merged entry keep their words and are listed as
+  still naming it.
+- Search by meaning for entries embeds at most 1500 entries per request and compares at most 400
+  pairwise for link candidates; vectors are not stored. Without a model for search, the listing
+  alone is used and the result says so.
+- Precision counts the changes kept in a saved proposal; an author who keeps a suggestion and
+  then edits it counts as kept.

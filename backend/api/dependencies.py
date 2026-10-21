@@ -117,6 +117,14 @@ def get_assist_session_service(container: Container = Depends(get_container)) ->
     return container.assist_session_service
 
 
+def get_conversation_service(container: Container = Depends(get_container)) -> Any:
+    return container.conversation_service
+
+
+def get_merge_service(container: Container = Depends(get_container)) -> Any:
+    return container.merge_service
+
+
 def get_archive_service(container: Container = Depends(get_container)) -> Any:
     return container.archive_service
 

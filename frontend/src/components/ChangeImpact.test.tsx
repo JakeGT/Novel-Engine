@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Impact, ImpactDependent } from '../api/client'
 import { expectAccessible, mockApi, problem, renderInProject } from '../test/harness'
-import { EntryImpact, MutationImpact } from './ChangeImpact'
+import { EntryImpact, ImpactView, MutationImpact } from './ChangeImpact'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -96,7 +96,7 @@ describe('MutationImpact', () => {
     renderInProject(<MutationImpact mutationId="mut_1" version="a" />, at)
     expect(
       await screen.findByText(
-        'Nothing in your plan, story rules or kept drafts depends on it, and none of your writing names it.',
+        'Nothing in your plan, story rules, kept drafts, beliefs, events, pictures or studio checks depends on it, and none of your writing names it.',
       ),
     ).toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'Affected' })).not.toBeInTheDocument()
@@ -141,5 +141,31 @@ describe('EntryImpact', () => {
     // Following a link would leave the edit unsaved, so the names are not links here.
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
     await expectAccessible(container)
+  })
+})
+
+describe('What a change touches beyond the plan (CON-017)', () => {
+  it('links beliefs, events, pictures and studio checks to where they are', () => {
+    renderInProject(
+      <ImpactView
+        impact={{
+          about: ['No longer true: Mara is a member of Harbor Guild'],
+          affected: [
+            { kind: 'belief', level: 'affected', id: 'ent_t', title: 'Tobin', reasons: ['Knows what changes: Mara is a member of Harbor Guild'], count: 0 },
+            { kind: 'event', level: 'affected', id: 'evt_1', title: 'The guild meeting', reasons: ['Mara takes part in it'], count: 0 },
+            { kind: 'picture', level: 'affected', id: 'ast_1', title: 'Mara at the wheel', reasons: ['A picture of Mara'], count: 0 },
+            { kind: 'finding', level: 'affected', id: 'pln_s1', plan_id: 'pln_s1', title: 'The Docks', reasons: ['A check says: “Mara is in two places at once.”'], count: 1 },
+          ],
+          may_be_affected: [],
+          not_checked: ['Who learns it from whom.'],
+        }}
+      />,
+    )
+    expect(screen.getByRole('link', { name: 'Tobin' })).toHaveAttribute('href', '/projects/prj_1/entries/ent_t')
+    expect(screen.getByRole('link', { name: 'The guild meeting' })).toHaveAttribute('href', '/projects/prj_1/timeline')
+    expect(screen.getByRole('link', { name: 'Mara at the wheel' })).toHaveAttribute('href', '/projects/prj_1/pictures/ast_1')
+    expect(screen.getByRole('link', { name: 'The Docks' })).toHaveAttribute('href', '/projects/prj_1/plan/pln_s1/write')
+    expect(screen.getByText('What they believe')).toBeInTheDocument()
+    expect(screen.getByText('In the studio')).toBeInTheDocument()
   })
 })

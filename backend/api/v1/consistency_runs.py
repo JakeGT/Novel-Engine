@@ -22,13 +22,42 @@ from backend.api.v1.studio import DismissalModel, _dismissal
 from backend.container import Container
 from backend.domain.check_fingerprints import BY_NAME
 from backend.domain.identity import AccessScope
-from backend.services.consistency_runs import CalibrationLine, ConsistencyRunService, RunView
+from backend.services.consistency_runs import (
+    CalibrationLine,
+    ConsistencyRunService,
+    PictureRead,
+    RunView,
+)
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["checks"])
 
 
 def get_runs(container: Container = Depends(get_container)) -> ConsistencyRunService:
     return container.consistency_runs  # type: ignore[no-any-return]
+
+
+class RunPictureModel(BaseModel):
+    """A picture a check with the assistant compared the scene with (CON-001)."""
+
+    asset_id: str
+    version_id: str
+    label: str
+    # send (the picture itself) or describe (its accepted description).
+    choice: str
+    # What has changed about it since, in plain words; null when it is as it was.
+    changed: str | None = None
+
+
+def _picture(item: PictureRead | None) -> RunPictureModel | None:
+    if item is None:
+        return None
+    return RunPictureModel(
+        asset_id=item.asset_id,
+        version_id=item.version_id,
+        label=item.label,
+        choice=item.choice,
+        changed=item.changed,
+    )
 
 
 class RunFindingModel(BaseModel):
@@ -51,6 +80,8 @@ class RunFindingModel(BaseModel):
     came_back: bool = False
     # For a check that needs no model, the named check it belongs to (CON-007).
     check: str | None = None
+    # For a note of the pictures pass, the picture it was compared with.
+    picture: RunPictureModel | None = None
 
 
 class CheckWorkModel(BaseModel):
@@ -80,6 +111,8 @@ class RunSceneModel(BaseModel):
     fixed: int
     # The checks that need no model, as this run worked them out (empty for older runs).
     checks: list[CheckWorkModel] = []
+    # The pictures the pictures pass was given for this scene (empty when it read none).
+    pictures: list[RunPictureModel] = []
 
 
 class RunModel(BaseModel):
@@ -179,6 +212,11 @@ def _run(view: RunView) -> RunModel:
                 superseded=part.tally.superseded,
                 fixed=part.tally.fixed,
                 checks=_checks(view, part.input.plan_id),
+                pictures=[
+                    model
+                    for picture in view.pictures.get(part.input.plan_id, [])
+                    if (model := _picture(picture)) is not None
+                ],
             )
             for part in view.scenes
         ],
@@ -197,6 +235,7 @@ def _run(view: RunView) -> RunModel:
                 stale=item.stale,
                 came_back=item.came_back,
                 check=item.check,
+                picture=_picture(item.picture),
             )
             for item in view.findings
         ],

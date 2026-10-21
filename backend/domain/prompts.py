@@ -88,10 +88,20 @@ _SPECS = (
         _S + "canon_creation_workflow:CreationDraft",
     ),
     PromptSpec(
+        "premise-round",
+        1,
+        "One round of starting a story from the author's own description: the entries it "
+        "establishes, to review, and the questions still open (AST-EXP-005).",
+        _S + "canon_creation_workflow:premise_messages",
+        _S + "canon_creation_workflow:PremiseRound",
+    ),
+    PromptSpec(
         "change-by-instruction",
         # 2: the story bible is listed by the change-story policy (CTX-002), the request's
         # own entries first, with a last line saying how much is not listed.
-        2,
+        # 3: merges as their own change, changes to the plan, the earlier turns of the
+        # author's kept conversation, and the material inside markers (AST-EXP-017).
+        3,
         "One instruction from the author, worked out into every change it implies.",
         _S + "canon_change_workflow:change_messages",
         _S + "canon_change_workflow:ChangePlan",
@@ -107,7 +117,9 @@ _SPECS = (
         "suggest-links",
         # 2: the story bible is listed by the suggest-links policy (CTX-002), entries whose
         # details name others first, with a last line saying how much is not listed.
-        2,
+        # 3: pairs close in meaning to check first, and the material inside markers
+        # (AST-EXP-007).
+        3,
         "Connections the story bible's own words imply but no fact records yet.",
         _S + "canon_revise_workflow:links_messages",
         _S + "canon_revise_workflow:LinkPlan",
@@ -121,14 +133,16 @@ _SPECS = (
     ),
     PromptSpec(
         "plan-draft",
-        1,
+        # 2: each item quotes the author's words it comes from, or none (AST-EXP-013).
+        2,
         "What the author said about the story, turned into plan items to review.",
         _S + "plan_workflow:plan_draft_messages",
         _S + "plan_workflow:PlanDraft",
     ),
     PromptSpec(
         "plan-next",
-        1,
+        # 2: each item quotes what it builds on, or none (AST-EXP-013).
+        2,
         "Two or three directions the story could take next, for the author to choose from.",
         _S + "plan_workflow:plan_next_messages",
         _S + "plan_workflow:DirectionSheet",
@@ -136,7 +150,8 @@ _SPECS = (
     PromptSpec(
         "read-passage",
         # 2: the read-text listing policy (CTX-002), and events and thread steps (EXT-001).
-        2,
+        # 3: changes of state (held, where, status, relationship) and new threads (EXT-001).
+        3,
         "What a passage of the author's writing establishes, as changes to review.",
         _S + "intake_workflow:read_passage_messages",
         _S + "intake_workflow:PassageDraft",
@@ -147,7 +162,8 @@ _SPECS = (
         # instead of whether it was already so; only those take the scene's time.
         # 3: the read-text listing policy (CTX-002), and events (in the scene or not) and
         # thread steps (EXT-001).
-        3,
+        # 4: changes of state and new threads (EXT-001).
+        4,
         "A passage of a written scene set at a known story time, read as changes to review; "
         "each fact also says whether the scene shows it changing or starting there.",
         _S + "intake_workflow:read_scene_messages",
@@ -258,6 +274,14 @@ _SPECS = (
         "One or two scenes to come before a scene and bring about what it needs first.",
         _S + "planning_help:bridge_messages",
         _S + "planning_help:BridgeSheet",
+    ),
+    PromptSpec(
+        "plan-corrections",
+        1,
+        "A plan of which scenes to change and why, from an audit's findings, each step "
+        "citing the findings it answers (CON-011). No prose is written.",
+        _S + "correction_plans:corrections_messages",
+        _S + "correction_plans:CorrectionSheet",
     ),
     PromptSpec(
         "legacy-character-questions",

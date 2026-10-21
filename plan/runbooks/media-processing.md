@@ -10,6 +10,43 @@ Commands below are for the hosted stack (`docker compose exec server …`); on a
 `uv run --locked python -m backend.devtools.media …` or `make media MEDIA_ARGS='…'`. Every
 command prints counts only: never a picture, its name or a stored file's key.
 
+## The worker's sandbox
+
+Before it decodes anything the worker also shuts itself in (AST-006, ADR-010 amendment 2026-10-21), with
+whatever the machine offers: no new privileges; a network of its own where allowed (usually not
+inside a container); Landlock (Linux 5.13 or later) with no path allowed, so it can open, make,
+remove or run no file; and a seccomp filter that refuses opening files, sockets, running
+programs, starting processes, tracing or signalling another process (every signal call and
+pidfd), and mounting. Standard input and output were opened before
+and keep working. How far it got is in `/health/capabilities` under
+`capabilities.pictures.sandbox` (asked once, from a worker started for that alone):
+
+```sh
+docker compose exec -T server python -c "
+import json, urllib.request as u
+print(json.dumps(json.load(u.urlopen('http://127.0.0.1:8000/health/capabilities', timeout=10))['capabilities']['pictures']['sandbox'], indent=2))"
+```
+
+- `level`: `full` (Landlock and seccomp both on), `partial` (one of them), `limits_only` (only the
+  memory, time and file-size limits), or `unknown` (the check itself could not run).
+- `layers` says each one and why one is off (`not_supported`: the kernel lacks it;
+  `refused`: something in front, such as a container's own seccomp profile, would not allow it;
+  `unknown_architecture`: the filter is written for x86-64 and arm64 only).
+- `refused` says what a sandboxed worker was refused: `read_files`, `write_files`, `network`,
+  `new_process`, each `true` when refused.
+- `reason`: a plain sentence when the level is less than full.
+
+Each picture's log line (`media.process.decode`) carries `sandbox=<level>` too, and a worker
+check that finds less than full logs `media.process.sandbox` at warning level.
+
+`MEDIA_WORKER_SANDBOX` chooses: `best` (the default: use what is there and say so), `require`
+(prepare no picture unless Landlock and seccomp are both on; each fails as "Pictures cannot be
+prepared on this installation right now", and can be tried again once fixed) or `off`. Docker's
+default seccomp profile allows Landlock and seccomp, so the hosted stack gets `full` on a kernel
+with Landlock enabled (`cat /sys/kernel/security/lsm` lists `landlock`); it refuses the network
+namespace, which the seccomp layer covers. Not covered: asking whether a path exists (`stat`),
+which neither Landlock nor this filter refuses, and anything in the kernel itself.
+
 ## How you notice
 
 - Readiness (see the [README](README.md)) says `200 degraded` with "Pictures have waited too long

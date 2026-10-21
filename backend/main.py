@@ -23,13 +23,16 @@ from backend.api.v1.canon_characters import router as canon_characters_router
 from backend.api.v1.canon_entities import router as canon_entities_router
 from backend.api.v1.canon_history import router as canon_history_router
 from backend.api.v1.canon_mutations import router as canon_mutations_router
+from backend.api.v1.connector import router as connector_router
 from backend.api.v1.consistency_runs import router as consistency_runs_router
 from backend.api.v1.context import router as context_router
+from backend.api.v1.conversations import router as conversations_router
 from backend.api.v1.credentials import router as credentials_router
 from backend.api.v1.delegation import router as delegation_router
 from backend.api.v1.impact import router as impact_router
 from backend.api.v1.knowledge import router as knowledge_router
 from backend.api.v1.media import router as media_router
+from backend.api.v1.merges import router as merges_router
 from backend.api.v1.pictures import router as pictures_router
 from backend.api.v1.plan import router as plan_router
 from backend.api.v1.plan_assist import router as plan_assist_router
@@ -45,6 +48,7 @@ from backend.api.v1.story_time import router as story_time_router
 from backend.api.v1.story_views import router as story_views_router
 from backend.api.v1.studio import router as studio_router
 from backend.api.v1.tenancy import router as tenancy_router
+from backend.api.v1.voice import router as voice_router
 from backend.api.v1.what_ifs import router as what_ifs_router
 from backend.container import Container, build_container
 from backend.core.config import Settings
@@ -163,6 +167,8 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.include_router(canon_mutations_router, prefix="/api/v1")
     app.include_router(canon_characters_router, prefix="/api/v1")
     app.include_router(canon_assist_router, prefix="/api/v1")
+    app.include_router(conversations_router, prefix="/api/v1")
+    app.include_router(merges_router, prefix="/api/v1")
     app.include_router(plan_router, prefix="/api/v1")
     app.include_router(plan_assist_router, prefix="/api/v1")
     app.include_router(plan_help_router, prefix="/api/v1")
@@ -179,6 +185,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.include_router(review_dismissals_router, prefix="/api/v1")
     app.include_router(canon_archive_router, prefix="/api/v1")
     app.include_router(impact_router, prefix="/api/v1")
+    app.include_router(voice_router, prefix="/api/v1")
     app.include_router(delegation_router, prefix="/api/v1")
     app.add_api_route(
         "/api/v1/projects/{project_id}/access",
@@ -192,6 +199,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     app.include_router(story_views_router, prefix="/api/v1")
     app.include_router(projection_router, prefix="/api/v1")
     app.include_router(access_keys_router, prefix="/api/v1")
+    app.include_router(connector_router, prefix="/api/v1")
     # Other assistants, with an access key (QRY-003). JSON-RPC, so not in the OpenAPI document.
     app.include_router(mcp_router)
     app.include_router(health_router)

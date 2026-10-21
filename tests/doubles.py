@@ -69,6 +69,7 @@ from backend.domain.media import (
     MediaLifecycleAction,
     MediaLifecycleEvent,
 )
+from backend.domain.merge import expand_merges
 from backend.domain.objects import ObjectStat
 from backend.domain.operations import (
     AmendEventOp,
@@ -81,6 +82,7 @@ from backend.domain.operations import (
     CreateEventOp,
     CreatePlanItemOp,
     LinkAssetOp,
+    RestoreEntityOp,
     RetireAssetLinkOp,
     RetireEntityOp,
     RetireEventOp,
@@ -1187,6 +1189,10 @@ class InMemoryRateLimiter:
     def __init__(self) -> None:
         self._hits: dict[str, list[float]] = {}
 
+    async def exhausted(self, key: str, *, limit: int, window_seconds: int) -> bool:
+        now = time.monotonic()
+        return len([hit for hit in self._hits.get(key, []) if now - hit < window_seconds]) >= limit
+
     async def allow(self, key: str, *, limit: int, window_seconds: int) -> bool:
         now = time.monotonic()
         hits = [hit for hit in self._hits.get(key, []) if now - hit < window_seconds]
@@ -2198,6 +2204,11 @@ class InMemoryCanonWriter:
             if entity is not None:
                 entity["lifecycle"] = "retired"
                 entity["retired_revision"] = revision
+        elif isinstance(operation, RestoreEntityOp):
+            entity = self.entities.get(key)
+            if entity is not None:
+                entity["lifecycle"] = "active"
+                entity["retired_revision"] = None
 
     def _apply_assertion(self, ws, pr, branch_id, revision, operation, commit_id) -> None:
         from backend.domain.operations import (
@@ -2285,6 +2296,16 @@ class InMemoryCanonWriter:
                     event["world_position"] = operation.world_position
                 if operation.when is not None:
                     event["when"] = _stored_time(operation.when)
+                if operation.participants is not None:
+                    event["participants"] = [
+                        p.model_copy(deep=True) for p in operation.participants
+                    ]
+                if operation.location_ids is not None:
+                    event["location_ids"] = list(operation.location_ids)
+                if operation.cause_ids is not None:
+                    event["cause_ids"] = list(operation.cause_ids)
+                if operation.outcome_ids is not None:
+                    event["outcome_ids"] = list(operation.outcome_ids)
         elif isinstance(operation, RetireEventOp):
             event = self.events.get(key)
             if event is not None:
@@ -2534,6 +2555,7 @@ _CANON_RECORD_TYPE = {
     "create_entity": "entity",
     "update_entity": "entity",
     "retire_entity": "entity",
+    "restore_entity": "entity",
     "assert_fact": "fact",
     "close_fact": "fact",
     "amend_fact": "fact",
@@ -2669,6 +2691,22 @@ class _MemoryCanonReader:
                 workspace_id=self._workspace_id, project_id=self._project_id, limit=limit
             )
         )
+
+    async def live_plan_items(self, limit: int) -> list[Any]:
+        found = [
+            item
+            for (w, p, _), item in sorted(self._repository.plan_items.items())
+            if (w, p) == (self._workspace_id, self._project_id) and item.retired_revision is None
+        ]
+        return found[:limit]
+
+    async def live_asset_links(self, limit: int) -> list[Any]:
+        found = [
+            link
+            for (w, p, _), link in sorted(self._repository.asset_links.items())
+            if (w, p) == (self._workspace_id, self._project_id) and link.retired_revision is None
+        ]
+        return found[:limit]
 
 
 def _per_branch(name: str, factory: Any) -> property:
@@ -3080,8 +3118,14 @@ class InMemoryCanonRepository:
                 await self._journal.list_operations(mutation_id=envelope.mutation_id),
                 await self._journal.list_operation_decisions(mutation_id=envelope.mutation_id),
             )
-            resolved_stored, _ = resolve_temporary_ids(
+            stored_operations, _origin = await expand_merges(
                 [parse_operation(item.payload) for item in accepted],
+                _MemoryCanonReader(
+                    self, envelope.workspace_id, envelope.project_id, envelope.branch_id
+                ),
+            )
+            resolved_stored, _ = resolve_temporary_ids(
+                stored_operations,
                 new_id=lambda kind, temporary_id: format_canon_id(
                     kind,
                     hashlib.sha256(f"{envelope.mutation_id}:{temporary_id}".encode()).hexdigest()[
@@ -3325,6 +3369,10 @@ class InMemoryCanonRepository:
             self.entities[key] = current.model_copy(
                 update={"lifecycle": EntityLifecycle.RETIRED, "retired_revision": revision}
             )
+        elif isinstance(operation, RestoreEntityOp) and key in self.entities:
+            self.entities[key] = self.entities[key].model_copy(
+                update={"lifecycle": EntityLifecycle.ACTIVE, "retired_revision": None}
+            )
         elif isinstance(operation, AssertFactOp):
             self.facts[key] = Fact(
                 id=operation.id,
@@ -3397,6 +3445,18 @@ class InMemoryCanonRepository:
             current = self.events[key]
             self.events[key] = current.model_copy(
                 update={
+                    "participants": current.participants
+                    if operation.participants is None
+                    else list(operation.participants),
+                    "location_ids": current.location_ids
+                    if operation.location_ids is None
+                    else list(operation.location_ids),
+                    "cause_ids": current.cause_ids
+                    if operation.cause_ids is None
+                    else list(operation.cause_ids),
+                    "outcome_ids": current.outcome_ids
+                    if operation.outcome_ids is None
+                    else list(operation.outcome_ids),
                     "name": current.name if operation.name is None else operation.name,
                     "world_position": operation.world_position
                     if operation.world_position is not None
@@ -6286,3 +6346,426 @@ class FakeImageProcessor:
         return ProcessedImage(
             width=width, height=height, detected_format="PNG", renditions=tuple(renditions)
         )
+
+
+class InMemoryConnectorStore:
+    """Connected computers, codes and the request queue (SCN-002A), in memory.
+
+    Guarded by a lock, so a test can drive the site from one thread while a server on
+    another answers the connector."""
+
+    def __init__(self) -> None:
+        import threading
+
+        self._lock = threading.Lock()
+        self.codes: dict[str, Any] = {}
+        self.devices_by_id: dict[str, Any] = {}
+        self.requests: dict[str, Any] = {}
+
+    async def add_code(self, code: Any) -> bool:
+        with self._lock:
+            if any(c.user_code == code.user_code for c in self.codes.values()):
+                return False
+            self.codes[code.device_code_hash] = copy.deepcopy(code)
+            return True
+
+    async def code_by_device_hash(self, device_code_hash: str) -> Any | None:
+        with self._lock:
+            found = self.codes.get(device_code_hash)
+            return copy.deepcopy(found)
+
+    async def code_by_user_code(self, user_code: str) -> Any | None:
+        with self._lock:
+            found = next((c for c in self.codes.values() if c.user_code == user_code), None)
+            return copy.deepcopy(found)
+
+    async def decide_code(
+        self, *, user_code: str, approve: bool, workspace_id: str, decided_by: str, at: datetime
+    ) -> Any | None:
+        from backend.domain.connector import CodeStatus
+
+        with self._lock:
+            code = next((c for c in self.codes.values() if c.user_code == user_code), None)
+            if code is None or code.status is not CodeStatus.PENDING or at >= code.expires_at:
+                return None
+            code.status = CodeStatus.APPROVED if approve else CodeStatus.DENIED
+            code.workspace_id, code.decided_by, code.decided_at = workspace_id, decided_by, at
+            return copy.deepcopy(code)
+
+    async def touch_code(self, *, device_code_hash: str, at: datetime, interval: int) -> None:
+        with self._lock:
+            code = self.codes.get(device_code_hash)
+            if code is not None:
+                code.last_polled_at, code.interval_seconds = at, interval
+
+    async def issue_code(self, *, device_code_hash: str, device: Any) -> bool:
+        from backend.domain.connector import CodeStatus
+
+        with self._lock:
+            code = self.codes.get(device_code_hash)
+            if code is None or code.status is not CodeStatus.APPROVED:
+                return False
+            code.status, code.device_id = CodeStatus.ISSUED, device.id
+            self.devices_by_id[device.id] = copy.deepcopy(device)
+            return True
+
+    async def device(self, device_id: str) -> Any | None:
+        with self._lock:
+            return copy.deepcopy(self.devices_by_id.get(device_id))
+
+    async def device_by_credential(self, credential_hash: str) -> Any | None:
+        with self._lock:
+            found = next(
+                (
+                    d
+                    for d in self.devices_by_id.values()
+                    if credential_hash in (d.credential_hash, d.previous_hash)
+                ),
+                None,
+            )
+            return copy.deepcopy(found)
+
+    async def devices(self, workspace_id: str) -> list[Any]:
+        with self._lock:
+            found = [d for d in self.devices_by_id.values() if d.workspace_id == workspace_id]
+            return copy.deepcopy(sorted(found, key=lambda d: d.created_at, reverse=True))
+
+    async def seen(
+        self, *, device_id: str, at: datetime, version: str, capabilities: dict | None
+    ) -> None:
+        from backend.domain.connector import DeviceCapabilities, DeviceStatus
+
+        with self._lock:
+            device = self.devices_by_id.get(device_id)
+            if device is None or device.status is not DeviceStatus.ACTIVE:
+                return
+            device.last_seen_at, device.connector_version = at, version
+            if capabilities is not None:
+                device.capabilities = DeviceCapabilities.from_json(capabilities)
+
+    async def rotate(
+        self,
+        *,
+        device_id: str,
+        expected_hash: str,
+        new_hash: str,
+        previous_hash: str,
+        at: datetime,
+        grace_until: datetime,
+        only_if_unused: bool = False,
+    ) -> bool:
+        from backend.domain.connector import DeviceStatus
+
+        with self._lock:
+            device = self.devices_by_id.get(device_id)
+            if (
+                device is None
+                or device.status is not DeviceStatus.ACTIVE
+                or device.credential_hash != expected_hash
+                or (only_if_unused and device.credential_last_used_at is not None)
+            ):
+                return False
+            device.previous_hash, device.previous_valid_until = previous_hash, grace_until
+            device.credential_hash, device.credential_issued_at = new_hash, at
+            device.credential_last_used_at = None
+            return True
+
+    async def credential_used(self, *, device_id: str, credential_hash: str, at: datetime) -> None:
+        from backend.domain.connector import DeviceStatus
+
+        with self._lock:
+            device = self.devices_by_id.get(device_id)
+            if (
+                device is not None
+                and device.status is DeviceStatus.ACTIVE
+                and device.credential_hash == credential_hash
+            ):
+                device.credential_last_used_at = at
+
+    async def revoke(
+        self, *, workspace_id: str, device_id: str, reason: str, by: str | None, at: datetime
+    ) -> Any | None:
+        from backend.domain.connector import DeviceStatus, RequestStatus, RevokedBecause
+
+        with self._lock:
+            device = self.devices_by_id.get(device_id)
+            if (
+                device is None
+                or device.workspace_id != workspace_id
+                or device.status is not DeviceStatus.ACTIVE
+            ):
+                return None
+            device.status, device.revoked_reason = DeviceStatus.REVOKED, RevokedBecause(reason)
+            device.revoked_by, device.revoked_at, device.in_use = by, at, False
+            device.previous_hash = device.previous_valid_until = None
+            for request in self.requests.values():
+                if request.device_id == device_id and request.status in (
+                    RequestStatus.WAITING,
+                    RequestStatus.TAKEN,
+                ):
+                    request.status, request.failure = RequestStatus.FAILED, "disconnected"
+                    request.payload = request.result = None
+                    request.finished_at = at
+            return copy.deepcopy(device)
+
+    async def set_in_use(self, *, workspace_id: str, device_id: str | None) -> None:
+        from backend.domain.connector import DeviceStatus
+
+        with self._lock:
+            for device in self.devices_by_id.values():
+                if device.workspace_id == workspace_id:
+                    device.in_use = device.id == device_id and device.status is DeviceStatus.ACTIVE
+
+    async def in_use(self, workspace_id: str) -> Any | None:
+        from backend.domain.connector import DeviceStatus
+
+        with self._lock:
+            found = next(
+                (
+                    d
+                    for d in self.devices_by_id.values()
+                    if d.workspace_id == workspace_id
+                    and d.in_use
+                    and d.status is DeviceStatus.ACTIVE
+                ),
+                None,
+            )
+            return copy.deepcopy(found)
+
+    async def enqueue(self, request: Any) -> None:
+        with self._lock:
+            self.requests[request.id] = copy.deepcopy(request)
+
+    async def take_next(self, *, device_id: str, at: datetime, since: datetime) -> Any | None:
+        from backend.domain.connector import DeviceStatus, RequestStatus
+
+        with self._lock:
+            device = self.devices_by_id.get(device_id)
+            if device is None or device.status is not DeviceStatus.ACTIVE:
+                return None
+            waiting = sorted(
+                (
+                    r
+                    for r in self.requests.values()
+                    if r.device_id == device_id
+                    and r.status is RequestStatus.WAITING
+                    and r.created_at > since
+                ),
+                key=lambda r: r.created_at,
+            )
+            if not waiting:
+                return None
+            taken = waiting[0]
+            taken.status, taken.taken_at = RequestStatus.TAKEN, at
+            return copy.deepcopy(taken)
+
+    async def request(self, request_id: str) -> Any | None:
+        with self._lock:
+            return copy.deepcopy(self.requests.get(request_id))
+
+    async def answer(
+        self,
+        *,
+        device_id: str,
+        request_id: str,
+        status: str,
+        result: dict | None,
+        result_status: int | None,
+        failure: str | None,
+        model: str | None,
+        prompt_tokens: int | None,
+        completion_tokens: int | None,
+        at: datetime,
+    ) -> bool:
+        from backend.domain.connector import RequestStatus
+
+        with self._lock:
+            request = self.requests.get(request_id)
+            if (
+                request is None
+                or request.device_id != device_id
+                or request.status is not RequestStatus.TAKEN
+            ):
+                return False
+            request.status = RequestStatus(status)
+            request.result, request.result_status = copy.deepcopy(result), result_status
+            request.failure, request.model = failure, model or request.model
+            request.prompt_tokens, request.completion_tokens = prompt_tokens, completion_tokens
+            request.finished_at, request.payload = at, None
+            return True
+
+    async def close(self, *, request_id: str, failure: str | None, at: datetime) -> None:
+        from backend.domain.connector import RequestStatus
+
+        with self._lock:
+            request = self.requests.get(request_id)
+            if request is None:
+                return
+            request.payload = request.result = None
+            if request.status in (RequestStatus.WAITING, RequestStatus.TAKEN):
+                request.status, request.failure = RequestStatus.EXPIRED, failure
+            request.finished_at = request.finished_at or at
+
+    async def sweep(self, *, at: datetime, open_before: datetime, read_before: datetime) -> int:
+        from backend.domain.connector import RequestStatus
+
+        cleared = 0
+        with self._lock:
+            for request in self.requests.values():
+                if request.payload is None and request.result is None:
+                    continue
+                if request.status in (RequestStatus.WAITING, RequestStatus.TAKEN):
+                    if request.created_at >= open_before:
+                        continue
+                    request.status, request.failure = RequestStatus.EXPIRED, "abandoned"
+                elif request.finished_at is None or request.finished_at >= read_before:
+                    continue
+                request.payload = request.result = None
+                request.finished_at = request.finished_at or at
+                cleared += 1
+        return cleared
+
+    async def delete_project(self, workspace_id: str, project_id: str) -> int:
+        with self._lock:
+            gone = [
+                key
+                for key, request in self.requests.items()
+                if request.workspace_id == workspace_id and request.project_id == project_id
+            ]
+            for key in gone:
+                del self.requests[key]
+            return len(gone)
+
+    async def delete_workspace(self, workspace_id: str) -> int:
+        with self._lock:
+            removed = 0
+            for table in (self.requests, self.devices_by_id):
+                for key in [k for k, v in table.items() if v.workspace_id == workspace_id]:
+                    del table[key]
+                    removed += 1
+            for key in [k for k, v in self.codes.items() if v.workspace_id == workspace_id]:
+                del self.codes[key]
+                removed += 1
+            return removed
+
+
+class InMemoryConversationStore:
+    """In-memory ``PostgresConversationStore``: kept threads and suggestion runs (0054)."""
+
+    def __init__(self) -> None:
+        from backend.domain.conversations import SuggestionRun, Thread
+
+        self.threads: dict[tuple[str, str, str], Thread] = {}
+        self.runs: dict[tuple[str, str, str], SuggestionRun] = {}
+
+    async def find_thread(self, *, workspace_id, project_id, actor_user_id, kind, branch_id):
+        for (w, p, _), thread in self.threads.items():
+            if (
+                (w, p) == (workspace_id, project_id)
+                and thread.actor_user_id == actor_user_id
+                and thread.kind == kind
+                and (thread.branch_id or "") == (branch_id or "")
+            ):
+                return thread.model_copy(deep=True)
+        return None
+
+    async def start_thread(self, thread):
+        existing = await self.find_thread(
+            workspace_id=thread.workspace_id,
+            project_id=thread.project_id,
+            actor_user_id=thread.actor_user_id,
+            kind=thread.kind,
+            branch_id=thread.branch_id,
+        )
+        if existing is not None:
+            return existing
+        self.threads[(thread.workspace_id, thread.project_id, thread.id)] = thread.model_copy(
+            deep=True
+        )
+        return thread.model_copy(deep=True)
+
+    async def add_turns(self, *, workspace_id, project_id, thread_id, turns, now):
+        from backend.domain.conversations import MAX_TURNS, pinned
+
+        thread = self.threads.get((workspace_id, project_id, thread_id))
+        if thread is None:
+            return
+        last = max((turn.position for turn in thread.turns), default=0)
+        added = [
+            turn.model_copy(update={"position": last + offset, "created_at": now})
+            for offset, turn in enumerate(turns, start=1)
+        ]
+        cut = last + len(added) - MAX_TURNS
+        kept = [
+            turn
+            for turn in [*thread.turns, *added]
+            if turn.position > cut or pinned(thread.kind, turn)
+        ]
+        self.threads[(workspace_id, project_id, thread_id)] = thread.model_copy(
+            update={"turns": kept, "updated_at": now}
+        )
+
+    async def add_tokens(self, *, workspace_id, project_id, thread_id, tokens):
+        thread = self.threads.get((workspace_id, project_id, thread_id))
+        if thread is not None:
+            self.threads[(workspace_id, project_id, thread_id)] = thread.model_copy(
+                update={"tokens_used": thread.tokens_used + max(0, tokens)}
+            )
+
+    async def delete_thread(self, *, workspace_id, project_id, thread_id):
+        return 1 if self.threads.pop((workspace_id, project_id, thread_id), None) else 0
+
+    async def delete_member_threads(self, *, workspace_id, actor_user_id):
+        gone = [
+            key
+            for key, thread in self.threads.items()
+            if key[0] == workspace_id and thread.actor_user_id == actor_user_id
+        ]
+        for key in gone:
+            del self.threads[key]
+        return len(gone)
+
+    async def list_threads(self, *, workspace_id, project_id):
+        return sorted(
+            (
+                thread.model_copy(deep=True)
+                for (w, p, _), thread in self.threads.items()
+                if (w, p) == (workspace_id, project_id)
+            ),
+            key=lambda thread: (thread.created_at, thread.id),
+        )
+
+    async def add_run(self, run):
+        self.runs.setdefault((run.workspace_id, run.project_id, run.id), run)
+        return run
+
+    async def list_runs(self, *, workspace_id, project_id, kind, limit, branch_id=None):
+        found = [
+            run
+            for (w, p, _), run in self.runs.items()
+            if (w, p) == (workspace_id, project_id)
+            and (kind is None or run.kind == kind)
+            and (run.branch_id or "") == (branch_id or "")
+        ]
+        found.sort(key=lambda run: (run.created_at, run.id), reverse=True)
+        return found[:limit]
+
+    async def settle_run(
+        self, *, workspace_id, project_id, run_id, kept, settled_at, kept_for_you=None
+    ):
+        from backend.domain.conversations import KEPT_FOR_YOU
+
+        key = (workspace_id, project_id, run_id)
+        run = self.runs.get(key)
+        if run is not None and run.settled_at is None:
+            details = dict(run.details)
+            if kept_for_you is not None:
+                details[KEPT_FOR_YOU] = kept_for_you
+            self.runs[key] = run.model_copy(
+                update={"kept": kept, "settled_at": settled_at, "details": details}
+            )
+
+    def delete_project(self, workspace_id, project_id):
+        for store in (self.threads, self.runs):
+            for key in [k for k in store if k[:2] == (workspace_id, project_id)]:
+                del store[key]

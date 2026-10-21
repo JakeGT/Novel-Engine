@@ -8,7 +8,14 @@ import time
 from collections.abc import Sequence
 from typing import Any
 
+from backend.adapters.connector_transport import (
+    PLACEHOLDER_BASE_URL,
+    DeviceTransport,
+    device_failure,
+    http_impl,
+)
 from backend.core.logging import log_event
+from backend.domain.connector import MY_COMPUTER, parse_device_address
 from backend.domain.providers import StructuredMode, request_model, spec_for_base_url
 from backend.ports import (
     AIInvalidOutputError,
@@ -186,6 +193,7 @@ class OpenAIGateway:
         image_max_bytes: int = 5 * 1024 * 1024,
         image_types: frozenset[str] = frozenset({"image/png", "image/jpeg", "image/webp"}),
         image_providers: frozenset[str] = frozenset(),
+        devices: Any = None,
     ) -> None:
         self._api_key = api_key
         self._default_model = default_model
@@ -198,10 +206,31 @@ class OpenAIGateway:
         self._image_max_bytes = max(0, image_max_bytes)
         self._image_types = image_types
         self._image_providers = image_providers
+        # A model on the author's own computer, reached through the connector (SCN-002A).
+        self._devices = devices
+
+    def attach_devices(self, devices: Any) -> None:
+        self._devices = devices
 
     def _build_client(self, api_key: str | None, base_url: str | None) -> Any:
         from openai import AsyncOpenAI
 
+        device = parse_device_address(base_url)
+        if device is not None:
+            if self._devices is None:
+                raise AIProviderError("Computers cannot be connected on this site.")
+            workspace_id, device_id = device
+            transport = DeviceTransport(
+                self._devices.relay, workspace_id=workspace_id, device_id=device_id
+            )
+            # No retries: a computer that did not answer says why, at once.
+            return AsyncOpenAI(
+                api_key="connector",
+                base_url=PLACEHOLDER_BASE_URL,
+                max_retries=0,
+                timeout=None,
+                http_client=http_impl.AsyncClient(transport=transport, timeout=None),
+            )
         resolved_base_url = base_url or self._base_url
         kwargs: dict[str, Any] = {"api_key": api_key or self._api_key or "not-needed"}
         if resolved_base_url:
@@ -224,6 +253,17 @@ class OpenAIGateway:
 
         A workspace's provider can see pictures only when the operator listed it in
         ``AI_IMAGE_PROVIDERS``; otherwise, like an unconfigured route, it is text only."""
+        device = parse_device_address(base_url)
+        if device is not None:
+            known = self._devices.known_capabilities(device[1]) if self._devices else None
+            model = request_model() or self._default_model
+            # Text only: pictures are not sent to a computer (ADR-025).
+            return ProviderCapabilities(
+                provider=MY_COMPUTER,
+                model=model,
+                structured_output=bool(known and known.structured_output),
+                max_context_tokens=known.context_for(model) if known else None,
+            )
         provider = self._provider
         sees = self._image_input
         if base_url and base_url.rstrip("/") != self._base_url.rstrip("/"):
@@ -264,6 +304,9 @@ class OpenAIGateway:
         resolved_model = request_model() or model or self._default_model
         spec = spec_for_base_url(base_url or self._base_url)
         prompted = spec is not None and spec.structured is StructuredMode.PROMPTED
+        if parse_device_address(base_url) is not None:
+            # A computer whose model server does not keep to a schema is asked in words.
+            prompted = not self.capabilities(base_url=base_url).structured_output
         # A picture the route cannot take is refused here, before any client is built.
         check_images(images, self.capabilities(base_url=base_url))
         start = time.perf_counter()
@@ -310,6 +353,8 @@ class OpenAIGateway:
                 duration_ms=round((time.perf_counter() - start) * 1000, 3),
                 error_type=type(error).__name__,
             )
+            if (failure := device_failure(error)) is not None:
+                raise failure from None
             # Provider text can contain request/account details; keep it as the
             # cause for logs but do not surface it through the API contract.
             raise AIProviderError("model provider request failed") from error
@@ -375,6 +420,8 @@ class OpenAIGateway:
                 duration_ms=round((time.perf_counter() - start) * 1000, 3),
                 error_type=type(error).__name__,
             )
+            if (failure := device_failure(error)) is not None:
+                raise failure from None
             raise AIProviderError("model provider request failed") from error
         finally:
             if per_call_client is not None:

@@ -12,6 +12,7 @@ import { BeliefsPanel } from '../components/BeliefsPanel'
 import { ClaimsPanel } from '../components/ClaimsPanel'
 import { TrustPanel } from '../components/TrustPanel'
 import { KnowledgePanel } from '../components/KnowledgePanel'
+import { MergeDialog } from '../components/MergeDialog'
 import { useStoryClock, whenText } from '../lib/storytime'
 import { FactsPanel } from '../components/FactsPanel'
 import { EntryMarks } from '../components/EntryMarks'
@@ -186,6 +187,7 @@ export function EntryPage() {
   const { scope, canWrite } = useProject()
   const { entityId = '' } = useParams()
   const [editing, setEditing] = useState(false)
+  const [merging, setMerging] = useState(false)
 
   const query = useQuery({
     queryKey: scopedKey(scope, 'entity', entityId),
@@ -280,6 +282,26 @@ export function EntryPage() {
               <ActivityPanel recordType="entity" recordId={entity.id} />
             </div>
           </div>
+
+          {/* Two entries that are one: merged as one reviewed change, undone in one step. */}
+          {editable && (
+            <section className="card quiet" aria-labelledby="merge-heading" style={{ marginTop: '1.25rem' }}>
+              <div className="card-head">
+                <div>
+                  <h2 id="merge-heading">The same as another entry?</h2>
+                  <p className="muted small">
+                    If {entity.name} and another {typeLabel(entity.type).toLowerCase()} are one and
+                    the same, merge them. You see everything that would move, and review it before
+                    it is saved.
+                  </p>
+                </div>
+              </div>
+              <div>
+                <Button onClick={() => setMerging(true)}>Merge with another entry</Button>
+              </div>
+            </section>
+          )}
+          {merging && <MergeDialog entity={entity} onClose={() => setMerging(false)} />}
 
           {/* Kept well away from Edit: an entry is archived deliberately, not by a slip. */}
           {editable && (

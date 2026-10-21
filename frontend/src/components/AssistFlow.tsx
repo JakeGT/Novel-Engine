@@ -333,6 +333,17 @@ export function AssistFlow({ entity, initialType, types, onClose, onManual, resu
         )}
       </Field>
 
+      {!entity && !type && (
+        // A whole story is better told as a conversation, answered in turn (AST-EXP-005).
+        <p className="hint">
+          Telling the whole story?{' '}
+          <Link to={`/projects/${scope.projectId}/premise`} onClick={onClose}>
+            Start from your story
+          </Link>{' '}
+          instead: the assistant asks what it needs, round by round.
+        </p>
+      )}
+
       <AllowanceNote reads="entry" />
 
       <AssistantProblem error={questions.error ?? draft.error} onManual={manual} />

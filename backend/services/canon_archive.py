@@ -344,8 +344,12 @@ class CanonArchiveService:
         self.picture_notes: Any = None
         # Summaries of scenes the author kept (CTX-006); set by the container.
         self.scene_summaries: Any = None
+        # The assistant's kept threads (AST-EXP-017), when wired.
+        self.assistant_threads: Any = None
         # Checks kept as runs in every line of the story (CON-001); set by the container.
         self.check_runs: Any = None
+        # Scenes the author left out of their usual voice (CON-018); set by the container.
+        self.voice: Any = None
 
     # ----------------------------------------------- authorized entry points
     async def _require_owner(self, scope: AccessScope, workspace_id: str, project_id: str) -> None:
@@ -381,7 +385,9 @@ class CanonArchiveService:
         self, scope: AccessScope, workspace_id: str, project_id: str
     ) -> dict[str, Any]:
         await self._require_owner(scope, workspace_id, project_id)
-        archive = await self.export_project(workspace_id, project_id)
+        archive = await self.export_project(
+            workspace_id, project_id, actor_user_id=scope.actor_user_id
+        )
         await self._record_audit(
             scope,
             workspace_id,
@@ -556,11 +562,14 @@ class CanonArchiveService:
         return branch.id
 
     # ---------------------------------------------------------------- export
-    async def export_project(self, workspace_id: str, project_id: str) -> dict[str, Any]:
+    async def export_project(
+        self, workspace_id: str, project_id: str, *, actor_user_id: str | None = None
+    ) -> dict[str, Any]:
         # An archive is the main story, whatever what-if the request was made from:
         # its records and its history must come from the same line (ADR-020).
+        # ``actor_user_id``: who is exporting; only their own assistant threads go in.
         with working_in(None):
-            return await self._export_main(workspace_id, project_id)
+            return await self._export_main(workspace_id, project_id, actor_user_id)
 
     async def _export_commits(
         self,
@@ -641,7 +650,9 @@ class CanonArchiveService:
             )
         return commits
 
-    async def _export_main(self, workspace_id: str, project_id: str) -> dict[str, Any]:
+    async def _export_main(
+        self, workspace_id: str, project_id: str, actor_user_id: str | None = None
+    ) -> dict[str, Any]:
         branch_id = await self._root_branch_id(workspace_id, project_id)
         schema_versions = await self._schemas.list(workspace_id=workspace_id, project_id=project_id)
         mutation_commits: dict[str, str] = {}
@@ -816,6 +827,14 @@ class CanonArchiveService:
             summaries = await self.scene_summaries.export_summaries(workspace_id, project_id)
             if summaries:
                 body["scene_summaries"] = summaries
+        if self.assistant_threads is not None:
+            # The exporting author's own running conversations with the assistant (never
+            # anyone else's: they are private to each author); left out when none.
+            threads = await self.assistant_threads.export_threads(
+                workspace_id, project_id, mutation_commits, actor_user_id=actor_user_id
+            )
+            if threads:
+                body["assistant_threads"] = threads
         if self.check_runs is not None:
             # The history of checks in every line of the story; left out when there is none.
             lines = {}
@@ -828,6 +847,11 @@ class CanonArchiveService:
             runs = await self.check_runs.export_runs(workspace_id, project_id, lines)
             if runs:
                 body["check_runs"] = runs
+        if self.voice is not None:
+            # Scenes left out of the author's usual voice; left out when there are none.
+            left_out = await self.voice.export_left_out(workspace_id, project_id)
+            if left_out:
+                body["voice_left_out"] = left_out
         # Said in the archive itself, so whoever opens it knows what is not there.
         body["left_out"] = list(LEFT_OUT)
         body["checksum"] = _checksum(body)
@@ -1711,9 +1735,30 @@ class CanonArchiveService:
             result["scene_summaries"] = await self.scene_summaries.restore_summaries(
                 target_workspace_id, target_project_id, archive["scene_summaries"], branches
             )
+        if self.assistant_threads is not None and archive.get("assistant_threads"):
+            checksum = archive["checksum"]
+
+            async def mutation_for(commit_id: str | None) -> str | None:
+                return await self._mutation_for(
+                    checksum, target_workspace_id, target_project_id, commit_id
+                )
+
+            # Restored as the restoring author's own: who the archive names is not trusted.
+            result["assistant_threads"] = await self.assistant_threads.restore_threads(
+                target_workspace_id,
+                target_project_id,
+                archive["assistant_threads"],
+                branches,
+                mutation_for,
+                actor_user_id=actor_user_id,
+            )
         if self.check_runs is not None and archive.get("check_runs"):
             result["check_runs"] = await self.check_runs.restore_runs(
                 target_workspace_id, target_project_id, archive["check_runs"], branches
+            )
+        if self.voice is not None and archive.get("voice_left_out"):
+            result["voice_left_out"] = await self.voice.restore_left_out(
+                target_workspace_id, target_project_id, archive["voice_left_out"]
             )
         result["pictures_queued"] = await self._queue_pictures(
             target_workspace_id, target_project_id, actor_user_id

@@ -252,7 +252,7 @@ then `pnpm --dir frontend run gen:api`.
 
 ## 10. Data & migrations
 
-- Alembic (PostgreSQL) head: **`0052_context_layers`** (… → `0022_archive_imports` →
+- Alembic (PostgreSQL) head: **`0055_voice_and_audits`** (… → `0022_archive_imports` →
   `0023_session_id_token` → `0024_assist_sessions` → `0025_workspace_ai_settings` →
   `0026_assist_suggestions` → `0027_usage_allowance` → `0028_plan_items` →
   `0029_plan_conversations` → `0030_source_texts` → `0031_story_rules` → `0032_story_time` →
@@ -260,7 +260,8 @@ then `pnpm --dir frontend run gen:api`.
   `0037_finding_decisions` → `0038_usage_controls` → `0039_check_passes` → `0040_scoped_names` → `0041_claims` →
   `0042_delegation` → `0043_access_keys` → `0044_consistency_runs` → `0045_how_long` → `0046_media_variants` →
   `0047_embedding_generations` → `0048_media_observations` → `0049_check_fingerprints` →
-  `0050_read_models` → `0051_planning_help` → `0052_context_layers`).
+  `0050_read_models` → `0051_planning_help` → `0052_context_layers` → `0053_local_connector` →
+  `0054_conversations` → `0055_voice_and_audits`).
 - Neo4j ordered migrations: `0001_initial_graph_schema`, `0002_entity_scope_identity`,
   `0003_canon_scope_identity`, `0004_canon_projection_labels` (checksums in
   `plan/phase-2-evidence.md`).
@@ -867,4 +868,36 @@ the model, what-if summaries, prose-check false alarms) were fixed with tests. A
 stories with retired or deleted pictures failed to restore (older than this batch), and the passage
 waiting list could hold a text for two minutes (a `SKIP LOCKED` subquery claiming more rows than
 asked). Everything ran against the scripted model and stand-ins only.
+
+## A model on your own computer, conversations, voice and audits, eighth batch (2026-10-21)
+
+- **Local model connector** (SCN-002A, ADR-025, migration 0053): a standard-library program
+  (`uv run python -m connector --site …`) connects Ollama, LM Studio or a llama.cpp server to a
+  hosted or self-hosted site through an outbound HTTPS long poll; registration is the RFC 8628
+  device flow confirmed by a workspace owner or admin; credentials are stored as digests, rotate
+  daily with reuse detection, and are revoked on disconnect, member removal or demotion. When the
+  chosen computer is off, the assistant stops; it never falls back to a cloud key. Runbook
+  `plan/runbooks/local-connector.md`.
+- **Conversations** (AST-EXP-005/007/013/017, migration 0054): "Start from your story" (`/premise`)
+  asks open questions and suggests entries for review; merging two entries is one reviewed, undoable
+  change; "Change anything" can change the plan and keeps one conversation per author and line
+  ("Clear and start again" erases it); link suggestions record how many were kept; plan
+  suggestions record whether they quote the author. Archives carry only the exporting author's
+  threads.
+- **Voice and audits** (CON-010/011/017/018, migration 0055): voice measures without a model and a
+  "How it sounds" panel; correction plans from an audit; comparing a what-if with the main story;
+  scheduled audits within a limit the author sets; turning a finding into a reviewed change; what
+  a change touches now covers beliefs, events, pictures and studio findings. Runbook
+  `plan/runbooks/scheduled-audits.md`.
+- **Operations** (OPS-004, AST-006, EXT-001): `backend/devtools/rekey.py` re-locks stored keys
+  under a new key (`CREDENTIAL_PREVIOUS_KEKS` during rotation); the picture worker adds seccomp and
+  Landlock where the kernel allows; readings suggest moves, possession, status and relationship
+  changes, and new threads, all for review.
+
+A read-only review found no high issue; medium ones were fixed with tests: a quadratic voice regex
+that could freeze the server, connector words left after a crash, code-guess limits, credential
+reuse, unlimited long polls, archive privacy of threads, three merge data-loss cases, scheduled
+audit spend, and untimed readings ending facts. Open decision: what-ifs cannot be discarded, so
+their threads and schedules live until the project is deleted. Everything ran against the scripted
+model and stand-ins only; no real Ollama, LM Studio or llama.cpp server has been tried.
 

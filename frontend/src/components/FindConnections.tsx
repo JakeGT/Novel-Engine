@@ -4,6 +4,7 @@ import { api } from '../api/client'
 import { useInvalidateProject, useProject } from '../project'
 import { AllowanceNote } from './Allowance'
 import { AssistantProblem } from './AssistFlow'
+import { SuggestionRecord } from './SuggestionRecord'
 import { Button } from './ui'
 
 /**
@@ -52,6 +53,8 @@ export function FindConnections() {
           {find.isPending ? 'Reading your story bible…' : 'Find missing connections'}
         </Button>
       </div>
+      {/* How many of the assistant's earlier suggestions were kept (AST-EXP-007). */}
+      <SuggestionRecord kind="links" title="Earlier suggestions, and how many you kept" />
     </section>
   )
 }

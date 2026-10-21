@@ -124,6 +124,8 @@ Dedicated application hostname/path behind reverse proxy/TLS, shared Authentik O
 
 If selected, a separately authenticated companion makes outbound connections from the user's network and brokers jobs to OpenAI-compatible local endpoints. It receives only authorized job context, never platform master secrets. Its protocol, updates, revocation, and threat model require a dedicated ADR.
 
+Built 2026-10-21 (SCN-002A, ADR-025): registration by the OAuth device grant (RFC 8628) confirmed by a workspace owner who sees the computer's name; a digest-only device credential rotated daily, stopped after 30 days, revocable at once and when its member leaves; an outbound HTTPS long poll (no inbound port, no redirects); only model listing and chat completions relayed; the words cleared once answered; a version floor enforced on both sides with nothing downloaded. Runbook `plan/runbooks/local-connector.md`.
+
 ## Operational runbooks required before beta
 
 - backup and restore
@@ -140,12 +142,15 @@ If selected, a separately authenticated companion makes outbound connections fro
 - shared IdP outage/key rotation and invitation abuse
 - suspected provider-key or tenant-data exposure
 
-Written so far (2026-10-18, `plan/runbooks/`): backup and restore, stuck jobs, provider outage
-and a revoked key, schema migration failure, a failed project import, credential key rotation,
-the story graph behind or wrong, and a full disk. Not yet written: failed or corrupt commit
-recovery (`backend.devtools.reconcile` exists), vector reindex, media processing, data deletion,
-orphaned objects, spend spikes, the shared identity provider, and suspected exposure of keys or
-tenant data.
+Written so far (`plan/runbooks/`, 2026-10-18, completed 2026-10-21): backup and restore (with an
+example off-host copy), stuck jobs, provider outage and a revoked key, schema migration failure, a
+failed project import, credential key rotation (with `backend.devtools.rekey`, which re-locks every
+stored key in place), the story graph behind or wrong, a full disk, failed or corrupt commit
+recovery, vector reindex (`search-index.md`), media processing and orphaned objects
+(`media-processing.md`), data deletion, spend spikes, the shared identity provider (outage, key
+changes, invitation abuse), and suspected exposure of keys or tenant data. None has been rehearsed
+on the live site; every SQL statement in them is checked against the schema by
+`tests/integration/test_runbook_queries.py`.
 
 ## Revision 2026-10-10: the in-product assistant
 

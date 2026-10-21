@@ -20,11 +20,17 @@ from backend.domain.impact import (
     Impact,
     KeptDraft,
     Mention,
+    PictureLink,
     StoryFacts,
+    StudioFinding,
     Touched,
     assemble,
+    belief_dependents,
     draft_dependents,
+    event_dependents,
+    finding_dependents,
     own_text_dependents,
+    picture_dependents,
     plan_dependents,
     rule_dependents,
     standing_gaps,
@@ -44,6 +50,9 @@ logger = logging.getLogger(__name__)
 MAX_ENTITIES = 2000
 MAX_FACTS = 10_000
 MAX_PASSAGES = 500
+# How many changed entries' pictures, and how many scenes' studio findings, are read.
+MAX_PICTURE_ENTRIES = 50
+MAX_FINDING_SCENES = 300
 
 
 class ImpactService:
@@ -60,7 +69,13 @@ class ImpactService:
         studio: Any = None,
         tenancy: Any = None,
         local_mode: bool = False,
+        runs: Any = None,
+        media: Any = None,
     ) -> None:
+        # Checks kept as runs (CON-001) and the pictures' store, for what a change touches
+        # in the studio and among pictures (CON-017).
+        self._runs = runs
+        self._media = media
         self._reader = reader
         self._mutation = mutation
         self._journal = journal
@@ -170,6 +185,12 @@ class ImpactService:
                 for event in events
             },
             plans={item.id: item for item in plans if item.is_active},
+            belief_records={belief.id: belief for belief in beliefs},
+            event_records={event.id: event for event in events},
+            names_of={
+                entity.id: tuple(name for name in (entity.name, *entity.aliases) if name)
+                for entity in entities
+            },
         )
         complete = len(entities) < MAX_ENTITIES and len(facts) < MAX_FACTS
         return story, world, complete
@@ -288,6 +309,99 @@ class ImpactService:
             )
         return found, behind, len(passages) >= MAX_PASSAGES
 
+    async def _pictures(
+        self, workspace_id: str, project_id: str, touched: Touched
+    ) -> list[PictureLink]:
+        """Pictures linked to a changed entry in this line of the story."""
+        list_links = getattr(self._reader, "list_links", None)
+        if list_links is None or not touched.entries:
+            return []
+        found: list[PictureLink] = []
+        titles: dict[str, str] = {}
+        for entry_id in list(touched.entries)[:MAX_PICTURE_ENTRIES]:
+            for link in await list_links(
+                workspace_id=workspace_id, project_id=project_id, target_record_id=entry_id
+            ):
+                if link.target_record_type != "entity":
+                    continue
+                if link.asset_id not in titles:
+                    titles[link.asset_id] = await self._picture_title(
+                        workspace_id, project_id, link.asset_id
+                    )
+                found.append(
+                    PictureLink(
+                        asset_id=link.asset_id,
+                        title=titles[link.asset_id],
+                        entity_id=entry_id,
+                        role=str(getattr(link.role, "value", link.role)),
+                    )
+                )
+        return found
+
+    async def _picture_title(self, workspace_id: str, project_id: str, asset_id: str) -> str:
+        if self._media is None:
+            return "A picture"
+        try:
+            asset = await self._media.get_asset(
+                workspace_id=workspace_id, project_id=project_id, asset_id=asset_id
+            )
+        except Exception:  # noqa: BLE001 - a title is a nicety
+            return "A picture"
+        return str(asset.name) if asset is not None and asset.name else "A picture"
+
+    async def _findings(
+        self,
+        workspace_id: str,
+        project_id: str,
+        touched: Touched,
+        manuscripts: dict[str, str],
+        story: StoryFacts,
+    ) -> list[StudioFinding]:
+        """The checks of each scene's newest kept check run, and the assistant's notes on
+        its saved words, in this line of the story (CON-001)."""
+        if not touched.entries or (self._runs is None and self._studio is None):
+            return []
+        branch = await self._journal.working_branch(
+            workspace_id=workspace_id, project_id=project_id
+        )
+        latest: dict[str, str | None] = {}
+        if self._sources is not None:
+            latest = {
+                text.id: text.latest_version_id
+                for text in await self._sources.all_texts(workspace_id, project_id)
+            }
+        found: list[StudioFinding] = []
+        for plan_id, source_id in list(manuscripts.items())[:MAX_FINDING_SCENES]:
+            scene = story.plans.get(plan_id)
+            if scene is None:
+                continue
+            if self._runs is not None:
+                runs = await self._runs.recent(
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    branch_id=branch.id,
+                    plan_id=plan_id,
+                    kind="checks",
+                    limit=1,
+                )
+                for run in runs[:1]:
+                    found.extend(
+                        StudioFinding(plan_id, scene.title, check.message, "check")
+                        for check in run.findings
+                        if check.plan_id == plan_id
+                    )
+            version_id = latest.get(source_id)
+            findings_of = getattr(self._studio, "findings", None)
+            if version_id and findings_of is not None:
+                for note in await findings_of(
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    target_kind="version",
+                    target_id=version_id,
+                ):
+                    found.append(StudioFinding(plan_id, scene.title, note.message, "note"))
+        return found
+
     async def _other_lines(self, workspace_id: str, project_id: str) -> str | None:
         try:
             branches = await self._journal.list_branches(
@@ -373,6 +487,16 @@ class ImpactService:
         other = await self._other_lines(workspace_id, project_id)
         if other:
             gaps.append(other)
+        others = [
+            *belief_dependents(touched, story),
+            *event_dependents(touched, story, touched.events),
+            *picture_dependents(touched, await self._pictures(workspace_id, project_id, touched)),
+            *finding_dependents(
+                touched,
+                await self._findings(workspace_id, project_id, touched, manuscripts, story),
+                story.names_of,
+            ),
+        ]
         impact = assemble(
             touched,
             plan=plan_dependents(touched, story),
@@ -380,6 +504,7 @@ class ImpactService:
             drafts=draft_dependents(touched, drafts, story),
             texts=[*text_dependents(touched, mentions), *own_text_dependents(touched, titles)],
             not_checked=gaps,
+            others=others,
         )
         # Counts only: never names, titles or words.
         log_event(

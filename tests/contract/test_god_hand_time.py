@@ -74,6 +74,12 @@ def test_three_years_before_the_war_becomes_a_relative_time(auth_client, fake_co
         "name": None,
         "world_position": None,
         "when": {"kind": "at", "at": 100.0, "label": None},
+        # Who takes part, where, and what causes or follows it are left as they are (a
+        # merge sets them).
+        "participants": None,
+        "location_ids": None,
+        "cause_ids": None,
+        "outcome_ids": None,
         "evidence": amended["evidence"],
     }
     # The model was told the unit and shown the events.
