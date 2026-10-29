@@ -970,6 +970,9 @@ scanning, unbounded streams, region refresh on the request path); all were fixed
 Everything ran against the scripted model and the local stand-in only; no real provider has
 streamed a draft or read a picture region.
 
-Known gap noted 2026-10-29: the Docker image is built without the `embeddings` extra, so a site
-deployed from it has no search by meaning unless the image is changed; embeddings run on the
-server's CPU (MiniLM, or EmbeddingGemma more slowly) and there is no cloud embedding adapter yet.
+Noted 2026-10-29: the Docker image leaves out the `embeddings` extra on purpose (a smaller image),
+so a site deployed from it searches by words only and the index reports `semantic: false`.
+Embeddings are the only model the server itself runs (MiniLM on a CPU, or EmbeddingGemma more
+slowly); chat, checks and picture reading all go to the configured cloud provider. There is no
+cloud embedding adapter; adding one is an owner decision, because it would send every passage to
+that provider in the background, under the operator's key on a hosted site.
