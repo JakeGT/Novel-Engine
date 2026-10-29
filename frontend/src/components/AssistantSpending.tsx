@@ -11,6 +11,7 @@ import { PROFILE_LABEL, asked, useAssistantSettings } from '../lib/assistantSett
 import { setSpendAsker, type SpendQuestion } from '../lib/spend'
 import { plural } from '../lib/words'
 import { scopedKey, useProject } from '../project'
+import { SendPreview } from './SendPreview'
 import { Button, ConfirmDialog, Dialog, ErrorNotice, Field, Loading } from './ui'
 
 const number = (value: number) => value.toLocaleString('en-GB')
@@ -510,9 +511,17 @@ export function SpendConfirmHost() {
     answer.current = null
     setQuestion(null)
   }
+  const sending = question.sending
+  const pictures = sending?.pictures.length ?? 0
+  // Asked only because pictures would leave the site, not for the size.
+  const forPictures = pictures > 0 && question.thresholdTokens === null
   return (
     <ConfirmDialog
-      title={`Use about ${number(question.estimatedTokens)} tokens?`}
+      title={
+        forPictures && sending
+          ? `Send ${pictures === 1 ? 'a picture' : `${pictures} pictures`} to ${sending.provider_label}?`
+          : `Use about ${number(question.estimatedTokens)} tokens?`
+      }
       confirmLabel={`Send it (about ${number(question.estimatedTokens)} tokens)`}
       keepLabel="Don’t send"
       danger={false}
@@ -520,9 +529,13 @@ export function SpendConfirmHost() {
       onCancel={() => reply(false)}
     >
       <p>{question.detail}</p>
+      {sending && <SendPreview sending={sending} scope={question.scope} />}
       <p className="muted small">
         Nothing has been sent yet. The size is an estimate from what it will read and the longest
-        reply it may write. You can change when you are asked on the AI assistant page.
+        reply it may write.{' '}
+        {forPictures
+          ? 'You are asked each time pictures from your story would go to a company’s servers.'
+          : 'You can change when you are asked on the AI assistant page.'}
       </p>
     </ConfirmDialog>
   )

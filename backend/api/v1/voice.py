@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import get_container
 from backend.api.v1.assistant_settings import confirmed_tokens
-from backend.api.v1.studio import DismissalModel, _dismissal
+from backend.api.v1.studio import DismissalModel, JobModel, _dismissal, _job
 from backend.container import Container
 from backend.domain.dismissals import MAX_NOTE, DismissReason
 from backend.domain.identity import AccessScope
@@ -303,6 +303,63 @@ async def scene_voice(
 ) -> SceneVoiceModel:
     """How the scene's saved words sound against the author's usual. Calls no model."""
     return scene_model(await voice.scene(scope, scope.workspace_id or "", project_id, plan_id))
+
+
+class FlaggedPassageModel(BaseModel):
+    start: int
+    end: int
+    # Why it was chosen: the note on how the scene sounds that it shows.
+    why: str
+
+
+class VoiceEscalationModel(BaseModel):
+    """Whether a small voice check with the assistant is offered for this scene's flagged
+    passages, which passages, and roughly what it would use (CON-018)."""
+
+    offered: bool
+    why_not: str | None = None
+    notes: list[str]
+    passages: list[FlaggedPassageModel]
+    words: int
+    total_tokens: int
+    version_id: str | None = None
+
+
+@router.get("/plan/{plan_id}/voice/escalation")
+async def voice_escalation(
+    project_id: str,
+    plan_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    voice: VoiceService = Depends(get_voice),
+) -> VoiceEscalationModel:
+    """Whether the measures point far enough from the author's usual to offer the
+    assistant's voice check of the passages that show it, and its cost. Calls no model."""
+    found = await voice.escalation(scope, scope.workspace_id or "", project_id, plan_id)
+    return VoiceEscalationModel(
+        offered=found.offered,
+        why_not=found.why_not,
+        notes=found.notes,
+        passages=[FlaggedPassageModel(start=p.start, end=p.end, why=p.why) for p in found.passages],
+        words=found.words,
+        total_tokens=found.total_tokens,
+        version_id=found.version_id,
+    )
+
+
+@router.post("/plan/{plan_id}/voice/escalation", status_code=202)
+async def start_voice_escalation(
+    project_id: str,
+    plan_id: str,
+    scope: AccessScope = Depends(require_project_scope),
+    voice: VoiceService = Depends(get_voice),
+    confirmed: int | None = Depends(confirmed_tokens),
+) -> JobModel:
+    """Ask the assistant about the flagged passages only. Its notes quote the words and
+    show with the assistant's other notes on the scene."""
+    job = await voice.start_check(
+        scope, scope.workspace_id or "", project_id, plan_id, confirmed_tokens=confirmed
+    )
+    return _job(job)
 
 
 class CountRequest(BaseModel):

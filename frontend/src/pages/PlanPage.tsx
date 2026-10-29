@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { api, type AssistSession, type ConditionState, type PlanItem, type PlanKind } from '../api/client'
 import { ArcPathDialog, ArcStages } from '../components/ArcPath'
-import { SuggestBridges, SuggestIntent } from '../components/PlanHelp'
+import { SuggestBridges, SuggestGapScene, SuggestIntent, SuggestStages } from '../components/PlanHelp'
 import { StoryScales } from '../components/StoryScales'
 import { AuditDialog } from '../components/AuditDialog'
 import { ClaimDialog } from '../components/ClaimDialog'
@@ -401,6 +401,7 @@ export function PlanPage() {
               arc={item}
               reading={arcReadings.find((reading) => reading.arc_id === item.id)}
               sceneLink={(scene) => <a href={`#plan-${scene.id}`}>{scene.title}</a>}
+              suggest={canWrite}
             />
           )}
           {item.kind === 'arc' && canWrite && (item.path ?? []).length === 0 && (
@@ -408,7 +409,11 @@ export function PlanPage() {
               <button type="button" className="link-button" onClick={() => setStaging(item)}>
                 Say how {refs(item, 'about').map((entityId) => entries.names.get(entityId)).find(Boolean) ?? 'the character'}{' '}
                 changes, stage by stage
-              </button>
+              </button>{' '}
+              <SuggestStages
+                arc={item}
+                who={refs(item, 'about').map((entityId) => entries.names.get(entityId)).find(Boolean) ?? 'the character'}
+              />
             </p>
           )}
           {item.kind === 'scene' && (
@@ -433,6 +438,12 @@ export function PlanPage() {
                 </li>
               ))}
             </ul>
+          )}
+          {/* A thread nothing moves along: the assistant can suggest a scene for it (STY-004). */}
+          {canWrite && openFor(item.id).some((entry) => entry.code === 'needs_progress') && (
+            <p className="small">
+              <SuggestGapScene item={item} />
+            </p>
           )}
         </div>
         {tools(item)}

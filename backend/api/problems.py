@@ -54,17 +54,18 @@ def _problem_response(status: int, body: dict[str, Any]) -> JSONResponse:
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(DomainError)
     async def _handle_domain_error(request: Request, exc: DomainError) -> JSONResponse:
-        return _problem_response(
-            exc.status_code,
-            problem_body(
-                status=exc.status_code,
-                title=exc.title,
-                code=exc.code,
-                detail=exc.detail,
-                field_errors=exc.field_errors,
-                correlation_id=_correlation_id(request),
-            ),
+        body = problem_body(
+            status=exc.status_code,
+            title=exc.title,
+            code=exc.code,
+            detail=exc.detail,
+            field_errors=exc.field_errors,
+            correlation_id=_correlation_id(request),
         )
+        # Extension members never replace the standard ones.
+        extensions = getattr(exc, "extensions", None) or {}
+        body.update({key: value for key, value in extensions.items() if key not in body})
+        return _problem_response(exc.status_code, body)
 
     @app.exception_handler(RequestValidationError)
     async def _handle_request_validation(

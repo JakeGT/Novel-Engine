@@ -86,7 +86,7 @@ test('choose what a check looks at, then audit a part of the story', async ({ pa
   await page.goto(`/projects/${PROJECT}/plan/${scenes[0].id}/write`)
   const choices = page.getByRole('group', { name: 'What the assistant checks' })
   await expect(choices.getByText(/about [\d,]+ tokens/).first()).toBeVisible()
-  await expect(page.getByText(/About [\d,]+ tokens for all five\./)).toBeVisible()
+  await expect(page.getByText(/About [\d,]+ tokens for the five usual checks\./)).toBeVisible()
   await choices.getByRole('checkbox', { name: /Your voice/ }).uncheck()
   await expect(page.getByText(/About [\d,]+ tokens for the 4 chosen\./)).toBeVisible()
   await shot(page, '01-studio-choices')

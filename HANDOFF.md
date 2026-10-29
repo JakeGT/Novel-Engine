@@ -258,7 +258,7 @@ then `pnpm --dir frontend run gen:api`.
 
 ## 10. Data & migrations
 
-- Alembic (PostgreSQL) head: **`0058_media_remainders`** (… → `0022_archive_imports` →
+- Alembic (PostgreSQL) head: **`0062_audits_and_impact`** (… → `0022_archive_imports` →
   `0023_session_id_token` → `0024_assist_sessions` → `0025_workspace_ai_settings` →
   `0026_assist_suggestions` → `0027_usage_allowance` → `0028_plan_items` →
   `0029_plan_conversations` → `0030_source_texts` → `0031_story_rules` → `0032_story_time` →
@@ -268,7 +268,8 @@ then `pnpm --dir frontend run gen:api`.
   `0047_embedding_generations` → `0048_media_observations` → `0049_check_fingerprints` →
   `0050_read_models` → `0051_planning_help` → `0052_context_layers` → `0053_local_connector` →
   `0054_conversations` → `0055_voice_and_audits` → `0056_context_remainders` →
-  `0057_check_remainders` → `0058_media_remainders`).
+  `0057_check_remainders` → `0058_media_remainders` → `0059_streaming_and_routes` →
+  `0060_picture_regions` → `0061_check_passes_more` → `0062_audits_and_impact`).
 - Neo4j ordered migrations: `0001_initial_graph_schema`, `0002_entity_scope_identity`,
   `0003_canon_scope_identity`, `0004_canon_projection_labels` (checksums in
   `plan/phase-2-evidence.md`).
@@ -940,3 +941,35 @@ skipping the story-time filter, the history check without a lock); all were fixe
 scene checks now run off the event loop. Consistency evaluation: 161 cases, precision 1.0, recall
 0.892. Everything ran against the scripted model and stand-ins only.
 
+## Streaming, send preview, picture parts, more checks and audit notices, tenth batch (2026-10-29)
+
+- **Drafting and models** (SCN-002/002A, CTX-013; migration 0059): drafts stream to the studio
+  over `GET /jobs/{job}/stream` (server-sent events, capped, with the
+  chunks stored append-only); what each model can take comes from the provider's list, OpenRouter's public list
+  (`AI_MODEL_LIST`) and the operator's table (`AI_MODEL_CAPABILITIES`); the send preview and its
+  limits follow the workspace's chosen model, and the request carries an `X-Confirm-Sending`
+  digest of what was shown.
+- **Pictures** (AST-003/005/007; migration 0060): marked parts of a picture linked to entries,
+  refreshed as a job (at most 50 parts per version); words in a picture as `text_in_picture`
+  observations in the search index; notes can point at a part of a picture.
+- **Checks** (CON-003/004/008/009/011/014/016/017/018, STY-004/005/006, SCN-007; migration 0061):
+  motivation, physical and causal, and world-rule passes; voice notes that escalate; arc stage
+  suggestions; knows/seen/heard scene conditions; gap bridges; journeys and deaths read from prose
+  (`backend/domain/movement.py`, linear time, off the event loop). Automatic checks and audits ask
+  first, or leave out the pictures pass.
+- **Audits and impact** (migration 0062): a notice when an audit finishes; a what-if lists the
+  scenes it changes; dismissals travel in archives; Change impact previews a what-if's scratch
+  changes with a graph.
+- **Release** (OSS-005): `make release` / `make release-check` (reproducible artefacts in
+  `dist/release/`; nothing tagged or published); `pyproject.toml` builds with `uv_build`.
+
+A read-only review found one high issue (the send preview and limits used the site's default model
+instead of the workspace's choice) and several medium ones (automatic checks could send pictures
+without asking, limits read before capabilities were refreshed, quadratic travel and speech
+scanning, unbounded streams, region refresh on the request path); all were fixed with tests.
+Everything ran against the scripted model and the local stand-in only; no real provider has
+streamed a draft or read a picture region.
+
+Known gap noted 2026-10-29: the Docker image is built without the `embeddings` extra, so a site
+deployed from it has no search by meaning unless the image is changed; embeddings run on the
+server's CPU (MiniLM, or EmbeddingGemma more slowly) and there is no cloud embedding adapter yet.

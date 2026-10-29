@@ -1,3 +1,9 @@
+# OSS-005: how ``make release`` builds the wheel and sdist (``uv build``). The project is
+# still not installed into its own environment (``[tool.uv] package = false``).
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
 [project]
 name = "novel-engine"
 version = "0.1.0"
@@ -44,6 +50,12 @@ dev = [
 
 [tool.uv]
 package = false
+
+[tool.uv.build-backend]
+# The application and the connector; migrations, deploy files and the frontend are in
+# the source tarball ``make release`` writes beside the wheel.
+module-name = ["backend", "connector"]
+module-root = ""
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

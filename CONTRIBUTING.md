@@ -40,6 +40,25 @@ downgrade that never deletes an author's words; a change to a prompt's wording o
 raises its version in `backend/domain/prompts.py` and updates the snapshots
 (`uv run python -m tests.prompts.snapshots --update`).
 
+## Releases
+
+`make release` builds a reproducible set of release files from one commit into
+`dist/release/novel-engine-<version>/`: the source tarball with the pinned lock files, the backend
+wheel and sdist, the built frontend, CycloneDX bills of materials for Python and the frontend,
+`BUILDINFO.json` and `SHA256SUMS` (check with `cd dist/release/novel-engine-<version> && sha256sum -c
+SHA256SUMS`). It builds `HEAD` unless `RELEASE_ARGS="--ref <commit or tag>"` says otherwise;
+`RELEASE_ARGS="--worktree"` tries uncommitted work, says so in `BUILDINFO.json` and writes to
+`dist/release/novel-engine-<version>-worktree/` (that is not a release). A `--ref` is resolved to
+its commit first; one starting with `-` is refused. `make release-check` builds twice and fails if
+any byte differs. Every time written is fixed: the source and frontend tarballs, the bills of
+materials and `BUILDINFO.json` carry the commit's time (`SOURCE_DATE_EPOCH`); `uv build` stamps the
+wheel's files 1980-01-01 (the earliest a zip can hold) and the sdist's 1970-01-01. `VITE_*` and
+`NODE_ENV` settings in your shell are cleared for the frontend build. So the same commit built with
+the same tool versions (recorded in `BUILDINFO.json`) gives the same bytes. Paths marked
+`export-ignore` in `.gitattributes` (the `.agent/` folder) and local agent-tool files are never
+shipped. Nothing is tagged, signed or published by these commands; that is the maintainer's step.
+See the ADR-008 amendment.
+
 ## Status honesty
 
 Do not describe planned work as built. When you change a capability, update its status line in

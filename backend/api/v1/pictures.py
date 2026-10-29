@@ -36,6 +36,7 @@ from backend.domain.media_observations import (
 from backend.domain.worldtime import describe, parse_world_time
 from backend.services.media_observations import (
     LinkView,
+    MarkedPart,
     MediaObservationService,
     PictureView,
 )
@@ -103,10 +104,26 @@ class ObservationRegionModel(BaseModel):
     height: float
 
 
+class PicturePartModel(BaseModel):
+    """A part of the picture the author marked (AST-007)."""
+
+    id: str
+    # In pixels of the picture as shown.
+    x: int
+    y: int
+    width: int
+    height: int
+    # As fractions of the picture, to draw it on any copy.
+    region: ObservationRegionModel
+    label: str | None = None
+    entity_id: str | None = None
+    entity_name: str | None = None
+
+
 class ObservationModel(BaseModel):
     id: str
     asset_version_id: str
-    # caption or appearance
+    # caption, appearance or text_in_picture (writing read in the picture)
     kind: str
     # What the model proposed.
     text: str
@@ -116,6 +133,9 @@ class ObservationModel(BaseModel):
     subject_record_id: str | None = None
     subject_name: str | None = None
     region: ObservationRegionModel | None = None
+    # The marked part it is about, when it is about one, and what that part is called.
+    segment_id: str | None = None
+    part_name: str | None = None
     confidence: float | None = None
     model: str | None = None
     prompt_version: str | None = None
@@ -139,6 +159,8 @@ class PictureModel(BaseModel):
     height: int | None = None
     links: list[PictureLinkModel]
     observations: list[ObservationModel]
+    # The parts of the newest version the author marked, oldest first.
+    parts: list[PicturePartModel] = Field(default_factory=list)
     # send, describe or leave_out
     context_choice: ContextChoice
     context_choice_words: str
@@ -230,7 +252,11 @@ def _link(view: LinkView, numbers: dict[str, int] | None = None) -> PictureLinkM
 
 
 def _observation(
-    observation: MediaObservation, *, current_version: str, names: dict[str, str]
+    observation: MediaObservation,
+    *,
+    current_version: str,
+    names: dict[str, str],
+    parts: dict[str, str] | None = None,
 ) -> ObservationModel:
     region = observation.region
     return ObservationModel(
@@ -243,6 +269,8 @@ def _observation(
         subject_record_id=observation.subject_record_id,
         subject_name=names.get(observation.subject_record_id or ""),
         region=ObservationRegionModel(**region.model_dump()) if region is not None else None,
+        segment_id=observation.segment_id,
+        part_name=(parts or {}).get(observation.segment_id or ""),
         confidence=observation.confidence,
         model=observation.model,
         prompt_version=observation.prompt_version,
@@ -263,8 +291,28 @@ def _names(view: PictureView) -> dict[str, str]:
     }
 
 
+def _part(part: MarkedPart) -> PicturePartModel:
+    return PicturePartModel(
+        id=part.segment_id,
+        x=part.x,
+        y=part.y,
+        width=part.width,
+        height=part.height,
+        region=ObservationRegionModel(**part.region.model_dump()),
+        label=part.label,
+        entity_id=part.entity_id,
+        entity_name=part.entity_name,
+    )
+
+
 def _picture(view: PictureView) -> PictureModel:
     names = _names(view)
+    for part in view.parts:
+        if part.entity_id and part.entity_name:
+            names.setdefault(part.entity_id, part.entity_name)
+    part_names = {
+        part.segment_id: shown for part in view.parts if (shown := part.label or part.entity_name)
+    }
     return PictureModel(
         asset_id=view.asset.id,
         name=view.asset.name,
@@ -277,9 +325,10 @@ def _picture(view: PictureView) -> PictureModel:
             for item in view.links
         ],
         observations=[
-            _observation(item, current_version=view.version.id, names=names)
+            _observation(item, current_version=view.version.id, names=names, parts=part_names)
             for item in view.observations
         ],
+        parts=[_part(part) for part in view.parts],
         context_choice=view.choice,
         context_choice_words=CHOICE_WORDS[view.choice],
         description=view.description,

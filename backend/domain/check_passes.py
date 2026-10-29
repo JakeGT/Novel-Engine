@@ -12,6 +12,16 @@ What each pass reads is chosen here from the scene's context, by section. The
 viewpoint pass is given what the viewpoint character knows and, apart and labelled as
 the author's only, the secrets they do not: a check has to know a secret to see it slip
 onto the page, and nothing it is given is ever written into the story.
+
+Three more passes split what continuity once judged together (batch 10): why a
+character acts as they do (what they want and know), bodies, objects, travel and
+cause before effect, and the story's own rules (what its magic or technology can and
+cannot do). They are optional: offered with their cost beside the others, but not
+chosen until the author ticks them, and never run by an automatic check. Continuity
+stays as it was, so turning them on adds to it rather than replacing it. The split
+follows the same finding as the passes above: one criterion per judge call gives
+steadier, more specific verdicts than one call asked about many at once (Multi-Crit,
+arXiv 2511.21662; Zheng et al., "Judging LLM-as-a-Judge", NeurIPS 2023).
 """
 
 from __future__ import annotations
@@ -37,6 +47,10 @@ class CheckPass(StrEnum):
     PLAN = "plan"
     VOICE = "voice"
     CLARITY = "clarity"
+    # Optional passes (CON-008, batch 10): each is chosen by the author, never by default.
+    MOTIVATION = "motivation"
+    PHYSICAL = "physical"
+    WORLD = "world"
     # The scene against its pictures (CON-014): only when the scene has pictures the
     # author chose to send or that have an accepted description.
     PICTURES = "pictures"
@@ -46,10 +60,23 @@ class CheckPass(StrEnum):
 PASS_ORDER: tuple[CheckPass, ...] = (
     CheckPass.VIEWPOINT,
     CheckPass.CONTINUITY,
+    CheckPass.MOTIVATION,
+    CheckPass.PHYSICAL,
+    CheckPass.WORLD,
     CheckPass.PLAN,
     CheckPass.VOICE,
     CheckPass.CLARITY,
     CheckPass.PICTURES,
+)
+# Passes the author turns on by hand; a check that names none never runs them.
+OPTIONAL_PASSES: frozenset[CheckPass] = frozenset(
+    {CheckPass.MOTIVATION, CheckPass.PHYSICAL, CheckPass.WORLD}
+)
+# What a check runs when nobody chose: an automatic check, or a job from before passes
+# were chosen. The optional passes are left out, so their cost is only ever spent when
+# the author asks for them.
+DEFAULT_PASSES: tuple[CheckPass, ...] = tuple(
+    item for item in PASS_ORDER if item not in OPTIONAL_PASSES
 )
 
 # What each pass is called where the author chooses, in plain words.
@@ -59,6 +86,9 @@ PASS_LABELS: dict[CheckPass, str] = {
     CheckPass.PLAN: "What the plan asks for",
     CheckPass.VOICE: "Your voice",
     CheckPass.CLARITY: "Clarity",
+    CheckPass.MOTIVATION: "Why characters act",
+    CheckPass.PHYSICAL: "Bodies, objects and cause",
+    CheckPass.WORLD: "Your story’s own rules",
     CheckPass.PICTURES: "What the pictures show",
 }
 
@@ -76,6 +106,17 @@ PASS_DESCRIPTIONS: dict[CheckPass, str] = {
     ),
     CheckPass.VOICE: "Passages that do not sound like your own writing or your notes on it.",
     CheckPass.CLARITY: "Passages a reader could find hard to follow.",
+    CheckPass.MOTIVATION: (
+        "Whether what each character does follows from what they want and what they know by then."
+    ),
+    CheckPass.PHYSICAL: (
+        "Bodies, things and places: who holds what, injuries, how far and how fast people "
+        "travel, and whether a cause comes before what it causes."
+    ),
+    CheckPass.WORLD: (
+        "Whether the scene keeps your story's own rules, such as what its magic or "
+        "technology can and cannot do."
+    ),
     CheckPass.PICTURES: (
         "Anything the scene says about how someone or somewhere looks that its pictures "
         "show differently. Only pictures you chose to send, or that have a description."
@@ -118,6 +159,36 @@ PASS_SECTIONS: dict[CheckPass, frozenset[ContextSection]] = {
     ),
     CheckPass.VOICE: frozenset({ContextSection.CAST, ContextSection.WRITING}),
     CheckPass.CLARITY: frozenset({ContextSection.CAST, ContextSection.SCENE}),
+    # Why characters act: who they are, what the viewpoint character knows and gets
+    # wrong, what has happened, what came just before, and what the plan says they want.
+    CheckPass.MOTIVATION: frozenset(
+        {
+            ContextSection.CAST,
+            ContextSection.KNOWS,
+            ContextSection.WRONG,
+            ContextSection.HAPPENED,
+            ContextSection.EARLIER,
+            ContextSection.BEFORE,
+            ContextSection.PLAN,
+            ContextSection.SCENE,
+        }
+    ),
+    # Bodies, objects, travel, cause and effect: what is true of people and things, what
+    # has happened and in what order, and how the scene before ended.
+    CheckPass.PHYSICAL: frozenset(
+        {
+            ContextSection.CAST,
+            ContextSection.TRUE,
+            ContextSection.HAPPENED,
+            ContextSection.EARLIER,
+            ContextSection.BEFORE,
+            ContextSection.SCENE,
+        }
+    ),
+    # The story's own rules, with the facts they are about.
+    CheckPass.WORLD: frozenset(
+        {ContextSection.RULES, ContextSection.CAST, ContextSection.TRUE, ContextSection.SCENE}
+    ),
     CheckPass.PICTURES: frozenset(
         {ContextSection.CAST, ContextSection.PICTURES, ContextSection.SCENE}
     ),
@@ -136,10 +207,11 @@ TOKENS_PER_WORD = 4 / 3
 
 
 def choose_passes(values: Iterable[str] | None) -> tuple[CheckPass, ...]:
-    """The passes asked for, in their usual order, each once. None means every pass.
-    An unknown name raises ``ValueError``."""
+    """The passes asked for, in their usual order, each once. None means the usual
+    passes (``DEFAULT_PASSES``): an optional pass is only ever estimated or run when it is
+    named. An unknown name raises ``ValueError``."""
     if values is None:
-        return PASS_ORDER
+        return DEFAULT_PASSES
     asked = {CheckPass(str(value)) for value in values}
     return tuple(item for item in PASS_ORDER if item in asked)
 
@@ -248,6 +320,8 @@ def estimate_passes(
 
 
 __all__ = [
+    "DEFAULT_PASSES",
+    "OPTIONAL_PASSES",
     "MAX_PASS_NOTES",
     "PASS_ANSWER_TOKENS",
     "PASS_DESCRIPTIONS",

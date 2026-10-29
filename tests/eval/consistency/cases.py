@@ -46,6 +46,7 @@ from backend.domain.drafting import (
     check_draft,
 )
 from backend.domain.knowledge import Reveal
+from backend.domain.movement import Elsewhere, Kept, MovementBrief, PlaceKnown, movement_findings
 from backend.domain.plan_checks import order_findings, reveal_findings
 from backend.domain.rules import (
     Check,
@@ -59,7 +60,13 @@ from backend.domain.rules import (
     WorldFact,
     violations,
 )
-from backend.domain.scene_conditions import SceneCondition, condition_state, planned_change
+from backend.domain.scene_conditions import (
+    Knowing,
+    KnowsCheck,
+    SceneCondition,
+    condition_state,
+    planned_change,
+)
 from backend.domain.worldtime import At, Between, Interval
 from tests.eval.consistency.story import (
     ENTRIES,
@@ -1120,6 +1127,95 @@ def _condition(world_facts: Iterable[WorldFact], earlier=()) -> set[str]:
     planned = planned_change(_AT_QUAY, list(earlier))
     state = condition_state("s2", _AT_QUAY, _world(world_facts), planned=planned)
     return {state.status}
+
+
+def _knowing(how: str, sources: Iterable[str | None], scene_id: str = "s4", earlier=()) -> set[str]:
+    """STY-005: Wren must know (have seen, have heard) Osric's secret before ``scene_id``."""
+    need = SceneCondition(
+        when="before",
+        entity_id="wren",
+        knows=KnowsCheck(how=how, subject_id="osric", predicate="MEMBER_OF", other_id="wardens"),
+    )
+    seen = event("seen_in_s1", kind="witnessed", who=[("wren", "witness")], scene="s1")
+    events = [seen, _TOLD]
+    knowing = Knowing(
+        beliefs=[belief(f"b_{i}", "wren", _SECRET, source) for i, source in enumerate(sources)],
+        events={item.id: item for item in events},
+        where=_placed(events=events),
+        names=names(),
+    )
+    planned = planned_change(need, list(earlier))
+    state = condition_state(scene_id, need, _world(), knowing=knowing, planned=planned)
+    return {state.status}
+
+
+def _moved_away() -> set[str]:
+    """STY-005: scene 1 is meant to leave Wren at Marrow Light; scene 2 needs her at the quay."""
+    away = SceneCondition(
+        when="after",
+        entity_id="wren",
+        check=Check(kind="has", pattern=Pattern(predicate="LOCATED_AT", other_id="light")),
+    )
+    return _condition([WorldFact("l1", "wren", "LOCATED_AT", "quay")], [("s1", "S1", [away])])
+
+
+def _knowing_cases() -> list[Case]:
+    return [
+        _case(
+            "plan/knows-learned-later",
+            "plan",
+            "Scene 2 needs Wren to know Osric's secret; she is only told it in scene 3.",
+            defect=True,
+            codes=["not_met"],
+            run=lambda: _knowing("knows", ["told_in_s3"], scene_id="s2"),
+            tags=["knowledge"],
+        ),
+        _case(
+            "plan/knows-in-time",
+            "plan",
+            "Scene 4 needs Wren to know it; she was told it in scene 3.",
+            defect=False,
+            codes=["not_met"],
+            run=lambda: _knowing("knows", ["told_in_s3"]),
+            tags=["knowledge"],
+        ),
+        _case(
+            "plan/seen-but-only-told",
+            "plan",
+            "Scene 4 needs Wren to have seen it happen; she was only told it.",
+            defect=True,
+            codes=["not_met"],
+            run=lambda: _knowing("seen", ["told_in_s3"]),
+            tags=["knowledge"],
+        ),
+        _case(
+            "plan/seen-it",
+            "plan",
+            "Scene 4 needs Wren to have seen it; she saw it in scene 1.",
+            defect=False,
+            codes=["not_met"],
+            run=lambda: _knowing("seen", ["seen_in_s1"]),
+            tags=["knowledge"],
+        ),
+        _case(
+            "plan/heard-it-told",
+            "plan",
+            "Scene 4 needs Wren to have heard it; she was told it in scene 3.",
+            defect=False,
+            codes=["not_met"],
+            run=lambda: _knowing("heard", ["told_in_s3"]),
+            tags=["knowledge"],
+        ),
+        _case(
+            "plan/is-at-moved-away",
+            "plan",
+            "Wren is at the quay in the story bible, but scene 1 is meant to take her to "
+            "Marrow Light before scene 2, which needs her at the quay.",
+            defect=True,
+            codes=["not_met"],
+            run=_moved_away,
+        ),
+    ]
 
 
 def _plan_cases() -> list[Case]:
@@ -2279,6 +2375,206 @@ def _voice_cases() -> list[Case]:
     ]
 
 
+# ------------------------------------------------------------------ travel and lasting statuses
+# SCN-007 travel read from the words, and CON-004 statuses that last (imprisoned, exiled,
+# missing, married) with the event that ends them honoured. All notes.
+
+_PLACES = [
+    PlaceKnown("quay", "Kestle Quay", ("Kestle Quay", "the quay")),
+    PlaceKnown("light", "Marrow Light", ("Marrow Light",)),
+    PlaceKnown("fen", "the Low Fen", ("the Low Fen", "Low Fen")),
+]
+_PEOPLE = {"Wren Halloway": ("Wren Halloway", "Wren"), "Osric Pell": ("Osric Pell", "Osric")}
+
+
+def _travel(text: str, **fields) -> set[str]:
+    brief = MovementBrief(people=dict(_PEOPLE), places=list(_PLACES), **fields)
+    return {item.code for item in movement_findings(text, brief)}
+
+
+def _travel_cases() -> list[Case]:
+    moved = ["moves_elsewhere", "travel_too_soon", "moves_while_held", "moves_into_exile"]
+    road = [("quay", "light", 3.0, "3 days")]
+    soon = Elsewhere(
+        "Wren Halloway", "quay", "the scene “The Crossing” (day 6)", 1.0, "1 day", True
+    )
+    held = Kept("Wren Halloway", "held", "Wren Halloway is imprisoned at Kestle Quay", "quay")
+    return [
+        _case(
+            "prose/rides-away-from-the-planned-place",
+            "prose",
+            "The scene is planned at Kestle Quay; the words have Wren sail to Marrow Light.",
+            defect=True,
+            codes=moved,
+            run=lambda: _travel("At dusk Wren sailed to Marrow Light.", scene_place="quay"),
+        ),
+        _case(
+            "prose/rides-within-the-planned-place",
+            "prose",
+            "Walking to the quay, the scene's own place, is not leaving it.",
+            defect=False,
+            codes=moved,
+            run=lambda: _travel("Wren walked back to the quay.", scene_place="quay"),
+        ),
+        _case(
+            "prose/journey-quicker-than-the-table",
+            "prose",
+            "Marrow Light is three days from the quay; Wren is at the quay a day later.",
+            defect=True,
+            codes=moved,
+            run=lambda: _travel("Wren rode to Marrow Light.", travel=road, elsewhere=[soon]),
+        ),
+        _case(
+            "prose/journey-wished-for",
+            "prose",
+            "Wren only wants to sail to Marrow Light.",
+            defect=False,
+            codes=moved,
+            run=lambda: _travel("Wren wanted to sail to Marrow Light.", scene_place="quay"),
+        ),
+        _case(
+            "prose/journey-said-aloud",
+            "prose",
+            "Osric says Wren rode to Marrow Light; the narration does not.",
+            defect=False,
+            codes=moved,
+            run=lambda: _travel("“Wren rode to Marrow Light,” Osric said.", scene_place="quay"),
+        ),
+        _case(
+            "prose/journey-in-a-clause-about-something-else",
+            "prose",
+            "'The horse that Wren rode to Marrow Light was lame' is about the horse.",
+            defect=False,
+            codes=moved,
+            run=lambda: _travel(
+                "The horse that Wren rode to Marrow Light was lame.", scene_place="quay"
+            ),
+        ),
+        _case(
+            "prose/journey-in-a-dream",
+            "prose",
+            "Wren wanders to Marrow Light only in her dreams.",
+            defect=False,
+            codes=moved,
+            run=lambda: _travel("Wren wandered to Marrow Light in her dreams.", scene_place="quay"),
+        ),
+        _case(
+            "prose/walks-out-while-imprisoned",
+            "prose",
+            "Wren is imprisoned at the quay then; the words walk her to the Low Fen.",
+            defect=True,
+            codes=moved,
+            run=lambda: _travel("Wren walked to the Low Fen.", kept=[held]),
+        ),
+        _case(
+            "prose/journey-by-pronoun",
+            "prose",
+            "'She rode to Marrow Light' after naming Wren: a pronoun is not read.",
+            defect=True,
+            codes=moved,
+            run=lambda: _travel("Wren saddled up. She rode to Marrow Light.", scene_place="quay"),
+            known_limit="A pronoun is never read as the person named before; that needs a model.",
+        ),
+    ]
+
+
+def _lifecycle_cases() -> list[Case]:
+    lasting = [
+        "held_elsewhere",
+        "exile_returned",
+        "missing_seen",
+        "marries_while_married",
+        "two_spouses",
+    ]
+    held = fact("f_held", "wren", "IMPRISONED_AT", "light", starts=At(at=2), ends=At(at=9))
+    freed = event("wren_freed", At(at=3), kind="released", who=["wren"])
+    exiled = fact("f_exile", "osric", "EXILED_FROM", "quay", starts=At(at=1))
+    missing = fact(
+        "f_missing", "ada", "HAS_STATUS", {"kind": "string", "value": "missing"}, starts=At(at=1)
+    )
+    married = fact("f_wed", "bram", "MARRIED_TO", "ada", starts=At(at=1))
+    wedding = event("bram_weds", At(at=6), kind="wedding", who=["bram", "wren"])
+    return [
+        _case(
+            "continuity/held-and-elsewhere",
+            "continuity",
+            "Wren is imprisoned at Marrow Light from day 2 to 9; a day-4 scene has her at the quay.",
+            defect=True,
+            codes=lasting,
+            run=lambda: _continuity(
+                facts=[held], scenes=[scene("quay_day4", At(at=4), place="quay", who=["wren"])]
+            ),
+        ),
+        _case(
+            "continuity/held-but-released",
+            "continuity",
+            "Wren is released on day 3, before the day-4 scene at the quay.",
+            defect=False,
+            codes=lasting,
+            run=lambda: _continuity(
+                facts=[held],
+                events=[freed],
+                scenes=[scene("quay_day4", At(at=4), place="quay", who=["wren"])],
+            ),
+        ),
+        _case(
+            "continuity/exile-back-home",
+            "continuity",
+            "Osric, exiled from the quay since year 1, is at the quay in year 5.",
+            defect=True,
+            codes=lasting,
+            run=lambda: _continuity(
+                facts=[exiled], scenes=[scene("home", At(at=5), place="quay", who=["osric"])]
+            ),
+        ),
+        _case(
+            "continuity/missing-among-friends",
+            "continuity",
+            "Ada is missing from year 1, yet a year-4 scene has her with Wren.",
+            defect=True,
+            codes=lasting,
+            run=lambda: _continuity(
+                facts=[missing],
+                scenes=[scene("inn", At(at=4), place="house", who=["ada", "wren"])],
+            ),
+        ),
+        _case(
+            "continuity/missing-loose-time",
+            "continuity",
+            "The scene is only 'some time before year 3': it may come before she goes missing.",
+            defect=False,
+            codes=lasting,
+            run=lambda: _continuity(
+                facts=[missing],
+                scenes=[
+                    scene(
+                        "inn", Between(earliest=None, latest=3), place="house", who=["ada", "wren"]
+                    )
+                ],
+            ),
+        ),
+        _case(
+            "continuity/marries-while-married",
+            "continuity",
+            "Bram, married to Ada, marries Wren in year 6 with nothing ending the first.",
+            defect=True,
+            codes=lasting,
+            run=lambda: _continuity(facts=[married], events=[wedding]),
+        ),
+        _case(
+            "continuity/marries-after-a-divorce",
+            "continuity",
+            "A divorce in year 4 ends Bram's marriage before the year-6 wedding.",
+            defect=False,
+            codes=lasting,
+            run=lambda: _continuity(
+                facts=[married],
+                events=[wedding, event("parting", At(at=4), kind="divorce", who=["bram", "ada"])],
+            ),
+        ),
+    ]
+
+
 def all_cases() -> list[Case]:
     return [
         *_continuity_cases(),
@@ -2286,7 +2582,10 @@ def all_cases() -> list[Case]:
         *_knowledge_cases(),
         *_drafting_cases(),
         *_plan_cases(),
+        *_knowing_cases(),
         *_prose_cases(),
+        *_travel_cases(),
+        *_lifecycle_cases(),
         *_voice_cases(),
     ]
 

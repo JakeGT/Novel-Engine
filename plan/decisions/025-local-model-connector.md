@@ -209,3 +209,12 @@ model only.
   https://lmstudio.ai/docs/api/rest-api
 - llama.cpp server `/props` (`default_generation_settings.n_ctx`): the server README in
   https://github.com/ggml-org/llama.cpp/tree/master/tools/server
+
+## Amendment 2026-10-21 (batch 10 A): answers come whole, not streamed
+
+Drafts stream to the studio from cloud providers (ADR-022 amendment, SCN-002). Through the
+connector they do not: the relay carries one request and one whole answer, and the route declares
+`supports_streaming=False`, so the gateway never asks a computer for a stream and the studio shows
+progress only. Relaying pieces would need a new protocol version (the connector posting parts of an
+answer while the site's long poll holds the request), with its own limits and tests, for little gain
+with a local model. Revisit if authors ask for it.

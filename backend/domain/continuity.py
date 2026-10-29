@@ -284,6 +284,20 @@ COVERAGE: tuple[Coverage, ...] = (
         "time is said to have none.",
     ),
     Coverage(
+        "lifecycle",
+        "Imprisoned, exiled, missing or married",
+        "A status that lasts: imprisoned, held or captive (a status such as imprisoned, or a "
+        "kind of fact such as “imprisoned at” or “held at” a place), exiled or banished from "
+        "a place, missing, or married (to someone, or a status such as married), each from "
+        "when it starts until it ends, or until an event with them in it ends it (released, "
+        "freed or escaped; returned or pardoned; found; divorced, or the death of the one they "
+        "married). A note when a scene or event at that time does not fit it: someone held at "
+        "one place is somewhere else, someone exiled from a place is there, someone missing is "
+        "in a scene with others, or someone married marries again or to two people at once. "
+        "Only when the status is certainly true then; a time that cannot be placed never "
+        "counts.",
+    ),
+    Coverage(
         "change",
         "Relationships and goals that change off the page",
         "A relationship (related to, knows, member of, or any fact between two characters) or a "
@@ -425,6 +439,73 @@ STATE_WORDS = frozenset(
         "missing",
     }
 )
+# Statuses that last until something ends them (CON-004), by kind: in a word (a status's
+# value), or as a kind of fact naming a place or a person.
+HELD_WORDS = frozenset(
+    {"imprisoned", "jailed", "captive", "captured", "held", "detained", "locked up", "enslaved"}
+)
+HELD_KINDS = frozenset(
+    {
+        "IMPRISONED_AT",
+        "IMPRISONED_IN",
+        "HELD_AT",
+        "HELD_IN",
+        "CAPTIVE_AT",
+        "CAPTIVE_IN",
+        "DETAINED_AT",
+        "DETAINED_IN",
+        "JAILED_AT",
+        "JAILED_IN",
+        "PRISONER_AT",
+        "PRISONER_IN",
+        "LOCKED_IN",
+    }
+)
+EXILED_WORDS = frozenset({"exiled", "banished", "outlawed"})
+EXILED_KINDS = frozenset({"EXILED_FROM", "BANISHED_FROM", "BARRED_FROM", "OUTLAWED_FROM"})
+MISSING_WORDS = frozenset({"missing", "disappeared", "vanished"})
+MARRIED_WORDS = frozenset({"married", "wed", "wedded"})
+MARRIED_KINDS = frozenset({"MARRIED_TO", "SPOUSE_OF", "WED_TO", "WIFE_OF", "HUSBAND_OF"})
+# Events (with the person in them) that end each kind of status from when they happen.
+ENDS_STATUS: dict[str, frozenset[str]] = {
+    "held": frozenset(
+        {
+            "release",
+            "released",
+            "freed",
+            "freeing",
+            "escape",
+            "escaped",
+            "rescue",
+            "rescued",
+            "pardon",
+            "pardoned",
+            "liberation",
+            "liberated",
+            "jailbreak",
+            "breakout",
+        }
+    ),
+    "exiled": frozenset(
+        {"return", "returned", "recall", "recalled", "pardon", "pardoned", "homecoming"}
+    ),
+    "missing": frozenset(
+        {
+            "found",
+            "rescue",
+            "rescued",
+            "return",
+            "returned",
+            "reappearance",
+            "reappeared",
+            "reunion",
+        }
+    ),
+    "married": frozenset(
+        {"divorce", "divorced", "annulment", "annulled", "separation", "separated", "widowed"}
+    ),
+}
+WEDDING_KINDS = frozenset({"wedding", "marriage", "married", "wed", "wedded"})
 # Who can only be in one place at a time.
 _BODIES = frozenset({"Character", "Object"})
 
@@ -1194,6 +1275,25 @@ def _status_word(fact: Fact) -> str | None:
     return word if word in DEAD_WORDS or word in STATE_WORDS else None
 
 
+def _lasting_ended(c: _Checker, entity_id: str, word: str, fact: Fact, moment: Interval) -> bool:
+    """Whether a lasting status (imprisoned, missing) may have ended by ``moment``: an event
+    with them in it that ends it comes after the status starts and before the moment."""
+    kind = "held" if word in HELD_WORDS else "missing" if word in MISSING_WORDS else None
+    if kind is None:
+        return False
+    span = c.span(fact)
+    start = span.start.hi if span.start is not None else -math.inf
+    for event in c.events:
+        at = c.times[event.id].interval
+        if at is None or _word(event.kind) not in ENDS_STATUS[kind]:
+            continue
+        if entity_id not in {item.entity_id for item in event.participants}:
+            continue
+        if at.hi >= start and at.lo <= moment.hi:
+            return True
+    return False
+
+
 def check_life(c: _Checker) -> None:
     """Before birth, after death, a death before a birth, two deaths, and conditions."""
     births: dict[str, list[tuple[Interval, Record, str]]] = {}
@@ -1266,6 +1366,10 @@ def check_life(c: _Checker) -> None:
             judge(entity_id, moment, c.scene_record(scene), scene.id)
             for fact in timed_states.get(entity_id, []):
                 word = _status_word(fact) or ""
+                if (scene.id, fact.id) in getattr(c, "_lifecycle_noted", set()):
+                    continue  # said more exactly by the lasting status's own note
+                if word in STATE_WORDS and _lasting_ended(c, entity_id, word, fact, moment):
+                    continue  # released, found or the like by then (CON-004)
                 if word in STATE_WORDS and true_at(c.span(fact), moment) is Truth.TRUE:
                     c.add(
                         "state",
@@ -1330,6 +1434,316 @@ def check_life(c: _Checker) -> None:
                         f"“{second_record.label}” ({second_words}).",
                         [c.entry(entity_id), first_record, second_record],
                     )
+
+
+@dataclass(frozen=True)
+class _Status:
+    """A status that lasts (CON-004), where it is certainly true: [lo, hi)."""
+
+    entity_id: str
+    kind: str  # held | exiled | missing | married
+    fact: Fact
+    lo: float
+    hi: float
+    place: str | None = None
+    other: str | None = None
+
+
+def _status_of(c: _Checker, fact: Fact) -> list[tuple[str, str, str | None, str | None]]:
+    """(whose, kind, place, other person) for each status a fact gives."""
+    subject = fact.proposition.subject_id
+    if c.kind_of(subject) != "Character":
+        return []
+    predicate = fact.proposition.predicate
+    other = getattr(fact.proposition.object, "entity_id", None)
+    if other is not None:
+        if predicate in HELD_KINDS:
+            place = other if c.kind_of(other) == "Location" else None
+            return [(subject, "held", place, None)]
+        if predicate in EXILED_KINDS and c.kind_of(other) == "Location":
+            return [(subject, "exiled", other, None)]
+        if predicate in MARRIED_KINDS and c.kind_of(other) == "Character":
+            return [(subject, "married", None, other), (other, "married", None, subject)]
+        return []
+    value = getattr(fact.proposition.object, "value", None)
+    if not isinstance(value, str):
+        return []
+    word = _word(value)
+    for words, kind in (
+        (HELD_WORDS, "held"),
+        (EXILED_WORDS, "exiled"),
+        (MISSING_WORDS, "missing"),
+        (MARRIED_WORDS, "married"),
+    ):
+        if word in words:
+            return [(subject, kind, None, None)]
+    return []
+
+
+def _endings(c: _Checker) -> dict[tuple[str, str], list[Interval]]:
+    """(person, kind of status) -> when events that end it happen, with them in it."""
+    found: dict[tuple[str, str], list[Interval]] = {}
+    for event in c.events:
+        moment = c.times[event.id].interval
+        if moment is None:
+            continue
+        kind_word = _word(event.kind)
+        for kind, words in ENDS_STATUS.items():
+            if kind_word in words:
+                for item in event.participants:
+                    found.setdefault((item.entity_id, kind), []).append(moment)
+    # A death ends a marriage, for the one they married.
+    for entity_id, event in c.life_events(DEATH_KINDS, DEATH_ROLES, DIED_ROLES):
+        moment = c.times[event.id].interval
+        if moment is not None:
+            found.setdefault((entity_id, "death"), []).append(moment)
+    return found
+
+
+def lifecycle_statuses(c: _Checker) -> list[_Status]:
+    """Every lasting status where it is certainly true, cut short where an event ends it.
+    Built once per checker."""
+    cached = getattr(c, "_lifecycle", None)
+    if cached is not None:
+        return cached  # type: ignore[no-any-return]
+    endings = _endings(c)
+    found: list[_Status] = []
+    for fact in c.facts:
+        for entity_id, kind, place, other in _status_of(c, fact):
+            stretch = c.certain(c.span(fact))
+            if stretch is None or not c.placed(c.span(fact)):
+                continue
+            lo, hi = stretch
+            ends = list(endings.get((entity_id, kind), ()))
+            if kind == "married" and other is not None:
+                ends.extend(endings.get((other, "death"), ()))
+            for end in ends:
+                if end.hi >= lo:
+                    # It may have ended as soon as the event can happen.
+                    hi = min(hi, end.lo)
+            if lo < hi:
+                found.append(_Status(entity_id, kind, fact, lo, hi, place, other))
+    c._lifecycle = found  # type: ignore[attr-defined]
+    return found
+
+
+def _inside(status: _Status, moment: Interval) -> bool:
+    return moment.lo >= status.lo and moment.hi < status.hi
+
+
+def check_lifecycle(c: _Checker) -> None:
+    """Scenes and events that do not fit a lasting status at their time (CON-004). Notes."""
+    statuses = lifecycle_statuses(c)
+    if not statuses:
+        return
+    noted: set[tuple[str, str]] = set()
+    presences = _presences(c)
+    for status in statuses:
+        who = c.name(status.entity_id)
+        said = fact_sentence(status.fact, c.names)
+        if status.kind in ("held", "exiled") and status.place is not None:
+            for presence in presences.get(status.entity_id, []):
+                if presence.stay:
+                    continue
+                moment = Interval(presence.lo, presence.hi)
+                if not _inside(status, moment):
+                    continue
+                there = c.same_place(presence.place_id, status.place)
+                if status.kind == "held" and not there:
+                    message = (
+                        f"{who} is held at {c.name(status.place)} at this time (“{said}”), yet "
+                        f"{_where(c, presence)} ({c.words(moment)}) has them at "
+                        f"{c.name(presence.place_id)}. If they are free by then, end the "
+                        "status there, or add the event that frees them."
+                    )
+                    code = "held_elsewhere"
+                elif status.kind == "exiled" and there:
+                    message = (
+                        f"{who} is exiled from {c.name(status.place)} at this time (“{said}”), "
+                        f"yet {_where(c, presence)} ({c.words(moment)}) has them there. If "
+                        "they may come back by then, end the status, or add their return."
+                    )
+                    code = "exile_returned"
+                else:
+                    continue
+                c.add(
+                    "lifecycle",
+                    code,
+                    "note",
+                    message,
+                    [c.entry(status.entity_id), presence.record, c.fact_record(status.fact)],
+                    [presence.scene_id],
+                )
+                if presence.scene_id:
+                    noted.add((presence.scene_id, status.fact.id))
+        elif status.kind == "missing":
+            for scene in c.scenes:
+                at = c.scene_moment.get(scene.id)
+                if at is None or status.entity_id not in c.scene_people(scene):
+                    continue
+                if not _inside(status, at):
+                    continue
+                others = [
+                    entity_id
+                    for entity_id in c.scene_people(scene)
+                    if entity_id != status.entity_id and c.kind_of(entity_id) == "Character"
+                ]
+                if not others:
+                    continue
+                c.add(
+                    "lifecycle",
+                    "missing_seen",
+                    "note",
+                    f"{who} is missing at this time (“{said}”), yet the scene "
+                    f"“{scene.title}” ({c.words(at)}) has them with "
+                    f"{', '.join(sorted(c.name(i) for i in others))}. If they are found here, "
+                    "end the status here, or add the event where they are found.",
+                    [c.entry(status.entity_id), c.scene_record(scene), c.fact_record(status.fact)],
+                    [scene.id],
+                )
+                noted.add((scene.id, status.fact.id))
+        elif status.kind == "married":
+            for event in c.events:
+                when = c.times[event.id].interval
+                if when is None or _word(event.kind) not in WEDDING_KINDS:
+                    continue
+                people = {
+                    item.entity_id
+                    for item in event.participants
+                    if c.kind_of(item.entity_id) == "Character"
+                }
+                if status.entity_id not in people or not _inside(status, when):
+                    continue
+                spouses = people - {status.entity_id}
+                if status.other is not None and spouses <= {status.other}:
+                    continue  # their own wedding again: a renewal, not a second marriage
+                c.add(
+                    "lifecycle",
+                    "marries_while_married",
+                    "note",
+                    f"{who} is married at this time (“{said}”), yet marries in "
+                    f"“{event.name}” ({c.event_when(event)}). If the marriage has ended, end "
+                    "it there, or add the divorce or the death that ends it.",
+                    [c.entry(status.entity_id), c.event_record(event), c.fact_record(status.fact)],
+                )
+    married = [item for item in statuses if item.kind == "married" and item.other is not None]
+    for index, first in enumerate(married):
+        for second in married[index + 1 :]:
+            if (
+                first.entity_id != second.entity_id
+                or first.other == second.other
+                or first.fact.id == second.fact.id
+                or first.hi <= second.lo
+                or second.hi <= first.lo
+            ):
+                continue
+            c.add(
+                "lifecycle",
+                "two_spouses",
+                "note",
+                f"{c.name(first.entity_id)} is married to {c.name(first.other or '')} and to "
+                f"{c.name(second.other or '')} at the same time (“"
+                f"{fact_sentence(first.fact, c.names)}”, “{fact_sentence(second.fact, c.names)}”). "
+                "If one ended first, give it an end.",
+                [c.entry(first.entity_id), c.fact_record(first.fact), c.fact_record(second.fact)],
+            )
+    c._lifecycle_noted = noted  # type: ignore[attr-defined]
+
+
+# ------------------------------------------------------------------ travel read from prose
+
+
+@dataclass(frozen=True)
+class Whereabouts:
+    """Where someone is just before or after a scene, for the travel read from its prose."""
+
+    entity_id: str
+    place_id: str
+    where: str
+    gap: float
+    gap_words: str
+    after: bool
+
+
+@dataclass(frozen=True)
+class KeptThen:
+    """A status that keeps someone at the scene's time: held, or exiled from a place."""
+
+    entity_id: str
+    kind: str
+    said: str
+    place_id: str | None = None
+
+
+@dataclass
+class MovementContext:
+    """What the travel read from a scene's prose is compared with (SCN-007)."""
+
+    places: dict[str, CanonEntity]
+    groups: dict[str, str]
+    travel: list[tuple[str, str, float, str]]
+    elsewhere: list[Whereabouts]
+    kept: list[KeptThen]
+
+
+def movement_context(parts: StoryParts, scene_id: str, people: Iterable[str]) -> MovementContext:
+    """Places and journeys, and for the scene's ``people``: where they are in the nearest
+    timed appearance before and after the scene, and a status that keeps them then."""
+    c = _Checker(parts)
+    places = {key: entity for key, entity in c.entities.items() if entity.type == "Location"}
+    travel = [
+        (row.from_id, row.to_id, row.amount, c.amount(row.amount)) for row in parts.how_long.travel
+    ]
+    found = MovementContext(places, dict(c.groups), travel, [], [])
+    moment = c.scene_moment.get(scene_id)
+    if moment is None:
+        return found
+    wanted = list(dict.fromkeys(people))
+    presences = _presences(c)
+    for entity_id in wanted:
+        before: _Presence | None = None
+        after: _Presence | None = None
+        for presence in presences.get(entity_id, []):
+            if presence.scene_id == scene_id:
+                continue
+            if presence.hi <= moment.lo and (before is None or presence.hi > before.hi):
+                before = presence
+            elif presence.lo >= moment.hi and (after is None or presence.lo < after.lo):
+                after = presence
+        here = _Presence(entity_id, "", moment.lo, moment.hi, False, Record("scene", scene_id, ""))
+        for nearest, is_after in ((before, False), (after, True)):
+            if nearest is None:
+                continue
+            presence = nearest
+            gap = _longest_gap(here, presence) if is_after else _longest_gap(presence, here)
+            if gap is None:
+                continue
+            when = c.words(Interval(presence.lo, presence.hi)) if not presence.stay else ""
+            found.elsewhere.append(
+                Whereabouts(
+                    entity_id,
+                    presence.place_id,
+                    f"{_where(c, presence)}" + (f" ({when})" if when else ""),
+                    gap,
+                    c.amount(max(gap, 0)),
+                    is_after,
+                )
+            )
+    for status in lifecycle_statuses(c):
+        if status.entity_id not in wanted or status.kind not in ("held", "exiled"):
+            continue
+        if status.kind == "exiled" and status.place is None:
+            continue
+        if _inside(status, moment):
+            found.kept.append(
+                KeptThen(
+                    status.entity_id,
+                    status.kind,
+                    fact_sentence(status.fact, c.names),
+                    status.place,
+                )
+            )
+    return found
 
 
 def _change_kind(c: _Checker, fact: Fact) -> str | None:
@@ -1401,6 +1815,8 @@ CHECKS: tuple[Callable[[_Checker], None], ...] = (
     check_durations,
     check_place_lifetimes,
     check_possession,
+    # Before the plain conditions, so a lasting status's own note is said instead (CON-004).
+    check_lifecycle,
     check_life,
     check_changes,
 )
@@ -1488,6 +1904,11 @@ def known_records(
 
 
 __all__ = [
+    "KeptThen",
+    "MovementContext",
+    "Whereabouts",
+    "movement_context",
+    "check_lifecycle",
     "ALWAYS_SAID",
     "COVERAGE",
     "ContinuityFinding",

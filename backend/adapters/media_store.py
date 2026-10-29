@@ -930,6 +930,7 @@ def _segment(row: Any) -> MediaSegment:
         width=int(row.width),
         height=int(row.height),
         label=row.label,
+        entity_id=getattr(row, "entity_id", None),
         content_hash=row.content_hash,
         created_by=row.created_by,
         processor_version=row.processor_version,
@@ -1275,9 +1276,10 @@ class PostgresMediaProcessingStore:
                     text(
                         "INSERT INTO media_segments (workspace_id, project_id, id, asset_id, "
                         "asset_version_id, kind, x, y, width, height, label, content_hash, "
-                        "created_by, processor_version) VALUES (:w, :p, :id, :a, :v, :kind, :x, "
-                        ":y, :width, :height, :label, :hash, :by, :pv) ON CONFLICT (workspace_id, "
-                        "project_id, id) DO UPDATE SET label=EXCLUDED.label RETURNING *"
+                        "created_by, processor_version, entity_id) VALUES (:w, :p, :id, :a, :v, "
+                        ":kind, :x, :y, :width, :height, :label, :hash, :by, :pv, :entity) "
+                        "ON CONFLICT (workspace_id, project_id, id) DO UPDATE SET "
+                        "label=EXCLUDED.label, entity_id=EXCLUDED.entity_id RETURNING *"
                     ),
                     {
                         "w": segment.workspace_id,
@@ -1294,10 +1296,53 @@ class PostgresMediaProcessingStore:
                         "hash": segment.content_hash,
                         "by": segment.created_by,
                         "pv": segment.processor_version,
+                        "entity": segment.entity_id,
                     },
                 )
             ).one()
         return _segment(row)
+
+    async def get_segment(
+        self, *, workspace_id: str, project_id: str, segment_id: str
+    ) -> MediaSegment | None:
+        async with session_scope(self._session_factory) as session:
+            row = (
+                await session.execute(
+                    text(
+                        "SELECT * FROM media_segments WHERE workspace_id=:w AND project_id=:p "
+                        "AND id=:id"
+                    ),
+                    {"w": workspace_id, "p": project_id, "id": segment_id},
+                )
+            ).first()
+        return _segment(row) if row else None
+
+    async def update_segment(self, segment: MediaSegment) -> MediaSegment | None:
+        """Change a current region's place, size, name and entry (AST-007)."""
+        async with session_scope(self._session_factory) as session:
+            row = (
+                await session.execute(
+                    text(
+                        "UPDATE media_segments SET x=:x, y=:y, width=:width, height=:height, "
+                        "label=:label, entity_id=:entity, content_hash=:hash "
+                        "WHERE workspace_id=:w AND project_id=:p AND id=:id AND kind='region' "
+                        "AND retired_at IS NULL RETURNING *"
+                    ),
+                    {
+                        "w": segment.workspace_id,
+                        "p": segment.project_id,
+                        "id": segment.id,
+                        "x": segment.x,
+                        "y": segment.y,
+                        "width": segment.width,
+                        "height": segment.height,
+                        "label": segment.label,
+                        "entity": segment.entity_id,
+                        "hash": segment.content_hash,
+                    },
+                )
+            ).first()
+        return _segment(row) if row else None
 
     async def retire_segment(
         self, *, workspace_id: str, project_id: str, segment_id: str

@@ -328,6 +328,9 @@ class MediaSegment(BaseModel):
     width: int
     height: int
     label: str | None = None
+    # The entry this part shows, when the author said (a region only; AST-007). The
+    # author's own pointer, like the label: it states nothing about the story.
+    entity_id: str | None = None
     content_hash: str
     created_by: str | None = None
     processor_version: str | None = None

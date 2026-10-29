@@ -183,6 +183,27 @@ class JobRunner:
         # Work the loop does now and then, between jobs, such as starting audits the
         # author scheduled (CON-011): (every so many seconds, what, next due).
         self._periodic: list[list[Any]] = []
+        # Told of each job as it ends, however it ended, such as keeping a notice when an
+        # audit the author scheduled finishes (CON-011).
+        self._finished: list[Callable[[Job], Awaitable[Any]]] = []
+
+    def on_finished(self, listener: Callable[[Job], Awaitable[Any]]) -> None:
+        """Call ``listener`` with each job this runner ends. A failure in it is logged by
+        kind and never changes how the job ended."""
+        self._finished.append(listener)
+
+    async def _tell_finished(self, job: Job) -> None:
+        for listener in self._finished:
+            try:
+                await listener(job)
+            except Exception as error:  # noqa: BLE001 - the job has ended either way
+                log_event(
+                    logger,
+                    "job.finished_listener.error",
+                    level=logging.WARNING,
+                    job_kind=job.kind,
+                    error_type=type(error).__name__,
+                )
 
     def register(self, kind: str, handler: Handler, *, keeps_partial: bool = False) -> None:
         self._handlers[kind] = handler
@@ -379,6 +400,7 @@ class JobRunner:
             status=finished.status.value,
             error_code=finished.error_code,
         )
+        await self._tell_finished(finished)
         return finished  # type: ignore[no-any-return]
 
     async def run_pending(self, limit: int = 20) -> list[Job]:

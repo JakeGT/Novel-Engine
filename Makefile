@@ -6,7 +6,7 @@ export pnpm_config_store_dir = $(PNPM_STORE_DIR)
 
 TYPE_CHECK_TARGETS = backend connector
 
-.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify verify seed reset-dev diagnostics retention rekey media read-models read-models-verify reindex reindex-refresh reindex-status reindex-activate reindex-rollback reindex-cancel eval-media eval eval-model reconcile project watch archive audit api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check secret-scan frontend-install frontend-api-check frontend-lint frontend-typecheck frontend-test frontend-build frontend-e2e-install e2e check
+.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify verify seed reset-dev diagnostics retention rekey media read-models read-models-verify reindex reindex-refresh reindex-status reindex-activate reindex-rollback reindex-cancel eval-media eval eval-model reconcile project watch archive audit api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check secret-scan frontend-install frontend-api-check frontend-lint frontend-typecheck frontend-test frontend-build frontend-e2e-install e2e release release-check check
 
 help:
 	@echo "install             Install runtime Python dependencies"
@@ -34,6 +34,8 @@ help:
 	@echo "reindex-cancel      Ask a running search index build to stop"
 	@echo "eval-media          Picture/words search evaluation; JSON report in var/eval (EVAL_MEDIA_ARGS)"
 	@echo "eval                Evaluation sets without a model; report in var/eval/report.md"
+	@echo "release             Reproducible release artefacts from HEAD in dist/release (RELEASE_ARGS=--ref|--worktree)"
+	@echo "release-check       The same, built twice and compared byte for byte"
 	@echo "eval-model          The same, plus reading with the configured model (asks before spending)"
 	@echo "reconcile           Reconcile an interrupted canon commit by id"
 	@echo "project             Project committed canon into the graph (PROJECT_ARGS=--lag|--rebuild|--verify)"
@@ -232,5 +234,17 @@ frontend-e2e-install:
 e2e:
 	pnpm --dir frontend exec playwright test
 	pnpm --dir frontend exec playwright test --config playwright.model.config.ts
+
+# OSS-005: a reproducible release artefact set from one commit (HEAD unless
+# RELEASE_ARGS="--ref v0.1.0"): source tarball with lock files, wheel and sdist, the
+# built frontend, CycloneDX SBOMs, BUILDINFO.json and SHA256SUMS, in dist/release/.
+# Nothing is tagged or published. RELEASE_ARGS="--worktree" tries uncommitted work
+# (written to dist/release/novel-engine-<version>-worktree/, never as a release).
+release:
+	uv run --locked python -m scripts.release.build $(RELEASE_ARGS)
+
+# Builds twice and compares every file's checksum.
+release-check:
+	uv run --locked python -m scripts.release.build --check $(RELEASE_ARGS)
 
 check: lock-check lint format-check secret-scan typecheck test frontend-api-check frontend-lint frontend-typecheck frontend-test frontend-build

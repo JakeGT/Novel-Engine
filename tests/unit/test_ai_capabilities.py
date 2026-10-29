@@ -14,7 +14,11 @@ def test_openai_gateway_reports_text_only_capabilities() -> None:
     assert capabilities.input_modalities == frozenset({"text"})
     assert capabilities.output_modalities == frozenset({"text"})
     assert capabilities.structured_output is True
-    assert capabilities.supports_streaming is False
+    # Drafts stream unless the operator turns it off (SCN-002, AI_STREAMING).
+    assert capabilities.supports_streaming is True
+    assert capabilities.source == "route"
+    off = OpenAIGateway(api_key="sk-test", streaming=False).capabilities()
+    assert off.supports_streaming is False
 
 
 def test_scripted_gateway_reports_capabilities() -> None:

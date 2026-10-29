@@ -29,22 +29,26 @@ from backend.domain.knowledge import reading_order
 from backend.domain.sources import VersionOrigin
 from backend.domain.tenancy import Permission
 from backend.domain.voice import (
+    ESCALATION_VERSION,
     MIN_ATTRIBUTED_SHARE,
     MIN_BASELINE_SCENES,
     MIN_BASELINE_WORDS,
     MIN_SCENE_WORDS,
     VOICE_VERSION,
     Baseline,
+    FlaggedPassage,
     Speech,
     Trend,
     VoiceNote,
     VoiceStats,
     baseline,
     drift,
+    flagged_passages,
     measure,
     speech_drift,
     speech_drift_ready,
     speeches,
+    strong_drift,
     trends,
 )
 
@@ -54,6 +58,8 @@ logger = logging.getLogger(__name__)
 MAX_SCENES = 400
 MAX_KEPT = 4_000
 MAX_LEFT_OUT = 400
+# The voice check of flagged passages (CON-018), a job of its own.
+VOICE_CHECK_JOB = "voice_check"
 
 
 @dataclass(frozen=True)
@@ -146,6 +152,22 @@ def not_compared(reading: SceneReading | None, usual: Usual) -> str | None:
             f"scenes and {MIN_BASELINE_WORDS:,} words of your own."
         )
     return None
+
+
+@dataclass
+class VoiceEscalation:
+    """Whether the assistant's voice check of a few flagged passages is offered, which
+    passages it would read and why, and roughly what it would use (CON-018)."""
+
+    offered: bool
+    # Why it is not offered, in plain words, when it is not.
+    why_not: str | None = None
+    notes: list[str] = field(default_factory=list)
+    passages: list[FlaggedPassage] = field(default_factory=list)
+    words: int = 0
+    total_tokens: int = 0
+    source_id: str | None = None
+    version_id: str | None = None
 
 
 class VoiceService:
@@ -602,6 +624,253 @@ class VoiceService:
         )
         return current
 
+    # ------------------------------------------------- the assistant's voice check
+
+    def register_jobs(self, runner: Any) -> None:
+        runner.register(VOICE_CHECK_JOB, self.run_check)
+
+    async def escalation(
+        self, scope: AccessScope, workspace_id: str, project_id: str, plan_id: str
+    ) -> VoiceEscalation:
+        """Whether the measures point strongly enough away from the author's usual to
+        offer a small voice check with the assistant, on which passages, and its cost.
+        Calls no model."""
+        found = await self.scene(scope, workspace_id, project_id, plan_id)
+        return await self._escalation(scope, workspace_id, project_id, found)
+
+    async def _escalation(
+        self, scope: AccessScope, workspace_id: str, project_id: str, found: SceneVoice
+    ) -> VoiceEscalation:
+        reading = found.reading
+        if reading is None or found.not_compared is not None:
+            return VoiceEscalation(
+                offered=False, why_not=found.not_compared or "Nothing is written yet."
+            )
+        standing = [
+            note
+            for note, key in zip(found.notes, found.keys, strict=False)
+            if key not in found.dismissals
+        ]
+        if not strong_drift(standing):
+            return VoiceEscalation(
+                offered=False,
+                why_not="The measures do not point far enough from your usual to ask the "
+                "assistant: that takes two different notes, or one saying the scene may "
+                "sound like someone else.",
+                notes=[note.message for note in standing],
+            )
+        content = await self._content(workspace_id, project_id, found)
+        # Off the event loop: a long scene takes a moment to read.
+        passages = await asyncio.to_thread(flagged_passages, content, standing, reading.stats)
+        if not passages:
+            return VoiceEscalation(
+                offered=False,
+                why_not="No passage shows what the measures found clearly enough to send.",
+                notes=[note.message for note in standing],
+            )
+        messages = [note.message for note in standing]
+        tokens = await self._estimate(
+            scope, workspace_id, project_id, found, content, passages, messages
+        )
+        return VoiceEscalation(
+            offered=True,
+            notes=[note.message for note in standing],
+            passages=passages,
+            words=sum(len(content[p.start : p.end].split()) for p in passages),
+            total_tokens=tokens,
+            source_id=reading.source_id,
+            version_id=reading.version_id,
+        )
+
+    async def _material(
+        self, scope: AccessScope, workspace_id: str, project_id: str, plan_id: str, content: str
+    ) -> Any:
+        from backend.domain.check_passes import CheckPass
+
+        plan = await self._studio.check_plan(
+            scope, workspace_id, project_id, plan_id, content, (CheckPass.VOICE,)
+        )
+        return plan.materials[0]
+
+    @staticmethod
+    def _messages(
+        material: Any, content: str, passages: list[FlaggedPassage], notes: list[str]
+    ) -> list[dict[str, str]]:
+        from backend.services.scene_checks import GAP, voice_passages_messages
+
+        text = (
+            GAP.strip("\n")
+            .join(f"\n\n{content[p.start : p.end].strip()}\n\n" for p in passages)
+            .strip()
+        )
+        # Every note the passages were chosen for, each once.
+        flagged = "\n".join(
+            f"- {why}" for why in dict.fromkeys([*notes, *(p.why for p in passages)])
+        )
+        return voice_passages_messages(material.story, material.voice, text, flagged)
+
+    async def _estimate(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        found: SceneVoice,
+        content: str,
+        passages: list[FlaggedPassage],
+        notes: list[str],
+    ) -> int:
+        import math
+
+        from backend.domain.check_passes import PASS_ANSWER_TOKENS, TOKENS_PER_WORD
+
+        material = await self._material(scope, workspace_id, project_id, found.scene.id, content)
+        messages = self._messages(material, content, passages, notes)
+        reads = sum(len(message["content"].split()) for message in messages)
+        return math.ceil(reads * TOKENS_PER_WORD) + PASS_ANSWER_TOKENS
+
+    async def start_check(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        *,
+        confirmed_tokens: int | None = None,
+    ) -> Any:
+        """Ask the assistant about the flagged passages only. Its notes quote the words
+        and are kept with the version read, as the voice pass's notes."""
+        from backend.services.job_runner import JobSubmission
+
+        studio = self._studio
+        await studio._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        found = await self.escalation(scope, workspace_id, project_id, plan_id)
+        if not found.offered:
+            raise ValidationError(found.why_not or "There is nothing for the assistant to check.")
+        await studio.confirm(
+            workspace_id,
+            project_id,
+            estimated_tokens=found.total_tokens,
+            confirmed_tokens=confirmed_tokens,
+            doing="Checking how these passages sound",
+        )
+        if studio._usage is not None:
+            await studio._usage.ensure_within_limits(
+                workspace_id=workspace_id,
+                actor_user_id=scope.actor_user_id,
+                estimated_tokens=found.total_tokens,
+            )
+        branch = await studio._journal.working_branch(
+            workspace_id=workspace_id, project_id=project_id
+        )
+        return await studio._runner.submit(
+            scope,
+            workspace_id,
+            project_id,
+            JobSubmission(
+                kind=VOICE_CHECK_JOB,
+                payload={
+                    "plan_id": plan_id,
+                    "branch_id": None if branch.is_root else branch.id,
+                    "source_id": found.source_id,
+                    "version_id": found.version_id,
+                    "passages": [[p.start, p.end, p.why] for p in found.passages],
+                    "notes": found.notes,
+                    "estimated_tokens": found.total_tokens,
+                    "confirmed_tokens": confirmed_tokens,
+                },
+            ),
+        )
+
+    async def run_check(self, ctx: Any) -> dict[str, Any]:
+        from backend.domain.check_passes import CheckPass
+        from backend.services.scene_checks import CheckNotes, keep_notes
+
+        studio = self._studio
+        job, scope = ctx.job, ctx.scope
+        workspace_id, project_id, payload = job.workspace_id, job.project_id, job.payload
+        earlier = await studio._store.findings_for_job(
+            workspace_id=workspace_id, project_id=project_id, job_id=job.id
+        )
+        if earlier:
+            # An earlier run of this job finished the call and kept its notes.
+            return {"findings": len(earlier), "dropped": 0, "earlier": True}
+        await ctx.step("Reading the passages and how you write", 10)
+        # Exactly the version the author asked about, even if they have written since.
+        _, version, _ = await studio._sources.version(
+            workspace_id, project_id, payload["source_id"], payload["version_id"]
+        )
+        content = str(version.content)
+        passages = [
+            FlaggedPassage(int(start), int(end), str(why))
+            for start, end, why in payload.get("passages") or []
+            if 0 <= int(start) < int(end) <= len(content)
+        ]
+        if not passages:
+            raise ValidationError("The passages are no longer in this version of the scene.")
+        material = await self._material(
+            scope, workspace_id, project_id, payload["plan_id"], content
+        )
+        notes = [str(note) for note in payload.get("notes") or []]
+        messages = self._messages(material, content, passages, notes)
+        import math
+
+        from backend.domain.check_passes import PASS_ANSWER_TOKENS, TOKENS_PER_WORD
+
+        # Worked out again as it runs: the story may have grown since it was asked for.
+        reads = sum(len(message["content"].split()) for message in messages)
+        estimated = math.ceil(reads * TOKENS_PER_WORD) + PASS_ANSWER_TOKENS
+        await studio.confirm_again(
+            workspace_id,
+            project_id,
+            payload,
+            estimated_tokens=estimated,
+            doing="Checking how these passages sound",
+        )
+        key = f"{job.id}:{job.attempts}:voice-passages"
+        api_key, base_url, sink = await studio._provider(
+            scope, estimated_tokens=estimated, idempotency_key=key
+        )
+        await ctx.step("The assistant is reading the passages", 40)
+        async with ctx.holding():
+            response = await studio._ai.generate_structured(
+                messages=messages,
+                response_format=CheckNotes,
+                model=studio._model,
+                api_key=api_key,
+                base_url=base_url,
+            )
+            # Recorded inside the lease: a call that finished is counted even if the lease
+            # is lost just after it.
+            await sink(response.usage, response.model, idempotency_key=key)
+            await ctx.used(
+                response.usage.prompt_tokens,
+                response.usage.completion_tokens,
+                response.usage.cached_prompt_tokens,
+                response.usage.cost_usd,
+            )
+        kept, dropped = keep_notes(
+            response.parsed.notes or [],
+            content,
+            check=CheckPass.VOICE,
+            target_kind="version",
+            target_id=version.id,
+            job_id=job.id,
+            within=[(p.start, p.end) for p in passages],
+        )
+        await ctx.step("Saving what it found", 90)
+        await studio._store.add_findings(
+            workspace_id=workspace_id, project_id=project_id, findings=kept
+        )
+        log_event(
+            logger,
+            "voice.passages_checked",
+            passages=len(passages),
+            kept=len(kept),
+            dropped=dropped,
+            version=ESCALATION_VERSION,
+        )
+        return {"findings": len(kept), "dropped": dropped, "passages": len(passages)}
+
     # ---------------------------------------------------------------- archive
 
     async def export_left_out(self, workspace_id: str, project_id: str) -> list[str]:
@@ -627,6 +896,8 @@ class VoiceService:
 
 
 __all__ = [
+    "VOICE_CHECK_JOB",
+    "VoiceEscalation",
     "SpeakerRow",
     "BookVoice",
     "RangeVoice",

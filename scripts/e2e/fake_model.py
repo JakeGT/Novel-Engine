@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
@@ -51,6 +52,30 @@ CLARITY = {
 }
 
 
+# The optional "bodies, objects and cause" pass (CON-008, batch 10) notes one sentence.
+PHYSICAL = {
+    "notes": [
+        {
+            "quote": "She counted the sacks twice",
+            "problem": "The yard is dark by now and no lamp is near her, so she could not count.",
+            "suggestion": "Give her a lamp, or have her count by touch.",
+        }
+    ]
+}
+
+
+# The voice check of flagged passages (CON-018): one note on a first-person passage.
+VOICE_PASSAGES = {
+    "notes": [
+        {
+            "quote": "because counting is the only thing I can do",
+            "problem": "This is told with “I” in the present tense; your scenes use “she” and the past.",
+            "suggestion": "Tell it as “she counted”, as in your other scenes.",
+        }
+    ]
+}
+
+
 def _check(body: dict[str, Any]) -> dict[str, Any]:
     system = next(
         (str(m.get("content", "")) for m in body.get("messages", []) if m.get("role") == "system"),
@@ -60,6 +85,10 @@ def _check(body: dict[str, Any]) -> dict[str, Any]:
         return REVIEW
     if "for one thing only: clarity" in system:
         return CLARITY
+    if "for one thing only: bodies, objects, places and cause" in system:
+        return PHYSICAL
+    if "for one thing only: the author's voice, in a few passages" in system:
+        return VOICE_PASSAGES
     return {"notes": []}
 
 
@@ -189,6 +218,7 @@ def _change(body: dict[str, Any]) -> dict[str, Any]:
 # message (CTX-013). The stand-in never looks at them; it answers in fixed words, about
 # the first entry listed, so a browser test can accept a detail and offer it as a fact.
 LISTED_ENTRY = re.compile(r"^- (.+) \(([a-z ]+)\)$", re.MULTILINE)
+MARKED_PART = re.compile(r"^- (part \d+):", re.MULTILINE)
 
 
 def _pictures_in(body: dict[str, Any]) -> int:
@@ -233,6 +263,24 @@ def _describe(body: dict[str, Any]) -> dict[str, Any]:
             },
             {"detail": "Her hair is short and grey.", "about": about, "confidence": 0.6},
         ],
+        # Each marked part listed gets a caption; one fixed piece of writing is "read".
+        "parts": [
+            {
+                "part": number,
+                "caption": "A close view of this part of the picture.",
+                "confidence": 0.7,
+            }
+            for number in MARKED_PART.findall(
+                asked.split("PARTS-1>>>", 1)[1] if "PARTS-1>>>" in asked else ""
+            )
+        ],
+        "writing": [
+            {
+                "text": "THE BLACK SWAN",
+                "region": {"x": 0.1, "y": 0.05, "width": 0.4, "height": 0.1},
+                "confidence": 0.9,
+            }
+        ],
     }
 
 
@@ -246,6 +294,8 @@ def _picture_check(body: dict[str, Any]) -> dict[str, Any]:
                 "problem": "Her picture shows her in a long blue coat; the scene does not.",
                 "suggestion": "Mention the coat.",
                 "picture": "picture 1" if _pictures_in(body) else "",
+                # The first marked part listed with the pictures, when there is one.
+                "part": next(iter(MARKED_PART.findall(_text_of(body))), ""),
             }
         ]
     }
@@ -289,11 +339,40 @@ def _bridges(body: dict[str, Any]) -> dict[str, Any]:
         "summary": "The journey that gets them where the next scene needs them.",
         "how_it_helps": "It brings them to where the next scene begins.",
     }
+    if "<<<GAP-" in asked:
+        # A gap that is not a condition (STY-004): a scene of its own name, so the
+        # browser tests that count "On the road" are not thrown by it.
+        bridge = {
+            "title": "A torn sack on the stair",
+            "summary": "Someone finds a torn sack, and the question comes back.",
+            "how_it_helps": "It keeps the question open between where it starts and ends.",
+        }
     if people:
         bridge["point_of_view"] = {"id": people[0][0], "name": people[0][1]}
     if places:
         bridge["place"] = {"id": places[0][0], "name": places[0][1]}
     return {"bridges": [bridge]}
+
+
+# An arc's stages (STY-006): where the character starts, quoting what the arc is about,
+# and where they end, in the last listed scene they are in, quoting what happens there.
+ARC_ABOUT = re.compile(r"^What it is about: (.+)$", re.MULTILINE)
+ARC_SCENE = re.compile(r"^- (\S+): “(.+?)” \(in it\)(?: — (.+))?$", re.MULTILINE)
+
+
+def _stages(body: dict[str, Any]) -> dict[str, Any]:
+    asked = "\n".join(str(m.get("content", "")) for m in body.get("messages", []))
+    about = ARC_ABOUT.search(asked)
+    scenes = ARC_SCENE.findall(asked)
+    if about is None or not scenes:
+        return {"stages": []}
+    scene_id, title, happens = scenes[-1]
+    return {
+        "stages": [
+            {"name": "Keeps to herself", "words": about.group(1).strip()},
+            {"name": "Asks for help", "scene_id": scene_id, "words": happens or title},
+        ]
+    }
 
 
 # Starting from a premise (AST-EXP-005): the first round suggests the people and places
@@ -410,6 +489,8 @@ def _structured(name: str, body: dict[str, Any]) -> dict[str, Any]:
         return _intent(body)
     if name == "BridgeSheet":
         return _bridges(body)
+    if name == "StageSheet":
+        return _stages(body)
     if name == "PictureDescription":
         return _describe(body)
     if name == "PictureNotes":
@@ -466,12 +547,52 @@ class _Handler(BaseHTTPRequestHandler):
         if not self.path.rstrip("/").endswith("/chat/completions"):
             self.send_error(404)
             return
+        if body.get("stream"):
+            self._stream(body)
+            return
         payload = json.dumps(_answer(body)).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
         self.wfile.write(payload)
+
+    def _stream(self, body: dict[str, Any]) -> None:
+        """SCN-002: prose as server-sent events, a few words at a time, then what it
+        used (as ``stream_options.include_usage`` asks). A direction asking for it to be
+        written slowly ("write it slowly") makes each piece wait, so a browser test can
+        watch the words arrive and stop part way."""
+        answer = _answer(body)
+        content = answer["choices"][0]["message"]["content"]
+        slow = "write it slowly" in json.dumps(body.get("messages", [])).lower()
+        delay = 0.6 if slow else 0.02
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        words = content.split(" ")
+
+        def send(chunk: dict[str, Any]) -> None:
+            self.wfile.write(b"data: " + json.dumps(chunk).encode() + b"\n\n")
+            self.wfile.flush()
+
+        base = {"id": "chatcmpl-e2e", "object": "chat.completion.chunk", "created": 0}
+        base["model"] = body.get("model", "e2e-model")
+        try:
+            for start in range(0, len(words), 3):
+                piece = " ".join(words[start : start + 3])
+                if start + 3 < len(words):
+                    piece += " "
+                send({**base, "choices": [{"index": 0, "delta": {"content": piece}}]})
+                time.sleep(delay)
+            send({**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})
+            if (body.get("stream_options") or {}).get("include_usage"):
+                send({**base, "choices": [], "usage": answer["usage"]})
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            # The site stopped reading: the author pressed Stop.
+            return
 
     def do_GET(self) -> None:  # noqa: N802
         payload = json.dumps({"object": "list", "data": [{"id": "e2e-model"}]}).encode()

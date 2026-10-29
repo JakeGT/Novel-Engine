@@ -170,7 +170,10 @@ describe('AuditDialog', () => {
     const user = userEvent.setup()
     renderInProject(<AuditDialog item={beat} onClose={vi.fn()} />)
     const choices = await screen.findByRole('group', { name: 'What the assistant checks in each scene' })
-    for (const box of within(choices).getAllByRole('checkbox')) await user.click(box)
+    // Untick every pass that is on; the optional ones start off.
+    for (const box of within(choices).getAllByRole('checkbox')) {
+      if ((box as HTMLInputElement).checked) await user.click(box)
+    }
     expect(screen.getByText('Only the checks without the assistant will run. Nothing is spent.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Start the audit' })).toBeEnabled()
   })

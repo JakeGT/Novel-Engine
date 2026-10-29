@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import time
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -23,7 +24,7 @@ from backend.domain.canon.assertions import FactVisibility
 from backend.domain.canon.phrasing import phrase
 from backend.domain.canon.plans import PlanItem, PlanKind
 from backend.domain.check_passes import (
-    PASS_ORDER,
+    DEFAULT_PASSES,
     CheckPass,
     PassEstimate,
     PassMaterial,
@@ -32,6 +33,7 @@ from backend.domain.check_passes import (
     pass_material,
 )
 from backend.domain.context import ContextManifest
+from backend.domain.context_parts import MediaLimits
 from backend.domain.dismissals import (
     MAX_DISMISSALS_PER_SCENE,
     MAX_NOTE,
@@ -63,6 +65,7 @@ from backend.domain.jobs import MAX_ACTIVE_JOBS, Job, JobStatus
 from backend.domain.knowledge import knowledge_of, scene_reveals, scene_time
 from backend.domain.prompting import fence
 from backend.domain.prompts import prompt_version
+from backend.domain.providers import request_model
 from backend.domain.sources import (
     SourceKind,
     SourceText,
@@ -70,6 +73,7 @@ from backend.domain.sources import (
     VersionOrigin,
     find_mentions,
 )
+from backend.domain.streaming import StreamBuffer
 from backend.domain.studio import (
     DRAFT_JOB,
     MAX_DIRECTION,
@@ -88,11 +92,18 @@ from backend.domain.usage_controls import (
     CheckProfile,
     NeedsConfirmation,
 )
-from backend.ports import AIError, AIInvalidOutputError
+from backend.ports import AIError, AIInvalidOutputError, AIUsage
 from backend.services.job_runner import JobContext, JobSubmission
 from backend.services.knowledge_timing import StoryOrder, scene_signals, where_learned
 from backend.services.provider_route import resolve_provider
 from backend.services.scene_checks import PassRunner
+from backend.services.send_preview import (
+    agreed_sending,
+    ask_again_before_sending,
+    ask_before_sending,
+    unknown_preview,
+    with_preview,
+)
 from backend.services.story_time_service import read_story
 
 logger = logging.getLogger(__name__)
@@ -103,6 +114,8 @@ TOKENS_PER_WORD = 4 / 3
 INSTRUCTION_WORDS = 320
 # How many drafts may wait in one scene, to be kept or discarded, at once.
 MAX_WAITING_DRAFTS = 9
+# While a draft streams, how often a stop the author asked for is looked for (SCN-002).
+CANCEL_CHECK_SECONDS = 1.0
 
 
 @dataclass
@@ -220,6 +233,10 @@ class Estimate:
     context_words: int
     # For a check with the assistant: what each pass asked for would use (CON-008).
     passes: tuple[PassEstimate, ...] = ()
+    # The pictures the request may send, as context parts, so what goes and where can
+    # be shown first (CTX-013); and that preview, once worked out.
+    pictures: tuple[Any, ...] = ()
+    sending: Any = None
 
     @property
     def total(self) -> int:
@@ -244,6 +261,7 @@ class CheckPlan:
             completion_tokens=sum(item.completion_tokens for item in self.estimates),
             context_words=self.manifest.words,
             passes=self.estimates,
+            pictures=tuple(part for material in self.materials for part in material.pictures),
         )
 
 
@@ -297,6 +315,11 @@ class StudioService:
         self._model = model
         self._tenancy = tenancy
         self._local_mode = local_mode
+        # What a request would send and where, shown before it is sent (CTX-013).
+        self.previews: Any = None
+        # Drafts while they are written, for the studio to show (SCN-002); None writes
+        # each draft whole, as before.
+        self.streams: Any = None
         # Deep audits of a part of the story, built on these checks (CON-011).
         from backend.services.story_audit import StoryAudit
 
@@ -772,6 +795,8 @@ class StudioService:
             items=items,
             unit=await unit_of(getattr(self._plan, "clocks", None), workspace_id, project_id),
             pictures=getattr(self._context, "pictures", None),
+            # The clock and travel table, for travel read from the words (SCN-007).
+            clocks=getattr(self._plan, "clocks", None),
         )
         return brief
 
@@ -1058,11 +1083,50 @@ class StudioService:
         context = await self._context.for_scene(scope, workspace_id, project_id, plan_id)
         voice = await self._store.voice(workspace_id=workspace_id, project_id=project_id)
         reads = context.manifest.words + INSTRUCTION_WORDS + len(voice.split())
-        return Estimate(
+        found = Estimate(
             prompt_tokens=math.ceil(reads * TOKENS_PER_WORD) * variants,
             completion_tokens=math.ceil(words * TOKENS_PER_WORD) * variants,
             context_words=context.manifest.words,
+            pictures=tuple(item.media for item in context.manifest.items if item.media),
         )
+        return replace(found, sending=await self.sending(scope, workspace_id, found))
+
+    async def sending(self, scope: AccessScope, workspace_id: str, estimate: Estimate) -> Any:
+        """What a request with this estimate would send, and where (CTX-013); None when
+        it cannot be said (no route, or previews are not set up here). When it may send
+        pictures and where they would go cannot be worked out, it is taken as a company's
+        servers, so the author is asked rather than the pictures simply sent."""
+        if self.previews is None:
+            return None
+        pictures = getattr(self._context, "pictures", None)
+        try:
+            limits = (
+                await pictures.route_limits(scope, workspace_id)
+                if pictures is not None and estimate.pictures
+                else MediaLimits()
+            )
+            return await self.previews.preview(
+                scope,
+                workspace_id,
+                words=estimate.context_words,
+                estimated_tokens=estimate.total,
+                media=list(estimate.pictures),
+                limits=limits,
+            )
+        except DomainError as error:
+            if not estimate.pictures:
+                return None
+            log_event(
+                logger,
+                "studio.sending_unknown",
+                level=logging.WARNING,
+                error_type=type(error).__name__,
+            )
+            return unknown_preview(
+                words=estimate.context_words,
+                estimated_tokens=estimate.total,
+                media=list(estimate.pictures),
+            )
 
     async def start_draft(
         self,
@@ -1125,17 +1189,32 @@ class StudioService:
                 f"{' or being written' if coming else ''}, and up to {MAX_WAITING_DRAFTS} can "
                 "wait at once. Keep or discard some first, or ask for fewer."
             )
+        # What the author agreed to send, once asked (absent when nothing asked).
+        agreed: dict[str, Any] = {}
         if self._usage is not None or self.controls is not None:
             estimate = await self.estimate(
                 scope, workspace_id, project_id, plan_id, variants=variants, words=words
             )
-            await self.confirm(
-                workspace_id,
-                project_id,
+            doing = "Writing these drafts" if variants > 1 else "Writing this draft"
+            try:
+                await self.confirm(
+                    workspace_id,
+                    project_id,
+                    estimated_tokens=estimate.total,
+                    confirmed_tokens=confirmed_tokens,
+                    doing=doing,
+                )
+            except NeedsConfirmation as asked:
+                # The question carries what would be sent, and where (CTX-013).
+                raise with_preview(asked, estimate.sending) from None
+            ask_before_sending(
+                estimate.sending,
                 estimated_tokens=estimate.total,
                 confirmed_tokens=confirmed_tokens,
-                doing="Writing these drafts" if variants > 1 else "Writing this draft",
+                threshold=None,
+                doing=doing,
             )
+            agreed = {"confirmed_sending": agreed_sending(estimate.sending)}
         if self._usage is not None:
             await self._usage.ensure_within_limits(
                 workspace_id=workspace_id,
@@ -1154,6 +1233,9 @@ class StudioService:
                     "variants": variants,
                     "words": words,
                     "direction": direction.strip(),
+                    # The route and pictures the author agreed to send (CTX-013): the
+                    # draft stops as it runs if it would send others, or elsewhere.
+                    **agreed,
                 },
                 idempotency_key=idempotency_key,
             ),
@@ -1171,7 +1253,8 @@ class StudioService:
         confirmed_tokens: int | None = None,
     ) -> Job:
         """Ask the assistant to check the scene's current text, or one draft, with the
-        passes the author chose (every pass when none are named)."""
+        passes the author chose (the usual passes when none are named: the optional ones
+        only ever run when asked for)."""
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         await self._scene(scope, workspace_id, project_id, plan_id)
         chosen = _passes(passes)
@@ -1182,19 +1265,32 @@ class StudioService:
         elif await self._text(workspace_id, project_id, plan_id) is None:
             raise ValidationError("There is nothing written for this scene to check yet.")
         estimated = 0
+        agreed: dict[str, Any] = {}
         if self.controls is not None or self._usage is not None:
-            estimated = (
-                await self.review_estimate(
-                    scope, workspace_id, project_id, plan_id, draft_id=draft_id, passes=chosen
+            found = await self.review_estimate(
+                scope, workspace_id, project_id, plan_id, draft_id=draft_id, passes=chosen
+            )
+            estimated = found.total
+            doing = "Checking this draft" if draft_id else "Checking this scene"
+            sending = await self.sending(scope, workspace_id, found)
+            try:
+                await self.confirm(
+                    workspace_id,
+                    project_id,
+                    estimated_tokens=estimated,
+                    confirmed_tokens=confirmed_tokens,
+                    doing=doing,
                 )
-            ).total
-            await self.confirm(
-                workspace_id,
-                project_id,
+            except NeedsConfirmation as asked:
+                raise with_preview(asked, sending) from None
+            ask_before_sending(
+                sending,
                 estimated_tokens=estimated,
                 confirmed_tokens=confirmed_tokens,
-                doing="Checking this draft" if draft_id else "Checking this scene",
+                threshold=None,
+                doing=doing,
             )
+            agreed = {"confirmed_sending": agreed_sending(sending)}
         if self._usage is not None:
             # Refused now rather than queued to fail: the allowance is already used up.
             await self._usage.ensure_within_limits(
@@ -1219,6 +1315,7 @@ class StudioService:
                     # What the author confirmed (None when no confirming was needed): the
                     # check is planned again as it runs, and stops if it would need more.
                     "confirmed_tokens": confirmed_tokens,
+                    **agreed,
                 },
             ),
         )
@@ -1438,7 +1535,21 @@ class StudioService:
                 last = max(job.created_at for job in automatic)
                 if now - last < timedelta(minutes=settings.check_minutes):
                     return "too_soon"
-            estimate = await self.review_estimate(scope, workspace_id, project_id, plan_id)
+            passes = DEFAULT_PASSES
+            estimate = await self.review_estimate(
+                scope, workspace_id, project_id, plan_id, passes=passes
+            )
+            sending = await self.sending(scope, workspace_id, estimate)
+            if sending is not None and sending.asks_first:
+                # Pictures would go to a company's servers and nobody is there to agree:
+                # the check runs without its pictures pass (the author can ask for it).
+                passes = tuple(item for item in passes if item is not CheckPass.PICTURES)
+                estimate = await self.review_estimate(
+                    scope, workspace_id, project_id, plan_id, passes=passes
+                )
+                sending = await self.sending(scope, workspace_id, estimate)
+                if sending is not None and sending.asks_first:
+                    return "needs_confirmation"
             if _held(automatic) + estimate.total > settings.scene_tokens:
                 return "scene_allowance"
             limits = await self.controls.limits(workspace_id, project_id)
@@ -1480,10 +1591,12 @@ class StudioService:
                         "draft_id": None,
                         "automatic": True,
                         "trigger": trigger,
-                        "passes": [item.value for item in PASS_ORDER],
+                        "passes": [item.value for item in passes],
                         "estimated_tokens": estimate.total,
-                        # Nobody confirmed it: it stops if it would now need confirming.
+                        # Nobody confirmed it: it stops if it would now need confirming,
+                        # or now send pictures to a company's servers.
                         "confirmed_tokens": None,
+                        "confirmed_sending": agreed_sending(sending),
                     },
                     idempotency_key=f"auto:{plan_id}:{line or 'main'}:after:{latest}",
                 ),
@@ -1596,6 +1709,19 @@ class StudioService:
             # usage the stopped worker already recorded.
             return f"{job.id}:{job.attempts}:{number}"
 
+        if "confirmed_sending" in payload:
+            # The pictures and route agreed to when it was asked for, checked again now.
+            now = Estimate(
+                prompt_tokens=per_draft * len(to_make),
+                completion_tokens=0,
+                context_words=context.manifest.words,
+                pictures=tuple(item.media for item in context.manifest.items if item.media),
+            )
+            ask_again_before_sending(
+                payload,
+                await self.sending(scope, workspace_id, now),
+                doing="Writing these drafts" if variants > 1 else "Writing this draft",
+            )
         api_key, base_url, sink = await self._provider(
             scope,
             estimated_tokens=per_draft * len(to_make),
@@ -1608,7 +1734,7 @@ class StudioService:
         pictures = getattr(self._context, "pictures", None)
         if pictures is not None:
             delivered = await self._context.deliver(
-                scope, workspace_id, project_id, context, pictures.limits_for(base_url)
+                scope, workspace_id, project_id, context, await pictures.limits_for(base_url)
             )
             if delivered is not None:
                 delivery = delivered.delivery
@@ -1628,11 +1754,11 @@ class StudioService:
             scope, workspace_id, project_id, context, purpose="scene-draft", delivery=delivery
         )
         made = 0
+        streams = self.streams
+        read_tokens = math.ceil(reads * TOKENS_PER_WORD)
         for index, number in enumerate(to_make):
-            await ctx.step(
-                f"Writing draft {number} of {variants}" if variants > 1 else "Writing the draft",
-                10 + int(85 * (number - 1) / variants),
-            )
+            stage = f"Writing draft {number} of {variants}" if variants > 1 else "Writing the draft"
+            await ctx.step(stage, 10 + int(85 * (number - 1) / variants))
             if index and self._usage is not None:
                 # Checked again before each draft: the allowance may have run out meanwhile.
                 await self._usage.ensure_within_limits(
@@ -1641,14 +1767,63 @@ class StudioService:
                     estimated_tokens=per_draft * (len(to_make) - index),
                     idempotency_key=call_key(number),
                 )
-            async with ctx.holding():
-                response = await self._ai.generate_text(
-                    messages=messages,
-                    max_tokens=max(400, int(words * TOKENS_PER_WORD * 1.6)),
-                    model=self._model,
-                    api_key=api_key,
-                    base_url=base_url,
-                    **({"images": images} if images else {}),
+            writer = (
+                DraftWriter(
+                    streams,
+                    ctx,
+                    number=number,
+                    stage=stage,
+                    progress=(10 + 85 * (number - 1) / variants, 85 / variants),
+                    words=words,
+                )
+                if streams is not None
+                else None
+            )
+            try:
+                if writer is not None:
+                    await writer.begin()
+                async with ctx.holding():
+                    response = await self._ai.generate_text(
+                        messages=messages,
+                        max_tokens=max(400, int(words * TOKENS_PER_WORD * 1.6)),
+                        model=self._model,
+                        api_key=api_key,
+                        base_url=base_url,
+                        **({"images": images} if images else {}),
+                        **({"on_text": writer.add} if writer is not None else {}),
+                    )
+                if writer is not None:
+                    await writer.flush()
+            except BaseException:
+                if writer is not None and writer.written:
+                    # Stopped or failed part way through a stream (the author's stop, an
+                    # error or a dropped connection, a job lost to another worker, the
+                    # server shutting down): the provider charged for what it wrote and
+                    # will not say how much, so an estimate is recorded, once.
+                    spent = AIUsage(
+                        prompt_tokens=read_tokens,
+                        completion_tokens=math.ceil(writer.written_words * TOKENS_PER_WORD),
+                    )
+                    try:
+                        await sink(spent, request_model() or self._model or "", call_key(number))
+                        await ctx.used(spent.prompt_tokens, spent.completion_tokens)
+                    except Exception as error:  # noqa: BLE001 - the first failure is raised
+                        log_event(
+                            logger,
+                            "studio.partial_usage_not_recorded",
+                            level=logging.WARNING,
+                            error_type=type(error).__name__,
+                        )
+                await self._end_streams(job)
+                raise
+            if not response.usage_reported:
+                # Streamed without a report of what it used: recorded as estimated.
+                response = replace(
+                    response,
+                    usage=AIUsage(
+                        prompt_tokens=read_tokens,
+                        completion_tokens=math.ceil(len(response.text.split()) * TOKENS_PER_WORD),
+                    ),
                 )
             await sink(response.usage, response.model, idempotency_key=call_key(number))
             await ctx.used(
@@ -1679,11 +1854,58 @@ class StudioService:
                     created_at=job.created_at,
                 )
             )
+            if writer is not None:
+                # The draft is stored whole: its passing copy is cleared.
+                await writer.end()
             made += 1
         # A stop asked for while the last draft was being written still counts.
         await ctx.step("Finishing", 98)
         log_event(logger, "studio.drafted", drafts=made, prompt_version=DRAFT_PROMPT_VERSION)
         return {"drafts": len(done) + made, "manifest_id": manifest_id}
+
+    async def _end_streams(self, job: Job) -> None:
+        """The work stopped or failed: no words of an unfinished draft are kept. Only the
+        words this attempt (or an older one) wrote: a worker that lost the job to another
+        never ends the drafts the newer one is writing."""
+        if self.streams is None:
+            return
+        try:
+            await self.streams.end(
+                workspace_id=job.workspace_id,
+                project_id=job.project_id,
+                job_id=job.id,
+                attempt=job.attempts,
+            )
+        except Exception as error:  # noqa: BLE001 - the sweep clears what this misses
+            log_event(logger, "studio.stream_not_cleared", error_type=type(error).__name__)
+
+    async def stream(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        job_id: str,
+        offsets: dict[int, int],
+        *,
+        authorize: bool = True,
+    ) -> tuple[Job, list[Any]]:
+        """The job, and each draft's words after the offsets already sent (SCN-002).
+        ``authorize`` is False only between the checks a long stream repeats."""
+        if authorize:
+            job = await self.job(scope, workspace_id, project_id, job_id)
+        else:
+            found = await self._jobs.get(
+                workspace_id=workspace_id, project_id=project_id, job_id=job_id
+            )
+            if found is None:
+                raise NotFoundError("That piece of work was not found.")
+            job = found
+        if self.streams is None or job.kind != DRAFT_JOB:
+            return job, []
+        parts = await self.streams.read(
+            workspace_id=workspace_id, project_id=project_id, job_id=job_id, offsets=offsets
+        )
+        return job, list(parts)
 
     async def run_review(self, ctx: JobContext) -> dict:
         """Check the text asked about with each chosen pass, one model call each. A check
@@ -1705,7 +1927,7 @@ class StudioService:
             _, current, _ = await self._sources.version(workspace_id, project_id, text.id)
             content, target_kind, target_id = current.content, "version", current.id
             source_id = text.id
-        chosen = _passes(payload.get("passes")) or PASS_ORDER
+        chosen = _passes(payload.get("passes")) if payload.get("passes") else DEFAULT_PASSES
         if self.runs is not None:
             # Kept as a run (CON-001) with exactly the words read; once per job.
             try:
@@ -1730,6 +1952,12 @@ class StudioService:
             estimated_tokens=plan.estimate().total,
             doing="Checking this draft" if draft_id else "Checking this scene",
         )
+        if "confirmed_sending" in payload:
+            ask_again_before_sending(
+                payload,
+                await self.sending(scope, workspace_id, plan.estimate()),
+                doing="Checking this draft" if draft_id else "Checking this scene",
+            )
         # What an earlier run of this job stored (a job taken over or tried again), so a
         # pass, or a group of one, it finished is not asked again or stored twice.
         earlier = await self._store.findings_for_job(
@@ -1783,6 +2011,109 @@ STOCK_TO_AVOID = "delve, tapestry, a testament to, a sense of, couldn't help but
 
 # Kept under its old name for the callers in this package.
 _fence = fence
+
+
+class DraftWriter:
+    """Hands a draft's words on to the studio while the model writes them (SCN-002).
+
+    The pieces are gathered in a ``StreamBuffer`` and written at most every
+    ``FLUSH_SECONDS``; at most every ``CANCEL_CHECK_SECONDS`` it also records progress,
+    which is where a stop the author asked for, or a job lost to another worker, is
+    noticed (``JobCancelled`` or ``LeaseLost`` closes the stream). An empty piece is a
+    tick: the model is working (thinking, or silent) but sent no words, and the check
+    still happens. Words are counted as they come, never by joining what was written so
+    far. The copy shown while writing is a convenience: a failure to write it is logged
+    (its kind only) and never fails the draft the author is paying for."""
+
+    def __init__(
+        self,
+        store: Any,
+        ctx: JobContext,
+        *,
+        number: int,
+        stage: str,
+        progress: tuple[float, float],
+        words: int,
+        clock: Any = None,
+    ) -> None:
+        self._store = store
+        self._ctx = ctx
+        self.number = number
+        self._stage = stage
+        self._progress = progress
+        self._words = max(1, words)
+        self._clock = clock or time.monotonic
+        self._buffer = StreamBuffer(clock=self._clock)
+        self._checked = self._clock()
+        self.written = 0
+        self.written_words = 0
+        self._in_word = False
+        # Set once a write of the passing copy failed: no more are tried for this draft.
+        self._broken = False
+
+    def _key(self) -> dict[str, Any]:
+        job = self._ctx.job
+        return {
+            "workspace_id": job.workspace_id,
+            "project_id": job.project_id,
+            "job_id": job.id,
+            "number": self.number,
+            # Only this attempt's words: a worker that lost the job never touches the
+            # newer worker's.
+            "attempt": job.attempts,
+        }
+
+    async def _write(self, action: str, **extra: Any) -> None:
+        try:
+            await getattr(self._store, action)(**self._key(), **extra)
+        except Exception as error:  # noqa: BLE001 - the passing copy never fails a draft
+            if action != "end":
+                self._broken = True
+            log_event(
+                logger,
+                "studio.stream_write_failed",
+                level=logging.WARNING,
+                action=action,
+                error_type=type(error).__name__,
+            )
+
+    async def begin(self) -> None:
+        await self._write("begin")
+
+    async def add(self, piece: str) -> None:
+        if piece:
+            self.written += len(piece)
+            self.written_words += self._count(piece)
+        if not self._broken and self._buffer.add(piece):
+            await self.flush()
+        if self._clock() - self._checked >= CANCEL_CHECK_SECONDS:
+            self._checked = self._clock()
+            start, share = self._progress
+            done = min(1.0, self.written_words / self._words)
+            # Raises JobCancelled when the author asked to stop, LeaseLost when another
+            # worker holds the job now: the stream closes.
+            await self._ctx.step(self._stage, int(start + share * done))
+
+    def _count(self, piece: str) -> int:
+        """Words begun in this piece, carrying a word split across pieces (linear)."""
+        count = 0
+        in_word = self._in_word
+        for char in piece:
+            if char.isspace():
+                in_word = False
+            elif not in_word:
+                in_word = True
+                count += 1
+        self._in_word = in_word
+        return count
+
+    async def flush(self) -> None:
+        waiting = self._buffer.take()
+        if waiting and not self._broken:
+            await self._write("append", piece=waiting)
+
+    async def end(self) -> None:
+        await self._write("end")
 
 
 def _held(automatic: list[Job]) -> int:

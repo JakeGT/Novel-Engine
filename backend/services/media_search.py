@@ -38,7 +38,9 @@ from backend.domain.embedding import (
     StoredHit,
     TextInput,
 )
-from backend.services.embedding_index import MEDIA_KINDS
+from backend.services.embedding_index import MEDIA_KINDS, REGION_CAPTION_KIND, REGION_KIND
+
+REGION_KINDS = frozenset({REGION_KIND, REGION_CAPTION_KIND})
 
 # How many raw hits are read per picture wanted, so grouping a picture with its caption
 # and dropping linked ones still fills the list.
@@ -63,8 +65,9 @@ class PictureCandidate:
     # "linked": the author linked it; "similar": found by meaning.
     reason: Literal["linked", "similar"]
     score: float | None = None
-    # What matched, for a similar picture: "picture" (the image) or "caption".
-    matched: Literal["picture", "caption"] | None = None
+    # What matched, for a similar picture: "picture" (the image), "caption", or "part"
+    # (a part the author marked, as itself or by its words; ``segment_id`` names it).
+    matched: Literal["picture", "caption", "part"] | None = None
     generation_id: str | None = None
 
 
@@ -192,7 +195,13 @@ class MediaSearchService:
                     segment_id=hit.segment_id,
                     reason="similar",
                     score=hit.score,
-                    matched="picture" if hit.modality is Modality.IMAGE else "caption",
+                    matched=(
+                        "part"
+                        if hit.kind in REGION_KINDS
+                        else "picture"
+                        if hit.modality is Modality.IMAGE
+                        else "caption"
+                    ),
                     generation_id=active.id,
                 )
             )

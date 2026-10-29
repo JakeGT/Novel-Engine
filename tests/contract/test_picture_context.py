@@ -73,10 +73,26 @@ def _choose(client, w, asset_id: str, choice: str) -> None:
     assert chosen.json()["choice"] == choice
 
 
+def _confirmed(client, url: str, body: dict):
+    """Send, and when asked first (pictures going to a company's servers, CTX-013),
+    agree and send again, as the studio does once the author agrees."""
+    started = client.post(url, json=body)
+    if started.status_code == 409 and started.json().get("code") == "needs_confirmation":
+        asked = started.json()
+        assert asked["sending"]["pictures"], asked
+        estimate = asked["field_errors"]["estimated_tokens"]
+        started = client.post(
+            url,
+            json=body,
+            headers={"X-Confirm-Tokens": estimate, "X-Confirm-Sending": asked["sending"]["digest"]},
+        )
+    return started
+
+
 def _draft(client, container, w, scene) -> dict:
     container.ai.queue("Tobin waited at Lantern Harbor. Mara came down the quay in her blue coat.")
-    started = client.post(
-        f"{w['base']}/plan/{scene['id']}/studio/drafts", json={"variants": 1, "words": 200}
+    started = _confirmed(
+        client, f"{w['base']}/plan/{scene['id']}/studio/drafts", {"variants": 1, "words": 200}
     )
     assert started.status_code == 202, started.text
     (job,) = _run(container)
@@ -272,8 +288,8 @@ def _check(client, container, w, scene, notes: list[PictureNote]):
             usage=AIUsage(prompt_tokens=300, completion_tokens=20),
         )
     )
-    started = client.post(
-        f"{w['base']}/plan/{scene['id']}/studio/reviews", json={"passes": ["pictures"]}
+    started = _confirmed(
+        client, f"{w['base']}/plan/{scene['id']}/studio/reviews", {"passes": ["pictures"]}
     )
     assert started.status_code == 202, started.text
     (job,) = _run(container)

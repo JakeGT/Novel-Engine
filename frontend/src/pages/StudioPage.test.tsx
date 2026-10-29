@@ -3,7 +3,16 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PlanItem, SceneDraft, Studio, StudioJob } from '../api/client'
 import { entity, mutation, operation } from '../test/fixtures'
-import { expectAccessible, mockApi, problem, renderInProject, reply, VIEWER, type RecordedCall } from '../test/harness'
+import {
+  EventStreamReply,
+  expectAccessible,
+  mockApi,
+  problem,
+  renderInProject,
+  reply,
+  VIEWER,
+  type RecordedCall,
+} from '../test/harness'
 import { StudioPage } from './StudioPage'
 
 afterEach(() => {
@@ -275,6 +284,35 @@ describe('StudioPage', () => {
     expect(await within(progress).findByRole('button', { name: 'Stopping…' })).toBeDisabled()
   })
 
+  it('shows a draft word by word as it is written, and says it will not be kept once stopped', async () => {
+    const events = [
+      'event: job\ndata: {"status":"running","stage":"Writing the draft","progress":20,"cancel_requested":false}\n\n',
+      ': still working\n\n',
+      'event: text\ndata: {"number":1,"offset":0,"text":"The stairs wound "}\n\n',
+      'event: text\ndata: {"number":1,"offset":17,"text":"up and up.\\n\\nInes counted them."}\n\n',
+      'event: again\ndata: {}\n\n',
+    ].join('')
+    const api = mockApi({
+      ...base,
+      'GET /plan/pln_s/studio': studio({ jobs: [job({ stage: 'Writing the draft' })] }),
+      'GET /jobs/job_1': job({ stage: 'Writing the draft' }),
+      'GET /jobs/job_1/stream': () => new EventStreamReply(events),
+      'POST /jobs/job_1/cancel': job({ cancel_requested: true, stage: 'Writing the draft' }),
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<StudioPage />, route)
+    const progress = await screen.findByRole('region', { name: 'Work in progress' })
+    const writing = await within(progress).findByRole('figure', { name: 'Draft 1 as it is written' })
+    await waitFor(() => expect(writing).toHaveTextContent('The stairs wound up and up. Ines counted them.'))
+    expect(writing).toHaveTextContent('Draft 1, 9 words so far. It is not kept until it is finished and you keep it.')
+    const stream = api.find('GET', '/jobs/job_1/stream')[0]
+    expect(stream.headers?.get('Accept')).toBe('text/event-stream')
+    await expectAccessible(container)
+
+    await user.click(within(progress).getByRole('button', { name: 'Stop' }))
+    expect(await within(writing).findByText('Stopping: this draft will not be kept.')).toBeInTheDocument()
+  })
+
   it('says plainly why a draft failed', async () => {
     mockApi({
       ...base,
@@ -390,7 +428,7 @@ describe('StudioPage', () => {
     // Every check is chosen until the author says otherwise, each with what it costs.
     for (const [, label] of PASSES) expect(within(choices).getByRole('checkbox', { name: new RegExp(label) })).toBeChecked()
     expect(await within(choices).findByText('about 2,100 tokens')).toBeInTheDocument()
-    expect(screen.getByText('About 6,800 tokens for all five.')).toBeInTheDocument()
+    expect(screen.getByText('About 6,800 tokens for the five usual checks.')).toBeInTheDocument()
     await expectAccessible(container)
 
     await user.click(within(choices).getByRole('checkbox', { name: /Your voice/ }))

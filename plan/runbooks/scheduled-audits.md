@@ -99,3 +99,16 @@ Outcomes: `started`, `unchanged` (nothing written there changed), `nothing_writt
   quotes and titles): a restored story never starts spending on its own. A what-if that is set
   aside starts nothing: its schedules' next run is recorded as `gone` and they are turned off
   (the author can turn them on again once it is brought back).
+
+## Notices when a scheduled audit ends (CON-011, batch 10)
+
+- When an audit a schedule started ends (finished, stopped, or failed keeping what it finished),
+  the job runner's `on_finished` listener keeps one notice for the author it ran as in
+  `author_notices` (migration `0062_audits_and_impact`): scenes read, notes and findings found,
+  tokens and the provider's cost. Counts and identifiers only, never the story's words.
+  `audit.notice_kept` is logged with the outcome and the number of scenes.
+- The notice shows on the story's home page until the author marks it read, and on the audit's
+  page. A failure keeping it (`job.finished_listener.error`) never changes how the job ended;
+  the audit's results are on its page either way.
+- Deleting a story removes its notices; an archive does not carry them (they are about this
+  site's jobs, which an archive leaves out).

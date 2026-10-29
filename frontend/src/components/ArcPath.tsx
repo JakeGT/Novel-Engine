@@ -7,6 +7,7 @@ import { readingScenes } from '../lib/plan'
 import { useScales } from '../lib/scales'
 import { scopedKey, useCanonWrite, useEntries, useProject } from '../project'
 import { Badge, Button, Dialog, ErrorNotice, Loading, WriteProblem } from './ui'
+import { SuggestGapScene } from './PlanHelp'
 
 // The same limits the server keeps (backend/domain/arcs.py).
 const MAX_STAGES = 9
@@ -72,11 +73,14 @@ export function ArcStages({
   arc,
   reading,
   sceneLink,
+  suggest = false,
 }: {
   arc: PlanItem
   reading?: ArcReading
   /** Where a scene's title leads: the scene in the plan, or its own page. */
   sceneLink: (scene: PlanItem) => React.ReactNode
+  /** Offer the assistant's help with a stage no scene reaches (STY-004). */
+  suggest?: boolean
 }) {
   const { scope } = useProject()
   const stages = arc.path ?? []
@@ -106,7 +110,15 @@ export function ArcStages({
               ) : index === 0 ? (
                 'Where it starts'
               ) : (
-                'Not placed in a scene yet'
+                <>
+                  Not placed in a scene yet
+                  {suggest && stages.some((other, at) => at !== index && other.scene_id && byId.get(other.scene_id)) && (
+                    <>
+                      {' '}
+                      <SuggestGapScene item={arc} stage={index} />
+                    </>
+                  )}
+                </>
               )}
             </span>
             {stage.fact_id && (

@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, Query, status
+from fastapi import APIRouter, Depends, Header, Query, Request, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.api.auth import get_project_scope, require_project_scope
-from backend.api.dependencies import get_container
+from backend.api.dependencies import get_auth_service, get_container, get_settings
 from backend.api.v1.assistant_settings import confirmed_tokens
 from backend.container import Container
+from backend.core.config import Settings
 from backend.domain.check_passes import (
     PASS_DESCRIPTIONS,
     PASS_LABELS,
@@ -20,9 +24,17 @@ from backend.domain.check_passes import (
 )
 from backend.domain.dismissals import MAX_NOTE, DismissReason, FindingDismissal
 from backend.domain.drafting import DraftFinding, word_count
+from backend.domain.errors import DomainError, RateLimitedError
 from backend.domain.identity import AccessScope
 from backend.domain.jobs import Job
 from backend.domain.sources import SourceVersion
+from backend.domain.streaming import (
+    KEEPALIVE_SECONDS,
+    POLL_SECONDS,
+    STREAM_SECONDS,
+    sse_comment,
+    sse_event,
+)
 from backend.domain.studio import (
     MAX_DIRECTION,
     MAX_VARIANTS,
@@ -33,6 +45,7 @@ from backend.domain.studio import (
     SceneDraft,
 )
 from backend.domain.usage_controls import CheckProfile
+from backend.services.auth_service import AuthService
 from backend.services.scene_plan_card import ScenePlanCardService
 from backend.services.scene_reading import ReadingStatus, SceneReadingService
 from backend.services.studio_service import Checking, Estimate, StudioService, StudioState
@@ -98,6 +111,18 @@ class CheckModel(BaseModel):
     about: list[AboutModel] | None = None
 
 
+class NotePictureModel(BaseModel):
+    asset_id: str
+    version_id: str
+    # The picture's name, as the note was made.
+    label: str = ""
+    # A part the author marked, when the note named one.
+    segment_id: str | None = None
+    part_label: str | None = None
+    # The part as fractions of the picture: left, top, width, height.
+    region: list[float] | None = None
+
+
 class AssistantNoteModel(BaseModel):
     id: str
     category: str
@@ -111,6 +136,9 @@ class AssistantNoteModel(BaseModel):
     check_pass: CheckPass | None = None
     # The scene's characters it names: it can be dismissed wherever it is about them.
     about: list[AboutModel] | None = None
+    # A note of the pictures check: the picture it was compared with and the part of it
+    # (CON-014), to draw on the picture.
+    picture: NotePictureModel | None = None
 
 
 class DismissRequest(BaseModel):
@@ -248,11 +276,37 @@ class KeepRequest(BaseModel):
     base_version_id: str | None = None
 
 
+class SentPictureModel(BaseModel):
+    asset_id: str
+    version_id: str
+    name: str
+
+
+class SendingModel(BaseModel):
+    """What a request would send and where, before it is sent (CTX-013). The same
+    document is the ``sending`` member of a ``409 needs_confirmation`` problem."""
+
+    provider: str
+    provider_label: str
+    model: str
+    # The host it goes to ("openrouter.ai"); empty for the author's own computer.
+    destination: str
+    where: Literal["company", "your_computer", "local_network"]
+    where_words: str
+    words: int
+    estimated_tokens: int
+    pictures: list[SentPictureModel]
+    # How much the model reads at most, when its provider's list or the operator says.
+    context_tokens: int | None = None
+    fits: bool | None = None
+
+
 class EstimateModel(BaseModel):
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
     context_words: int
+    sending: SendingModel | None = None
 
 
 class PassEstimateModel(BaseModel):
@@ -338,6 +392,21 @@ def _note(
         key=key,
         dismissal=_dismissal(dismissal),
         check_pass=_check_pass(finding.check_pass),
+        picture=_note_picture(finding),
+    )
+
+
+def _note_picture(finding: AssistantFinding) -> NotePictureModel | None:
+    anchor = getattr(finding, "picture_anchor", None)
+    if anchor is None:
+        return None
+    return NotePictureModel(
+        asset_id=anchor.asset_id,
+        version_id=anchor.version_id,
+        label=anchor.label,
+        segment_id=anchor.segment_id,
+        part_label=anchor.part_label,
+        region=list(anchor.region) if anchor.region is not None else None,
     )
 
 
@@ -567,6 +636,7 @@ async def estimate(
         completion_tokens=found.completion_tokens,
         total_tokens=found.total,
         context_words=found.context_words,
+        sending=SendingModel(**found.sending.as_dict()) if found.sending is not None else None,
     )
 
 
@@ -696,6 +766,176 @@ async def job(
     service: StudioService = Depends(get_studio),
 ) -> JobModel:
     return _job(await service.job(scope, scope.workspace_id or "", project_id, job_id))
+
+
+# How many streams may be open at once in one server process: for one person (several
+# tabs), and for one piece of work. Each costs a read every few tenths of a second.
+MAX_STREAMS_PER_PERSON = 6
+MAX_STREAMS_PER_JOB = 3
+# How often a long stream checks again that the person may still read the work.
+RECHECK_SECONDS = 30.0
+
+
+class OpenStreams:
+    """The streams open in this process, by person and by piece of work. Each is let go
+    when its stream ends; one whose stream never started is let go when it would have
+    ended anyway, so none is held for ever."""
+
+    def __init__(self) -> None:
+        self._open: dict[int, tuple[tuple[str, str], tuple[str, str, str], float]] = {}
+        self._next = 0
+
+    def take(self, person: tuple[str, str], job: tuple[str, str, str], now: float) -> int:
+        self._open = {key: held for key, held in self._open.items() if held[2] > now}
+        if sum(1 for held in self._open.values() if held[0] == person) >= MAX_STREAMS_PER_PERSON:
+            raise RateLimitedError(
+                "You have too many pages following work as it is written. Close one, "
+                "then try again."
+            )
+        if sum(1 for held in self._open.values() if held[1] == job) >= MAX_STREAMS_PER_JOB:
+            raise RateLimitedError(
+                "This piece of work is already being followed in too many pages. Close "
+                "one, then try again."
+            )
+        self._next += 1
+        self._open[self._next] = (person, job, now + STREAM_SECONDS + 60.0)
+        return self._next
+
+    def let_go(self, token: int) -> None:
+        self._open.pop(token, None)
+
+
+open_streams = OpenStreams()
+
+
+@router.get(
+    "/jobs/{job_id}/stream",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"text/event-stream": {}}}},
+)
+async def job_stream(
+    project_id: str,
+    job_id: str,
+    request: Request,
+    scope: AccessScope = Depends(get_project_scope),
+    service: StudioService = Depends(get_studio),
+    auth: AuthService = Depends(get_auth_service),
+    settings: Settings = Depends(get_settings),
+) -> StreamingResponse:
+    """A draft's words as the model writes them, as server-sent events (SCN-002).
+
+    ``text`` carries a draft's new words and the offset they start at (a draft written
+    again from the start, by a job taken over, starts again at 0); ``draft_done`` says a
+    draft is stored whole and is now among the drafts waiting; ``job`` carries the stage
+    and progress when they change; ``end`` closes the stream when the work has finished,
+    and ``again`` when the stream has lasted long enough and should be opened again. Work
+    that is not a draft sends only ``job`` and ``end``. Read access is checked before the
+    stream opens and again every half minute while it lasts."""
+    # Also: ``end`` when the work may no longer be read, ``again`` when the session the
+    # stream was opened with has ended (the browser then asks with its current one), and
+    # 429 beyond a few open streams for one person or one piece of work.
+    workspace_id = scope.workspace_id or ""
+    first = await service.stream(scope, workspace_id, project_id, job_id, {})
+    token = open_streams.take(
+        (workspace_id, scope.actor_user_id),
+        (workspace_id, project_id, job_id),
+        asyncio.get_running_loop().time(),
+    )
+    session = request.cookies.get(settings.SESSION_COOKIE_NAME)
+
+    async def still_signed_in() -> bool:
+        return await auth.signed_in(session)
+
+    return StreamingResponse(
+        _job_events(
+            request,
+            service,
+            scope,
+            workspace_id,
+            project_id,
+            job_id,
+            first,
+            still_signed_in,
+            token,
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+async def _job_events(
+    request: Request,
+    service: StudioService,
+    scope: AccessScope,
+    workspace_id: str,
+    project_id: str,
+    job_id: str,
+    first: tuple[Job, list],
+    still_signed_in: Callable[[], Awaitable[bool]],
+    token: int,
+) -> AsyncIterator[bytes]:
+    try:
+        loop = asyncio.get_running_loop()
+        started = last_sent = checked = loop.time()
+        offsets: dict[int, int] = {}
+        stored: set[int] = set()
+        seen: tuple | None = None
+        job, parts = first
+        while True:
+            for part in parts:
+                if part.text:
+                    yield sse_event(
+                        "text", {"number": part.number, "offset": part.offset, "text": part.text}
+                    )
+                    last_sent = loop.time()
+                offsets[part.number] = part.offset + len(part.text)
+                if part.done and part.number not in stored:
+                    stored.add(part.number)
+                    yield sse_event("draft_done", {"number": part.number})
+            state = (job.status.value, job.stage, job.progress, job.cancel_requested)
+            if state != seen:
+                seen = state
+                yield sse_event(
+                    "job",
+                    {
+                        "status": job.status.value,
+                        "stage": job.stage,
+                        "progress": job.progress,
+                        "cancel_requested": job.cancel_requested,
+                    },
+                )
+                last_sent = loop.time()
+            if job.status.finished:
+                yield sse_event("end", {"status": job.status.value})
+                return
+            now = loop.time()
+            if now - started >= STREAM_SECONDS:
+                yield sse_event("again", {})
+                return
+            if await request.is_disconnected():
+                return
+            if now - last_sent >= KEEPALIVE_SECONDS:
+                yield sse_comment("still working")
+                last_sent = now
+            await asyncio.sleep(POLL_SECONDS)
+            again = loop.time() - checked >= RECHECK_SECONDS
+            if again:
+                checked = loop.time()
+                if not await still_signed_in():
+                    # Signed out (or the session was replaced): nothing more is sent on
+                    # this session. Opened again, the stream asks for the current one.
+                    yield sse_event("again", {})
+                    return
+            try:
+                job, parts = await service.stream(
+                    scope, workspace_id, project_id, job_id, offsets, authorize=again
+                )
+            except DomainError:
+                # No longer allowed to read it (or it is gone): the stream ends plainly.
+                yield sse_event("end", {"status": job.status.value, "reason": "unavailable"})
+                return
+    finally:
+        open_streams.let_go(token)
 
 
 @router.post("/jobs/{job_id}/cancel")

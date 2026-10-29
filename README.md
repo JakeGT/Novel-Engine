@@ -229,7 +229,9 @@ Operational tooling:
   `METRICS_ENABLED=true` (counts and timings only; set `METRICS_TOKEN` outside local development).
 
 Privacy: the only outbound connections are the configured OIDC provider, the AI provider (none
-when the model runs on your own computer), and opt-in Sentry. The connector on an author's computer
+when the model runs on your own computer), OpenRouter's public list of models when OpenRouter is the
+provider (at most once a day, no key and no story words; `AI_MODEL_LIST=false` turns it off), and
+opt-in Sentry. The connector on an author's computer
 connects out to the site; the site never connects to it. Sentry is disabled unless a DSN is set and scrubs
 request data, headers, and PII (`backend/core/observability.py`). Provider credentials are
 stored envelope-encrypted and never returned by the API; logs redact `sk-`/`sk-or-` keys.

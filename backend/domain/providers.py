@@ -38,6 +38,10 @@ class ProviderSpec:
     # A sensible starting model, or None when the owner must choose one.
     default_model: str | None
     note: str = ""
+    # SCN-002: whether a stream is asked to end with what it used
+    # (``stream_options.include_usage``). A provider that refuses it is asked again
+    # without it, and the use is then estimated.
+    stream_usage: bool = True
 
 
 PROVIDERS: tuple[ProviderSpec, ...] = (

@@ -17,6 +17,8 @@ import { fullDate } from '../lib/time'
 import { plural } from '../lib/words'
 import { scopedKey, useProject } from '../project'
 import { Badge, Button, ErrorNotice, Loading } from './ui'
+import { NotePicture } from './PictureMark'
+import { AskAboutVoice } from './VoiceCheck'
 
 // The checks and the assistant's notes in the studio's margin, each of which the author
 // can dismiss with a short reason (CON-010, CON-016). A dismissal belongs to this scene
@@ -530,6 +532,7 @@ export function Notes({
               <Badge tone="info">{NOTE_KINDS[note.category] ?? 'Note'}</Badge>
               <p>{note.message}</p>
               {note.suggestion && <p className="small finding-suggestion">Suggestion: {note.suggestion}</p>}
+              {note.picture && <NotePicture picture={note.picture} />}
               <Passage text={text} span={point(note.start, note.end)} onShow={onShow} />
             </Finding>
           ))}
@@ -759,6 +762,16 @@ export function Voice({
                 </Finding>
               ))}
             </ul>
+          )}
+          {canWrite && active.length > 0 && !stale && (
+            <AskAboutVoice
+              planId={planId}
+              versionId={versionId}
+              notesKey={active.map((note) => note.key).join('|')}
+              text={text}
+              point={point}
+              onShow={onShow}
+            />
           )}
           <JustDismissed items={dismissed} dismissals={voiceDismissals} />
           <Dismissed items={dismissed} noun={['note on how it sounds', 'notes on how it sounds']} dismissals={voiceDismissals} />

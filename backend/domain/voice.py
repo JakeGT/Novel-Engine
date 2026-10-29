@@ -37,7 +37,7 @@ import math
 import re
 from bisect import bisect_left
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from statistics import median
 from typing import Literal
@@ -1145,7 +1145,240 @@ def speech_drift(here: Speech, elsewhere: Sequence[Speech], share: float) -> lis
     return notes
 
 
+# ------------------------------------------------------- asking the assistant (escalation)
+#
+# When the measures above point strongly away from the author's usual, the studio offers
+# a small check with the assistant on just the passages that show it (CON-018's bounded
+# critic escalation). "Strongly" is deterministic: a note that the scene may sound like
+# someone else (the everyday-word mix, who tells it, the tense), or two or more different
+# notes at once. The passages are chosen here, with no model, from what each note
+# measured: the paragraphs with the longest (or shortest) sentences, the most -ly words,
+# the words the scene leans on, the most dialogue, the sentence a note points at, and so
+# on, at most ``MAX_FLAGGED`` of them and ``MAX_FLAGGED_WORDS`` words in all, so the cost
+# is small and known before anything is sent. Stylometry's measures say *that* a text
+# departs from a style, not *where* or *why*, and are rough below a few thousand words
+# (Burrows, "'Delta'", 2002; Eder, "Does size matter? Authorship attribution, small
+# samples, big problem", DSH 30, 2015): the assistant is asked only to say, quoting the words, which of those passages
+# do not sound like the author, and why. Everything is one pass over the text.
+
+ESCALATION_VERSION = "voice-escalation/1"
+MAX_FLAGGED = 6
+MAX_FLAGGED_WORDS = 900
+# A passage longer than this is cut to sentences around what was flagged in it.
+MAX_PASSAGE_CHARS = 1_500
+# Notes that the scene may sound like someone else: one of them is enough.
+STRONG_CODES = frozenset({"voice_everyday_words", "voice_person", "voice_tense"})
+_NOT_LOCATED = frozenset({"voice_sentence_variety"})
+
+
+@dataclass(frozen=True)
+class FlaggedPassage:
+    start: int
+    end: int
+    # Why it was chosen, in plain words: the note's own message.
+    why: str
+
+
+def strong_drift(notes: Sequence[VoiceNote]) -> bool:
+    """Whether the notes (those the author has not dismissed) are strong enough to offer
+    the assistant's voice check."""
+    codes = {note.code for note in notes}
+    return bool(codes & STRONG_CODES) or len(codes) >= 2
+
+
+@dataclass
+class _Paragraph:
+    start: int
+    end: int
+    words: int = 0
+    sentences: int = 0
+    adverbs: int = 0
+    leans: int = 0
+    quoted: int = 0
+    first: int = 0
+    present: int = 0
+    names: Counter[str] = field(default_factory=Counter)
+    # Where in it each measure is first met, so a long paragraph is cut around that.
+    first_at: dict[str, int] = field(default_factory=dict)
+
+
+def _paragraph_spans(text: str) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = []
+    cursor = 0
+    for match in _LINE_BREAK.finditer(text):
+        if text[cursor : match.start()].strip():
+            spans.append((cursor, match.start()))
+        cursor = match.end()
+    if text[cursor:].strip():
+        spans.append((cursor, len(text)))
+    return spans
+
+
+def _cut(text: str, start: int, end: int, focus: int | None = None) -> tuple[int, int]:
+    """A paragraph as a passage: whole, or, when it is too long, the sentences around
+    ``focus`` (what was flagged in it; its start when nothing is given) within the limit:
+    from the start of the sentence it is in to the last sentence end that fits.
+    Linear in the limit, whatever the paragraph's length."""
+    while start < end and text[start].isspace():
+        start += 1
+    while end > start and text[end - 1].isspace():
+        end -= 1
+    if end - start <= MAX_PASSAGE_CHARS:
+        return start, end
+    at = start if focus is None else min(max(focus, start), end - 1)
+    # Back to the start of its sentence, but never more than a third of the limit back.
+    lo = max(start, at - MAX_PASSAGE_CHARS // 3)
+    for match in _SENTENCE_END.finditer(text, lo, at):
+        lo = match.end()
+    while lo < at and text[lo].isspace():
+        lo += 1
+    limit = min(end, lo + MAX_PASSAGE_CHARS)
+    last = None
+    for match in _SENTENCE_END.finditer(text, at, limit):
+        last = match.end()
+    return lo, last if last is not None and last > at else limit
+
+
+def _first_name(subject: str) -> str:
+    """The first word of the name a speaker note is about ("Tobin Ashe\x1elonger")."""
+    words = subject.split("\x1e", 1)[0].split()
+    return words[0].casefold().replace("’", "'") if words else ""
+
+
+def flagged_passages(
+    text: str, notes: Sequence[VoiceNote], stats: VoiceStats
+) -> list[FlaggedPassage]:
+    """The passages that show what the notes measured, in the order they come in the
+    scene. Linear in the length of the text."""
+    text = text[:MAX_TEXT]
+    spans = _paragraph_spans(text)
+    if not spans or not notes:
+        return []
+    paragraphs = [_Paragraph(start, end) for start, end in spans]
+    starts = [start for start, _ in spans]
+    quotes = _quotes(text)
+
+    def where(at: int) -> int:
+        return max(0, bisect_left(starts, at + 1) - 1)
+
+    leaned: set[str] = set()
+    speakers: set[str] = set()
+    for note in notes:
+        if note.code == "voice_leans_on":
+            leaned |= set(note.subject.split())
+        if note.code.startswith("voice_speaker_") and "\x1e" in note.subject:
+            speakers.add(_first_name(note.subject))
+    for start, end in quotes:
+        index = where(start)
+        paragraphs[index].quoted += end - start
+        paragraphs[index].first_at.setdefault("quoted", start)
+    quote_index = 0
+    for match in _WORD.finditer(text):
+        at = match.start()
+        while quote_index < len(quotes) and quotes[quote_index][1] <= at:
+            quote_index += 1
+        spoken = quote_index < len(quotes) and quotes[quote_index][0] <= at
+        word = match.group(0).lower().replace("’", "'")
+        item = paragraphs[where(at)]
+        item.words += 1
+        if spoken:
+            continue
+        if word.endswith("ly") and len(word) > 4 and word not in _NOT_ADVERBS:
+            item.adverbs += 1
+            item.first_at.setdefault("adverbs", at)
+        if word in leaned:
+            item.leans += 1
+            item.first_at.setdefault("leans", at)
+        if word in _FIRST_SINGULAR:
+            item.first += 1
+            item.first_at.setdefault("first", at)
+        if _verb_tense(word) == "present":
+            item.present += 1
+            item.first_at.setdefault("present", at)
+        if word in speakers:
+            item.names[word] += 1
+            item.first_at.setdefault(f"name:{word}", at)
+    for match in _SENTENCE_END.finditer(text):
+        paragraphs[where(match.start())].sentences += 1
+
+    def mean(item: _Paragraph) -> float:
+        return item.words / max(item.sentences, 1)
+
+    chosen: dict[int, str] = {}
+    # Where in each chosen paragraph what was flagged is, for cutting a long one.
+    focus: dict[int, int] = {}
+    words_in = 0
+
+    def take(ranked: Iterable[int], why: str, count: int = 2, at: str | int | None = None) -> None:
+        nonlocal words_in
+        taken = 0
+        for index in ranked:
+            if taken >= count or len(chosen) >= MAX_FLAGGED:
+                return
+            if index in chosen:
+                taken += 1
+                continue
+            if words_in + min(paragraphs[index].words, 250) > MAX_FLAGGED_WORDS and chosen:
+                return
+            chosen[index] = why
+            spot = paragraphs[index].first_at.get(at) if isinstance(at, str) else at
+            if spot is not None:
+                focus[index] = spot
+            words_in += min(paragraphs[index].words, 250)
+            taken += 1
+
+    def top(key: Callable[[_Paragraph], float], least: float = 0.0) -> list[int]:
+        scored = [(key(item), index) for index, item in enumerate(paragraphs) if item.words]
+        return [
+            index for score, index in sorted(scored, key=lambda p: (-p[0], p[1])) if score > least
+        ]
+
+    for note in notes:
+        if note.start is not None:
+            take([where(note.start)], note.message, 1, note.start)
+            continue
+        code = note.code
+        if code == "voice_sentence_length":
+            if note.subject == "shorter":
+                take(top(lambda p: -mean(p) if p.sentences >= 2 else -1e9, -1e9), note.message)
+            else:
+                take(top(mean), note.message)
+        elif code == "voice_adverbs":
+            # The paragraphs where -ly words come thickest, as the measure counts them.
+            take(top(lambda p: p.adverbs / max(p.words, 1)), note.message, at="adverbs")
+        elif code == "voice_leans_on":
+            take(top(lambda p: p.leans), note.message, at="leans")
+        elif code == "voice_dialogue" and note.subject == "more":
+            take(top(lambda p: p.quoted / max(p.end - p.start, 1)), note.message, at="quoted")
+        elif code in ("voice_person", "voice_person_mixed") and stats.person != "third":
+            take(top(lambda p: p.first), note.message, at="first")
+        elif code in ("voice_tense", "voice_tense_mixed"):
+            take(top(lambda p: p.present), note.message, at="present")
+        elif code.startswith("voice_speaker_"):
+            who = _first_name(note.subject)
+
+            def spoken_by(p: _Paragraph, who: str = who) -> float:
+                return p.names[who] if p.quoted else 0
+
+            take(top(spoken_by), note.message, at=f"name:{who}")
+        elif code not in _NOT_LOCATED:
+            # Measured over the whole scene: its longest stretches of narration stand for it.
+            take(top(lambda p: p.words - p.quoted / 6), note.message, 1)
+    found = []
+    for index in sorted(chosen):
+        start, end = _cut(text, paragraphs[index].start, paragraphs[index].end, focus.get(index))
+        if end > start:
+            found.append(FlaggedPassage(start, end, chosen[index]))
+    return found
+
+
 __all__ = [
+    "ESCALATION_VERSION",
+    "MAX_FLAGGED",
+    "MAX_FLAGGED_WORDS",
+    "FlaggedPassage",
+    "flagged_passages",
+    "strong_drift",
     "BANDS",
     "FUNCTION_WORDS",
     "MIN_BASELINE_SCENES",

@@ -551,3 +551,71 @@ describe('PlanPage audits', () => {
     expect(screen.queryByRole('button', { name: /Audit this part of the story: Who drew/, hidden: true })).toBeNull()
   })
 })
+
+describe('PlanPage: what someone knows, and gaps (STY-005, STY-004)', () => {
+  it('takes a condition about what a character has seen, as a fact of the story bible', async () => {
+    const inPoint = fact({
+      id: 'fct_in',
+      subject_id: 'ent_ines',
+      object: { kind: 'entity_ref', entity_id: 'ent_point', project_id: 'prj_1' },
+    })
+    const api = mockApi({
+      ...everyone,
+      'GET /plan': outline,
+      'GET /vocabulary': VOCABULARY,
+      'GET /facts': { items: [inPoint], limit: 200, offset: 0 },
+      'PUT /plan/pln_s/conditions': scene,
+    })
+    const user = userEvent.setup()
+    renderInProject(<PlanPage />, at)
+    await user.click(
+      await screen.findByText('Move, plan, remove', {
+        selector: 'summary[aria-label="Move, plan or remove The lamp room at night"]',
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Before and after' }))
+    const dialog = screen.getByRole('dialog', { name: 'Before and after “The lamp room at night”' })
+    await user.click(within(dialog).getByRole('button', { name: 'Add something that must be true first' }))
+    const how = within(dialog).getByLabelText('How it is said (Before this scene, condition 1)')
+    await waitFor(() => expect(within(how).getByRole('option', { name: 'What someone knows' })).toBeEnabled())
+    await user.selectOptions(how, 'knows')
+    await user.selectOptions(
+      within(dialog).getByLabelText('Knows, has seen or has heard (Before this scene, condition 1)'),
+      'seen',
+    )
+    expect(within(dialog).getByText(/“has seen” needs something they saw happen/)).toBeInTheDocument()
+    await expectAccessible(dialog)
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.find('PUT', '/conditions')).toHaveLength(1))
+    expect(api.find('PUT', '/conditions')[0].body).toEqual({
+      conditions: [
+        {
+          when: 'before',
+          strength: 'hard',
+          entity_id: 'ent_ines',
+          knows: { how: 'seen', subject_id: 'ent_ines', predicate: inPoint.predicate, other_id: 'ent_point' },
+        },
+      ],
+      expected_revision: 3,
+    })
+  }, 20_000)
+
+  it('offers a scene for a thread nothing moves along', async () => {
+    mockApi({
+      ...everyone,
+      'GET /plan': {
+        ...outline,
+        open: [
+          {
+            plan_id: 'pln_t',
+            code: 'needs_progress',
+            message: 'This thread opens and resolves, but no scene in between moves it along.',
+          },
+        ],
+      },
+    })
+    renderInProject(<PlanPage />, at)
+    await screen.findByRole('list', { name: 'Still to do for Who drew the false chart?' })
+    expect(screen.getByRole('button', { name: 'Suggest a scene' })).toBeInTheDocument()
+  })
+})

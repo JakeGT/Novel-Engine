@@ -103,21 +103,29 @@ test('story time, secrets and a what-if, by hand', async ({ page }) => {
   const band = page.getByRole('region', { name: 'Working in a what-if' })
   await expect(band).toContainText('What if the lamps never went dark?')
   await expectAccessible(page)
-  const whatIf = (await call(page, 'GET', '/what-ifs')).items[0]
+  // The test story is shared across specs, so find this what-if by its name.
+  const whatIf = (await call(page, 'GET', '/what-ifs')).items.find(
+    (item: { name: string }) => item.name === 'What if the lamps never went dark?',
+  )
   await call(page, 'POST', '/entities', {
     type: 'Character',
     name: 'Wick',
     expected_revision: await head(page, whatIf.id),
   }, whatIf.id)
+  // The overview shows only the first few of each type, so search for Wick.
   await page.goto(`/projects/${PROJECT}/bible?view=all`)
-  await expect(page.getByText('Wick').first()).toBeVisible()
+  await page.getByRole('searchbox', { name: 'Search entries' }).fill('Wick')
+  await expect(page.getByRole('link', { name: 'Wick' }).first()).toBeVisible()
 
   // Back in the story, Wick does not exist.
   await band.getByRole('button', { name: 'Back to the story' }).click()
   await expect(band).toHaveCount(0)
   await page.reload()
-  await expect(page.getByText('Mara Quill').first()).toBeVisible()
-  await expect(page.getByText('Wick')).toHaveCount(0)
+  await page.getByRole('searchbox', { name: 'Search entries' }).fill('Mara Quill')
+  await expect(page.getByRole('link', { name: 'Mara Quill' }).first()).toBeVisible()
+  await page.getByRole('searchbox', { name: 'Search entries' }).fill('Wick')
+  await expect(page.getByRole('link', { name: 'Mara Quill' })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'Wick' })).toHaveCount(0)
 
   // Compare, and bring it back as a change to review.
   await page.goto(`/projects/${PROJECT}/what-ifs/${whatIf.id}`)

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -32,14 +33,24 @@ from backend.domain.knowledge import reading_order
 from backend.domain.sources import SourceVersion
 from backend.domain.studio import AUDIT_JOB, AssistantFinding
 from backend.domain.tenancy import Permission
+from backend.domain.usage_controls import NeedsConfirmation
 from backend.services.job_runner import JobContext, JobSubmission
 from backend.services.scene_checks import pass_finished, pass_notes
+from backend.services.send_preview import (
+    agreed_sending,
+    ask_again_before_sending,
+    ask_before_sending,
+    with_preview,
+)
 
 logger = logging.getLogger(__name__)
 
 # The most scenes one audit reads: a larger part of the story is audited in parts.
 MAX_AUDIT_SCENES = 60
 WHOLE_PLAN = ""
+# Stands for "the scenes a what-if has written differently" in an audit's ``plan_id``:
+# an assistant audit over only those, in the what-if (CON-011).
+WHAT_IF_CHANGES = "what-if-changes"
 # A scene's estimate is kept this long, so starting an audit just estimated (and estimating
 # again as the author changes the passes) does not gather every scene's context again. It
 # is also keyed by the story's version and the scene's text, so a change makes a new one.
@@ -55,6 +66,8 @@ class AuditScene:
     source_id: str | None = None
     version: SourceVersion | None = None
     estimates: tuple[PassEstimate, ...] = ()
+    # The pictures its pictures pass may send, as context parts (CTX-013).
+    pictures: tuple[Any, ...] = ()
 
     @property
     def written(self) -> bool:
@@ -85,6 +98,19 @@ class AuditEstimate:
     @property
     def total(self) -> int:
         return sum(scene.tokens for scene in self.scenes)
+
+    @property
+    def pictures(self) -> tuple[Any, ...]:
+        """Every picture the audit may send, each once."""
+        seen: dict[str, Any] = {}
+        for scene in self.scenes:
+            for part in scene.pictures:
+                seen.setdefault(part.key, part)
+        return tuple(seen.values())
+
+    @property
+    def words(self) -> int:
+        return sum(len(scene.version.content.split()) for scene in self.written if scene.version)
 
 
 @dataclass
@@ -140,8 +166,11 @@ class StoryAudit:
         self._studio = studio
         # The author's voice across the book (CON-018); set by the container.
         self.voice: Any = None
-        # (story, version of it, scene, text version, passes) -> (kept until, estimates).
-        self._estimates: dict[tuple[Any, ...], tuple[float, tuple[PassEstimate, ...]]] = {}
+        # (story, version of it, scene, text version, passes) -> (kept until, estimates,
+        # the pictures it may send).
+        self._estimates: dict[
+            tuple[Any, ...], tuple[float, tuple[PassEstimate, ...], tuple[Any, ...]]
+        ] = {}
 
     def register_jobs(self, runner: Any) -> None:
         runner.register(AUDIT_JOB, self.run, keeps_partial=True)
@@ -200,6 +229,157 @@ class StoryAudit:
         await studio._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
         chosen = _passes(passes)
         item, scenes = await self._part(scope, workspace_id, project_id, plan_id)
+        return await self._estimate_scenes(scope, workspace_id, project_id, item, scenes, chosen)
+
+    async def estimate_changed(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        what_if_id: str,
+        passes: Any = None,
+    ) -> tuple[AuditEstimate, str]:
+        """What auditing only the scenes a what-if has written differently from the main
+        story would read and use, in the what-if, scene by scene. Calls no model. Returns
+        the estimate and the what-if's id (an audit is started in it)."""
+        studio = self._studio
+        await studio._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        branch = await studio._journal.get_branch(
+            workspace_id=workspace_id, project_id=project_id, branch_id=what_if_id
+        )
+        if branch is None or branch.is_root:
+            raise NotFoundError("That what-if was not found.")
+        chosen = _passes(passes)
+        main_links = dict(
+            await studio._store.manuscripts_for(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                branch_id=await self._root_id(workspace_id, project_id),
+            )
+        )
+        with working_in(branch.id):
+            links = dict(
+                await studio._store.manuscripts_for(
+                    workspace_id=workspace_id, project_id=project_id, branch_id=branch.id
+                )
+            )
+            items = await studio._reader.list_plan_items(
+                workspace_id=workspace_id, project_id=project_id
+            )
+            pairs: list[tuple[PlanItem, str | None, str]] = []
+            for scene in reading_order(items):
+                mine = links.get(scene.id)
+                if mine is None:
+                    continue
+                theirs = main_links.get(scene.id)
+                if theirs != mine:
+                    pairs.append((scene, theirs, mine))
+            changed = await self._written_differently(workspace_id, project_id, pairs)
+            found = await self._estimate_scenes(
+                scope, workspace_id, project_id, None, changed, chosen
+            )
+        return found, branch.id
+
+    async def _root_id(self, workspace_id: str, project_id: str) -> str:
+        with working_in(None):
+            root = await self._studio._journal.working_branch(
+                workspace_id=workspace_id, project_id=project_id
+            )
+        return str(root.id)
+
+    async def _written_differently(
+        self,
+        workspace_id: str,
+        project_id: str,
+        pairs: Sequence[tuple[PlanItem, str | None, str]],
+    ) -> list[PlanItem]:
+        """The scenes whose what-if text says anything other than the main story's, from
+        (scene, main text, what-if text). The texts' stored checksums are compared, read
+        in one query, so no scene's words are loaded; a scene with no main text, or a
+        store that cannot list checksums, is read text by text."""
+        store = getattr(self._studio._sources, "_store", None)
+        latest = getattr(store, "latest_hashes", None)
+        hashes: dict[str, str] | None = None
+        if latest is not None and pairs:
+            ids = sorted({mine for _, _, mine in pairs} | {t for _, t, _ in pairs if t})
+            hashes = await latest(workspace_id=workspace_id, project_id=project_id, source_ids=ids)
+        changed: list[PlanItem] = []
+        for scene, theirs, mine in pairs:
+            if hashes is None or not theirs:
+                differs = await self._differs(workspace_id, project_id, theirs, mine)
+            elif mine not in hashes:
+                differs = False  # the what-if's text is gone: nothing written to audit
+            else:
+                differs = hashes.get(theirs) != hashes[mine]
+            if differs:
+                changed.append(scene)
+        return changed
+
+    async def _differs(
+        self, workspace_id: str, project_id: str, main: str | None, what_if: str
+    ) -> bool:
+        """Whether a what-if's text for a scene says anything other than the main story's."""
+        sources = self._studio._sources
+        try:
+            _, ours, _ = await sources.version(workspace_id, project_id, what_if)
+        except NotFoundError:
+            return False
+        if not main:
+            return bool(ours.content.strip())
+        try:
+            _, theirs, _ = await sources.version(workspace_id, project_id, main)
+        except NotFoundError:
+            return True
+        return bool(ours.content != theirs.content)
+
+    async def start_changed(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        what_if_id: str,
+        *,
+        passes: Any = None,
+        confirmed_tokens: int | None = None,
+        idempotency_key: str = "",
+    ) -> Job:
+        """Audit only the scenes a what-if has written differently, in the what-if, with the
+        passes chosen: estimated, confirmed and limited like any audit."""
+        await self._studio._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        found, branch_id = await self.estimate_changed(
+            scope, workspace_id, project_id, what_if_id, passes
+        )
+        if not found.passes:
+            raise ValidationError(
+                "Choose at least one check for the assistant: the checks without it are "
+                "already shown on this page."
+            )
+        if not found.written:
+            raise ValidationError(
+                "No scene is written differently in this what-if, so there is nothing to audit."
+            )
+        with working_in(branch_id):
+            return await self.start(
+                scope,
+                workspace_id,
+                project_id,
+                WHAT_IF_CHANGES,
+                passes=list(found.passes),
+                confirmed_tokens=confirmed_tokens,
+                idempotency_key=idempotency_key,
+                found=found,
+            )
+
+    async def _estimate_scenes(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        item: PlanItem | None,
+        scenes: list[PlanItem],
+        chosen: tuple[CheckPass, ...],
+    ) -> AuditEstimate:
+        studio = self._studio
         branch = await studio._journal.working_branch(
             workspace_id=workspace_id, project_id=project_id
         )
@@ -212,9 +392,12 @@ class StoryAudit:
                 continue
             _, current, _ = await studio._sources.version(workspace_id, project_id, text.id)
             estimates: tuple[PassEstimate, ...] = ()
+            pictures: tuple[Any, ...] = ()
             if chosen and len([entry for entry in found if entry.written]) < MAX_AUDIT_SCENES:
-                estimates = await self._scene_estimates(scope, story, scene.id, current, chosen)
-            found.append(AuditScene(scene, text.id, current, estimates))
+                estimates, pictures = await self._scene_estimates(
+                    scope, story, scene.id, current, chosen
+                )
+            found.append(AuditScene(scene, text.id, current, estimates, pictures))
         return AuditEstimate(item=item, passes=chosen, scenes=tuple(found))
 
     async def _scene_estimates(
@@ -224,13 +407,14 @@ class StoryAudit:
         scene_id: str,
         version: SourceVersion,
         chosen: tuple[CheckPass, ...],
-    ) -> tuple[PassEstimate, ...]:
-        """One scene's estimate, pass by pass: worked out once, then kept a short while."""
+    ) -> tuple[tuple[PassEstimate, ...], tuple[Any, ...]]:
+        """One scene's estimate, pass by pass, and the pictures it may send: worked out
+        once, then kept a short while."""
         key = (*story, scene_id, version.id, chosen)
         now = time.monotonic()
         kept = self._estimates.get(key)
         if kept is not None and kept[0] > now:
-            return kept[1]
+            return kept[1], kept[2]
         workspace_id, project_id = story[0], story[1]
         plan = await self._studio.check_plan(
             scope, workspace_id, project_id, scene_id, version.content, chosen
@@ -239,8 +423,9 @@ class StoryAudit:
             self._estimates = {k: v for k, v in self._estimates.items() if v[0] > now}
             if len(self._estimates) >= MAX_KEPT_ESTIMATES:
                 self._estimates.clear()
-        self._estimates[key] = (now + ESTIMATE_SECONDS, plan.estimates)
-        return plan.estimates  # type: ignore[no-any-return]
+        pictures = tuple(part for material in plan.materials for part in material.pictures)
+        self._estimates[key] = (now + ESTIMATE_SECONDS, plan.estimates, pictures)
+        return plan.estimates, pictures
 
     # ------------------------------------------------------------------ start
 
@@ -280,14 +465,42 @@ class StoryAudit:
                 f"most {MAX_AUDIT_SCENES}. Audit a smaller part of it."
             )
         total = found.total
+        # What the author agreed to send, once asked (absent when nothing asked).
+        agreed: dict[str, Any] = {}
         if found.passes:
-            await studio.confirm(
+            from backend.services.studio_service import Estimate
+
+            doing = "Auditing this part of the story"
+            # What would be sent and where (CTX-013): pictures going to a company's
+            # servers are asked about first, whatever the size.
+            sending = await studio.sending(
+                scope,
                 workspace_id,
-                project_id,
+                Estimate(
+                    prompt_tokens=total,
+                    completion_tokens=0,
+                    context_words=found.words,
+                    pictures=found.pictures,
+                ),
+            )
+            try:
+                await studio.confirm(
+                    workspace_id,
+                    project_id,
+                    estimated_tokens=total,
+                    confirmed_tokens=confirmed_tokens,
+                    doing=doing,
+                )
+            except NeedsConfirmation as asked:
+                raise with_preview(asked, sending) from None
+            ask_before_sending(
+                sending,
                 estimated_tokens=total,
                 confirmed_tokens=confirmed_tokens,
-                doing="Auditing this part of the story",
+                threshold=None,
+                doing=doing,
             )
+            agreed = {"confirmed_sending": agreed_sending(sending)}
             if studio._usage is not None:
                 await studio._usage.ensure_within_limits(
                     workspace_id=workspace_id,
@@ -320,6 +533,9 @@ class StoryAudit:
                     # read, and the audit stops if it would need more than confirmed.
                     "confirmed_tokens": confirmed_tokens,
                     "scene_tokens": {entry.scene.id: entry.tokens for entry in written},
+                    # The route and pictures agreed to (CTX-013): a scene that would send
+                    # others, or send them elsewhere, stops the audit as it is read.
+                    **agreed,
                     # Started by a schedule the author set up (CON-011), not by a request.
                     **({"schedule_id": schedule_id} if schedule_id else {}),
                 },
@@ -414,6 +630,12 @@ class StoryAudit:
                     estimated_tokens=expected,
                     doing="Auditing this part of the story",
                 )
+                if "confirmed_sending" in payload:
+                    ask_again_before_sending(
+                        payload,
+                        await studio.sending(scope, workspace_id, plan.estimate()),
+                        doing="Auditing this part of the story",
+                    )
 
                 def call_key(check: CheckPass, number: int = index) -> str:
                     return f"{job.id}:{job.attempts}:{number}:{check.value}"
@@ -592,6 +814,15 @@ class StoryAudit:
         )
         if job is None or job.kind != AUDIT_JOB:
             raise NotFoundError("That audit was not found.")
+        if job.payload.get("plan_id") == WHAT_IF_CHANGES:
+            # Only a what-if's own scenes: read in that what-if, whichever line is open now.
+            with working_in(job.payload.get("branch_id")):
+                return await self._report_of(scope, job)
+        return await self._report_of(scope, job)
+
+    async def _report_of(self, scope: AccessScope, job: Job) -> AuditReport:
+        studio = self._studio
+        workspace_id, project_id = job.workspace_id, job.project_id
         payload = job.payload
         plan_id = str(payload.get("plan_id") or WHOLE_PLAN)
         item: PlanItem | None = None
@@ -599,7 +830,7 @@ class StoryAudit:
             workspace_id=workspace_id, project_id=project_id
         )
         by_id = {entry.id: entry for entry in items if entry.is_active}
-        if plan_id != WHOLE_PLAN:
+        if plan_id not in (WHOLE_PLAN, WHAT_IF_CHANGES):
             item = by_id.get(plan_id)
         notes = await studio._store.findings_for_job(
             workspace_id=workspace_id, project_id=project_id, job_id=job.id
@@ -675,6 +906,7 @@ class StoryAudit:
 __all__ = [
     "AuditDrift",
     "MAX_AUDIT_SCENES",
+    "WHAT_IF_CHANGES",
     "WHOLE_PLAN",
     "AuditEstimate",
     "AuditReport",

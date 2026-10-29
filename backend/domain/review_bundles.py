@@ -45,6 +45,7 @@ its inputs, so the same story always gives the same plan.
 
 from __future__ import annotations
 
+import bisect
 import hashlib
 import math
 import re
@@ -324,15 +325,19 @@ def review_units(
         cursor = match.end()
     if text[cursor:].strip():
         spans.append((cursor, len(text)))
+    # Mentions in order of where they start, so each unit finds its own by halving
+    # rather than reading every mention of the scene again.
+    ordered = sorted(mentions, key=lambda item: item[0])
+    mention_starts = [item[0] for item in ordered]
     units: list[ReviewUnit] = []
     for p_start, p_end in spans:
         for start, end, cut in _cuts(text, p_start, p_end, max(1, max_tokens)):
             words = text[start:end]
             if not words.strip():
                 continue
-            named = frozenset(
-                entity_id for (m_start, m_end, entity_id) in mentions if start <= m_start < end
-            )
+            first = bisect.bisect_left(mention_starts, start)
+            last = bisect.bisect_left(mention_starts, end, first)
+            named = frozenset(item[2] for item in ordered[first:last])
             index = len(units)
             units.append(
                 ReviewUnit(

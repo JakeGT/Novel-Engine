@@ -83,6 +83,10 @@ class Container:
     projection_worker: Any = None
     studio_store: Any = None
     studio_service: Any = None
+    # A draft's words while the model writes them (SCN-002).
+    job_streams: Any = None
+    # What each model can take (CTX-013).
+    model_capabilities: Any = None
     # Checks kept as runs (CON-001).
     consistency_run_store: Any = None
     consistency_runs: Any = None
@@ -143,6 +147,8 @@ class Container:
     # proposals from findings (CON-018, CON-011, CON-010).
     voice_service: Any = None
     audit_schedules: Any = None
+    # Notices for the author when a scheduled audit finishes (CON-011).
+    audit_notices: Any = None
     correction_plans: Any = None
     what_if_audit: Any = None
     finding_proposals: Any = None
@@ -216,6 +222,7 @@ def build_container(settings: Settings | None = None) -> Container:
             image_providers=frozenset(
                 part.strip() for part in resolved.AI_IMAGE_PROVIDERS.split(",") if part.strip()
             ),
+            streaming=resolved.AI_STREAMING,
         ),
         schema_registry=SchemaRegistry(resolved.CUSTOM_SCHEMA_PATH),
         clock=SystemClock(),
@@ -532,6 +539,32 @@ def build_container(settings: Settings | None = None) -> Container:
         local_mode=not resolved.is_hosted,
     )
     container.studio_service.register_jobs()
+    # What each model can take, by name (CTX-013): the operator's table over providers'
+    # public lists, kept in PostgreSQL and read at most once a day.
+    from backend.adapters.model_capability_store import PostgresModelCapabilityStore
+    from backend.services.model_capabilities import ModelCapabilityService
+
+    container.model_capabilities = ModelCapabilityService(
+        table=resolved.AI_MODEL_CAPABILITIES,
+        store=PostgresModelCapabilityStore(database.session_factory),
+        read_lists=resolved.AI_MODEL_LIST,
+    )
+    attach_models = getattr(container.ai, "attach_models", None)
+    if attach_models is not None:
+        attach_models(container.model_capabilities)
+    # What a request would send and where, shown first (CTX-013).
+    from backend.services.send_preview import SendPreviewService
+
+    container.studio_service.previews = SendPreviewService(
+        settings=resolved, credentials=container.credential_service, ai=container.ai
+    )
+    # Drafts shown as they are written (SCN-002); words left by a stopped server are
+    # cleared every few minutes.
+    from backend.adapters.stream_store import PostgresJobStreamStore
+
+    container.job_streams = PostgresJobStreamStore(database.session_factory)
+    container.studio_service.streams = container.job_streams
+    container.job_runner.every(300.0, container.job_streams.sweep)
     from backend.adapters.consistency_run_store import PostgresConsistencyRunStore
     from backend.services.consistency_runs import ConsistencyRunService
 
@@ -854,6 +887,12 @@ def build_container(settings: Settings | None = None) -> Container:
 
     # Checks kept as runs travel with the archive (CON-001).
     container.archive_service.check_runs = RunArchive(container.consistency_run_store)
+    from backend.services.dismissal_archive import DismissalArchive
+
+    # Dismissals on the review screen and beyond one scene travel with it too (CON-016).
+    container.archive_service.dismissal_archive = DismissalArchive(
+        review=container.review_dismissals._store, scoped=container.scoped_dismissals._store
+    )
     container.archive_service.picture_notes = container.media_observations
     from backend.services.embedding_index import (
         EmbeddingIndexService,
@@ -868,6 +907,8 @@ def build_container(settings: Settings | None = None) -> Container:
         objects=container.objects,
         passages=container.passage_index,
         runner=container.job_runner,
+        # Marked parts of pictures are cut in the limited picture worker (CTX-012).
+        cropper=container.image_processor,
     )
     container.embedding_index_service.register_jobs()
     # Catching the search index up in the background, when switched on (CTX-012).
@@ -885,6 +926,7 @@ def build_container(settings: Settings | None = None) -> Container:
     wire_observations(container.media_observations, container.embedding_index_service)
     # Pictures found by meaning join the scene's context after the linked ones (CTX-013).
     container.context_service.search = container.media_search
+    from backend.adapters.notice_store import PostgresNoticeStore
     from backend.adapters.voice_audit_store import (
         PostgresAuditScheduleStore,
         PostgresCorrectionPlanStore,
@@ -898,5 +940,6 @@ def build_container(settings: Settings | None = None) -> Container:
         schedules=PostgresAuditScheduleStore(database.session_factory),
         corrections=PostgresCorrectionPlanStore(database.session_factory),
         model=resolved.AI_MODEL,
+        notices=PostgresNoticeStore(database.session_factory),
     )
     return container

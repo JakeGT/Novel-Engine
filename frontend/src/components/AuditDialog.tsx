@@ -3,6 +3,7 @@ import { useId, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, isApiError, type AuditSchedule, type CheckPass, type PlanItem } from '../api/client'
 import {
+  ALL_PASSES,
   AUDIT_STATUS,
   auditPath,
   chosenTokens,
@@ -29,7 +30,7 @@ export function AuditDialog({ item, onClose }: { item: PlanItem; onClose: () => 
   const requestKey = useRef(newRequestKey())
   const estimate = useQuery({
     queryKey: scopedKey(scope, 'audit-estimate', item.id),
-    queryFn: () => api.auditEstimate(scope, item.id),
+    queryFn: () => api.auditEstimate(scope, item.id, ALL_PASSES),
   })
   const earlier = useQuery({
     queryKey: scopedKey(scope, 'audits', item.id),

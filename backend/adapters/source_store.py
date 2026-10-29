@@ -289,6 +289,28 @@ class PostgresSourceStore:
             ).first()
         return _version(row) if row is not None else None
 
+    async def latest_hashes(
+        self, *, workspace_id: str, project_id: str, source_ids: list[str]
+    ) -> dict[str, str]:
+        """The stored checksum of each text's newest version, for texts not removed, in
+        one query and without reading any text's words."""
+        if not source_ids:
+            return {}
+        async with session_scope(self._session_factory) as db:
+            rows = (
+                await db.execute(
+                    text(
+                        "SELECT DISTINCT ON (v.source_id) v.source_id, v.content_hash "
+                        "FROM source_versions v JOIN source_texts s ON " + _OWN + " "
+                        "WHERE v.workspace_id = :ws AND v.project_id = :pj "
+                        "AND v.source_id = ANY(:ids) AND s.removed_at IS NULL "
+                        "ORDER BY v.source_id, v.number DESC"
+                    ),
+                    {"ws": workspace_id, "pj": project_id, "ids": list(source_ids)},
+                )
+            ).all()
+        return {str(row[0]): str(row[1]) for row in rows}
+
     async def remove_source(self, *, workspace_id: str, project_id: str, source_id: str) -> None:
         """Erase the words, keep a title-only marker so old evidence can say where it led."""
         async with session_scope(self._session_factory) as db:

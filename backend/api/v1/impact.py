@@ -70,6 +70,19 @@ class DependentModel(BaseModel):
     count: int = 0
 
 
+class AfterChangeModel(BaseModel):
+    """How something would read once the change is kept, from a scratch copy (CON-017)."""
+
+    # condition: a scene's condition in the plan; reader: the reader's guide.
+    kind: Literal["condition", "reader"]
+    plan_id: str
+    title: str
+    words: str
+    # For a condition: how it stands now and how it would ("met", "not met", ...).
+    now: str = ""
+    after: str = ""
+
+
 class ImpactModel(BaseModel):
     """What depends on a change: affected, may be affected, and what was not checked."""
 
@@ -78,6 +91,11 @@ class ImpactModel(BaseModel):
     may_be_affected: list[DependentModel]
     # What the index does not cover. Never empty: the answer is not exhaustive.
     not_checked: list[str]
+    # How the plan's conditions and the reader's guide would read after the change, worked
+    # out on a scratch copy of the story with the change applied, never saved. Only for a
+    # proposed change (``scratch`` true); empty when nothing would read differently.
+    after_change: list[AfterChangeModel] = []
+    scratch: bool = False
 
 
 def _dependent(item: Dependent) -> DependentModel:
@@ -102,6 +120,18 @@ def _model(impact: Impact) -> ImpactModel:
         affected=[_dependent(item) for item in impact.affected],
         may_be_affected=[_dependent(item) for item in impact.may_be_affected],
         not_checked=impact.not_checked,
+        after_change=[
+            AfterChangeModel(
+                kind=item.kind,
+                plan_id=item.plan_id,
+                title=item.title,
+                words=item.words,
+                now=item.now,
+                after=item.after,
+            )
+            for item in impact.after_change
+        ],
+        scratch=impact.scratch,
     )
 
 

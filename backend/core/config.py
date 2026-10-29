@@ -63,6 +63,18 @@ class Settings(BaseSettings):
     # The same for a workspace's own provider (hosted): which providers' chosen models are
     # treated as able to see pictures, by provider id ("openrouter,anthropic"); empty is none.
     AI_IMAGE_PROVIDERS: str = ""
+    # CTX-013: what each model can take. The two settings above say whether pictures may
+    # go to a route at all; within that, a model its provider's list (or this table) says
+    # cannot see pictures is given words instead. The table is JSON keyed by
+    # "provider/model" (a trailing "*" matches the rest of a name), each with any of
+    # "images", "max_images", "context_tokens", "max_output_tokens", "structured":
+    # {"openrouter/deepseek/*": {"images": false}}. It wins over a provider's list.
+    AI_MODEL_CAPABILITIES: str = ""
+    # Read OpenRouter's public list of models (no story words are sent, only the request
+    # for the list) to learn each model's limits, at most once a day.
+    AI_MODEL_LIST: bool = True
+    # SCN-002: ask for drafts as a stream, so the studio shows them as they are written.
+    AI_STREAMING: bool = True
 
     NEO4J_URI: str = "bolt://localhost:7687"
     NEO4J_USER: str = "neo4j"
@@ -251,6 +263,14 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "POSTGRES_PASSWORD must not use the development default in production"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_model_capabilities(self) -> "Settings":
+        # Read at start-up, so a mistake in the operator's table is said at once (CTX-013).
+        from backend.domain.model_capabilities import parse_operator_table
+
+        parse_operator_table(self.AI_MODEL_CAPABILITIES)
         return self
 
     @model_validator(mode="after")

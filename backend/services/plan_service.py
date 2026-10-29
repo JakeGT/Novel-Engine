@@ -40,7 +40,7 @@ from backend.domain.arcs import (
     without_scenes,
 )
 from backend.domain.branching import working_in
-from backend.domain.canon.assertions import Belief, Fact
+from backend.domain.canon.assertions import Belief, Fact, FactVisibility
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.events import CLAIM_KIND, CLAIM_NARRATOR, CLAIM_SPEAKER, Event
 from backend.domain.canon.ids import format_canon_id
@@ -81,12 +81,14 @@ from backend.domain.rules import World, body_problems, world_from_canon
 from backend.domain.scene_conditions import (
     MAX_CONDITIONS,
     ConditionState,
+    Knowing,
     SceneCondition,
     condition_body,
     condition_state,
     plain_details,
     planned_change,
     scene_conditions,
+    statement_key,
     with_conditions,
 )
 from backend.domain.scene_intent import SceneIntent, with_intent
@@ -100,7 +102,7 @@ from backend.domain.threads import (
 )
 from backend.domain.worldtime import Relative, Truth, is_unknown, true_at
 from backend.ports import CanonRepositoryPort, SchemaVersionStorePort
-from backend.services.knowledge_timing import plan_signals
+from backend.services.knowledge_timing import StoryOrder, plan_signals
 from backend.services.mutation_service import CommitResult, MutationService
 from backend.services.story_time_service import (
     MAX_RECORDS,
@@ -362,7 +364,9 @@ class PlanService:
                     OpenItem(item.plan_id, item.code, item.message, item.kind)
                     for item in reveal_findings(scenes, story.facts, names)
                 ]
-                states = condition_states(scenes, story)
+                states = condition_states(
+                    scenes, story, await self._knowing(workspace_id, project_id, items, scenes)
+                )
                 found += [
                     OpenItem(
                         state.plan_id,
@@ -592,6 +596,76 @@ class PlanService:
             for item in plan_signals(items, facts, events, beliefs, names, words)
         ]
 
+    async def _knowing(
+        self,
+        workspace_id: str,
+        project_id: str,
+        items: list[PlanItem],
+        scenes: list[PlanItem],
+    ) -> Knowing | None:
+        """What the plan's conditions about what someone knows are judged against
+        (STY-005): read only when a scene has such a condition. The beliefs of each
+        character named in one, the events they were learned from, where scenes and events
+        sit, and which of the statements named everyone knows."""
+        asked = [
+            condition
+            for scene in scenes
+            for condition in scene_conditions(scene.details)
+            if condition.knows is not None and condition.entity_id is not None
+        ]
+        if not asked:
+            return None
+        beliefs: list[Belief] = []
+        for holder in sorted({condition.entity_id or "" for condition in asked}):
+            beliefs += await self._reader.list_beliefs(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                holder_entity_id=holder,
+                limit=MAX_RECORDS,
+            )
+        events = [
+            event
+            for event in await self._reader.list_events(
+                workspace_id=workspace_id, project_id=project_id, limit=MAX_RECORDS
+            )
+            if event.retired_revision is None
+        ]
+        common: set[tuple[str, str, str]] = set()
+        for subject_id in sorted({c.knows.subject_id for c in asked if c.knows is not None}):
+            for fact in await self._reader.list_facts(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                subject_id=subject_id,
+                limit=MAX_WORLD_FACTS,
+            ):
+                if fact.closed_revision is None and fact.visibility is FactVisibility.COMMON:
+                    common.add(
+                        statement_key(
+                            fact.proposition.subject_id,
+                            fact.proposition.predicate,
+                            fact.proposition.object,
+                        )
+                    )
+        holders = {condition.entity_id or "" for condition in asked}
+        names = {
+            entity_id: entity.name
+            for entity_id in sorted(holders)
+            if (
+                entity := await self._reader.get_entity(
+                    workspace_id=workspace_id, project_id=project_id, entity_id=entity_id
+                )
+            )
+            is not None
+        }
+        placed = StoryOrder(items, events)
+        return Knowing(
+            beliefs=beliefs,
+            events=placed.by_id,
+            where=placed.where,
+            common=frozenset(common),
+            names=names,
+        )
+
     async def _story_for_checks(
         self,
         workspace_id: str,
@@ -619,6 +693,10 @@ class PlanService:
                     about.add(condition.entity_id)
                 if condition.check is not None and condition.check.pattern.other_id:
                     named.add(condition.check.pattern.other_id)
+                if condition.knows is not None:
+                    named.add(condition.knows.subject_id)
+                    if condition.knows.other_id:
+                        named.add(condition.knows.other_id)
             if conditions and scene_time(scene.details) is not None:
                 timed = True
             fact_ids.update(reveal.fact_id for reveal in scene_reveals(scene.details))
@@ -709,8 +787,26 @@ class PlanService:
             workspace_id=workspace_id, project_id=project_id, limit=MAX_WORLD_ENTITIES
         )
         entity_ids = {entity.id for entity in entities if entity.is_active}
+        characters = {
+            entity.id for entity in entities if entity.is_active and entity.type == "Character"
+        }
         for condition in conditions:
             if condition.words is not None:
+                continue
+            if condition.knows is not None:
+                # What someone knows (STY-005): a character, and a statement about entries
+                # that are there, of a kind the story allows.
+                knows = condition.knows
+                if condition.entity_id not in characters:
+                    raise ValidationError("Only a character can know, see or hear something.")
+                if knows.subject_id not in entity_ids or (
+                    knows.other_id is not None and knows.other_id not in entity_ids
+                ):
+                    raise ValidationError(
+                        "What they must know names an entry that is not in the story bible."
+                    )
+                if knows.predicate not in predicates:
+                    raise ValidationError("That is not a kind of fact this story has.")
                 continue
             problems = body_problems(
                 condition_body(condition),
@@ -1194,7 +1290,9 @@ def fact_standing_in(story: Story) -> Callable[[str, PlanItem | None], FactStand
     return standing
 
 
-def condition_states(scenes: list[PlanItem], story: Story) -> list[ConditionState]:
+def condition_states(
+    scenes: list[PlanItem], story: Story, knowing: Knowing | None = None
+) -> list[ConditionState]:
     """Every scene's conditions, judged where the scene comes (reading order).
 
     A scene placed in story time is judged against the facts true at that moment; one
@@ -1230,6 +1328,7 @@ def condition_states(scenes: list[PlanItem], story: Story) -> list[ConditionStat
                         at_time=at_time,
                         planned=planned,
                         undated=undated,
+                        knowing=knowing,
                     )
                 )
         earlier.append((scene.id, scene.title, conditions))

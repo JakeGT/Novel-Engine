@@ -8,6 +8,7 @@ be stale; what the index cannot see is said, never hidden.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Sequence
 from typing import Any
@@ -17,6 +18,7 @@ from backend.domain.branching import working_in
 from backend.domain.errors import NotFoundError
 from backend.domain.identity import AccessScope
 from backend.domain.impact import (
+    AfterChange,
     Impact,
     KeptDraft,
     Mention,
@@ -26,24 +28,29 @@ from backend.domain.impact import (
     Touched,
     assemble,
     belief_dependents,
+    condition_changes,
     draft_dependents,
     event_dependents,
     finding_dependents,
     own_text_dependents,
     picture_dependents,
     plan_dependents,
+    reader_changes,
     rule_dependents,
     standing_gaps,
     text_dependents,
     touched_by,
     touched_entry,
 )
-from backend.domain.operations import CanonOperation, parse_operation
+from backend.domain.operations import CanonOperation, RestoreEntityOp, parse_operation
 from backend.domain.review import effective_operations
 from backend.domain.rules import World, apply_operations, world_from_canon
 from backend.domain.scene_conditions import scene_conditions
 from backend.domain.sources import SourceKind
 from backend.domain.tenancy import Permission
+from backend.services.scratch_story import scratch_story
+from backend.services.story_at_version import StoryAt
+from backend.services.story_time_service import Story
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +120,9 @@ class ImpactService:
             branch_id=mutation.branch_id,
         )
         with working_in(None if branch is None or branch.is_root else branch.id):
-            story, before, complete = await self._story(mutation.workspace_id, mutation.project_id)
+            story, before, complete, state = await self._story(
+                mutation.workspace_id, mutation.project_id
+            )
             touched = touched_by(operations, story)
             impact = await self._impact(
                 mutation.workspace_id,
@@ -123,6 +132,14 @@ class ImpactService:
                 before,
                 apply_operations(before, operations),
                 complete=complete,
+            )
+            await self._after_change(
+                impact,
+                state,
+                operations,
+                workspace_id=mutation.workspace_id,
+                project_id=mutation.project_id,
+                branch_id=mutation.branch_id,
             )
         if unreadable:
             impact.not_checked.insert(
@@ -138,7 +155,7 @@ class ImpactService:
     ) -> Impact:
         """What depends on one entry, in the line of the story the request works in."""
         await self._authorize(scope, workspace_id, project_id)
-        story, world, complete = await self._story(workspace_id, project_id)
+        story, world, complete, _state = await self._story(workspace_id, project_id)
         if entity_id not in story.names:
             raise NotFoundError("That entry was not found.")
         return await self._impact(
@@ -152,7 +169,58 @@ class ImpactService:
         )
 
     # ------------------------------------------------------------------------- reading
-    async def _story(self, workspace_id: str, project_id: str) -> tuple[StoryFacts, World, bool]:
+    async def _after_change(
+        self,
+        impact: Impact,
+        state: StoryAt,
+        operations: Sequence[CanonOperation],
+        *,
+        workspace_id: str,
+        project_id: str,
+        branch_id: str,
+    ) -> None:
+        """How the plan's conditions and the reader's guide would read after the change,
+        from a scratch copy of the story with it applied; nothing is saved (CON-017)."""
+        if not operations:
+            return
+        head = 0
+        get_head = getattr(self._reader, "get_head", None)
+        if get_head is not None:
+            head = int(
+                await get_head(
+                    workspace_id=workspace_id, project_id=project_id, branch_id=branch_id
+                )
+            )
+        try:
+            # Pure work over every record, scene and fact (the copy, the merges expanded
+            # over it, and the reading of it): off the event loop for a large story.
+            impact.after_change = await asyncio.to_thread(
+                _after_on_scratch,
+                state,
+                operations,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                branch_id=branch_id,
+                revision=head + 1,
+            )
+        except Exception as error:  # noqa: BLE001 - the rest of the answer stands
+            log_event(logger, "impact.scratch_failed", error_type=type(error).__name__)
+            impact.not_checked.insert(
+                0,
+                "How the plan's conditions and the reader's guide would read after the change "
+                "could not be worked out this time.",
+            )
+            return
+        impact.scratch = True
+        if any(isinstance(operation, RestoreEntityOp) for operation in operations):
+            impact.not_checked.append(
+                "An entry brought back is not in the copy used to show how the plan's "
+                "conditions and the reader's guide would read after the change."
+            )
+
+    async def _story(
+        self, workspace_id: str, project_id: str
+    ) -> tuple[StoryFacts, World, bool, StoryAt]:
         entities = await self._reader.list_entities(
             workspace_id=workspace_id,
             project_id=project_id,
@@ -193,7 +261,16 @@ class ImpactService:
             },
         )
         complete = len(entities) < MAX_ENTITIES and len(facts) < MAX_FACTS
-        return story, world, complete
+        state = StoryAt(
+            story=Story(
+                entities={entity.id: entity for entity in entities if entity.is_active},
+                facts=[fact for fact in facts if fact.closed_revision is None],
+                events=[event for event in events if event.retired_revision is None],
+            ),
+            beliefs=[belief for belief in beliefs if belief.closed_revision is None],
+            plan_items=[item for item in plans if item.is_active],
+        )
+        return story, world, complete, state
 
     async def _manuscripts(self, workspace_id: str, project_id: str) -> dict[str, str]:
         """Plan id -> the text holding that scene's prose, in the line being worked in."""
@@ -517,4 +594,61 @@ class ImpactService:
         return impact
 
 
-__all__ = ["ImpactService"]
+def _after_on_scratch(
+    state: StoryAt,
+    operations: Sequence[CanonOperation],
+    *,
+    workspace_id: str,
+    project_id: str,
+    branch_id: str,
+    revision: int,
+) -> list[AfterChange]:
+    """The scratch copy and how it reads, in a worker thread. Expanding a merge reads the
+    copy through an asynchronous source that never waits on anything, so it runs to the
+    end in a loop of the thread's own."""
+    copy = asyncio.run(
+        scratch_story(
+            state,
+            operations,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            branch_id=branch_id,
+            revision=revision,
+        )
+    )
+    return after_change(state, copy)
+
+
+def after_change(before: StoryAt, after: StoryAt) -> list[AfterChange]:
+    """The plan's conditions and the reader's guide over the story now and over the
+    scratch copy, worked out by the plan's and the guide's own code, and what differs."""
+    from backend.domain.knowledge import reading_order
+    from backend.domain.plan_checks import fact_sentence
+    from backend.services.knowledge_service import _journey_of
+    from backend.services.plan_service import condition_states
+
+    def conditions(state: StoryAt) -> list[Any]:
+        return condition_states(reading_order(state.plan_items), state.story)
+
+    def saying(state: StoryAt) -> Any:
+        names = {entity.id: entity.name for entity in state.story.entities.values()}
+        facts = {fact.id: fact for fact in state.story.facts}
+
+        def said(fact_id: str) -> str:
+            fact = facts.get(fact_id)
+            return fact_sentence(fact, names) if fact is not None else "a fact no longer there"
+
+        return said
+
+    titles = {item.id: item.title for item in [*before.plan_items, *after.plan_items]}
+    titles.update({item.id: item.title for item in after.plan_items})
+    found = condition_changes(conditions(before), conditions(after), titles)
+    found.extend(
+        reader_changes(
+            _journey_of(before).steps, _journey_of(after).steps, saying(before), saying(after)
+        )
+    )
+    return found
+
+
+__all__ = ["ImpactService", "after_change"]

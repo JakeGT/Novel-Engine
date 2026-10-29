@@ -755,6 +755,28 @@ class ContextService:
         # going in and the stage reached, so the change happens on the page.
         for move in moves_in_scene(items_all, scene.id):
             if pov is None or pov not in move.about:
+                # Someone else's arc moves here (STY-006), and they are in the scene: the
+                # plan says so, for the plan's check to look for the change on the page.
+                # Only the stages' names, never the fact a stage is tied to, which may be
+                # a secret.
+                present = {ref.entity_id for ref in scene.refs}
+                who = next((names[i] for i in move.about if i in names and i in present), "")
+                if not who:
+                    continue
+                going = f"going in, {who} is at “{move.current}”; " if move.current else ""
+                out.append(
+                    ContextItem(
+                        key=f"arc:{scene.id}:{move.arc_id}",
+                        section=ContextSection.PLAN,
+                        text=f"{who}'s arc “{move.arc_title}”: {going}in this scene, {who} "
+                        f"reaches “{move.reached}”.",
+                        reason=f"You said this scene moves {who}'s arc.",
+                        authority="plan",
+                        record_type="plan_item",
+                        record_id=move.arc_id,
+                        score=70,
+                    )
+                )
                 continue
             who = names.get(pov, "The viewpoint character")
             text = f"{who}'s arc “{move.arc_title}”: "

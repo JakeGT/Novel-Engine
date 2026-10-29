@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { api, type CanonEntity, type Fact, type PlanItem, type SceneCondition } from '../api/client'
+import { api, type CanonEntity, type Fact, type KnowsCheck, type PlanItem, type SceneCondition } from '../api/client'
 import { factSentence } from '../lib/facts'
 import { emptyPattern, KINDS, type CheckKind } from '../lib/rules'
 import { scopedKey, useCanonWrite, useEntries, useProject } from '../project'
@@ -21,6 +21,37 @@ function structured(when: When, strength: Strength, entityId: string, predicate:
 function inWords(when: When, strength: Strength, words = ''): SceneCondition {
   return { when, strength, words }
 }
+
+type Knowing = KnowsCheck['how']
+
+/** What a character must know, have seen or have heard, as a fact of the story bible (STY-005). */
+function knowsOf(fact: Fact, how: Knowing): KnowsCheck {
+  const object = fact.object as { entity_id?: string; value?: unknown }
+  return object.entity_id
+    ? { how, subject_id: fact.subject_id, predicate: fact.predicate, other_id: object.entity_id }
+    : { how, subject_id: fact.subject_id, predicate: fact.predicate, value: String(object.value ?? '') }
+}
+
+function knowing(when: When, strength: Strength, holder: string, fact: Fact, how: Knowing = 'knows'): SceneCondition {
+  return { when, strength, entity_id: holder, knows: knowsOf(fact, how) }
+}
+
+/** Whether a knowing condition is about this fact. */
+function sameStatement(knows: KnowsCheck, fact: Fact): boolean {
+  const mine = knowsOf(fact, knows.how)
+  return (
+    mine.subject_id === knows.subject_id &&
+    mine.predicate === knows.predicate &&
+    (mine.other_id ?? null) === (knows.other_id ?? null) &&
+    (mine.value ?? null) === (knows.value ?? null)
+  )
+}
+
+const KNOWING: { value: Knowing; label: string }[] = [
+  { value: 'knows', label: 'knows' },
+  { value: 'seen', label: 'has seen' },
+  { value: 'heard', label: 'has heard' },
+]
 
 /** A fact about an entry as the pattern a condition checks: the same kind, the same other end. */
 function patternOf(fact: Fact) {
@@ -59,6 +90,8 @@ export function SceneConditionsDialog({
   const predicates = (vocabulary.data?.predicates ?? []).map((item) => item.predicate)
   const types = (vocabulary.data?.entity_types ?? []).map((item) => item.name)
   const active = entries.filter((entry) => entry.lifecycle === 'active')
+  const characters = active.filter((entry) => entry.type === 'Character')
+  const allFacts = (facts.data?.items ?? []).filter((fact) => !fact.closed_revision)
   const [rows, setRows] = useState<SceneCondition[]>(scene.conditions)
   const [tried, setTried] = useState(false)
 
@@ -93,6 +126,7 @@ export function SceneConditionsDialog({
       {rows.map((row, index) => {
         if (row.when !== when) return null
         const wordy = row.words !== undefined && row.words !== null
+        const knows = row.knows ?? null
         const about = (facts.data?.items ?? []).filter((fact) => fact.subject_id === row.entity_id)
         const number = rows.slice(0, index + 1).filter((other) => other.when === when).length
         const name = `${heading}, condition ${number}`
@@ -110,18 +144,23 @@ export function SceneConditionsDialog({
               </select>
               <select
                 aria-label={`How it is said (${name})`}
-                value={wordy ? 'words' : 'entry'}
+                value={wordy ? 'words' : knows ? 'knows' : 'entry'}
                 onChange={(event) =>
                   change(
                     index,
                     event.target.value === 'words'
                       ? inWords(when, row.strength)
-                      : structured(when, row.strength, active[0]?.id ?? '', predicates[0] ?? ''),
+                      : event.target.value === 'knows' && characters[0] && allFacts[0]
+                        ? knowing(when, row.strength, characters[0].id, allFacts[0])
+                        : structured(when, row.strength, active[0]?.id ?? '', predicates[0] ?? ''),
                   )
                 }
               >
                 <option value="entry" disabled={active.length === 0}>
                   About an entry
+                </option>
+                <option value="knows" disabled={characters.length === 0 || allFacts.length === 0}>
+                  What someone knows
                 </option>
                 <option value="words">In my own words</option>
               </select>
@@ -154,6 +193,56 @@ export function SceneConditionsDialog({
                 )}
                 <span className="muted small" id={`words-${index}-hint`}>
                   Given to the assistant with the scene; it is not checked.
+                </span>
+              </div>
+            ) : knows ? (
+              <div className="stack tight">
+                <div className="rule-line">
+                  <select
+                    aria-label={`Who (${name})`}
+                    value={row.entity_id ?? ''}
+                    onChange={(event) => change(index, { ...row, entity_id: event.target.value })}
+                  >
+                    {characters.map((entry) => (
+                      <option key={entry.id} value={entry.id}>
+                        {entry.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    aria-label={`Knows, has seen or has heard (${name})`}
+                    value={knows.how}
+                    onChange={(event) => change(index, { ...row, knows: { ...knows, how: event.target.value as Knowing } })}
+                  >
+                    {KNOWING.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <label className="field">
+                  <span>What they must know</span>
+                  <select
+                    value={allFacts.find((fact) => sameStatement(knows, fact))?.id ?? ''}
+                    onChange={(event) => {
+                      const fact = allFacts.find((item) => item.id === event.target.value)
+                      if (fact) change(index, { ...row, knows: knowsOf(fact, knows.how) })
+                    }}
+                  >
+                    {!allFacts.some((fact) => sameStatement(knows, fact)) && (
+                      <option value="">A fact no longer in your story bible</option>
+                    )}
+                    {allFacts.map((fact) => (
+                      <option key={fact.id} value={fact.id}>
+                        {factSentence(fact, named.names)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <span className="muted small">
+                  Checked against what is recorded about how they learned it: “has seen” needs something they saw
+                  happen, “has heard” something they were told, overheard or heard said.
                 </span>
               </div>
             ) : (

@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from bisect import bisect_left, bisect_right
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 
 from backend.domain.appearance import (
@@ -22,7 +22,9 @@ from backend.domain.appearance import (
     identity_clashes,
     number_of,
 )
+from backend.domain.movement import MovementBrief, movement_findings
 from backend.domain.sources import Mention, MentionStatus
+from backend.domain.spoken import blank_spoken
 
 # Phrases readers increasingly recognise as machine-written, from writing-tool checklists
 # (2025). Matched as whole words, case-insensitively.
@@ -52,17 +54,15 @@ _STOCK = re.compile(
 )
 _PARAGRAPH = re.compile(r"\n\s*\n")
 _FIRST_PERSON = re.compile(r"(?<![\w])(I|me|my)(?![\w])")
-# What someone says aloud, between straight or curly double quotes or curly single quotes:
-# an "I" there is the speaker's, not the narrator's. A closing ’ is also an apostrophe
-# ("Wren’s"), so a single-quoted span must end where no letter follows.
-_SPOKEN = re.compile(r"\"[^\"]*\"|“[^”]*”|‘(?:[^’]|’(?=\w))*’(?!\w)")
+# What someone says aloud (``backend.domain.spoken``, found in one pass): an "I" there is
+# the speaker's, not the narrator's.
 _SENTENCE = re.compile(r"[^.!?]+(?:[.!?]+|$)")
 _NEGATION = re.compile(r"(?<![\w])(not|never|no|nothing)(?![\w])|n[’']t(?![\w])", re.IGNORECASE)
 
 
 def _first_person(text: str) -> bool:
     """The narration says I, me or my (outside anything a character says aloud)."""
-    return bool(_FIRST_PERSON.search(_SPOKEN.sub(" ", text)))
+    return bool(_FIRST_PERSON.search(blank_spoken(text)))
 
 
 class Severity(StrEnum):
@@ -204,6 +204,9 @@ class DraftBrief:
     appearance: list[AppearanceDetail] = field(default_factory=list)
     # How old the scene's people can be at its time, from the story bible (CON-004).
     ages: list[AgeKnown] = field(default_factory=list)
+    # Places, journeys and where the scene's people are around its time, for travel read
+    # from the words (SCN-007, ``backend.domain.movement``); None when not gathered.
+    movement: MovementBrief | None = None
 
     def names_for(self, name: str) -> list[str]:
         return [name, *self.also.get(name, ())]
@@ -589,7 +592,7 @@ def days_between(
 
 def _without_speech(text: str) -> str:
     """The text with what characters say aloud blanked, so offsets still match."""
-    return _SPOKEN.sub(lambda match: " " * len(match.group(0)), text)
+    return blank_spoken(text)
 
 
 def _opening(text: str) -> str:
@@ -1232,7 +1235,29 @@ def prose_findings(text: str, brief: DraftBrief) -> list[DraftFinding]:
     found.extend(supply_findings(text, brief))
     found.extend(appearance_findings(text, brief))
     found.extend(identity_findings(text, brief))
+    found.extend(travel_findings(text, brief))
     return found
+
+
+def travel_findings(text: str, brief: DraftBrief) -> list[DraftFinding]:
+    """The words taking someone somewhere the plan, the travel table or a status that keeps
+    them does not allow (SCN-007, CON-004). Notes, quoting the words."""
+    if brief.movement is None:
+        return []
+    # Other phrases that mean each person here (their aliases, the author's answers),
+    # kept by name in the brief; the travel check keys people by entry.
+    shown = brief.movement.shown
+    movement = replace(
+        brief.movement,
+        people={
+            who: tuple(dict.fromkeys([*names, *brief.also.get(shown.get(who, who), ())]))
+            for who, names in brief.movement.people.items()
+        },
+    )
+    return [
+        DraftFinding(item.code, Severity.NOTE, item.message, item.start, item.end, item.subject)
+        for item in movement_findings(_without_speech(text), movement)
+    ]
 
 
 __all__ = [
@@ -1256,5 +1281,6 @@ __all__ = [
     "resource_findings",
     "supply_findings",
     "time_words",
+    "travel_findings",
     "word_count",
 ]

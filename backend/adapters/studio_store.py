@@ -11,7 +11,7 @@ from sqlalchemy import text
 
 from backend.core.database import session_scope
 from backend.domain.dismissals import DismissReason, FindingDismissal, FindingKind
-from backend.domain.studio import AssistantFinding, SceneDraft, SceneReading
+from backend.domain.studio import AssistantFinding, PictureAnchor, SceneDraft, SceneReading
 
 _DRAFT = (
     "SELECT workspace_id, project_id, id, branch_id, plan_id, job_id, manifest_id, number, "
@@ -19,7 +19,7 @@ _DRAFT = (
 )
 _FINDING = (
     "SELECT id, target_kind, target_id, job_id, category, message, suggestion, start_char, "
-    "end_char, created_at, check_pass FROM draft_findings"
+    "end_char, created_at, check_pass, picture_anchor FROM draft_findings"
 )
 
 
@@ -55,7 +55,17 @@ def _finding(row: Any) -> AssistantFinding:
         end=row[8],
         created_at=row[9],
         check_pass=row[10],
+        picture_anchor=PictureAnchor.from_dict(_json(row[11])) if len(row) > 11 else None,
     )
+
+
+def _json(value: Any) -> Any:
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except ValueError:
+            return None
+    return value
 
 
 _DISMISSAL = (
@@ -299,8 +309,9 @@ class PostgresStudioStore:
                     text(
                         "INSERT INTO draft_findings (workspace_id, project_id, id, target_kind, "
                         "target_id, job_id, category, message, suggestion, start_char, end_char, "
-                        "check_pass) VALUES (:w, :p, :id, :kind, :target, :job, :category, "
-                        ":message, :suggestion, :start, :end, :check_pass)"
+                        "check_pass, picture_anchor) VALUES (:w, :p, :id, :kind, :target, :job, "
+                        ":category, :message, :suggestion, :start, :end, :check_pass, "
+                        "CAST(:anchor AS JSONB))"
                     ),
                     {
                         "w": workspace_id,
@@ -315,6 +326,11 @@ class PostgresStudioStore:
                         "start": finding.start,
                         "end": finding.end,
                         "check_pass": finding.check_pass,
+                        "anchor": (
+                            json.dumps(finding.picture_anchor.as_dict())
+                            if finding.picture_anchor is not None
+                            else None
+                        ),
                     },
                 )
 

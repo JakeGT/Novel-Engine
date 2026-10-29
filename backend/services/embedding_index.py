@@ -15,7 +15,13 @@ What is embedded, per project:
 - accepted or corrected captions, as text, pointing at their picture;
 - pictures, by their web-safe copy, as images: only when the generation's model takes
   images. A text-only generation holds the captions and never pretends to have seen a
-  picture.
+  picture;
+- parts of pictures the author marked and named or linked to an entry (CTX-012): each
+  as its own row pointing at its segment. Every generation holds a part's words (its
+  name, the entry it shows and what the author accepted about it); one whose model takes
+  images also holds the part itself, cut from the web-safe copy in the same limited
+  worker that prepares pictures. A part taken off is refused by the search gate at once
+  and its rows are removed when the story's parts are next brought up to date.
 
 Rows are compared by content hash, so a build that is stopped and started again, or
 run twice, does only the work still missing. Counts only are logged.
@@ -24,6 +30,7 @@ run twice, does only the work still missing. Counts only are logged.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
@@ -40,13 +47,24 @@ from backend.domain.embedding import (
     TextInput,
     VectorRow,
 )
+from backend.domain.media_observations import region_caption
 
 logger = logging.getLogger(__name__)
 
 EMBEDDING_REINDEX_KIND = "embedding_reindex"
+# Bringing a story's marked parts up to date after one is marked, changed or taken off:
+# queued from the author's request, never run inside it. One waits per picture at a
+# time; another change to that picture before it starts is caught by the same one.
+REGION_REFRESH_KIND = "embedding_regions"
+# A waiting refresh older than this is taken to be lost (stopped, or the server was
+# restarted), so the next change queues a new one.
+REGION_REFRESH_WAIT_SECONDS = 300.0
 PICTURE_KIND = "picture"
 CAPTION_KIND = "caption"
-MEDIA_KINDS = (PICTURE_KIND, CAPTION_KIND)
+# A marked part of a picture: the part itself (image spaces) and its words (every space).
+REGION_KIND = "region"
+REGION_CAPTION_KIND = "region_caption"
+MEDIA_KINDS = (PICTURE_KIND, CAPTION_KIND, REGION_KIND, REGION_CAPTION_KIND)
 BATCH = 16
 # The scheduled catch-up (CTX-012): stories looked at, and brought up to date, per round,
 # and at most this many things embedded in one round however many a story is missing
@@ -76,6 +94,35 @@ def caption_row_id(observation_id: str) -> str:
     return f"caption:{observation_id}"
 
 
+def region_row_id(segment_id: str) -> str:
+    return f"region:{segment_id}"
+
+
+def region_caption_row_id(segment_id: str) -> str:
+    return f"region_caption:{segment_id}"
+
+
+def region_image_hash(source: Any) -> str:
+    """A part's image row is current while its picture's copy and its place are."""
+    return hashlib.sha256(f"{source.checksum}:{source.region_hash}".encode()).hexdigest()
+
+
+def region_words(source: Any) -> str:
+    return region_caption(source.label, source.entity_name, list(source.notes))
+
+
+def wanted_region_rows(sources: Sequence[Any], *, images: bool) -> dict[str, str]:
+    """Each region row a generation should hold, by id, with its content hash."""
+    wanted: dict[str, str] = {}
+    for source in sources:
+        words = region_words(source)
+        if words:
+            wanted[region_caption_row_id(source.segment_id)] = TextInput(text=words).content_hash
+        if images:
+            wanted[region_row_id(source.segment_id)] = region_image_hash(source)
+    return wanted
+
+
 @dataclass
 class ProjectBuild:
     """Counts from building one project into one generation; never names or content."""
@@ -86,6 +133,8 @@ class ProjectBuild:
     unchanged: int = 0
     removed: int = 0
     pictures_unreadable: int = 0
+    regions: int = 0
+    regions_unreadable: int = 0
 
     def add(self, other: ProjectBuild) -> None:
         for name in vars(self):
@@ -94,7 +143,14 @@ class ProjectBuild:
     @property
     def embedded(self) -> int:
         """Things sent to the model to embed (a picture that could not be read counts)."""
-        return self.documents + self.captions + self.pictures + self.pictures_unreadable
+        return (
+            self.documents
+            + self.captions
+            + self.pictures
+            + self.pictures_unreadable
+            + self.regions
+            + self.regions_unreadable
+        )
 
 
 @dataclass
@@ -105,16 +161,18 @@ class Lag:
     captions: int = 0
     pictures: int = 0
     projects: int = 0
+    regions: int = 0
 
     @property
     def total(self) -> int:
-        return self.documents + self.captions + self.pictures
+        return self.documents + self.captions + self.pictures + self.regions
 
     def as_dict(self) -> dict[str, int]:
         return {
             "documents": self.documents,
             "captions": self.captions,
             "pictures": self.pictures,
+            "regions": self.regions,
             "projects": self.projects,
             "total": self.total,
         }
@@ -123,6 +181,7 @@ class Lag:
         self.documents += other.documents
         self.captions += other.captions
         self.pictures += other.pictures
+        self.regions += other.regions
         if other.total:
             self.projects += 1
 
@@ -170,8 +229,11 @@ class EmbeddingIndexService:
         passages: Any = None,
         runner: Any = None,
         batch_size: int = BATCH,
+        cropper: Any = None,
     ) -> None:
         self._index = index
+        # Cuts a marked part from a picture's web copy, in the limited picture worker.
+        self._cropper = cropper
         self._embedder = embedder
         self._objects = objects
         self._passages = passages
@@ -179,6 +241,9 @@ class EmbeddingIndexService:
         self._batch = max(1, batch_size)
         # Where the next scheduled catch-up round starts, so every story gets its turn.
         self._catch_up_from = 0
+        # Refreshes of marked parts waiting to start, by (workspace, story, picture): when
+        # each was queued (the event loop's clock).
+        self._regions_waiting: dict[tuple[str, str, str], float] = {}
 
     # --- configuration --------------------------------------------------------------
 
@@ -283,6 +348,11 @@ class EmbeddingIndexService:
             for picture in await self._call("pictures_ready", **scope):
                 if have.get(picture_row_id(picture.asset_version_id)) != picture.checksum:
                     lag.pictures += 1
+        wanted = wanted_region_rows(
+            await self._call("regions_ready", **scope),
+            images=generation.supports(Modality.IMAGE),
+        )
+        lag.regions += sum(1 for row_id, digest in wanted.items() if have.get(row_id) != digest)
         return lag
 
     # --- building -------------------------------------------------------------------
@@ -365,6 +435,8 @@ class EmbeddingIndexService:
 
         await self._check_cancel(generation.id, step, "captions", 40)
         report.add(await self._build_captions(generation, have, scope, room=room()))
+        await self._check_cancel(generation.id, step, "regions", 50)
+        report.add(await self._build_regions(generation, have, scope, room=room()))
         if generation.supports(Modality.IMAGE):
             await self._check_cancel(generation.id, step, "pictures", 60)
             report.add(await self._build_pictures(generation, have, scope, step=step, room=room()))
@@ -456,6 +528,206 @@ class EmbeddingIndexService:
             await self._call("delete_kinds_except", generation.id, [CAPTION_KIND], wanted, **scope)
         )
         return report
+
+    async def _build_regions(
+        self,
+        generation: Generation,
+        have: dict[str, str],
+        scope: dict[str, str],
+        *,
+        room: int | None = None,
+    ) -> ProjectBuild:
+        """Bring the story's named marked parts up to date: their words in every
+        generation, the parts themselves in one that takes images (CTX-012)."""
+        report = ProjectBuild()
+        images = generation.supports(Modality.IMAGE)
+        sources = await self._call("regions_ready", **scope)
+        wanted = wanted_region_rows(sources, images=images)
+
+        def left() -> int | None:
+            return (
+                None if room is None else max(0, room - report.regions - report.regions_unreadable)
+            )
+
+        pending = []
+        for source in sources:
+            row_id = region_caption_row_id(source.segment_id)
+            if row_id not in wanted:
+                continue
+            if have.get(row_id) == wanted[row_id]:
+                report.unchanged += 1
+                continue
+            pending.append((row_id, source, TextInput(text=region_words(source))))
+        if room is not None:
+            pending = pending[:room]
+        for start in range(0, len(pending), self._batch):
+            chunk = pending[start : start + self._batch]
+            vectors = await asyncio.to_thread(
+                self._embedder.embed, [item for _, _, item in chunk], task=EmbeddingTask.DOCUMENT
+            )
+            rows = [
+                VectorRow(
+                    id=row_id,
+                    kind=REGION_CAPTION_KIND,
+                    modality=Modality.TEXT,
+                    task=EmbeddingTask.DOCUMENT,
+                    content_hash=item.content_hash,
+                    values=vector.values,
+                    # The author's own words and accepted notes; never logged.
+                    document=item.text,
+                    metadata={"kind": REGION_CAPTION_KIND},
+                    asset_id=source.asset_id,
+                    asset_version_id=source.asset_version_id,
+                    segment_id=source.segment_id,
+                )
+                for (row_id, source, item), vector in zip(chunk, vectors, strict=True)
+            ]
+            report.regions += int(await self._call("upsert", generation.id, rows, **scope))
+        if images:
+            opened: tuple[str, bytes] | None = None
+            # Parts of one picture together, so its copy is read once.
+            for source in sorted(sources, key=lambda item: (item.object_key, item.segment_id)):
+                row_id = region_row_id(source.segment_id)
+                if have.get(row_id) == wanted[row_id]:
+                    report.unchanged += 1
+                    continue
+                if (remaining := left()) is not None and remaining <= 0:
+                    # The rest waits for the next round; a row still wanted is never removed.
+                    continue
+                cropper = self._cropper
+                if self._objects is None or cropper is None:
+                    report.regions_unreadable += 1
+                    continue
+                try:
+                    if opened is None or opened[0] != source.object_key:
+                        data = await asyncio.to_thread(
+                            self._objects.open, source.object_key, **scope
+                        )
+                        opened = (source.object_key, data)
+                    part = await cropper.crop(opened[1], source.box)
+                    vector = (
+                        await asyncio.to_thread(
+                            self._embedder.embed,
+                            [ImageInput(data=part.data, media_type=part.content_type)],
+                            task=EmbeddingTask.DOCUMENT,
+                        )
+                    )[0]
+                except Exception:  # noqa: BLE001 - an unreadable part is counted, not fatal
+                    report.regions_unreadable += 1
+                    continue
+                row = VectorRow(
+                    id=row_id,
+                    kind=REGION_KIND,
+                    modality=Modality.IMAGE,
+                    task=EmbeddingTask.DOCUMENT,
+                    content_hash=wanted[row_id],
+                    values=vector.values,
+                    document=None,
+                    metadata={"kind": REGION_KIND},
+                    asset_id=source.asset_id,
+                    asset_version_id=source.asset_version_id,
+                    segment_id=source.segment_id,
+                )
+                report.regions += int(await self._call("upsert", generation.id, [row], **scope))
+        keep_captions = [
+            row_id for row_id in wanted if row_id.startswith(region_caption_row_id(""))
+        ]
+        keep_images = [row_id for row_id in wanted if row_id.startswith(region_row_id(""))]
+        report.removed += int(
+            await self._call(
+                "delete_kinds_except", generation.id, [REGION_CAPTION_KIND], keep_captions, **scope
+            )
+        )
+        report.removed += int(
+            await self._call(
+                "delete_kinds_except", generation.id, [REGION_KIND], keep_images, **scope
+            )
+        )
+        return report
+
+    async def regions_changed(self, workspace_id: str, project_id: str) -> int:
+        """Bring a story's marked parts up to date in every generation in use (after a
+        part is marked, changed or taken off, or a note about one is reviewed). Every
+        other generation cannot be embedded into, but a part's rows that no longer match
+        are removed from it, so it never answers with a part taken off or renamed.
+        Best effort: the next build catches up."""
+        scope = {"workspace_id": workspace_id, "project_id": project_id}
+        made = 0
+        try:
+            live = await self._live() if self.configured_ready() else []
+            for generation in live:
+                have = await self._call("hashes", generation.id, **scope)
+                made += (await self._build_regions(generation, have, scope)).regions
+            done = {generation.id for generation in live}
+            sources = None
+            for generation in await self._call("list_generations"):
+                if generation.id in done:
+                    continue
+                if sources is None:
+                    sources = await self._call("regions_ready", **scope)
+                wanted = wanted_region_rows(sources, images=generation.supports(Modality.IMAGE))
+                have = await self._call("hashes", generation.id, **scope)
+                stale = [
+                    row_id
+                    for row_id, content_hash in have.items()
+                    if row_id.startswith((region_row_id(""), region_caption_row_id("")))
+                    and wanted.get(row_id) != content_hash
+                ]
+                if stale:
+                    await self._call("delete_ids_in", generation.id, stale, **scope)
+        except Exception as error:  # noqa: BLE001 - search can catch up later
+            log_event(
+                logger,
+                "embedding.regions_failed",
+                level=logging.WARNING,
+                error_type=type(error).__name__,
+            )
+        return made
+
+    async def parts_changed(
+        self,
+        workspace_id: str,
+        project_id: str,
+        scope: Any = None,
+        asset_id: str = "",
+    ) -> bool:
+        """Media's hook when a picture's marked parts change: queue bringing them up to
+        date as a job, unless one for this picture is waiting to start already. Without
+        a job runner (or anyone to queue it for) it is done here, as before. True when
+        something was queued or done."""
+        if self._runner is None or scope is None:
+            await self.regions_changed(workspace_id, project_id)
+            return True
+        key = (workspace_id, project_id, asset_id)
+        now = asyncio.get_running_loop().time()
+        queued = self._regions_waiting.get(key)
+        if queued is not None and now - queued < REGION_REFRESH_WAIT_SECONDS:
+            return False
+        from backend.services.job_runner import JobSubmission
+
+        self._regions_waiting[key] = now
+        try:
+            await self._runner.submit(
+                scope,
+                workspace_id,
+                project_id,
+                JobSubmission(kind=REGION_REFRESH_KIND, payload={"asset_id": asset_id}),
+            )
+        except BaseException:
+            self._regions_waiting.pop(key, None)
+            raise
+        return True
+
+    async def _run_regions_job(self, ctx: Any) -> dict[str, Any]:
+        job = ctx.job
+        # Started: a change from now on needs a refresh of its own.
+        self._regions_waiting.pop(
+            (job.workspace_id, job.project_id, str(job.payload.get("asset_id") or "")), None
+        )
+        await ctx.step("parts", 10)
+        made = await self.regions_changed(job.workspace_id, job.project_id)
+        await ctx.step("done", 100)
+        return {"regions": made}
 
     async def _build_pictures(
         self,
@@ -676,6 +948,8 @@ class EmbeddingIndexService:
                 level=logging.WARNING,
                 error_type=type(error).__name__,
             )
+        # What the author accepts about a marked part is part of that part's words.
+        made += await self.regions_changed(workspace_id, project_id)
         return made
 
     async def versions_removed(
@@ -773,6 +1047,7 @@ class EmbeddingIndexService:
     def register_jobs(self) -> None:
         if self._runner is not None:
             self._runner.register(EMBEDDING_REINDEX_KIND, self._run_job, keeps_partial=True)
+            self._runner.register(REGION_REFRESH_KIND, self._run_regions_job)
 
     async def _run_job(self, ctx: Any) -> dict[str, Any]:
         job = ctx.job
@@ -818,7 +1093,11 @@ def wire_observations(observations: Any, service: EmbeddingIndexService) -> None
             scope: Any, workspace_id: str, project_id: str, *args: Any, **kwargs: Any
         ) -> Any:
             decided = await review(scope, workspace_id, project_id, *args, **kwargs)
-            if str(getattr(decided, "kind", CAPTION_KIND)) == CAPTION_KIND:
+            # A caption is indexed itself; any note about a marked part is in its words.
+            if (
+                str(getattr(decided, "kind", CAPTION_KIND)) == CAPTION_KIND
+                or getattr(decided, "segment_id", None) is not None
+            ):
                 await service.captions_changed(workspace_id, project_id)
             return decided
 
@@ -850,6 +1129,9 @@ def wire_media(media_service: Any, service: EmbeddingIndexService) -> None:
     on_removed = getattr(media_service, "on_versions_removed", None)
     if on_removed is not None:
         on_removed(service.versions_removed)
+    on_regions = getattr(media_service, "on_regions_changed", None)
+    if on_regions is not None:
+        on_regions(service.parts_changed)
     on_ready = getattr(media_service, "on_version_ready", None)
     if on_ready is not None:
         on_ready(service.picture_ready)
@@ -875,7 +1157,10 @@ __all__ = [
     "CAPTION_KIND",
     "EMBEDDING_REINDEX_KIND",
     "MEDIA_KINDS",
+    "REGION_REFRESH_KIND",
     "PICTURE_KIND",
+    "REGION_CAPTION_KIND",
+    "REGION_KIND",
     "BuildCancelled",
     "EmbeddingIndexService",
     "IndexStatus",
@@ -884,4 +1169,6 @@ __all__ = [
     "ProjectBuild",
     "caption_row_id",
     "picture_row_id",
+    "region_caption_row_id",
+    "region_row_id",
 ]

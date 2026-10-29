@@ -20,6 +20,7 @@ READS_WORDS = {
     "reveals",
     "presence",
     "looks",
+    "travel",
     "stock",
     "length",
     "other",
@@ -89,14 +90,16 @@ def test_an_unchanged_scene_runs_no_check_and_a_change_runs_exactly_what_reads_i
     assert fact.status_code == 201, fact.text
     assert _reran(_record(auth_client, w, scene)) == {"continuity"}
 
-    # The travel table changes: continuity only.
+    # The travel table changes: continuity, and the travel read from the words (SCN-007),
+    # which compares journeys in the words with the table (and the catch-all that reads
+    # the whole brief).
     table = {
         "travel": [{"from_id": w["harbor"], "to_id": w["saltmere"], "amount": 3}],
         "lasting": [],
         "expected_version": 0,
     }
     assert auth_client.put(f"{w['base']}/timeline/how-long", json=table).status_code == 200
-    assert _reran(_record(auth_client, w, scene)) == {"continuity"}
+    assert _reran(_record(auth_client, w, scene)) == {"continuity", "travel", "other"}
 
     # A new secret the viewpoint character does not know: the secrets check, continuity
     # (the story changed), and the catch-all that reads the whole brief.

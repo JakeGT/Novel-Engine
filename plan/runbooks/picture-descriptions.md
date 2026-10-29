@@ -48,3 +48,18 @@ says so; "Describe this picture" is refused before anything is queued or spent.
 Open a picture's page: with picture input on, "Describe this picture" shows its cost; run it
 and the suggestions appear. Logs carry `media.described` with counts only, and `ai.generate`
 with `images: 1` — never the picture, its words or the data address.
+
+## Marked parts and writing read in a picture (AST-007, AST-005, batch 10)
+
+- A describe job lists the parts the author marked and asks for a caption of each and for the
+  writing it can read. Its result counts what was kept (`observations`) and thrown away
+  (`dropped`: a part that was not listed, empty words, more than eight pieces of writing).
+- Writing is never read by a local OCR engine; it comes from the same vision model, so it needs
+  picture input on as above. A model that cannot read small text leaves it out or reads it wrong:
+  every reading waits for the author to accept, correct or reject it.
+- Marking parts needs a prepared picture ("Parts can be marked once the picture is ready"): see
+  [media processing](media-processing.md). Logs carry `media.region_marked` and
+  `media.region_changed` with whether it was named and linked, never the name.
+- In the search index each named part has its own rows; `make reindex-status` counts them under
+  `regions` in the lag. A part that could not be cut (no picture worker, a missing web copy) is
+  counted, not fatal, and is tried again by the next build.

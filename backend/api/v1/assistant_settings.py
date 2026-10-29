@@ -30,6 +30,7 @@ from backend.domain.usage_controls import (
 )
 from backend.services.assistant_settings_service import AssistantSettingsService, AssistBudget
 from backend.services.credential_service import CredentialService
+from backend.services.send_preview import set_confirmed_sending
 
 router = APIRouter(tags=["assistant-settings"])
 
@@ -42,12 +43,19 @@ def get_assist_budget(container: Container = Depends(get_container)) -> Any:
     return container.assist_budget
 
 
-def confirmed_tokens(
+async def confirmed_tokens(
     x_confirm_tokens: int | None = Header(
         default=None, alias="X-Confirm-Tokens", ge=0, le=MAX_CONTROL_TOKENS * 10
     ),
+    x_confirm_sending: str | None = Header(
+        default=None, alias="X-Confirm-Sending", max_length=64, pattern=r"^[0-9a-f]+$"
+    ),
 ) -> int | None:
-    """The size the author agreed to spend on this request, after being asked."""
+    """The size the author agreed to spend on this request, after being asked; and, when
+    the question was about pictures going to a company (CTX-013), the digest of what they
+    were shown, read by the service as it asks (``send_preview.confirmed_sending``)."""
+    # Async, so it is set in the request's own context, where the service reads it.
+    set_confirmed_sending(x_confirm_sending)
     return x_confirm_tokens
 
 

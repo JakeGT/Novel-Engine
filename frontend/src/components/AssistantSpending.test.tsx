@@ -1,8 +1,9 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api, isApiError } from '../api/client'
-import { expectAccessible, mockApi, problem, renderInProject, VIEWER } from '../test/harness'
+import { expectAccessible, mockApi, problem, renderInProject, Reply, VIEWER } from '../test/harness'
 import { CheckingChoice, CheckingStatus, SpendConfirmHost, SpendingCard } from './AssistantSpending'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -139,6 +140,61 @@ describe('Asking before a large request', () => {
     expect(calls).toHaveLength(2)
     expect(calls[0].headers?.get('X-Confirm-Tokens')).toBeNull()
     expect(calls[1].headers?.get('X-Confirm-Tokens')).toBe('64000')
+  })
+
+  it('asks before pictures go to a company, saying what goes and where', async () => {
+    const sending = {
+      provider: 'openrouter',
+      provider_label: 'OpenRouter',
+      model: 'maker/vision-model',
+      destination: 'openrouter.ai',
+      where: 'company',
+      where_words: 'to OpenRouter’s servers, outside this site',
+      words: 1800,
+      estimated_tokens: 5200,
+      pictures: [{ asset_id: 'ast_1', version_id: 'ver_1', name: '“Mara on the quay”, version 1' }],
+      context_tokens: 200000,
+      fits: true,
+    }
+    let first = true
+    const mock = mockApi({
+      'POST /studio/drafts': () => {
+        if (first) {
+          first = false
+          return new Reply(409, {
+            code: 'needs_confirmation',
+            detail: 'Writing this draft sends a picture from your story to OpenRouter’s servers, outside this site.',
+            field_errors: { estimated_tokens: '5200', threshold_tokens: '0' },
+            sending,
+          })
+        }
+        return { id: 'job_1', kind: 'scene_draft', status: 'queued' }
+      },
+      'GET /content': {},
+    })
+    // Mounted inside the app's query client, as in App.tsx.
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SpendConfirmHost />
+      </QueryClientProvider>,
+    )
+    const sent = api.startDraft(scope, 'pln_1', { variants: 1, words: 800, direction: '' }, 'key-1')
+
+    expect(await screen.findByRole('heading', { name: 'Send a picture to OpenRouter?' })).toBeInTheDocument()
+    const preview = screen.getByRole('region', { name: 'What will be sent' })
+    expect(preview).toHaveTextContent('Goes toOpenRouter (openrouter.ai)')
+    expect(preview).toHaveTextContent('Modelmaker/vision-model')
+    expect(preview).toHaveTextContent('From your storyAbout 1,800 words and 1 picture')
+    expect(preview).toHaveTextContent('It goes to OpenRouter’s servers, outside this site.')
+    expect(
+      within(screen.getByRole('list', { name: 'Pictures that will be sent' })).getByText('“Mara on the quay”, version 1'),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/You are asked each time pictures from your story would go/)).toBeInTheDocument()
+    await expectAccessible(container.ownerDocument.body)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Send it (about 5,200 tokens)' }))
+    await expect(sent).resolves.toMatchObject({ id: 'job_1' })
+    expect(mock.find('POST', '/studio/drafts')[1].headers?.get('X-Confirm-Tokens')).toBe('5200')
   })
 
   it('sends nothing when the author says no', async () => {

@@ -10,7 +10,7 @@ import asyncio
 
 import pytest
 
-from backend.domain.check_passes import PASS_ORDER, CheckPass
+from backend.domain.check_passes import DEFAULT_PASSES, PASS_ORDER, CheckPass
 from backend.domain.studio import AssistantFinding
 from backend.ports import AIUsage, StructuredResponse
 from backend.services.scene_checks import CheckNote, CheckNotes
@@ -19,9 +19,11 @@ from tests.contract.test_studio import PROSE, _ids, _save, _scene_world, _scope_
 pytestmark = pytest.mark.contract
 
 ALL = [item.value for item in PASS_ORDER]
+# What a check runs when the author names no passes: every pass but the optional ones.
+USUAL = [item.value for item in DEFAULT_PASSES]
 # The passes that read the scene's words; the pictures pass makes no call on a scene with
 # no pictures it may use (tests/contract/test_picture_context.py).
-TEXT = [item.value for item in PASS_ORDER if item is not CheckPass.PICTURES]
+TEXT = [item.value for item in DEFAULT_PASSES if item is not CheckPass.PICTURES]
 
 
 def _run(container) -> list:
@@ -56,8 +58,8 @@ def test_every_pass_runs_by_default_one_call_each_and_notes_say_which(auth_clien
     assert started.status_code == 202, started.text
     (done,) = _run(fake_container)
     assert done.status.value == "succeeded", done.error_message
-    assert done.payload["passes"] == ALL
-    assert set(done.result["passes"]) == set(ALL) and done.result["findings"] == 5
+    assert done.payload["passes"] == USUAL
+    assert set(done.result["passes"]) == set(USUAL) and done.result["findings"] == 5
 
     calls = fake_container.ai.calls
     assert len(calls) == 5 and all(call["response_format"] is CheckNotes for call in calls)
@@ -107,7 +109,10 @@ def test_the_estimate_is_given_pass_by_pass_and_asks_no_model(auth_client, fake_
     w, scene = _scene_world(auth_client, fake_container)
     _save(auth_client, w, scene, PROSE, None)
     url = f"{w['base']}/plan/{scene['id']}/studio/check-estimate"
-    every = auth_client.get(url).json()
+    usual = auth_client.get(url).json()
+    # Named none: the usual passes. The optional ones are estimated only when named.
+    assert [item["check_pass"] for item in usual["passes"]] == USUAL
+    every = auth_client.get(url, params={"passes": ALL}).json()
     assert [item["check_pass"] for item in every["passes"]] == ALL
     assert all(item["label"] and item["description"] for item in every["passes"])
     assert every["total_tokens"] == sum(item["total_tokens"] for item in every["passes"])

@@ -1,4 +1,5 @@
-"""The assistant's help with a scene's plan (STY-003, STY-004).
+"""The assistant's help with the plan: a scene's intent, bridges, an arc's stages and
+gaps (STY-003, STY-004, STY-006).
 
 Each kind of help has an estimate, to show the cost before anything is sent, and a
 start, which queues a job. A finished job's result names the suggested plan change,
@@ -15,6 +16,7 @@ from backend.api.dependencies import get_container
 from backend.api.v1.assistant_settings import confirmed_tokens
 from backend.api.v1.studio import JobModel, _job
 from backend.container import Container
+from backend.domain.arcs import MAX_STAGES
 from backend.domain.identity import AccessScope
 from backend.domain.scene_conditions import MAX_CONDITIONS
 from backend.services.planning_help import PlanningHelpService
@@ -99,5 +101,73 @@ async def suggest_bridges(
         plan_id,
         condition,
         confirmed_tokens=confirmed,
+    )
+    return _job(job)
+
+
+# ---------------------------------------------------------------- an arc's stages (STY-006)
+
+
+@router.get("/{plan_id}/stages/estimate", response_model=HelpEstimateModel)
+async def stages_estimate(
+    project_id: str,
+    plan_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    help_: PlanningHelpService = Depends(get_planning_help),
+) -> HelpEstimateModel:
+    """What suggesting the stages of an arc with none yet would use."""
+    found = await help_.arc_estimate(scope, scope.workspace_id or "", project_id, plan_id)
+    return HelpEstimateModel(**found)
+
+
+@router.post(
+    "/{plan_id}/stages/suggest", response_model=JobModel, status_code=status.HTTP_202_ACCEPTED
+)
+async def suggest_stages(
+    project_id: str,
+    plan_id: str,
+    scope: AccessScope = Depends(require_project_scope),
+    help_: PlanningHelpService = Depends(get_planning_help),
+    confirmed: int | None = Depends(confirmed_tokens),
+) -> JobModel:
+    """Suggest the stages of an arc from the arc, the story bible and the plan's scenes,
+    as a plan change for review. Only an arc with no stages yet."""
+    job = await help_.start_arc(
+        scope, scope.workspace_id or "", project_id, plan_id, confirmed_tokens=confirmed
+    )
+    return _job(job)
+
+
+# ---------------------------------------------------------------- gaps (STY-004)
+
+
+@router.get("/{plan_id}/gap/estimate", response_model=HelpEstimateModel)
+async def gap_estimate(
+    project_id: str,
+    plan_id: str,
+    stage: int | None = Query(default=None, ge=1, lt=MAX_STAGES),
+    scope: AccessScope = Depends(get_project_scope),
+    help_: PlanningHelpService = Depends(get_planning_help),
+) -> HelpEstimateModel:
+    """What suggesting a scene for a gap would use: a thread nothing moves along (the
+    thread's id), or an arc's stage no scene reaches (the arc's id and ``stage``)."""
+    found = await help_.gap_estimate(scope, scope.workspace_id or "", project_id, plan_id, stage)
+    return HelpEstimateModel(**found)
+
+
+@router.post(
+    "/{plan_id}/gap/suggest", response_model=JobModel, status_code=status.HTTP_202_ACCEPTED
+)
+async def suggest_gap(
+    project_id: str,
+    plan_id: str,
+    stage: int | None = Query(default=None, ge=1, lt=MAX_STAGES),
+    scope: AccessScope = Depends(require_project_scope),
+    help_: PlanningHelpService = Depends(get_planning_help),
+    confirmed: int | None = Depends(confirmed_tokens),
+) -> JobModel:
+    """Suggest one scene that fills a gap in the plan, as a plan change for review."""
+    job = await help_.start_gap(
+        scope, scope.workspace_id or "", project_id, plan_id, stage, confirmed_tokens=confirmed
     )
     return _job(job)

@@ -557,13 +557,26 @@ class ScriptedAIGateway:
         self.max_image_bytes = max_image_bytes
         # Pictures the route refused before anything was "sent" (nothing was spent).
         self.refused: list[dict[str, Any]] = []
+        # SCN-002: prose is handed on in pieces of this many words when asked to stream;
+        # False answers whole, as a computer through the connector does.
+        self.streams = True
+        self.stream_words = 3
+        # Whether a streamed answer says what it used (a provider may not).
+        self.stream_usage = True
+        # Raised half way through the next streamed answer (a dropped connection, an
+        # error the provider sends part way), then forgotten.
+        self.stream_error: BaseException | None = None
 
     def is_available(self) -> bool:
         return self._available
 
-    def capabilities(self, *, base_url: str | None = None) -> ProviderCapabilities:
+    def capabilities(
+        self, *, base_url: str | None = None, model: str | None = None
+    ) -> ProviderCapabilities:
         if not self.sees_images:
-            return ProviderCapabilities(provider="scripted", model="scripted")
+            return ProviderCapabilities(
+                provider="scripted", model="scripted", supports_streaming=self.streams
+            )
         return ProviderCapabilities(
             provider="scripted",
             model="scripted",
@@ -571,6 +584,7 @@ class ScriptedAIGateway:
             max_images=self.max_images,
             max_image_bytes=self.max_image_bytes,
             image_types=frozenset({"image/png", "image/jpeg", "image/webp"}),
+            supports_streaming=self.streams,
         )
 
     async def aclose(self) -> None:
@@ -630,6 +644,7 @@ class ScriptedAIGateway:
         api_key: str | None = None,
         base_url: str | None = None,
         images: Any = (),
+        on_text: Any = None,
     ) -> Any:
         from backend.adapters.ai import check_images
         from backend.ports import AIUsage, TextResponse
@@ -649,6 +664,7 @@ class ScriptedAIGateway:
                 "route_model": request_model(),
                 "text": True,
                 "images": list(images),
+                "streamed": on_text is not None and self.streams,
             }
         )
         if self._index >= len(self._responses):
@@ -658,12 +674,32 @@ class ScriptedAIGateway:
         if isinstance(item, BaseException):
             raise item
         if isinstance(item, TextResponse):
-            return item
-        words = len(str(item).split())
+            response = item
+        else:
+            words = len(str(item).split())
+            response = TextResponse(
+                text=str(item),
+                model=model or "fake",
+                usage=AIUsage(prompt_tokens=100, completion_tokens=words),
+            )
+        if on_text is None or not self.streams:
+            return response
+        # The answer in pieces, spaces kept, as a provider streams it.
+        pieces = response.text.split(" ")
+        size = max(1, self.stream_words)
+        for start in range(0, len(pieces), size):
+            if self.stream_error is not None and start and start >= len(pieces) // 2:
+                failure, self.stream_error = self.stream_error, None
+                raise failure
+            chunk = " ".join(pieces[start : start + size])
+            await on_text(chunk if start + size >= len(pieces) else chunk + " ")
         return TextResponse(
-            text=str(item),
-            model=model or "fake",
-            usage=AIUsage(prompt_tokens=100, completion_tokens=words),
+            text=response.text,
+            model=response.model,
+            usage=response.usage if self.stream_usage else AIUsage(),
+            truncated=response.truncated,
+            usage_reported=self.stream_usage,
+            streamed=True,
         )
 
     async def list_models(self, *, api_key: str, base_url: str) -> list[str]:
@@ -4945,6 +4981,25 @@ class InMemorySourceStore:
         source = self.sources.get((workspace_id, project_id, source_id))
         return self._summary(source) if source is not None else None
 
+    async def latest_hashes(
+        self, *, workspace_id: str, project_id: str, source_ids: list[str]
+    ) -> dict[str, str]:
+        self.hash_reads = getattr(self, "hash_reads", 0) + 1
+        found: dict[str, str] = {}
+        for source_id in source_ids:
+            source = self.sources.get((workspace_id, project_id, source_id))
+            if source is None or source.removed_at is not None:
+                continue
+            versions = [
+                item
+                for item in self.versions.values()
+                if (item.workspace_id, item.project_id, item.source_id)
+                == (workspace_id, project_id, source_id)
+            ]
+            if versions:
+                found[source_id] = max(versions, key=lambda item: item.number).content_hash
+        return found
+
     async def list_versions(
         self, *, workspace_id: str, project_id: str, source_id: str
     ) -> list[Any]:
@@ -5475,6 +5530,102 @@ class InMemoryManifestStore:
 
     async def get(self, *, workspace_id, project_id, manifest_id) -> Any:
         return self.saved.get((workspace_id, project_id, manifest_id))
+
+
+class InMemoryJobStreamStore:
+    """Drafts while they are written (SCN-002), as the PostgreSQL store keeps them."""
+
+    def __init__(self, jobs: Any = None) -> None:
+        self.rows: dict[tuple[str, str, str, int], dict[str, Any]] = {}
+        self.appends = 0
+        self._jobs = jobs
+
+    async def begin(
+        self, *, workspace_id: str, project_id: str, job_id: str, number: int, attempt: int = 0
+    ) -> None:
+        found = self.rows.get((workspace_id, project_id, job_id, number))
+        if found is not None and found["attempt"] > attempt:
+            return  # a worker that lost the job never starts the newer one's words again
+        self.rows[(workspace_id, project_id, job_id, number)] = {
+            "pieces": [],
+            "chars": 0,
+            "done": False,
+            "attempt": attempt,
+        }
+
+    async def append(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        job_id: str,
+        number: int,
+        piece: str,
+        attempt: int = 0,
+    ) -> None:
+        row = self.rows.get((workspace_id, project_id, job_id, number))
+        if row is None or row["done"] or not piece or row["attempt"] != attempt:
+            return
+        self.appends += 1
+        row["pieces"].append(piece)
+        row["chars"] += len(piece)
+
+    async def end(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        job_id: str,
+        number: int | None = None,
+        attempt: int | None = None,
+    ) -> None:
+        for (w, p, j, n), row in self.rows.items():
+            if (w, p, j) != (workspace_id, project_id, job_id) or number not in (None, n):
+                continue
+            if attempt is not None and (
+                row["attempt"] > attempt if number is None else row["attempt"] != attempt
+            ):
+                continue
+            row["pieces"] = []
+            row["done"] = True
+
+    def words(self, workspace_id: str, project_id: str, job_id: str, number: int) -> str:
+        row = self.rows.get((workspace_id, project_id, job_id, number))
+        return "".join(row["pieces"]) if row else ""
+
+    async def read(
+        self, *, workspace_id: str, project_id: str, job_id: str, offsets: dict[int, int]
+    ) -> list[Any]:
+        from backend.adapters.stream_store import StreamPart
+
+        found = []
+        for (w, p, j, n), row in sorted(self.rows.items()):
+            if (w, p, j) != (workspace_id, project_id, job_id):
+                continue
+            words = "".join(row["pieces"])
+            offset = min(row["chars"], max(0, offsets.get(n, 0)))
+            found.append(
+                StreamPart(
+                    number=n,
+                    chars=row["chars"],
+                    text=words[offset:],
+                    offset=offset,
+                    done=row["done"],
+                )
+            )
+        return found
+
+    async def sweep(self) -> int:
+        ended = [
+            key
+            for key in self.rows
+            if self._jobs is not None
+            and (job := self._jobs.jobs.get(key[:3])) is not None
+            and job.status.finished
+        ]
+        for key in ended:
+            del self.rows[key]
+        return len(ended)
 
 
 class InMemoryJobStore:
@@ -6159,6 +6310,27 @@ class InMemoryReviewDismissalStore:
                 counts[code] = counts.get(code, 0) + 1
         return counts
 
+    async def restore(self, dismissal: Any) -> bool:
+        if any(
+            (item.workspace_id, item.project_id, item.id)
+            == (dismissal.workspace_id, dismissal.project_id, dismissal.id)
+            or (
+                dismissal.withdrawn_at is None
+                and item.withdrawn_at is None
+                and (item.workspace_id, item.project_id, item.mutation_id, item.fingerprint)
+                == (
+                    dismissal.workspace_id,
+                    dismissal.project_id,
+                    dismissal.mutation_id,
+                    dismissal.fingerprint,
+                )
+            )
+            for item in self.dismissals
+        ):
+            return False
+        self.dismissals.append(dismissal)
+        return True
+
     async def for_project(self, *, workspace_id: str, project_id: str) -> list[Any]:
         return [
             item
@@ -6191,6 +6363,16 @@ class InMemoryScopedDismissalStore:
 
     async def add(self, item: Any) -> None:
         self.items.append(item)
+
+    async def restore(self, item: Any) -> bool:
+        if any(
+            (other.workspace_id, other.project_id, other.branch_id, other.id)
+            == (item.workspace_id, item.project_id, item.branch_id, item.id)
+            for other in self.items
+        ):
+            return False
+        self.items.append(item)
+        return True
 
     async def withdraw(
         self, *, workspace_id: str, project_id: str, branch_id: str, dismissal_id: str, at: Any
@@ -6474,9 +6656,27 @@ class InMemoryMediaProcessingStore:
     async def add_segment(self, segment):
         key = (segment.workspace_id, segment.project_id, segment.id)
         if key in self.segments:
-            self.segments[key] = self.segments[key].model_copy(update={"label": segment.label})
+            self.segments[key] = self.segments[key].model_copy(
+                update={"label": segment.label, "entity_id": segment.entity_id}
+            )
         else:
             self.segments[key] = segment
+        return self.segments[key]
+
+    async def get_segment(self, *, workspace_id, project_id, segment_id):
+        return self.segments.get((workspace_id, project_id, segment_id))
+
+    async def update_segment(self, segment):
+        key = (segment.workspace_id, segment.project_id, segment.id)
+        current = self.segments.get(key)
+        if current is None or current.kind.value != "region" or current.retired_at is not None:
+            return None
+        self.segments[key] = current.model_copy(
+            update={
+                field: getattr(segment, field)
+                for field in ("x", "y", "width", "height", "label", "entity_id", "content_hash")
+            }
+        )
         return self.segments[key]
 
     async def retire_segment(self, *, workspace_id, project_id, segment_id):

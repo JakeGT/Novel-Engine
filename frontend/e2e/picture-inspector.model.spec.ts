@@ -108,7 +108,7 @@ test('describe a picture, accept what was seen, and offer it for review', async 
   await expectAccessible(page)
 
   await page.getByRole('button', { name: 'Describe this picture' }).click()
-  await expect(page.getByText(/Described. 3 suggestions to review below./)).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText(/Described. 4 suggestions to review below./)).toBeVisible({ timeout: 30_000 })
   const coat = page.getByRole('listitem').filter({ hasText: 'She wears a long blue coat.' })
   await expect(coat.getByText('Waiting for you')).toBeVisible()
   await expect(coat.getByText(/About Wren Hollis · Sure \(80%\)/)).toBeVisible()

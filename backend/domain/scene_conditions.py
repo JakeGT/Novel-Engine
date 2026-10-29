@@ -17,17 +17,40 @@ spans, and in plan order: an earlier scene meant to bring it about (its "after")
 makes it planned, and an earlier scene meant to undo it makes it not ready.
 Only a required "before" that is not true at that point is listed as something
 to look at; a preferred one is a note.
+
+A condition can also be about what a character knows (STY-005, batch 10): "Mara knows
+that Ivo is at the tower", "Mara has seen it", "Mara has heard it". It is judged against
+the beliefs recorded for her and how each was learned (``backend.domain.acquisition``):
+knowing needs a belief that agrees, or a fact everyone knows; seeing needs one she
+learned by seeing it happen; hearing, one she was told, overheard or heard said. A
+belief she only comes to hold after the scene does not count, and for a "before" one
+learned in the scene itself does not either. Nothing is guessed: a belief whose learning
+cannot be placed counts as known all along, as everywhere else in the knowledge checks.
+
+In plan order, besides "has" and "lacks" on the same kind of fact, an earlier scene
+meant to leave someone somewhere else undoes "is at" (a person is in one place at a
+time), an earlier "knows" (or "has seen" / "has heard" for the same way) brings a
+knowing about, and an earlier scene meant to leave the very same check true brings
+any other check about.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from backend.domain.acquisition import (
+    Learned,
+    Placement,
+    how_learned,
+    learned_after,
+)
+from backend.domain.canon.assertions import Belief
+from backend.domain.canon.events import Event
 from backend.domain.rules import (
     BELIEF_KINDS,
     Check,
@@ -42,6 +65,8 @@ from backend.domain.rules import (
 CONDITIONS_KEY = "_conditions"
 MAX_CONDITIONS = 6
 MAX_WORDS_LENGTH = 300
+# A fact kind someone can only be in one of at a time, so being elsewhere undoes it.
+ONE_PLACE_PREDICATES = frozenset({"LOCATED_AT"})
 
 Strength = Literal["hard", "soft"]
 # met: true at that point. planned: not recorded, but an earlier scene is meant to
@@ -50,8 +75,71 @@ Strength = Literal["hard", "soft"]
 Status = Literal["met", "planned", "not_met", "unclear", "unchecked"]
 
 
+KnowingHow = Literal["knows", "seen", "heard"]
+# How each way of learning counts: anything for knowing; seeing it for "has seen"; being
+# told, overhearing or hearing it said for "has heard".
+_COUNTS: dict[str, frozenset[str]] = {
+    "seen": frozenset({"saw"}),
+    "heard": frozenset({"told", "overheard", "heard_said"}),
+}
+_HOW_WORDS = {
+    "knows": "know this",
+    "seen": "have seen this",
+    "heard": "have heard this",
+}
+_LEARNED_WORDS = {
+    "told": "was told it",
+    "overheard": "overheard it",
+    "saw": "saw it",
+    "worked_out": "worked it out",
+    "heard_said": "heard it said",
+    "event": "learned it from something that happened",
+    "recorded": "knows it, with no record of how",
+}
+
+
+class KnowsCheck(BaseModel):
+    """What the condition's character must know, have seen or have heard: one statement,
+    like a fact of the story bible (who it is about, its kind, and what it points at or
+    its value)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    how: KnowingHow = "knows"
+    subject_id: str = Field(min_length=1, max_length=200)
+    predicate: str = Field(min_length=1, max_length=100)
+    other_id: str | None = Field(default=None, min_length=1, max_length=200)
+    value: str | None = Field(default=None, min_length=1, max_length=300)
+
+    @model_validator(mode="after")
+    def _one_end(self) -> KnowsCheck:
+        if (self.other_id is None) == (self.value is None):
+            raise ValueError("say what it points at, or its value, but not both")
+        return self
+
+    def matches(self, subject_id: str, predicate: str, obj: object) -> bool:
+        if subject_id != self.subject_id or predicate != self.predicate:
+            return False
+        if self.other_id is not None:
+            return getattr(obj, "entity_id", None) == self.other_id
+        value = getattr(obj, "value", None)
+        if value is None or isinstance(value, dict):
+            return False
+        said = str(value).lower() if isinstance(value, bool) else str(value)
+        return said.casefold() == (self.value or "").casefold()
+
+    def same_statement(self, other: KnowsCheck) -> bool:
+        return (
+            self.subject_id == other.subject_id
+            and self.predicate == other.predicate
+            and self.other_id == other.other_id
+            and (self.value or "").casefold() == (other.value or "").casefold()
+        )
+
+
 class SceneCondition(BaseModel):
-    """One condition: a check on one entry, or a sentence in the author's words."""
+    """One condition: a check on one entry, what a character knows, or a sentence in the
+    author's words."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -62,15 +150,21 @@ class SceneCondition(BaseModel):
     check: Check | None = None
     # In the author's own words, for what the story bible cannot say. Never checked.
     words: str | None = Field(default=None, max_length=MAX_WORDS_LENGTH)
+    # What ``entity_id`` (a character) must know, have seen or have heard (STY-005).
+    knows: KnowsCheck | None = None
 
     @model_validator(mode="after")
     def _one_form(self) -> SceneCondition:
         if self.words is not None:
             self.words = self.words.strip() or None
-        structured = self.entity_id is not None or self.check is not None
+        structured = self.entity_id is not None or self.check is not None or self.knows
         if self.words is not None and structured:
             raise ValueError("a condition is either about an entry or in your own words, not both")
-        if self.words is None and (self.entity_id is None or self.check is None):
+        if self.check is not None and self.knows is not None:
+            raise ValueError("a condition is either a fact or what someone knows, not both")
+        if self.words is None and (
+            self.entity_id is None or (self.check is None and self.knows is None)
+        ):
             raise ValueError("say which entry and what must be true, or write it in words")
         if self.check is not None and self.check.kind in BELIEF_KINDS:
             # A scene's conditions are judged against facts only; beliefs are not read.
@@ -139,15 +233,34 @@ def plain_details(details: dict[str, str]) -> dict[str, str]:
 
 
 def condition_body(condition: SceneCondition) -> RuleBody:
-    """The condition as a rule about its one entry. Only for a condition about an entry."""
+    """The condition as a rule about its one entry. Only for a condition about a fact."""
     if condition.entity_id is None or condition.check is None:
-        raise ValueError("a condition in words has no rule")
+        raise ValueError("a condition in words, or about what someone knows, has no rule")
     return RuleBody(applies_to=Selector(entity_id=condition.entity_id), checks=[condition.check])
+
+
+def statement_words(knows: KnowsCheck, names: dict[str, str]) -> str:
+    """The statement a knowing condition is about, as a short clause."""
+    from backend.domain.canon.phrasing import phrase
+
+    subject = names.get(knows.subject_id, "Someone no longer in the story bible")
+    target = (
+        names.get(knows.other_id, "something no longer in the story bible")
+        if knows.other_id is not None
+        else str(knows.value)
+    )
+    return f"{subject} {phrase(knows.predicate)} {target}".strip()
 
 
 def condition_reading(condition: SceneCondition, names: dict[str, str]) -> str:
     if condition.words is not None:
         return condition.words
+    if condition.knows is not None:
+        who = names.get(condition.entity_id or "", "Someone no longer in the story bible")
+        return (
+            f"{who} must {_HOW_WORDS[condition.knows.how]}: "
+            f"{statement_words(condition.knows, names)}."
+        )
     return read_rule(condition_body(condition), names)
 
 
@@ -174,31 +287,134 @@ class PlannedChange:
     brings_about: bool
 
 
+def _undoes_place(condition: Check, other: Check) -> bool:
+    """Whether ``other`` (an earlier "after") leaves someone somewhere else than
+    ``condition`` (a "before") needs them: a person is in one place at a time."""
+    mine, theirs = condition.pattern, other.pattern
+    return (
+        condition.kind == "has"
+        and other.kind == "has"
+        and mine.predicate in ONE_PLACE_PREDICATES
+        and theirs.predicate == mine.predicate
+        and mine.direction == theirs.direction == "out"
+        and mine.other_id is not None
+        and theirs.other_id is not None
+        and theirs.other_id != mine.other_id
+    )
+
+
 def planned_change(
     condition: SceneCondition, earlier: Sequence[tuple[str, str, Sequence[SceneCondition]]]
 ) -> PlannedChange | None:
     """What earlier scenes, in reading order, are meant to leave true about this.
 
     ``earlier`` is (plan id, title, conditions) for each scene before this one, in
-    reading order. Only "has" and "lacks" checks on the same entry and the same kind
-    of fact are compared, so the answer is exact rather than a guess.
+    reading order. Only what can be compared exactly is: "has" and "lacks" on the same
+    entry and kind of fact; being somewhere else for "is at"; the very same check; and
+    for what someone knows, the same statement known (or seen, or heard, the same way).
     """
-    if condition.check is None or condition.check.kind not in _OPPOSITE:
-        return None
     for plan_id, title, conditions in reversed(earlier):
         for other in reversed(list(conditions)):
-            if (
-                other.when != "after"
-                or other.check is None
-                or other.entity_id != condition.entity_id
-                or other.check.pattern != condition.check.pattern
-            ):
+            if other.when != "after" or other.entity_id != condition.entity_id:
                 continue
-            if other.check.kind == condition.check.kind:
-                return PlannedChange(plan_id, title, True)
-            if other.check.kind == _OPPOSITE[condition.check.kind]:
+            if condition.knows is not None:
+                if other.knows is not None and condition.knows.same_statement(other.knows):
+                    if condition.knows.how in ("knows", other.knows.how):
+                        return PlannedChange(plan_id, title, True)
+                continue
+            mine, theirs = condition.check, other.check
+            if mine is None or theirs is None:
+                continue
+            if mine.kind in _OPPOSITE and theirs.pattern == mine.pattern:
+                if theirs.kind == mine.kind:
+                    return PlannedChange(plan_id, title, True)
+                if theirs.kind == _OPPOSITE[mine.kind]:
+                    return PlannedChange(plan_id, title, False)
+            if _undoes_place(mine, theirs):
                 return PlannedChange(plan_id, title, False)
+            if mine.kind not in _OPPOSITE and theirs == mine:
+                return PlannedChange(plan_id, title, True)
     return None
+
+
+@dataclass(frozen=True)
+class Knowing:
+    """What the knowledge conditions are judged against: every belief recorded, the
+    events they were learned from, where scenes and events sit, and the statements
+    everyone in the story knows (facts marked common), as (subject, kind, other end)."""
+
+    beliefs: Sequence[Belief]
+    events: dict[str, Event]
+    where: Placement
+    common: frozenset[tuple[str, str, str]] = frozenset()
+    names: dict[str, str] | None = None
+
+
+def _end(obj: object) -> str:
+    entity = getattr(obj, "entity_id", None)
+    if entity is not None:
+        return f"@{entity}"
+    value = getattr(obj, "value", None)
+    return "" if value is None or isinstance(value, dict) else str(value).casefold()
+
+
+def statement_key(subject_id: str, predicate: str, obj: object) -> tuple[str, str, str]:
+    return (subject_id, predicate, _end(obj))
+
+
+def _knows_key(knows: KnowsCheck) -> tuple[str, str, str]:
+    other = f"@{knows.other_id}" if knows.other_id is not None else (knows.value or "").casefold()
+    return (knows.subject_id, knows.predicate, other)
+
+
+def knowing_verdict(plan_id: str, condition: SceneCondition, knowing: Knowing) -> tuple[bool, str]:
+    """Whether the condition's character knows (has seen, has heard) the statement where
+    the scene comes, and why not in plain words when they do not."""
+    knows = condition.knows
+    assert knows is not None and condition.entity_id is not None
+    names = knowing.names or {}
+    who = names.get(condition.entity_id, "They")
+    if knows.how == "knows" and _knows_key(knows) in knowing.common:
+        return True, ""
+    held: list[tuple[Belief, Learned]] = [
+        (belief, how_learned(belief, knowing.events))
+        for belief in knowing.beliefs
+        if belief.holder_entity_id == condition.entity_id
+        and belief.closed_revision is None
+        and knows.matches(
+            belief.proposition.subject_id, belief.proposition.predicate, belief.proposition.object
+        )
+    ]
+    counts = _COUNTS.get(knows.how)
+    fitting = [pair for pair in held if counts is None or pair[1].how in counts]
+
+    def in_time(learned: Learned) -> bool:
+        if learned_after(learned, plan_id, knowing.where):
+            return False
+        # Needed before the scene: learned in the scene itself is too late.
+        return not (condition.when == "before" and learned.scene_id == plan_id)
+
+    if any(in_time(learned) for _, learned in fitting):
+        return True, ""
+    if fitting:
+        learned = fitting[0][1]
+        title = knowing.where.scene_titles.get(learned.scene_id or "")
+        place = (
+            "only in this scene"
+            if learned.scene_id == plan_id
+            else f"only later, in “{title}”"
+            if title
+            else "only later in the story"
+        )
+        return False, f"{who} learns it {place}."
+    if held:
+        ways = sorted({_LEARNED_WORDS[learned.how] for _, learned in held})
+        wanted = "seeing it" if knows.how == "seen" else "hearing it"
+        return False, (
+            f"{who} {' and '.join(ways)}, but nothing records {wanted}; record how they "
+            "learned it, or change the condition."
+        )
+    return False, f"Nothing records that {who} knows this."
 
 
 def condition_state(
@@ -210,6 +426,7 @@ def condition_state(
     at_time: tuple[World, World] | None = None,
     planned: PlannedChange | None = None,
     undated: World | None = None,
+    knowing: Knowing | None = None,
 ) -> ConditionState:
     """Whether a condition holds where its scene comes.
 
@@ -218,6 +435,7 @@ def condition_state(
     an earlier scene is meant to change about it (``planned_change``). ``undated`` is,
     for a scene with no story time, the story without the facts that stop being true
     at some point: when the answer turns on one of those, it cannot be told.
+    ``knowing`` is what a condition about what someone knows is judged against.
     """
     names = {entry.id: entry.name for entry in world.entries.values()}
     reading = condition_reading(condition, names)
@@ -239,6 +457,8 @@ def condition_state(
         return state(None, "unchecked")
     if condition.entity_id not in world.entries:
         return state(None, "unclear", "The entry it is about is no longer in the story bible.")
+    if condition.knows is not None:
+        return _knowing_state(plan_id, condition, knowing, planned, state)
     if at_time is not None:
         worlds = list(at_time)
     elif undated is not None:
@@ -287,3 +507,25 @@ def condition_state(
             "clearly enough in time.",
         )
     return state(False, "not_met", f"Not true in the story bible{when_said}.")
+
+
+def _knowing_state(
+    plan_id: str,
+    condition: SceneCondition,
+    knowing: Knowing | None,
+    planned: PlannedChange | None,
+    state: Callable[..., ConditionState],
+) -> ConditionState:
+    if knowing is None:
+        return state(None, "unclear", "What they know was not read for this.")
+    holds, why = knowing_verdict(plan_id, condition, knowing)
+    if holds:
+        return state(True, "met")
+    if condition.when == "before" and planned is not None and planned.brings_about:
+        return state(
+            False,
+            "planned",
+            f"Not recorded yet; “{planned.title}”, earlier in the plan, is meant to bring "
+            "it about.",
+        )
+    return state(False, "not_met", why)

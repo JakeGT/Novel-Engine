@@ -16,10 +16,12 @@ import {
   useSuggestedChanges,
   type DraftChoices,
 } from '../lib/studio'
+import { useDraftStream, type DraftWords } from '../lib/draftStream'
 import { plural } from '../lib/words'
 import { scopedKey, useProject } from '../project'
 import { AllowanceNote } from './Allowance'
 import { AssistantProblem } from './AssistFlow'
+import { SendPreview } from './SendPreview'
 import { Button, ErrorNotice, Field } from './ui'
 
 const number = (value: number) => value.toLocaleString('en-GB')
@@ -129,6 +131,7 @@ export function DraftForm({
             providers charge by).
           </p>
         )}
+        {found?.sending && <SendPreview sending={found.sending} compact />}
         {estimate.error ? <span className="muted">It could not work out the cost just now.</span> : null}
         {onShowContext && (
           <button type="button" className="link-button small" onClick={onShowContext}>
@@ -161,21 +164,28 @@ export function JobProgress({
   onStop,
   stopping,
   error,
+  onDraftStored,
 }: {
   job: StudioJob
   onStop: () => void
   stopping: boolean
   error: unknown
+  /** A draft written by this work is stored whole and now waits with the others. */
+  onDraftStored?: () => void
 }) {
-  const { canWrite } = useProject()
+  const { scope, canWrite } = useProject()
   const asked = job.cancel_requested || stopping
+  const words = useDraftStream(scope, isDraftJob(job) ? job.id : null, { onStored: onDraftStored })
+  // The stream says how far along it is sooner than the polled job does.
+  const stage = (words.progress ?? -1) > job.progress ? words.stage || job.stage : job.stage || words.stage
+  const progress = Math.max(job.progress, words.progress ?? 0)
   return (
     <section className="studio-job" aria-label="Work in progress">
       <div className="studio-job-head">
         <span className="spinner" aria-hidden="true" />
         <p aria-live="polite">
           <strong>{JOB_DOING[job.kind] ?? 'The assistant is working'}.</strong>{' '}
-          {asked ? 'Stopping after this step…' : job.stage || 'Waiting to start…'}
+          {asked ? 'Stopping after this step…' : stage || 'Waiting to start…'}
         </p>
         {canWrite && (
           <Button size="sm" onClick={onStop} disabled={asked}>
@@ -183,7 +193,8 @@ export function JobProgress({
           </Button>
         )}
       </div>
-      <progress className="meter" max={100} value={job.progress} aria-label="How far along" />
+      <progress className="meter" max={100} value={progress} aria-label="How far along" />
+      {words.streaming && <DraftAsWritten words={words} asked={asked} />}
       <p className="hint">
         You can keep writing while it works. Leaving this page does not stop it; come back to find
         the result here.
@@ -191,6 +202,41 @@ export function JobProgress({
       <ErrorNotice error={error} prefix="Could not stop it" />
     </section>
   )
+}
+
+/**
+ * The draft being written, word by word as the model writes it (SCN-002). It is only a
+ * view: nothing is kept until the whole draft is stored, and then it waits with the
+ * other drafts to be kept or discarded. Not announced word by word to a screen reader;
+ * the count of words so far is, now and then, through the live region of the progress.
+ */
+function DraftAsWritten({ words, asked }: { words: DraftWords; asked: boolean }) {
+  const writing = Object.keys(words.texts)
+    .map(Number)
+    .filter((number) => !words.stored.includes(number))
+    .sort((a, b) => a - b)
+  const number = writing[writing.length - 1]
+  if (number === undefined) return null
+  const text = words.texts[number] ?? ''
+  const count = countWords(text)
+  return (
+    <figure className="studio-stream" aria-label={`Draft ${number} as it is written`}>
+      <figcaption className="muted small">
+        {asked
+          ? 'Stopping: this draft will not be kept.'
+          : `Draft ${number}, ${plural(count, 'word')} so far. It is not kept until it is finished and you keep it.`}
+      </figcaption>
+      <div className="studio-stream-text" aria-busy={!asked}>
+        {text}
+        {!asked && <span className="studio-stream-caret" aria-hidden="true" />}
+      </div>
+    </figure>
+  )
+}
+
+function countWords(text: string): number {
+  const trimmed = text.trim()
+  return trimmed ? trimmed.split(/\s+/).length : 0
 }
 
 /** What finished work came to, with the one next step it suggests. */

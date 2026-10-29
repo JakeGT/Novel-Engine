@@ -77,11 +77,22 @@ for authors and for whoever runs an install. Version numbers start when the owne
 - **Photos lose their hidden details** (location, camera) when uploaded.
 - **Use a model on your own computer** (Ollama, LM Studio) on a self-hosted install, so nothing
   about your story leaves it.
+- **Drafts appear as they are written** in the scene studio, and **before anything is sent you see
+  what it is**: the parts, their size and the cost, worked out for the model you chose.
+- **Mark parts of a picture** (a face, a sign) and link each to an entry; words written in a
+  picture are read and can be searched; a note can point at a part of a picture.
+- **More checks the assistant can run**: what a character wants against what they do, things that
+  could not physically happen, and your story's own world rules; voice notes that grow firmer when
+  they repeat; suggested arc stages; scene conditions on who knows, has seen or has heard
+  something; bridges for gaps between scenes.
+- **Audits tell you when they finish**; a what-if lists the scenes it changes; what a change
+  touches is shown for a what-if too, with a picture of the connections.
+- **Journeys and deaths written in your prose** are checked, not just those in the story bible.
 
 ### For whoever runs it
 
 - **Upgrading:** take a backup first (`deploy/hosted/backup.sh` on the hosted profile). The server
-  applies migrations on start; this release adds migrations up to `0058_media_remainders`. Key rotation: `python -m backend.devtools.rekey`. `0047` moves search vectors into a
+  applies migrations on start; this release adds migrations up to `0062_audits_and_impact`. Key rotation: `python -m backend.devtools.rekey`. `0047` moves search vectors into a
   new table; run `make reindex-status` afterwards.
 - **Readiness** now answers `ready`, `degraded` (200) or `unavailable` (503, a required store is
   down); a watcher that looked for `degraded` on a store outage must look for `unavailable`.
@@ -96,6 +107,12 @@ for authors and for whoever runs an install. Version numbers start when the owne
 - **The story graph updates by itself** in the background; readiness reports it. Scheduled
   backups and recovery runbooks are in `deploy/hosted/` and `plan/runbooks/`.
 - **Checking the model route:** `python -m backend.devtools.diagnostics --check-ai`.
+- **Model settings:** `AI_STREAMING` (drafts as a stream, on by default), `AI_MODEL_CAPABILITIES`
+  (what each model can take, as JSON; it wins over the provider's own list) and `AI_MODEL_LIST`
+  (read OpenRouter's public model list once a day; no story words go with it).
+- **Release artefacts:** `make release` builds a source tarball, wheel, the built frontend, SBOMs
+  and checksums from one commit into `dist/release/`; `make release-check` builds twice and
+  compares. Nothing is tagged or published.
 - **Nightly backups:** an example systemd timer and a cron line in `deploy/hosted/README.md`;
   `deploy/hosted/prune-backups.sh` keeps the newest complete backups. Recovery runbooks for common
   failures are in `plan/runbooks/`.

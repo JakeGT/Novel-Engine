@@ -28,6 +28,8 @@ import {
   ReadOnlyNotice,
 } from '../components/ui'
 import {
+  ALL_PASSES,
+  PASS_ORDER,
   DEFAULT_CHOICES,
   chosenTokens,
   eitherOf,
@@ -247,7 +249,8 @@ export function StudioPage() {
   // What each pass of a check would use for the text or draft in view; no model is asked.
   const passCosts = useQuery({
     queryKey: scopedKey(scope, 'check-estimate', planId, shown?.id ?? 'text', data?.version_id ?? ''),
-    queryFn: () => api.checkEstimate(scope, planId, shown?.id ?? null),
+    // Every pass, so the optional ones show their cost too (CON-008).
+    queryFn: () => api.checkEstimate(scope, planId, shown?.id ?? null, ALL_PASSES),
     enabled: canWrite && Boolean(shown || data?.version_id),
   })
   const keep = useMutation({
@@ -477,6 +480,7 @@ export function StudioPage() {
             stopping={stop.isPending}
             error={stop.error}
             onStop={() => stop.mutate(current.id)}
+            onDraftStored={() => void client.invalidateQueries({ queryKey: studioKey })}
           />
         )}
         {outcomeJob && (
@@ -690,7 +694,13 @@ export function StudioPage() {
                     ) : (
                       checkCost !== null && (
                         <span id="review-cost" className="hint">
-                          About {tokenCount(checkCost)} tokens for {passes.length === 5 ? 'all five' : passes.length === 1 ? 'the one chosen' : `the ${passes.length} chosen`}.
+                          About {tokenCount(checkCost)} tokens for{' '}
+                          {passes.length === PASS_ORDER.length && PASS_ORDER.every((item) => passes.includes(item))
+                            ? 'the five usual checks'
+                            : passes.length === 1
+                              ? 'the one chosen'
+                              : `the ${passes.length} chosen`}
+                          .
                         </span>
                       )
                     )}

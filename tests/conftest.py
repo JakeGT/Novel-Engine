@@ -341,6 +341,15 @@ def _build_fake_container(settings, tmp_path):
         local_mode=not settings.is_hosted,
     )
     studio_service.register_jobs()
+    from tests.doubles import InMemoryJobStreamStore
+
+    job_streams = InMemoryJobStreamStore(jobs)
+    studio_service.streams = job_streams
+    from backend.services.send_preview import SendPreviewService
+
+    studio_service.previews = SendPreviewService(
+        settings=settings, credentials=credential_service, ai=ai
+    )
     from backend.services.consistency_runs import ConsistencyRunService
     from tests.doubles import InMemoryConsistencyRunStore
 
@@ -575,6 +584,11 @@ def _build_fake_container(settings, tmp_path):
     from backend.services.run_archive import RunArchive
 
     archive_service.check_runs = RunArchive(consistency_run_store)
+    from backend.services.dismissal_archive import DismissalArchive
+
+    archive_service.dismissal_archive = DismissalArchive(
+        review=review_dismissals._store, scoped=scoped_dismissal_store
+    )
     from backend.services.read_models import ReadModelConsumer, ReadModelService
     from tests.read_model_doubles import InMemoryReadModelStore
 
@@ -653,6 +667,7 @@ def _build_fake_container(settings, tmp_path):
         job_runner=job_runner,
         studio_store=studio_store,
         studio_service=studio_service,
+        job_streams=job_streams,
         consistency_run_store=consistency_run_store,
         consistency_runs=consistency_runs,
         review_dismissals=review_dismissals,
@@ -684,6 +699,7 @@ def _build_fake_container(settings, tmp_path):
         delegation_service=delegation_service,
     )
     from backend.services.voice_audit_wiring import wire_voice_and_audits
+    from tests.notice_doubles import InMemoryNoticeStore
     from tests.voice_doubles import (
         InMemoryAuditScheduleStore,
         InMemoryCorrectionPlanStore,
@@ -696,6 +712,7 @@ def _build_fake_container(settings, tmp_path):
         baselines=InMemoryVoiceBaselineStore(),
         schedules=InMemoryAuditScheduleStore(),
         corrections=InMemoryCorrectionPlanStore(),
+        notices=InMemoryNoticeStore(),
     )
     return container
 

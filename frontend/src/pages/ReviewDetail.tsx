@@ -251,6 +251,15 @@ function conditionWords(value: unknown, names: Map<string, string>): unknown {
     if (!isFlat(item)) return String(item)
     const when = `${item.when === 'after' ? 'After' : 'Before'} (${item.strength === 'soft' ? 'preferred' : 'required'})`
     if (item.words) return `${when}: ${String(item.words)}`
+    if (isFlat(item.knows)) {
+      // What someone knows, has seen or has heard (STY-005).
+      const knows = item.knows
+      const holder = names.get(String(item.entity_id)) ?? 'someone'
+      const subject = names.get(String(knows.subject_id)) ?? 'an entry'
+      const end = knows.other_id ? (names.get(String(knows.other_id)) ?? 'something no longer there') : String(knows.value ?? '')
+      const must = knows.how === 'seen' ? 'must have seen this' : knows.how === 'heard' ? 'must have heard this' : 'must know this'
+      return `${when}: ${holder} ${must}: ${subject} ${predicateLabel(String(knows.predicate ?? ''))} ${end}`.trim()
+    }
     const check = isFlat(item.check) ? item.check : {}
     const pattern = isFlat(check.pattern) ? check.pattern : {}
     const who = names.get(String(item.entity_id)) ?? 'an entry'
@@ -260,6 +269,24 @@ function conditionWords(value: unknown, names: Map<string, string>): unknown {
     return `${when}: ${who} ${must}: ${what}`
   })
   return sentences.join('; ')
+}
+
+/** An arc's stages (STY-006), in order, each with where it is reached. */
+function pathWords(value: unknown, names: Map<string, string>): unknown {
+  if (!Array.isArray(value)) return value
+  if (value.length === 0) return 'None'
+  return value
+    .map((stage, index) => {
+      if (!isFlat(stage)) return String(stage)
+      const where = stage.scene_id
+        ? `reached in ${names.has(String(stage.scene_id)) ? `“${names.get(String(stage.scene_id))}”` : 'a scene of the plan'}`
+        : index === 0
+          ? 'where it starts'
+          : 'not placed yet'
+      const level = stage.scale_id && stage.level ? `, at “${String(stage.level)}”` : ''
+      return `${index + 1}. ${String(stage.name)} (${where}${level})`
+    })
+    .join('; ')
 }
 
 /** One row for each part of a plan item's notes that changes. */
@@ -280,7 +307,9 @@ function planDetailRows(value: unknown, was: unknown, names: Map<string, string>
       ? intentWords(parsed(item))
       : key === '_conditions'
         ? conditionWords(parsed(item), names)
-        : item
+        : key === '_path'
+          ? pathWords(parsed(item), names)
+          : item
   return Object.entries(value)
     .filter(([key, item]) => !(before && same(before[key], item)))
     .map(([key, item]) => ({

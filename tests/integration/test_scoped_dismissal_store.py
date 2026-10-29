@@ -150,3 +150,59 @@ async def test_a_wider_dismissal_is_kept_withdrawn_and_forked(stack) -> None:
                 )
             ).scalar_one()
             assert left == 0, table
+
+
+@pytest.mark.asyncio
+async def test_dismissals_restored_from_an_archive_keep_their_record_once(stack) -> None:
+    """CON-016: a restore puts each back as it was, withdrawn or not, and only once."""
+    from backend.domain.dismissals import ReviewDismissal
+
+    service, _repository, factory = stack
+    root = await _root(service, factory)
+    now = datetime.now(UTC)
+    scoped = PostgresScopedDismissalStore(factory)
+    item = ScopedDismissal(
+        workspace_id=WS,
+        project_id=PR,
+        branch_id=root,
+        id="sd_restored",
+        kind=FindingKind.CHECK,
+        code="stock_phrase",
+        scope=DismissalScope.RANGE,
+        reason=DismissReason.INTENDED,
+        note="",
+        created_at=now,
+        from_plan_id="pln_a",
+        to_plan_id="pln_b",
+        withdrawn_at=now + timedelta(seconds=5),
+    )
+    assert await scoped.restore(item)
+    assert not await scoped.restore(item)
+    (back,) = await scoped.list(workspace_id=WS, project_id=PR, branch_id=root)
+    assert back.withdrawn_at is not None and back.from_plan_id == "pln_a"
+
+    reviews = PostgresReviewDismissalStore(factory)
+
+    def review(dismissal_id: str, gone: datetime | None) -> ReviewDismissal:
+        return ReviewDismissal(
+            workspace_id=WS,
+            project_id=PR,
+            id=dismissal_id,
+            mutation_id="mut_restored",
+            fingerprint="c" * 64,
+            depends_on="d" * 64,
+            code="possible_duplicate",
+            reason=DismissReason.NOT_A_PROBLEM,
+            note="",
+            created_by="usr_author",
+            created_at=now,
+            withdrawn_at=gone,
+        )
+
+    assert await reviews.restore(review("rd_1", now))
+    assert await reviews.restore(review("rd_2", None))
+    # A second standing one for the same finding is left out, as is the same id again.
+    assert not await reviews.restore(review("rd_3", None))
+    assert not await reviews.restore(review("rd_1", now))
+    found = await reviews.for_mutation(workspace_id=WS, project_id=PR, mutation_id="mut_restored")
+    assert [(d.id, d.withdrawn_at is None) for d in found] == [("rd_1", False), ("rd_2", True)]

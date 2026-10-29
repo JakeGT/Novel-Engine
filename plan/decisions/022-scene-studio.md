@@ -317,7 +317,7 @@ from whom are not worked out.
 
 ## Not decided here
 
-Streaming a draft as it is written; editing inside a draft, or merging parts of several drafts or a
+Editing inside a draft, or merging parts of several drafts or a
 draft with the author's text (a draft is kept or discarded whole); showing a version's line of descent
 on screen; reading facts out of prose into proposed changes (Phase 6); continuing or rewriting a
 selected passage; style learned from the author's texts rather than a note; per-job priority and
@@ -338,3 +338,88 @@ scheduling; notifying the author when a job finishes beyond the studio polling i
 - ProWritingAid's repeats/echoes and sentence length reports: <https://prowritingaid.com/art/1067/using-prowritingaid-for-deep-edits.aspx>
 - Agarwal, Naaman, Vashistha, "AI Suggestions Homogenize Writing Toward Western Styles and Diminish Cultural Nuances": <https://arxiv.org/abs/2409.11360v2>
 - Claiming due rows in one statement with `SKIP LOCKED`: <https://www.netdata.cloud/academy/update-skip-locked/>
+
+## Amendment 2026-10-21 (batch 10 A): drafts shown as they are written (SCN-002)
+
+**Decision.** A draft streams to the studio while the model writes it, and is still stored whole,
+once, with its usage recorded once, exactly as before.
+
+- **Gateway.** `AIGateway.generate_text` takes an optional `on_text` callback. When the route
+  streams (`ProviderCapabilities.supports_streaming`, from `AI_STREAMING`, on by default) the
+  OpenAI-compatible adapter asks for `stream: true` with `stream_options.include_usage` and hands
+  each piece on as it comes; the pieces are kept in a list and joined once. A provider that refuses
+  the usage option before writing anything is asked once more without it, and the use is then
+  estimated (`TextResponse.usage_reported` false: the studio records its own estimate rather than
+  nothing). An error sent part way (OpenRouter's `finish_reason: "error"` or a top-level `error`
+  event) fails the request; nothing written so far becomes a draft.
+- **Passing it on.** The job writes the words to `job_streams` (migration 0059) in batches at most
+  every 0.4 s or 4,000 characters (`StreamBuffer`, linear in the answer's length), because the job
+  may run in a different server process from the one the author's browser is connected to. The
+  words are a passing copy: cleared when the draft is stored, when the work stops or fails, and by a
+  sweep every five minutes for any a stopped server left. A row is deleted with its job.
+- **To the browser.** `GET /projects/{id}/jobs/{job}/stream` sends server-sent events (`text` with
+  a draft's new words and their offset, `draft_done`, `job` progress, `end`, and `again` after ten
+  minutes so the browser opens it afresh). Only the words not yet sent are read (`substr` from the
+  offset), so a long draft is never sent twice. Read access is checked before it opens and again
+  every 30 s. The studio reads it with `fetch` (not `EventSource`, which cannot send the workspace
+  and story-line headers) and shows the draft growing in the reading face; a screen reader is told
+  the word count, not every word. If the stream cannot be opened, the polled progress carries on.
+- **Stopping part way.** While streaming, the job checks for a stop at most once a second. A stop
+  raises `JobCancelled` inside the callback, which closes the stream: for providers that support it
+  OpenRouter then stops the model and the charge. What it wrote was still charged and the provider
+  will not say how much, so an estimate (what it read and the words it wrote) is recorded, once,
+  under the call's idempotency key. Nothing is kept: the cancelled outcome says so.
+- **The author's own computer (SCN-002A).** Answers come whole through the connector's relay; the
+  route declares `supports_streaming=False` and the studio shows progress only. Relaying chunks
+  would need a new connector protocol version (pieces posted back while the long poll holds the
+  request) and gains little for a local model that is usually fast; decided against for release
+  one, recorded in ADR-025.
+
+**Not decided here.** Streaming the assistant's other answers (checks, conversations): they are
+structured and only useful whole. Resuming a stream in the same browser tab from where it was
+(the stream starts again from the beginning of the draft, which is cheap).
+
+Sources: WHATWG HTML, server-sent events <https://html.spec.whatwg.org/multipage/server-sent-events.html>;
+OpenRouter streaming (keep-alive comments, the final usage chunk, errors part way, cancelling)
+<https://openrouter.ai/docs/api/reference/streaming>; OpenAI chat completions `stream_options`
+<https://platform.openai.com/docs/api-reference/chat/create>.
+
+## Amendment 2026-10-21 (batch 10 C): optional passes and the voice check of flagged passages (CON-008, CON-018)
+
+**Three optional passes.** A check gains *why characters act* (`motivation`: does what a
+character does follow from what they want and know by then), *bodies, objects and cause*
+(`physical`: who holds what, injuries, travel, cause before effect) and *your story's own
+rules* (`world`: what its magic or technology can and cannot do). Each is one call with its
+own prompt (`check-motivation`, `check-physical`, `check-world`) and only the context
+sections it needs (`PASS_SECTIONS`); none is given a secret. They are **optional**: listed
+apart under "More you can add", each with its cost, off until ticked, and never run by a
+check that names no passes (`DEFAULT_PASSES`), so an automatic check (CON-009) costs what
+it did. Continuity is unchanged, so they add to it rather than replacing it. A long scene
+sends the physical and world-rule passes in groups by what each passage names
+(`review_bundles`, prompt `check-group`) and the motivation pass in parts (`check-part`
+v2), as continuity and the viewpoint pass are sent. Migration `0061_check_passes_more`
+replaces the check on `draft_findings.check_pass`, which also never listed `pictures`
+(CON-014's notes could not be stored in PostgreSQL until now).
+
+Why separate calls: a judge asked about several criteria at once tends to let one colour
+the others, and single-focus rubrics are the usual advice; the bundled-versus-separate
+question has no settled measurement, so the cost is shown and the choice left to the author
+(Multi-Crit, arXiv 2511.21662; Zheng et al., "Judging LLM-as-a-Judge", NeurIPS 2023; Li et
+al., scoring bias in LLM judges, arXiv 2506.22316).
+
+**The voice check of flagged passages (CON-018).** When the voice measures point strongly
+away from the author's usual (a note that the scene may sound like someone else: the
+everyday-word mix, who tells it, the tense; or two different notes at once, dismissed notes
+not counting), the "How it sounds" panel offers a small check with the assistant on just
+the passages that show it: chosen with no model from what each note measured, at most six
+passages and 900 words, one pass over the text off the event loop (a test reads 500,000
+characters well under a second). The passages and the cost are shown first; one call
+(`check-voice-passages`) is told why they were flagged; its notes must quote words inside
+those passages and are kept as the voice pass's notes on the exact version read (job
+`voice_check`, `GET|POST /plan/{id}/voice/escalation`). Stylometric measures say that a
+text departs from a style, not where or why, and are rough on short samples (Burrows,
+"'Delta': a measure of stylistic difference", LLC 17, 2002; Eder, "Does size matter?
+Authorship attribution, small samples, big problem", DSH 30, 2015), which is why the
+model is asked only about the flagged passages and may find nothing.
+
+Not done: any measurement of a real model's notes from these passes.

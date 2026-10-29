@@ -11,7 +11,13 @@ from typing import Any
 
 
 def wire_voice_and_audits(
-    container: Any, *, baselines: Any, schedules: Any, corrections: Any, model: str | None = None
+    container: Any,
+    *,
+    baselines: Any,
+    schedules: Any,
+    corrections: Any,
+    model: str | None = None,
+    notices: Any = None,
 ) -> None:
     from backend.services.audit_schedules import AuditScheduleService
     from backend.services.correction_plans import CorrectionPlanService
@@ -22,9 +28,16 @@ def wire_voice_and_audits(
     studio = container.studio_service
     audits = studio.audits
     container.voice_service = VoiceService(studio=studio, store=baselines)
+    container.voice_service.register_jobs(container.job_runner)
     audits.voice = container.voice_service
     container.audit_schedules = AuditScheduleService(audits=audits, store=schedules)
     container.audit_schedules.register(container.job_runner)
+    if notices is not None:
+        from backend.services.audit_notices import AuditNoticeService
+
+        # A notice for the author when an audit they scheduled finishes (CON-011).
+        container.audit_notices = AuditNoticeService(store=notices, audits=audits)
+        container.audit_notices.register(container.job_runner)
     container.correction_plans = CorrectionPlanService(
         audits=audits,
         store=corrections,

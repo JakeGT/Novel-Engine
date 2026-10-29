@@ -104,6 +104,34 @@ class PostgresReviewDismissalStore:
                 },
             )
 
+    async def restore(self, dismissal: ReviewDismissal) -> bool:
+        """Put back a dismissal from an archive as it was, withdrawn or not (CON-016). One
+        already there (by id), or a second standing one for the same finding, is left."""
+        async with session_scope(self._session_factory) as db:
+            result = await db.execute(
+                text(
+                    "INSERT INTO review_dismissals (workspace_id, project_id, id, mutation_id, "
+                    "fingerprint, depends_on, code, reason, note, created_by, created_at, "
+                    "withdrawn_at) VALUES (:w, :p, :id, :m, :f, :d, :code, :reason, :note, "
+                    ":by, :at, :gone) ON CONFLICT DO NOTHING"
+                ),
+                {
+                    "w": dismissal.workspace_id,
+                    "p": dismissal.project_id,
+                    "id": dismissal.id,
+                    "m": dismissal.mutation_id,
+                    "f": dismissal.fingerprint,
+                    "d": dismissal.depends_on,
+                    "code": dismissal.code,
+                    "reason": dismissal.reason.value,
+                    "note": dismissal.note,
+                    "by": dismissal.created_by,
+                    "at": dismissal.created_at,
+                    "gone": dismissal.withdrawn_at,
+                },
+            )
+            return bool(result.rowcount)  # type: ignore[attr-defined]
+
     async def for_project(self, *, workspace_id: str, project_id: str) -> list[ReviewDismissal]:
         """Every dismissal on the review screen in this story, withdrawn ones too."""
         async with session_scope(self._session_factory) as db:

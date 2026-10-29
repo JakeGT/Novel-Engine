@@ -3,6 +3,8 @@
 import pytest
 
 from backend.domain.check_passes import (
+    DEFAULT_PASSES,
+    OPTIONAL_PASSES,
     PASS_ORDER,
     CheckPass,
     choose_passes,
@@ -40,8 +42,15 @@ ITEMS = [
 ]
 
 
-def test_passes_are_chosen_in_their_order_once_and_none_means_all() -> None:
-    assert choose_passes(None) == PASS_ORDER
+def test_passes_are_chosen_in_their_order_once_and_none_means_the_usual_ones() -> None:
+    assert choose_passes(None) == DEFAULT_PASSES
+    assert not set(DEFAULT_PASSES) & OPTIONAL_PASSES
+    assert set(DEFAULT_PASSES) | OPTIONAL_PASSES == set(PASS_ORDER)
+    assert choose_passes(["world", "motivation", "physical"]) == (
+        CheckPass.MOTIVATION,
+        CheckPass.PHYSICAL,
+        CheckPass.WORLD,
+    )
     assert choose_passes(["clarity", "viewpoint", "clarity"]) == (
         CheckPass.VIEWPOINT,
         CheckPass.CLARITY,
@@ -105,3 +114,21 @@ def test_an_estimate_grows_with_what_a_pass_reads() -> None:
     assert large.prompt_tokens > small.prompt_tokens
     assert small.completion_tokens == large.completion_tokens > 0
     assert small.total == small.prompt_tokens + small.completion_tokens
+
+
+def test_the_optional_passes_each_read_their_own_part_and_never_a_secret() -> None:
+    manifest = assemble(ITEMS)
+    motivation = pass_material(CheckPass.MOTIVATION, manifest)
+    assert "Tobin believes the tide is out." in motivation.story
+    assert "opens the thread" in motivation.story
+    assert "Pilots never swim." not in motivation.story
+    physical = pass_material(CheckPass.PHYSICAL, manifest)
+    assert "Mara is at the harbour." in physical.story
+    assert "Pilots never swim." not in physical.story and "opens the thread" not in physical.story
+    world = pass_material(CheckPass.WORLD, manifest)
+    assert "Pilots never swim." in world.story and "Mara is at the harbour." in world.story
+    assert "Tobin believes the tide is out." not in world.story
+    for check in OPTIONAL_PASSES:
+        material = pass_material(check, assemble(ITEMS, include_secrets=True))
+        assert "Mara is in the guild" not in material.story + material.secrets
+        assert estimate_pass(material, "Tobin waited.").total > 0

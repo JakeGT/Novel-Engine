@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
 import math
 import time
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from backend.adapters.connector_transport import (
@@ -167,6 +169,155 @@ def with_images(messages: list[dict[str, str]], images: Sequence[ImageInput]) ->
     return shaped
 
 
+def stream_usage_option(base_url: str | None) -> bool:
+    """Whether to ask the provider to report usage at the end of a stream
+    (``stream_options.include_usage``). OpenRouter reports it on every stream anyway;
+    a provider that refuses the option is asked again without it (see ``stream_text``)."""
+    spec = spec_for_base_url(base_url)
+    return spec is None or spec.stream_usage
+
+
+@dataclass
+class StreamedText:
+    text: str
+    finish_reason: str | None
+    usage: Any
+    # False when the provider refused to stream and the answer came whole instead.
+    streamed: bool = True
+
+
+# While a stream is open and the model sends nothing, how often the caller is still told
+# (an empty piece), so a stop the author asked for, or a lost job, is noticed (SCN-002).
+TICK_SECONDS = 1.0
+
+
+def _refused(error: Exception) -> str:
+    """What a refusal says, to tell which part of the request it is about (never logged)."""
+    return str(error).lower()
+
+
+def _about_usage_option(said: str) -> bool:
+    return any(word in said for word in ("stream_options", "include_usage", "stream options"))
+
+
+async def stream_text(
+    client: Any,
+    *,
+    model: str,
+    messages: list[Any],
+    max_tokens: int,
+    on_text: Callable[[str], Awaitable[None]],
+    usage_option: bool = True,
+) -> StreamedText:
+    """Ask for the answer as a stream and hand each piece on as it comes (SCN-002).
+
+    The pieces are kept in a list and joined once, so a long answer costs time in
+    proportion to its length. Every chunk, and every ``TICK_SECONDS`` without one, the
+    caller is told even when no words came (``on_text("")``: the model is thinking, or
+    silent), so a stop is noticed whatever the model is doing. Whatever ``on_text``
+    raises (the author stopped the work) closes the stream at once: for a provider that
+    supports it, that also stops the model writing and charging. An error the provider
+    sends part way through (OpenRouter sends ``finish_reason: "error"``) fails the
+    request; nothing written so far is returned.
+
+    A refusal before anything is written is asked again only when it is about what was
+    asked of the stream: the usage option (asked again without it), or streaming itself
+    (asked once for the whole answer). Any other refusal is the caller's to report."""
+    from openai import BadRequestError, UnprocessableEntityError
+
+    request: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "stream": True,
+    }
+    if usage_option:
+        request["stream_options"] = {"include_usage": True}
+    stream: Any = None
+    while stream is None:
+        try:
+            stream = await client.chat.completions.create(**request)
+        except (BadRequestError, UnprocessableEntityError) as error:
+            said = _refused(error)
+            if "stream_options" in request and _about_usage_option(said):
+                # A provider that does not know the usage option: asked once more
+                # without it; usage is then estimated.
+                request.pop("stream_options")
+            elif "stream" in said:
+                return await _whole_answer(client, request, on_text)
+            else:
+                raise
+    pieces: list[str] = []
+    finish: str | None = None
+    usage: Any = None
+    async with stream:
+        chunks = stream.__aiter__()
+        waiting: asyncio.Future[Any] | None = None
+        try:
+            while True:
+                if waiting is None:
+                    waiting = asyncio.ensure_future(chunks.__anext__())
+                arrived, _ = await asyncio.wait({waiting}, timeout=TICK_SECONDS)
+                if not arrived:
+                    # Nothing yet: the caller still checks for a stop (the same chunk is
+                    # waited for again, never asked for twice).
+                    await on_text("")
+                    continue
+                current, waiting = waiting, None
+                try:
+                    chunk = current.result()
+                except StopAsyncIteration:
+                    break
+                reported = getattr(chunk, "usage", None)
+                if reported is not None:
+                    usage = reported
+                wrote = False
+                for choice in getattr(chunk, "choices", None) or ():
+                    delta = getattr(choice, "delta", None)
+                    piece = getattr(delta, "content", None) if delta is not None else None
+                    if piece:
+                        wrote = True
+                        pieces.append(piece)
+                        await on_text(piece)
+                    if getattr(choice, "finish_reason", None):
+                        finish = choice.finish_reason
+                if not wrote:
+                    # Thinking, a role, a usage report or a keep-alive: no words, but a tick.
+                    await on_text("")
+        finally:
+            if waiting is not None:
+                waiting.cancel()
+                await asyncio.gather(waiting, return_exceptions=True)
+    if finish == "error":
+        raise AIProviderError("model provider request failed")
+    text = "".join(pieces)
+    if not text.strip():
+        raise AIInvalidOutputError("provider returned no text")
+    return StreamedText(text=text, finish_reason=finish, usage=usage)
+
+
+async def _whole_answer(
+    client: Any, request: dict[str, Any], on_text: Callable[[str], Awaitable[None]]
+) -> StreamedText:
+    """The provider refused to stream: the answer asked for once, whole, and handed on as
+    one piece."""
+    whole = {
+        key: value for key, value in request.items() if key not in ("stream", "stream_options")
+    }
+    response = await client.chat.completions.create(**whole)
+    choice = response.choices[0] if response.choices else None
+    text = (choice.message.content or "") if choice is not None else ""
+    if not text.strip():
+        raise AIInvalidOutputError("provider returned no text")
+    await on_text(text)
+    return StreamedText(
+        text=text,
+        finish_reason=getattr(choice, "finish_reason", None),
+        usage=getattr(response, "usage", None),
+        streamed=False,
+    )
+
+
 class OpenAIGateway:
     """AsyncOpenAI-compatible adapter.
 
@@ -194,6 +345,7 @@ class OpenAIGateway:
         image_types: frozenset[str] = frozenset({"image/png", "image/jpeg", "image/webp"}),
         image_providers: frozenset[str] = frozenset(),
         devices: Any = None,
+        streaming: bool = True,
     ) -> None:
         self._api_key = api_key
         self._default_model = default_model
@@ -208,9 +360,18 @@ class OpenAIGateway:
         self._image_providers = image_providers
         # A model on the author's own computer, reached through the connector (SCN-002A).
         self._devices = devices
+        # SCN-002: whether drafts are asked for as a stream (``AI_STREAMING``).
+        self._streaming = streaming
+        # CTX-013: what each model can take, from its provider's list or the operator's
+        # table; None negotiates per route, as before.
+        self._models: Any = None
 
     def attach_devices(self, devices: Any) -> None:
         self._devices = devices
+
+    def attach_models(self, models: Any) -> None:
+        """What each model can take (``ModelCapabilityService``), per request (CTX-013)."""
+        self._models = models
 
     def _build_client(self, api_key: str | None, base_url: str | None) -> Any:
         from openai import AsyncOpenAI
@@ -248,16 +409,24 @@ class OpenAIGateway:
     def is_available(self) -> bool:
         return bool(self._api_key or self._base_url)
 
-    def capabilities(self, *, base_url: str | None = None) -> ProviderCapabilities:
-        """The configured route, or a workspace's own provider at ``base_url``.
+    def capabilities(
+        self, *, base_url: str | None = None, model: str | None = None
+    ) -> ProviderCapabilities:
+        """The configured route, or a workspace's own provider at ``base_url``, for
+        ``model`` (by default the model this request uses, or the configured one).
+
+        A preview made outside a request names the workspace's chosen model here: what
+        that model takes is what decides, never the operator's default (CTX-013).
 
         A workspace's provider can see pictures only when the operator listed it in
         ``AI_IMAGE_PROVIDERS``; otherwise, like an unconfigured route, it is text only."""
+        chosen = model
         device = parse_device_address(base_url)
         if device is not None:
             known = self._devices.known_capabilities(device[1]) if self._devices else None
-            model = request_model() or self._default_model
-            # Text only: pictures are not sent to a computer (ADR-025).
+            model = chosen or request_model() or self._default_model
+            # Text only: pictures are not sent to a computer (ADR-025), and its answer
+            # comes whole through the relay, so it never streams (SCN-002).
             return ProviderCapabilities(
                 provider=MY_COMPUTER,
                 model=model,
@@ -265,23 +434,48 @@ class OpenAIGateway:
                 max_context_tokens=known.context_for(model) if known else None,
             )
         provider = self._provider
-        sees = self._image_input
+        allowed = self._image_input
         if base_url and base_url.rstrip("/") != self._base_url.rstrip("/"):
             spec = spec_for_base_url(base_url)
             provider = spec.id if spec is not None else "unknown"
-            sees = spec is not None and spec.id in self._image_providers
+            allowed = spec is not None and spec.id in self._image_providers
+        model = chosen or request_model() or self._default_model
+        # CTX-013: what this model takes, by name (the operator's table over the
+        # provider's list). The operator still decides whether pictures may go at all.
+        listed = self._models.lookup(provider, model) if self._models is not None else None
+        sees = allowed and (listed is None or listed.sees_images is not False)
+        max_images = self._image_max_count
+        if listed is not None and listed.max_images:
+            max_images = min(max_images, listed.max_images)
         return ProviderCapabilities(
             provider=provider,
-            model=request_model() or self._default_model,
+            model=model,
             input_modalities=frozenset({"text", "image"}) if sees else frozenset({"text"}),
             output_modalities=frozenset({"text"}),
-            structured_output=True,
-            max_context_tokens=None,
-            supports_streaming=False,
-            max_images=self._image_max_count if sees else 0,
+            structured_output=listed is None or listed.structured is not False,
+            max_context_tokens=listed.context_tokens if listed is not None else None,
+            supports_streaming=self._streaming,
+            max_images=max_images if sees else 0,
             max_image_bytes=self._image_max_bytes if sees else 0,
             image_types=self._image_types if sees else frozenset(),
+            max_output_tokens=listed.max_output_tokens if listed is not None else None,
+            source=listed.source if listed is not None else "route",
         )
+
+    async def refresh_capabilities(
+        self, *, base_url: str | None = None, model: str | None = None
+    ) -> None:
+        """Make what is known of the route's models fresh before a request (CTX-013).
+        ``model`` is accepted for symmetry with ``capabilities``: a provider's list covers
+        every model behind it."""
+        del model
+        if self._models is None or parse_device_address(base_url) is not None:
+            return
+        provider = self._provider
+        if base_url and base_url.rstrip("/") != self._base_url.rstrip("/"):
+            spec = spec_for_base_url(base_url)
+            provider = spec.id if spec is not None else "unknown"
+        await self._models.ensure(provider)
 
     async def aclose(self) -> None:
         if self._client is not None:
@@ -304,11 +498,14 @@ class OpenAIGateway:
         resolved_model = request_model() or model or self._default_model
         spec = spec_for_base_url(base_url or self._base_url)
         prompted = spec is not None and spec.structured is StructuredMode.PROMPTED
-        if parse_device_address(base_url) is not None:
-            # A computer whose model server does not keep to a schema is asked in words.
-            prompted = not self.capabilities(base_url=base_url).structured_output
+        await self.refresh_capabilities(base_url=base_url, model=resolved_model)
+        capabilities = self.capabilities(base_url=base_url, model=resolved_model)
+        if not capabilities.structured_output:
+            # A computer whose model server, or a model whose provider's list says it
+            # does not keep to a schema, is asked in words.
+            prompted = True
         # A picture the route cannot take is refused here, before any client is built.
-        check_images(images, self.capabilities(base_url=base_url))
+        check_images(images, capabilities)
         start = time.perf_counter()
         per_call_client: Any = None
         if api_key or base_url:
@@ -344,7 +541,7 @@ class OpenAIGateway:
                     parsed, response = await self._prompted(
                         client, resolved_model, messages, response_format, images
                     )
-        except OpenAIError as error:
+        except (OpenAIError, http_impl.TransportError) as error:
             log_event(
                 logger,
                 "ai.generate.error",
@@ -392,12 +589,15 @@ class OpenAIGateway:
         api_key: str | None = None,
         base_url: str | None = None,
         images: Sequence[ImageInput] = (),
+        on_text: Callable[[str], Awaitable[None]] | None = None,
     ) -> TextResponse:
         from openai import OpenAIError
 
         resolved_model = request_model() or model or self._default_model
+        await self.refresh_capabilities(base_url=base_url, model=resolved_model)
+        capabilities = self.capabilities(base_url=base_url, model=resolved_model)
         # A picture the route cannot take is refused here, before any client is built.
-        check_images(images, self.capabilities(base_url=base_url))
+        check_images(images, capabilities)
         start = time.perf_counter()
         per_call_client: Any = None
         if api_key or base_url:
@@ -406,12 +606,46 @@ class OpenAIGateway:
         else:
             client = self.client
         try:
+            if on_text is not None and capabilities.supports_streaming:
+                # SCN-002: the answer in pieces as it is written; the whole of it, and
+                # what it used, still come back once at the end.
+                streamed = await stream_text(
+                    client,
+                    model=resolved_model,
+                    messages=with_images(messages, images),
+                    max_tokens=max_tokens,
+                    on_text=on_text,
+                    usage_option=stream_usage_option(base_url or self._base_url),
+                )
+                usage_model = usage_from(streamed.usage)
+                log_event(
+                    logger,
+                    "ai.generate_text",
+                    model=resolved_model,
+                    duration_ms=round((time.perf_counter() - start) * 1000, 3),
+                    prompt_tokens=usage_model.prompt_tokens,
+                    completion_tokens=usage_model.completion_tokens,
+                    cached_prompt_tokens=usage_model.cached_prompt_tokens,
+                    images=len(images),
+                    streamed=streamed.streamed,
+                    usage_reported=streamed.usage is not None,
+                )
+                return TextResponse(
+                    text=streamed.text,
+                    model=resolved_model,
+                    usage=usage_model,
+                    truncated=streamed.finish_reason == "length",
+                    usage_reported=streamed.usage is not None,
+                    streamed=streamed.streamed,
+                )
             response = await client.chat.completions.create(
                 model=resolved_model,
                 messages=with_images(messages, images),
                 max_tokens=max_tokens,
             )
-        except OpenAIError as error:
+        except (OpenAIError, http_impl.TransportError) as error:
+            # A connection broken part way through a stream is raised by the HTTP library
+            # itself, not wrapped by the client: it is a provider failure all the same.
             log_event(
                 logger,
                 "ai.generate_text.error",

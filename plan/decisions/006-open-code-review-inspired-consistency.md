@@ -261,3 +261,62 @@ state, justification), as summarised in GitHub's SARIF output reference,
 https://docs.github.com/en/enterprise-server@3.19/code-security/reference/code-scanning/codeql/codeql-cli/sarif-output.
 Muzny, Fang, Chang and Jurafsky, "A Two-stage Sieve Approach for Quote Attribution", EACL 2017,
 https://aclanthology.org/E17-1044/.
+
+## Amendment 2026-10-21 (batch 10 D): audits that tell the author, a change read on a copy, travel in the words, statuses that last (CON-011, CON-016, CON-017, SCN-007, CON-004)
+
+**Telling the author (CON-011).** When an audit the author scheduled ends (finished, stopped, or
+failed keeping what it finished), the job runner tells a listener once, and a notice is kept for
+the author it ran as (`author_notices`, migration 0062): how many scenes it read, how many notes
+the assistant and the checks without it found, and what it used (tokens and the provider's cost
+when given). Counts and identifiers only; the part of the plan is named when the notice is read.
+It is shown on the story's home page until marked read, and on the audit's own page. Following
+NN/g's split between indicators, validations and notifications, this is a *passive* notification:
+nothing has to be done, so it is a quiet card with a link and "Mark as read", never a dialog or a
+toast that disappears. An audit started by hand is on its page already and leaves no notice.
+"Ask the assistant about the changed scenes" audits only the scenes a what-if wrote differently,
+in the what-if, estimated and confirmed like any audit (plan id `what-if-changes`).
+
+**A change read on a copy (CON-017).** Before a proposal is approved, the plan's scene conditions
+and the reader's guide are worked out twice by their own code: over the story now and over a
+scratch copy of its records with the change applied the way history replays a saved change (one
+definition of what each operation does, `canon_history_service`'s replay; a merge is expanded
+first, as when kept). Nothing is written. The differences are said scene by scene ("would be not
+met instead of met", "The reader would no longer learn: …"). What the change touches can also be
+shown as a small picture (the change, and each kind of thing with how many), solid lines for what
+records name and dashed for what writing mentions, so colour is never the only signal (WCAG 1.4.1);
+the picture has a short name and a description giving the counts, and the full lists stay below it,
+following the guidance for complex images to pair a short text alternative with a nearby long
+description in a structured, linear form.
+
+**Dismissals carried (CON-016).** An archive now carries review dismissals (by the saved change
+their proposal became, restored onto the restored proposal; one on a proposal never saved is not
+carried, as the proposal is not) and dismissals beyond one scene (by line of the story), withdrawn
+ones too; digests only; validated before anything is written; restoring again changes nothing.
+
+**Travel in the words (SCN-007).** A motion event in Talmy's sense has a Figure (who moves), a
+Path and a Ground (where to); the check reads only the case where all three are explicit and
+certain: a person of the scene named in the narration (no pronoun, nothing said aloud), a verb of
+going in the simple past with a goal preposition ("to", "into", "arrived at", "reached"; never
+"towards" or "set out for", which say a direction or a start, not an arrival), and a place the
+story bible knows, written as a name. A hedged clause ("would", "wanted to", "not", "had", a
+question) is left alone. The move is compared with the plan's place, the travel table (the nearest
+timed appearance before and after, with the longest possible gap), and statuses that keep the
+person; each is a note quoting the words. One pass over the text, places looked up by their first
+word: linear, measured on 500,000 characters.
+
+**Statuses that last (CON-004).** Imprisoned or held (at a place, or not said), exiled from a
+place, missing, and married, from a status word or a kind of fact naming the place or the spouse,
+where the status is certainly true; an event with the person in it that ends it (released, freed,
+escaped; returned, pardoned; found; divorced, or the spouse's death) cuts it short from the
+earliest the event can happen. Notes only, as for every continuity finding that a story could mean
+on purpose; a time that cannot be placed never makes one.
+
+Sources: Nielsen Norman Group, "Indicators, Validations, and Notifications: Pick the Correct
+Communication Option", https://www.nngroup.com/articles/indicators-validations-notifications/.
+University of Wisconsin–Madison, "Accessible complex images",
+https://it.wisc.edu/learn/make-it-accessible/accessible-complex-images-3/; University of Nevada,
+Reno, "Making Graphical Data More Accessible",
+https://www.unr.edu/accessibility/research/strategy-2. L. Talmy, "Main verb properties and
+equipollent framing", https://www.acsu.buffalo.edu/~talmy/talmyweb/Recent/main-verb.pdf (Figure,
+Path, Ground). J. Pustejovsky and Z. Yocum, "Capturing Motion in ISO-SpaceBank", ISA-9 2013,
+https://aclanthology.org/W13-0503/.

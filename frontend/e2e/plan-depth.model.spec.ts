@@ -98,7 +98,10 @@ test('threads move along, scenes say what the viewpoint wants, and a kept draft 
   // The plan says the thread opens and resolves with nothing in between moving it.
   await page.goto(`/projects/${PROJECT}/plan`)
   const needs = page.locator('details.card').filter({ hasText: 'the plan still needs' })
-  await needs.locator('summary').click()
+  // It opens by itself when something in the shared story is out of order.
+  if (!(await needs.evaluate((element) => (element as HTMLDetailsElement).open))) {
+    await needs.locator('summary').click()
+  }
   // Other tests share this story, so the gap is found by this thread's title.
   await expect(
     needs

@@ -395,6 +395,7 @@ def test_every_check_says_what_it_covers() -> None:
         "possession",
         "life",
         "state",
+        "lifecycle",
         "change",
     }
 

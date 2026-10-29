@@ -47,6 +47,8 @@ PROCESSOR_VERSION = "pictures-2"
 VARIANT_SIZES: dict[str, int] = {"thumbnail": 256, "web": 1024}
 VARIANT_CONTENT_TYPE = "image/webp"
 WEBP_QUALITY = 80
+# The longest side of a marked part's copy made for the search index (CTX-012).
+CROP_SIDE = 512
 _WORKER = Path(__file__).with_name("image_worker.py")
 
 
@@ -196,13 +198,33 @@ class SubprocessImageProcessor:
         async with self._slots:
             return await asyncio.to_thread(self.process_sync, data)
 
-    def process_sync(self, data: bytes) -> ProcessedImage:
+    async def crop(
+        self, data: bytes, box: tuple[float, float, float, float], *, side: int = CROP_SIDE
+    ) -> Rendition:
+        """One part of a picture (``box``: left, top, width, height as fractions of the
+        picture as shown), as a WebP copy at most ``side`` pixels on its longer side.
+        Decoded in the same limited worker as every picture (CTX-012, AST-006)."""
+        async with self._slots:
+            return await asyncio.to_thread(self.crop_sync, data, box, side=side)
+
+    def crop_sync(
+        self, data: bytes, box: tuple[float, float, float, float], *, side: int = CROP_SIDE
+    ) -> Rendition:
+        left, top, across, down = (float(value) for value in box)
+        if not (0 <= left < 1 and 0 <= top < 1 and 0 < across <= 1 and 0 < down <= 1):
+            raise ImageRejected("damaged")
+        processed = self.process_sync(
+            data, crop=[left, top, across, down], sizes={"region": max(16, int(side))}
+        )
+        return processed.renditions[0]
+
+    def process_sync(self, data: bytes, **extra: Any) -> ProcessedImage:
         limits = self.limits
         if len(data) > limits.max_bytes:
             raise ImageRejected("too_large")
         if not data:
             raise ImageRejected("damaged")
-        settings = self._settings()
+        settings = self._settings(**extra)
         started = time.monotonic()
         try:
             completed = self._run(settings, data)

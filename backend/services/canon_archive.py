@@ -348,6 +348,9 @@ class CanonArchiveService:
         self.assistant_threads: Any = None
         # Checks kept as runs in every line of the story (CON-001); set by the container.
         self.check_runs: Any = None
+        # Dismissals on the review screen and beyond one scene (CON-016); set by the
+        # container (``backend.services.dismissal_archive``).
+        self.dismissal_archive: Any = None
         # Scenes the author left out of their usual voice (CON-018); set by the container.
         self.voice: Any = None
 
@@ -847,6 +850,23 @@ class CanonArchiveService:
             runs = await self.check_runs.export_runs(workspace_id, project_id, lines)
             if runs:
                 body["check_runs"] = runs
+        if self.dismissal_archive is not None:
+            # Dismissals on saved changes' review screens, and beyond one scene in every
+            # line of the story (CON-016); each left out when there are none.
+            main = await self._journal.working_branch(  # type: ignore[attr-defined]
+                workspace_id=workspace_id, project_id=project_id
+            )
+            lines = {str(main.id): "main"}
+            for what_if in what_ifs or []:
+                lines[str(what_if["id"])] = str(what_if["id"])
+            review = await self.dismissal_archive.export_review(
+                workspace_id, project_id, mutation_commits
+            )
+            if review:
+                body["review_dismissals"] = review
+            scoped = await self.dismissal_archive.export_scoped(workspace_id, project_id, lines)
+            if scoped:
+                body["scoped_dismissals"] = scoped
         if self.voice is not None:
             # Scenes left out of the author's usual voice; left out when there are none.
             left_out = await self.voice.export_left_out(workspace_id, project_id)
@@ -1756,6 +1776,30 @@ class CanonArchiveService:
             result["check_runs"] = await self.check_runs.restore_runs(
                 target_workspace_id, target_project_id, archive["check_runs"], branches
             )
+        if self.dismissal_archive is not None and archive.get("scoped_dismissals"):
+            # Restored as the restoring author's own, like the threads above.
+            result["scoped_dismissals"] = await self.dismissal_archive.restore_scoped(
+                target_workspace_id,
+                target_project_id,
+                archive["scoped_dismissals"],
+                branches,
+                actor_user_id=actor_user_id,
+            )
+        if self.dismissal_archive is not None and archive.get("review_dismissals"):
+            review_checksum = archive["checksum"]
+
+            async def review_mutation(commit_id: str | None) -> str | None:
+                return await self._mutation_for(
+                    review_checksum, target_workspace_id, target_project_id, commit_id
+                )
+
+            result["review_dismissals"] = await self.dismissal_archive.restore_review(
+                target_workspace_id,
+                target_project_id,
+                archive["review_dismissals"],
+                review_mutation,
+                actor_user_id=actor_user_id,
+            )
         if self.voice is not None and archive.get("voice_left_out"):
             result["voice_left_out"] = await self.voice.restore_left_out(
                 target_workspace_id, target_project_id, archive["voice_left_out"]
@@ -2518,6 +2562,26 @@ class CanonArchiveService:
             try:
                 validate_runs(archive["check_runs"], lines)
             except ArchiveRunsError as error:
+                raise ArchiveError(str(error)) from error
+        if (
+            archive.get("review_dismissals") is not None
+            or archive.get("scoped_dismissals") is not None
+        ):
+            from backend.services.dismissal_archive import (
+                ArchiveDismissalsError,
+                validate_review,
+                validate_scoped,
+            )
+
+            dismissal_lines = {"main"} | {
+                str(raw.get("id")) for raw in archive.get("what_ifs", []) if isinstance(raw, dict)
+            }
+            try:
+                if archive.get("review_dismissals") is not None:
+                    validate_review(archive["review_dismissals"])
+                if archive.get("scoped_dismissals") is not None:
+                    validate_scoped(archive["scoped_dismissals"], dismissal_lines)
+            except ArchiveDismissalsError as error:
                 raise ArchiveError(str(error)) from error
 
         project = archive.get("project") or {}

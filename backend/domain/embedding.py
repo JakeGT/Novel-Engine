@@ -325,6 +325,7 @@ __all__ = [
     "GEMMA_DIMENSIONS",
     "CaptionSource",
     "PictureSource",
+    "RegionSource",
     "METADATA_FILTER_KEYS",
     "SearchGate",
     "StoredHit",
@@ -460,6 +461,28 @@ class PictureSource:
     object_key: str
     content_type: str
     checksum: str
+
+
+@dataclass(frozen=True)
+class RegionSource:
+    """A part of a picture the author marked and named (or linked to an entry), ready to
+    embed (CTX-012): the web-safe copy of its picture, the part as fractions of it, and
+    the words a text-only index finds it by (its name, the entry it shows, and what the
+    author accepted about it)."""
+
+    asset_id: str
+    asset_version_id: str
+    segment_id: str
+    # left, top, width, height as fractions of the picture as shown.
+    box: tuple[float, float, float, float]
+    object_key: str
+    content_type: str
+    # The web copy's checksum and the part's own (its place on that version).
+    checksum: str
+    region_hash: str
+    label: str | None = field(default=None, repr=False)
+    entity_name: str | None = field(default=None, repr=False)
+    notes: tuple[str, ...] = field(default=(), repr=False)
 
 
 @dataclass(frozen=True)

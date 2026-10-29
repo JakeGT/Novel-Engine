@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { PassEstimate } from '../api/client'
@@ -20,5 +20,21 @@ describe('PassChoices and pictures', () => {
     expect(pictures).not.toBeChecked()
     await userEvent.setup().click(pictures)
     expect(onChange).toHaveBeenCalledWith(['clarity', 'pictures'])
+  })
+})
+
+describe('PassChoices and the optional passes', () => {
+  it('lists the optional passes apart, with their cost, off until ticked', async () => {
+    const more = (['motivation', 'physical', 'world'] as const).map((item) => estimate(item, 1500))
+    const onChange = vi.fn()
+    render(<PassChoices passes={[...text, ...more]} chosen={['viewpoint', 'plan']} onChange={onChange} />)
+    const group = screen.getByRole('list', { name: /More you can add/ })
+    const boxes = within(group).getAllByRole('checkbox')
+    expect(boxes).toHaveLength(3)
+    for (const box of boxes) expect(box).not.toBeChecked()
+    expect(within(group).getByRole('checkbox', { name: /physical.*about 1,500 tokens/ })).toBeInTheDocument()
+    await userEvent.setup().click(within(group).getByRole('checkbox', { name: /world/ }))
+    // In the order the passes run, whatever order they were ticked in.
+    expect(onChange).toHaveBeenCalledWith(['viewpoint', 'world', 'plan'])
   })
 })

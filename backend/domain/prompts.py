@@ -216,16 +216,27 @@ _SPECS = (
         _S + "scene_checks:CheckNotes",
     ),
     PromptSpec(
-        "check-part",
+        "check-group",
         1,
-        "Notes quoting one part of a long scene, checked for its viewpoint, voice or clarity "
-        "with everything that check reads of the story (CON-013).",
+        "Notes quoting some passages of a long scene, checked for bodies, objects and cause "
+        "or for the story's own rules, with only the parts of the story they bear on "
+        "(CON-008, CON-013).",
+        _S + "scene_checks:group_messages",
+        _S + "scene_checks:CheckNotes",
+    ),
+    PromptSpec(
+        "check-part",
+        # 2: why characters act is sent in parts too (CON-008, batch 10).
+        2,
+        "Notes quoting one part of a long scene, checked for its viewpoint, voice, clarity "
+        "or why characters act, with everything that check reads of the story (CON-013).",
         _S + "scene_checks:part_messages",
         _S + "scene_checks:CheckNotes",
     ),
     PromptSpec(
         "check-plan",
-        1,
+        # 2: an arc stage reached in the scene with no sign of the change (STY-006).
+        2,
         "Notes quoting a scene where it goes against, or leaves out, what its plan asks for.",
         _S + "scene_checks:plan_messages",
         _S + "scene_checks:CheckNotes",
@@ -238,6 +249,14 @@ _SPECS = (
         _S + "scene_checks:CheckNotes",
     ),
     PromptSpec(
+        "check-voice-passages",
+        1,
+        "Notes quoting a few passages the voice measures flagged where they do not sound "
+        "like the author, with why each was flagged (CON-018).",
+        _S + "scene_checks:voice_passages_messages",
+        _S + "scene_checks:CheckNotes",
+    ),
+    PromptSpec(
         "check-clarity",
         1,
         "Notes quoting passages of a scene a reader could find hard to follow.",
@@ -245,18 +264,41 @@ _SPECS = (
         _S + "scene_checks:CheckNotes",
     ),
     PromptSpec(
-        "check-pictures",
+        "check-motivation",
         1,
+        "Notes quoting a scene where a character acts against what they want or know.",
+        _S + "scene_checks:motivation_messages",
+        _S + "scene_checks:CheckNotes",
+    ),
+    PromptSpec(
+        "check-physical",
+        1,
+        "Notes quoting a scene where bodies, objects, travel or cause and effect do not add up.",
+        _S + "scene_checks:physical_messages",
+        _S + "scene_checks:CheckNotes",
+    ),
+    PromptSpec(
+        "check-world",
+        1,
+        "Notes quoting a scene where it breaks the story's own rules, such as its magic's limits.",
+        _S + "scene_checks:world_messages",
+        _S + "scene_checks:CheckNotes",
+    ),
+    PromptSpec(
+        "check-pictures",
+        2,
         "Notes quoting a scene where it describes someone or somewhere differently from "
-        "their pictures, naming the picture; the pictures go with the request.",
+        "their pictures, naming the picture and, where it can, the marked part or the "
+        "place in it; the pictures go with the request.",
         _S + "scene_checks:pictures_messages",
         _S + "scene_checks:PictureNotes",
     ),
     PromptSpec(
         "describe-picture",
-        1,
-        "A caption and appearance details of one picture, for the author to review; the "
-        "picture goes with the request.",
+        2,
+        "A caption, appearance details, a caption for each part the author marked and the "
+        "writing read in one picture, for the author to review; the picture goes with the "
+        "request.",
         _S + "media_observations:describe_messages",
         _S + "media_observations:PictureDescription",
     ),
@@ -295,6 +337,22 @@ _SPECS = (
         1,
         "One or two scenes to come before a scene and bring about what it needs first.",
         _S + "planning_help:bridge_messages",
+        _S + "planning_help:BridgeSheet",
+    ),
+    PromptSpec(
+        "arc-stages",
+        1,
+        "The stages of a character's arc from the arc, the story bible and the plan's scenes, "
+        "each with the words that show it (STY-006).",
+        _S + "arc_help:arc_stage_messages",
+        _S + "arc_help:StageSheet",
+    ),
+    PromptSpec(
+        "gap-bridge",
+        1,
+        "One scene that moves a quiet thread along, or reaches an arc's stage no scene "
+        "reaches (STY-004).",
+        _S + "arc_help:gap_bridge_messages",
         _S + "planning_help:BridgeSheet",
     ),
     PromptSpec(

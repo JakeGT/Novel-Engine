@@ -57,7 +57,7 @@ def test_two_places_at_once_shows_on_the_timeline_the_plan_and_the_studio(
     kinds = {(record["kind"], record["label"]) for record in finding["records"]}
     assert ("entry", "Tobin Ashe") in kinds and ("scene", "Low tide") in kinds
     # Every check says what it covers, and none of them blocks.
-    assert len(checks["coverage"]) == 9 and "nothing here stops you" in checks["always"]
+    assert len(checks["coverage"]) == 10 and "nothing here stops you" in checks["always"]
 
     outline = auth_client.get(f"{w['base']}/plan").json()
     flagged = [item for item in outline["open"] if item["code"] == "two_places_at_once"]

@@ -39,6 +39,7 @@ from backend.domain.embedding import (
     MixedSpaceError,
     Modality,
     PictureSource,
+    RegionSource,
     SearchGate,
     StoredHit,
     VectorRow,
@@ -585,6 +586,76 @@ class PgEmbeddingIndexStore:
             for row in rows
             if row[3]
         ]
+
+    def regions_ready(self, *, workspace_id: str, project_id: str) -> list[RegionSource]:
+        """Current marked parts with a name or an entry, of current pictures whose
+        web-safe copy exists (CTX-012). The entry's name is read from the story (a line
+        where the entry is still active first); the notes are what the author accepted or
+        corrected about the part, oldest first."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT s.asset_id, s.asset_version_id, s.id, s.x, s.y, s.width, s.height, "
+                "mp.width, mp.height, var.object_key, var.content_type, var.checksum, "
+                "s.content_hash, s.label, ("
+                "SELECT e.name FROM canon_entities e WHERE e.workspace_id = s.workspace_id "
+                "AND e.project_id = s.project_id AND e.id = s.entity_id "
+                "ORDER BY (e.lifecycle = 'active') DESC, e.retired_revision IS NULL DESC, "
+                "e.branch_id LIMIT 1) "
+                "FROM media_segments s "
+                "JOIN media_processing mp ON mp.workspace_id = s.workspace_id "
+                "AND mp.project_id = s.project_id AND mp.asset_version_id = s.asset_version_id "
+                "AND mp.status = 'ready' AND mp.width > 0 AND mp.height > 0 "
+                "JOIN media_variants var ON var.workspace_id = s.workspace_id "
+                "AND var.project_id = s.project_id AND var.asset_version_id = s.asset_version_id "
+                "AND var.kind = 'web' "
+                "JOIN media_asset_versions mv ON mv.workspace_id = s.workspace_id "
+                "AND mv.project_id = s.project_id AND mv.id = s.asset_version_id "
+                "AND mv.retired_revision IS NULL "
+                "JOIN media_assets a ON a.workspace_id = mv.workspace_id "
+                "AND a.project_id = mv.project_id AND a.id = mv.asset_id "
+                "AND a.lifecycle = 'active' "
+                "WHERE s.workspace_id = %s AND s.project_id = %s AND s.kind = 'region' "
+                "AND s.retired_at IS NULL "
+                "AND (COALESCE(s.label, '') <> '' OR s.entity_id IS NOT NULL) ORDER BY s.id",
+                (workspace_id, project_id),
+            ).fetchall()
+            notes: dict[str, list[str]] = {}
+            for segment_id, words in connection.execute(
+                "SELECT segment_id, COALESCE(NULLIF(corrected_text, ''), text) "
+                "FROM media_observations WHERE workspace_id = %s AND project_id = %s "
+                "AND segment_id IS NOT NULL AND state IN ('accepted', 'corrected') "
+                "ORDER BY seq",
+                (workspace_id, project_id),
+            ).fetchall():
+                if words:
+                    notes.setdefault(segment_id, []).append(words)
+        found: list[RegionSource] = []
+        for row in rows:
+            full_width, full_height = int(row[7]), int(row[8])
+            box = (
+                min(1.0, row[3] / full_width),
+                min(1.0, row[4] / full_height),
+                min(1.0, row[5] / full_width),
+                min(1.0, row[6] / full_height),
+            )
+            if box[2] <= 0 or box[3] <= 0 or box[0] >= 1 or box[1] >= 1:
+                continue
+            found.append(
+                RegionSource(
+                    asset_id=row[0],
+                    asset_version_id=row[1],
+                    segment_id=row[2],
+                    box=box,
+                    object_key=row[9],
+                    content_type=row[10],
+                    checksum=row[11],
+                    region_hash=row[12],
+                    label=row[13],
+                    entity_name=row[14],
+                    notes=tuple(notes.get(row[2], ())),
+                )
+            )
+        return found
 
     def projects(self) -> list[tuple[str, str]]:
         with self._connect() as connection:

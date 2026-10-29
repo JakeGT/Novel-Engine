@@ -27,6 +27,15 @@ export class Reply {
   }
 }
 
+/** A reply of server-sent events, sent as written (a job's stream, SCN-002). */
+export class EventStreamReply {
+  text: string
+
+  constructor(text: string) {
+    this.text = text
+  }
+}
+
 export function reply(status: number, body: unknown = {}): Reply {
   return new Reply(status, body)
 }
@@ -82,6 +91,9 @@ export function mockApi(routes: Record<string, Handler | Reply | unknown>): Mock
         )
       }
       const value = typeof match[1] === 'function' ? (match[1] as Handler)(call) : match[1]
+      if (value instanceof EventStreamReply) {
+        return new Response(value.text, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+      }
       const answer = value instanceof Reply ? value : new Reply(200, value)
       return new Response(JSON.stringify(answer.body ?? {}), {
         status: answer.status,

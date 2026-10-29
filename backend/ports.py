@@ -6,7 +6,7 @@ process-global singletons. Adapters in ``backend.adapters`` implement them.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
@@ -302,6 +302,10 @@ class EmbeddingIndexStore(Protocol):
 
     def accepted_captions(self, *, workspace_id: str, project_id: str) -> list[CaptionSource]: ...
 
+    def regions_ready(self, *, workspace_id: str, project_id: str) -> list[Any]:
+        """Named parts of current, prepared pictures (``RegionSource``, CTX-012)."""
+        ...
+
     def projects(self) -> list[tuple[str, str]]: ...
 
     def count(self, generation_id: str, *, workspace_id: str | None = None) -> int: ...
@@ -396,6 +400,11 @@ class TextResponse:
     usage: AIUsage = field(default_factory=AIUsage)
     # True when the model stopped at the length limit rather than finishing.
     truncated: bool = False
+    # False when the answer was streamed and the provider never said what it used: the
+    # caller then records its own estimate rather than nothing (SCN-002, OPS-008).
+    usage_reported: bool = True
+    # True when the answer arrived in pieces, as it was written.
+    streamed: bool = False
 
 
 @dataclass(frozen=True)
@@ -418,6 +427,11 @@ class ProviderCapabilities:
     max_images: int = 0
     max_image_bytes: int = 0
     image_types: frozenset[str] = frozenset()
+    # The longest answer the model writes, when known (CTX-013).
+    max_output_tokens: int | None = None
+    # Where these limits come from: "route" (the operator's settings for the route),
+    # "provider" (the provider's list of models), "operator" (the operator's table).
+    source: str = "route"
 
     @property
     def sees_images(self) -> bool:
@@ -467,9 +481,12 @@ class AIDeviceUnavailableError(AIProviderError):
 class AIGateway(Protocol):
     def is_available(self) -> bool: ...
 
-    def capabilities(self, *, base_url: str | None = None) -> ProviderCapabilities:
+    def capabilities(
+        self, *, base_url: str | None = None, model: str | None = None
+    ) -> ProviderCapabilities:
         """What the route a request will use can take: the configured one, or the
-        workspace's own provider at ``base_url``."""
+        workspace's own provider at ``base_url``, for ``model`` (by default the model
+        the request uses)."""
         ...
 
     async def generate_structured(
@@ -495,9 +512,15 @@ class AIGateway(Protocol):
         api_key: str | None = None,
         base_url: str | None = None,
         images: Sequence[ImageInput] = (),
+        on_text: Callable[[str], Awaitable[None]] | None = None,
     ) -> TextResponse:
         """Prose, not structured output: a scene draft (ADR-022). ``images`` as for
-        ``generate_structured``: refused before sending when the route cannot take them."""
+        ``generate_structured``: refused before sending when the route cannot take them.
+
+        ``on_text`` is given each piece of the answer as it is written when the route
+        streams (SCN-002); a route that does not (a computer through the connector) gives
+        the whole answer at once and never calls it. Whatever it raises stops the answer
+        and closes the connection. The whole answer is returned either way."""
         ...
 
     async def list_models(self, *, api_key: str, base_url: str) -> list[str]: ...
@@ -1583,6 +1606,12 @@ class MediaProcessingStorePort(Protocol):
     async def list_regions(self, *, workspace_id: str, project_id: str) -> list[Any]: ...
 
     async def add_segment(self, segment: Any) -> Any: ...
+
+    async def get_segment(
+        self, *, workspace_id: str, project_id: str, segment_id: str
+    ) -> Any | None: ...
+
+    async def update_segment(self, segment: Any) -> Any | None: ...
 
     async def retire_segment(
         self, *, workspace_id: str, project_id: str, segment_id: str

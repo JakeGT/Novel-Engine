@@ -33,6 +33,31 @@ describe('Asking before a large request', () => {
     expect(calls.map((call) => call.headers?.get('X-Confirm-Tokens'))).toEqual([null, '64000', '70000'])
   })
 
+  it('sends back what it was shown when the question is about pictures', async () => {
+    const sending = {
+      provider: 'openrouter',
+      provider_label: 'OpenRouter',
+      model: 'openai/gpt-4o',
+      destination: 'openrouter.ai',
+      where: 'company',
+      where_words: 'to OpenRouter’s servers, outside this site',
+      words: 100,
+      estimated_tokens: 500,
+      pictures: [{ asset_id: 'ast_1', version_id: 'ver_1', name: 'Mara' }],
+      digest: 'ab12cd34',
+    }
+    const asking = refusal(500)
+    ;(asking.body as Record<string, unknown>).sending = sending
+    const answers = [asking, { id: 'job_1', kind: 'scene_review', status: 'queued' }]
+    const mock = mockApi({ 'POST /studio/reviews': () => answers.shift() })
+    setSpendAsker(async () => true)
+
+    await expect(api.startReview(scope, 'pln_1', null)).resolves.toMatchObject({ id: 'job_1' })
+    const calls = mock.find('POST', '/studio/reviews')
+    expect(calls.map((call) => call.headers?.get('X-Confirm-Sending'))).toEqual([null, 'ab12cd34'])
+    expect(calls.map((call) => call.headers?.get('X-Confirm-Tokens'))).toEqual([null, '500'])
+  })
+
   it('stops after asking twice and shows the refusal', async () => {
     const mock = mockApi({ 'POST /studio/reviews': refusal(64000) })
     setSpendAsker(async () => true)

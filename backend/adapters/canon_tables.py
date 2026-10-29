@@ -29,6 +29,8 @@ CANON_PROJECT_TABLES: tuple[str, ...] = (
     "voice_baselines",
     "audit_schedules",
     "correction_plans",
+    # Notices for the author when a scheduled audit finishes (CON-011): counts only.
+    "author_notices",
     # What each check that needs no model found for one fingerprint (CON-007): derived.
     "check_cache",
     "finding_dismissals",
@@ -40,6 +42,8 @@ CANON_PROJECT_TABLES: tuple[str, ...] = (
     "scene_readings",
     "draft_findings",
     "scene_drafts",
+    # A draft's words while the model writes it (SCN-002): a passing copy, cleared once stored.
+    "job_streams",
     "jobs",
     "story_voices",
     "text_passages",

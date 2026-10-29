@@ -1,8 +1,10 @@
-import { useQuery } from '@tanstack/react-query'
-import { Link, useParams } from 'react-router-dom'
-import { api, type WhatIfAudit } from '../api/client'
-import { Badge, ErrorNotice, Loading } from '../components/ui'
-import { scenePath } from '../lib/studio'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { useRef, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { api, isApiError, type WhatIfAudit } from '../api/client'
+import { PassChoices } from '../components/CheckPasses'
+import { Badge, Button, ErrorNotice, Loading } from '../components/ui'
+import { auditPath, chosenTokens, newRequestKey, readChosenPasses, scenePath, tokenCount } from '../lib/studio'
 import { plural } from '../lib/words'
 import { scopedKey, useProject } from '../project'
 
@@ -42,6 +44,80 @@ function Differences({ items, empty }: { items: Difference[]; empty: string }) {
         )
       })}
     </ul>
+  )
+}
+
+/**
+ * Ask the assistant to check only the scenes the what-if wrote differently (CON-011): the
+ * cost first, then an audit like any other, in the what-if, on its own page.
+ */
+function CheckChanged({ branchId, changed }: { branchId: string; changed: number }) {
+  const { scope } = useProject()
+  const navigate = useNavigate()
+  const [passes, setPasses] = useState(() => readChosenPasses(scope))
+  const requestKey = useRef(newRequestKey())
+  const estimate = useQuery({
+    queryKey: scopedKey(scope, 'changed-audit-estimate', branchId),
+    queryFn: () => api.changedAuditEstimate(scope, branchId),
+    enabled: changed > 0,
+  })
+  const start = useMutation({
+    mutationFn: () => api.startChangedAudit(scope, branchId, passes, requestKey.current),
+    onSuccess: (job) => navigate(auditPath(scope.projectId, job.id)),
+  })
+  const found = estimate.data
+  const cost = chosenTokens(found?.passes, passes)
+  const blocked =
+    changed === 0
+      ? 'No scene is written differently yet, so there is nothing for the assistant to check.'
+      : !found
+        ? 'Working out what it would read…'
+        : found.written > found.max_scenes
+          ? `The assistant checks at most ${found.max_scenes} scenes at once; ${found.written} are written differently.`
+          : passes.length === 0
+            ? 'Choose at least one thing for the assistant to check.'
+            : null
+  return (
+    <section className="audit-extra stack" aria-labelledby="check-changed-heading">
+      <h2 id="check-changed-heading">Ask the assistant about the changed scenes</h2>
+      <p className="muted small">
+        {changed === 1
+          ? 'Only the scene written differently in this what-if is read, as it is in the what-if.'
+          : `Only the ${changed} scenes written differently in this what-if are read, as they are in the what-if.`}{' '}
+        Nothing in either is changed.
+      </p>
+      <ErrorNotice error={estimate.error} prefix="Could not work out what it would read" />
+      {changed > 0 && (
+        <PassChoices
+          passes={found?.passes}
+          chosen={passes}
+          onChange={setPasses}
+          legend="What the assistant checks in each changed scene"
+          hint="Costs are for every changed scene together."
+        />
+      )}
+      <p className="hint" id="check-changed-cost">
+        {blocked ?? (cost !== null ? `About ${tokenCount(cost)} tokens in all. If that is more than you asked to be asked about, you will be asked first.` : '')}
+      </p>
+      {start.error && isApiError(start.error, 'not_confirmed') ? (
+        <p className="hint" role="status">
+          Not started, as you chose. Nothing was spent.
+        </p>
+      ) : (
+        <ErrorNotice error={start.error} prefix="Could not start the check" />
+      )}
+      <div className="actions">
+        <Button
+          variant="primary"
+          icon="spark"
+          disabled={blocked !== null || start.isPending}
+          aria-describedby="check-changed-cost"
+          onClick={() => start.mutate()}
+        >
+          {start.isPending ? 'Starting…' : changed === 1 ? 'Check the changed scene' : `Check ${changed} changed scenes`}
+        </Button>
+      </div>
+    </section>
   )
 }
 
@@ -117,6 +193,7 @@ export function WhatIfAuditPage() {
               </ul>
             )}
           </section>
+          <CheckChanged branchId={branchId} changed={found.scenes.length} />
           <section className="audit-extra" aria-labelledby="scenes-heading">
             <h2 id="scenes-heading">Scenes written differently</h2>
             {found.scenes.length === 0 ? (

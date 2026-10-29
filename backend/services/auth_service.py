@@ -106,6 +106,17 @@ class AuthService:
 
         return AuthenticatedSession(user=user, session=session)
 
+    async def signed_in(self, raw_session_id: str | None) -> bool:
+        """Whether a session is still in force, checked without replacing it: for a
+        long-lived response (a stream) that cannot hand the browser a new cookie."""
+        if not raw_session_id:
+            return False
+        session = await self._session_store.get(raw_session_id)
+        if session is None:
+            return False
+        user = await self._identity_store.get_user(session.user_id)
+        return user is not None and user.is_active
+
     async def start_hosted_login(self) -> str:
         if not self._identity_provider.is_available():
             raise IdentityProviderUnavailable("OIDC provider is not configured")

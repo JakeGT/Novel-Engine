@@ -392,6 +392,49 @@
         "title": "AddedEntryModel",
         "type": "object"
       },
+      "AfterChangeModel": {
+        "description": "How something would read once the change is kept, from a scratch copy (CON-017).",
+        "properties": {
+          "after": {
+            "default": "",
+            "title": "After",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "condition",
+              "reader"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "now": {
+            "default": "",
+            "title": "Now",
+            "type": "string"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "words": {
+            "title": "Words",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "plan_id",
+          "title",
+          "words"
+        ],
+        "title": "AfterChangeModel",
+        "type": "object"
+      },
       "AiChoiceModel": {
         "properties": {
           "chosen": {
@@ -1896,6 +1939,16 @@
             "title": "Message",
             "type": "string"
           },
+          "picture": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotePictureModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "start": {
             "anyOf": [
               {
@@ -2251,6 +2304,16 @@
             "title": "Message",
             "type": "string"
           },
+          "picture": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotePictureModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "quoted": {
             "default": "",
             "title": "Quoted",
@@ -2290,7 +2353,7 @@
                 "items": {
                   "$ref": "#/components/schemas/CheckPass"
                 },
-                "maxItems": 6,
+                "maxItems": 9,
                 "type": "array"
               },
               {
@@ -3390,6 +3453,25 @@
         "title": "ChangeRuleRequest",
         "type": "object"
       },
+      "ChangedAuditRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "passes": {
+            "items": {
+              "$ref": "#/components/schemas/CheckPass"
+            },
+            "maxItems": 9,
+            "minItems": 1,
+            "title": "Passes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "passes"
+        ],
+        "title": "ChangedAuditRequest",
+        "type": "object"
+      },
       "ChangedContextModel": {
         "properties": {
           "item": {
@@ -3838,6 +3920,16 @@
             "title": "Prompt Tokens",
             "type": "integer"
           },
+          "sending": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SendingModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "total_tokens": {
             "title": "Total Tokens",
             "type": "integer"
@@ -3938,6 +4030,9 @@
           "plan",
           "voice",
           "clarity",
+          "motivation",
+          "physical",
+          "world",
           "pictures"
         ],
         "title": "CheckPass",
@@ -8456,6 +8551,29 @@
         "title": "FindingRef",
         "type": "object"
       },
+      "FlaggedPassageModel": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "integer"
+          },
+          "start": {
+            "title": "Start",
+            "type": "integer"
+          },
+          "why": {
+            "title": "Why",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "why"
+        ],
+        "title": "FlaggedPassageModel",
+        "type": "object"
+      },
       "FoundPictureModel": {
         "properties": {
           "asset_id": {
@@ -8487,6 +8605,17 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "part": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Part"
           },
           "processing": {
             "anyOf": [
@@ -8871,6 +9000,14 @@
             "title": "Affected",
             "type": "array"
           },
+          "after_change": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AfterChangeModel"
+            },
+            "title": "After Change",
+            "type": "array"
+          },
           "may_be_affected": {
             "items": {
               "$ref": "#/components/schemas/DependentModel"
@@ -8884,6 +9021,11 @@
             },
             "title": "Not Checked",
             "type": "array"
+          },
+          "scratch": {
+            "default": false,
+            "title": "Scratch",
+            "type": "boolean"
           }
         },
         "required": [
@@ -9731,6 +9873,66 @@
           "how"
         ],
         "title": "KnownFactModel",
+        "type": "object"
+      },
+      "KnowsCheck": {
+        "additionalProperties": false,
+        "description": "What the condition's character must know, have seen or have heard: one statement,\nlike a fact of the story bible (who it is about, its kind, and what it points at or\nits value).",
+        "properties": {
+          "how": {
+            "default": "knows",
+            "enum": [
+              "knows",
+              "seen",
+              "heard"
+            ],
+            "title": "How",
+            "type": "string"
+          },
+          "other_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Id"
+          },
+          "predicate": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Predicate",
+            "type": "string"
+          },
+          "subject_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Subject Id",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "subject_id",
+          "predicate"
+        ],
+        "title": "KnowsCheck",
         "type": "object"
       },
       "LastingModel": {
@@ -11654,6 +11856,201 @@
         "title": "NodeUpdateItem",
         "type": "object"
       },
+      "NotePictureModel": {
+        "properties": {
+          "asset_id": {
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          },
+          "part_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Part Label"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "segment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segment Id"
+          },
+          "version_id": {
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset_id",
+          "version_id"
+        ],
+        "title": "NotePictureModel",
+        "type": "object"
+      },
+      "NoticeListModel": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NoticeModel"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "NoticeListModel",
+        "type": "object"
+      },
+      "NoticeModel": {
+        "description": "An in-app notice for the author: a scheduled audit finished (CON-011).",
+        "properties": {
+          "branch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Id"
+          },
+          "checks": {
+            "title": "Checks",
+            "type": "integer"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "audit_finished",
+            "title": "Kind",
+            "type": "string"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "integer"
+          },
+          "part": {
+            "title": "Part",
+            "type": "string"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "scenes": {
+            "title": "Scenes",
+            "type": "integer"
+          },
+          "seen": {
+            "title": "Seen",
+            "type": "boolean"
+          },
+          "sentence": {
+            "title": "Sentence",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "succeeded",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          },
+          "what_if": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "What If"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "job_id",
+          "status",
+          "sentence",
+          "part",
+          "plan_id",
+          "scenes",
+          "notes",
+          "checks",
+          "total_tokens",
+          "seen"
+        ],
+        "title": "NoticeModel",
+        "type": "object"
+      },
       "ObservationModel": {
         "properties": {
           "asset_version_id": {
@@ -11721,6 +12118,17 @@
             ],
             "title": "Model"
           },
+          "part_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Part Name"
+          },
           "prompt_version": {
             "anyOf": [
               {
@@ -11764,6 +12172,17 @@
               }
             ],
             "title": "Reviewed At"
+          },
+          "segment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segment Id"
           },
           "state": {
             "title": "State",
@@ -12733,6 +13152,13 @@
             "title": "Observations",
             "type": "array"
           },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/PicturePartModel"
+            },
+            "title": "Parts",
+            "type": "array"
+          },
           "revision": {
             "title": "Revision",
             "type": "integer"
@@ -12772,6 +13198,77 @@
           "revision"
         ],
         "title": "PictureModel",
+        "type": "object"
+      },
+      "PicturePartModel": {
+        "description": "A part of the picture the author marked (AST-007).",
+        "properties": {
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          },
+          "entity_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Name"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "region": {
+            "$ref": "#/components/schemas/ObservationRegionModel"
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          },
+          "x": {
+            "title": "X",
+            "type": "integer"
+          },
+          "y": {
+            "title": "Y",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "x",
+          "y",
+          "width",
+          "height",
+          "region"
+        ],
+        "title": "PicturePartModel",
         "type": "object"
       },
       "PictureSearchModel": {
@@ -14659,6 +15156,18 @@
       },
       "RegionRequest": {
         "properties": {
+          "entity_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          },
           "height": {
             "minimum": 1.0,
             "title": "Height",
@@ -15454,7 +15963,7 @@
                 "items": {
                   "$ref": "#/components/schemas/CheckPass"
                 },
-                "maxItems": 6,
+                "maxItems": 9,
                 "type": "array"
               },
               {
@@ -16634,7 +17143,7 @@
       },
       "SceneCondition": {
         "additionalProperties": false,
-        "description": "One condition: a check on one entry, or a sentence in the author's words.",
+        "description": "One condition: a check on one entry, what a character knows, or a sentence in the\nauthor's words.",
         "properties": {
           "check": {
             "anyOf": [
@@ -16658,6 +17167,16 @@
               }
             ],
             "title": "Entity Id"
+          },
+          "knows": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KnowsCheck"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "strength": {
             "default": "hard",
@@ -17228,7 +17747,7 @@
             "items": {
               "$ref": "#/components/schemas/CheckPass"
             },
-            "maxItems": 6,
+            "maxItems": 9,
             "title": "Passes",
             "type": "array"
           },
@@ -17718,6 +18237,17 @@
             "title": "Created At",
             "type": "string"
           },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          },
           "height": {
             "title": "Height",
             "type": "integer"
@@ -17820,6 +18350,113 @@
           }
         },
         "title": "Selector",
+        "type": "object"
+      },
+      "SendingModel": {
+        "description": "What a request would send and where, before it is sent (CTX-013). The same\ndocument is the ``sending`` member of a ``409 needs_confirmation`` problem.",
+        "properties": {
+          "context_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Tokens"
+          },
+          "destination": {
+            "title": "Destination",
+            "type": "string"
+          },
+          "estimated_tokens": {
+            "title": "Estimated Tokens",
+            "type": "integer"
+          },
+          "fits": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fits"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "pictures": {
+            "items": {
+              "$ref": "#/components/schemas/SentPictureModel"
+            },
+            "title": "Pictures",
+            "type": "array"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "provider_label": {
+            "title": "Provider Label",
+            "type": "string"
+          },
+          "where": {
+            "enum": [
+              "company",
+              "your_computer",
+              "local_network"
+            ],
+            "title": "Where",
+            "type": "string"
+          },
+          "where_words": {
+            "title": "Where Words",
+            "type": "string"
+          },
+          "words": {
+            "title": "Words",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "provider",
+          "provider_label",
+          "model",
+          "destination",
+          "where",
+          "where_words",
+          "words",
+          "estimated_tokens",
+          "pictures"
+        ],
+        "title": "SendingModel",
+        "type": "object"
+      },
+      "SentPictureModel": {
+        "properties": {
+          "asset_id": {
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "version_id": {
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset_id",
+          "version_id",
+          "name"
+        ],
+        "title": "SentPictureModel",
         "type": "object"
       },
       "SetAllowanceRequest": {
@@ -20623,6 +21260,68 @@
         "title": "VoiceDismissRequest",
         "type": "object"
       },
+      "VoiceEscalationModel": {
+        "description": "Whether a small voice check with the assistant is offered for this scene's flagged\npassages, which passages, and roughly what it would use (CON-018).",
+        "properties": {
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "offered": {
+            "title": "Offered",
+            "type": "boolean"
+          },
+          "passages": {
+            "items": {
+              "$ref": "#/components/schemas/FlaggedPassageModel"
+            },
+            "title": "Passages",
+            "type": "array"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          },
+          "why_not": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Why Not"
+          },
+          "words": {
+            "title": "Words",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "offered",
+          "notes",
+          "passages",
+          "words",
+          "total_tokens"
+        ],
+        "title": "VoiceEscalationModel",
+        "type": "object"
+      },
       "VoiceModel": {
         "additionalProperties": false,
         "properties": {
@@ -21354,6 +22053,16 @@
           "prompt_tokens": {
             "title": "Prompt Tokens",
             "type": "integer"
+          },
+          "sending": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SendingModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "total_tokens": {
             "title": "Total Tokens",
@@ -22165,6 +22874,24 @@
               ],
               "title": "X-Confirm-Tokens"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
+            }
           }
         ],
         "requestBody": {
@@ -22270,6 +22997,24 @@
                 }
               ],
               "title": "X-Confirm-Tokens"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
             }
           }
         ],
@@ -23321,6 +24066,24 @@
               ],
               "title": "X-Confirm-Tokens"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
+            }
           }
         ],
         "requestBody": {
@@ -23426,6 +24189,24 @@
                 }
               ],
               "title": "X-Confirm-Tokens"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
             }
           }
         ],
@@ -25262,6 +26043,86 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/assets/{asset_id}/versions/{version_id}/segments/{segment_id}": {
+      "put": {
+        "description": "Move, resize, rename or relink a marked part (the author's own markup).",
+        "operationId": "update_region_api_v1_projects__project_id__assets__asset_id__versions__version_id__segments__segment_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "title": "Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "segment_id",
+            "required": true,
+            "schema": {
+              "title": "Segment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SegmentModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Region",
+        "tags": [
+          "media"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/assets/{asset_id}/versions/{version_id}/segments/{segment_id}/retire": {
       "post": {
         "operationId": "retire_region_api_v1_projects__project_id__assets__asset_id__versions__version_id__segments__segment_id__retire_post",
@@ -25361,6 +26222,24 @@
                 }
               ],
               "title": "X-Confirm-Tokens"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
             }
           }
         ],
@@ -25493,6 +26372,24 @@
               ],
               "title": "X-Confirm-Tokens"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
+            }
           }
         ],
         "requestBody": {
@@ -25563,6 +26460,24 @@
                 }
               ],
               "title": "X-Confirm-Tokens"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
             }
           }
         ],
@@ -25688,6 +26603,24 @@
               ],
               "title": "X-Confirm-Tokens"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
+            }
           }
         ],
         "requestBody": {
@@ -25757,6 +26690,24 @@
                 }
               ],
               "title": "X-Confirm-Tokens"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
             }
           }
         ],
@@ -25829,6 +26780,24 @@
               ],
               "title": "X-Confirm-Tokens"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
+            }
           }
         ],
         "requestBody": {
@@ -25899,6 +26868,24 @@
               ],
               "title": "X-Confirm-Tokens"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
+            }
           }
         ],
         "requestBody": {
@@ -25968,6 +26955,24 @@
                 }
               ],
               "title": "X-Confirm-Tokens"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
             }
           }
         ],
@@ -26040,6 +27045,24 @@
               ],
               "title": "X-Confirm-Tokens"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
+            }
           }
         ],
         "requestBody": {
@@ -26110,6 +27133,24 @@
                 }
               ],
               "title": "X-Confirm-Tokens"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
             }
           }
         ],
@@ -26549,6 +27590,24 @@
               ],
               "title": "X-Confirm-Tokens"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
+            }
           }
         ],
         "requestBody": {
@@ -26856,6 +27915,24 @@
               ],
               "title": "X-Confirm-Tokens"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
+            }
           }
         ],
         "requestBody": {
@@ -27041,6 +28118,24 @@
               ],
               "title": "X-Confirm-Tokens"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
+            }
           }
         ],
         "requestBody": {
@@ -27116,7 +28211,7 @@
                   "items": {
                     "$ref": "#/components/schemas/CheckPass"
                   },
-                  "maxItems": 6,
+                  "maxItems": 9,
                   "type": "array"
                 },
                 {
@@ -27296,6 +28391,24 @@
                 }
               ],
               "title": "X-Confirm-Tokens"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
             }
           }
         ],
@@ -27891,6 +29004,24 @@
               ],
               "title": "X-Confirm-Tokens"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
+            }
           }
         ],
         "requestBody": {
@@ -27969,6 +29100,24 @@
                 }
               ],
               "title": "X-Confirm-Tokens"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
             }
           }
         ],
@@ -30442,6 +31591,54 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/jobs/{job_id}/stream": {
+      "get": {
+        "description": "A draft's words as the model writes them, as server-sent events (SCN-002).\n\n``text`` carries a draft's new words and the offset they start at (a draft written\nagain from the start, by a job taken over, starts again at 0); ``draft_done`` says a\ndraft is stored whole and is now among the drafts waiting; ``job`` carries the stage\nand progress when they change; ``end`` closes the stream when the work has finished,\nand ``again`` when the stream has lasted long enough and should be opened again. Work\nthat is not a draft sends only ``job`` and ``end``. Read access is checked before the\nstream opens and again every half minute while it lasts.",
+        "operationId": "job_stream_api_v1_projects__project_id__jobs__job_id__stream_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Job Stream",
+        "tags": [
+          "studio"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/kept-for-you": {
       "get": {
         "description": "What was kept for the author, newest first.",
@@ -32740,6 +33937,121 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/notices": {
+      "get": {
+        "description": "Your own notices in this story, newest first: one for each audit you scheduled that\nhas finished. ``unseen`` keeps only those not yet marked read; ``job_id`` one audit's.",
+        "operationId": "list_notices_api_v1_projects__project_id__notices_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "job_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Job Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unseen",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Unseen",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoticeListModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Notices",
+        "tags": [
+          "audits"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/notices/{notice_id}/seen": {
+      "post": {
+        "description": "Mark one of your notices read. It stays listed, as read.",
+        "operationId": "mark_notice_seen_api_v1_projects__project_id__notices__notice_id__seen_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "notice_id",
+            "required": true,
+            "schema": {
+              "title": "Notice Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark Notice Seen",
+        "tags": [
+          "audits"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/observations/{observation_id}/propose": {
       "post": {
         "description": "Offer an accepted appearance detail as a fact about its entry. It goes to the\nreview queue as a suggestion from the assistant and changes nothing until approved.",
@@ -33126,6 +34438,24 @@
                 }
               ],
               "title": "X-Confirm-Tokens"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
             }
           }
         ],
@@ -33641,6 +34971,24 @@
               ],
               "title": "X-Confirm-Tokens"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
+            }
           }
         ],
         "responses": {
@@ -34136,6 +35484,24 @@
               ],
               "title": "X-Confirm-Tokens"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
+            }
           }
         ],
         "requestBody": {
@@ -34238,6 +35604,182 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/gap/estimate": {
+      "get": {
+        "description": "What suggesting a scene for a gap would use: a thread nothing moves along (the\nthread's id), or an arc's stage no scene reaches (the arc's id and ``stage``).",
+        "operationId": "gap_estimate_api_v1_projects__project_id__plan__plan_id__gap_estimate_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stage",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMaximum": 9,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stage"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HelpEstimateModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Gap Estimate",
+        "tags": [
+          "plan-help"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/gap/suggest": {
+      "post": {
+        "description": "Suggest one scene that fills a gap in the plan, as a plan change for review.",
+        "operationId": "suggest_gap_api_v1_projects__project_id__plan__plan_id__gap_suggest_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stage",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMaximum": 9,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stage"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Suggest Gap",
+        "tags": [
+          "plan-help"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/plan/{plan_id}/intent/estimate": {
       "get": {
         "description": "What suggesting this scene's intent would use, before anything is sent. A read,\nso no CSRF token; only someone who may change the plan is answered.",
@@ -34329,6 +35871,24 @@
                 }
               ],
               "title": "X-Confirm-Tokens"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
             }
           }
         ],
@@ -34572,6 +36132,24 @@
                 }
               ],
               "title": "X-Confirm-Tokens"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
             }
           }
         ],
@@ -34940,6 +36518,146 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/stages/estimate": {
+      "get": {
+        "description": "What suggesting the stages of an arc with none yet would use.",
+        "operationId": "stages_estimate_api_v1_projects__project_id__plan__plan_id__stages_estimate_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HelpEstimateModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stages Estimate",
+        "tags": [
+          "plan-help"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/stages/suggest": {
+      "post": {
+        "description": "Suggest the stages of an arc from the arc, the story bible and the plan's scenes,\nas a plan change for review. Only an arc with no stages yet.",
+        "operationId": "suggest_stages_api_v1_projects__project_id__plan__plan_id__stages_suggest_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Suggest Stages",
+        "tags": [
+          "plan-help"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/plan/{plan_id}/studio": {
       "get": {
         "operationId": "studio_api_v1_projects__project_id__plan__plan_id__studio_get",
@@ -35024,7 +36742,7 @@
                   "items": {
                     "$ref": "#/components/schemas/CheckPass"
                   },
-                  "maxItems": 6,
+                  "maxItems": 9,
                   "type": "array"
                 },
                 {
@@ -35259,6 +36977,24 @@
               ],
               "title": "X-Confirm-Tokens"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
+            }
           }
         ],
         "requestBody": {
@@ -35400,6 +37136,24 @@
               ],
               "title": "X-Confirm-Tokens"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
+            }
           }
         ],
         "responses": {
@@ -35470,6 +37224,24 @@
               ],
               "title": "X-Confirm-Tokens"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
+            }
           }
         ],
         "responses": {
@@ -35538,6 +37310,24 @@
                 }
               ],
               "title": "X-Confirm-Tokens"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
             }
           }
         ],
@@ -35791,6 +37581,24 @@
                 }
               ],
               "title": "X-Confirm-Tokens"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
             }
           }
         ],
@@ -36063,6 +37871,144 @@
           }
         },
         "summary": "Undo Voice Dismissal",
+        "tags": [
+          "voice"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/plan/{plan_id}/voice/escalation": {
+      "get": {
+        "description": "Whether the measures point far enough from the author's usual to offer the\nassistant's voice check of the passages that show it, and its cost. Calls no model.",
+        "operationId": "voice_escalation_api_v1_projects__project_id__plan__plan_id__voice_escalation_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceEscalationModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Voice Escalation",
+        "tags": [
+          "voice"
+        ]
+      },
+      "post": {
+        "description": "Ask the assistant about the flagged passages only. Its notes quote the words and\nshow with the assistant's other notes on the scene.",
+        "operationId": "start_voice_escalation_api_v1_projects__project_id__plan__plan_id__voice_escalation_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Voice Escalation",
         "tags": [
           "voice"
         ]
@@ -39362,6 +41308,193 @@
           }
         },
         "summary": "Audit What If",
+        "tags": [
+          "audits"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/what-ifs/{what_if_id}/audit/changed": {
+      "post": {
+        "description": "Ask the assistant to check only the scenes this what-if has written differently, in\nthe what-if. Above the size the author asked to confirm, refused with ``409\nneeds_confirmation`` until confirmed. The results are an audit like any other.",
+        "operationId": "start_changed_audit_api_v1_projects__project_id__what_ifs__what_if_id__audit_changed_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "what_if_id",
+            "required": true,
+            "schema": {
+              "title": "What If Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Tokens",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Tokens"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Confirm-Sending",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Confirm-Sending"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangedAuditRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Changed Audit",
+        "tags": [
+          "audits"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/what-ifs/{what_if_id}/audit/changed/estimate": {
+      "get": {
+        "description": "What asking the assistant to check only the scenes this what-if has written\ndifferently from the main story would read and use, before anything is sent. Every\npass when none are named. Calls no model.",
+        "operationId": "changed_audit_estimate_api_v1_projects__project_id__what_ifs__what_if_id__audit_changed_estimate_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "what_if_id",
+            "required": true,
+            "schema": {
+              "title": "What If Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "passes",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/CheckPass"
+                  },
+                  "maxItems": 9,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Passes"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditEstimateModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Changed Audit Estimate",
         "tags": [
           "audits"
         ]

@@ -1191,6 +1191,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/assets/{asset_id}/versions/{version_id}/segments/{segment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Region
+         * @description Move, resize, rename or relink a marked part (the author's own markup).
+         */
+        put: operations["update_region_api_v1_projects__project_id__assets__asset_id__versions__version_id__segments__segment_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/assets/{asset_id}/versions/{version_id}/segments/{segment_id}/retire": {
         parameters: {
             query?: never;
@@ -2587,6 +2607,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/jobs/{job_id}/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Job Stream
+         * @description A draft's words as the model writes them, as server-sent events (SCN-002).
+         *
+         *     ``text`` carries a draft's new words and the offset they start at (a draft written
+         *     again from the start, by a job taken over, starts again at 0); ``draft_done`` says a
+         *     draft is stored whole and is now among the drafts waiting; ``job`` carries the stage
+         *     and progress when they change; ``end`` closes the stream when the work has finished,
+         *     and ``again`` when the stream has lasted long enough and should be opened again. Work
+         *     that is not a draft sends only ``job`` and ``end``. Read access is checked before the
+         *     stream opens and again every half minute while it lasts.
+         */
+        get: operations["job_stream_api_v1_projects__project_id__jobs__job_id__stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/kept-for-you": {
         parameters: {
             query?: never;
@@ -3280,6 +3328,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/notices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Notices
+         * @description Your own notices in this story, newest first: one for each audit you scheduled that
+         *     has finished. ``unseen`` keeps only those not yet marked read; ``job_id`` one audit's.
+         */
+        get: operations["list_notices_api_v1_projects__project_id__notices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/notices/{notice_id}/seen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Notice Seen
+         * @description Mark one of your notices read. It stays listed, as read.
+         */
+        post: operations["mark_notice_seen_api_v1_projects__project_id__notices__notice_id__seen_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/observations/{observation_id}/propose": {
         parameters: {
             query?: never;
@@ -3712,6 +3801,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/gap/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Gap Estimate
+         * @description What suggesting a scene for a gap would use: a thread nothing moves along (the
+         *     thread's id), or an arc's stage no scene reaches (the arc's id and ``stage``).
+         */
+        get: operations["gap_estimate_api_v1_projects__project_id__plan__plan_id__gap_estimate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/gap/suggest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suggest Gap
+         * @description Suggest one scene that fills a gap in the plan, as a plan change for review.
+         */
+        post: operations["suggest_gap_api_v1_projects__project_id__plan__plan_id__gap_suggest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/plan/{plan_id}/intent/estimate": {
         parameters: {
             query?: never;
@@ -3910,6 +4040,47 @@ export interface paths {
          */
         put: operations["set_scene_reveals_api_v1_projects__project_id__plan__plan_id__reveals_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/stages/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stages Estimate
+         * @description What suggesting the stages of an arc with none yet would use.
+         */
+        get: operations["stages_estimate_api_v1_projects__project_id__plan__plan_id__stages_estimate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/stages/suggest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suggest Stages
+         * @description Suggest the stages of an arc from the arc, the story bible and the plan's scenes,
+         *     as a plan change for review. Only an arc with no stages yet.
+         */
+        post: operations["suggest_stages_api_v1_projects__project_id__plan__plan_id__stages_suggest_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4223,6 +4394,32 @@ export interface paths {
          * @description Bring a dismissed note on how the scene sounds back.
          */
         delete: operations["undo_voice_dismissal_api_v1_projects__project_id__plan__plan_id__voice_dismissals__dismissal_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plan/{plan_id}/voice/escalation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Voice Escalation
+         * @description Whether the measures point far enough from the author's usual to offer the
+         *     assistant's voice check of the passages that show it, and its cost. Calls no model.
+         */
+        get: operations["voice_escalation_api_v1_projects__project_id__plan__plan_id__voice_escalation_get"];
+        put?: never;
+        /**
+         * Start Voice Escalation
+         * @description Ask the assistant about the flagged passages only. Its notes quote the words and
+         *     show with the assistant's other notes on the scene.
+         */
+        post: operations["start_voice_escalation_api_v1_projects__project_id__plan__plan_id__voice_escalation_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -5233,6 +5430,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/what-ifs/{what_if_id}/audit/changed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Changed Audit
+         * @description Ask the assistant to check only the scenes this what-if has written differently, in
+         *     the what-if. Above the size the author asked to confirm, refused with ``409
+         *     needs_confirmation`` until confirmed. The results are an audit like any other.
+         */
+        post: operations["start_changed_audit_api_v1_projects__project_id__what_ifs__what_if_id__audit_changed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/what-ifs/{what_if_id}/audit/changed/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Changed Audit Estimate
+         * @description What asking the assistant to check only the scenes this what-if has written
+         *     differently from the main story would read and use, before anything is sent. Every
+         *     pass when none are named. Calls no model.
+         */
+        get: operations["changed_audit_estimate_api_v1_projects__project_id__what_ifs__what_if_id__audit_changed_estimate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/rag/query": {
         parameters: {
             query?: never;
@@ -5740,6 +5981,33 @@ export interface components {
             /** Type */
             type: string;
         };
+        /**
+         * AfterChangeModel
+         * @description How something would read once the change is kept, from a scratch copy (CON-017).
+         */
+        AfterChangeModel: {
+            /**
+             * After
+             * @default
+             */
+            after: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "condition" | "reader";
+            /**
+             * Now
+             * @default
+             */
+            now: string;
+            /** Plan Id */
+            plan_id: string;
+            /** Title */
+            title: string;
+            /** Words */
+            words: string;
+        };
         /** AiChoiceModel */
         AiChoiceModel: {
             /** Chosen */
@@ -6091,6 +6359,7 @@ export interface components {
             key: string;
             /** Message */
             message: string;
+            picture?: components["schemas"]["NotePictureModel"] | null;
             /** Start */
             start?: number | null;
             /** Suggestion */
@@ -6207,6 +6476,7 @@ export interface components {
             key: string;
             /** Message */
             message: string;
+            picture?: components["schemas"]["NotePictureModel"] | null;
             /**
              * Quoted
              * @default
@@ -6567,6 +6837,11 @@ export interface components {
             /** Title */
             title?: string | null;
         };
+        /** ChangedAuditRequest */
+        ChangedAuditRequest: {
+            /** Passes */
+            passes: components["schemas"]["CheckPass"][];
+        };
         /** ChangedContextModel */
         ChangedContextModel: {
             item: components["schemas"]["ContextItemModel"];
@@ -6735,6 +7010,7 @@ export interface components {
             passes?: components["schemas"]["PassEstimateModel"][];
             /** Prompt Tokens */
             prompt_tokens: number;
+            sending?: components["schemas"]["SendingModel"] | null;
             /** Total Tokens */
             total_tokens: number;
         };
@@ -6768,7 +7044,7 @@ export interface components {
          * CheckPass
          * @enum {string}
          */
-        CheckPass: "viewpoint" | "continuity" | "plan" | "voice" | "clarity" | "pictures";
+        CheckPass: "viewpoint" | "continuity" | "plan" | "voice" | "clarity" | "motivation" | "physical" | "world" | "pictures";
         /**
          * CheckProfile
          * @enum {string}
@@ -8498,6 +8774,15 @@ export interface components {
              */
             kind: "check" | "note";
         };
+        /** FlaggedPassageModel */
+        FlaggedPassageModel: {
+            /** End */
+            end: number;
+            /** Start */
+            start: number;
+            /** Why */
+            why: string;
+        };
         /** FoundPictureModel */
         FoundPictureModel: {
             /** Asset Id */
@@ -8520,6 +8805,8 @@ export interface components {
             matched: string;
             /** Name */
             name: string;
+            /** Part */
+            part?: string | null;
             /** Processing */
             processing?: ("queued" | "processing" | "ready" | "failed") | null;
             /** Processing Message */
@@ -8649,10 +8936,20 @@ export interface components {
             about: string[];
             /** Affected */
             affected: components["schemas"]["DependentModel"][];
+            /**
+             * After Change
+             * @default []
+             */
+            after_change: components["schemas"]["AfterChangeModel"][];
             /** May Be Affected */
             may_be_affected: components["schemas"]["DependentModel"][];
             /** Not Checked */
             not_checked: string[];
+            /**
+             * Scratch
+             * @default false
+             */
+            scratch: boolean;
         };
         /** IndexStatusModel */
         IndexStatusModel: {
@@ -8952,6 +9249,28 @@ export interface components {
             fact: components["schemas"]["FactModel"];
             /** How */
             how: string;
+        };
+        /**
+         * KnowsCheck
+         * @description What the condition's character must know, have seen or have heard: one statement,
+         *     like a fact of the story bible (who it is about, its kind, and what it points at or
+         *     its value).
+         */
+        KnowsCheck: {
+            /**
+             * How
+             * @default knows
+             * @enum {string}
+             */
+            how: "knows" | "seen" | "heard";
+            /** Other Id */
+            other_id?: string | null;
+            /** Predicate */
+            predicate: string;
+            /** Subject Id */
+            subject_id: string;
+            /** Value */
+            value?: string | null;
         };
         /** LastingModel */
         LastingModel: {
@@ -9594,6 +9913,73 @@ export interface components {
             /** Type */
             type: string;
         };
+        /** NotePictureModel */
+        NotePictureModel: {
+            /** Asset Id */
+            asset_id: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /** Part Label */
+            part_label?: string | null;
+            /** Region */
+            region?: number[] | null;
+            /** Segment Id */
+            segment_id?: string | null;
+            /** Version Id */
+            version_id: string;
+        };
+        /** NoticeListModel */
+        NoticeListModel: {
+            /** Items */
+            items: components["schemas"]["NoticeModel"][];
+        };
+        /**
+         * NoticeModel
+         * @description An in-app notice for the author: a scheduled audit finished (CON-011).
+         */
+        NoticeModel: {
+            /** Branch Id */
+            branch_id?: string | null;
+            /** Checks */
+            checks: number;
+            /** Cost Usd */
+            cost_usd?: number | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Id */
+            id: string;
+            /** Job Id */
+            job_id: string;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "audit_finished";
+            /** Notes */
+            notes: number;
+            /** Part */
+            part: string;
+            /** Plan Id */
+            plan_id: string;
+            /** Scenes */
+            scenes: number;
+            /** Seen */
+            seen: boolean;
+            /** Sentence */
+            sentence: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "succeeded" | "failed" | "cancelled";
+            /** Total Tokens */
+            total_tokens: number;
+            /** What If */
+            what_if?: string | null;
+        };
         /** ObservationModel */
         ObservationModel: {
             /** Asset Version Id */
@@ -9617,6 +10003,8 @@ export interface components {
             kind: string;
             /** Model */
             model?: string | null;
+            /** Part Name */
+            part_name?: string | null;
             /** Prompt Version */
             prompt_version?: string | null;
             /** Proposal Mutation Set Id */
@@ -9624,6 +10012,8 @@ export interface components {
             region?: components["schemas"]["ObservationRegionModel"] | null;
             /** Reviewed At */
             reviewed_at?: string | null;
+            /** Segment Id */
+            segment_id?: string | null;
             /** State */
             state: string;
             /** Subject Name */
@@ -9950,6 +10340,8 @@ export interface components {
             name: string;
             /** Observations */
             observations: components["schemas"]["ObservationModel"][];
+            /** Parts */
+            parts?: components["schemas"]["PicturePartModel"][];
             /** Revision */
             revision: number;
             version: components["schemas"]["PictureVersionModel"];
@@ -9957,6 +10349,29 @@ export interface components {
             versions: components["schemas"]["PictureVersionModel"][];
             /** Width */
             width?: number | null;
+        };
+        /**
+         * PicturePartModel
+         * @description A part of the picture the author marked (AST-007).
+         */
+        PicturePartModel: {
+            /** Entity Id */
+            entity_id?: string | null;
+            /** Entity Name */
+            entity_name?: string | null;
+            /** Height */
+            height: number;
+            /** Id */
+            id: string;
+            /** Label */
+            label?: string | null;
+            region: components["schemas"]["ObservationRegionModel"];
+            /** Width */
+            width: number;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
         };
         /** PictureSearchModel */
         PictureSearchModel: {
@@ -10619,6 +11034,8 @@ export interface components {
         };
         /** RegionRequest */
         RegionRequest: {
+            /** Entity Id */
+            entity_id?: string | null;
             /** Height */
             height: number;
             /** Label */
@@ -11326,12 +11743,14 @@ export interface components {
         };
         /**
          * SceneCondition
-         * @description One condition: a check on one entry, or a sentence in the author's words.
+         * @description One condition: a check on one entry, what a character knows, or a sentence in the
+         *     author's words.
          */
         SceneCondition: {
             check?: components["schemas"]["Check"] | null;
             /** Entity Id */
             entity_id?: string | null;
+            knows?: components["schemas"]["KnowsCheck"] | null;
             /**
              * Strength
              * @default hard
@@ -11711,6 +12130,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Entity Id */
+            entity_id?: string | null;
             /** Height */
             height: number;
             /** Id */
@@ -11742,6 +12163,47 @@ export interface components {
             tag?: string | null;
             /** Type */
             type?: string | null;
+        };
+        /**
+         * SendingModel
+         * @description What a request would send and where, before it is sent (CTX-013). The same
+         *     document is the ``sending`` member of a ``409 needs_confirmation`` problem.
+         */
+        SendingModel: {
+            /** Context Tokens */
+            context_tokens?: number | null;
+            /** Destination */
+            destination: string;
+            /** Estimated Tokens */
+            estimated_tokens: number;
+            /** Fits */
+            fits?: boolean | null;
+            /** Model */
+            model: string;
+            /** Pictures */
+            pictures: components["schemas"]["SentPictureModel"][];
+            /** Provider */
+            provider: string;
+            /** Provider Label */
+            provider_label: string;
+            /**
+             * Where
+             * @enum {string}
+             */
+            where: "company" | "your_computer" | "local_network";
+            /** Where Words */
+            where_words: string;
+            /** Words */
+            words: number;
+        };
+        /** SentPictureModel */
+        SentPictureModel: {
+            /** Asset Id */
+            asset_id: string;
+            /** Name */
+            name: string;
+            /** Version Id */
+            version_id: string;
         };
         /** SetAllowanceRequest */
         SetAllowanceRequest: {
@@ -12671,6 +13133,27 @@ export interface components {
             note: string;
             reason: components["schemas"]["DismissReason"];
         };
+        /**
+         * VoiceEscalationModel
+         * @description Whether a small voice check with the assistant is offered for this scene's flagged
+         *     passages, which passages, and roughly what it would use (CON-018).
+         */
+        VoiceEscalationModel: {
+            /** Notes */
+            notes: string[];
+            /** Offered */
+            offered: boolean;
+            /** Passages */
+            passages: components["schemas"]["FlaggedPassageModel"][];
+            /** Total Tokens */
+            total_tokens: number;
+            /** Version Id */
+            version_id?: string | null;
+            /** Why Not */
+            why_not?: string | null;
+            /** Words */
+            words: number;
+        };
         /** VoiceModel */
         VoiceModel: {
             /**
@@ -12915,6 +13398,7 @@ export interface components {
             context_words: number;
             /** Prompt Tokens */
             prompt_tokens: number;
+            sending?: components["schemas"]["SendingModel"] | null;
             /** Total Tokens */
             total_tokens: number;
         };
@@ -13522,6 +14006,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -13590,6 +14075,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14286,6 +14772,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -14354,6 +14841,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path?: never;
             cookie?: never;
@@ -15558,6 +16046,44 @@ export interface operations {
             };
         };
     };
+    update_region_api_v1_projects__project_id__assets__asset_id__versions__version_id__segments__segment_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                asset_id: string;
+                version_id: string;
+                segment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SegmentModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     retire_region_api_v1_projects__project_id__assets__asset_id__versions__version_id__segments__segment_id__retire_post: {
         parameters: {
             query?: never;
@@ -15597,6 +16123,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -15667,6 +16194,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -15704,6 +16232,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -15776,6 +16305,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -15813,6 +16343,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -15850,6 +16381,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -15887,6 +16419,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -15924,6 +16457,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -15961,6 +16495,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -15998,6 +16533,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -16238,6 +16774,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -16437,6 +16974,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -16538,6 +17076,7 @@ export interface operations {
             header?: {
                 "Idempotency-Key"?: string | null;
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -16673,6 +17212,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -17015,6 +17555,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -17053,6 +17594,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -18488,6 +19030,38 @@ export interface operations {
             };
         };
     };
+    job_stream_api_v1_projects__project_id__jobs__job_id__stream_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_kept_api_v1_projects__project_id__kept_for_you_get: {
         parameters: {
             query?: never;
@@ -19884,6 +20458,70 @@ export interface operations {
             };
         };
     };
+    list_notices_api_v1_projects__project_id__notices_get: {
+        parameters: {
+            query?: {
+                job_id?: string | null;
+                unseen?: boolean;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoticeListModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_notice_seen_api_v1_projects__project_id__notices__notice_id__seen_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                notice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     propose_observation_api_v1_projects__project_id__observations__observation_id__propose_post: {
         parameters: {
             query?: never;
@@ -20094,6 +20732,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -20401,6 +21040,7 @@ export interface operations {
             };
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -20671,6 +21311,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -20740,6 +21381,77 @@ export interface operations {
             };
         };
     };
+    gap_estimate_api_v1_projects__project_id__plan__plan_id__gap_estimate_get: {
+        parameters: {
+            query?: {
+                stage?: number | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HelpEstimateModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suggest_gap_api_v1_projects__project_id__plan__plan_id__gap_suggest_post: {
+        parameters: {
+            query?: {
+                stage?: number | null;
+            };
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
+            };
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     intent_estimate_api_v1_projects__project_id__plan__plan_id__intent_estimate_get: {
         parameters: {
             query?: never;
@@ -20777,6 +21489,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -20915,6 +21628,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -21126,6 +21840,73 @@ export interface operations {
             };
         };
     };
+    stages_estimate_api_v1_projects__project_id__plan__plan_id__stages_estimate_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HelpEstimateModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suggest_stages_api_v1_projects__project_id__plan__plan_id__stages_suggest_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
+            };
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     studio_api_v1_projects__project_id__plan__plan_id__studio_get: {
         parameters: {
             query?: never;
@@ -21268,6 +22049,7 @@ export interface operations {
             header?: {
                 "Idempotency-Key"?: string | null;
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -21342,6 +22124,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -21376,6 +22159,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -21410,6 +22194,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -21552,6 +22337,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
             };
             path: {
                 project_id: string;
@@ -21706,6 +22492,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SceneVoiceModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    voice_escalation_api_v1_projects__project_id__plan__plan_id__voice_escalation_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceEscalationModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_voice_escalation_api_v1_projects__project_id__plan__plan_id__voice_escalation_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
+            };
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobModel"];
                 };
             };
             /** @description Validation Error */
@@ -23786,6 +24639,80 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WhatIfAuditModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_changed_audit_api_v1_projects__project_id__what_ifs__what_if_id__audit_changed_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+                "X-Confirm-Tokens"?: number | null;
+                "X-Confirm-Sending"?: string | null;
+            };
+            path: {
+                project_id: string;
+                what_if_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangedAuditRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    changed_audit_estimate_api_v1_projects__project_id__what_ifs__what_if_id__audit_changed_estimate_get: {
+        parameters: {
+            query?: {
+                passes?: components["schemas"]["CheckPass"][] | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                what_if_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEstimateModel"];
                 };
             };
             /** @description Validation Error */

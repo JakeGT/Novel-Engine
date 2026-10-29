@@ -1,5 +1,5 @@
 import { noteSignedIn, shouldHoldFor401, waitForSignIn } from '../lib/reauth'
-import { askToSpend, canAskToSpend, type SpendQuestion } from '../lib/spend'
+import { askToSpend, canAskToSpend, type Sending, type SpendQuestion } from '../lib/spend'
 import type { components } from './schema'
 
 type Schemas = components['schemas']
@@ -160,6 +160,8 @@ export type KeepDecision = Schemas['KeepDecisionModel']
 export type CheckProfile = Schemas['CheckProfile']
 // Checks with the assistant, one pass each (CON-008), and deep audits (CON-011).
 export type CheckPass = Schemas['CheckPass']
+export type VoiceEscalation = Schemas['VoiceEscalationModel']
+export type KnowsCheck = Schemas['KnowsCheck']
 export type CheckEstimate = Schemas['CheckEstimateModel']
 export type PassEstimate = Schemas['PassEstimateModel']
 export type AuditEstimate = Schemas['AuditEstimateModel']
@@ -180,6 +182,7 @@ export type AuditSchedule = Schemas['ScheduleModel']
 export type AuditSchedules = Schemas['ScheduleListModel']
 export type AuditScheduleAsk = Schemas['ScheduleRequest']
 export type WhatIfAudit = Schemas['WhatIfAuditModel']
+export type AuthorNotice = Schemas['NoticeModel']
 export type FindingRef = Schemas['FindingRef']
 export type FindingProposal = Schemas['FindingProposalModel']
 export type FindingProposalEstimate = Schemas['FindingProposalEstimateModel']
@@ -415,11 +418,15 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   // The size the author agreed to spend, once asked (see lib/spend).
   let confirmedTokens: string | null = null
+  // What the author was shown, when the question was about pictures (CTX-013): the
+  // answer is only for those pictures going that way.
+  let confirmedSending: string | null = null
   const send = () => {
     const headers = new Headers(rest.headers)
     headers.set('Accept', 'application/json')
     if (workspaceId) headers.set('X-Workspace-Id', workspaceId)
     if (confirmedTokens) headers.set('X-Confirm-Tokens', confirmedTokens)
+    if (confirmedSending) headers.set('X-Confirm-Sending', confirmedSending)
     if (json !== undefined) headers.set('Content-Type', 'application/json')
     // Read at the moment of sending: after signing in again the token is a new one.
     if (method !== 'GET' && method !== 'HEAD') headers.set('X-CSRF-Token', readCookie(CSRF_COOKIE))
@@ -446,10 +453,21 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   for (let asks = 0; asks < 2 && response.status === 409 && canAskToSpend(); asks++) {
     const asked = await spendQuestion(response.clone())
     if (!asked) break
+    // The story it is about, so the question can show the pictures it would send.
+    const story = /^\/api\/v1\/projects\/([^/?]+)/.exec(path)
+    if (story && asked.sending) {
+      const headers = new Headers(rest.headers)
+      asked.scope = {
+        workspaceId: workspaceId ?? null,
+        projectId: decodeURIComponent(story[1]),
+        branchId: headers.get('X-Story-Branch'),
+      }
+    }
     if (!(await askToSpend(asked))) {
       throw new ApiError(409, 'Not sent: you chose not to go ahead. Nothing was spent.', 'not_confirmed')
     }
     confirmedTokens = String(asked.estimatedTokens)
+    confirmedSending = asked.sending?.digest ?? null
     response = await send()
   }
   if (response.ok) noteSignedIn()
@@ -479,26 +497,50 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 /** The question a `needs_confirmation` refusal asks, or null for any other conflict. */
 async function spendQuestion(response: Response): Promise<SpendQuestion | null> {
   try {
-    const body = (await response.json()) as { code?: string; detail?: string; field_errors?: Record<string, string> }
+    const body = (await response.json()) as {
+      code?: string
+      detail?: string
+      field_errors?: Record<string, string>
+      sending?: Sending | null
+    }
     const estimated = Number(body.field_errors?.estimated_tokens)
     if (body.code !== 'needs_confirmation' || !Number.isFinite(estimated) || estimated <= 0) return null
     const threshold = Number(body.field_errors?.threshold_tokens)
     return {
       detail: body.detail ?? '',
       estimatedTokens: estimated,
-      thresholdTokens: Number.isFinite(threshold) ? threshold : null,
+      thresholdTokens: Number.isFinite(threshold) && threshold > 0 ? threshold : null,
+      sending: body.sending ?? null,
     }
   } catch {
     return null
   }
 }
 
-type QueryParams = Record<string, string | number | boolean | undefined | null>
+/**
+ * Opens the stream of a job's progress and a draft's words as the model writes them
+ * (SCN-002): server-sent events, read with fetch so the workspace and line of the story
+ * go with it. The caller reads the body (lib/sse) and closes it with `signal`.
+ */
+export function openJobStream(scope: Scope, jobId: string, signal: AbortSignal): Promise<Response> {
+  const headers = new Headers({ Accept: 'text/event-stream', ...branchHeaders(scope) })
+  if (scope.workspaceId) headers.set('X-Workspace-Id', scope.workspaceId)
+  return fetch(`${project(scope)}/jobs/${encodeURIComponent(jobId)}/stream`, {
+    credentials: 'include',
+    headers,
+    signal,
+  })
+}
+
+type QueryParams = Record<string, string | number | boolean | readonly string[] | undefined | null>
 
 function query(params: QueryParams): string {
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && value !== '') search.set(key, String(value))
+    if (Array.isArray(value)) {
+      // A list is sent as the same name once for each value: ?passes=a&passes=b.
+      for (const item of value as readonly string[]) search.append(key, item)
+    } else if (value !== undefined && value !== null && value !== '') search.set(key, String(value))
   }
   const encoded = search.toString()
   return encoded ? `?${encoded}` : ''
@@ -738,6 +780,14 @@ export const api = {
     get<HelpEstimate>(scope, `/plan/${id(planId)}/bridges/estimate`, { condition }),
   suggestBridges: (scope: Scope, planId: string, condition: number) =>
     send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/bridges/suggest${query({ condition })}`),
+  /** What suggesting the stages of an arc with none yet would use (STY-006). */
+  stagesEstimate: (scope: Scope, arcId: string) => get<HelpEstimate>(scope, `/plan/${id(arcId)}/stages/estimate`),
+  suggestStages: (scope: Scope, arcId: string) => send<StudioJob>(scope, 'POST', `/plan/${id(arcId)}/stages/suggest`),
+  /** A scene for a gap: a thread nothing moves along, or an arc's stage (with ``stage``) no scene reaches (STY-004). */
+  gapEstimate: (scope: Scope, planId: string, stage?: number) =>
+    get<HelpEstimate>(scope, `/plan/${id(planId)}/gap/estimate`, { stage }),
+  suggestGap: (scope: Scope, planId: string, stage?: number) =>
+    send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/gap/suggest${query({ stage })}`),
   removePlanItem: (scope: Scope, planId: string, expectedRevision: number) =>
     send<Schemas['RemovedModel']>(scope, 'POST', `/plan/${id(planId)}/remove`, {
       expected_revision: expectedRevision,
@@ -1006,8 +1056,9 @@ export const api = {
     send<DraftEstimate>(scope, 'POST', `/plan/${id(planId)}/studio/estimate`, ask),
   /** Roughly what a check with the assistant of the scene's text (or a draft) would use,
    * pass by pass; every pass when none are named. */
-  checkEstimate: (scope: Scope, planId: string, draftId?: string | null) =>
-    get<CheckEstimate>(scope, `/plan/${id(planId)}/studio/check-estimate`, { draft_id: draftId }),
+  /** What a check would use, pass by pass; the usual passes, or those named (CON-008). */
+  checkEstimate: (scope: Scope, planId: string, draftId?: string | null, passes?: readonly CheckPass[]) =>
+    get<CheckEstimate>(scope, `/plan/${id(planId)}/studio/check-estimate`, { draft_id: draftId, passes }),
   /** Ask for drafts. The key makes a resent request start the same work, not a second one. */
   startDraft: (scope: Scope, planId: string, ask: DraftAsk, key: string) =>
     request<StudioJob>(`${project(scope)}/plan/${id(planId)}/studio/drafts`, {
@@ -1023,8 +1074,8 @@ export const api = {
       passes,
     } satisfies Schemas['ReviewRequest']),
   /** What auditing a part of the plan ('' for all of it) would read and use. Calls no model. */
-  auditEstimate: (scope: Scope, planId: string) =>
-    get<AuditEstimate>(scope, '/audits/estimate', { plan_id: planId }),
+  auditEstimate: (scope: Scope, planId: string, passes?: readonly CheckPass[]) =>
+    get<AuditEstimate>(scope, '/audits/estimate', { plan_id: planId, passes }),
   /** Audit a part of the story with the chosen passes; none runs only the free checks. */
   startAudit: (scope: Scope, planId: string, passes: CheckPass[], key: string) =>
     request<StudioJob>(`${project(scope)}/audits`, {
@@ -1056,8 +1107,32 @@ export const api = {
     send<void>(scope, 'DELETE', `/audit-schedules/${id(scheduleId)}`),
   /** What differs between a what-if and the main story, with the checks. Calls no model. */
   whatIfAudit: (scope: Scope, branchId: string) => get<WhatIfAudit>(scope, `/what-ifs/${id(branchId)}/audit`),
+  /** What the assistant would read and use checking only the scenes a what-if wrote differently. */
+  changedAuditEstimate: (scope: Scope, branchId: string) =>
+    get<AuditEstimate>(scope, `/what-ifs/${id(branchId)}/audit/changed/estimate`),
+  /** Ask the assistant to check only the scenes a what-if wrote differently (CON-011). */
+  startChangedAudit: (scope: Scope, branchId: string, passes: CheckPass[], key: string) =>
+    request<StudioJob>(`${project(scope)}/what-ifs/${id(branchId)}/audit/changed`, {
+      method: 'POST',
+      workspaceId: scope.workspaceId,
+      headers: { ...branchHeaders(scope), 'Idempotency-Key': key },
+      json: { passes } satisfies Schemas['ChangedAuditRequest'],
+    }),
+  /** Your notices in this story: one for each scheduled audit that finished (CON-011). */
+  notices: (scope: Scope, params: { jobId?: string; unseen?: boolean } = {}) =>
+    get<Schemas['NoticeListModel']>(scope, '/notices', {
+      job_id: params.jobId,
+      unseen: params.unseen ? true : undefined,
+    }),
+  markNoticeSeen: (scope: Scope, noticeId: string) =>
+    send<void>(scope, 'POST', `/notices/${id(noticeId)}/seen`),
   /** How the scene's saved words sound against the author's usual. Calls no model. */
   sceneVoice: (scope: Scope, planId: string) => get<SceneVoice>(scope, `/plan/${id(planId)}/voice`),
+  /** Whether the assistant's voice check of the flagged passages is offered, and its cost (CON-018). */
+  voiceEscalation: (scope: Scope, planId: string) =>
+    get<VoiceEscalation>(scope, `/plan/${id(planId)}/voice/escalation`),
+  startVoiceEscalation: (scope: Scope, planId: string) =>
+    send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/voice/escalation`),
   /** Dismiss a note on how the scene sounds, with a reason (CON-018). */
   dismissVoiceNote: (scope: Scope, planId: string, body: Schemas['VoiceDismissRequest']) =>
     send<SceneVoice>(scope, 'POST', `/plan/${id(planId)}/voice/dismissals`, body),
@@ -1408,6 +1483,18 @@ export type PictureLink = Schemas['PictureLinkModel']
 export type PictureObservation = Schemas['ObservationModel']
 export type DescribeEstimate = Schemas['DescribeEstimateModel']
 export type PictureChoice = Schemas['PictureModel']['context_choice']
+/** A part of a picture the author marked (AST-007). */
+export type PicturePart = Schemas['PicturePartModel']
+export type PartSegment = Schemas['SegmentModel']
+/** Where a marked part is, in pixels of the picture as shown, its name and the entry it shows. */
+export type PartChange = {
+  x: number
+  y: number
+  width: number
+  height: number
+  label: string | null
+  entity_id: string | null
+}
 export type ContextPicture = Schemas['ContextPictureModel']
 
 export const pictureApi = {
@@ -1449,6 +1536,22 @@ export const pictureApi = {
       expected_revision: number
     },
   ) => send<Picture>(scope, 'PUT', `/pictures/${id(assetId)}/links/${id(linkId)}`, change),
+  /** Mark a part of the picture's newest version: the author's own markup, no review. */
+  markPart: (scope: Scope, assetId: string, versionId: string, part: PartChange) =>
+    send<PartSegment>(scope, 'POST', `/assets/${id(assetId)}/versions/${id(versionId)}/segments`, part),
+  changePart: (scope: Scope, assetId: string, versionId: string, partId: string, part: PartChange) =>
+    send<PartSegment>(
+      scope,
+      'PUT',
+      `/assets/${id(assetId)}/versions/${id(versionId)}/segments/${id(partId)}`,
+      part,
+    ),
+  removePart: (scope: Scope, assetId: string, versionId: string, partId: string) =>
+    send<PartSegment>(
+      scope,
+      'POST',
+      `/assets/${id(assetId)}/versions/${id(versionId)}/segments/${id(partId)}/retire`,
+    ),
 }
 
 // ---------------------------------------------------------------------------------

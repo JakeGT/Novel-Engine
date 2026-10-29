@@ -21,6 +21,8 @@ venv/
 data/
 # Evaluation reports (make eval / make eval-model)
 var/eval/
+# Release artefacts (make release)
+/dist/
 backend/debug/
 *.log
 

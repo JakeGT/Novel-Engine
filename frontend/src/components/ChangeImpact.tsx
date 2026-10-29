@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type Impact, type ImpactDependent } from '../api/client'
+
+type ImpactAfter = NonNullable<Impact['after_change']>[number]
 import { scenePath } from '../lib/studio'
 import { scopedKey, useProject } from '../project'
 import { Button, Loading } from './ui'
@@ -104,11 +106,170 @@ function Dependents({
   )
 }
 
+/** What each kind is called on the picture: plural, short. */
+const KIND_MANY: Record<ImpactDependent['kind'], string> = {
+  scene: 'Scenes',
+  plan: 'Plan parts',
+  thread: 'Threads',
+  rule: 'Story rules',
+  draft: 'Kept drafts',
+  belief: 'Beliefs',
+  event: 'Events',
+  picture: 'Pictures',
+  finding: 'Studio checks',
+  scene_text: 'Scene texts',
+  text: 'Your writing',
+}
+
+interface GraphGroup {
+  kind: ImpactDependent['kind']
+  affected: number
+  maybe: number
+}
+
+/**
+ * A small picture of what a change touches (CON-017): the change in the middle and each
+ * kind of thing it touches around it, with how many. A solid line is "affected" (records
+ * name it), a dashed one "may be affected" (writing mentions it), so the line's pattern
+ * says it, not its colour. The lists below say the same in full, so the picture is never
+ * the only way to read it.
+ */
+export function ImpactGraph({ impact }: { impact: Impact }) {
+  const uid = useId()
+  const groups = new Map<ImpactDependent['kind'], GraphGroup>()
+  for (const item of [...impact.affected, ...impact.may_be_affected]) {
+    const group = groups.get(item.kind) ?? { kind: item.kind, affected: 0, maybe: 0 }
+    if (item.level === 'affected') group.affected += 1
+    else group.maybe += 1
+    groups.set(item.kind, group)
+  }
+  const nodes = [...groups.values()]
+  if (nodes.length === 0) return null
+  // The change on the left and what it touches in one column on the right, so the picture
+  // stays readable at phone width however many kinds there are.
+  const width = 340
+  const row = 46
+  const height = Math.max(120, nodes.length * row + 16)
+  const cx = 52
+  const cy = height / 2
+  const nodeX = 186
+  const nodeWidth = 148
+  const summary = nodes
+    .map((node) => {
+      const parts = [node.affected ? `${node.affected} affected` : '', node.maybe ? `${node.maybe} may be affected` : '']
+      return `${KIND_MANY[node.kind]}: ${parts.filter(Boolean).join(', ')}`
+    })
+    .join('; ')
+  return (
+    <figure className="impact-graph">
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-labelledby={`${uid}-title`} aria-describedby={`${uid}-desc`}>
+        <title id={`${uid}-title`}>What this change touches, as a picture</title>
+        <desc id={`${uid}-desc`}>{summary}</desc>
+        {nodes.map((node, index) => {
+          const y = 8 + row * index + row / 2
+          const only = node.affected === 0
+          return (
+            <g key={node.kind} className={only ? 'impact-node maybe' : 'impact-node'}>
+              <line x1={cx + 40} y1={cy} x2={nodeX} y2={y} strokeDasharray={only ? '5 4' : undefined} />
+              <rect x={nodeX} y={y - 18} width={nodeWidth} height={36} rx={4} />
+              <text x={nodeX + 10} y={y - 3}>
+                {KIND_MANY[node.kind]}
+              </text>
+              <text x={nodeX + 10} y={y + 12} className="impact-node-count">
+                {[node.affected ? `${node.affected} affected` : '', node.maybe ? `${node.maybe} may be` : '']
+                  .filter(Boolean)
+                  .join(' · ')}
+              </text>
+            </g>
+          )
+        })}
+        <g className="impact-centre">
+          <circle cx={cx} cy={cy} r={40} />
+          <text x={cx} y={cy + 4} textAnchor="middle">
+            The change
+          </text>
+        </g>
+      </svg>
+      <figcaption className="hint small">
+        A solid line: your records name it. A dashed line: only your writing mentions it. Each is
+        listed in full below.
+      </figcaption>
+    </figure>
+  )
+}
+
+const AFTER_KIND: Record<ImpactAfter['kind'], string> = {
+  condition: 'Scene conditions',
+  reader: 'The reader’s guide',
+}
+
+/** How the plan's conditions and the reader's guide would read once the change is kept. */
+function AfterTheChange({ impact, links }: { impact: Impact; links: boolean }) {
+  const { scope } = useProject()
+  if (!impact.scratch) return null
+  const items = impact.after_change ?? []
+  return (
+    <section className="impact-group" aria-label="After the change">
+      <h3 className="impact-title">
+        After the change <span className="muted">· {items.length}</span>
+      </h3>
+      <p className="hint small">
+        Worked out on a copy of your story with the change applied. Nothing is saved until you add
+        the change.
+      </p>
+      {items.length === 0 ? (
+        <p className="small">The plan’s conditions and the reader’s guide would read the same.</p>
+      ) : (
+        (['condition', 'reader'] as const).map((kind) => {
+          const rows = items.filter((item) => item.kind === kind)
+          if (rows.length === 0) return null
+          return (
+            <div key={kind} className="stack tight">
+              <h4 className="impact-subtitle">{AFTER_KIND[kind]}</h4>
+              <ul className="rows">
+                {rows.map((item, index) => (
+                  <li className="row impact-row" key={`${item.plan_id}:${index}`}>
+                    <span className="grow">
+                      {links && !item.plan_id.startsWith('tmp:') ? (
+                        <Link
+                          to={
+                            kind === 'reader'
+                              ? `/projects/${scope.projectId}/plan/${encodeURIComponent(item.plan_id)}/guide`
+                              : `/projects/${scope.projectId}/plan#plan-${item.plan_id}`
+                          }
+                        >
+                          {item.title}
+                        </Link>
+                      ) : (
+                        <strong>{item.title}</strong>
+                      )}
+                      <span className="impact-reasons small">{item.words}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )
+        })
+      )}
+    </section>
+  )
+}
+
 /** The answer itself: affected, may be affected, and what was not checked. */
 export function ImpactView({ impact, links = true }: { impact: Impact; links?: boolean }) {
   const nothing = impact.affected.length === 0 && impact.may_be_affected.length === 0
+  const [picture, setPicture] = useState(false)
   return (
     <div className="impact-body">
+      {!nothing && (
+        <div>
+          <Button size="sm" variant="ghost" aria-expanded={picture} onClick={() => setPicture(!picture)}>
+            {picture ? 'Hide the picture' : 'Show it as a picture'}
+          </Button>
+        </div>
+      )}
+      {picture && <ImpactGraph impact={impact} />}
       {nothing && (
         <p>
           {impact.about.length === 0
@@ -128,6 +289,7 @@ export function ImpactView({ impact, links = true }: { impact: Impact; links?: b
         items={impact.may_be_affected}
         links={links}
       />
+      <AfterTheChange impact={impact} links={links} />
       {/* Always shown: an answer from an incomplete index must not pass for the whole story. */}
       <div className="impact-group">
         <h3 className="impact-title">Not checked</h3>

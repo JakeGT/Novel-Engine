@@ -118,7 +118,7 @@ def test_a_picture_is_described_by_a_model_that_can_see_it(auth_client, fake_con
     observations = {item["text"]: item for item in view["observations"]}
     caption = observations["A woman in a long blue coat stands on a quay at dusk."]
     assert caption["kind"] == "caption" and caption["state"] == "proposed"
-    assert caption["model"] == "vision-model" and caption["prompt_version"] == "describe-picture/1"
+    assert caption["model"] == "vision-model" and caption["prompt_version"] == "describe-picture/2"
     assert caption["job_id"] == job.id and caption["current"] is True
     coat = observations["She wears a long blue coat."]
     assert coat["subject_record_id"] == w["mara"] and coat["subject_name"] == "Mara"

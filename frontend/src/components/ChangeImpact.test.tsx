@@ -25,6 +25,8 @@ function dependent(fields: Partial<ImpactDependent>): ImpactDependent {
 }
 
 const IMPACT: Impact = {
+  after_change: [],
+  scratch: false,
   about: ['No longer true: Mara is a member of Harbor Guild'],
   affected: [
     dependent({}),
@@ -149,6 +151,8 @@ describe('What a change touches beyond the plan (CON-017)', () => {
     renderInProject(
       <ImpactView
         impact={{
+          after_change: [],
+          scratch: false,
           about: ['No longer true: Mara is a member of Harbor Guild'],
           affected: [
             { kind: 'belief', level: 'affected', id: 'ent_t', title: 'Tobin', reasons: ['Knows what changes: Mara is a member of Harbor Guild'], count: 0 },
@@ -167,5 +171,58 @@ describe('What a change touches beyond the plan (CON-017)', () => {
     expect(screen.getByRole('link', { name: 'The Docks' })).toHaveAttribute('href', '/projects/prj_1/plan/pln_s1/write')
     expect(screen.getByText('What they believe')).toBeInTheDocument()
     expect(screen.getByText('In the studio')).toBeInTheDocument()
+  })
+})
+
+describe('After the change, and as a picture (CON-017)', () => {
+  const after: Impact = {
+    ...IMPACT,
+    scratch: true,
+    after_change: [
+      {
+        kind: 'condition',
+        plan_id: 'pln_q',
+        title: 'The Quay',
+        words: '“Mara must have this: it is a member of Harbor Guild.” (before the scene) would no longer be met',
+        now: 'met',
+        after: 'not met',
+      },
+      { kind: 'reader', plan_id: 'pln_m', title: 'The Market', words: 'The reader would no longer learn: Mara is a member of Harbor Guild', now: '', after: '' },
+      { kind: 'reader', plan_id: 'tmp:s', title: 'The Oath', words: 'It would come into the reading order', now: '', after: '' },
+    ],
+  }
+
+  it('says how conditions and the guide would read, worked out on a copy', async () => {
+    const { container } = renderInProject(<ImpactView impact={after} />)
+    const group = screen.getByRole('region', { name: 'After the change' })
+    expect(within(group).getByText(/on a copy of your story/)).toBeInTheDocument()
+    expect(within(group).getByRole('heading', { name: 'Scene conditions' })).toBeInTheDocument()
+    expect(within(group).getByRole('link', { name: 'The Quay' })).toHaveAttribute('href', '/projects/prj_1/plan#plan-pln_q')
+    expect(within(group).getByRole('link', { name: 'The Market' })).toHaveAttribute('href', '/projects/prj_1/plan/pln_m/guide')
+    // A scene the change would add is not there yet: named, not linked.
+    expect(within(group).queryByRole('link', { name: 'The Oath' })).toBeNull()
+    expect(within(group).getByText('The Oath')).toBeInTheDocument()
+    await expectAccessible(container)
+  })
+
+  it('says nothing would read differently, and shows no such part without a copy', () => {
+    const { unmount } = renderInProject(<ImpactView impact={{ ...after, after_change: [] }} />)
+    expect(screen.getByText('The plan’s conditions and the reader’s guide would read the same.')).toBeInTheDocument()
+    unmount()
+    renderInProject(<ImpactView impact={IMPACT} />)
+    expect(screen.queryByRole('region', { name: 'After the change' })).toBeNull()
+  })
+
+  it('shows what it touches as a picture on request, with the same counts in words', async () => {
+    const { container } = renderInProject(<ImpactView impact={IMPACT} />)
+    expect(screen.queryByRole('img')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Show it as a picture' }))
+    const picture = screen.getByRole('img', { name: /What this change touches, as a picture/ })
+    expect(picture).toHaveAccessibleDescription(/Scenes: 1 affected/)
+    expect(picture).toHaveAccessibleDescription(/Your writing: 1 may be affected/)
+    expect(screen.getByRole('button', { name: 'Hide the picture' })).toHaveAttribute('aria-expanded', 'true')
+    // The lists stay: the picture is never the only way to read it.
+    expect(screen.getByRole('region', { name: 'Affected' })).toBeInTheDocument()
+    await expectAccessible(container)
   })
 })

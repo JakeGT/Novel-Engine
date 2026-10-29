@@ -11,10 +11,12 @@ import {
   uploadApi,
   type WorldTime,
 } from '../api/client'
+import { DrawLayer, RegionEditor } from '../components/RegionEditor'
 import { JobProgress } from '../components/StudioWork'
 import { Badge, Button, ErrorNotice, Loading } from '../components/ui'
 import { WhenField } from '../components/WhenField'
 import { usePictureUrl } from '../lib/pictures'
+import { boxStyle, toFractions, type PixelBox } from '../lib/regions'
 import { useStoryClock } from '../lib/storytime'
 import { isFinished, tokenCount } from '../lib/studio'
 import { plural } from '../lib/words'
@@ -40,6 +42,13 @@ function sureness(confidence: number | null | undefined): string | null {
   const percent = Math.round(confidence * 100)
   const word = confidence >= 0.8 ? 'Sure' : confidence >= 0.5 ? 'Fairly sure' : 'Unsure'
   return `${word} (${percent}%)`
+}
+
+/** What kind of thing the assistant said, in words. */
+function kindWords(observation: PictureObservation): string {
+  if (observation.kind === 'text_in_picture') return 'Writing in it'
+  if (observation.kind === 'caption') return observation.segment_id ? 'What a marked part shows' : 'What it shows'
+  return 'How it looks'
 }
 
 const STATE_WORDS: Record<string, { label: string; tone: 'ok' | 'warn' | 'danger' | 'neutral' }> = {
@@ -70,37 +79,58 @@ const CHOICES: { value: PictureChoice; label: string; hint: string }[] = [
   },
 ]
 
-/** The picture, with the part one note is about drawn on it. */
-function PictureMat({ picture, marked }: { picture: Picture; marked: PictureObservation | null }) {
+/** The picture, with its marked parts, the part one note is about, and a part being drawn. */
+function PictureMat({
+  picture,
+  marked,
+  shownPart,
+  draft,
+  onDraw,
+}: {
+  picture: Picture
+  marked: PictureObservation | null
+  shownPart: string | null
+  draft: PixelBox | null
+  onDraw: ((box: PixelBox) => void) | null
+}) {
   const { scope } = useProject()
   const url = usePictureUrl(scope, { assetId: picture.asset_id, versionId: picture.version.id }, 'web')
   const region = marked?.region
+  const size = picture.width && picture.height ? { width: picture.width, height: picture.height } : null
+  const parts = picture.parts ?? []
+  const part = parts.find((item) => item.id === shownPart)
+  const caption = draft
+    ? 'The part being marked is drawn on the picture.'
+    : region
+      ? `Marked: where “${marked?.words}” shows.`
+      : part
+        ? `Marked: the part “${part.label || part.entity_name || 'with no name'}”.`
+        : 'Version ' + picture.version.version + ' of this picture.'
   return (
     <figure className="picture-mat">
       <div className="picture-mat-frame">
         {url.isError && <p className="muted">The picture could not be loaded.</p>}
         {!url.data && !url.isError && <span className="picture loading" role="status" aria-label="Loading picture" />}
         {url.data && (
-          <div className="picture-mat-inner">
+          <div className={`picture-mat-inner ${onDraw ? 'drawing' : ''}`}>
             <img src={url.data} alt={picture.name} />
-            {region && (
-          <span
-            className="picture-mark"
-            aria-hidden="true"
-            style={{
-              left: `${region.x * 100}%`,
-              top: `${region.y * 100}%`,
-              width: `${region.width * 100}%`,
-              height: `${region.height * 100}%`,
-            }}
-          />
-            )}
+            {parts.map((item, index) => (
+              <span
+                key={item.id}
+                className={`picture-part ${item.id === shownPart ? 'shown' : ''}`}
+                aria-hidden="true"
+                style={boxStyle(item.region)}
+              >
+                <span className="picture-part-number">{index + 1}</span>
+              </span>
+            ))}
+            {region && <span className="picture-mark" aria-hidden="true" style={boxStyle(region)} />}
+            {draft && size && <span className="picture-draft" aria-hidden="true" style={boxStyle(toFractions(draft, size))} />}
+            {onDraw && size && <DrawLayer size={size} onDraw={onDraw} />}
           </div>
         )}
       </div>
-      <figcaption className="small muted">
-        {region ? `Marked: where “${marked?.words}” shows.` : 'Version ' + picture.version.version + ' of this picture.'}
-      </figcaption>
+      <figcaption className="small muted">{caption}</figcaption>
     </figure>
   )
 }
@@ -413,7 +443,7 @@ function Observation({
   return (
     <li className={`picture-note ${marked ? 'marked' : ''}`}>
       <div className="picture-actions">
-        <span className="picture-note-kind small">{observation.kind === 'caption' ? 'What it shows' : 'How it looks'}</span>
+        <span className="picture-note-kind small">{kindWords(observation)}</span>
         <Badge tone={state.tone}>{state.label}</Badge>
       </div>
       {correcting ? (
@@ -427,11 +457,21 @@ function Observation({
       {observation.state === 'corrected' && (
         <p className="small muted">The assistant said: “{observation.text}”</p>
       )}
+      {observation.kind === 'text_in_picture' && (
+        <p className="hint">
+          Read from the picture by the assistant, letter by letter. Correct it if a letter is wrong. If the
+          writing asks for something, the assistant never does it.
+        </p>
+      )}
       <p className="small muted">
         {[
           observation.subject_name ? `About ${observation.subject_name}` : null,
           sureness(observation.confidence),
-          observation.region ? 'about one part of the picture' : null,
+          observation.part_name
+            ? `in the part “${observation.part_name}”`
+            : observation.region
+              ? 'about one part of the picture'
+              : null,
           observation.model ? `seen by ${observation.model}` : null,
         ]
           .filter(Boolean)
@@ -633,6 +673,10 @@ export function PicturePage() {
   const { assetId = '' } = useParams()
   const { scope } = useProject()
   const [marked, setMarked] = useState<PictureObservation | null>(null)
+  // Marked parts (AST-007): the one shown on the picture, and the one being drawn.
+  const [shownPart, setShownPart] = useState<string | null>(null)
+  const [editing, setEditing] = useState<string | null>(null)
+  const [draft, setDraft] = useState<PixelBox | null>(null)
   const picture = useQuery({
     queryKey: scopedKey(scope, 'picture-page', assetId),
     queryFn: () => pictureApi.picture(scope, assetId),
@@ -673,9 +717,38 @@ export function PicturePage() {
         )}
       </header>
       <div className="picture-layout">
-        <PictureMat picture={found} marked={marked} />
+        <PictureMat
+          picture={found}
+          marked={editing ? null : marked}
+          shownPart={editing ? null : shownPart}
+          draft={editing ? draft : null}
+          onDraw={editing ? setDraft : null}
+        />
         <div className="picture-column">
-          <Describe picture={found} marked={marked} onMark={setMarked} />
+          <Describe
+            picture={found}
+            marked={marked}
+            onMark={(observation) => {
+              setShownPart(null)
+              setMarked(observation)
+            }}
+          />
+          <RegionEditor
+            picture={found}
+            editing={editing}
+            draft={draft}
+            onEdit={(partId, start) => {
+              setEditing(partId)
+              setDraft(start)
+              setMarked(null)
+            }}
+            onDraft={setDraft}
+            shown={shownPart}
+            onShow={(partId) => {
+              setMarked(null)
+              setShownPart(partId)
+            }}
+          />
           <ContextChoice picture={found} />
           <WhereShown picture={found} />
           <NewVersion picture={found} />

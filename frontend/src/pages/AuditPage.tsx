@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, isApiError, type AuditScene, type CheckPass, type CorrectionPlan } from '../api/client'
+import { AuditNotices } from '../components/AuditNotices'
 import { AuditRecord } from '../components/CheckHistory'
 import { JobProgress } from '../components/StudioWork'
 import { Badge, Button, ErrorNotice, Loading } from '../components/ui'
@@ -108,6 +109,8 @@ export function AuditPage() {
             : `${plural(notes, 'note')} from the assistant and ${plural(checks, 'check')} without it, across ${plural(checked, 'scene')}.`}
         </p>
       )}
+
+      {finished && <AuditNotices jobId={jobId} />}
 
       {finished && <AuditRecord jobId={jobId} refresh={found.job.status} />}
 

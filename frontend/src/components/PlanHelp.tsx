@@ -154,3 +154,44 @@ export function SuggestBridges({ scene, index, preferred = false }: { scene: Pla
     />
   )
 }
+
+/** The stages of an arc with none yet, from the arc, the story bible and the plan (STY-006). */
+export function SuggestStages({ arc, who }: { arc: PlanItem; who: string }) {
+  const { scope } = useProject()
+  if ((arc.path ?? []).length > 0 || !arc.refs.some((ref) => ref.role === 'about')) return null
+  return (
+    <HelpOffer
+      offer="Suggest the stages"
+      what={() =>
+        `The assistant reads this arc, what your story bible records about ${who} and the plan’s scenes, and suggests where ${who} starts, the turns along the way and where they end. Each stage must quote your plan or story bible, or it is left out.`
+      }
+      estimateKey={['plan-help', 'stages', arc.id, arc.created_revision, arc.summary]}
+      estimate={() => api.stagesEstimate(scope, arc.id)}
+      start={() => api.suggestStages(scope, arc.id)}
+      outcome={() => 'Nothing to suggest: the assistant could not show any stages from your plan or story bible.'}
+    />
+  )
+}
+
+/**
+ * One scene for a gap that is not a condition (STY-004): a thread nothing moves along
+ * between where it opens and resolves, or a stage of an arc no scene reaches.
+ */
+export function SuggestGapScene({ item, stage }: { item: PlanItem; stage?: number }) {
+  const { scope } = useProject()
+  const thread = stage === undefined
+  return (
+    <HelpOffer
+      offer="Suggest a scene"
+      what={() =>
+        thread
+          ? `The assistant reads “${item.title}”, the scenes around it and the entries in them, and suggests one scene that moves the thread along, just before the scene that resolves it.`
+          : `The assistant reads this arc, the scenes around the stage and the entries in them, and suggests one scene where the stage is reached.`
+      }
+      estimateKey={['plan-help', 'gap', item.id, stage ?? 'thread', JSON.stringify(item.path ?? [])]}
+      estimate={() => api.gapEstimate(scope, item.id, stage)}
+      start={() => api.suggestGap(scope, item.id, stage)}
+      outcome={() => 'Nothing to suggest: the scene the assistant offered did not fit your story.'}
+    />
+  )
+}

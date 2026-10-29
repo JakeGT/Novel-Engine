@@ -22,6 +22,7 @@ from backend.domain.embedding import (
     GenerationState,
     MixedSpaceError,
     PictureSource,
+    RegionSource,
     SearchGate,
     StoredHit,
     VectorRow,
@@ -64,6 +65,9 @@ class MediaWorld:
 
     pictures: dict[tuple[str, str], list[Picture]] = field(default_factory=dict)
     captions: dict[tuple[str, str], list[CaptionSource]] = field(default_factory=dict)
+    regions: dict[tuple[str, str], list[RegionSource]] = field(default_factory=dict)
+    # Marked parts taken off since they were indexed (the search gate refuses them).
+    retired_regions: set[str] = field(default_factory=set)
     root_branch: str = "br_main"
 
     def add_picture(self, workspace_id: str, project_id: str, picture: Picture) -> Picture:
@@ -72,6 +76,9 @@ class MediaWorld:
 
     def add_caption(self, workspace_id: str, project_id: str, caption: CaptionSource) -> None:
         self.captions.setdefault((workspace_id, project_id), []).append(caption)
+
+    def add_region(self, workspace_id: str, project_id: str, region: RegionSource) -> None:
+        self.regions.setdefault((workspace_id, project_id), []).append(region)
 
     def picture(self, workspace_id: str, project_id: str, asset_id: str) -> Picture | None:
         found = [
@@ -285,6 +292,8 @@ class InMemoryEmbeddingIndexStore:
             picture = self.world.picture(workspace_id, project_id, row.asset_id)
             if picture is not None and picture.segment_retired:
                 return False
+            if row.segment_id in self.world.retired_regions:
+                return False
         return True
 
     def search(
@@ -414,9 +423,17 @@ class InMemoryEmbeddingIndexStore:
     def accepted_captions(self, *, workspace_id: str, project_id: str) -> list[CaptionSource]:
         return list(self.world.captions.get((workspace_id, project_id), []))
 
+    def regions_ready(self, *, workspace_id: str, project_id: str) -> list[RegionSource]:
+        return [
+            region
+            for region in self.world.regions.get((workspace_id, project_id), [])
+            if region.segment_id not in self.world.retired_regions
+            and self.world.picture(workspace_id, project_id, region.asset_id) is not None
+        ]
+
     def projects(self) -> list[tuple[str, str]]:
         scopes = {(k[1], k[2]) for k in self._rows}
-        scopes |= set(self.world.pictures) | set(self.world.captions)
+        scopes |= set(self.world.pictures) | set(self.world.captions) | set(self.world.regions)
         return sorted(scopes)
 
     def count(self, generation_id: str, *, workspace_id: str | None = None) -> int:

@@ -636,9 +636,11 @@ class FoundPictureModel(LibraryPictureModel):
     # "words": its name or reviewed description holds every word; "meaning": found by
     # search by meaning.
     reason: Literal["words", "meaning"]
-    # "name", "description", "picture" or "caption".
+    # "name", "description", "picture", "caption" or "part" (a part the author marked).
     matched: str
     score: float | None = None
+    # The marked part's name (or the entry it shows) when a part matched.
+    part: str | None = None
 
 
 class PictureSearchModel(BaseModel):
@@ -666,6 +668,7 @@ async def search_pictures(
                 reason=item.reason,  # type: ignore[arg-type]
                 matched=item.matched,
                 score=item.score,
+                part=item.part,
             )
             for item in found.found
         ],
@@ -793,6 +796,8 @@ class SegmentModel(BaseModel):
     width: int
     height: int
     label: str | None = None
+    # The entry this part shows, when the author said (AST-007).
+    entity_id: str | None = None
     created_at: datetime
 
 
@@ -806,6 +811,7 @@ class RegionRequest(BaseModel):
     width: int = Field(ge=1)
     height: int = Field(ge=1)
     label: str | None = Field(default=None, max_length=200)
+    entity_id: str | None = Field(default=None, max_length=200)
 
 
 def _segment(segment: MediaSegment) -> SegmentModel:
@@ -817,6 +823,7 @@ def _segment(segment: MediaSegment) -> SegmentModel:
         width=segment.width,
         height=segment.height,
         label=segment.label,
+        entity_id=segment.entity_id,
         created_at=segment.created_at,
     )
 
@@ -857,6 +864,35 @@ async def add_region(
         width=payload.width,
         height=payload.height,
         label=payload.label,
+        entity_id=payload.entity_id,
+    )
+    return _segment(segment)
+
+
+@router.put("/assets/{asset_id}/versions/{version_id}/segments/{segment_id}")
+async def update_region(
+    project_id: str,
+    asset_id: str,
+    version_id: str,
+    segment_id: str,
+    payload: RegionRequest,
+    scope: AccessScope = Depends(require_project_scope),
+    media: MediaService = Depends(get_media_service),
+) -> SegmentModel:
+    """Move, resize, rename or relink a marked part (the author's own markup)."""
+    segment = await media.update_region(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        asset_id,
+        version_id,
+        segment_id,
+        x=payload.x,
+        y=payload.y,
+        width=payload.width,
+        height=payload.height,
+        label=payload.label,
+        entity_id=payload.entity_id,
     )
     return _segment(segment)
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class DomainError(Exception):
     status_code: int = 500
@@ -12,6 +14,9 @@ class DomainError(Exception):
         super().__init__(detail)
         self.detail = detail
         self.field_errors = field_errors or {}
+        # Extra members of the problem document (RFC 9457 extensions), such as what a
+        # request would send and where (``sending``, CTX-013). Never a secret.
+        self.extensions: dict[str, Any] = {}
 
 
 class ValidationError(DomainError):

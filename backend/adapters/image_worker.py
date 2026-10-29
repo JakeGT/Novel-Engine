@@ -609,7 +609,7 @@ def render(data: bytes, limits: dict[str, Any]) -> dict[str, Any]:
     try:
         if getattr(image, "n_frames", 1) > 1:
             image.seek(0)  # a moving picture: its first frame only
-        if detected == "JPEG":
+        if detected == "JPEG" and limits.get("crop") is None:
             # Decode at the smallest power-of-two scale still at least this large.
             image.draft(image.mode, (largest, largest))
         image.load()
@@ -644,6 +644,24 @@ def render(data: bytes, limits: dict[str, Any]) -> dict[str, Any]:
     del image
     # Nothing the file carried travels with the pixels.
     bare.info.clear()
+
+    # One part of the picture only (a part the author marked, for the search index,
+    # CTX-012): fractions of the picture as shown, cut before any copy is made.
+    box = limits.get("crop")
+    if box is not None:
+        try:
+            left, top, across, down = (float(value) for value in box)
+        except (TypeError, ValueError) as error:
+            raise Rejected("damaged") from error
+        if not (0 <= left < 1 and 0 <= top < 1 and 0 < across <= 1 and 0 < down <= 1):
+            raise Rejected("damaged")
+        x0 = min(bare.width - 1, int(left * bare.width))
+        y0 = min(bare.height - 1, int(top * bare.height))
+        x1 = max(x0 + 1, min(bare.width, round((left + across) * bare.width)))
+        y1 = max(y0 + 1, min(bare.height, round((top + down) * bare.height)))
+        bare = bare.crop((x0, y0, x1, y1))
+        bare.info.clear()
+        width, height = bare.size
 
     # The largest copy is made first and each smaller one from the copy before it, in
     # place, so the full-size pixels are never held twice.

@@ -89,6 +89,11 @@ SCENE_TARGET = "plan_item"
 MAX_LIBRARY = 200
 MAX_LIBRARY_LINKS = 2000
 MEDIA_PROCESS_KIND = "media_process"
+# Marked parts (AST-007): at most this many on one picture version, and no side or
+# corner of a part restored from an archive past this many pixels (the largest picture
+# taken is 12,000 a side).
+MAX_REGIONS_PER_VERSION = 50
+MAX_REGION_PIXELS = 20_000
 DEFAULT_QUOTA_BYTES = 2 * 1024 * 1024 * 1024
 DEFAULT_ORPHAN_GRACE = timedelta(hours=24)
 # Two-step uploads (AST-002): how long one may take from asking to finishing, how many one
@@ -284,9 +289,12 @@ class FoundPicture:
     picture: LibraryPicture
     # "words": the words are in its name or description; "meaning": search by meaning.
     reason: str
-    # What matched: "name", "description", "picture" or "caption".
+    # What matched: "name", "description", "picture", "caption" or "part" (a part of it
+    # the author marked: its name, the entry it shows, or the part found by meaning).
     matched: str
     score: float | None = None
+    # The marked part's name (or the entry it shows) when a part matched.
+    part: str | None = None
 
 
 @dataclass(frozen=True)
@@ -360,6 +368,8 @@ class MediaService:
         self._quota_bytes = max(0, int(quota_bytes))
         self._orphan_grace = orphan_grace
         self._removed_hooks: list[VersionsRemovedHook] = []
+        # Told (workspace, project, who, picture) when a picture's marked parts change.
+        self._region_hooks: list[Callable[..., Awaitable[Any]]] = []
         # Set by the container: reviewed descriptions to find pictures by (AST-007), and
         # search by meaning (``MediaSearchService``), when it is set up.
         self.observation_store: Any = None
@@ -788,16 +798,31 @@ class MediaService:
                 text_of = seen.corrected_text if seen.state.value == "corrected" else seen.text
                 if text_of:
                     described.setdefault(seen.asset_id, []).append(text_of.lower())
+        parts = await self._part_words(workspace_id, project_id, set(by_id))
         found: list[FoundPicture] = []
         for picture in library:
             name = picture.asset.name.lower()
             about = " ".join(described.get(picture.asset.id, []))
+            marked = next(
+                (
+                    shown
+                    for shown, said, _segment_id in parts.get(picture.asset.id, [])
+                    if all(word in said for word in words)
+                ),
+                None,
+            )
             if all(word in name for word in words):
                 found.append(FoundPicture(picture, "words", "name"))
+            elif marked is not None:
+                found.append(FoundPicture(picture, "words", "part", part=marked))
             elif about and all(word in f"{name} {about}" for word in words):
                 found.append(FoundPicture(picture, "words", "description"))
         note: str | None = "Search by meaning is not set up here."
         by_meaning = False
+        part_names = {
+            asset_id: [(segment_id, shown) for shown, _said, segment_id in items]
+            for asset_id, items in parts.items()
+        }
         if self.search is not None and len(found) < limit:
             result = await self.search.pictures_for(
                 workspace_id, project_id, query=cleaned, limit=limit
@@ -809,8 +834,24 @@ class MediaService:
                 if match is None or candidate.asset_id in already:
                     continue
                 already.add(candidate.asset_id)
+                shown = None
+                if candidate.matched == "part":
+                    shown = next(
+                        (
+                            label
+                            for segment_id, label in part_names.get(candidate.asset_id, [])
+                            if segment_id == candidate.segment_id
+                        ),
+                        None,
+                    )
                 found.append(
-                    FoundPicture(match, "meaning", candidate.matched or "picture", candidate.score)
+                    FoundPicture(
+                        match,
+                        "meaning",
+                        candidate.matched or "picture",
+                        candidate.score,
+                        part=shown,
+                    )
                 )
         metrics.increment(
             "media_picture_searches_total",
@@ -818,6 +859,42 @@ class MediaService:
             by_meaning=str(by_meaning).lower(),
         )
         return PictureSearch(found=found[:limit], by_meaning=by_meaning, note=note)
+
+    async def _part_words(
+        self, workspace_id: str, project_id: str, asset_ids: set[str]
+    ) -> dict[str, list[tuple[str, str, str]]]:
+        """Each picture's current marked parts with a name or an entry: what to call the
+        part, the words it is found by (lowercased name and entry) and its id."""
+        if self._processing is None or not asset_ids:
+            return {}
+        regions = [
+            region
+            for region in await self._processing.list_regions(
+                workspace_id=workspace_id, project_id=project_id
+            )
+            if region.asset_id in asset_ids
+        ]
+        names: dict[str, str | None] = {}
+        found: dict[str, list[tuple[str, str, str]]] = {}
+        for region in regions:
+            entity_name = None
+            if region.entity_id:
+                if region.entity_id not in names:
+                    entity = await self._reader.get_entity(
+                        workspace_id=workspace_id, project_id=project_id, entity_id=region.entity_id
+                    )
+                    names[region.entity_id] = (
+                        entity.name
+                        if entity is not None and getattr(entity, "is_active", True)
+                        else None
+                    )
+                entity_name = names[region.entity_id]
+            shown = region.label or entity_name
+            if not shown:
+                continue
+            said = " ".join(item for item in (region.label, entity_name) if item).lower()
+            found.setdefault(region.asset_id, []).append((shown, said, region.id))
+        return found
 
     # ------------------------------------------------- two-step uploads (AST-002)
     async def start_upload(
@@ -1784,6 +1861,47 @@ class MediaService:
             )
         )
 
+    async def _ready_size(
+        self, workspace_id: str, project_id: str, version: MediaAssetVersion
+    ) -> tuple[int, int]:
+        """The prepared picture's size in pixels; refused before it is ready."""
+        if self._processing is None:
+            raise ValidationError("Pictures cannot be prepared on this installation.")
+        state = await self._processing.get_processing(
+            workspace_id=workspace_id, project_id=project_id, version_id=version.id
+        )
+        if (
+            state is None
+            or state.status is not ProcessingStatus.READY
+            or state.width is None
+            or state.height is None
+        ):
+            raise ValidationError("A part of a picture can be marked once the picture is ready.")
+        return int(state.width), int(state.height)
+
+    @staticmethod
+    def _inside(x: int, y: int, width: int, height: int, size: tuple[int, int]) -> None:
+        if width < 1 or height < 1 or x < 0 or y < 0:
+            raise ValidationError("A marked part needs a place and a size inside the picture.")
+        if x + width > size[0] or y + height > size[1]:
+            raise ValidationError(
+                f"That part goes past the picture's edge ({size[0]} by {size[1]})."
+            )
+
+    async def _region_entry(
+        self, workspace_id: str, project_id: str, entity_id: str | None
+    ) -> str | None:
+        """The entry a marked part shows: one that is in the story now, or none."""
+        wanted = (entity_id or "").strip()
+        if not wanted:
+            return None
+        entity = await self._reader.get_entity(
+            workspace_id=workspace_id, project_id=project_id, entity_id=wanted
+        )
+        if entity is None or not getattr(entity, "is_active", True):
+            raise ValidationError("That entry is not in the story. Choose another, or none.")
+        return wanted
+
     async def add_region(
         self,
         scope: AccessScope,
@@ -1797,34 +1915,26 @@ class MediaService:
         width: int,
         height: int,
         label: str | None = None,
+        entity_id: str | None = None,
     ) -> MediaSegment:
         """Mark a part of a prepared picture (a face, a sign) so it can be pointed at on
-        its own. Pixels of the picture as shown, inside its edges."""
+        its own, with a name and the entry it shows. Pixels of the picture as shown,
+        inside its edges. The author's own markup: nothing in the story changes."""
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         version = await self._servable_version(workspace_id, project_id, asset_id, version_id)
-        if self._processing is None:
-            raise ValidationError("Pictures cannot be prepared on this installation.")
-        state = await self._processing.get_processing(
-            workspace_id=workspace_id, project_id=project_id, version_id=version.id
-        )
-        if (
-            state is None
-            or state.status is not ProcessingStatus.READY
-            or state.width is None
-            or state.height is None
-        ):
-            raise ValidationError("A part of a picture can be marked once the picture is ready.")
-        if width < 1 or height < 1 or x < 0 or y < 0:
-            raise ValidationError("A marked part needs a place and a size inside the picture.")
-        if x + width > state.width or y + height > state.height:
-            raise ValidationError(
-                f"That part goes past the picture's edge ({state.width} by {state.height})."
-            )
+        size = await self._ready_size(workspace_id, project_id, version)
+        self._inside(x, y, width, height, size)
+        entry = await self._region_entry(workspace_id, project_id, entity_id)
         clean = " ".join((label or "").split())[:120] or None
-        region_hash = hashlib.sha256(
-            f"{version.checksum}:{x}:{y}:{width}:{height}".encode()
-        ).hexdigest()
-        return await self._processing.add_segment(  # type: ignore[no-any-return]
+        assert self._processing is not None
+        if await self._region_count(workspace_id, project_id, version.id) >= (
+            MAX_REGIONS_PER_VERSION
+        ):
+            raise ValidationError(
+                f"A picture can have at most {MAX_REGIONS_PER_VERSION} marked parts. "
+                "Take one off before marking another."
+            )
+        segment = await self._processing.add_segment(
             MediaSegment(
                 workspace_id=workspace_id,
                 project_id=project_id,
@@ -1837,10 +1947,103 @@ class MediaService:
                 width=width,
                 height=height,
                 label=clean,
-                content_hash=region_hash,
+                entity_id=entry,
+                content_hash=_region_hash(version.checksum, x, y, width, height),
                 created_by=scope.actor_user_id,
             )
         )
+        log_event(logger, "media.region_marked", named=clean is not None, entry=entry is not None)
+        await self._regions_changed(scope, workspace_id, project_id, version.asset_id)
+        return segment  # type: ignore[no-any-return]
+
+    async def update_region(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        asset_id: str,
+        version_id: str,
+        segment_id: str,
+        *,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        label: str | None = None,
+        entity_id: str | None = None,
+    ) -> MediaSegment:
+        """Move, resize, rename or relink a marked part. Notes already pointing at it keep
+        the rectangle they were made with."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        version = await self._servable_version(workspace_id, project_id, asset_id, version_id)
+        current = (
+            await self._processing.get_segment(
+                workspace_id=workspace_id, project_id=project_id, segment_id=segment_id
+            )
+            if self._processing is not None
+            else None
+        )
+        if (
+            current is None
+            or current.asset_version_id != version.id
+            or current.kind is not SegmentKind.REGION
+            or current.retired_at is not None
+        ):
+            raise NotFoundError("That marked part was not found.")
+        size = await self._ready_size(workspace_id, project_id, version)
+        self._inside(x, y, width, height, size)
+        entry = await self._region_entry(workspace_id, project_id, entity_id)
+        clean = " ".join((label or "").split())[:120] or None
+        assert self._processing is not None
+        updated = await self._processing.update_segment(
+            current.model_copy(
+                update={
+                    "x": x,
+                    "y": y,
+                    "width": width,
+                    "height": height,
+                    "label": clean,
+                    "entity_id": entry,
+                    "content_hash": _region_hash(version.checksum, x, y, width, height),
+                }
+            )
+        )
+        if updated is None:
+            raise NotFoundError("That marked part was not found.")
+        log_event(logger, "media.region_changed", named=clean is not None, entry=entry is not None)
+        await self._regions_changed(scope, workspace_id, project_id, version.asset_id)
+        return updated  # type: ignore[no-any-return]
+
+    async def _region_count(self, workspace_id: str, project_id: str, version_id: str) -> int:
+        """How many marked parts one picture version has now (taken-off ones not counted)."""
+        assert self._processing is not None
+        return sum(
+            1
+            for segment in await self._processing.list_segments(
+                workspace_id=workspace_id, project_id=project_id, version_id=version_id
+            )
+            if segment.kind is SegmentKind.REGION and segment.retired_at is None
+        )
+
+    def on_regions_changed(self, callback: Callable[..., Awaitable[Any]]) -> None:
+        """Be told when a picture's marked parts change (for the search index, CTX-012),
+        as ``callback(workspace_id, project_id, scope, asset_id)``. It is called inside
+        the author's request, so it should only queue work, never do it."""
+        self._region_hooks.append(callback)
+
+    async def _regions_changed(
+        self, scope: AccessScope | None, workspace_id: str, project_id: str, asset_id: str
+    ) -> None:
+        for callback in list(getattr(self, "_region_hooks", [])):
+            try:
+                await callback(workspace_id, project_id, scope, asset_id)
+            except Exception as error:  # noqa: BLE001 - the index catches up later
+                log_event(
+                    logger,
+                    "media.region_hook_failed",
+                    level=logging.WARNING,
+                    error_type=type(error).__name__,
+                )
 
     async def retire_region(
         self,
@@ -1862,6 +2065,7 @@ class MediaService:
         )
         if retired is None or retired.asset_version_id != version_id:
             raise NotFoundError("That marked part was not found.")
+        await self._regions_changed(scope, workspace_id, project_id, asset_id)
         return retired  # type: ignore[no-any-return]
 
     async def export_regions(self, workspace_id: str, project_id: str) -> list[dict[str, Any]]:
@@ -1879,6 +2083,7 @@ class MediaService:
                 "width": region.width,
                 "height": region.height,
                 "label": region.label,
+                "entity_id": region.entity_id,
                 "created_at": region.created_at.isoformat(),
             }
             for region in await self._processing.list_regions(
@@ -1888,10 +2093,13 @@ class MediaService:
 
     async def restore_regions(self, workspace_id: str, project_id: str, regions: list[Any]) -> int:
         """Put back marked parts from an archive, for pictures that came back with it.
-        A malformed entry, or one naming a picture not there, is skipped."""
+        A malformed entry, one naming a picture not there, one outside its picture (or
+        past any picture's size) and any past a picture's limit of parts are skipped. A
+        part showing an entry no longer in the story comes back without that link."""
         if self._processing is None or not isinstance(regions, list):
             return 0
         restored = 0
+        counts: dict[str, int] = {}
         for raw in regions:
             if not isinstance(raw, dict):
                 continue
@@ -1906,7 +2114,33 @@ class MediaService:
                 x, y, width, height = (int(raw[key]) for key in ("x", "y", "width", "height"))
                 if min(x, y) < 0 or min(width, height) < 1 or not str(raw["id"]).startswith("seg_"):
                     continue
+                if x + width > MAX_REGION_PIXELS or y + height > MAX_REGION_PIXELS:
+                    continue
+                state = await self._processing.get_processing(
+                    workspace_id=workspace_id, project_id=project_id, version_id=version.id
+                )
+                # Once its picture is prepared, a part must lie inside it; before, the
+                # bound above is all that can be checked.
+                if (
+                    state is not None
+                    and state.width is not None
+                    and state.height is not None
+                    and (x + width > int(state.width) or y + height > int(state.height))
+                ):
+                    continue
+                if version.id not in counts:
+                    counts[version.id] = await self._region_count(
+                        workspace_id, project_id, version.id
+                    )
+                if counts[version.id] >= MAX_REGIONS_PER_VERSION:
+                    continue
                 label = " ".join(str(raw.get("label") or "").split())[:120] or None
+                try:
+                    entry = await self._region_entry(
+                        workspace_id, project_id, str(raw.get("entity_id") or "")[:200]
+                    )
+                except ValidationError:
+                    entry = None  # that entry is not in the story: the part comes back unlinked
                 await self._processing.add_segment(
                     MediaSegment(
                         workspace_id=workspace_id,
@@ -1920,13 +2154,13 @@ class MediaService:
                         width=width,
                         height=height,
                         label=label,
-                        content_hash=hashlib.sha256(
-                            f"{version.checksum}:{x}:{y}:{width}:{height}".encode()
-                        ).hexdigest(),
+                        entity_id=entry,
+                        content_hash=_region_hash(version.checksum, x, y, width, height),
                     )
                 )
             except (KeyError, TypeError, ValueError):
                 continue
+            counts[version.id] += 1
             restored += 1
         return restored
 
@@ -2453,6 +2687,11 @@ def _size(byte_count: int) -> str:
     if byte_count < 1024 * 1024 * 1024:
         return f"{byte_count / (1024 * 1024):.1f} MB".replace(".0 MB", " MB")
     return f"{byte_count / (1024 * 1024 * 1024):.1f} GB".replace(".0 GB", " GB")
+
+
+def _region_hash(checksum: str, x: int, y: int, width: int, height: int) -> str:
+    """What a marked part covers, so the search index embeds it again only when it moved."""
+    return hashlib.sha256(f"{checksum}:{x}:{y}:{width}:{height}".encode()).hexdigest()
 
 
 def format_asset_link_id() -> str:

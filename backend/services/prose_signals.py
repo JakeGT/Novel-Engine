@@ -11,6 +11,7 @@ the prose.
 
 from __future__ import annotations
 
+import asyncio
 import math
 from collections.abc import Sequence
 from decimal import Decimal
@@ -24,7 +25,9 @@ from backend.domain.continuity import (
     BIRTH_ROLES,
     PLAIN_LIFE_KINDS,
     POSSESSION_KINDS,
+    StoryParts,
     counts_whole_units,
+    movement_context,
 )
 from backend.domain.drafting import (
     AfterShown,
@@ -37,6 +40,7 @@ from backend.domain.drafting import (
 from backend.domain.knowledge import reading_order, scene_time
 from backend.domain.media import link_applies_at
 from backend.domain.media_observations import ObservationKind
+from backend.domain.movement import Elsewhere, Kept, MovementBrief, PlaceKnown
 from backend.domain.scene_conditions import condition_reading, scene_conditions
 from backend.domain.worldtime import (
     At,
@@ -104,8 +108,10 @@ async def add_prose_signals(
     items: Sequence[PlanItem],
     unit: str,
     pictures: Any = None,
+    clocks: Any = None,
 ) -> None:
-    """Fill the brief's fields for the checks against the prose, in place."""
+    """Fill the brief's fields for the checks against the prose, in place. ``clocks`` (the
+    story's clock and travel table) lets travel read from the words be checked (SCN-007)."""
     times = event_times(story.events)
     when = scene_time(scene.details)
     moment = resolve(when, anchor_lookup(times)).interval if when is not None else None
@@ -130,6 +136,10 @@ async def add_prose_signals(
     brief.supplies = _supplies(story, moment, first, names_of, unit, brief)
     brief.appearance = _appearance(story, moment, people, first, names_of)
     brief.ages = _ages(story, when, people, first, names_of, unit)
+    if clocks is not None:
+        brief.movement = await _movement(
+            story, scene, items, unit, clocks, workspace_id, project_id, people, first, names_of
+        )
     if pictures is not None:
         brief.appearance.extend(
             await _pictures_seen(
@@ -145,6 +155,79 @@ async def add_prose_signals(
                 moment,
             )
         )
+
+
+MAX_PLACES = 2_000
+
+
+async def _movement(
+    story: Story,
+    scene: PlanItem,
+    items: Sequence[PlanItem],
+    unit: str,
+    clocks: Any,
+    workspace_id: str,
+    project_id: str,
+    people: Sequence[str],
+    first: dict[str, str],
+    names_of: dict[str, tuple[str, ...]],
+) -> MovementBrief:
+    """Places, journeys, and where the scene's characters are around its time and what
+    keeps them, for travel read from the words (SCN-007, CON-004)."""
+    from backend.domain.canon.plans import PlanKind
+    from backend.services.continuity_service import how_long_of
+
+    characters = [
+        entity_id
+        for entity_id in people
+        if story.entities.get(entity_id) is not None
+        and story.entities[entity_id].type == "Character"
+    ]
+    how_long, _ = await how_long_of(clocks, workspace_id, project_id)
+    parts = StoryParts(
+        entities=story.entities,
+        facts=story.facts,
+        events=story.events,
+        scenes=[item for item in reading_order(items) if item.kind is PlanKind.SCENE],
+        unit=unit,
+        how_long=how_long,
+    )
+    # Reads the whole of story time: off the event loop for a large story.
+    context = await asyncio.to_thread(movement_context, parts, scene.id, characters)
+    place = next(iter(scene.refs_as("place")), None)
+    # Keyed by entry, not by name: two characters who share a name stay two people.
+    return MovementBrief(
+        people={
+            i: tuple(dict.fromkeys((first[i], *names_of.get(i, ()))))
+            for i in characters
+            if i in first
+        },
+        shown={i: first[i] for i in characters if i in first},
+        places=[
+            PlaceKnown(key, first.get(key, entity.name), names_of.get(key, (entity.name,)))
+            for key, entity in list(context.places.items())[:MAX_PLACES]
+        ],
+        scene_place=place if place in context.places else None,
+        same=dict(context.groups),
+        travel=list(context.travel),
+        elsewhere=[
+            Elsewhere(
+                item.entity_id,
+                item.place_id,
+                item.where,
+                item.gap,
+                item.gap_words,
+                item.after,
+            )
+            for item in context.elsewhere
+            if item.entity_id in first
+        ],
+        kept=[
+            Kept(item.entity_id, item.kind, item.said, item.place_id)
+            for item in context.kept
+            if item.entity_id in first
+        ],
+    )
 
 
 def _after(scene: PlanItem, story: Story, first: dict[str, str]) -> list[AfterShown]:

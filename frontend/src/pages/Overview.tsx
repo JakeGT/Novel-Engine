@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
+import { AuditNotices } from '../components/AuditNotices'
 import { OpenConversations } from '../components/Conversations'
 import { useKeptThread } from '../lib/threads'
 import { EntryMarks } from '../components/EntryMarks'
@@ -232,6 +233,7 @@ export function Overview() {
         ))}
       </section>
 
+      <AuditNotices />
       <OpenConversations />
       {canWrite && <PremiseNudge />}
 

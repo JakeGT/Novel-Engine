@@ -779,6 +779,43 @@ describe('ReviewDetail', () => {
     await expectAccessible(container)
   })
 
+  it('reads suggested arc stages and what someone must have seen in words (STY-005, STY-006)', async () => {
+    const seen = {
+      when: 'before',
+      strength: 'hard',
+      entity_id: 'ent_mara',
+      knows: { how: 'seen', subject_id: 'ent_mara', predicate: 'LOCATED_AT', other_id: 'ent_mara' },
+    }
+    mockApi({
+      ...entries,
+      'GET /plan': { items: [], open: [] },
+      'GET /mutations/mut_1': mutation({
+        operations: [
+          operation({
+            operation_type: 'update_plan_item',
+            target_before: { id: 'pln_arc', title: 'Learning to trust', details: {} },
+            payload: {
+              op: 'update_plan_item',
+              id: 'pln_arc',
+              details: {
+                _path: JSON.stringify([{ name: 'Alone' }, { name: 'Trusting', scene_id: 'pln_gone' }]),
+                _conditions: JSON.stringify([seen]),
+              },
+            },
+          }),
+        ],
+      }),
+    })
+    renderInProject(<ReviewDetail />, at)
+    const plan = await screen.findByRole('region', { name: 'Story plan' })
+    const stages = within(plan).getByRole('row', { name: /Stages/ })
+    expect(stages).toHaveTextContent('1. Alone (where it starts); 2. Trusting (reached in a scene of the plan)')
+    expect(within(plan).getByRole('row', { name: /What must be true/ })).toHaveTextContent(
+      'Before (required): Mara Venn must have seen this: Mara Venn',
+    )
+    expect(stages.closest('table')).not.toHaveTextContent('{')
+  })
+
   it('keeps an edited change open with the text when the server rejects it', async () => {
     mockApi({
       ...entries,

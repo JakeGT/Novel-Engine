@@ -29,6 +29,7 @@ decide what happens elsewhere.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import math
 import re
@@ -71,6 +72,18 @@ from backend.domain.scene_intent import (
 )
 from backend.domain.sources import find_quote, location_for
 from backend.domain.tenancy import Permission
+from backend.services.arc_help import (
+    MAX_LISTED_FACTS,
+    MAX_LISTED_SCENES,
+    Gap,
+    StageSheet,
+    arc_stage_messages,
+    gap_bridge_messages,
+    gap_operations,
+    stage_change,
+    stage_gap,
+    thread_gap,
+)
 from backend.services.job_runner import JobContext, JobSubmission
 from backend.services.provider_route import resolve_provider
 
@@ -78,11 +91,17 @@ logger = logging.getLogger(__name__)
 
 INTENT_JOB = "scene_intent"
 BRIDGE_JOB = "bridge_scenes"
+ARC_JOB = "arc_stages"
+GAP_JOB = "gap_bridge"
 INTENT_PROMPT_VERSION = prompt_version("scene-intent")
 BRIDGE_PROMPT_VERSION = prompt_version("bridge-scenes")
+ARC_PROMPT_VERSION = prompt_version("arc-stages")
+GAP_PROMPT_VERSION = prompt_version("gap-bridge")
 # The same reading budget as the plan card from prose: a long chapter's opening is enough.
 MAX_SCENE_CHARACTERS = 60_000
 MAX_LISTED = 200
+# A scene's summary as listed for an arc's stages, at most this many characters.
+MAX_SUMMARY_WORDS = 300
 MAX_FACTS = 30
 MAX_BRIDGES = 2
 MAX_BRIDGE_TITLE = 120
@@ -108,6 +127,8 @@ TOKENS_PER_WORD = 1.4
 INSTRUCTION_TOKENS = 600
 INTENT_ANSWER_TOKENS = 500
 BRIDGE_ANSWER_TOKENS = 900
+ARC_ANSWER_TOKENS = 900
+GAP_ANSWER_TOKENS = 600
 
 
 # ----------------------------------------------------------------------- answers
@@ -377,7 +398,7 @@ def bridge_change(
 
     after = (
         [condition.model_copy(update={"when": "after"})]
-        if condition is not None and condition.check is not None
+        if condition is not None and (condition.check is not None or condition.knows is not None)
         else []
     )
     created: list[CreatePlanItemOp] = []
@@ -480,6 +501,8 @@ class PlanningHelpService:
     def register_jobs(self) -> None:
         self._runner.register(INTENT_JOB, self.run_intent)
         self._runner.register(BRIDGE_JOB, self.run_bridges)
+        self._runner.register(ARC_JOB, self.run_arc)
+        self._runner.register(GAP_JOB, self.run_gap)
 
     # ------------------------------------------------------------ shared
 
@@ -905,8 +928,330 @@ class PlanningHelpService:
         )
         return {"mutation_id": mutation_id, "bridges": change.bridges, "dropped": change.dropped}
 
+    # ------------------------------------------------------------ an arc's stages (STY-006)
+
+    async def _arc_request(
+        self, scope: AccessScope, workspace_id: str, project_id: str, arc_id: str
+    ) -> tuple[PlanItem, list[dict[str, str]], str, list[str], set[str], Any]:
+        from backend.domain.arcs import arc_path
+
+        arc = await self._plan.get(scope, workspace_id, project_id, arc_id)
+        if arc.kind is not PlanKind.ARC or not arc.is_active:
+            raise ValidationError("Only an arc of the plan can have stages.")
+        if arc_path(arc.details):
+            raise ValidationError(
+                "This arc already has stages, so there is nothing to suggest. Change them on "
+                "the arc itself."
+            )
+        about = arc.refs_as("about")
+        if not about:
+            raise ValidationError("Say whose arc this is first.")
+        names = await self._names(workspace_id, project_id)
+        label = {key: value.name for key, value in names.items()}
+        items = list(
+            await self._reader.list_plan_items(
+                workspace_id=workspace_id, project_id=project_id, limit=2000
+            )
+        )
+        scenes = [
+            item for item in reading_order(items) if item.kind is PlanKind.SCENE and item.is_active
+        ][:MAX_LISTED_SCENES]
+        facts = []
+        for entity_id in about:
+            facts += [
+                fact
+                for fact in await self._reader.list_facts(
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    subject_id=entity_id,
+                    limit=MAX_LISTED_FACTS,
+                )
+                if fact.closed_revision is None
+            ]
+        facts = facts[:MAX_LISTED_FACTS]
+        scales, _ = await self._plan.scales(scope, workspace_id, project_id)
+        who = ", ".join(label.get(entity_id, "someone") for entity_id in about)
+        lines = [f"The arc: “{arc.title}”"]
+        if arc.summary.strip():
+            lines.append(f"What it is about: {arc.summary.strip()}")
+        lines.append(f"Whose arc: {who}")
+        if facts:
+            lines.append(f"\nWhat is recorded about {who} (id: fact):")
+            lines.extend(f"- {fact.id}: {fact_sentence(fact, label)}" for fact in facts)
+        if scenes:
+            lines.append("\nThe plan's scenes in reading order (id: title — what happens):")
+            for scene in scenes:
+                summary = " ".join(scene.summary.split())[:MAX_SUMMARY_WORDS]
+                mark = " (in it)" if set(about) & {ref.entity_id for ref in scene.refs} else ""
+                lines.append(
+                    f"- {scene.id}: “{scene.title}”{mark}" + (f" — {summary}" if summary else "")
+                )
+        if scales.scales:
+            lines.append("\nThe story's scales (id: name — levels):")
+            for scale in scales.scales:
+                order = "in order" if scale.ordered else "in no order"
+                lines.append(f"- {scale.id}: {scale.name} — {', '.join(scale.levels)} ({order})")
+        if not scenes and not arc.summary.strip() and not facts:
+            raise ValidationError(
+                "Say what this arc is about, or plan some scenes, first: there is nothing to "
+                "go on yet."
+            )
+        material = "\n".join(lines)
+        return (
+            arc,
+            arc_stage_messages(material),
+            material,
+            [scene.id for scene in scenes],
+            {fact.id for fact in facts},
+            scales,
+        )
+
+    async def arc_estimate(
+        self, scope: AccessScope, workspace_id: str, project_id: str, arc_id: str
+    ) -> dict[str, Any]:
+        await self._studio._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)  # noqa: SLF001
+        _a, messages, *_ = await self._arc_request(scope, workspace_id, project_id, arc_id)
+        return {"total_tokens": _tokens(messages, ARC_ANSWER_TOKENS), "reads_prose": False}
+
+    async def start_arc(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        arc_id: str,
+        *,
+        confirmed_tokens: int | None = None,
+    ) -> Job:
+        """Ask the assistant to suggest the stages of an arc with none yet, for review."""
+        await self._studio._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)  # noqa: SLF001
+        _a, messages, *_ = await self._arc_request(scope, workspace_id, project_id, arc_id)
+        await self._guard(
+            scope,
+            workspace_id,
+            project_id,
+            _tokens(messages, ARC_ANSWER_TOKENS),
+            confirmed_tokens,
+            "Suggesting the stages of this arc",
+        )
+        return await self._submit(scope, workspace_id, project_id, ARC_JOB, {"plan_id": arc_id})
+
+    async def run_arc(self, ctx: JobContext) -> dict:
+        job, scope = ctx.job, ctx.scope
+        workspace_id, project_id, payload = job.workspace_id, job.project_id, job.payload
+        await ctx.step("Reading the arc, its character and the plan", 5)
+        arc, messages, material, order, fact_ids, scales = await self._arc_request(
+            scope, workspace_id, project_id, payload["plan_id"]
+        )
+        await ctx.step("The assistant is thinking of the arc's stages", 30)
+        sheet: StageSheet = await self._ask(ctx, messages, ARC_ANSWER_TOKENS, StageSheet, "arc")
+        await ctx.step("Checking what it suggests against the arc and the plan", 85)
+        # The arc as it is now: the author may have given it stages while the job waited.
+        arc = await self._plan.get(scope, workspace_id, project_id, payload["plan_id"])
+        change = stage_change(
+            sheet,
+            arc,
+            material=material,
+            scene_order=order,
+            fact_ids=fact_ids,
+            scales=scales,
+            job_id=job.id,
+        )
+        mutation_id: str | None = None
+        if change.operation is not None:
+            await ctx.step("Sending the plan change for review", 95)
+            mutation_id = await self._propose(
+                scope,
+                workspace_id,
+                project_id,
+                [change.operation],
+                "stages suggested for an arc from the plan and the story bible, awaiting review",
+            )
+        log_event(
+            logger,
+            "plan.arc_stages_suggested",
+            proposed=mutation_id is not None,
+            stages=change.stages,
+            dropped=change.dropped,
+            cleared=change.cleared,
+            prompt_version=ARC_PROMPT_VERSION,
+        )
+        return {
+            "mutation_id": mutation_id,
+            "stages": change.stages,
+            "dropped": change.dropped,
+            "cleared": change.cleared,
+        }
+
+    # ------------------------------------------------------------ gaps (STY-004)
+
+    async def _gap_request(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        stage: int | None,
+    ) -> tuple[Gap, list[dict[str, str]], list[CanonEntity], list[PlanItem]]:
+        await self._plan.get(scope, workspace_id, project_id, plan_id)
+        names = await self._names(workspace_id, project_id)
+        label = {key: value.name for key, value in names.items()}
+        items = list(
+            await self._reader.list_plan_items(
+                workspace_id=workspace_id, project_id=project_id, limit=2000
+            )
+        )
+        found = (
+            thread_gap(items, plan_id) if stage is None else stage_gap(items, plan_id, stage, label)
+        )
+        if isinstance(found, str):
+            raise ValidationError(found)
+        order = reading_order(items)
+        place = next((i for i, item in enumerate(order) if item.id == found.anchor.id), None)
+        around = list(found.around)
+        if place is not None:
+            for item in order[max(0, place - 2) : place + 3]:
+                if item not in around:
+                    around.append(item)
+        around.sort(key=lambda item: next((i for i, o in enumerate(order) if o.id == item.id), 0))
+        involved = {ref.entity_id for item in around for ref in item.refs} | set(found.about)
+        listed = sorted(names.values(), key=lambda e: (e.id not in involved, e.name.casefold()))[
+            :MAX_LISTED
+        ]
+        lines = ["Entries (id: name (type)):"]
+        lines.extend(f"- {entity.id}: {entity.name} ({entity.type})" for entity in listed)
+        lines.append("\nThe scenes around the gap, in reading order:")
+        for item in around:
+            summary = f": {item.summary.strip()}" if item.summary.strip() else ""
+            lines.append(f"- “{item.title}”{summary}")
+        where = "just after" if found.after else "just before"
+        gap = f"{found.words} The new scene comes {where} “{found.anchor.title}”."
+        return found, gap_bridge_messages("\n".join(lines), gap), listed, items
+
+    async def gap_estimate(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        stage: int | None,
+    ) -> dict[str, Any]:
+        await self._studio._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)  # noqa: SLF001
+        _g, messages, _l, _i = await self._gap_request(
+            scope, workspace_id, project_id, plan_id, stage
+        )
+        return {"total_tokens": _tokens(messages, GAP_ANSWER_TOKENS), "reads_prose": False}
+
+    async def start_gap(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        plan_id: str,
+        stage: int | None,
+        *,
+        confirmed_tokens: int | None = None,
+    ) -> Job:
+        """Ask for one scene that moves a quiet thread along, or reaches an arc's stage
+        that no scene reaches, as a plan change for review."""
+        await self._studio._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)  # noqa: SLF001
+        _g, messages, _l, _i = await self._gap_request(
+            scope, workspace_id, project_id, plan_id, stage
+        )
+        await self._guard(
+            scope,
+            workspace_id,
+            project_id,
+            _tokens(messages, GAP_ANSWER_TOKENS),
+            confirmed_tokens,
+            "Suggesting a scene to fill the gap",
+        )
+        return await self._submit(
+            scope, workspace_id, project_id, GAP_JOB, {"plan_id": plan_id, "stage": stage}
+        )
+
+    async def _arc_now(
+        self, scope: AccessScope, workspace_id: str, project_id: str, gap: Gap
+    ) -> Gap:
+        """A stage's gap against its arc as it is now, so only that stage's scene is set and
+        every other change the author made meanwhile is kept. The stage is found again by
+        its name; refused, in plain words, when it is gone or a scene reaches it now."""
+        from backend.domain.arcs import arc_path
+
+        assert gap.arc is not None and gap.stage_index is not None
+        wanted = arc_path(gap.arc.details)[gap.stage_index].name.casefold()
+        arc = await self._plan.get(scope, workspace_id, project_id, gap.arc.id)
+        stages = arc_path(arc.details)
+        index = next(
+            (i for i, stage in enumerate(stages) if i > 0 and stage.name.casefold() == wanted),
+            None,
+        )
+        if index is None or stages[index].scene_id:
+            raise ValidationError(
+                "The arc changed while the assistant was thinking: that stage is no longer "
+                "on it, or a scene reaches it now. Nothing was suggested; ask again if a "
+                "scene is still wanted."
+            )
+        return dataclasses.replace(gap, arc=arc, stage_index=index)
+
+    async def run_gap(self, ctx: JobContext) -> dict:
+        job, scope = ctx.job, ctx.scope
+        workspace_id, project_id, payload = job.workspace_id, job.project_id, job.payload
+        stage = payload.get("stage")
+        await ctx.step("Reading the plan and the gap", 5)
+        gap, messages, listed, items = await self._gap_request(
+            scope,
+            workspace_id,
+            project_id,
+            payload["plan_id"],
+            int(stage) if stage is not None else None,
+        )
+        await ctx.step("The assistant is thinking of a scene", 30)
+        sheet: BridgeSheet = await self._ask(ctx, messages, GAP_ANSWER_TOKENS, BridgeSheet, "gap")
+        await ctx.step("Checking what it suggests against the story", 85)
+        if gap.arc is not None:
+            # The arc as it is now: the author may have changed it while the job waited.
+            gap = await self._arc_now(scope, workspace_id, project_id, gap)
+        anchor = gap.anchor
+        siblings = [
+            item
+            for item in items
+            if item.is_active
+            and item.parent_id == anchor.parent_id
+            and item.kind is not PlanKind.THREAD
+            and (anchor.parent_id is not None or item.kind is anchor.kind)
+        ]
+        before = (
+            anchor.model_copy(update={"position": anchor.position + 1}) if gap.after else anchor
+        )
+        change = bridge_change(
+            BridgeSheet(bridges=sheet.bridges[:1]), before, siblings, None, listed, job.id
+        )
+        mutation_id: str | None = None
+        if change.operations:
+            created, *moved = change.operations
+            assert isinstance(created, CreatePlanItemOp)
+            await ctx.step("Sending the plan change for review", 95)
+            mutation_id = await self._propose(
+                scope,
+                workspace_id,
+                project_id,
+                gap_operations(gap, created, moved, job.id),
+                "a scene suggested to fill a gap in the plan, awaiting review",
+            )
+        log_event(
+            logger,
+            "plan.gap_bridged",
+            proposed=mutation_id is not None,
+            kind=gap.kind,
+            dropped=change.dropped,
+            prompt_version=GAP_PROMPT_VERSION,
+        )
+        return {"mutation_id": mutation_id, "bridges": change.bridges, "dropped": change.dropped}
+
 
 __all__ = [
+    "ARC_JOB",
+    "GAP_JOB",
     "BRIDGE_JOB",
     "INTENT_JOB",
     "BridgeChoice",

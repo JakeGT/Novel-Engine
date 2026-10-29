@@ -31,7 +31,7 @@ references and matches in comments and text.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -203,12 +203,34 @@ class KeptDraft:
     records: frozenset[str]
 
 
+@dataclass(frozen=True)
+class AfterChange:
+    """How something would read once the change is kept, worked out on a scratch copy of
+    the story with the change applied (CON-017): a scene's condition, or what the
+    reader's guide says the reader learns in a scene."""
+
+    # condition (a scene's condition in the plan) or reader (the reader's guide)
+    kind: Literal["condition", "reader"]
+    plan_id: str
+    # The scene's title, as it would be after the change.
+    title: str
+    # What changes, in a sentence, with how it reads now and how it would read.
+    words: str
+    now: str = ""
+    after: str = ""
+
+
 @dataclass
 class Impact:
     about: list[str]
     affected: list[Dependent]
     may_be_affected: list[Dependent]
     not_checked: list[str]
+    # How the plan's conditions and the reader's guide would read after the change, from
+    # a scratch copy of the story; empty when nothing there would read differently.
+    after_change: list[AfterChange] = field(default_factory=list)
+    # Whether that copy was worked out (only for a proposed change).
+    scratch: bool = False
 
 
 # ---------------------------------------------------------------- what a change names
@@ -822,6 +844,187 @@ def standing_gaps(touched: Touched) -> list[str]:
     return gaps
 
 
+# ---------------------------------------------------- after the change (scratch copy)
+
+
+def _condition_change(what: str, was: str, will: str) -> str:
+    """How a condition would read after the change, in plain words."""
+    if was == "met" and will == "not_met":
+        return f"{what} would no longer be met"
+    if was == "not_met" and will == "met":
+        return f"{what} would now be met"
+    return (
+        f"{what} would be {_CONDITION_WORDS.get(will, will)} "
+        f"instead of {_CONDITION_WORDS.get(was, was)}"
+    )
+
+
+_CONDITION_WORDS = {
+    "met": "met",
+    "not_met": "not met",
+    "planned": "planned in an earlier scene",
+    "unclear": "cannot be told",
+    "unchecked": "in your own words, not checked",
+}
+
+
+def _condition_key(state: object) -> tuple[str, str, str]:
+    return (
+        str(getattr(state, "plan_id", "")),
+        str(getattr(state, "when", "")),
+        str(getattr(state, "reading", "")),
+    )
+
+
+def condition_changes(
+    before: Sequence[object], after: Sequence[object], titles: Mapping[str, str]
+) -> list[AfterChange]:
+    """Scene conditions whose standing differs once the change is kept (``ConditionState``
+    from the plan, worked out the same way over the story now and over the scratch copy).
+    A condition is the same one when its scene, its "before" or "after" and its reading
+    are; one only in the plan after the change is new, and one only before is gone."""
+    then = {_condition_key(state): state for state in before}
+    now = {_condition_key(state): state for state in after}
+    found: list[AfterChange] = []
+    for key in [*then, *(k for k in now if k not in then)]:
+        plan_id, when, reading = key
+        title = titles.get(plan_id, "A scene")
+        old, new = then.get(key), now.get(key)
+        side = "before" if when == "before" else "after"
+        what = f"“{reading}” ({side} the scene)"
+        if old is not None and new is not None:
+            was = str(getattr(old, "status", ""))
+            will = str(getattr(new, "status", ""))
+            if was == will:
+                continue
+            found.append(
+                AfterChange(
+                    "condition",
+                    plan_id,
+                    title,
+                    _condition_change(what, was, will),
+                    now=_CONDITION_WORDS.get(was, was),
+                    after=_CONDITION_WORDS.get(will, will),
+                )
+            )
+        elif new is not None:
+            will = str(getattr(new, "status", ""))
+            found.append(
+                AfterChange(
+                    "condition",
+                    plan_id,
+                    title,
+                    f"A new condition {what} would "
+                    + (
+                        "not be met"
+                        if will == "not_met"
+                        else f"be {_CONDITION_WORDS.get(will, will)}"
+                    ),
+                    after=_CONDITION_WORDS.get(will, will),
+                )
+            )
+        elif old is not None:
+            found.append(
+                AfterChange(
+                    "condition",
+                    plan_id,
+                    title,
+                    f"The condition {what} would no longer be in the plan",
+                    now=_CONDITION_WORDS.get(str(getattr(old, "status", "")), ""),
+                )
+            )
+    return found[:MAX_DEPENDENTS]
+
+
+class _NoStep:
+    """A scene not in the reading order: it shows the reader nothing."""
+
+    number = None
+    shown: tuple[object, ...] = ()
+    irony: tuple[str, ...] = ()
+    withheld: tuple[str, ...] = ()
+    repeated: tuple[str, ...] = ()
+    flashback = False
+
+
+def reader_changes(
+    before: Sequence[object],
+    after: Sequence[object],
+    said_before: Callable[[str], str],
+    said_after: Callable[[str], str],
+) -> list[AfterChange]:
+    """What the reader's guide would say differently, scene by scene (``ReaderStep`` over
+    the story now and over the scratch copy): what the reader is shown or given a hint
+    of, what they know that the viewpoint character does not, what the viewpoint
+    character knows that is kept from the reader, a scene shown again, a flashback, and
+    scenes that come into or leave the reading order. ``said_*`` say a fact in words."""
+    then = {str(getattr(getattr(step, "scene", None), "id", "")): step for step in before}
+    now = {str(getattr(getattr(step, "scene", None), "id", "")): step for step in after}
+    found: list[AfterChange] = []
+
+    def title(step: object) -> str:
+        return str(getattr(getattr(step, "scene", None), "title", "") or "A scene")
+
+    def shown(step: object) -> dict[str, str]:
+        return {
+            str(getattr(reveal, "fact_id", "")): str(getattr(reveal, "how", "shown"))
+            for reveal in getattr(step, "shown", []) or []
+        }
+
+    def add(plan_id: str, step: object, words: str) -> None:
+        found.append(AfterChange("reader", plan_id, title(step), words))
+
+    for plan_id, step in now.items():
+        old = then.get(plan_id)
+        if old is None:
+            add(plan_id, step, "It would come into the reading order")
+            old = _NoStep()
+        elif getattr(old, "number", None) != getattr(step, "number", None):
+            add(
+                plan_id,
+                step,
+                f"It would be scene {getattr(step, 'number', '?')} instead of "
+                f"scene {getattr(old, 'number', '?')} in reading order",
+            )
+        was, will = shown(old), shown(step)
+        for fact_id, how in will.items():
+            verb = "shown" if how == "shown" else "given a hint of"
+            if fact_id not in was:
+                add(plan_id, step, f"The reader would be {verb}: {said_after(fact_id)}")
+            elif was[fact_id] != how:
+                add(plan_id, step, f"The reader would be {verb} instead: {said_after(fact_id)}")
+        for fact_id in was:
+            if fact_id not in will:
+                add(plan_id, step, f"The reader would no longer learn: {said_before(fact_id)}")
+        for name, words, say in (
+            ("irony", "The reader would know, and the viewpoint character not", said_after),
+            ("withheld", "The viewpoint character would know, kept from the reader", said_after),
+            ("repeated", "It would show the reader again", said_after),
+        ):
+            gained = set(getattr(step, name, []) or []) - set(getattr(old, name, []) or [])
+            for fact_id in sorted(gained):
+                add(plan_id, step, f"{words}: {say(fact_id)}")
+        for name, words in (
+            ("irony", "No longer known to the reader and not to the viewpoint character"),
+            ("withheld", "No longer kept from the reader"),
+        ):
+            lost = set(getattr(old, name, []) or []) - set(getattr(step, name, []) or [])
+            for fact_id in sorted(lost):
+                add(plan_id, step, f"{words}: {said_before(fact_id)}")
+        if bool(getattr(old, "flashback", False)) != bool(getattr(step, "flashback", False)):
+            add(
+                plan_id,
+                step,
+                "It would be a flashback"
+                if getattr(step, "flashback", False)
+                else "It would no longer be a flashback",
+            )
+    for plan_id, step in then.items():
+        if plan_id not in now:
+            add(plan_id, step, "It would leave the reading order")
+    return found[:MAX_DEPENDENTS]
+
+
 def _unique(items: Iterable[str]) -> list[str]:
     return list(dict.fromkeys(items))
 
@@ -836,6 +1039,9 @@ def _and(names: Sequence[str]) -> str:
 
 
 __all__ = [
+    "AfterChange",
+    "condition_changes",
+    "reader_changes",
     "PictureLink",
     "StudioFinding",
     "belief_dependents",

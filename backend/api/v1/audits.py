@@ -7,7 +7,7 @@ with ``POST /jobs/{id}/cancel``.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Header, Query, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -45,7 +45,12 @@ from backend.domain.check_passes import PASS_DESCRIPTIONS, PASS_LABELS, CheckPas
 from backend.domain.identity import AccessScope
 from backend.services.audit_schedules import AuditScheduleService
 from backend.services.correction_plans import CorrectionPlanService
-from backend.services.story_audit import MAX_AUDIT_SCENES, StoryAudit
+from backend.services.story_audit import (
+    MAX_AUDIT_SCENES,
+    WHAT_IF_CHANGES,
+    AuditEstimate,
+    StoryAudit,
+)
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["audits"])
 
@@ -131,6 +136,8 @@ class AuditModel(BaseModel):
 
 
 def _title(item: object | None, plan_id: str = "") -> str:
+    if plan_id == WHAT_IF_CHANGES:
+        return "The scenes written differently in this what-if"
     if item is None:
         return "A part of the plan no longer there" if plan_id else "The whole story"
     return str(getattr(item, "title", "")) or "Untitled"
@@ -147,10 +154,14 @@ async def audit_estimate(
     """What auditing this part of the story would read and use, before anything is sent.
     Every pass when none are named. Calls no model."""
     found = await audits.estimate(scope, scope.workspace_id or "", project_id, plan_id, passes)
+    return _estimate_model(found, plan_id)
+
+
+def _estimate_model(found: AuditEstimate, plan_id: str) -> AuditEstimateModel:
     totals = found.pass_totals()
     return AuditEstimateModel(
         plan_id=plan_id,
-        title=_title(found.item),
+        title=_title(found.item, plan_id),
         scenes=[
             AuditSceneEstimateModel(
                 plan_id=entry.scene.id,
@@ -558,6 +569,145 @@ async def remove_schedule(
 
 
 # ------------------------------------------------------------ comparing a what-if
+
+
+@router.get("/what-ifs/{what_if_id}/audit/changed/estimate")
+async def changed_audit_estimate(
+    project_id: str,
+    what_if_id: str,
+    passes: list[CheckPass] | None = Query(default=None, max_length=len(CheckPass)),
+    scope: AccessScope = Depends(get_project_scope),
+    audits: StoryAudit = Depends(get_audits),
+) -> AuditEstimateModel:
+    """What asking the assistant to check only the scenes this what-if has written
+    differently from the main story would read and use, before anything is sent. Every
+    pass when none are named. Calls no model."""
+    found, _ = await audits.estimate_changed(
+        scope, scope.workspace_id or "", project_id, what_if_id, passes
+    )
+    return _estimate_model(found, WHAT_IF_CHANGES)
+
+
+class ChangedAuditRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    passes: list[CheckPass] = Field(min_length=1, max_length=len(CheckPass))
+
+
+@router.post("/what-ifs/{what_if_id}/audit/changed", status_code=status.HTTP_202_ACCEPTED)
+async def start_changed_audit(
+    project_id: str,
+    what_if_id: str,
+    body: ChangedAuditRequest,
+    scope: AccessScope = Depends(require_project_scope),
+    audits: StoryAudit = Depends(get_audits),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=200),
+    confirmed: int | None = Depends(confirmed_tokens),
+) -> JobModel:
+    """Ask the assistant to check only the scenes this what-if has written differently, in
+    the what-if. Above the size the author asked to confirm, refused with ``409
+    needs_confirmation`` until confirmed. The results are an audit like any other."""
+    job = await audits.start_changed(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        what_if_id,
+        passes=body.passes,
+        confirmed_tokens=confirmed,
+        idempotency_key=idempotency_key or "",
+    )
+    return _job(job)
+
+
+# --------------------------------------------------------------------- notices
+
+
+class NoticeModel(BaseModel):
+    """An in-app notice for the author: a scheduled audit finished (CON-011)."""
+
+    id: str
+    kind: Literal["audit_finished"]
+    job_id: str
+    # succeeded, failed (kept what it finished) or cancelled (kept what it finished).
+    status: Literal["succeeded", "failed", "cancelled"]
+    # What it says, in plain words, with what it found and used.
+    sentence: str
+    # What the audit covered, as named now.
+    part: str
+    plan_id: str
+    # The what-if it ran in, by name; null for the main story.
+    what_if: str | None = None
+    branch_id: str | None = None
+    scenes: int
+    notes: int
+    checks: int
+    total_tokens: int
+    cost_usd: float | None = None
+    created_at: datetime | None = None
+    seen: bool
+
+
+class NoticeListModel(BaseModel):
+    items: list[NoticeModel]
+
+
+def get_notices(container: Container = Depends(get_container)) -> Any:
+    return container.audit_notices
+
+
+@router.get("/notices")
+async def list_notices(
+    project_id: str,
+    job_id: str | None = Query(default=None, max_length=200),
+    unseen: bool = Query(default=False),
+    scope: AccessScope = Depends(get_project_scope),
+    notices: Any = Depends(get_notices),
+) -> NoticeListModel:
+    """Your own notices in this story, newest first: one for each audit you scheduled that
+    has finished. ``unseen`` keeps only those not yet marked read; ``job_id`` one audit's."""
+    if notices is None:
+        return NoticeListModel(items=[])
+    found = await notices.list(
+        scope, scope.workspace_id or "", project_id, job_id=job_id, unseen_only=unseen
+    )
+    return NoticeListModel(
+        items=[
+            NoticeModel(
+                id=item.notice.id,
+                kind=item.notice.kind,
+                job_id=item.notice.job_id,
+                status=item.notice.status,
+                sentence=item.sentence,
+                part=item.part,
+                plan_id=item.notice.plan_id,
+                what_if=item.what_if,
+                branch_id=item.notice.branch_id,
+                scenes=item.notice.scenes,
+                notes=item.notice.notes,
+                checks=item.notice.checks,
+                total_tokens=item.notice.tokens,
+                cost_usd=item.notice.cost_usd,
+                created_at=item.notice.created_at,
+                seen=item.notice.seen_at is not None,
+            )
+            for item in found
+        ]
+    )
+
+
+@router.post("/notices/{notice_id}/seen", status_code=status.HTTP_204_NO_CONTENT)
+async def mark_notice_seen(
+    project_id: str,
+    notice_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    notices: Any = Depends(get_notices),
+) -> None:
+    """Mark one of your notices read. It stays listed, as read."""
+    from backend.domain.errors import NotFoundError
+
+    if notices is None or not await notices.mark_seen(
+        scope, scope.workspace_id or "", project_id, notice_id
+    ):
+        raise NotFoundError("That notice was not found.")
 
 
 class WhatIfDifferenceModel(BaseModel):

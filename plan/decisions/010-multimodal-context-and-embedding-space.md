@@ -524,3 +524,98 @@ What exists stays as it is: `AudioPart` and `VideoPart` are declared and never s
 embedding adapter refuses audio, video and interleaved inputs. Backlog items that list audio or
 video (CTX-011–CTX-014, AST-003, AST-005, CON-008, CON-014, SCN-002) now say so instead of
 listing them as not built. Recorded in `11-decisions-and-questions.md`.
+
+## Amendment 2026-10-21 (batch 10 B): marked parts of a picture, writing read from a picture, notes that point at a part
+
+**Marking parts (AST-007, AST-003; migration `0060_picture_regions`).** The picture page has a
+"Marked parts" section: draw a rectangle on the picture with the pointer, or type where it is
+(from the left, from the top, width, height, in pixels of the picture as shown), give it a name
+and say which entry it shows; change it, show it on the picture, or remove it with Undo. A part
+is the author's own markup, like its name: `media_segments.entity_id` points at an entry and
+states nothing about the story, so it is not a reviewed change (the reviewed picture link still
+decides where a picture is shown and who may see it). The entry must be in the story when the
+part is saved. Typing is the way that always works; drawing is a shortcut hidden from assistive
+technology, so the screen meets WCAG 2.2's 2.5.7 Dragging Movements (a single-pointer or typed
+alternative to every drag). Parts are stored in pixels of the picture as shown and handed to
+models and to the screen as fractions of it, the same idea as W3C Media Fragments' spatial
+dimension (`xywh=` in pixels or percent), so they hold for every smaller copy.
+
+**Writing read from a picture (AST-003, AST-005).** The describe job (`describe-picture/2`) lists
+the marked parts and asks the vision model for a caption of each and for the writing it can read,
+copied letter for letter, never completed, corrected, translated or guessed, with where it is. Each
+becomes an observation (`text_in_picture`, or a caption pointing at its part) reviewed like any
+other: accept, correct, reject; never a story fact (writing cannot be offered as a detail). Writing
+that asks for something is only ever copied, inside the request's marked material. No local OCR
+engine is used (owner decision for this batch): the model that describes the picture already sees
+it, and a second engine would be one more decoder to sandbox. Vision models are known to invent
+text they cannot read in degraded pictures, recited from language patterns rather than read
+(He et al., 2025), which is why every reading is a suggestion with its own confidence and the
+author's correction wins. A model rectangle lying mostly (60%) inside a marked part points at that
+part. Accepted part captions and writing join the picture's description for a route that cannot
+see pictures ("Written in the picture: “…”").
+
+**Parts in the search index (CTX-012).** Each part with a name or an entry is its own index row
+pointing at its segment: its words (name, the entry it shows, what the author accepted about it,
+kind `region_caption`) in every generation, and, in a generation whose model takes images, the
+part itself (kind `region`), cut from the web copy in the same limited picture worker that
+prepares pictures (`crop` in `image_worker.py`). Marking, changing or removing a part, or reviewing
+a note about one, brings the story's parts up to date at once; a removed part is refused by the
+search gate (the segment is retired) before its rows go. Lag and builds count parts. "Find
+pictures" also finds a picture by a part's name or entry and says so.
+
+**Notes that point at a part (CON-014).** The pictures check (`check-pictures/2`) lists each
+picture's marked parts, numbered across the request; a note may name one (`part`) or, for a
+picture sent, give a rectangle (`region`). The note keeps the picture version and the part
+(`draft_findings.picture_anchor`), and the studio shows the picture small with the part drawn on
+it and a link to the picture page. A note naming a part that was not listed keeps the picture
+only; a rectangle for a picture given only as words is dropped. Notes keep the rectangle they were
+made with when a part is later moved or removed.
+
+Not built: a model-proposed part (the author marks parts; the model only describes them),
+fallback-quality measurement, and drawing beside the form on a phone (the picture sits above
+the form there; the typed numbers work everywhere). Everything ran against the scripted model,
+the local stand-in model and the stand-in embedder only.
+
+Sources consulted: [Understanding WCAG 2.2 SC 2.5.7 Dragging
+Movements](https://www.w3.org/WAI/WCAG22/Understanding/dragging-movements.html) (a feature that
+uses dragging must also work with a single pointer without dragging; typing a value counts);
+[W3C Media Fragments URI 1.0, spatial dimension](https://www.w3.org/TR/media-frags/#naming-space)
+(rectangles as `xywh` in pixels or percent of the image); [He et al., "Seeing is Believing?
+Mitigating OCR Hallucinations in Multimodal Large Language Models",
+arXiv:2506.20168](https://arxiv.org/abs/2506.20168) (models invent text in degraded images instead
+of admitting they cannot read it).
+
+## Amendment 2026-10-21 (batch 10 A): what each model takes, and what is sent before it is (CTX-013)
+
+**Per model, not per route.** `backend/services/model_capabilities.py` looks each model up by name:
+the operator's table (`AI_MODEL_CAPABILITIES`, JSON keyed by `provider/model` with a trailing `*`
+for a family; it always wins and is checked at start-up), else the provider's public list where it
+publishes one with these details (OpenRouter `GET /api/v1/models`: `architecture.input_modalities`,
+`context_length`, `top_provider.max_completion_tokens`, `supported_parameters`), read at most once a
+day (`AI_MODEL_LIST`, on by default; a failed read waits an hour), parsed off the event loop and
+kept in `model_capabilities` (migration 0059, install-wide public metadata). The connector already
+reports what it found on the author's computer (context per model, whether it keeps to a schema).
+OpenAI, Anthropic, Google, xAI, Mistral and DeepSeek do not publish modalities in their model
+lists, so for them the table or the route's settings decide.
+
+The operator still decides whether pictures may leave for a route at all (`AI_IMAGE_INPUT`,
+`AI_IMAGE_PROVIDERS`). Within that, a model a list says cannot see pictures is given their
+descriptions (recorded as a degradation, as before); the table may lower how many pictures go; a
+model said not to keep to a schema is asked in words; its context size travels with the route
+(`ProviderCapabilities.max_context_tokens`, `max_output_tokens`, `source`). Unknown models behave as
+before.
+
+**What will be sent, before it is.** `backend/services/send_preview.py` works out, for a draft or a
+check, the provider and model it goes to, the words of the story it reads, each picture that would go
+as itself (by the same `negotiate` the request uses) and where it goes in plain words: a company's
+servers, the author's own computer, or the site's own network (a loopback, private or dot-less host).
+It is shown beside a draft's cost and in every size question (`409 needs_confirmation` now carries a
+`sending` member, an RFC 9457 extension). A request that would send pictures to a company's servers
+is asked about first whatever its size, and confirmed the same way (`X-Confirm-Tokens`). Names and
+counts only: never a key or the story's words. The dialog shows each picture small.
+
+**Not covered.** Describing a picture (it shows its cost first and is about sending that picture)
+and scheduled audits (nobody is there to ask) do not show the preview; staged provider uploads.
+
+Sources: OpenRouter models API <https://openrouter.ai/docs/api/api-reference/models/get-models>;
+RFC 9457 problem details, extension members <https://www.rfc-editor.org/rfc/rfc9457#name-extension-members>.

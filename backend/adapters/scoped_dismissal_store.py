@@ -98,6 +98,39 @@ class PostgresScopedDismissalStore:
                 },
             )
 
+    async def restore(self, item: ScopedDismissal) -> bool:
+        """Put back a dismissal from an archive as it was, withdrawn or not (CON-016). One
+        already there (by id) is left as it is."""
+        async with session_scope(self._session_factory) as db:
+            result = await db.execute(
+                text(
+                    "INSERT INTO scoped_dismissals (workspace_id, project_id, branch_id, id, "
+                    "kind, code, scope, entity_id, from_plan_id, to_plan_id, reason, note, "
+                    "expires_at, created_by, created_at, withdrawn_at) VALUES (:w, :p, :b, :id, "
+                    ":kind, :code, :scope, :entity, :first, :last, :reason, :note, :expires, "
+                    ":by, :at, :gone) ON CONFLICT DO NOTHING"
+                ),
+                {
+                    "w": item.workspace_id,
+                    "p": item.project_id,
+                    "b": item.branch_id,
+                    "id": item.id,
+                    "kind": item.kind.value,
+                    "code": item.code,
+                    "scope": item.scope.value,
+                    "entity": item.entity_id,
+                    "first": item.from_plan_id,
+                    "last": item.to_plan_id,
+                    "reason": item.reason.value,
+                    "note": item.note,
+                    "expires": item.expires_at,
+                    "by": item.created_by,
+                    "at": item.created_at,
+                    "gone": item.withdrawn_at,
+                },
+            )
+            return bool(result.rowcount)  # type: ignore[attr-defined]
+
     async def withdraw(
         self, *, workspace_id: str, project_id: str, branch_id: str, dismissal_id: str, at: Any
     ) -> bool:

@@ -160,3 +160,27 @@ names both ends while saying it does not happen — each recorded as a limit.
 [swain]: https://en.wikipedia.org/wiki/Scene_and_sequel
 [timeml]: https://www.academia.edu/111118722/The_Specification_Language_TimeML
 [gaffes]: https://careerauthors.com/5-ways-to-avoid-continuity-gaffes/
+
+## Amendment (2026-10-21, batch 10 C): what someone knows, arc stages from the assistant, bridges for gaps
+
+- **Conditions about what someone knows** (STY-005). A scene condition can say a character
+  *knows*, *has seen* or *has heard* a statement (`knows` on the condition, kept in details
+  like the others). It is judged against the beliefs recorded and how each was learned
+  (`backend/domain/acquisition.py`): seeing needs a belief learned by witnessing, hearing one
+  told, overheard or heard said; a belief learned only later does not count, nor, for a
+  "before", one learned in the scene itself; a fact everyone knows counts for knowing. In
+  plan order, being left somewhere else undoes "is at", an earlier "knows" (or the same way of
+  learning) brings a knowing about, and the very same check brings any other about.
+- **Stages from the assistant** (STY-006). An arc with no stages can ask for them
+  (`arc-stages`, `POST /plan/{id}/stages/suggest`): each stage must quote the arc, a scene or a
+  recorded fact, is placed only in a listed scene in reading order, and is tied only to a
+  listed fact or a real scale level; the path arrives as one reviewed change. The plan pass
+  of a check is told every arc a scene moves (someone else's too, when they are in the scene,
+  never with the stage's fact) and notes, quoting where it belongs, a stage reached with no
+  sign of the change (`check-plan` v2). Arc stages follow a state-not-event shape (K. M.
+  Weiland, *Creating Character Arcs*, 2016).
+- **Bridges for gaps other than conditions** (STY-004). A thread that opens and resolves with
+  nothing moving it along, and an arc's stage no scene reaches, offer "Suggest a scene"
+  (`gap-bridge`, `POST /plan/{id}/gap/suggest[?stage=]`): one scene, placed before the scene
+  that resolves the thread (marked as moving it along) or after the scene of the stage before
+  (set as where the stage is reached, the arc's path updated in the same reviewed change).

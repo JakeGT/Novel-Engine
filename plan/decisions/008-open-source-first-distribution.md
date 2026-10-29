@@ -54,3 +54,27 @@ The source license is intentionally left open pending owner selection. “Free t
 ## Validation
 
 The first public release is valid when a new contributor can install it from documented sources, create and export a project, use deterministic workflows without an API key, and optionally generate with either a local OpenAI-compatible endpoint or their own OpenRouter key. No request may depend on a Novel Engine-operated account, billing API, or inference balance.
+
+## Amendment 2026-10-21 (batch 10 A): a reproducible release artefact (OSS-005)
+
+`make release` (`scripts/release/build.py`) builds, from one commit (`HEAD`, or `RELEASE_ARGS="--ref
+…"`), into `dist/release/novel-engine-<version>/`: the source tarball with its pinned lock files,
+the backend and connector as a wheel and sdist (`uv build`, backend `uv_build`; the project is still
+not installed into its own environment), the built frontend from a frozen install, CycloneDX SBOMs
+for both from their lock files (`uv export --format cyclonedx1.5`, in preview in uv, and `pnpm sbom
+--sbom-format cyclonedx --lockfile-only --prod`; no extra tool such as syft is needed), a
+`BUILDINFO.json` (commit, time, tool versions) and `SHA256SUMS`. Every time written is fixed: the
+source and frontend tarballs, SBOMs and `BUILDINFO.json` carry the commit's (`SOURCE_DATE_EPOCH`),
+while `uv build` stamps the wheel's members 1980-01-01 and the sdist's 1970-01-01; the shell's
+`VITE_*` and `NODE_ENV` are cleared for the frontend build; a `--ref` is resolved to its SHA first
+(one starting with `-` is refused); a `--worktree` build goes to `…-worktree/`; `.agent/` is
+`export-ignore`. Archives are written in Python with sorted members, plain owners and modes,
+and gzip with no name or time (the reproducible-builds.org archive advice); the SBOMs' own time and
+serial number are fixed from their content. `make release-check` builds twice and compares every
+file; on the build machine two builds are byte-identical. Reproducible here means with the same
+tool versions (uv, pnpm, Node, Python's zlib): `BUILDINFO.json` records them. Nothing is tagged,
+signed or published: that, and the licence, are the owner's.
+
+Sources: reproducible-builds.org, `SOURCE_DATE_EPOCH` <https://reproducible-builds.org/docs/source-date-epoch/>
+and archives <https://reproducible-builds.org/docs/archives/>; uv, exporting a lockfile (CycloneDX)
+<https://docs.astral.sh/uv/concepts/projects/export/>; pnpm `sbom` <https://pnpm.io/cli/sbom>.

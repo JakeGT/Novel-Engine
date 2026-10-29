@@ -192,3 +192,30 @@ async def test_deleting_a_story_or_a_workspace_takes_its_texts(stores) -> None:
     assert len(await store.list_sources(workspace_id="ws1", project_id="p2")) == 1
     assert await store.delete_workspace("ws1") == 1
     assert len(await store.list_sources(workspace_id="ws2", project_id="p1")) == 1
+
+
+@pytest.mark.asyncio
+async def test_latest_checksums_are_read_in_one_query_for_texts_not_removed(stores) -> None:
+    """What a what-if audit compares (CON-011): each text's newest checksum, never its words."""
+    store, _factory = stores
+    await _add(store, "src_a", "First words.")
+    await store.add_version(
+        **SCOPE,
+        version_id="srv_a_2",
+        source_id="src_a",
+        content="Second words.",
+        content_hash=content_hash("Second words."),
+        actor_user_id="u1",
+    )
+    await _add(store, "src_b", "Other words.")
+    await _add(store, "src_gone", "Removed words.")
+    await store.remove_source(**SCOPE, source_id="src_gone")
+    await _add(store, "src_elsewhere", "Another project.", project_id="p2")
+    found = await store.latest_hashes(
+        **SCOPE, source_ids=["src_a", "src_b", "src_gone", "src_elsewhere", "src_missing"]
+    )
+    assert found == {
+        "src_a": content_hash("Second words."),
+        "src_b": content_hash("Other words."),
+    }
+    assert await store.latest_hashes(**SCOPE, source_ids=[]) == {}

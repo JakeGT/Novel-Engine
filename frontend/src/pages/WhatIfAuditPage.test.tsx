@@ -1,6 +1,7 @@
 import { screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { WhatIfAudit } from '../api/client'
+import type { AuditEstimate, WhatIfAudit } from '../api/client'
 import { expectAccessible, mockApi, renderInProject } from '../test/harness'
 import { WhatIfAuditPage } from './WhatIfAuditPage'
 
@@ -29,9 +30,21 @@ const audit: WhatIfAudit = {
   left_out: [],
 }
 
+const changed: AuditEstimate = {
+  plan_id: 'what-if-changes',
+  title: 'The scenes written differently in this what-if',
+  scenes: [{ plan_id: 'pln_two', title: 'Two', written: true, words: 720, total_tokens: 1300 }],
+  written: 1,
+  max_scenes: 60,
+  passes: [
+    { check_pass: 'clarity', label: 'Clarity', description: 'What is unclear.', prompt_tokens: 1200, completion_tokens: 100, total_tokens: 1300 },
+  ],
+  total_tokens: 1300,
+} as AuditEstimate
+
 describe('WhatIfAuditPage', () => {
   it('lists what differs, with the checks found only in the what-if', async () => {
-    mockApi({ 'GET /what-ifs/br_2/audit': audit })
+    mockApi({ 'GET /what-ifs/br_2/audit': audit, 'GET /audit/changed/estimate': changed })
     const { container } = renderInProject(<WhatIfAuditPage />, { path: 'what-ifs/:branchId/audit', at: 'what-ifs/br_2/audit' })
     expect(await screen.findByRole('heading', { name: 'How “Mara stays away” differs from your story' })).toBeInTheDocument()
     const checks = screen.getByRole('region', { name: 'Checks' })
@@ -49,5 +62,33 @@ describe('WhatIfAuditPage', () => {
     mockApi({ 'GET /what-ifs/br_2/audit': { ...audit, same: true, bible: [], plan: [], scenes: [], new_findings: [] } })
     renderInProject(<WhatIfAuditPage />, { path: 'what-ifs/:branchId/audit', at: 'what-ifs/br_2/audit' })
     expect(await screen.findByText('Nothing differs yet: the what-if still matches your story.')).toBeInTheDocument()
+  })
+
+  it('asks the assistant about only the changed scenes, with the cost first', async () => {
+    window.localStorage.clear()
+    const api = mockApi({
+      'GET /what-ifs/br_2/audit': audit,
+      'GET /audit/changed/estimate': changed,
+      'POST /what-ifs/br_2/audit/changed': { id: 'job_9', status: 'queued' },
+      'GET /audits/job_9': {},
+    })
+    const { container } = renderInProject(<WhatIfAuditPage />, { path: 'what-ifs/:branchId/audit', at: 'what-ifs/br_2/audit' })
+    const section = await screen.findByRole('region', { name: 'Ask the assistant about the changed scenes' })
+    expect(await within(section).findByText(/About 1,300 tokens in all/)).toBeInTheDocument()
+    await expectAccessible(container)
+    await userEvent.click(within(section).getByRole('button', { name: 'Check the changed scene' }))
+    const [sent] = api.find('POST', '/what-ifs/br_2/audit/changed')
+    expect(sent.body).toEqual({ passes: expect.arrayContaining(['clarity']) })
+    expect(sent.headers?.get('Idempotency-Key')).toBeTruthy()
+    const [where] = await screen.findAllByTestId('location')
+    expect(where).toHaveTextContent('/projects/prj_1/audits/job_9')
+  })
+
+  it('offers nothing to check when no scene is written differently', async () => {
+    mockApi({ 'GET /what-ifs/br_2/audit': { ...audit, scenes: [] } })
+    renderInProject(<WhatIfAuditPage />, { path: 'what-ifs/:branchId/audit', at: 'what-ifs/br_2/audit' })
+    const section = await screen.findByRole('region', { name: 'Ask the assistant about the changed scenes' })
+    expect(within(section).getByText(/nothing for the assistant to check/)).toBeInTheDocument()
+    expect(within(section).getByRole('button', { name: /Check/ })).toBeDisabled()
   })
 })

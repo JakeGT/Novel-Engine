@@ -105,6 +105,9 @@ export const NOTE_KINDS: Record<string, string> = {
   plan: 'Against the plan',
   voice: 'Your voice',
   clarity: 'Clarity',
+  motivation: 'Why they act',
+  physical: 'Bodies, objects and cause',
+  world: 'Against your story’s rules',
   pictures: 'Against its pictures',
 }
 
@@ -112,11 +115,27 @@ export const NOTE_KINDS: Record<string, string> = {
 export const PASS_ORDER: CheckPass[] = ['viewpoint', 'continuity', 'plan', 'voice', 'clarity']
 
 /**
- * Every pass in order, the pictures pass last (CON-014). It is offered only for a scene
- * with pictures it can use (its estimate is above nothing), and is not chosen unless the
- * author ticks it.
+ * Optional passes (CON-008): offered with their cost beside the others, never chosen
+ * until the author ticks them, and never run by an automatic check.
  */
-export const ALL_PASSES: CheckPass[] = [...PASS_ORDER, 'pictures']
+export const OPTIONAL_PASSES: CheckPass[] = ['motivation', 'physical', 'world']
+
+/**
+ * Every pass in the order they run, the pictures pass last (CON-014). It is offered only
+ * for a scene with pictures it can use (its estimate is above nothing), and is not chosen
+ * unless the author ticks it.
+ */
+export const ALL_PASSES: CheckPass[] = [
+  'viewpoint',
+  'continuity',
+  'motivation',
+  'physical',
+  'world',
+  'plan',
+  'voice',
+  'clarity',
+  'pictures',
+]
 
 /** What each pass is called, while the server's own words are on their way. */
 export const PASS_NAMES: Record<CheckPass, string> = {
@@ -125,6 +144,9 @@ export const PASS_NAMES: Record<CheckPass, string> = {
   plan: 'What the plan asks for',
   voice: 'Your voice',
   clarity: 'Clarity',
+  motivation: 'Why characters act',
+  physical: 'Bodies, objects and cause',
+  world: 'Your story’s own rules',
   pictures: 'What the pictures show',
 }
 
@@ -148,14 +170,14 @@ export const AUDIT_STATUS: Record<string, string> = {
 
 const passesKey = (scope: Scope) => `novel-engine.check-passes.${scope.projectId}`
 
-/** The passes this person last chose in this story; every pass until they choose. */
+/** The passes this person last chose in this story; the usual passes until they choose. */
 export function readChosenPasses(scope: Scope): CheckPass[] {
   try {
     const raw = window.localStorage.getItem(passesKey(scope))
     if (!raw) return [...PASS_ORDER]
     const value: unknown = JSON.parse(raw)
     if (!Array.isArray(value)) return [...PASS_ORDER]
-    return PASS_ORDER.filter((item) => value.includes(item))
+    return [...PASS_ORDER, ...OPTIONAL_PASSES].filter((item) => value.includes(item))
   } catch {
     return [...PASS_ORDER]
   }

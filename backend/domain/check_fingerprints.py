@@ -41,6 +41,7 @@ CHECK_SOURCES: tuple[str, ...] = (
     "domain/continuity.py",
     "domain/drafting.py",
     "domain/knowledge.py",
+    "domain/movement.py",
     "domain/plan_checks.py",
     "domain/sources.py",
     "domain/worldtime.py",
@@ -127,6 +128,12 @@ SCENE_CHECKS: tuple[SceneCheck, ...] = (
         ("prose", "names", "looks"),
         "How people look and how old they are",
     ),
+    SceneCheck(
+        "travel",
+        ("moves_elsewhere", "travel_too_soon", "moves_while_held", "moves_into_exile"),
+        ("prose", "names", "movement"),
+        "Travel in the words",
+    ),
     SceneCheck("stock", ("stock_phrase",), ("prose",), "Stock phrasing"),
     SceneCheck("length", ("short", "long"), ("prose", "length"), "Length"),
     SceneCheck("continuity", ("continuity_*",), ("timeline",), "Continuity in story time"),
@@ -153,6 +160,10 @@ CODE_WORDS: dict[str, str] = {
     "height_differs": "A height unlike the accepted details",
     "mark_differs": "A scar or mark on the other side",
     "age_differs": "An age the story's dates do not allow",
+    "moves_elsewhere": "The words take someone away from the scene's place",
+    "travel_too_soon": "A journey in the words quicker than the travel table allows",
+    "moves_while_held": "The words move someone who is held",
+    "moves_into_exile": "The words take someone to a place they are exiled from",
     "stock_phrase": "Stock phrasing",
     "short": "Shorter than asked for",
     "long": "Longer than asked for",
@@ -256,6 +267,13 @@ def brief_inputs(brief: Any) -> dict[str, str]:
             {
                 "appearance": getattr(brief, "appearance", []),
                 "ages": getattr(brief, "ages", []),
+                "people": getattr(brief, "people", ()),
+                "also": also,
+            }
+        ),
+        "movement": digest_of(
+            {
+                "movement": getattr(brief, "movement", None),
                 "people": getattr(brief, "people", ()),
                 "also": also,
             }
