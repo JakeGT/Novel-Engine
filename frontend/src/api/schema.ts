@@ -261,6 +261,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ai/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Where */
+        get: operations["search_where_api_v1_ai_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ai/settings": {
         parameters: {
             query?: never;
@@ -12107,6 +12124,24 @@ export interface components {
             /** Withdrawn At */
             withdrawn_at?: string | null;
         };
+        /**
+         * SearchWhereModel
+         * @description Where an author's writing goes to be searchable by meaning. Set by whoever runs the
+         *     site, not by a workspace's key, so every author is told the same.
+         */
+        SearchWhereModel: {
+            /** Host */
+            host?: string | null;
+            /** In Use */
+            in_use: boolean;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "server" | "service" | "off";
+            /** Name */
+            name?: string | null;
+        };
         /** SectionModel */
         SectionModel: {
             /** End */
@@ -13891,6 +13926,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProviderModel"][];
+                };
+            };
+        };
+    };
+    search_where_api_v1_ai_search_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchWhereModel"];
                 };
             };
         };

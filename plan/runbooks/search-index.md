@@ -58,6 +58,23 @@ depends on it, and it can always be built again. See ADR-010 (amendment 2026-10-
 4. Switch: `make reindex-activate`. It refuses while rows are missing; finish the build first.
    `REINDEX_ARGS=--force` switches anyway (only when you accept missing results).
 
+**Using an embedding service instead** (no model on this server; for a small VPS):
+
+1. Set `EMBEDDING_PROVIDER=api`, `EMBEDDING_API_BASE_URL` (default OpenAI's),
+   `EMBEDDING_API_MODEL`, `EMBEDDING_API_DIMENSION` (at most 2000; OpenAI's
+   `text-embedding-3-small` gives 1536, and Google's models and OpenAI's large model are asked to
+   shorten theirs) and `EMBEDDING_API_NAME` (what authors are shown). The key goes in
+   `EMBEDDING_API_KEY`, or in `secrets/embedding_api_key` on the hosted stack. A service that
+   refuses the `dimensions` field needs `EMBEDDING_API_SEND_DIMENSION=false` and its own size.
+2. Restart, then build and switch as in steps 3 and 4 above. The build sends every stored passage
+   of every story to the service, under the site's key; the Assistant page tells authors where
+   their writing goes ("Search by meaning").
+3. `python -m backend.devtools.diagnostics` shows the service's host and whether a key is set,
+   never the key. A refused key or unknown model is logged as `embedding.api_refused` with the
+   status only; a busy or failing service is tried three times when writing (`embedding.api_failed`), and the
+   passage waits on the list to be tried again; a search query gets one try of at most eight
+   seconds, then that search uses words only. Pictures are not searched by meaning this way.
+
 **Going back:** `make reindex-rollback` switches to the index used before. If the model setting
 is still the new one, search stays off until the setting is changed back and the server
 restarted.

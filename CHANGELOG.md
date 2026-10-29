@@ -88,6 +88,8 @@ for authors and for whoever runs an install. Version numbers start when the owne
 - **Audits tell you when they finish**; a what-if lists the scenes it changes; what a change
   touches is shown for a what-if too, with a picture of the connections.
 - **Journeys and deaths written in your prose** are checked, not just those in the story bible.
+- **Where your writing goes for search** is shown on the Assistant page: the site's own server, a
+  named service, or nowhere when search by meaning is off.
 
 ### For whoever runs it
 
@@ -110,6 +112,10 @@ for authors and for whoever runs an install. Version numbers start when the owne
 - **Model settings:** `AI_STREAMING` (drafts as a stream, on by default), `AI_MODEL_CAPABILITIES`
   (what each model can take, as JSON; it wins over the provider's own list) and `AI_MODEL_LIST`
   (read OpenRouter's public model list once a day; no story words go with it).
+- **Search by meaning without a model on the server:** `EMBEDDING_PROVIDER=api` uses an
+  OpenAI-compatible embeddings service (`EMBEDDING_API_*` in `.env.example`; on the hosted stack
+  the key is `secrets/embedding_api_key`). Every passage is sent to that service under the site's
+  key; rebuild the index after switching (`plan/runbooks/search-index.md`). Text only.
 - **Release artefacts:** `make release` builds a source tarball, wheel, the built frontend, SBOMs
   and checksums from one commit into `dist/release/`; `make release-check` builds twice and
   compares. Nothing is tagged or published.

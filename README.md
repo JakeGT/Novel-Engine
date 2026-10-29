@@ -53,7 +53,10 @@ Local semantic embeddings are optional. The base install is small and degrades g
 install it with `uv sync --locked --extra embeddings` when you need search by meaning, seeding
 vectors (`uv run --locked python -m backend.devtools.seed --vectors`), or real vector retrieval;
 `make reindex` builds a search index with the configured model. All automated tests use
-deterministic fakes and run without it.
+deterministic fakes and run without it. To run no model on the server at all (a small VPS, say),
+set `EMBEDDING_PROVIDER=api` and point it at an OpenAI-compatible embeddings service (see
+`.env.example`); every passage is then sent to that service, and authors are told so on the
+Assistant page.
 
 The full clean-checkout sequence used for Phase 0 verification is:
 
@@ -245,9 +248,11 @@ stored envelope-encrypted and never returned by the API; logs redact `sk-`/`sk-o
 - Media: pictures (PNG, JPEG, WebP) are prepared, can be described by a model that sees pictures,
   and are sent to one when the author chooses; sound and film are not handled, and there is no
   hosted malware scanning.
-- Search by meaning needs the optional embeddings extra, which the hosted image does not install, so
-  it is off there; EmbeddingGemma 2 has never been loaded or run here.
-- Drafts are kept or discarded whole: no streaming, no editing inside a draft, no merging.
+- Search by meaning needs the optional embeddings extra, which the hosted image does not install, or
+  an embedding service (`EMBEDDING_PROVIDER=api`); neither EmbeddingGemma 2 nor a real embedding
+  service has been run here (the service adapter is tested against a stand-in).
+- Drafts stream as they are written, but are kept or discarded whole: no editing inside a draft,
+  no merging.
 - The checks without a model find only what their words and records show (see each item's limits in
   `plan/10-backlog.md`); they warn and never block a draft.
 - No open-source licence has been chosen yet; see `plan/phase-7-todo.md` for release items that are

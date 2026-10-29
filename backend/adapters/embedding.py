@@ -426,7 +426,8 @@ def build_multimodal_embedder(settings: Any, legacy: SentenceTransformerEmbeddin
     """The typed embedder an install is configured for (``EMBEDDING_PROVIDER``).
 
     ``minilm`` (the default) reuses the legacy model; ``embeddinggemma`` builds the
-    Gemma adapter without importing anything; ``fake`` is the deterministic stand-in
+    Gemma adapter without importing anything; ``api`` sends text to an embedding service
+    over HTTP (``embedding_api.py``); ``fake`` is the deterministic stand-in
     for tests and the evaluation harness; ``none`` turns search by meaning off.
     """
     provider = str(getattr(settings, "EMBEDDING_PROVIDER", "minilm")).lower()
@@ -438,6 +439,18 @@ def build_multimodal_embedder(settings: Any, legacy: SentenceTransformerEmbeddin
             revision=settings.EMBEDDING_GEMMA_REVISION,
             dimension=settings.EMBEDDING_GEMMA_DIMENSION,
             dtype=settings.EMBEDDING_DTYPE,
+        )
+    if provider == "api":
+        from backend.adapters.embedding_api import ApiTextEmbedding
+
+        return ApiTextEmbedding(
+            base_url=settings.EMBEDDING_API_BASE_URL,
+            api_key=settings.EMBEDDING_API_KEY,
+            model=settings.EMBEDDING_API_MODEL,
+            dimension=settings.EMBEDDING_API_DIMENSION,
+            send_dimension=settings.EMBEDDING_API_SEND_DIMENSION,
+            name=settings.EMBEDDING_API_NAME,
+            timeout_seconds=settings.EMBEDDING_API_TIMEOUT_SECONDS,
         )
     if provider == "fake":
         from backend.adapters.embedding_fake import DeterministicEmbedding

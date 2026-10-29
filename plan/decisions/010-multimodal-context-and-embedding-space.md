@@ -619,3 +619,41 @@ and scheduled audits (nobody is there to ask) do not show the preview; staged pr
 
 Sources: OpenRouter models API <https://openrouter.ai/docs/api/api-reference/models/get-models>;
 RFC 9457 problem details, extension members <https://www.rfc-editor.org/rfc/rfc9457#name-extension-members>.
+
+## Amendment 2026-10-29: an embedding service instead of a model on the server
+
+**Owner decision (2026-10-29):** offer a cloud option for search vectors, opt-in by the operator,
+with authors told plainly where their writing goes. Asked because a small VPS has no GPU and the
+hosted image carries no model, so it searched by words only.
+
+**Chosen.** `EMBEDDING_PROVIDER=api` builds `ApiTextEmbedding` (`backend/adapters/embedding_api.py`):
+`POST {EMBEDDING_API_BASE_URL}/embeddings` in the OpenAI shape, which OpenAI, Google's OpenAI
+compatibility layer, Mistral, OpenRouter, Ollama and LM Studio all accept. Text only; pictures are
+refused (`UnsupportedInputError`), as audio and video are by every adapter. The space is the model
+name, `api:<host>` as its revision (the same model name at another service is another space), the
+configured size and no task prompts (`plain`). The size is set by the operator, at most 2,000 (the
+HNSW limit above), and sent as `dimensions` unless `EMBEDDING_API_SEND_DIMENSION=false`: Google's
+`gemini-embedding-001` gives 3,072 and is Matryoshka-trained, and OpenAI's `text-embedding-3`
+models accept the field. Vectors are normalized again, since a shortened one is not unit length.
+Requests carry at most 64 texts and 120,000 characters (OpenAI allows 2,048 inputs and 300,000
+tokens). A refused key, unknown model or bad request (400/401/403/404/422) is not retried; while
+writing the index a busy or failing service is tried three times, waiting as `Retry-After` asks
+(at most ten seconds), but a query, which someone is waiting on, is tried once for at most eight
+seconds and search then falls back to words. No
+message quotes the service's answer, which can echo what was sent; logs carry the host, counts and
+status only. `health()` never calls the service. https is required except for a model on this
+machine, which also needs no key.
+
+**Where the words go.** `GET /ai/search` answers `server`, `service` (with the operator's name for
+it and the host) or `off`, and whether the index is in use; the Assistant page shows it to every
+author as "Search by meaning", since it is the site's choice and not a workspace's key. On a hosted
+site the service is paid for under the operator's key: this is the one place the site itself pays
+for a model, and only when the operator chooses it.
+
+**Rejected.** Per-workspace embedding keys: one search index serves the whole site, and vectors
+from different keys' accounts would still be one space, so a key per workspace adds custody without
+separating anything. A CPU-only MiniLM image: offered to the owner, not chosen now.
+
+Sources: OpenAI embeddings reference <https://developers.openai.com/api/reference/resources/embeddings/methods/create>;
+Gemini OpenAI compatibility <https://ai.google.dev/api/compatibility>; Gemini Embedding GA
+<https://developers.googleblog.com/gemini-embedding-available-gemini-api/>.

@@ -6,8 +6,9 @@
 #
 # The OIDC client id and secret are copied from that .env (default: this checkout's .env) and
 # must match the Authentik provider. The error-reporting DSNs are copied from it too when it has
-# them (SENTRY_DSN_BACKEND, SENTRY_DSN_WEB); without them the files are created empty, which
-# leaves error reporting off. Everything else is generated here.
+# them (SENTRY_DSN_BACKEND, SENTRY_DSN_WEB), and so is EMBEDDING_API_KEY; without them the files
+# are created empty, which leaves error reporting and the embedding service off. Everything else
+# is generated here.
 set -eu
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -42,6 +43,7 @@ random_kek() { head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '\n'; }
 neo4j_auth() { printf 'neo4j/%s' "$(cat secrets/neo4j_password)"; }
 oidc_secret() { printf '%s' "$(value_of OIDC_CLIENT_SECRET)"; }
 sentry_backend() { printf '%s' "$(value_of SENTRY_DSN_BACKEND)"; }
+embedding_key() { printf '%s' "$(value_of EMBEDDING_API_KEY)"; }
 sentry_web() {
   # Older checkouts kept the browser's DSN in frontend/.env, where the web build read it.
   dsn="$(value_of SENTRY_DSN_WEB)"
@@ -72,6 +74,8 @@ create oidc_client_secret 400 oidc_secret
 # A DSN lets anyone send events to the project it names, so it is kept with the secrets.
 create sentry_dsn_backend 400 sentry_backend
 create sentry_dsn_web 400 sentry_web
+# Only used with EMBEDDING_PROVIDER=api; empty otherwise.
+create embedding_api_key 400 embedding_key
 
 if [ -e .env ]; then
   printf 'kept     .env\n'

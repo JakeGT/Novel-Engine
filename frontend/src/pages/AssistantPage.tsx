@@ -1,5 +1,6 @@
 import { AllowanceCard } from '../components/Allowance'
 import { SpendingCard, WorkspaceLimitsCard } from '../components/AssistantSpending'
+import { SearchWhereCard } from '../components/SearchWhereCard'
 import { WorkspaceKeptCard } from '../components/KeptForYou'
 import { MyComputerCard } from '../components/MyComputer'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -233,6 +234,7 @@ export function AssistantPage() {
           </EmptyState>
           <MyComputerCard workspaceId={null} />
           <SpendingCard />
+          <SearchWhereCard />
         </div>
       </>
     )
@@ -420,6 +422,7 @@ export function AssistantPage() {
           </>
         )}
         {!credentials.isPending && <SpendingCard />}
+        {!credentials.isPending && <SearchWhereCard />}
       </div>
     </>
   )

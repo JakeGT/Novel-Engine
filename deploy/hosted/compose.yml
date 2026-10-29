@@ -46,6 +46,15 @@ x-app: &app
     APP_RELEASE: ${NOVEL_ENGINE_VERSION}
     # Errors only; raise to sample performance traces (0.0 to 1.0).
     SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.0}
+    # Search by meaning. The image has no model of its own, so "minilm" means search by words
+    # only. "api" sends every passage to an embedding service under the site's own key
+    # (secrets/embedding_api_key); authors are told so on the Assistant page. After changing
+    # it: `docker compose exec server python -m backend.devtools.embeddings build`, then `activate`.
+    EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-minilm}
+    EMBEDDING_API_BASE_URL: ${EMBEDDING_API_BASE_URL:-https://api.openai.com/v1}
+    EMBEDDING_API_MODEL: ${EMBEDDING_API_MODEL:-text-embedding-3-small}
+    EMBEDDING_API_DIMENSION: ${EMBEDDING_API_DIMENSION:-1536}
+    EMBEDDING_API_NAME: ${EMBEDDING_API_NAME:-}
   secrets:
     - postgres_password
     - neo4j_password
@@ -54,6 +63,8 @@ x-app: &app
     # Error reporting (Sentry). An empty file switches that side off.
     - sentry_dsn_backend
     - sentry_dsn_web
+    # The embedding service's key (EMBEDDING_PROVIDER=api). Empty unless that is used.
+    - embedding_api_key
   read_only: true
   tmpfs:
     - /tmp:size=64m,mode=1777
@@ -175,3 +186,4 @@ secrets:
   credential_kek: { file: "${SECRETS_DIR:-./secrets}/credential_kek" }
   sentry_dsn_backend: { file: "${SECRETS_DIR:-./secrets}/sentry_dsn_backend" }
   sentry_dsn_web: { file: "${SECRETS_DIR:-./secrets}/sentry_dsn_web" }
+  embedding_api_key: { file: "${SECRETS_DIR:-./secrets}/embedding_api_key" }

@@ -632,6 +632,8 @@ export const api = {
     request<Credential>('/api/v1/credentials', { method: 'POST', workspaceId, json: body }),
   // --- which AI provider and model the assistant uses ---------------------------
   aiProviders: () => request<AiProvider[]>('/api/v1/ai/providers'),
+  /** Where writing goes to be searchable by meaning, for the whole site. */
+  searchWhere: () => request<Schemas['SearchWhereModel']>('/api/v1/ai/search'),
   aiSettings: (workspaceId: string) => request<AiChoice>('/api/v1/ai/settings', { workspaceId }),
   chooseAi: (workspaceId: string, body: { provider: string; model: string }) =>
     request<AiChoice>('/api/v1/ai/settings', { method: 'PUT', workspaceId, json: body }),

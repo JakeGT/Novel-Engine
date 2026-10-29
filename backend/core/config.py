@@ -94,9 +94,26 @@ class Settings(BaseSettings):
     EMBEDDING_DIMENSION: int = 384
     # Which model makes search vectors (CTX-011): "minilm" (the model above, text only),
     # "embeddinggemma" (text and pictures in one space; needs the embeddings extra and a
-    # pinned revision), "fake" (deterministic stand-in for tests and evaluations) or
-    # "none". Changing it needs a rebuild: `make reindex`, then `make reindex-activate`.
-    EMBEDDING_PROVIDER: Literal["minilm", "embeddinggemma", "fake", "none"] = "minilm"
+    # pinned revision), "api" (an embedding service over HTTP, below: no model runs on
+    # this server, but every passage is sent to that service), "fake" (deterministic
+    # stand-in for tests and evaluations) or "none". Changing it needs a rebuild:
+    # `make reindex`, then `make reindex-activate`.
+    EMBEDDING_PROVIDER: Literal["minilm", "embeddinggemma", "api", "fake", "none"] = "minilm"
+    # EMBEDDING_PROVIDER=api: any OpenAI-compatible embeddings endpoint (OpenAI, Google,
+    # Mistral, OpenRouter, or Ollama/LM Studio on this machine). https unless local.
+    EMBEDDING_API_BASE_URL: str = "https://api.openai.com/v1"
+    # A secret: set it in the environment or as a mounted secret file, never in git.
+    EMBEDDING_API_KEY: str = ""
+    EMBEDDING_API_MODEL: str = "text-embedding-3-small"
+    # How long each vector is (at most 2,000, the search index's limit). With
+    # EMBEDDING_API_SEND_DIMENSION the service is asked for this size (OpenAI's
+    # text-embedding-3 and Google's models can shorten theirs); turn that off for a
+    # service that refuses the "dimensions" field and set its own size here.
+    EMBEDDING_API_DIMENSION: int = 1536
+    EMBEDDING_API_SEND_DIMENSION: bool = True
+    # The name authors are shown for where their writing goes ("OpenAI"); the host if empty.
+    EMBEDDING_API_NAME: str = ""
+    EMBEDDING_API_TIMEOUT_SECONDS: float = 30.0
     EMBEDDING_GEMMA_MODEL: str = "google/embeddinggemma-2"
     # An exact Hugging Face commit; the model is never loaded from a moving branch.
     EMBEDDING_GEMMA_REVISION: str = ""
@@ -263,6 +280,15 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "POSTGRES_PASSWORD must not use the development default in production"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_embedding_service(self) -> "Settings":
+        # Said at start-up rather than as a failed search later.
+        if not 1 <= self.EMBEDDING_API_DIMENSION <= 2000:
+            raise ValueError("EMBEDDING_API_DIMENSION must be between 1 and 2000")
+        if self.EMBEDDING_API_TIMEOUT_SECONDS <= 0:
+            raise ValueError("EMBEDDING_API_TIMEOUT_SECONDS must be more than 0")
         return self
 
     @model_validator(mode="after")

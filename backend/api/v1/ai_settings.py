@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+from typing import Any, Literal
+
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.api.auth import get_workspace_scope, require_session, require_workspace_scope
-from backend.api.dependencies import get_credential_service, get_usage_service
+from backend.api.dependencies import get_container, get_credential_service, get_usage_service
+from backend.container import Container
 from backend.domain.identity import AccessScope
 from backend.domain.providers import PROVIDERS
 from backend.ports import AIProviderError
@@ -64,6 +68,44 @@ async def list_providers() -> list[ProviderModel]:
         )
         for spec in PROVIDERS
     ]
+
+
+class SearchWhereModel(BaseModel):
+    """Where an author's writing goes to be searchable by meaning. Set by whoever runs the
+    site, not by a workspace's key, so every author is told the same."""
+
+    # server: made on this site's own computer; service: sent to another company's
+    # service; off: search by meaning is off, and passages are found by their words.
+    kind: Literal["server", "service", "off"]
+    # The service's name and host, when it is not this server.
+    name: str | None = None
+    host: str | None = None
+    # Whether the search index for it is built and in use now.
+    in_use: bool
+
+
+def _search_where(container: Container) -> SearchWhereModel:
+    embedder: Any = getattr(container, "multimodal_embedder", None)
+    if embedder is None or not embedder.available():
+        return SearchWhereModel(kind="off", in_use=False)
+    searchable = getattr(container.vectors, "searchable", None)
+    try:
+        in_use = bool(searchable()) if searchable is not None else False
+    except Exception:  # noqa: BLE001 - a store that cannot be read is "not in use", said plainly
+        in_use = False
+    where = getattr(embedder, "where_words_go", None)
+    if where is None:
+        return SearchWhereModel(kind="server", in_use=in_use)
+    found = where()
+    if found.kind == "server":
+        return SearchWhereModel(kind="server", in_use=in_use)
+    return SearchWhereModel(kind="service", name=found.name, host=found.host, in_use=in_use)
+
+
+@router.get("/search", dependencies=[Depends(require_session)])
+async def search_where(container: Container = Depends(get_container)) -> SearchWhereModel:
+    # Reading the index's state touches the database without async; keep it off the loop.
+    return await asyncio.to_thread(_search_where, container)
 
 
 @router.get("/settings")

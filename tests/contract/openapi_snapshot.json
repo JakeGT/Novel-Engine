@@ -18186,6 +18186,52 @@
         "title": "ScopedDismissalModel",
         "type": "object"
       },
+      "SearchWhereModel": {
+        "description": "Where an author's writing goes to be searchable by meaning. Set by whoever runs the\nsite, not by a workspace's key, so every author is told the same.",
+        "properties": {
+          "host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host"
+          },
+          "in_use": {
+            "title": "In Use",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "server",
+              "service",
+              "off"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "kind",
+          "in_use"
+        ],
+        "title": "SearchWhereModel",
+        "type": "object"
+      },
       "SectionModel": {
         "properties": {
           "end": {
@@ -22726,6 +22772,27 @@
           }
         },
         "summary": "List Providers",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/v1/ai/search": {
+      "get": {
+        "operationId": "search_where_api_v1_ai_search_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchWhereModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Search Where",
         "tags": [
           "ai"
         ]

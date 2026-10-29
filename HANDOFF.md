@@ -183,7 +183,7 @@ All variables are documented in `.env.example`; production rejects unsafe defaul
   `METRICS_ENABLED`, `METRICS_TOKEN` (Prometheus text at `/health/metrics`, off by default).
 - Pictures and search: `AI_IMAGE_INPUT`, `AI_IMAGE_MAX_COUNT/MAX_BYTES/TYPES`, `AI_IMAGE_PROVIDERS`
   (whether a route sees pictures); `MEDIA_*` (processing, decoding limits, `MEDIA_WORKER_SANDBOX`
-  `best|require|off`, workspace quota, orphan grace); `EMBEDDING_PROVIDER`, `EMBEDDING_GEMMA_*`,
+  `best|require|off`, workspace quota, orphan grace); `EMBEDDING_PROVIDER`, `EMBEDDING_GEMMA_*`, `EMBEDDING_API_*`,
   `SEARCH_INDEX_CATCH_UP_MINUTES`.
 - Auth: `AUTH_MODE` (`local|hosted`), `AUTH_LOCAL_USER_ID`, `AUTH_LOCAL_WORKSPACE_ID`,
   `AUTH_LOCAL_PROJECT_ID`,
@@ -970,9 +970,11 @@ scanning, unbounded streams, region refresh on the request path); all were fixed
 Everything ran against the scripted model and the local stand-in only; no real provider has
 streamed a draft or read a picture region.
 
-Noted 2026-10-29: the Docker image leaves out the `embeddings` extra on purpose (a smaller image),
-so a site deployed from it searches by words only and the index reports `semantic: false`.
-Embeddings are the only model the server itself runs (MiniLM on a CPU, or EmbeddingGemma more
-slowly); chat, checks and picture reading all go to the configured cloud provider. There is no
-cloud embedding adapter; adding one is an owner decision, because it would send every passage to
-that provider in the background, under the operator's key on a hosted site.
+Added 2026-10-29 (owner decision): `EMBEDDING_PROVIDER=api` makes search vectors with an
+OpenAI-compatible embeddings service, so a VPS runs no model at all (chat, checks and picture
+reading already went to cloud providers). Text only; every passage is sent to that service under
+the operator's key, and `GET /ai/search` plus the Assistant page's "Search by meaning" card tell
+authors where their writing goes. The Docker image still leaves out the `embeddings` extra, so
+without this option a deployed site searches by words. ADR-010 has the decision; the runbook
+`plan/runbooks/search-index.md` the steps. Tested against a stand-in service only; no real
+embedding service has been called.

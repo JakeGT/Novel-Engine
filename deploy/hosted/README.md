@@ -34,6 +34,17 @@ sed -i 's/^NOVEL_ENGINE_VERSION=.*/NOVEL_ENGINE_VERSION=<commit>/' .env
 `secrets/credential_kek` encrypts every stored provider key. **Keep a copy in the password
 manager**; without it stored keys cannot be decrypted and must be entered again.
 
+### Search by meaning with an embedding service, optional
+
+The image runs no model of its own, so search is by words unless a service makes the vectors. To
+use one, put its key in `secrets/embedding_api_key` (mode 0400; `init-secrets.sh` copies
+`EMBEDDING_API_KEY` from the checkout's `.env` when it has one) and add to `.env`:
+`EMBEDDING_PROVIDER=api`, and if not OpenAI's defaults, `EMBEDDING_API_BASE_URL`,
+`EMBEDDING_API_MODEL`, `EMBEDDING_API_DIMENSION` and `EMBEDDING_API_NAME`. Recreate the server,
+then build and switch the index (`plan/runbooks/search-index.md`). Every passage of every story is
+then sent to that service under the site's own key, and paid for by it; the Assistant page tells
+authors so.
+
 ### Error reporting (Sentry), optional
 
 `init-secrets.sh` creates `secrets/sentry_dsn_backend` and `secrets/sentry_dsn_web`, filled from

@@ -51,6 +51,31 @@ def ai_route(settings: Settings) -> dict[str, Any]:
     }
 
 
+def embedding_route(settings: Settings) -> dict[str, Any]:
+    """Which model makes search vectors, and for a service its host only (never the key)."""
+    provider = settings.EMBEDDING_PROVIDER
+    if provider == "api":
+        host = urlsplit(settings.EMBEDDING_API_BASE_URL.strip()).hostname or ""
+        return {
+            "provider": provider,
+            "host": host,
+            "model": settings.EMBEDDING_API_MODEL,
+            "dimension": settings.EMBEDDING_API_DIMENSION,
+            "key_set": bool(settings.EMBEDDING_API_KEY),
+        }
+    if provider == "embeddinggemma":
+        return {
+            "provider": provider,
+            "model": settings.EMBEDDING_GEMMA_MODEL,
+            "dimension": settings.EMBEDDING_GEMMA_DIMENSION,
+        }
+    return {
+        "provider": provider,
+        "model": settings.EMBEDDING_MODEL_NAME,
+        "dimension": settings.EMBEDDING_DIMENSION,
+    }
+
+
 class _Ready(BaseModel):
     ready: bool
 
@@ -149,10 +174,7 @@ def build_diagnostics(
             "ai_route": ai_route(settings),
             "sentry_enabled": bool(settings.SENTRY_DSN_BACKEND) and settings.APP_ENV != "test",
             "credentials_configured": bool(settings.CREDENTIAL_KEK),
-            "embeddings": {
-                "model": settings.EMBEDDING_MODEL_NAME,
-                "dimension": settings.EMBEDDING_DIMENSION,
-            },
+            "embeddings": embedding_route(settings),
             "pictures": picture_capability(settings),
         },
         "stores": {
