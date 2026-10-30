@@ -544,6 +544,9 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802 - the http.server interface
         length = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(length) or b"{}")
+        if self.path.rstrip("/").endswith("/embeddings"):
+            self._embeddings(body)
+            return
         if not self.path.rstrip("/").endswith("/chat/completions"):
             self.send_error(404)
             return
@@ -551,6 +554,30 @@ class _Handler(BaseHTTPRequestHandler):
             self._stream(body)
             return
         payload = json.dumps(_answer(body)).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def _embeddings(self, body: dict[str, Any]) -> None:
+        """An OpenAI-compatible embedding service (site search set up on the page): each
+        input becomes a deterministic vector of the size asked for, so nearness by
+        meaning ranks the same way every run."""
+        from backend.adapters.embedding_fake import DeterministicEmbedding
+        from backend.domain.embedding import EmbeddingTask, TextInput
+
+        inputs = body.get("input") or []
+        texts = [inputs] if isinstance(inputs, str) else [str(item) for item in inputs]
+        size = int(body.get("dimensions") or 64)
+        vectors = DeterministicEmbedding(dimension=size, model="e2e-embed").embed(
+            [TextInput(text=text) for text in texts], task=EmbeddingTask.DOCUMENT
+        )
+        data = [
+            {"object": "embedding", "index": index, "embedding": list(vector.values)}
+            for index, vector in enumerate(vectors)
+        ]
+        payload = json.dumps({"object": "list", "data": data, "model": body.get("model")}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
@@ -606,9 +633,10 @@ class _Handler(BaseHTTPRequestHandler):
         return
 
 
-def start(host: str = "127.0.0.1") -> tuple[ThreadingHTTPServer, str]:
-    """Start the stand-in on a free port; returns the server and its base URL."""
-    server = ThreadingHTTPServer((host, 0), _Handler)
+def start(host: str = "127.0.0.1", port: int = 0) -> tuple[ThreadingHTTPServer, str]:
+    """Start the stand-in (on a free port unless one is given); returns the server and
+    its base URL."""
+    server = ThreadingHTTPServer((host, port), _Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server, f"http://{host}:{server.server_address[1]}/v1"
 

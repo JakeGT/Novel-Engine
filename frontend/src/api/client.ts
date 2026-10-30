@@ -364,8 +364,80 @@ export interface Credential {
 export interface SessionInfo {
   user: { id: string; email: string | null; display_name: string | null }
   auth_mode: string
+  /** True for the site's administrators, who may change site-wide settings (SSP-001). */
+  platform_admin: boolean
   /** Present only in local (single-user) mode, which has exactly one project. */
   local?: { workspace_id: string; project_id: string }
+}
+
+/** Where search by meaning can be pointed, and what a key for it looks like (SSP-001). */
+export interface SearchProvider {
+  id: string
+  label: string
+  group: 'Model makers' | 'Hosting and routing' | 'Your own'
+  base_url: string | null
+  /** True when the provider's address is a server the administrator types. */
+  needs_url: boolean
+  key_url: string | null
+  key_hint: string | null
+  /** When the address is a server on this machine, no key is needed for this provider. */
+  key_optional_when_local: boolean
+  docs: string
+  models: SearchProviderModel[]
+  dimension_choices: number[] | null
+}
+
+export interface SearchProviderModel {
+  id: string
+  dimension: number
+  /** False when this model has one fixed size. */
+  adjustable: boolean
+  default_dimension: number
+}
+
+export type SearchSetupSource = 'page' | 'server' | 'built_in' | 'off'
+
+/** How search by meaning is set up for the whole site, and the state of its index. */
+export interface SearchSetup {
+  source: SearchSetupSource
+  editable: boolean
+  kek_configured: boolean
+  setup: {
+    provider: string
+    provider_label: string
+    model: string
+    dimension: number
+    base_url: string | null
+    host: string
+    key: { set: boolean; hint: string | null; updated_at: string | null }
+    verified: boolean | null
+    updated_at: string
+  } | null
+  built_in: { model: string; dimension: number } | null
+  index: {
+    searchable: boolean
+    active_model: string | null
+    building: boolean
+    build: { done: number; total: number; state: 'running' | 'waiting' | 'failed' } | null
+    needs_build: boolean
+  }
+  sign_in_needed: boolean
+}
+
+export interface SaveSearchSetupBody {
+  provider: string
+  model: string
+  dimension: number
+  base_url?: string | null
+  /** Omit to keep the stored key (only when provider and address are unchanged). */
+  api_key?: string | null
+}
+
+/** What saving answered: whether the provider was reached, a sentence to show, and the new state. */
+export interface SaveSearchSetupResult {
+  check: 'ok' | 'unchecked'
+  message: string
+  state: SearchSetup
 }
 
 /** A failed request, carrying the stable problem `code` so callers can branch on it. */
@@ -634,6 +706,20 @@ export const api = {
   aiProviders: () => request<AiProvider[]>('/api/v1/ai/providers'),
   /** Where writing goes to be searchable by meaning, for the whole site. */
   searchWhere: () => request<Schemas['SearchWhereModel']>('/api/v1/ai/search'),
+  // --- search by meaning, set for the whole site (SSP-001) ---------------------
+  /** The providers the site's search by meaning can use, with where their keys come from. */
+  searchProviders: () => request<SearchProvider[]>('/api/v1/site/search-providers'),
+  /** How search by meaning is set up for the whole site, and the state of its index. */
+  searchSetup: () => request<SearchSetup>('/api/v1/site/search-setup'),
+  /** Save the site's search-by-meaning setup; omit `api_key` to keep the stored key. */
+  saveSearchSetup: (body: SaveSearchSetupBody) =>
+    request<SaveSearchSetupResult>('/api/v1/site/search-setup', { method: 'PUT', json: body }),
+  /** Stop using a service: the stored key is forgotten and the built-in model (or off) takes over. */
+  removeSearchSetup: () => request<SearchSetup>('/api/v1/site/search-setup', { method: 'DELETE' }),
+  /** Build (or rebuild) the search index from every passage on the site. */
+  buildSearchIndex: () => request<SearchSetup>('/api/v1/site/search-setup/build', { method: 'POST' }),
+  cancelSearchBuild: () =>
+    request<SearchSetup>('/api/v1/site/search-setup/build/cancel', { method: 'POST' }),
   aiSettings: (workspaceId: string) => request<AiChoice>('/api/v1/ai/settings', { workspaceId }),
   chooseAi: (workspaceId: string, body: { provider: string; model: string }) =>
     request<AiChoice>('/api/v1/ai/settings', { method: 'PUT', workspaceId, json: body }),

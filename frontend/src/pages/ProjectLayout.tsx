@@ -480,6 +480,11 @@ export function ProjectLayout() {
           </div>
           <div className="actions" style={{ justifyContent: 'space-between', padding: '0 0.3rem' }}>
             <ThemeToggle />
+            {session.data?.platform_admin && (
+              <Link className="btn ghost sm" to="/site">
+                Site settings
+              </Link>
+            )}
             <button
               type="button"
               className="btn ghost sm"

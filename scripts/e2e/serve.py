@@ -103,7 +103,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.fake_model:
             from scripts.e2e.fake_model import start
 
-            _server, base_url = start(args.host)
+            # A fixed port when asked, so a browser test can point site search at it.
+            _server, base_url = start(args.host, int(os.environ.get("E2E_MODEL_PORT") or 0))
             env.update(
                 {
                     "OPENAI_API_KEY": "e2e-stand-in",

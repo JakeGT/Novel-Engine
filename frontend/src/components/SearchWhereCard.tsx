@@ -1,10 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { api } from '../api/client'
+import { useSession } from '../lib/session'
 import { ErrorNotice, Loading } from './ui'
 
 /** Where the author's writing goes to be searchable by meaning. Set for the whole site by
  * whoever runs it, so it is said the same way to everyone. */
 export function SearchWhereCard() {
+  const session = useSession()
   const where = useQuery({ queryKey: ['ai-search-where'], queryFn: () => api.searchWhere(), staleTime: 60_000 })
   const data = where.data
   return (
@@ -38,6 +41,11 @@ export function SearchWhereCard() {
         <p className="notice plain" role="note">
           Search by meaning is off on this site, so passages are found by the names and words they use. Nothing is
           sent anywhere for search.
+        </p>
+      )}
+      {session.data?.platform_admin && (
+        <p className="hint">
+          <Link to="/site">Change it in Site settings</Link>
         </p>
       )}
     </section>

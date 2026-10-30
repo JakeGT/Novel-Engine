@@ -32,6 +32,7 @@ import { WhatIfAuditPage } from './pages/WhatIfAuditPage'
 import { ProjectLayout } from './pages/ProjectLayout'
 import { ReviewDetail } from './pages/ReviewDetail'
 import { ReviewQueue } from './pages/ReviewQueue'
+import { SitePage } from './pages/SitePage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -54,6 +55,7 @@ export default function App() {
         <PageError home="/">
           <Routes>
             <Route path="/" element={<Home />} />
+            <Route path="/site" element={<SitePage />} />
             <Route path="/invite/:token" element={<InvitePage />} />
             <Route path="/projects/:projectId" element={<ProjectLayout />}>
               <Route index element={<Overview />} />

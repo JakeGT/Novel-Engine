@@ -6,6 +6,8 @@ import { defineConfig, devices } from '@playwright/test'
 // where there is no model at all.
 const apiPort = Number(process.env.E2E_MODEL_API_PORT ?? 8012)
 const webPort = Number(process.env.E2E_MODEL_WEB_PORT ?? 5176)
+// The stand-in's own port, fixed so a test can point site search at it.
+export const modelPort = Number(process.env.E2E_MODEL_PORT ?? 8013)
 const apiUrl = `http://127.0.0.1:${apiPort}`
 const webUrl = `http://127.0.0.1:${webPort}`
 
@@ -29,6 +31,7 @@ export default defineConfig({
     {
       command: `uv run --locked python -m scripts.e2e.serve --port ${apiPort} --fake-model`,
       cwd: '..',
+      env: { E2E_MODEL_PORT: String(modelPort) },
       url: `${apiUrl}/health/live`,
       reuseExistingServer: false,
       timeout: 180_000,

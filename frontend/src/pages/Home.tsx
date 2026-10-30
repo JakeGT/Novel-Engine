@@ -222,6 +222,11 @@ function Library() {
             {initial(displayName(session.data))}
           </span>
           <span className="small">{displayName(session.data)}</span>
+          {session.data?.platform_admin && (
+            <Link className="btn ghost sm" to="/site">
+              Site settings
+            </Link>
+          )}
           <Button variant="ghost" size="sm" icon="logout" onClick={() => void signOut()} disabled={signingOut}>
             Sign out
           </Button>
