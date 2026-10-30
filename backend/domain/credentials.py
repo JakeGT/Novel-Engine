@@ -47,6 +47,9 @@ class Credential(BaseModel):
     rotated_at: datetime | None = None
     last_used_at: datetime | None = None
     revoked_at: datetime | None = None
+    # Whether the provider accepted the key when it was last saved; None when it was
+    # never checked (a key from before this was recorded, or read back from the vault).
+    verified: bool | None = None
 
 
 class CredentialError(RuntimeError):

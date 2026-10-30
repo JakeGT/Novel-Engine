@@ -6241,6 +6241,17 @@
             "title": "Status",
             "type": "string"
           },
+          "verified": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified"
+          },
           "workspace_id": {
             "title": "Workspace Id",
             "type": "string"

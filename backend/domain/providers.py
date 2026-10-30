@@ -42,6 +42,14 @@ class ProviderSpec:
     # (``stream_options.include_usage``). A provider that refuses it is asked again
     # without it, and the use is then estimated.
     stream_usage: bool = True
+    # Where a key is checked when it is saved. None = the models list through the
+    # OpenAI-compatible client. OpenRouter's list answers 200 for any key, so it is
+    # checked at ``GET /key``; Anthropic's own list wants its own headers.
+    key_check_path: str | None = None
+    # The headers a plain check at ``key_check_path`` sends: the key as a bearer token,
+    # or in ``x-api-key`` with these extra headers (Anthropic).
+    key_check_header: str = "bearer"
+    key_check_extra: tuple[tuple[str, str], ...] = ()
 
 
 PROVIDERS: tuple[ProviderSpec, ...] = (
@@ -53,6 +61,7 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         key_url="https://openrouter.ai/keys",
         default_model="anthropic/claude-sonnet-5.5",
         note="One key for models from many companies.",
+        key_check_path="/key",
     ),
     ProviderSpec(
         id="anthropic",
@@ -61,6 +70,9 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         structured=StructuredMode.PROMPTED,
         key_url="https://console.anthropic.com/settings/keys",
         default_model="claude-sonnet-5-5",
+        key_check_path="/models?limit=1",
+        key_check_header="x-api-key",
+        key_check_extra=(("anthropic-version", "2023-06-01"),),
     ),
     ProviderSpec(
         id="openai",

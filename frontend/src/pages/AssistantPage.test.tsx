@@ -32,6 +32,7 @@ function credential(provider: string, overrides = {}) {
     rotated_at: null,
     last_used_at: null,
     revoked_at: null,
+    verified: null,
     ...overrides,
   }
 }
@@ -69,6 +70,50 @@ describe('AssistantPage', () => {
       label: 'Anthropic (Claude)',
       key: 'sk-ant-secret-key-1',
     })
+  })
+
+  it('says when the provider could not be reached to check the key', async () => {
+    const api = mockApi({
+      'GET /ai/providers': providers,
+      'GET /credentials': [],
+      'GET /ai/settings': { provider: null, model: null, chosen: false },
+      'POST /credentials': reply(201, credential('openrouter', { verified: false })),
+    })
+    const user = userEvent.setup()
+    const { container } = renderInProject(<AssistantPage />)
+
+    const form = await screen.findByRole('region', { name: 'Connect a key' })
+    await user.type(within(form).getByLabelText('Key'), 'sk-or-secret-key-1')
+    await user.click(within(form).getByRole('button', { name: 'Connect key' }))
+
+    await waitFor(() => expect(api.find('POST', '/credentials')).toHaveLength(1))
+    expect(await within(form).findByRole('status')).toHaveTextContent(
+      'Saved. OpenRouter could not be reached to check the key, so it will be tried the first time the assistant is used.',
+    )
+    await expectAccessible(container)
+  })
+
+  it('keeps a refused key in the field and shows the provider message', async () => {
+    mockApi({
+      'GET /ai/providers': providers,
+      'GET /credentials': [],
+      'GET /ai/settings': { provider: null, model: null, chosen: false },
+      'POST /credentials': problem(
+        400,
+        'validation_error',
+        'OpenRouter did not accept that key. Check it was copied in full and has not been revoked.',
+      ),
+    })
+    const user = userEvent.setup()
+    renderInProject(<AssistantPage />)
+
+    const form = await screen.findByRole('region', { name: 'Connect a key' })
+    await user.type(within(form).getByLabelText('Key'), 'sk-or-bad-key-1234')
+    await user.click(within(form).getByRole('button', { name: 'Connect key' }))
+
+    const alert = await within(form).findByRole('alert')
+    expect(alert).toHaveTextContent('did not accept that key')
+    expect(within(form).getByLabelText('Key')).toHaveValue('sk-or-bad-key-1234')
   })
 
   it('shows the model in use and lets an owner pick another from the provider’s list', async () => {

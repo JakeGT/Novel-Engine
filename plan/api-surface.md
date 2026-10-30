@@ -69,7 +69,10 @@
   `/api/v1/invitations/accept`: invite-only tenancy (Phase 1). The member list includes a display
   name for every member and the email address for callers who can invite.
 - `/api/v1/credentials` (+ `DELETE /{id}`, `/{id}/rotate`, `/{id}/revoke`): envelope-encrypted
-  provider keys (OpenRouter and six other providers); plaintext is never returned.
+  provider keys (OpenRouter and six other providers); plaintext is never returned. When a key is
+  created or rotated the provider is asked whether it accepts it; a clear "no" is answered 400 and
+  nothing is stored, and the answer's `verified` says `true` when the provider accepted it, `false`
+  when it could not be reached (the key is kept and tried on first use), or `null` from the list.
 - `/api/v1/ai/connector/codes/check`, `/codes/decide`, `/devices`, `/devices/{id}/use`,
   `/devices/{id}/disconnect`, `DELETE /ai/connector/use`: a workspace owner confirms a computer's
   connection code, lists connected computers, chooses one of their models for the assistant, stops

@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Literal
 
 from backend.domain.archive import ArchiveImport, ImportStatus
 from backend.domain.branching import working_branch_id, working_in
@@ -551,6 +551,9 @@ class ScriptedAIGateway:
         self.closed = False
         self.models: Any = ["model-a", "model-b"]
         self.model_list_calls: list[dict[str, Any]] = []
+        # The key check's answer, and the calls it has seen (key and address only).
+        self.key_check_result: Literal["ok", "refused", "unknown"] = "ok"
+        self.key_check_calls: list[dict[str, Any]] = []
         # CTX-013: a scripted route is text only unless a test says it can see pictures.
         self.sees_images = sees_images
         self.max_images = max_images
@@ -707,6 +710,12 @@ class ScriptedAIGateway:
         if isinstance(self.models, BaseException):
             raise self.models
         return list(self.models)
+
+    async def check_key(
+        self, *, api_key: str, base_url: str
+    ) -> Literal["ok", "refused", "unknown"]:
+        self.key_check_calls.append({"api_key": api_key, "base_url": base_url})
+        return self.key_check_result
 
     @property
     def remaining(self) -> int:

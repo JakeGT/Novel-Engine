@@ -1,4 +1,5 @@
 import types
+from typing import Any
 
 import pytest
 from openai import OpenAIError
@@ -238,6 +239,175 @@ async def test_models_are_listed_from_the_provider_sorted_and_without_repeats(mo
     assert holder["closed"] is True
 
 
+# ------------------------------------------------------------ the key check
+
+
+def _model_list_client(status: int = 200, *, error: BaseException | None = None) -> Any:
+    """An OpenAI client over a scripted transport, as the key check builds it."""
+    import httpx
+    from openai import AsyncOpenAI
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if error is not None:
+            raise error
+        return httpx.Response(status, json={"object": "list", "data": [{"id": "model-a"}]})
+
+    return AsyncOpenAI(
+        api_key="sk-test-key-123456",
+        base_url="https://api.openai.com/v1",
+        max_retries=0,
+        timeout=10.0,
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+
+
+def _path_client(status: int = 200, *, error: BaseException | None = None) -> Any:
+    """An httpx client over a scripted transport, for OpenRouter's ``GET /key``."""
+    import httpx
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if error is not None:
+            raise error
+        return httpx.Response(status, json={"data": {"label": "key"}})
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [(200, "ok"), (404, "unknown"), (429, "unknown"), (500, "unknown")],
+)
+async def test_check_key_via_the_models_list(monkeypatch, status: int, expected: str) -> None:
+    gateway = OpenAIGateway(api_key="", default_model="gpt-4o")
+    monkeypatch.setattr(gateway, "_key_check_client", lambda key, url: _model_list_client(status))
+
+    result = await gateway.check_key(
+        api_key="sk-test-key-123456", base_url="https://api.openai.com/v1"
+    )
+
+    assert result == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [401, 403])
+async def test_check_key_refuses_on_401_and_403(monkeypatch, status: int) -> None:
+    gateway = OpenAIGateway(api_key="", default_model="gpt-4o")
+    monkeypatch.setattr(gateway, "_key_check_client", lambda key, url: _model_list_client(status))
+
+    result = await gateway.check_key(
+        api_key="sk-test-key-123456", base_url="https://api.openai.com/v1"
+    )
+
+    assert result == "refused"
+
+
+@pytest.mark.asyncio
+async def test_check_key_timeout_is_unknown(monkeypatch) -> None:
+    import httpx
+
+    gateway = OpenAIGateway(api_key="", default_model="gpt-4o")
+    monkeypatch.setattr(
+        gateway,
+        "_key_check_client",
+        lambda key, url: _model_list_client(error=httpx.ReadTimeout("timed out")),
+    )
+
+    result = await gateway.check_key(
+        api_key="sk-test-key-123456", base_url="https://api.openai.com/v1"
+    )
+
+    assert result == "unknown"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (200, "ok"),
+        (401, "refused"),
+        (403, "refused"),
+        (404, "unknown"),
+        (429, "unknown"),
+        (500, "unknown"),
+    ],
+)
+async def test_check_key_via_openrouters_key_path(monkeypatch, status: int, expected: str) -> None:
+    gateway = OpenAIGateway(api_key="", default_model="gpt-4o")
+    monkeypatch.setattr(gateway, "_check_http_client", lambda: _path_client(status))
+
+    result = await gateway.check_key(
+        api_key="sk-or-v1-test-key", base_url="https://openrouter.ai/api/v1"
+    )
+
+    assert result == expected
+
+
+@pytest.mark.asyncio
+async def test_check_key_openrouter_hits_the_key_path_with_the_key(monkeypatch) -> None:
+    import httpx
+
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["authorization"] = request.headers.get("authorization", "")
+        return httpx.Response(200, json={"data": {}})
+
+    gateway = OpenAIGateway(api_key="", default_model="gpt-4o")
+    monkeypatch.setattr(
+        gateway,
+        "_check_http_client",
+        lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+
+    result = await gateway.check_key(
+        api_key="sk-or-v1-test-key", base_url="https://openrouter.ai/api/v1"
+    )
+
+    assert result == "ok"
+    assert seen["url"] == "https://openrouter.ai/api/v1/key"
+    assert seen["authorization"] == "Bearer sk-or-v1-test-key"
+
+
+@pytest.mark.asyncio
+async def test_check_key_openrouter_timeout_is_unknown(monkeypatch) -> None:
+    import httpx
+
+    gateway = OpenAIGateway(api_key="", default_model="gpt-4o")
+    monkeypatch.setattr(
+        gateway,
+        "_check_http_client",
+        lambda: _path_client(error=httpx.ReadTimeout("timed out")),
+    )
+
+    result = await gateway.check_key(
+        api_key="sk-or-v1-test-key", base_url="https://openrouter.ai/api/v1"
+    )
+
+    assert result == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_check_key_logs_provider_and_outcome_only(monkeypatch, caplog) -> None:
+    import logging
+
+    gateway = OpenAIGateway(api_key="", default_model="gpt-4o")
+    monkeypatch.setattr(gateway, "_key_check_client", lambda key, url: _model_list_client(200))
+
+    with caplog.at_level(logging.INFO, logger="backend.adapters.ai"):
+        result = await gateway.check_key(
+            api_key="sk-test-key-123456", base_url="https://api.openai.com/v1"
+        )
+
+    assert result == "ok"
+    events = [
+        record for record in caplog.records if getattr(record, "event", None) == "ai.key_check"
+    ]
+    assert len(events) == 1
+    assert getattr(events[0], "fields", None) == {"provider": "openai", "outcome": "ok"}
+
+
 def test_every_provider_has_a_distinct_address_and_a_key_page() -> None:
     from backend.domain.credentials import CredentialProvider
     from backend.domain.providers import PROVIDERS, provider_spec, spec_for_base_url
@@ -369,3 +539,37 @@ async def test_a_structured_answer_carries_its_cached_tokens(monkeypatch) -> Non
         messages=[{"role": "user", "content": "hi"}], response_format=_Schema
     )
     assert response.usage.cached_prompt_tokens == 1536
+
+
+@pytest.mark.asyncio
+async def test_check_key_anthropic_uses_its_own_headers(monkeypatch) -> None:
+    import httpx
+
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["x-api-key"] = request.headers.get("x-api-key", "")
+        seen["version"] = request.headers.get("anthropic-version", "")
+        seen["authorization"] = request.headers.get("authorization", "")
+        return httpx.Response(401 if seen["x-api-key"] == "sk-ant-wrong" else 200, json={})
+
+    gateway = OpenAIGateway(api_key="", default_model="gpt-4o")
+    monkeypatch.setattr(
+        gateway,
+        "_check_http_client",
+        lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+
+    assert (
+        await gateway.check_key(api_key="sk-ant-good-key", base_url="https://api.anthropic.com/v1/")
+        == "ok"
+    )
+    assert seen["url"] == "https://api.anthropic.com/v1/models?limit=1"
+    assert seen["x-api-key"] == "sk-ant-good-key"
+    assert seen["version"] == "2023-06-01"
+    assert seen["authorization"] == ""
+    assert (
+        await gateway.check_key(api_key="sk-ant-wrong", base_url="https://api.anthropic.com/v1/")
+        == "refused"
+    )

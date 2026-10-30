@@ -46,6 +46,8 @@ for authors and for whoever runs an install. Version numbers start when the owne
   three times can be added without asking, each listed with Undo.
 - **Connect another assistant** (Claude, ChatGPT and others) with an access key: it can read your
   story and, if you allow, suggest changes that wait in Review.
+- **A key you add is checked with its provider first**, so a mistyped or revoked key is refused
+  straight away instead of failing the first time you use the assistant.
 - **Character arcs**: the stages a character passes through, each placed in a scene, checked
   for order and against the story bible.
 - **What a change touches**, shown before you approve it: scenes, threads, rules, writing and

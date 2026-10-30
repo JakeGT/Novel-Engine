@@ -9,10 +9,15 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from backend.domain.connector import MY_COMPUTER
-from backend.domain.credentials import Credential, CredentialProvider, CredentialStatus
+from backend.domain.credentials import (
+    Credential,
+    CredentialNotFound,
+    CredentialProvider,
+    CredentialStatus,
+)
 from backend.domain.errors import CapabilityUnavailableError, ValidationError
 from backend.domain.identity import AccessScope, AuthMode
 from backend.domain.providers import ProviderSpec, provider_spec
@@ -47,6 +52,12 @@ class AiChoice:
     model: str | None
     # True when an owner picked it; False when it follows from the only key connected.
     chosen: bool
+
+
+def _verified(outcome: str) -> bool | None:
+    """True: the provider accepted the key. False: it could not be reached to ask.
+    None: there was nothing to ask it with."""
+    return None if outcome == "skipped" else outcome == "ok"
 
 
 class CredentialService:
@@ -107,6 +118,14 @@ class CredentialService:
         plaintext_key: str,
     ) -> Credential:
         await self._require_admin(scope, workspace_id)
+        spec = provider_spec(provider.value)
+        verified = await self._check_key(spec, plaintext_key)
+        if verified == "refused":
+            assert spec is not None
+            raise ValidationError(
+                f"{spec.label} did not accept that key. "
+                "Check it was copied in full and has not been revoked."
+            )
         credential = await self._vault.store(
             workspace_id=workspace_id,
             owner_user_id=scope.actor_user_id,
@@ -120,9 +139,21 @@ class CredentialService:
             action="credential.created",
             target_type="credential",
             target_id=credential.id,
-            detail={"provider": provider.value},
+            detail={"provider": provider.value, "verified": _verified(verified)},
         )
-        return credential
+        return credential.model_copy(update={"verified": _verified(verified)})
+
+    async def _check_key(
+        self, spec: ProviderSpec | None, plaintext_key: str
+    ) -> Literal["ok", "refused", "unknown", "skipped"]:
+        """Ask the provider whether it accepts the key, before it is stored.
+
+        Only providers in ``PROVIDERS`` are checked; a computer on the connector is
+        not one. With no gateway (a site with no AI, or a test) the check is skipped
+        (``skipped``), so a mistyped key is only found when it is first used."""
+        if self._ai is None or spec is None:
+            return "skipped"
+        return await self._ai.check_key(api_key=plaintext_key, base_url=spec.base_url)
 
     async def list(self, scope: AccessScope, workspace_id: str) -> list[Credential]:
         await self._require_admin(scope, workspace_id)
@@ -132,6 +163,17 @@ class CredentialService:
         self, scope: AccessScope, workspace_id: str, credential_id: str, plaintext_key: str
     ) -> Credential:
         await self._require_admin(scope, workspace_id)
+        existing = await self._vault.get(workspace_id=workspace_id, credential_id=credential_id)
+        if existing is None:
+            raise CredentialNotFound("Credential not found.")
+        spec = provider_spec(existing.provider.value)
+        verified = await self._check_key(spec, plaintext_key)
+        if verified == "refused":
+            assert spec is not None
+            raise ValidationError(
+                f"{spec.label} did not accept that key. "
+                "Check it was copied in full and has not been revoked."
+            )
         credential = await self._vault.rotate(
             workspace_id=workspace_id, credential_id=credential_id, plaintext_key=plaintext_key
         )
@@ -141,8 +183,9 @@ class CredentialService:
             action="credential.rotated",
             target_type="credential",
             target_id=credential_id,
+            detail={"provider": existing.provider.value, "verified": _verified(verified)},
         )
-        return credential
+        return credential.model_copy(update={"verified": _verified(verified)})
 
     async def revoke(self, scope: AccessScope, workspace_id: str, credential_id: str) -> Credential:
         await self._require_admin(scope, workspace_id)

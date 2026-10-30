@@ -359,6 +359,8 @@ export interface Credential {
   status: string
   created_at: string
   last_used_at: string | null
+  /** Whether the provider accepted the key when it was saved; null when it was not checked. */
+  verified: boolean | null
 }
 
 export interface SessionInfo {

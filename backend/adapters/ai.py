@@ -8,7 +8,7 @@ import math
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from backend.adapters.connector_transport import (
     PLACEHOLDER_BASE_URL,
@@ -18,7 +18,7 @@ from backend.adapters.connector_transport import (
 )
 from backend.core.logging import log_event
 from backend.domain.connector import MY_COMPUTER, parse_device_address
-from backend.domain.providers import StructuredMode, request_model, spec_for_base_url
+from backend.domain.providers import ProviderSpec, StructuredMode, request_model, spec_for_base_url
 from backend.ports import (
     AIInvalidOutputError,
     AIProviderError,
@@ -724,3 +724,82 @@ class OpenAIGateway:
         finally:
             await client.close()
         return names[:MAX_LISTED_MODELS]
+
+    def _key_check_client(self, api_key: str, base_url: str) -> Any:
+        """An OpenAI client for the key check: one cheap request, ten seconds, no
+        retries, and a redirect is never followed."""
+        import httpx
+        from openai import AsyncOpenAI
+
+        return AsyncOpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            max_retries=0,
+            timeout=10.0,
+            # The SDK types its client as its bundled httpx fork; the plain httpx
+            # client is accepted at runtime (and keeps MockTransport available to tests).
+            http_client=httpx.AsyncClient(timeout=10.0, follow_redirects=False),  # type: ignore[arg-type]
+        )
+
+    def _check_http_client(self) -> Any:
+        """An httpx client for a plain authenticated key check, with the same limits."""
+        import httpx
+
+        return httpx.AsyncClient(timeout=10.0, follow_redirects=False)
+
+    async def _check_key_path(
+        self, api_key: str, spec: ProviderSpec
+    ) -> Literal["ok", "refused", "unknown"]:
+        """Check a key at the provider's own path: OpenRouter's ``GET /key`` (its models
+        list answers 200 for any key), Anthropic's models list with its own headers."""
+        import httpx
+
+        headers = (
+            {"x-api-key": api_key}
+            if spec.key_check_header == "x-api-key"
+            else {"Authorization": f"Bearer {api_key}"}
+        )
+        headers.update(dict(spec.key_check_extra))
+        client = self._check_http_client()
+        try:
+            response = await client.get(
+                spec.base_url.rstrip("/") + (spec.key_check_path or ""), headers=headers
+            )
+        except httpx.HTTPError:
+            return "unknown"
+        finally:
+            await client.aclose()
+        if response.status_code in (401, 403):
+            return "refused"
+        return "ok" if response.is_success else "unknown"
+
+    async def check_key(
+        self, *, api_key: str, base_url: str
+    ) -> Literal["ok", "refused", "unknown"]:
+        """Ask the provider whether it accepts the key, spending nothing.
+
+        A clear "no" (401/403) refuses the key; success accepts it; anything else —
+        a provider that cannot be reached, one with no models list, a rate limit or a
+        server error — is ``unknown``, so a key is never thrown away when only the
+        network was wrong."""
+        from openai import AuthenticationError, OpenAIError, PermissionDeniedError
+
+        spec = spec_for_base_url(base_url)
+        provider = spec.id if spec is not None else "unknown"
+        outcome: Literal["ok", "refused", "unknown"] = "unknown"
+        if spec is not None and spec.key_check_path:
+            outcome = await self._check_key_path(api_key, spec)
+        else:
+            client = self._key_check_client(api_key, base_url)
+            try:
+                try:
+                    await client.models.list()
+                    outcome = "ok"
+                except (AuthenticationError, PermissionDeniedError):
+                    outcome = "refused"
+                except OpenAIError:
+                    outcome = "unknown"
+            finally:
+                await client.close()
+        log_event(logger, "ai.key_check", provider=provider, outcome=outcome)
+        return outcome

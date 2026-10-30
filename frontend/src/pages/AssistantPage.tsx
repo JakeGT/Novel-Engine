@@ -183,6 +183,7 @@ export function AssistantPage() {
   const [label, setLabel] = useState('')
   const [secret, setSecret] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
+  const [saved, setSaved] = useState<{ provider: string; verified: boolean | null } | null>(null)
   const picked = catalogue.find((item) => item.id === provider)
   const providerLabel = (id: string) =>
     id === 'my_computer' ? 'your own computer' : (catalogue.find((item) => item.id === id)?.label ?? id)
@@ -200,9 +201,10 @@ export function AssistantPage() {
         label: label.trim() || (picked?.label ?? provider),
         key: secret.trim(),
       }),
-    onSuccess: async () => {
+    onSuccess: async (credential) => {
       setSecret('')
       setLabel('')
+      setSaved({ provider: credential.provider, verified: credential.verified ?? null })
       await refresh()
     },
   })
@@ -216,6 +218,7 @@ export function AssistantPage() {
     event.preventDefault()
     if (secret.trim().length < 8) return setProblem('That key looks too short. Paste the whole key.')
     setProblem(null)
+    setSaved(null)
     add.mutate()
   }
 
@@ -412,6 +415,12 @@ export function AssistantPage() {
                   </Field>
                 </div>
                 <ErrorNotice error={add.error} prefix="The key was not saved" />
+                {saved?.verified === false && (
+                  <p className="notice plain" role="status">
+                    Saved. {providerLabel(saved.provider)} could not be reached to check the key, so
+                    it will be tried the first time the assistant is used.
+                  </p>
+                )}
                 <div className="actions">
                   <Button variant="primary" type="submit" disabled={add.isPending || taken}>
                     {add.isPending ? 'Saving…' : 'Connect key'}
