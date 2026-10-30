@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from backend.core.metrics import metrics
 from backend.domain.projection import ProjectionStatus
 from backend.ports import CanonJournalPort
 from backend.services.projection_service import GraphProjectionService
@@ -45,7 +46,7 @@ class OutboxConsumer:
         limit: int = 100,
     ) -> OutboxDrainResult:
         messages = await self._journal.list_outbox(
-            workspace_id=workspace_id, project_id=project_id, limit=limit
+            workspace_id=workspace_id, project_id=project_id, limit=limit, pending_only=True
         )
         pending = sorted(
             (message for message in messages if message.published_at is None),
@@ -54,7 +55,10 @@ class OutboxConsumer:
         published = 0
         failed = 0
         for message in pending:
-            if message.topic != CANON_COMMIT_TOPIC:
+            # Only the main story is projected (ADR-020). A what-if's commits share
+            # record ids with the story it came from, so projecting them would write
+            # over the main story's graph; they are acknowledged and left out.
+            if message.topic != CANON_COMMIT_TOPIC or message.branch_id != branch_id:
                 await self._journal.mark_outbox_published(message_id=message.id)
                 published += 1
                 continue
@@ -77,6 +81,27 @@ class OutboxConsumer:
                 workspace_id=workspace_id, project_id=project_id, branch_id=branch_id
             )
         ).lag
+        if published:
+            metrics.increment(
+                "outbox_deliveries_total",
+                "Outbox messages by delivery outcome.",
+                amount=published,
+                outcome="published",
+            )
+        if failed:
+            metrics.increment(
+                "outbox_deliveries_total",
+                "Outbox messages by delivery outcome.",
+                amount=failed,
+                outcome="failed",
+            )
+        # The most recent drain's lag across whichever project was drained; a
+        # per-project series would put a project id in a label.
+        metrics.set_gauge(
+            "projection_lag_revisions_last_drain",
+            "Committed revisions not yet projected, as seen by the last outbox drain.",
+            lag,
+        )
         return OutboxDrainResult(
             processed=len(pending), published=published, failed=failed, lag=lag
         )

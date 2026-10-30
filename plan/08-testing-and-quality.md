@@ -65,7 +65,7 @@ Offline contract tests use recorded or synthetic structured responses. Live-prov
 | Resolution memory | time/POV-scoped aliases, positive/negative correction examples, no historical/global silent remap |
 | Derived views | watermark/lag, duplicate delivery, replay equivalence, dependency coverage, impact preview parity |
 | Suppressions | scope/expiry/dependency staleness, audit, and inability to suppress integrity failures |
-| MCP | authenticated tenant scope, POV filters, read parity, proposal-only writes, no commit/policy bypass |
+| MCP | authenticated tenant scope, POV filters, read parity, proposal-only writes, no commit/policy bypass (built: `tests/contract/test_mcp.py`, `tests/application/test_access_key_service.py`, `tests/unit/test_access_key_format.py`, `tests/integration/test_access_key_store.py`, `frontend/e2e/access-keys.spec.ts`) |
 | Spoiler exports | narrative-position/viewpoint filtering, secret/media leakage, artifact-specific sharing |
 | Export | round trip, schema version, checksum, missing derived data rebuild |
 
@@ -118,12 +118,56 @@ For a release candidate:
 - manual release-one workflow is completed with a fresh project
 - media export/restore/reindex/deletion and cross-tenant object-access drills pass
 
-## Immediate test cleanup
+## Revision 2026-10-10: gates for the assistant and the learning curve
 
-1. Create `tests/unit`, `tests/application`, `tests/integration`, and `tests/e2e`.
-2. Mark existing root endpoint tests as legacy integration tests.
-3. Replace `requests` against localhost with an in-process client where possible.
-4. Inject graph/vector/AI dependencies so import and test collection need no services.
-5. Add characterization tests for entity tags and current graph DTOs before refactoring.
-6. Keep test output in normal tooling/CI artefacts rather than committing generated reports.
-7. Add CI only after the deterministic test command succeeds from a clean checkout.
+(The "Immediate test cleanup" list that stood here was Phase 0 work and is complete.)
+
+Added to the invariant matrix and release gates (ADR-017):
+
+| Invariant | Evidence required |
+| --- | --- |
+| The assistant never writes canon | Every assistant workflow ends in a proposal; a commit without approval is refused (tested for creation and fill-in) |
+| Every capability has two paths | A scripted-model test of the assistant path and a no-provider test of the by-hand path, per capability-map row |
+| Existing entries are linked, not duplicated | Fixtures with name, alias, and case variants (name matching tested; semantic suggestions Phase 2.5) |
+| Unusable model output is reported | Discarded items are returned with reasons and shown to the author |
+| Output formats are provider-safe | Each structured format converts to a strict JSON schema |
+| Plain language | No internal term on a Level 1–3 screen outside technical details, checked over rendered screens |
+| No provider, no dead end | The full Level 1–3 workflow passes with no provider configured |
+| Intent is never fact | Plan records never appear in fact queries or exports (Phase 2.6) |
+
+Release gate additions: the assistant-led release-one workflow is completed on a fresh project
+with a real provider, and again with no provider; the learning-curve measures in document 19 are
+met; drafted-change quality is at or above its recorded baseline.
+
+Known gap: as of 2026-10-10 no test exercises a real model. The scripted model proves the
+plumbing and the validation, not the quality of what is drafted.
+
+## Evaluation sets (2026-10-20: CON-012, CTX-010, EXT-008, CON-013, QLT-003)
+
+Labelled evaluation sets live in `tests/eval/` under the `eval` marker. The deterministic ones run
+in `make test` (and so `make check`) and their numbers are pinned: a change to a check, a case or
+the context service must move them on purpose. `make eval` runs them again and writes one report,
+`var/eval/report.md` and `report.json` (ignored by git; counts, rates, timings and case ids only,
+never prose, secrets or keys). Every set is original synthetic text from one invented story, the
+Saltglass Ferry.
+
+| Set | What it measures | Needs a model? |
+|---|---|---|
+| `consistency/` (CON-012) | Detection, false positives, precision and leakage recall of the deterministic checks (continuity, story rules, knowledge timing, drafting checks, reveals, thread order, scene conditions) on 73 hand-labelled defects and near misses; latency per call and on a 300-scene story; cost (zero tokens). Every case a check gets wrong carries its reason, a stated limit or a suspected bug (the bug cases are also `xfail`). | No |
+| `consistency/bundles.py` (CON-013) | The deterministic review groups against full-context and vector-only bundling: tokens, groups, secrets shown, and whether each of eight labelled defects has its passages and records shown together. | No (the vector baseline is a word-overlap stand-in) |
+| `retrieval/` (CTX-010) | A scene's context against labels, built through the API: Recall@5/@10, recall, MRR, precision, leaks (secrets, later knowledge, ended facts, another line of the story) by record and in the rendered words, omissions said or silent, what-if correctness, the least budget. | No (search by meaning off) |
+| `extraction/` (EXT-008) | Reading prose into suggested changes, through the API, scored with `intake_eval.score_facts` overall and by kind of reading (name, alias, pronoun, epithet, new entry, narration, speech, disclosure), plus things only said that became facts and items the reading dropped. In CI the scripted model replays hand-written answers (with typical mistakes): this pins the harness and the pipeline's filtering, and **measures no model**. | Only for `make eval-model` |
+| `multimodal/` (area B, `make eval-media`) | Picture and words search on a stand-in embedder. | Only with a real embedder |
+
+What only the owner's real model can measure, and is not measured anywhere yet: how well a model
+reads prose into facts (`make eval-model` runs the four labelled passages against the configured
+provider after saying about how many tokens it takes and waiting for "yes"; it refuses in CI, and
+`EVAL_ARGS=--stand-in` runs the same path against the local stand-in with no spend), how many of
+the defects a model critic finds when shown them and how many false findings it adds, whether
+drafts are better with the chosen context, and the real token cost per finding. Until those exist
+the release gates "AI evaluation metrics meet the approved baseline" and "drafted-change quality is
+at or above its recorded baseline" cannot be met, and no threshold has been approved.
+
+The sets are small and probe each check's edges, so their rates describe the set, not how often a
+real manuscript goes wrong. Add a case for every repaired defect in a check, and a near miss for
+every case a check must leave alone.

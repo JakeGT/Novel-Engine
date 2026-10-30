@@ -86,3 +86,64 @@ def test_scrub_event_removes_locals_extras_and_contexts() -> None:
     assert "vars" not in scrubbed["exception"]["values"][0]["stacktrace"]["frames"][0]
     assert "extra" not in scrubbed
     assert "contexts" not in scrubbed
+
+
+def test_errors_are_reported_under_the_commit_that_is_running() -> None:
+    from backend.core.observability import release_name
+
+    assert release_name(_settings(APP_RELEASE="26564cf")) == "novel-engine@26564cf"
+    # Outside a deployment there is no commit; the package version stands in.
+    assert release_name(_settings(APP_RELEASE="")) == "novel-engine@0.1.0"
+
+
+def test_the_page_is_given_a_dsn_only_when_one_is_configured() -> None:
+    from backend.core.observability import client_config
+
+    assert client_config(_settings(APP_ENV="development", SENTRY_DSN_WEB="")) is None
+    assert client_config(_settings(APP_ENV="test", SENTRY_DSN_WEB="https://k@s.example/2")) is None
+    assert client_config(
+        _settings(APP_ENV="development", SENTRY_DSN_WEB="https://k@s.example/2", APP_RELEASE="abc")
+    ) == {
+        "sentryDsn": "https://k@s.example/2",
+        "environment": "development",
+        "release": "novel-engine@abc",
+    }
+
+
+def test_scrubbing_keeps_ids_and_drops_anything_else_attached_to_an_event() -> None:
+    event = {
+        "user": {"id": "usr_1", "email": "jake@example.com", "ip_address": "10.0.0.1"},
+        "tags": {
+            "workspace_id": "ws_1",
+            "project_id": "prj_1",
+            "auth_mode": "hosted",
+            "story": "The Salt Road",
+        },
+        # A trace is scrubbed by the same function as an error.
+        "spans": [
+            {
+                "op": "db",
+                "description": "SELECT * FROM entities WHERE name = 'Mara'",
+                "data": {"q": 1},
+            },
+            {"op": "canon.commit", "description": "commit", "data": {"x": 1}},
+        ],
+    }
+
+    scrubbed = scrub_event(event)
+
+    assert scrubbed["user"] == {"id": "usr_1"}
+    assert scrubbed["tags"] == {
+        "workspace_id": "ws_1",
+        "project_id": "prj_1",
+        "auth_mode": "hosted",
+    }
+    assert scrubbed["spans"] == [{"op": "db"}, {"op": "canon.commit", "description": "commit"}]
+    assert "Mara" not in str(scrubbed) and "Salt Road" not in str(scrubbed)
+
+
+def test_identifying_a_request_does_nothing_when_reporting_is_off() -> None:
+    from backend.core.observability import identify_request
+
+    # Must be safe to call on every request of a site with no DSN.
+    identify_request(user_id="usr_1", workspace_id="ws_1", project_id="prj_1", auth_mode="local")

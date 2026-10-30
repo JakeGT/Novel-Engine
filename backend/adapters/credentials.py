@@ -6,14 +6,23 @@ Plaintext key material exists only transiently inside this adapter.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Integer, String, Text, delete, select, text, update
+from sqlalchemy import DateTime, Integer, String, Text, delete, func, select, text, update
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.adapters.system import uuid7
-from backend.core.crypto import envelope_decrypt, envelope_encrypt, key_fingerprint, key_last4
+from backend.core.crypto import (
+    CryptoError,
+    Envelope,
+    envelope_decrypt,
+    envelope_encrypt,
+    key_fingerprint,
+    key_last4,
+    rewrap_envelope,
+)
 from backend.core.database import Base, session_scope
 from backend.domain.credentials import (
     Credential,
@@ -43,6 +52,96 @@ class CredentialRow(Base):
     rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+@dataclass(frozen=True)
+class KeyVersionCount:
+    """How many stored keys one credential-key version locks, by status. No key is shown."""
+
+    key_version: int
+    status: str
+    count: int
+
+
+@dataclass(frozen=True)
+class RekeyedCredential:
+    workspace_id: str
+    credential_id: str
+    from_version: int
+
+
+@dataclass
+class RekeyReport:
+    """What re-locking stored keys under the current credential key did (OPS-004).
+
+    Ids only: never a key, its last characters or its fingerprint.
+    """
+
+    current_version: int
+    dry_run: bool
+    examined: int = 0
+    already_current: int = 0
+    rekeyed: list[RekeyedCredential] = field(default_factory=list)
+    skipped_revoked: int = 0
+    # Keys locked by a version this server was not given (CREDENTIAL_PREVIOUS_KEKS).
+    missing_version: dict[int, list[str]] = field(default_factory=dict)
+    # Keys the configured key for their version could not open, or that opened to a
+    # different key than the one recorded: a wrong key or a damaged row.
+    unopenable: list[str] = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return not self.missing_version and not self.unopenable
+
+
+@dataclass
+class VerifyReport:
+    """Whether every stored key opens with the keys this server holds (OPS-004)."""
+
+    current_version: int
+    configured_versions: list[int]
+    by_version: list[KeyVersionCount]
+    checked: int = 0
+    opened: int = 0
+    missing_version: dict[int, list[str]] = field(default_factory=dict)
+    unopenable: list[str] = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return not self.missing_version and not self.unopenable
+
+    @property
+    def retirable_versions(self) -> list[int]:
+        """Older versions no active key needs any more: safe to remove from the settings."""
+        in_use = {
+            item.key_version
+            for item in self.by_version
+            if item.status == CredentialStatus.ACTIVE.value and item.count
+        }
+        return sorted(
+            version
+            for version in self.configured_versions
+            if version != self.current_version and version not in in_use
+        )
+
+    @property
+    def old_active(self) -> int:
+        """Active keys still locked by an older version."""
+        return sum(
+            item.count
+            for item in self.by_version
+            if item.status == CredentialStatus.ACTIVE.value
+            and item.key_version != self.current_version
+        )
+
+
+def _envelope(row: CredentialRow) -> Envelope:
+    return Envelope(
+        key_version=row.key_version,
+        wrapped_dek=row.wrapped_dek,
+        nonce=row.nonce,
+        ciphertext=row.ciphertext,
+    )
 
 
 def _to_credential(row: CredentialRow) -> Credential:
@@ -243,14 +342,7 @@ class PostgresCredentialVault:
         row = await self._get_row(workspace_id, credential_id)
         if row is None or row.status != CredentialStatus.ACTIVE.value:
             raise CredentialNotFound("Active credential not found.")
-        from backend.core.crypto import Envelope
-
-        envelope = Envelope(
-            key_version=row.key_version,
-            wrapped_dek=row.wrapped_dek,
-            nonce=row.nonce,
-            ciphertext=row.ciphertext,
-        )
+        envelope = _envelope(row)
         kek = self._keks.get(row.key_version)
         if not kek:
             raise CredentialUnavailable(
@@ -292,3 +384,173 @@ class PostgresCredentialVault:
                 delete(CredentialRow).where(CredentialRow.workspace_id == workspace_id)
             )
             return result.rowcount or 0  # type: ignore[attr-defined]
+
+    # -- Re-locking under a new credential key (OPS-004) ------------------------------
+
+    @property
+    def current_version(self) -> int:
+        return self._key_version
+
+    @property
+    def configured_versions(self) -> list[int]:
+        return sorted(self._keks)
+
+    async def key_versions(self) -> list[KeyVersionCount]:
+        async with session_scope(self._session_factory) as session:
+            rows = await session.execute(
+                select(CredentialRow.key_version, CredentialRow.status, func.count())
+                .group_by(CredentialRow.key_version, CredentialRow.status)
+                .order_by(CredentialRow.key_version, CredentialRow.status)
+            )
+            return [
+                KeyVersionCount(key_version=int(version), status=str(status), count=int(count))
+                for version, status, count in rows
+            ]
+
+    @staticmethod
+    def _opens(envelope: Envelope, fingerprint: str, kek: str) -> bool:
+        """The envelope opens with ``kek`` to the key ``fingerprint`` records."""
+        try:
+            plaintext = envelope_decrypt(envelope, kek=kek)
+        except CryptoError:
+            return False
+        return key_fingerprint(plaintext) == fingerprint
+
+    async def rekey(
+        self,
+        *,
+        dry_run: bool = True,
+        include_revoked: bool = False,
+        audit_actor: str | None = None,
+    ) -> RekeyReport:
+        """Re-lock every stored key on an older version under the current credential key.
+
+        Only each key's data key is unwrapped and wrapped again; the stored ciphertext is
+        unchanged. A row is written only after its new envelope has been opened with the
+        current key and found to hold the key its fingerprint records, one row per
+        transaction under a row lock, so an owner connecting a key at the same time, a
+        second run, or a stop part way leaves every row either as it was or moved. A dry
+        run opens each key with its old version and writes nothing. Revoked keys are left
+        as they are unless asked: they can never be used, and retiring the old key makes
+        them unreadable, which is usually what is wanted.
+
+        With ``audit_actor``, each move's ``credential.rekeyed`` audit event is written in
+        the same transaction as the move, so a key is never moved without its record (or
+        recorded without being moved), even when the run stops part way.
+        """
+        self._require_configured()
+        report = RekeyReport(current_version=self._key_version, dry_run=dry_run)
+        async with session_scope(self._session_factory) as session:
+            candidates = list(
+                await session.execute(
+                    select(
+                        CredentialRow.id, CredentialRow.key_version, CredentialRow.status
+                    ).order_by(CredentialRow.id)
+                )
+            )
+        for credential_id, version, status in candidates:
+            report.examined += 1
+            if version == self._key_version:
+                report.already_current += 1
+                continue
+            if status != CredentialStatus.ACTIVE.value and not include_revoked:
+                report.skipped_revoked += 1
+                continue
+            old_kek = self._keks.get(version)
+            if not old_kek:
+                report.missing_version.setdefault(version, []).append(credential_id)
+                continue
+            async with session_scope(self._session_factory) as session:
+                row = (
+                    await session.execute(
+                        select(CredentialRow)
+                        .where(CredentialRow.id == credential_id)
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                if row is None:
+                    continue
+                if row.key_version == self._key_version:
+                    # Connected again (or moved by another run) since the list was read.
+                    report.already_current += 1
+                    continue
+                if row.key_version != version:
+                    old_kek = self._keks.get(row.key_version, "")
+                    if not old_kek:
+                        report.missing_version.setdefault(row.key_version, []).append(row.id)
+                        continue
+                if not self._opens(_envelope(row), row.key_fingerprint, old_kek):
+                    report.unopenable.append(row.id)
+                    continue
+                try:
+                    moved = rewrap_envelope(
+                        _envelope(row),
+                        old_kek=old_kek,
+                        new_kek=self._kek,
+                        new_version=self._key_version,
+                    )
+                except CryptoError:
+                    report.unopenable.append(row.id)
+                    continue
+                if not self._opens(moved, row.key_fingerprint, self._kek):
+                    report.unopenable.append(row.id)
+                    continue
+                report.rekeyed.append(
+                    RekeyedCredential(
+                        workspace_id=row.workspace_id,
+                        credential_id=row.id,
+                        from_version=row.key_version,
+                    )
+                )
+                if dry_run:
+                    continue
+                from_version = row.key_version
+                row.wrapped_dek = moved.wrapped_dek
+                row.key_version = moved.key_version
+                if audit_actor is not None:
+                    from backend.adapters.tenancy_store import AuditEventRow
+
+                    session.add(
+                        AuditEventRow(
+                            id=str(uuid7()),
+                            workspace_id=row.workspace_id,
+                            actor_user_id=audit_actor,
+                            action="credential.rekeyed",
+                            target_type="credential",
+                            target_id=row.id,
+                            detail={
+                                "from_version": from_version,
+                                "to_version": self._key_version,
+                            },
+                            correlation_id="",
+                            created_at=datetime.now(UTC),
+                        )
+                    )
+                await session.flush()
+        return report
+
+    async def verify(self, *, include_revoked: bool = False) -> VerifyReport:
+        """Open every active stored key (and revoked ones if asked) with the keys held here.
+
+        Nothing is written, and no key leaves this method.
+        """
+        report = VerifyReport(
+            current_version=self._key_version,
+            configured_versions=self.configured_versions,
+            by_version=await self.key_versions(),
+        )
+        statement = select(CredentialRow).order_by(CredentialRow.id)
+        if not include_revoked:
+            statement = statement.where(CredentialRow.status == CredentialStatus.ACTIVE.value)
+        async with session_scope(self._session_factory) as session:
+            rows = list((await session.execute(statement)).scalars())
+        for row in rows:
+            report.checked += 1
+            kek = self._keks.get(row.key_version)
+            if not kek:
+                report.missing_version.setdefault(row.key_version, []).append(row.id)
+            elif self._opens(_envelope(row), row.key_fingerprint, kek):
+                report.opened += 1
+            else:
+                report.unopenable.append(row.id)
+        return report

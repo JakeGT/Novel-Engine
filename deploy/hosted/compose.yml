@@ -1,0 +1,192 @@
+# Novel Engine hosted stack (novel-engine.jaketalling.com), following the jaketalling platform's
+# app contract: no host ports, only the server on platform-proxy, file-mounted secrets.
+# The image is built from this repository (see README.md here); NOVEL_ENGINE_VERSION picks the tag.
+# One image is the API, the migration CLI and the web UI.
+#
+# Networks:
+#   - platform-proxy:    Caddy reaches the server; also the server's way out to Authentik (OIDC
+#                        discovery, token exchange, signing keys) and the model provider. Only the
+#                        server is on it.
+#   - novel-engine-data: internal; server and migrate reach this stack's own Postgres and Neo4j.
+# The stores are on no platform network and publish no ports. Novel Engine needs pgvector and
+# Postgres 17, so it does not use the platform Postgres; back it up with ./backup.sh.
+
+name: novel-engine
+
+x-app: &app
+  image: novel-engine:${NOVEL_ENGINE_VERSION:?set NOVEL_ENGINE_VERSION}
+  environment:
+    APP_ENV: production
+    AUTH_MODE: hosted
+    NOVEL_ENGINE_SECRETS_DIR: /run/secrets
+    POSTGRES_HOST: postgres
+    POSTGRES_USER: novel
+    POSTGRES_DB: novel_engine
+    NEO4J_URI: bolt://neo4j:7687
+    NEO4J_USER: neo4j
+    OIDC_ISSUER: https://auth.jaketalling.com/application/o/novel-engine/
+    OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?set OIDC_CLIENT_ID}
+    OIDC_REDIRECT_URI: https://novel-engine.jaketalling.com/auth/callback
+    OIDC_POST_LOGOUT_REDIRECT_URI: https://novel-engine.jaketalling.com/
+    # Who may sign in is decided by Authentik. Once in, a person sets up one workspace of their
+    # own; only platform admins (Novel Engine user ids) may create more.
+    ALLOW_WORKSPACE_SELF_CREATION: "false"
+    # A signed-in person who owns no workspace may create one of their own.
+    ALLOW_PERSONAL_WORKSPACE: "true"
+    # Authentik sends no notice when someone's access is removed, so sessions are kept
+    # short: removal takes effect within this many seconds (12 hours).
+    SESSION_TTL_SECONDS: "43200"
+    PLATFORM_ADMIN_USER_IDS: ${PLATFORM_ADMIN_USER_IDS:-}
+    # The model suggested to a workspace that connects an OpenRouter key and has not
+    # chosen one. Each workspace picks its own provider and model on the Assistant page.
+    AI_MODEL: ${AI_MODEL:-anthropic/claude-sonnet-5.5}
+    # Caddy (the platform-proxy subnet) is the only trusted forwarder.
+    FORWARDED_ALLOW_IPS: 172.23.0.0/16
+    # Errors are reported under the commit that is running, so one can be traced to a deploy.
+    APP_RELEASE: ${NOVEL_ENGINE_VERSION}
+    # Errors only; raise to sample performance traces (0.0 to 1.0).
+    SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.0}
+    # Search by meaning. The image has no model of its own, so "minilm" means search by words
+    # only. "api" sends every passage to an embedding service under the site's own key
+    # (secrets/embedding_api_key); authors are told so on the Assistant page. After changing
+    # it: `docker compose exec server python -m backend.devtools.embeddings build`, then `activate`.
+    # Alternatively, leave EMBEDDING_PROVIDER at its default and set the site's setup (service,
+    # model, size and key) on the site settings page instead, then build from there.
+    EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-minilm}
+    EMBEDDING_API_PROVIDER: ${EMBEDDING_API_PROVIDER:-openai}
+    EMBEDDING_API_BASE_URL: ${EMBEDDING_API_BASE_URL:-}
+    EMBEDDING_API_MODEL: ${EMBEDDING_API_MODEL:-}
+    EMBEDDING_API_DIMENSION: ${EMBEDDING_API_DIMENSION:-0}
+    EMBEDDING_API_NAME: ${EMBEDDING_API_NAME:-}
+  secrets:
+    - postgres_password
+    - neo4j_password
+    - oidc_client_secret
+    - credential_kek
+    # Error reporting (Sentry). An empty file switches that side off.
+    - sentry_dsn_backend
+    - sentry_dsn_web
+    # The embedding service's key (EMBEDDING_PROVIDER=api). Empty unless that is used.
+    - embedding_api_key
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  logging:
+    driver: json-file
+    options: { max-size: 10m, max-file: "3" }
+
+services:
+  server:
+    <<: *app
+    container_name: novel-engine-server
+    restart: unless-stopped
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    networks:
+      proxy:
+        aliases: [novel-engine-server]
+      data: {}
+    volumes:
+      # Stored objects (archive exports, media versions). Backed up by ./backup.sh.
+      - objects:/var/lib/novel-engine/objects
+    mem_limit: 1g
+    pids_limit: 256
+
+  # Applies Postgres and Neo4j migrations, then exits. The server refuses to start on an
+  # unmigrated store, so it waits for this.
+  migrate:
+    <<: *app
+    container_name: novel-engine-migrate
+    restart: "no"
+    command: ["python", "-m", "backend.migrate"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      neo4j: { condition: service_healthy }
+    networks:
+      data: {}
+    mem_limit: 512m
+    pids_limit: 128
+
+  postgres:
+    image: pgvector/pgvector:0.8.0-pg17@sha256:40b404964359299eefdd5f8518facf1886c562848cf4de13b6eaf91cb70c2b87
+    container_name: novel-engine-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: novel
+      POSTGRES_DB: novel_engine
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    networks:
+      data:
+        aliases: [postgres]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U novel -d novel_engine"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 1g
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
+
+  # A rebuildable projection of canon (Postgres is authoritative), so it is not backed up.
+  neo4j:
+    image: neo4j:5.26.0@sha256:5a015e53de1895e7eee1574ae0325cf8c4b89587222778108c594bdd45a474b5
+    container_name: novel-engine-neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH_FILE: /run/secrets/neo4j_auth
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+    secrets:
+      - neo4j_auth
+      - neo4j_password
+    networks:
+      data:
+        aliases: [neo4j]
+    volumes:
+      - neo4j-data:/data
+    # A plain HTTP request, not cypher-shell: cypher-shell starts a JVM on
+    # every check, which cost about a third of a core per container at rest.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:7474/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
+      start_interval: 5s
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 1500m
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
+
+networks:
+  proxy:
+    name: ${PROXY_NETWORK:-platform-proxy}
+    external: true
+  data:
+    name: ${COMPOSE_PROJECT_NAME:-novel-engine}-data
+    internal: true
+
+volumes:
+  objects: {}
+  postgres-data: {}
+  neo4j-data: {}
+
+secrets:
+  postgres_password: { file: "${SECRETS_DIR:-./secrets}/postgres_password" }
+  neo4j_password: { file: "${SECRETS_DIR:-./secrets}/neo4j_password" }
+  neo4j_auth: { file: "${SECRETS_DIR:-./secrets}/neo4j_auth" }
+  oidc_client_secret: { file: "${SECRETS_DIR:-./secrets}/oidc_client_secret" }
+  credential_kek: { file: "${SECRETS_DIR:-./secrets}/credential_kek" }
+  sentry_dsn_backend: { file: "${SECRETS_DIR:-./secrets}/sentry_dsn_backend" }
+  sentry_dsn_web: { file: "${SECRETS_DIR:-./secrets}/sentry_dsn_web" }
+  embedding_api_key: { file: "${SECRETS_DIR:-./secrets}/embedding_api_key" }

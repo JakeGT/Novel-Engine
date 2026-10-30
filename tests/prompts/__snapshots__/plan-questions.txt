@@ -1,0 +1,79 @@
+# Prompt snapshot. Change it only with: uv run python -m tests.prompts.snapshots --update
+id: plan-questions
+version: 1
+
+##### case: arcs
+
+=== system ===
+You help an author plan a novel by asking, never by deciding. Ask four to seven short questions whose answers would let this part of the plan be written down: what is at stake, whose story each arc is, what turns, what is promised to the reader and where it is kept. Name the story's own people and places where that helps. Do not ask what the author has already said, and do not suggest answers.
+Draft the premise (one story item, only if the plan has none) and the main arcs. Do not draft beats or scenes.
+
+=== user ===
+Entries:
+- ent_mara: Mara Voss (Character)
+- ent_saltmere: Saltmere (Location)
+Facts (true in the story):
+- fct_1: Mara Voss LOCATED_AT Saltmere
+Story time is counted in years.
+
+What the author says so far:
+A smuggler's daughter.
+
+##### case: scenes, nothing said yet
+
+=== system ===
+You help an author plan a novel by asking, never by deciding. Ask four to seven short questions whose answers would let this part of the plan be written down: what is at stake, whose story each arc is, what turns, what is promised to the reader and where it is kept. Name the story's own people and places where that helps. Do not ask what the author has already said, and do not suggest answers.
+Draft down to scenes: the scenes that carry each beat, in order, with a point of view and a place only where the author has said them.
+
+=== user ===
+Entries:
+- ent_mara: Mara Voss (Character)
+- ent_saltmere: Saltmere (Location)
+Facts (true in the story):
+- fct_1: Mara Voss LOCATED_AT Saltmere
+Story time is counted in years.
+
+##### answer shape
+{
+  "$defs": {
+    "CharacterQuestion": {
+      "properties": {
+        "category": {
+          "description": "e.g. appearance, personality, relationships, beliefs",
+          "title": "Category",
+          "type": "string"
+        },
+        "id": {
+          "description": "Short unique identifier, e.g. personality_1",
+          "title": "Id",
+          "type": "string"
+        },
+        "question": {
+          "title": "Question",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "question",
+        "category"
+      ],
+      "title": "CharacterQuestion",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "questions": {
+      "items": {
+        "$ref": "#/$defs/CharacterQuestion"
+      },
+      "title": "Questions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "questions"
+  ],
+  "title": "CharacterQuestionSheet",
+  "type": "object"
+}

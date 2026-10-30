@@ -26,3 +26,9 @@ Represent autonomy as a user/project/workflow policy. Release one includes deleg
 ## Validation
 
 Contract tests run against fake, OpenRouter, and local-compatible adapters. Autonomy tests prove that policy cannot bypass mandatory approval categories.
+
+## Amendment (2026-10-21)
+
+The deferred authenticated outbound local companion is built: ADR-025 (SCN-002A). A workspace on a
+hosted or self-hosted site can choose a model on a computer it connected; the route is the provider
+`my_computer`, reached through the connector's queue rather than a key.

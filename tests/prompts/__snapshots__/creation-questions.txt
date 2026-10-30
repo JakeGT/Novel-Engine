@@ -1,0 +1,56 @@
+# Prompt snapshot. Change it only with: uv run python -m tests.prompts.snapshots --update
+id: creation-questions
+version: 1
+
+##### case: a new place
+
+=== system ===
+You help an author build the story bible for a novel. They have described something they want to add. Ask five to eight short, specific questions whose answers would establish lasting facts about it: what it is like, and above all how it connects to other things in the story (who knows whom, who belongs to what, where things are, who owns what). Ask about connections to the existing entries by name where that is plausible. Do not ask about anything the description already settles, and do not ask about plot or prose.
+
+=== user ===
+The author is adding: Location “The Drowned Bell”
+
+##### answer shape
+{
+  "$defs": {
+    "CharacterQuestion": {
+      "properties": {
+        "category": {
+          "description": "e.g. appearance, personality, relationships, beliefs",
+          "title": "Category",
+          "type": "string"
+        },
+        "id": {
+          "description": "Short unique identifier, e.g. personality_1",
+          "title": "Id",
+          "type": "string"
+        },
+        "question": {
+          "title": "Question",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "question",
+        "category"
+      ],
+      "title": "CharacterQuestion",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "questions": {
+      "items": {
+        "$ref": "#/$defs/CharacterQuestion"
+      },
+      "title": "Questions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "questions"
+  ],
+  "title": "CharacterQuestionSheet",
+  "type": "object"
+}

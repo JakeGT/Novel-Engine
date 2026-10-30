@@ -6,17 +6,32 @@ process-global singletons. Adapters in ``backend.adapters`` implement them.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
+from backend.domain.archive import ArchiveImport, ImportStatus
 from backend.domain.canon.assertions import Belief, Fact
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.events import Event
+from backend.domain.canon.plans import PlanItem
 from backend.domain.canon.revisions import CanonRevision, Provenance
 from backend.domain.commit import ApplyOutcome, CommitMarker
 from backend.domain.credentials import Credential, CredentialProvider
+from backend.domain.embedding import (
+    CaptionSource,
+    EmbeddingHealth,
+    EmbeddingInput,
+    EmbeddingSpace,
+    EmbeddingTask,
+    EmbeddingVector,
+    Generation,
+    PictureSource,
+    SearchGate,
+    StoredHit,
+    VectorRow,
+)
 from backend.domain.history import CanonTag, CanonTagHistoryEntry
 from backend.domain.identity import IdentityClaims, LoginAttempt, Role, Session, User
 from backend.domain.journal import (
@@ -26,13 +41,25 @@ from backend.domain.journal import (
     CommitEnvelope,
     MutationOperation,
     MutationSet,
+    MutationStatus,
+    MutationTransition,
+    OperationDecision,
+    OperationRevision,
     OutboxMessage,
     ReviewDecision,
 )
-from backend.domain.media import AssetLink, MediaAsset, MediaAssetVersion
+from backend.domain.media import (
+    AssetLifecycle,
+    AssetLink,
+    MediaAsset,
+    MediaAssetVersion,
+    MediaLifecycleEvent,
+    PictureUpload,
+    UploadState,
+)
 from backend.domain.objects import ObjectStat
 from backend.domain.operations import CanonOperation
-from backend.domain.projection import ProjectionWatermark, RecordVersion
+from backend.domain.projection import EvidenceRecord, ProjectionWatermark, RecordVersion
 from backend.domain.schemas import SchemaVersion
 from backend.domain.tenancy import AuditEvent, Invitation, Membership, Project, Workspace
 from backend.domain.usage import UsageRecord, UsageTotals
@@ -130,6 +157,8 @@ class VectorStorePort(Protocol):
         workspace_id: str,
         project_id: str,
         n_results: int = 5,
+        # Metadata filters (CTX-004): key -> the values it may take.
+        where: dict[str, Sequence[str]] | None = None,
     ) -> list[dict[str, Any]]: ...
 
     def delete(self, ids: Sequence[str], *, workspace_id: str, project_id: str) -> None: ...
@@ -159,6 +188,129 @@ class EmbeddingPort(Protocol):
     def embed(self, text: str) -> list[float] | None: ...
 
     def embed_node(self, node_type: str, properties: dict[str, Any]) -> list[float] | None: ...
+
+
+@runtime_checkable
+class MultimodalEmbeddingPort(Protocol):
+    """Typed text/image/audio/video embedding with provenance (CTX-011, ADR-010).
+
+    ``embed`` returns one normalized vector per input, each carrying the model,
+    revision, dimension, task and modality it was made with. An adapter refuses an
+    input it cannot embed (``UnsupportedInputError``) rather than dropping or guessing
+    it; audio, video and interleaved inputs are refused by every current adapter.
+    ``health`` never forces a model download.
+    """
+
+    @property
+    def space(self) -> EmbeddingSpace: ...
+
+    def available(self) -> bool: ...
+
+    def loaded(self) -> bool: ...
+
+    def health(self) -> EmbeddingHealth: ...
+
+    def embed(
+        self, inputs: Sequence[EmbeddingInput], *, task: EmbeddingTask
+    ) -> list[EmbeddingVector]: ...
+
+
+@runtime_checkable
+class EmbeddingIndexStore(Protocol):
+    """Generation-versioned vectors (CTX-012). Synchronous; services call it in a thread.
+
+    Every read and write names one generation, and a query never reads two. Deletes by
+    id, asset or scope cover every generation, so a picture or project removed is gone
+    from spaces being built and retired spaces too.
+    """
+
+    def active(self) -> Generation | None: ...
+
+    def building(self) -> Generation | None: ...
+
+    def get(self, generation_id: str) -> Generation | None: ...
+
+    def list_generations(self) -> list[Generation]: ...
+
+    def create_building(self, space: EmbeddingSpace, *, note: str | None = None) -> Generation: ...
+
+    def request_cancel(self, generation_id: str) -> bool: ...
+
+    def activate(self, generation_id: str) -> Generation: ...
+
+    def rollback(self) -> Generation: ...
+
+    def discard(self, generation_id: str) -> int: ...
+
+    def upsert(
+        self, generation_id: str, rows: Sequence[VectorRow], *, workspace_id: str, project_id: str
+    ) -> int: ...
+
+    def hashes(
+        self, generation_id: str, *, workspace_id: str, project_id: str
+    ) -> dict[str, str]: ...
+
+    def text_rows(
+        self, generation_id: str, *, workspace_id: str, project_id: str
+    ) -> list[VectorRow]: ...
+
+    def search(
+        self,
+        generation_id: str,
+        values: Sequence[float],
+        *,
+        workspace_id: str,
+        project_id: str,
+        gate: SearchGate,
+        limit: int,
+    ) -> list[StoredHit]: ...
+
+    def eligible_assets(
+        self, asset_ids: Sequence[str], *, workspace_id: str, project_id: str, gate: SearchGate
+    ) -> set[str]: ...
+
+    def delete_ids(self, ids: Sequence[str], *, workspace_id: str, project_id: str) -> int: ...
+
+    def delete_ids_in(
+        self, generation_id: str, ids: Sequence[str], *, workspace_id: str, project_id: str
+    ) -> int: ...
+
+    def delete_kinds_except(
+        self,
+        generation_id: str,
+        kinds: Sequence[str],
+        keep_ids: Sequence[str],
+        *,
+        workspace_id: str,
+        project_id: str,
+    ) -> int: ...
+
+    def delete_assets(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        asset_ids: Sequence[str] = (),
+        asset_version_ids: Sequence[str] = (),
+    ) -> int: ...
+
+    def delete_project(self, *, workspace_id: str, project_id: str) -> int: ...
+
+    def delete_workspace(self, *, workspace_id: str) -> int: ...
+
+    def pictures_ready(self, *, workspace_id: str, project_id: str) -> list[PictureSource]: ...
+
+    def accepted_captions(self, *, workspace_id: str, project_id: str) -> list[CaptionSource]: ...
+
+    def regions_ready(self, *, workspace_id: str, project_id: str) -> list[Any]:
+        """Named parts of current, prepared pictures (``RegionSource``, CTX-012)."""
+        ...
+
+    def projects(self) -> list[tuple[str, str]]: ...
+
+    def count(self, generation_id: str, *, workspace_id: str | None = None) -> int: ...
+
+    def ping(self) -> bool: ...
 
 
 @runtime_checkable
@@ -220,6 +372,12 @@ class SchemaVersionStorePort(Protocol):
 class AIUsage:
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    # Of the prompt tokens, how many the provider read back from its cache (CTX-015).
+    # Already counted in ``prompt_tokens``; 0 when the provider does not say.
+    cached_prompt_tokens: int = 0
+    # What the provider says the call cost, in US dollars (OpenRouter's ``usage.cost``);
+    # None when it does not say. Never worked out here from a price list (OPS-002).
+    cost_usd: float | None = None
 
     @property
     def total_tokens(self) -> int:
@@ -233,12 +391,30 @@ class StructuredResponse:
     usage: AIUsage = field(default_factory=AIUsage)
 
 
+@dataclass
+class TextResponse:
+    """Prose from a model, with what it cost."""
+
+    text: str
+    model: str = ""
+    usage: AIUsage = field(default_factory=AIUsage)
+    # True when the model stopped at the length limit rather than finishing.
+    truncated: bool = False
+    # False when the answer was streamed and the provider never said what it used: the
+    # caller then records its own estimate rather than nothing (SCN-002, OPS-008).
+    usage_reported: bool = True
+    # True when the answer arrived in pieces, as it was written.
+    streamed: bool = False
+
+
 @dataclass(frozen=True)
 class ProviderCapabilities:
-    """Typed provider/model capability description (no media transfer).
+    """Typed provider/model capability description (CTX-013).
 
-    Later adapters add image/audio/video modalities and limits without changing
-    configuration or diagnostics again. Multimodal payloads are Phase 4–5.
+    A route that can see pictures lists ``"image"`` among its input modalities and
+    declares how many pictures one request may carry, how large each may be and which
+    types it takes. A route that declares none of this is text only, and the gateway
+    refuses a picture for it before anything is sent.
     """
 
     provider: str
@@ -248,6 +424,35 @@ class ProviderCapabilities:
     structured_output: bool = True
     max_context_tokens: int | None = None
     supports_streaming: bool = False
+    max_images: int = 0
+    max_image_bytes: int = 0
+    image_types: frozenset[str] = frozenset()
+    # The longest answer the model writes, when known (CTX-013).
+    max_output_tokens: int | None = None
+    # Where these limits come from: "route" (the operator's settings for the route),
+    # "provider" (the provider's list of models), "operator" (the operator's table).
+    source: str = "route"
+
+    @property
+    def sees_images(self) -> bool:
+        return "image" in self.input_modalities and self.max_images > 0
+
+
+@dataclass(frozen=True)
+class ImageInput:
+    """One picture sent with a request: its exact bytes and where they came from.
+
+    ``ref`` names the picture and version in the request's own words (``picture 1``),
+    so the model can cite it; the bytes are never logged."""
+
+    data: bytes
+    content_type: str
+    ref: str
+    asset_id: str = ""
+    version_id: str = ""
+    # "original" or the smaller copy's kind ("web").
+    rendition: str = "original"
+    checksum: str = ""
 
 
 class AIError(RuntimeError):
@@ -262,11 +467,27 @@ class AIInvalidOutputError(AIError):
     """Provider returned output that could not be parsed into the requested schema."""
 
 
+class AIUnsupportedInputError(AIError):
+    """The route cannot take what was asked to be sent (a picture to a text-only model,
+    too many or too large pictures). Raised before anything is sent or spent."""
+
+
+class AIDeviceUnavailableError(AIProviderError):
+    """The person's own computer did not answer (SCN-002A): offline, disconnected, or too
+    slow. Its message is written here in plain words and is safe to show."""
+
+
 @runtime_checkable
 class AIGateway(Protocol):
     def is_available(self) -> bool: ...
 
-    def capabilities(self) -> ProviderCapabilities: ...
+    def capabilities(
+        self, *, base_url: str | None = None, model: str | None = None
+    ) -> ProviderCapabilities:
+        """What the route a request will use can take: the configured one, or the
+        workspace's own provider at ``base_url``, for ``model`` (by default the model
+        the request uses)."""
+        ...
 
     async def generate_structured(
         self,
@@ -276,7 +497,44 @@ class AIGateway(Protocol):
         model: str | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
-    ) -> StructuredResponse: ...
+        images: Sequence[ImageInput] = (),
+    ) -> StructuredResponse:
+        """``images`` go with the last user message; a route that cannot take them
+        raises ``AIUnsupportedInputError`` before anything is sent."""
+        ...
+
+    async def generate_text(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        max_tokens: int,
+        model: str | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        images: Sequence[ImageInput] = (),
+        on_text: Callable[[str], Awaitable[None]] | None = None,
+    ) -> TextResponse:
+        """Prose, not structured output: a scene draft (ADR-022). ``images`` as for
+        ``generate_structured``: refused before sending when the route cannot take them.
+
+        ``on_text`` is given each piece of the answer as it is written when the route
+        streams (SCN-002); a route that does not (a computer through the connector) gives
+        the whole answer at once and never calls it. Whatever it raises stops the answer
+        and closes the connection. The whole answer is returned either way."""
+        ...
+
+    async def list_models(self, *, api_key: str, base_url: str) -> list[str]: ...
+
+    async def check_key(
+        self, *, api_key: str, base_url: str
+    ) -> Literal["ok", "refused", "unknown"]:
+        """Ask the provider whether it accepts the key, without spending anything.
+
+        ``refused`` means the provider answered with a clear "no" (401/403); ``ok``
+        means it accepted the key; anything else (unreachable, no models list, asked
+        to slow down, a server error) is ``unknown`` so a key is never thrown away
+        when only the network was wrong."""
+        ...
 
     async def aclose(self) -> None: ...
 
@@ -353,6 +611,7 @@ class IdentityProviderPort(Protocol):
         nonce: str,
         code_challenge: str,
         redirect_uri: str,
+        fresh: bool = False,
     ) -> str: ...
 
     async def exchange_code(
@@ -393,9 +652,19 @@ class SessionStorePort(Protocol):
         ttl_seconds: int,
         csrf_token: str,
         rotated_from: str | None = None,
+        id_token: str | None = None,
+        authenticated_at: datetime | None = None,
     ) -> Session: ...
 
     async def get(self, session_id: str) -> Session | None: ...
+
+    async def has_successor(self, session_id: str) -> bool:
+        """Whether this session has already been replaced by a newer one."""
+        ...
+
+    async def expire_within(self, session_id: str, seconds: int) -> None:
+        """Let a replaced session live only a little longer, never longer than it had."""
+        ...
 
     async def revoke(self, session_id: str) -> bool: ...
 
@@ -419,6 +688,8 @@ class LoginAttemptStorePort(Protocol):
         code_verifier: str,
         redirect_uri: str,
         ttl_seconds: int,
+        fresh: bool = False,
+        return_to: str | None = None,
     ) -> LoginAttempt: ...
 
     async def consume(self, state: str) -> LoginAttempt | None: ...
@@ -582,6 +853,10 @@ class CanonJournalPort(Protocol):
         self, *, workspace_id: str, project_id: str, branch_id: str
     ) -> Branch | None: ...
 
+    async def working_branch(self, *, workspace_id: str, project_id: str) -> Branch:
+        """The what-if the current request works in, or the main story."""
+        ...
+
     async def list_branches(self, *, workspace_id: str, project_id: str) -> list[Branch]: ...
 
     async def create_mutation(
@@ -596,17 +871,83 @@ class CanonJournalPort(Protocol):
         schema_version_id: str | None = None,
         correlation_id: str = "",
         idempotency_key: str = "",
+        intent: str = "edit",
     ) -> MutationSet: ...
 
     async def get_mutation(
         self, *, workspace_id: str, project_id: str, mutation_id: str
     ) -> MutationSet | None: ...
 
+    async def list_mutations(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[MutationSet]: ...
+
+    async def transition_mutation(
+        self,
+        *,
+        mutation_id: str,
+        to_status: MutationStatus,
+        actor_user_id: str | None,
+        reason: str,
+        correlation_id: str = "",
+    ) -> MutationSet: ...
+
+    async def list_transitions(self, *, mutation_id: str) -> list[MutationTransition]: ...
+
+    async def retarget_mutation(
+        self,
+        *,
+        mutation_id: str,
+        expected_head: int,
+        actor_user_id: str | None,
+        reason: str,
+        keep_approval: bool = False,
+    ) -> MutationSet: ...
+
     async def record_operations(
         self, *, mutation_id: str, operations: Sequence[MutationOperation]
     ) -> None: ...
 
     async def list_operations(self, *, mutation_id: str) -> list[MutationOperation]: ...
+
+    async def revise_operation(
+        self,
+        *,
+        mutation_id: str,
+        ordinal: int,
+        operation_type: str,
+        payload: dict[str, Any],
+        actor_user_id: str | None,
+        reason: str,
+    ) -> MutationOperation: ...
+
+    async def list_operation_revisions(self, *, mutation_id: str) -> list[OperationRevision]: ...
+
+    async def record_operation_decision(
+        self,
+        *,
+        mutation_id: str,
+        ordinal: int,
+        decision: str,
+        actor_user_id: str | None = None,
+        note: str | None = None,
+    ) -> OperationDecision: ...
+
+    async def record_operation_decisions(
+        self,
+        *,
+        mutation_id: str,
+        decisions: Sequence[tuple[int, str, str | None]],
+        actor_user_id: str | None = None,
+    ) -> list[OperationDecision]: ...
+
+    async def list_operation_decisions(self, *, mutation_id: str) -> list[OperationDecision]: ...
 
     async def record_decision(
         self,
@@ -615,6 +956,8 @@ class CanonJournalPort(Protocol):
         decision: str,
         actor_user_id: str | None = None,
         note: str | None = None,
+        transition_to: MutationStatus | None = None,
+        correlation_id: str = "",
     ) -> ReviewDecision: ...
 
     async def list_decisions(self, *, mutation_id: str) -> list[ReviewDecision]: ...
@@ -642,8 +985,12 @@ class CanonJournalPort(Protocol):
     async def append_outbox(self, message: OutboxMessage) -> None: ...
 
     async def list_outbox(
-        self, *, workspace_id: str, project_id: str, limit: int = 100
+        self, *, workspace_id: str, project_id: str, limit: int = 100, pending_only: bool = False
     ) -> list[OutboxMessage]: ...
+
+    async def projects_with_pending_outbox(self, *, limit: int = 50) -> list[tuple[str, str]]:
+        """(workspace, project) pairs with messages not yet delivered, oldest first."""
+        ...
 
     async def mark_outbox_published(self, *, message_id: str) -> None: ...
 
@@ -679,6 +1026,16 @@ class CanonWriterPort(Protocol):
     async def get_marker(self, commit_id: str) -> CommitMarker | None: ...
 
     async def discard(self, *, workspace_id: str, project_id: str, branch_id: str) -> int: ...
+
+    async def purge(self, *, workspace_id: str, project_id: str | None = None) -> int:
+        """Erase every projected canon node for a deleted project or workspace."""
+        ...
+
+    async def list_fact_edges(
+        self, *, workspace_id: str, project_id: str
+    ) -> list[tuple[str, str, str, str]]:
+        """Projected ``(fact_id, subject_id, predicate, object_id)`` relationship shortcuts."""
+        ...
 
     async def get_entity(
         self, *, workspace_id: str, project_id: str, entity_id: str
@@ -773,6 +1130,54 @@ class CanonRepositoryPort(Protocol):
         origin: str = "author",
     ) -> int: ...
 
+    async def begin_import(
+        self,
+        *,
+        import_id: str,
+        workspace_id: str,
+        project_id: str,
+        archive_checksum: str,
+        format_version: str,
+        commits_total: int,
+        actor_user_id: str | None = None,
+    ) -> ArchiveImport:
+        """Record (or resume) an archive import before its first durable write."""
+        ...
+
+    async def update_import(
+        self,
+        *,
+        import_id: str,
+        stage: str,
+        commits_applied: int | None = None,
+        object_keys: Sequence[str] | None = None,
+        created_records: dict[str, list[str]] | None = None,
+    ) -> None: ...
+
+    async def finish_import(
+        self, *, import_id: str, status: ImportStatus, error: str | None = None
+    ) -> ArchiveImport: ...
+
+    async def record_removed_import(self, record: ArchiveImport) -> ArchiveImport: ...
+
+    async def list_imports(self, *, workspace_id: str, project_id: str) -> list[ArchiveImport]: ...
+
+    async def purge_project(self, *, workspace_id: str, project_id: str) -> int:
+        """Erase every canon, journal, schema, and media row a project owns."""
+        ...
+
+    async def purge_workspace(self, *, workspace_id: str) -> int: ...
+
+    async def purge_import(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        created_records: dict[str, list[str]],
+    ) -> int:
+        """Erase the canon an import wrote plus exactly the supporting records it created."""
+        ...
+
     async def get_head(self, *, workspace_id: str, project_id: str, branch_id: str) -> int: ...
 
     async def get_entity(
@@ -801,6 +1206,38 @@ class CanonRepositoryPort(Protocol):
         limit: int = 50,
     ) -> list[CanonEntity]: ...
 
+    async def get_entity_by_slug(
+        self, *, workspace_id: str, project_id: str, slug: str
+    ) -> CanonEntity | None: ...
+
+    async def get_entity_by_external_id(
+        self, *, workspace_id: str, project_id: str, namespace: str, value: str
+    ) -> CanonEntity | None: ...
+
+    async def find_entities_by_name(
+        self, *, workspace_id: str, project_id: str, entity_type: str, name: str
+    ) -> list[CanonEntity]: ...
+
+    async def list_active_references(
+        self, *, workspace_id: str, project_id: str, entity_id: str
+    ) -> list[tuple[str, str]]:
+        """``(record_type, record_id)`` of live records that reference the entity."""
+        ...
+
+    async def count_active_references(
+        self, *, workspace_id: str, project_id: str, entity_id: str
+    ) -> int: ...
+
+    async def list_evidence(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        record_type: str | None = None,
+        record_id: str | None = None,
+        commit_id: str | None = None,
+    ) -> list[EvidenceRecord]: ...
+
     async def get_fact(
         self, *, workspace_id: str, project_id: str, fact_id: str
     ) -> Fact | None: ...
@@ -815,6 +1252,7 @@ class CanonRepositoryPort(Protocol):
         predicate: str | None = None,
         limit: int = 50,
         offset: int = 0,
+        object_entity_id: str | None = None,
     ) -> list[Fact]: ...
 
     async def get_belief(
@@ -836,6 +1274,19 @@ class CanonRepositoryPort(Protocol):
         self, *, workspace_id: str, project_id: str, event_id: str
     ) -> Event | None: ...
 
+    async def get_plan_item(
+        self, *, workspace_id: str, project_id: str, plan_id: str
+    ) -> PlanItem | None: ...
+
+    async def list_plan_items(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        include_retired: bool = False,
+        limit: int = 2000,
+    ) -> list[PlanItem]: ...
+
     async def list_events(
         self,
         *,
@@ -844,6 +1295,7 @@ class CanonRepositoryPort(Protocol):
         include_retired: bool = False,
         limit: int = 50,
         offset: int = 0,
+        entity_id: str | None = None,
     ) -> list[Event]: ...
 
     async def get_provenance(
@@ -912,6 +1364,7 @@ class CanonRepositoryPort(Protocol):
         include_retired: bool = False,
         limit: int = 100,
         offset: int = 0,
+        target_record_id: str | None = None,
     ) -> list[AssetLink]: ...
 
     async def health(self) -> bool: ...
@@ -927,7 +1380,12 @@ class MediaStorePort(Protocol):
     """
 
     async def create_asset(
-        self, *, workspace_id: str, project_id: str, name: str
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        name: str,
+        actor_user_id: str | None = None,
     ) -> MediaAsset: ...
 
     async def get_asset(
@@ -954,6 +1412,7 @@ class MediaStorePort(Protocol):
         authority: str | None = None,
         visibility: str | None = None,
         created_revision: int = 0,
+        actor_user_id: str | None = None,
     ) -> MediaAssetVersion: ...
 
     async def get_version(
@@ -964,6 +1423,16 @@ class MediaStorePort(Protocol):
         self, *, workspace_id: str, project_id: str, asset_id: str
     ) -> list[MediaAssetVersion]: ...
 
+    async def list_versions_for_assets(
+        self, *, workspace_id: str, project_id: str, asset_ids: list[str]
+    ) -> dict[str, list[MediaAssetVersion]]:
+        """Every version of each named asset, oldest first, keyed by asset."""
+        ...
+
+    async def discard_asset(self, *, workspace_id: str, project_id: str, asset_id: str) -> None:
+        """Remove an asset no canon record refers to, with its versions and events."""
+        ...
+
     async def retire_asset(
         self,
         *,
@@ -971,6 +1440,7 @@ class MediaStorePort(Protocol):
         project_id: str,
         asset_id: str,
         retired_revision: int | None = None,
+        actor_user_id: str | None = None,
     ) -> MediaAsset | None: ...
 
     async def retire_version(
@@ -980,10 +1450,330 @@ class MediaStorePort(Protocol):
         project_id: str,
         version_id: str,
         retired_revision: int | None = None,
+        actor_user_id: str | None = None,
     ) -> MediaAssetVersion | None: ...
+
+    async def delete_original(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        version_id: str,
+        retired_revision: int | None = None,
+        actor_user_id: str | None = None,
+    ) -> MediaAssetVersion | None: ...
+
+    async def delete_asset(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        asset_id: str,
+        retired_revision: int | None = None,
+        actor_user_id: str | None = None,
+    ) -> MediaAsset | None: ...
+
+    # Two-step picture uploads (AST-002).
+    async def create_upload(
+        self,
+        upload: PictureUpload,
+        *,
+        max_per_person: int,
+        max_per_workspace: int,
+    ) -> PictureUpload | None: ...
+
+    async def get_upload(
+        self, *, workspace_id: str, project_id: str, upload_id: str
+    ) -> PictureUpload | None: ...
+
+    async def open_uploads(self, *, workspace_id: str, actor_user_id: str | None = None) -> int: ...
+
+    async def move_upload(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        upload_id: str,
+        from_state: UploadState,
+        to_state: UploadState,
+        staged_key: str | None = None,
+        content_type: str | None = None,
+        asset_id: str | None = None,
+        version_id: str | None = None,
+        link_id: str | None = None,
+        unexpired: bool = True,
+    ) -> PictureUpload | None: ...
+
+    async def expire_uploads(
+        self, *, limit: int = 100, finishing_grace_seconds: int = 900
+    ) -> list[PictureUpload]: ...
+
+    async def record_notes_removed(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        asset_id: str,
+        count: int,
+        actor_user_id: str | None = None,
+        canon_revision: int | None = None,
+    ) -> None: ...
+
+    async def hold_for_deletion(
+        self, *, workspace_id: str, project_id: str, asset_id: str, lifecycle: AssetLifecycle
+    ) -> bool:
+        """Mark an asset deleted before its files go, only if it is still in ``lifecycle``
+        (nothing recorded yet); False when it changed (AST-008)."""
+        ...
+
+    async def release_hold(
+        self, *, workspace_id: str, project_id: str, asset_id: str, lifecycle: AssetLifecycle
+    ) -> None:
+        """Put back an asset held for deletion whose files were never touched."""
+        ...
+
+    async def object_keys_in_use(
+        self, *, workspace_id: str, project_id: str, object_keys: list[str], except_asset_id: str
+    ) -> set[str]:
+        """Which of these stored files another asset's version (file not deleted), or a
+        smaller copy of one, still uses."""
+        ...
 
     async def import_asset(self, asset: MediaAsset) -> MediaAsset: ...
 
     async def import_version(self, version: MediaAssetVersion) -> MediaAssetVersion: ...
 
+    async def list_lifecycle_events(
+        self, *, workspace_id: str, project_id: str, asset_id: str
+    ) -> list[MediaLifecycleEvent]:
+        """Append-only audit of registration, import, and retirement for one asset."""
+        ...
+
     async def health(self) -> bool: ...
+
+
+@runtime_checkable
+class MediaProcessingStorePort(Protocol):
+    """Processing state, rebuildable smaller copies and segments of picture versions
+    (AST-003). Copies live in the object store; these rows say which keys are copies."""
+
+    async def get_processing(
+        self, *, workspace_id: str, project_id: str, version_id: str
+    ) -> Any | None: ...
+
+    async def list_processing(
+        self, *, workspace_id: str, project_id: str, version_ids: list[str]
+    ) -> dict[str, Any]: ...
+
+    async def queue(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        version_id: str,
+        asset_id: str,
+        checksum: str,
+        processor_version: str,
+        job_id: str | None,
+    ) -> Any: ...
+
+    async def start(self, *, workspace_id: str, project_id: str, version_id: str) -> Any | None: ...
+
+    async def fail(
+        self, *, workspace_id: str, project_id: str, version_id: str, failure_code: str
+    ) -> None: ...
+
+    async def complete(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        version_id: str,
+        width: int,
+        height: int,
+        detected_format: str,
+        variants: list[Any],
+        whole: Any,
+    ) -> list[str]:
+        """Record copies, the whole-picture segment and readiness; replaced copies' keys."""
+        ...
+
+    async def get_variant(
+        self, *, workspace_id: str, project_id: str, version_id: str, kind: Any
+    ) -> Any | None: ...
+
+    async def list_variants(
+        self, *, workspace_id: str, project_id: str, version_ids: list[str]
+    ) -> dict[str, list[Any]]: ...
+
+    async def variant_object_keys(self, *, workspace_id: str, project_id: str) -> set[str]: ...
+
+    async def known_object_keys(self, *, workspace_id: str, project_id: str) -> set[str]: ...
+
+    async def remove_variants(
+        self, *, workspace_id: str, project_id: str, version_id: str
+    ) -> list[str]: ...
+
+    async def list_segments(
+        self, *, workspace_id: str, project_id: str, version_id: str
+    ) -> list[Any]: ...
+
+    async def list_regions(self, *, workspace_id: str, project_id: str) -> list[Any]: ...
+
+    async def add_segment(self, segment: Any) -> Any: ...
+
+    async def get_segment(
+        self, *, workspace_id: str, project_id: str, segment_id: str
+    ) -> Any | None: ...
+
+    async def update_segment(self, segment: Any) -> Any | None: ...
+
+    async def retire_segment(
+        self, *, workspace_id: str, project_id: str, segment_id: str
+    ) -> Any | None: ...
+
+    async def workspace_bytes(self, *, workspace_id: str) -> int: ...
+
+    async def lag(self) -> dict[str, Any]: ...
+
+    async def pending_versions(
+        self,
+        *,
+        processor_version: str,
+        content_types: list[str],
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        limit: int = 500,
+        include_failed: bool = False,
+        stale_seconds: int = 3600,
+    ) -> list[Any]: ...
+
+    async def retired_with_variants(self, *, limit: int = 1000) -> list[tuple[str, str, str]]: ...
+
+    async def projects_with_media(self) -> list[tuple[str, str]]: ...
+
+    async def health(self) -> bool: ...
+
+
+@runtime_checkable
+class AccessKeyStorePort(Protocol):
+    """Personal access keys for other assistants (QRY-003). Digests only, never keys."""
+
+    async def create(self, key: Any) -> Any: ...
+
+    async def get(self, *, workspace_id: str, key_id: str) -> Any | None: ...
+
+    async def get_by_hash(self, token_hash: str) -> Any | None: ...
+
+    async def list_keys(self, *, workspace_id: str, user_id: str | None = None) -> list[Any]:
+        """Keys in a workspace, newest first; one holder's when ``user_id`` is given."""
+        ...
+
+    async def revoke(self, *, key_id: str, reason: str, at: datetime) -> bool:
+        """Stop a key working; False when it had already stopped."""
+        ...
+
+    async def revoke_for_member(
+        self, *, workspace_id: str, user_id: str, reason: str, at: datetime
+    ) -> list[str]:
+        """Stop every working key one member holds in a workspace; the ids stopped."""
+        ...
+
+    async def touch(self, *, key_id: str, at: datetime) -> None:
+        """Note when a key was last used (at most about once a minute is written)."""
+        ...
+
+    async def record_use(
+        self, *, key_id: str, workspace_id: str, day: str, tool: str, refused: bool
+    ) -> None: ...
+
+    async def uses(self, *, key_id: str, since_day: str) -> list[Any]: ...
+
+    async def delete_workspace(self, workspace_id: str) -> int: ...
+
+    async def delete_project(self, workspace_id: str, project_id: str) -> int: ...
+
+
+@runtime_checkable
+class ConnectorStorePort(Protocol):
+    """Computers connected to a workspace, codes waiting to be confirmed, and the queue of
+    model requests for each computer (SCN-002A, ADR-025). Only credential digests are
+    stored; a request's words are cleared as soon as its answer has been read."""
+
+    async def add_code(self, code: Any) -> bool:
+        """Store a new registration code; False when its user code is already taken."""
+        ...
+
+    async def code_by_device_hash(self, device_code_hash: str) -> Any | None: ...
+
+    async def code_by_user_code(self, user_code: str) -> Any | None: ...
+
+    async def decide_code(
+        self, *, user_code: str, approve: bool, workspace_id: str, decided_by: str, at: datetime
+    ) -> Any | None:
+        """Approve or deny a pending, unexpired code; None when there is no such code."""
+        ...
+
+    async def touch_code(self, *, device_code_hash: str, at: datetime, interval: int) -> None: ...
+
+    async def issue_code(self, *, device_code_hash: str, device: Any) -> bool:
+        """Mark an approved code used and create its device, at once; False if not approved."""
+        ...
+
+    async def device(self, device_id: str) -> Any | None: ...
+
+    async def device_by_credential(self, credential_hash: str) -> Any | None: ...
+
+    async def devices(self, workspace_id: str) -> list[Any]: ...
+
+    async def seen(
+        self, *, device_id: str, at: datetime, version: str, capabilities: dict | None
+    ) -> None: ...
+
+    async def rotate(
+        self,
+        *,
+        device_id: str,
+        expected_hash: str,
+        new_hash: str,
+        previous_hash: str,
+        at: datetime,
+        grace_until: datetime,
+    ) -> bool:
+        """Replace the credential when the current one is still ``expected_hash``."""
+        ...
+
+    async def revoke(
+        self, *, workspace_id: str, device_id: str, reason: str, by: str | None, at: datetime
+    ) -> Any | None: ...
+
+    async def set_in_use(self, *, workspace_id: str, device_id: str | None) -> None: ...
+
+    async def in_use(self, workspace_id: str) -> Any | None: ...
+
+    async def enqueue(self, request: Any) -> None: ...
+
+    async def take_next(self, *, device_id: str, at: datetime) -> Any | None: ...
+
+    async def request(self, request_id: str) -> Any | None: ...
+
+    async def answer(
+        self,
+        *,
+        device_id: str,
+        request_id: str,
+        status: str,
+        result: dict | None,
+        result_status: int | None,
+        failure: str | None,
+        model: str | None,
+        prompt_tokens: int | None,
+        completion_tokens: int | None,
+        at: datetime,
+    ) -> bool: ...
+
+    async def close(self, *, request_id: str, failure: str | None, at: datetime) -> None:
+        """Clear a request's words and answer; a request still open becomes expired."""
+        ...
+
+    async def delete_workspace(self, workspace_id: str) -> int: ...

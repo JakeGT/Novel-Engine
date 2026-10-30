@@ -11,12 +11,20 @@ from __future__ import annotations
 from backend.adapters.system import uuid7
 from backend.domain.canon.entities import CanonEntity
 from backend.domain.canon.ids import format_canon_id
-from backend.domain.errors import NotFoundError, ValidationError
+from backend.domain.canon.marks import details, needs_detail
+from backend.domain.canon.naming import MAX_SLUG_LENGTH, slugify
+from backend.domain.errors import ConflictError, NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
-from backend.domain.operations import CreateEntityOp, RetireEntityOp, UpdateEntityOp
+from backend.domain.operations import (
+    CreateEntityOp,
+    EvidenceRef,
+    RetireEntityOp,
+    UpdateEntityOp,
+)
 from backend.domain.tenancy import Permission
 from backend.ports import CanonRepositoryPort, SchemaVersionStorePort
 from backend.services.mutation_service import CommitResult, MutationService
+from backend.services.sample_story import sample_operations
 
 
 class CanonEntityService:
@@ -84,6 +92,43 @@ class CanonEntityService:
             offset=offset,
         )
 
+    async def needs_detail(
+        self, scope: AccessScope, workspace_id: str, project_id: str, *, limit: int = 50
+    ) -> list[CanonEntity]:
+        """Active entries still to be filled in.
+
+        Either marked so (created from a passing mention, by the assistant or by
+        hand), or only a name so far: no details and nothing stated about them.
+        The second kind is derived on every call, so such an entry leaves the list
+        as soon as it gains a detail or a fact of its own.
+        """
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        bare: list[CanonEntity] = []
+        offset = 0
+        while len(bare) < limit:
+            page = await self._reader.list_entities(
+                workspace_id=workspace_id, project_id=project_id, limit=200, offset=offset
+            )
+            for entity in page:
+                if needs_detail(entity.attributes):
+                    bare.append(entity)
+                    if len(bare) >= limit:
+                        break
+                    continue
+                if details(entity.attributes):
+                    continue
+                stated = await self._reader.list_facts(
+                    workspace_id=workspace_id, project_id=project_id, subject_id=entity.id, limit=1
+                )
+                if not stated:
+                    bare.append(entity)
+                    if len(bare) >= limit:
+                        break
+            if len(page) < 200:
+                break
+            offset += 200
+        return bare
+
     async def search(
         self,
         scope: AccessScope,
@@ -117,16 +162,24 @@ class CanonEntityService:
         expected_revision: int,
         idempotency_key: str = "",
         slug: str | None = None,
+        aliases: list[str] | None = None,
+        external_ids: dict[str, str] | None = None,
+        evidence: list[EvidenceRef] | None = None,
     ) -> tuple[CommitResult, CanonEntity]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         schema_version_id = await self._published_schema_id(workspace_id, project_id)
         entity_id = format_canon_id("entity", str(uuid7()))
+        if slug is None:
+            slug = await self._available_slug(workspace_id, project_id, name)
         operation = CreateEntityOp(
             id=entity_id,
             type=entity_type,
             name=name,
             slug=slug,
             attributes=attributes or {},
+            aliases=aliases or [],
+            external_ids=external_ids or {},
+            evidence=evidence or [],
         )
         result = await self._commit(
             scope,
@@ -153,13 +206,22 @@ class CanonEntityService:
         name: str | None = None,
         slug: str | None = None,
         attributes: dict | None = None,
+        aliases: list[str] | None = None,
+        external_ids: dict[str, str] | None = None,
         expected_revision: int,
         idempotency_key: str = "",
     ) -> tuple[CommitResult, CanonEntity]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         await self._require_active(workspace_id, project_id, entity_id)
         schema_version_id = await self._published_schema_id(workspace_id, project_id)
-        operation = UpdateEntityOp(id=entity_id, name=name, slug=slug, attributes=attributes)
+        operation = UpdateEntityOp(
+            id=entity_id,
+            name=name,
+            slug=slug,
+            attributes=attributes,
+            aliases=aliases,
+            external_ids=external_ids,
+        )
         result = await self._commit(
             scope,
             workspace_id,
@@ -184,6 +246,7 @@ class CanonEntityService:
         *,
         expected_revision: int,
         idempotency_key: str = "",
+        acknowledge_high_impact: bool = False,
     ) -> tuple[CommitResult, CanonEntity]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         await self._require_active(workspace_id, project_id, entity_id)
@@ -197,6 +260,7 @@ class CanonEntityService:
             expected_revision,
             idempotency_key,
             schema_version_id,
+            acknowledge_high_impact=acknowledge_high_impact,
         )
         entity = await self._reader.get_entity(
             workspace_id=workspace_id, project_id=project_id, entity_id=entity_id
@@ -204,12 +268,85 @@ class CanonEntityService:
         assert entity is not None
         return result, entity
 
+    async def get_by_external_id(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        *,
+        namespace: str,
+        value: str,
+    ) -> CanonEntity:
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        entity = await self._reader.get_entity_by_external_id(
+            workspace_id=workspace_id, project_id=project_id, namespace=namespace, value=value
+        )
+        if entity is None:
+            raise NotFoundError("Entity not found.")
+        return entity
+
+    async def name_collisions(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        *,
+        entity_type: str,
+        name: str,
+    ) -> list[CanonEntity]:
+        """Active same-type entities sharing a display name (advisory, never blocking)."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_READ)
+        return await self._reader.find_entities_by_name(
+            workspace_id=workspace_id, project_id=project_id, entity_type=entity_type, name=name
+        )
+
+    async def _available_slug(self, workspace_id: str, project_id: str, name: str) -> str | None:
+        """Derive a free slug from the name; the commit transaction still enforces uniqueness."""
+        base = slugify(name)
+        if not base:
+            return None
+        candidate = base
+        for suffix in range(2, 1000):
+            holder = await self._reader.get_entity_by_slug(
+                workspace_id=workspace_id, project_id=project_id, slug=candidate
+            )
+            if holder is None:
+                return candidate
+            tail = f"-{suffix}"
+            candidate = f"{base[: MAX_SLUG_LENGTH - len(tail)].rstrip('-')}{tail}"
+        return None
+
     async def _require_active(self, workspace_id: str, project_id: str, entity_id: str) -> None:
         existing = await self._reader.get_entity(
             workspace_id=workspace_id, project_id=project_id, entity_id=entity_id
         )
         if existing is None:
             raise NotFoundError("Entity not found.")
+
+    async def load_sample(
+        self, scope: AccessScope, workspace_id: str, project_id: str, *, expected_revision: int
+    ) -> CommitResult:
+        """Fill an empty project with the sample story, as one version by the person asking."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        existing = await self._reader.list_entities(
+            workspace_id=workspace_id, project_id=project_id, include_retired=True, limit=1
+        )
+        if existing:
+            raise ConflictError(
+                "This project already has entries, so the sample story was not added. "
+                "Start a new project to look at the sample."
+            )
+        return await self._commit(
+            scope,
+            workspace_id,
+            project_id,
+            sample_operations(project_id),
+            expected_revision,
+            f"sample-story:{project_id}",
+            await self._published_schema_id(workspace_id, project_id),
+            # Asking for the sample is the acknowledgement that many entries arrive at once.
+            acknowledge_high_impact=True,
+        )
 
     async def _commit(
         self,
@@ -220,6 +357,8 @@ class CanonEntityService:
         expected_revision: int,
         idempotency_key: str,
         schema_version_id: str | None,
+        *,
+        acknowledge_high_impact: bool = False,
     ) -> CommitResult:
         mutation = await self._mutation.create_draft(
             scope,
@@ -230,7 +369,9 @@ class CanonEntityService:
             idempotency_key=idempotency_key,
             schema_version_id=schema_version_id,
         )
-        return await self._mutation.commit(scope, mutation.id)
+        return await self._mutation.commit_author_change(
+            scope, mutation.id, acknowledge_high_impact=acknowledge_high_impact
+        )
 
 
 __all__ = ["CanonEntityService"]

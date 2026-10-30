@@ -20,6 +20,8 @@ class OriginKind(StrEnum):
     DERIVED = "derived"
     MIGRATION = "migration"
     SYSTEM = "system"
+    # Another assistant the author connected with an access key (QRY-003). Always reviewed.
+    MACHINE = "machine"
 
 
 class Provenance(BaseModel):

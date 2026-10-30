@@ -1,0 +1,395 @@
+# Prompt snapshot. Change it only with: uv run python -m tests.prompts.snapshots --update
+id: creation-draft
+version: 1
+
+##### case: with answers
+
+=== system ===
+Turn an author's description (and their answers, if any) into structured story-bible entries and the connections between them. Only state what the author actually wrote; never invent names, events or relationships. Rules:
+- create an entity for each distinct person, place, group or thing the author mentions that does not already exist, including one referred to only by a description (“her professor”, “the old lighthouse”). Name such an entry by that description (“Mara’s professor”) so the author can name it properly later, and connect it with a fact. Give each a short unique ref.
+- when the author refers to an entry that already exists, do not create it: use its id directly as the ref in facts.
+- when the author is filling in an existing entry, include it once in entities with its exact name and type, carrying any new attributes or aliases.
+- be generous with entries: anyone or anything the description or an answer mentions, even in passing, gets an entity with its name and type, so the author can fill it in later. Set needs_more to true on any entity the author said little about.
+- give each entity up to three short tags, in lower case, that tell it apart at a glance: its role in the story (protagonist, antagonist, mentor, rival) and how it relates to the main characters (“John’s professor”, “family of the protagonist”). Use only what the author’s words support.
+- set importance to main (the story is about them), supporting, minor or background, when the author’s words make it clear; otherwise leave it empty.
+- entity types must be one of: ['Character', 'Faction', 'Location', 'Object']
+- put lasting descriptive traits (role, appearance, temperament) in the entity's attributes as short key/value text.
+- connect things with facts wherever the author states a relationship. Use only these predicates, respecting subject and object types:
+- LOCATED_AT: subject is one of ['Character', 'Object']; object is entity_ref of type ['Location']
+- MEMBER_OF: subject is one of ['Character']; object is entity_ref of type ['Faction']
+- AGE: subject is one of ['Character']; object is integer
+- MOTTO: subject is one of ['Faction']; object is string
+- facts are objective truths. A belief is what a character thinks, which may be false; never mark a belief as true or false.
+- set question_id to the id of the answer an item came from, when it did.
+- if the author states something that none of the allowed entry types or kinds of fact can express, do not bend it into the wrong one and never use a kind of fact that is not listed. Leave that statement out of facts and beliefs, and describe what is missing in suggested_types or suggested_fact_kinds: its name, what it means, which entry types it connects, and what the author said that needs it. Suggest only what this text needs, a few at most. Prefer an existing kind of fact whenever one fits.
+
+=== user ===
+The author is adding: Location “The Drowned Bell”
+
+Answers:
+[q1] Q: Where does Mara live?
+A: In Saltmere.
+
+[q2] Q: Who does she work for?
+A: The guild.
+
+##### case: without answers
+
+=== system ===
+Turn an author's description (and their answers, if any) into structured story-bible entries and the connections between them. Only state what the author actually wrote; never invent names, events or relationships. Rules:
+- create an entity for each distinct person, place, group or thing the author mentions that does not already exist, including one referred to only by a description (“her professor”, “the old lighthouse”). Name such an entry by that description (“Mara’s professor”) so the author can name it properly later, and connect it with a fact. Give each a short unique ref.
+- when the author refers to an entry that already exists, do not create it: use its id directly as the ref in facts.
+- when the author is filling in an existing entry, include it once in entities with its exact name and type, carrying any new attributes or aliases.
+- be generous with entries: anyone or anything the description or an answer mentions, even in passing, gets an entity with its name and type, so the author can fill it in later. Set needs_more to true on any entity the author said little about.
+- give each entity up to three short tags, in lower case, that tell it apart at a glance: its role in the story (protagonist, antagonist, mentor, rival) and how it relates to the main characters (“John’s professor”, “family of the protagonist”). Use only what the author’s words support.
+- set importance to main (the story is about them), supporting, minor or background, when the author’s words make it clear; otherwise leave it empty.
+- entity types must be one of: ['Character', 'Faction', 'Location', 'Object']
+- put lasting descriptive traits (role, appearance, temperament) in the entity's attributes as short key/value text.
+- connect things with facts wherever the author states a relationship. Use only these predicates, respecting subject and object types:
+- LOCATED_AT: subject is one of ['Character', 'Object']; object is entity_ref of type ['Location']
+- MEMBER_OF: subject is one of ['Character']; object is entity_ref of type ['Faction']
+- AGE: subject is one of ['Character']; object is integer
+- MOTTO: subject is one of ['Faction']; object is string
+- facts are objective truths. A belief is what a character thinks, which may be false; never mark a belief as true or false.
+- set question_id to the id of the answer an item came from, when it did.
+- if the author states something that none of the allowed entry types or kinds of fact can express, do not bend it into the wrong one and never use a kind of fact that is not listed. Leave that statement out of facts and beliefs, and describe what is missing in suggested_types or suggested_fact_kinds: its name, what it means, which entry types it connects, and what the author said that needs it. Suggest only what this text needs, a few at most. Prefer an existing kind of fact whenever one fits.
+
+=== user ===
+Their description:
+A tavern under the sea wall.
+
+##### answer shape
+{
+  "$defs": {
+    "DraftAttribute": {
+      "description": "One lasting trait. A list of pairs, because providers' strict structured\noutput does not accept free-form objects.",
+      "properties": {
+        "key": {
+          "description": "Short trait name, e.g. role, appearance",
+          "title": "Key",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "title": "DraftAttribute",
+      "type": "object"
+    },
+    "DraftBelief": {
+      "properties": {
+        "about_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Defaults to the holder",
+          "title": "About Ref"
+        },
+        "confidence": {
+          "default": 0.7,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "holder_ref": {
+          "description": "The character who holds the belief",
+          "title": "Holder Ref",
+          "type": "string"
+        },
+        "object_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Object Ref"
+        },
+        "object_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Object Value"
+        },
+        "predicate": {
+          "title": "Predicate",
+          "type": "string"
+        },
+        "question_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Question Id"
+        }
+      },
+      "required": [
+        "holder_ref",
+        "predicate"
+      ],
+      "title": "DraftBelief",
+      "type": "object"
+    },
+    "DraftEntity": {
+      "properties": {
+        "aliases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "attributes": {
+          "description": "Stable descriptive traits, e.g. role, appearance",
+          "items": {
+            "$ref": "#/$defs/DraftAttribute"
+          },
+          "title": "Attributes",
+          "type": "array"
+        },
+        "importance": {
+          "default": "",
+          "description": "main, supporting, minor or background; empty if unclear",
+          "title": "Importance",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "needs_more": {
+          "default": false,
+          "description": "True when the author said little about it so far",
+          "title": "Needs More",
+          "type": "boolean"
+        },
+        "ref": {
+          "description": "Local handle used by facts and beliefs in this draft",
+          "title": "Ref",
+          "type": "string"
+        },
+        "tags": {
+          "description": "Up to three short lower-case phrases that tell it apart at a glance",
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "type": {
+          "description": "One of the allowed entity types",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "type",
+        "name"
+      ],
+      "title": "DraftEntity",
+      "type": "object"
+    },
+    "DraftFact": {
+      "properties": {
+        "object_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Existing entity id or draft ref, for entity predicates",
+          "title": "Object Ref"
+        },
+        "object_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Value for scalar predicates",
+          "title": "Object Value"
+        },
+        "predicate": {
+          "title": "Predicate",
+          "type": "string"
+        },
+        "question_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Question Id"
+        },
+        "subject_ref": {
+          "description": "An existing entity id or a draft entity ref",
+          "title": "Subject Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "subject_ref",
+        "predicate"
+      ],
+      "title": "DraftFact",
+      "type": "object"
+    },
+    "SuggestedFactKind": {
+      "properties": {
+        "description": {
+          "default": "",
+          "description": "What it means, as a phrase",
+          "title": "Description",
+          "type": "string"
+        },
+        "name": {
+          "description": "A short verb phrase, e.g. STUDIED_UNDER",
+          "title": "Name",
+          "type": "string"
+        },
+        "object_types": {
+          "description": "Entry types it can point to, when points_to is entry",
+          "items": {
+            "type": "string"
+          },
+          "title": "Object Types",
+          "type": "array"
+        },
+        "one_at_a_time": {
+          "default": false,
+          "description": "True when an entry can have only one of these at once",
+          "title": "One At A Time",
+          "type": "boolean"
+        },
+        "points_to": {
+          "default": "entry",
+          "description": "One of: entry, text, whole_number, yes_no",
+          "title": "Points To",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "description": "What the author said that needs it",
+          "title": "Reason",
+          "type": "string"
+        },
+        "subject_types": {
+          "description": "Entry types it can be said about",
+          "items": {
+            "type": "string"
+          },
+          "title": "Subject Types",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "SuggestedFactKind",
+      "type": "object"
+    },
+    "SuggestedType": {
+      "properties": {
+        "description": {
+          "default": "",
+          "description": "What this type of entry is",
+          "title": "Description",
+          "type": "string"
+        },
+        "name": {
+          "description": "Singular, e.g. Instrument",
+          "title": "Name",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "description": "What the author said that needs it",
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "SuggestedType",
+      "type": "object"
+    }
+  },
+  "description": "Structured model output. Untrusted: validated and typed before it becomes operations.",
+  "properties": {
+    "beliefs": {
+      "items": {
+        "$ref": "#/$defs/DraftBelief"
+      },
+      "title": "Beliefs",
+      "type": "array"
+    },
+    "entities": {
+      "items": {
+        "$ref": "#/$defs/DraftEntity"
+      },
+      "title": "Entities",
+      "type": "array"
+    },
+    "facts": {
+      "items": {
+        "$ref": "#/$defs/DraftFact"
+      },
+      "title": "Facts",
+      "type": "array"
+    },
+    "suggested_fact_kinds": {
+      "items": {
+        "$ref": "#/$defs/SuggestedFactKind"
+      },
+      "title": "Suggested Fact Kinds",
+      "type": "array"
+    },
+    "suggested_types": {
+      "items": {
+        "$ref": "#/$defs/SuggestedType"
+      },
+      "title": "Suggested Types",
+      "type": "array"
+    }
+  },
+  "title": "CreationDraft",
+  "type": "object"
+}

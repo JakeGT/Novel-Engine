@@ -1,59 +1,624 @@
-import { useQuery } from '@tanstack/react-query'
-import { Link, Outlet, useParams } from 'react-router-dom'
-import { api, type Scope } from '../api/client'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { PageError } from '../components/PageError'
+import { api, isApiError, type AssistSession, type CanonEntity, type Scope } from '../api/client'
+import { CommandPalette } from '../components/CommandPalette'
+import { GodHand } from '../components/GodHand'
+import { Icon, type IconName } from '../components/icons'
+import { NewEntryDialog } from '../components/NewEntryDialog'
+import { Logo } from '../components/Logo'
+import { ThemeToggle } from '../components/ThemeToggle'
+import { Button, EmptyState, Loading } from '../components/ui'
+import { rememberVisit, useMenu, type PageId } from '../lib/levels'
+import { useWorkingWhatIf } from '../lib/whatif'
+import { displayName, useSession, useSignOut } from '../lib/session'
+import { initial, isOpenChange, roleLabel, typePlural } from '../lib/words'
+import {
+  ProjectProvider,
+  scopedKey,
+  useEntries,
+  useInvalidateProject,
+  type ProjectContext,
+} from '../project'
 import { getActiveWorkspaceId } from '../scope'
 
-export interface ProjectContext {
-  scope: Scope
-  headRevision: number
+const IMPORT_TEXT: Record<string, string> = {
+  importing: 'A backup is being restored into this project. What you see is incomplete until it finishes.',
+  failed:
+    'Restoring a backup into this project stopped part-way, so this project is incomplete. An owner should retry the restore or remove it.',
+  removed: 'A failed restore was removed from this project.',
 }
+
+/** The entry types every new project starts with; nothing project-specific. */
+const STARTER_SCHEMA = {
+  label: 'Starter schema',
+  description: '',
+  entity_extensions: [],
+  predicate_extensions: [],
+}
+
+function NavItem({
+  to,
+  icon,
+  end,
+  children,
+  trailing,
+}: {
+  to: string
+  icon: IconName
+  end?: boolean
+  children: string
+  trailing?: React.ReactNode
+}) {
+  return (
+    <NavLink to={to} end={end} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+      <Icon name={icon} />
+      {children}
+      {trailing}
+    </NavLink>
+  )
+}
+
+// Pages a brand-new project does not need in its menu yet (see lib/levels.ts).
+const LATER_PAGES: { id: PageId; label: string; icon: IconName }[] = [
+  { id: 'plan', label: 'Story plan', icon: 'layers' },
+  { id: 'texts', label: 'Your writing', icon: 'feather' },
+  { id: 'rules', label: 'Story rules', icon: 'shield' },
+  { id: 'timeline', label: 'Timeline', icon: 'timeline' },
+  { id: 'whatifs', label: 'What-ifs', icon: 'branch' },
+  { id: 'history', label: 'History', icon: 'clock' },
+  { id: 'customize', label: 'Types and fields', icon: 'sliders' },
+  { id: 'media', label: 'Media', icon: 'image' },
+]
+
+// Where a page lives when its address is not its id.
+const PAGE_PATHS: Partial<Record<PageId, string>> = { whatifs: 'what-ifs' }
 
 export function ProjectLayout() {
   const { projectId = '' } = useParams()
-  const scope: Scope = { workspaceId: getActiveWorkspaceId(), projectId }
+  const navigate = useNavigate()
+  const location = useLocation()
+  const workspaceId = getActiveWorkspaceId()
+  const { whatIf, set: setWhatIf } = useWorkingWhatIf(projectId)
+  const scope: Scope = { workspaceId, projectId, branchId: whatIf?.id ?? null }
+  const invalidate = useInvalidateProject(scope)
+  const session = useSession()
+  const { signOut, pending: signingOut } = useSignOut()
 
   const projection = useQuery({
-    queryKey: ['projection', scope.workspaceId, projectId],
+    queryKey: scopedKey(scope, 'projection'),
     queryFn: () => api.projection(scope),
   })
+  const access = useQuery({
+    queryKey: scopedKey(scope, 'access'),
+    queryFn: () => api.access(scope),
+  })
+  // Hosted workspaces can hold several projects; local mode has exactly one.
+  const projects = useQuery({
+    queryKey: ['projects', workspaceId],
+    queryFn: () => api.listProjects(workspaceId as string),
+    enabled: Boolean(workspaceId),
+  })
+  const pending = useQuery({
+    queryKey: scopedKey(scope, 'mutations', 'open'),
+    queryFn: () => api.listMutations(scope, { limit: 100 }),
+    refetchInterval: 30_000,
+  })
+  const schemas = useQuery({
+    queryKey: scopedKey(scope, 'schemas'),
+    queryFn: () => api.listSchemaVersions(scope),
+  })
+  const entries = useEntries(scope)
+  // Only to know whether there is a plan, so it can sit in the menu once there is one.
+  const plan = useQuery({
+    queryKey: scopedKey(scope, 'plan'),
+    queryFn: () => api.outline(scope),
+  })
+
+  const texts = useQuery({ queryKey: scopedKey(scope, 'texts'), queryFn: () => api.texts(scope) })
+  const rules = useQuery({ queryKey: scopedKey(scope, 'rules'), queryFn: () => api.rules(scope) })
+  const whatIfs = useQuery({ queryKey: scopedKey(scope, 'what-ifs'), queryFn: () => api.whatIfs(scope) })
+  const timeline = useQuery({ queryKey: scopedKey(scope, 'timeline'), queryFn: () => api.timeline(scope) })
+
+  // A what-if remembered by this browser that no longer exists: back to the story.
+  const lostWhatIf = Boolean(whatIf) && isApiError(access.error) && access.error.status === 404
+  useEffect(() => {
+    if (lostWhatIf) setWhatIf(null)
+  }, [lostWhatIf, setWhatIf])
+
+  // A page the author has opened once stays in their menu.
+  useEffect(() => {
+    const page = location.pathname.split('/')[3]
+    const pages: PageId[] = ['plan', 'texts', 'rules', 'timeline', 'history', 'customize', 'media']
+    if ((pages as string[]).includes(page)) rememberVisit(projectId, page as PageId)
+    if (page === 'what-ifs') rememberVisit(projectId, 'whatifs')
+  }, [location.pathname, projectId])
+
+  // More than the starter setup means the author has made types or kinds of fact of their own.
+  const menu = useMenu(
+    projectId,
+    entries.items.filter((item) => item.lifecycle === 'active').length,
+    { customize: (schemas.data?.length ?? 0) > 1, plan: (plan.data?.items.length ?? 0) > 0,
+      texts: (texts.data?.items.length ?? 0) > 0,
+      rules: (rules.data?.items.length ?? 0) > 0,
+      timeline: (timeline.data?.placed.length ?? 0) + (timeline.data?.spans.length ?? 0) > 0,
+      whatifs: (whatIfs.data?.items.length ?? 0) > 0 || Boolean(whatIf),
+    },
+  )
+
+  const canWrite = access.data?.can_write ?? false
+  const canAdmin = access.data?.can_admin ?? false
+
+  // A project cannot hold anything until its entry types are published once.
+  // Do that quietly for the owner the first time the project is opened.
+  const setup = useMutation({
+    mutationFn: async () => {
+      const draft = await api.createSchemaDraft(scope, STARTER_SCHEMA)
+      return api.publishSchema(scope, draft.version.id)
+    },
+    onSettled: () => invalidate(),
+  })
+  const needsSetup = schemas.isSuccess && schemas.data.length === 0
+  const startedSetup = useRef(false)
+  useEffect(() => {
+    if (needsSetup && canAdmin && !startedSetup.current) {
+      startedSetup.current = true
+      setup.mutate()
+    }
+  }, [needsSetup, canAdmin, setup])
+
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [newEntry, setNewEntry] = useState<{
+    type?: string
+    entity?: CanonEntity
+    resume?: AssistSession
+  } | null>(null)
+  const openNewEntry = useCallback((type?: string) => setNewEntry({ type }), [])
+  const openFillIn = useCallback((entity: CanonEntity) => setNewEntry({ entity }), [])
+  const [godHand, setGodHand] = useState<{ entity?: CanonEntity; resume?: AssistSession } | null>(null)
+  const openGodHand = useCallback((entity?: CanonEntity) => setGodHand({ entity }), [])
+  const resumeConversation = useCallback(
+    (session: AssistSession) => {
+      // A planning conversation is picked up on the plan page, where it belongs.
+      if (session.kind === 'plan') return navigate(`/projects/${projectId}/plan`, { state: { resume: session } })
+      if (session.kind === 'change') return setGodHand({ resume: session })
+      if (session.kind !== 'fill_in' || !session.entity_id) return setNewEntry({ resume: session })
+      // Filling in needs the entry itself; if it has gone, there is nothing to carry on with.
+      void api.getEntity({ workspaceId, projectId }, session.entity_id).then(
+        (entity) => setNewEntry({ entity, resume: session }),
+        () => setNewEntry({ resume: { ...session, kind: 'create', entity_id: null } }),
+      )
+    },
+    [workspaceId, projectId, navigate],
+  )
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setPaletteOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  if (!lostWhatIf && isApiError(access.error) && [401, 403, 404].includes(access.error.status)) {
+    const signedOut = access.error.status === 401
+    return (
+      <div className="center-page">
+        <EmptyState
+          icon="key"
+          title={signedOut ? 'You’ve been signed out' : 'This project isn’t available to you'}
+          action={
+            signedOut ? (
+              <a className="btn primary" href="/auth/login">
+                Sign in again
+              </a>
+            ) : (
+              <Link className="btn primary" to="/">
+                Back to your library
+              </Link>
+            )
+          }
+        >
+          {signedOut
+            ? 'Your session ended. Sign in to pick up where you left off.'
+            : 'It may have been removed, or you may not have been invited to it.'}
+        </EmptyState>
+      </div>
+    )
+  }
 
   const status = projection.data
-  const headRevision = status?.head_revision ?? 0
+  const context: ProjectContext = {
+    scope,
+    headRevision: status?.head_revision ?? 0,
+    refreshHead: async () => {
+      const fresh = await projection.refetch()
+      if (fresh.data === undefined) throw fresh.error ?? new Error('Could not reload the latest version.')
+      return fresh.data.head_revision
+    },
+    access: access.data,
+    canWrite,
+    canAdmin,
+    userId: session.data?.user.id ?? null,
+    newEntry: openNewEntry,
+    fillIn: openFillIn,
+    godHand: openGodHand,
+    resume: resumeConversation,
+  }
+  const local = !workspaceId
+  const projectName =
+    projects.data?.find((item) => item.id === projectId)?.name ?? (local ? 'Your project' : 'Project')
+  const base = `/projects/${projectId}`
+  const awaiting = (pending.data?.items ?? []).filter((item) => isOpenChange(item.status)).length
+  const importState = status?.import
+
+  const active = entries.items.filter((item) => item.lifecycle === 'active')
+  const counts = new Map<string, number>()
+  for (const item of active) counts.set(item.type, (counts.get(item.type) ?? 0) + 1)
+  const typesInUse = [...counts.keys()].sort(
+    (a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0) || a.localeCompare(b),
+  )
+
+  const later = LATER_PAGES.filter((page) => !menu.shown(page.id))
+
+  const banners =
+    (importState && importState.status !== 'completed') ||
+    status?.status === 'error' ||
+    needsSetup ||
+    setup.isError
 
   return (
-    <main className="shell">
-      <header className="row">
-        <div>
-          <h1>Novel Engine</h1>
-          <p className="tagline">Project {projectId}</p>
+    <ProjectProvider value={context}>
+    <div className="app">
+      <a className="skip" href="#main">
+        Skip to content
+      </a>
+      <button
+        type="button"
+        className={`scrim ${menuOpen ? 'open' : ''}`}
+        aria-hidden="true"
+        tabIndex={-1}
+        onClick={() => setMenuOpen(false)}
+      />
+
+      <aside
+        className={`sidebar ${menuOpen ? 'open' : ''}`}
+        id="sidebar"
+        // Following any link in the menu closes it on a small screen.
+        onClick={(event) => {
+          if ((event.target as HTMLElement).closest('a')) setMenuOpen(false)
+        }}
+      >
+        <Link className="brand" to="/" title="All projects">
+          <Logo />
+          <span className="wordmark">Novel Engine</span>
+        </Link>
+        {/* Shown only when the menu is a drawer: a visible way to put it away. */}
+        <button type="button" className="btn ghost sm menu-close" onClick={() => setMenuOpen(false)}>
+          <Icon name="x" size={15} />
+          Close menu
+        </button>
+
+        <div className="project-switch">
+          <span className="eyebrow">Project</span>
+          {projects.data && projects.data.length > 1 ? (
+            <select
+              aria-label="Switch project"
+              value={projectId}
+              onChange={(event) => navigate(`/projects/${event.target.value}`)}
+            >
+              {projects.data.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="project-name">{projectName}</span>
+          )}
+          {/* A visible way back to the library; the logo is not the only door. */}
+          <Link className="small" to="/">
+            All projects
+          </Link>
         </div>
-        <nav className="row">
-          <Link to={`/projects/${projectId}`}>Entities</Link>
-          <Link to="/">Switch project</Link>
-        </nav>
-      </header>
 
-      <section className="panel status" aria-live="polite">
-        {projection.isSuccess && status ? (
-          <>
-            <span>
-              Canon head <strong>r{status.head_revision}</strong> · graph applied{' '}
-              <strong>r{status.applied_revision}</strong>
-            </span>
-            <span className={status.current ? 'badge ok' : 'badge warn'}>
-              {status.current ? 'Graph current' : `Projection lag ${status.lag}`}
-            </span>
-            {status.failed_deliveries > 0 && (
-              <span className="badge warn">Failed deliveries: {status.failed_deliveries}</span>
+        <nav aria-label="Project" className="stack">
+          <div className="nav-group">
+            <NavItem to={base} icon="home" end>
+              Home
+            </NavItem>
+            <NavItem
+              to={`${base}/bible`}
+              icon="book"
+              trailing={active.length > 0 ? <span className="count">{active.length}</span> : null}
+            >
+              Story bible
+            </NavItem>
+            {typesInUse.map((type) => (
+              <Link
+                key={type}
+                to={`${base}/bible?type=${encodeURIComponent(type)}`}
+                className={`nav-link sub ${
+                  location.pathname === `${base}/bible` &&
+                  new URLSearchParams(location.search).get('type') === type
+                    ? 'active'
+                    : ''
+                }`}
+              >
+                {typePlural(type)}
+                <span className="count">{counts.get(type)}</span>
+              </Link>
+            ))}
+            <NavItem
+              to={`${base}/review`}
+              icon="inbox"
+              trailing={
+                awaiting > 0 ? (
+                  <span className="pill">
+                    {awaiting}
+                    <span className="sr-only"> waiting</span>
+                  </span>
+                ) : null
+              }
+            >
+              Review
+            </NavItem>
+            {menu.shown('plan') && (
+              <NavItem to={`${base}/plan`} icon="layers">
+                Story plan
+              </NavItem>
             )}
-            {status.last_error && <span className="badge warn">Last error: {status.last_error}</span>}
-          </>
-        ) : (
-          <span className="muted">Loading project status…</span>
-        )}
-      </section>
+            {menu.shown('texts') && (
+              <NavItem to={`${base}/texts`} icon="feather">
+                Your writing
+              </NavItem>
+            )}
+            {menu.shown('rules') && (
+              <NavItem to={`${base}/rules`} icon="shield">
+                Story rules
+              </NavItem>
+            )}
+            {menu.shown('timeline') && (
+              <NavItem to={`${base}/timeline`} icon="timeline">
+                Timeline
+              </NavItem>
+            )}
+            {menu.shown('whatifs') && (
+              <NavItem to={`${base}/what-ifs`} icon="branch">
+                What-ifs
+              </NavItem>
+            )}
+            {menu.shown('history') && (
+              <NavItem to={`${base}/history`} icon="clock">
+                History
+              </NavItem>
+            )}
+          </div>
 
-      <Outlet context={{ scope, headRevision } satisfies ProjectContext} />
-    </main>
+          {/* No heading over nothing: a new single-project install has no set-up pages yet. */}
+          {(menu.shown('customize') || menu.shown('media') || access.data?.hosted) && (
+          <div className="nav-group">
+            <span className="eyebrow nav-title">Set up</span>
+            {menu.shown('customize') && (
+              <NavItem to={`${base}/customize`} icon="sliders">
+                Types and fields
+              </NavItem>
+            )}
+            {menu.shown('media') && (
+              <NavItem to={`${base}/media`} icon="image">
+                Media
+              </NavItem>
+            )}
+            {access.data?.hosted && (
+              <NavItem to={`${base}/assistant`} icon="spark">
+                AI assistant
+              </NavItem>
+            )}
+            {access.data?.hosted && (
+              <NavItem to={`${base}/people`} icon="user">
+                People
+              </NavItem>
+            )}
+          </div>
+          )}
+
+          {/* Nothing is hidden: pages a new project does not need yet wait here. */}
+          {(later.length > 0 || menu.showAll) && (
+            <details className="nav-more">
+              <summary>Pages you have not used yet</summary>
+              <div className="nav-group">
+                {later.map((page) => (
+                  <NavItem key={page.id} to={`${base}/${PAGE_PATHS[page.id] ?? page.id}`} icon={page.icon}>
+                    {page.label}
+                  </NavItem>
+                ))}
+                <label className="check small">
+                  <input
+                    type="checkbox"
+                    checked={menu.showAll}
+                    onChange={(event) => menu.setShowAll(event.target.checked)}
+                  />
+                  <span>Always show every page</span>
+                </label>
+              </div>
+            </details>
+          )}
+        </nav>
+
+        <div className="sidebar-foot">
+          <div className="save-state" aria-live="polite">
+            {projection.isError ? (
+              <>
+                <span className="dot danger" aria-hidden="true" />
+                Status unavailable
+              </>
+            ) : !status ? (
+              <span className="muted">Loading…</span>
+            ) : (
+              <>
+                <span className={`dot ${status.status === 'error' ? 'warn' : ''}`} aria-hidden="true" />
+                <span>
+                  {whatIf ? 'What-if version' : 'Version'} {status.head_revision} · saved
+                </span>
+              </>
+            )}
+          </div>
+          {access.data && !canWrite && <span className="badge warn">Reader: you can look, not change</span>}
+          <div className="user-row">
+            <span className="avatar sm round tint-violet" aria-hidden="true">
+              {initial(displayName(session.data))}
+            </span>
+            <span className="who small">
+              <strong>{displayName(session.data)}</strong>
+              {access.data && <span className="muted">{roleLabel(access.data.role)}</span>}
+            </span>
+          </div>
+          <div className="actions" style={{ justifyContent: 'space-between', padding: '0 0.3rem' }}>
+            <ThemeToggle />
+            {session.data?.platform_admin && (
+              <Link className="btn ghost sm" to="/site">
+                Site settings
+              </Link>
+            )}
+            <button
+              type="button"
+              className="btn ghost sm"
+              disabled={signingOut}
+              onClick={() => void signOut()}
+            >
+              <Icon name="logout" size={15} />
+              Sign out
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <div className="main">
+        <header className="topbar">
+          <button
+            type="button"
+            className="btn ghost sm menu-btn"
+            aria-expanded={menuOpen}
+            aria-controls="sidebar"
+            onClick={() => setMenuOpen(true)}
+          >
+            <Icon name="menu" size={15} />
+            Menu
+          </button>
+          <button type="button" className="search-trigger" onClick={() => setPaletteOpen(true)}>
+            <Icon name="search" />
+            <span>Search your story bible…</span>
+            <kbd>Ctrl K</kbd>
+          </button>
+          <span className="spacer" />
+          {canWrite && (
+            <Button icon="hand" onClick={() => openGodHand()}>
+              Change anything
+            </Button>
+          )}
+          {canWrite && (
+            <Button variant="primary" icon="plus" onClick={() => openNewEntry()}>
+              New entry
+            </Button>
+          )}
+        </header>
+
+        <main id="main" className="content" tabIndex={-1}>
+          {whatIf && (
+            <div className="what-if-band" role="region" aria-label="Working in a what-if">
+              <Icon name="branch" />
+              <p>
+                <strong>
+                  You are trying out a what-if: “{whatIf.name}”{/[.?!]$/.test(whatIf.name) ? '' : '.'}
+                </strong>{' '}
+                Changes made here stay in the what-if. Your story itself is not touched.
+              </p>
+              <span className="actions">
+                <Link className="btn sm" to={`${base}/what-ifs/${whatIf.id}`}>
+                  Compare with the story
+                </Link>
+                <Button size="sm" onClick={() => setWhatIf(null)}>
+                  Back to the story
+                </Button>
+              </span>
+            </div>
+          )}
+          {banners && (
+          <div className="stack" style={{ marginBottom: '1.25rem' }}>
+            {importState && importState.status !== 'completed' && (
+              <p className={`notice ${importState.status === 'failed' ? 'danger' : 'warn'}`} role="alert">
+                <span>
+                  {IMPORT_TEXT[importState.status] ?? `Restore status: ${importState.status}.`}{' '}
+                  <span className="muted">
+                    ({importState.commits_applied} of {importState.commits_total} versions restored)
+                  </span>
+                </span>
+              </p>
+            )}
+            {status?.status === 'error' && (
+              <p className="notice warn" role="alert">
+                <span>
+                  <strong>Search is out of date.</strong> Your story bible itself is safe and
+                  complete; the person who runs this site needs to rebuild the search index.
+                </span>
+              </p>
+            )}
+            {needsSetup && setup.isPending && <Loading>Getting your story bible ready…</Loading>}
+            {needsSetup && !canAdmin && access.isSuccess && (
+              <p className="notice plain" role="note">
+                This project is still being set up by its owner. You can look around, but nothing
+                can be added yet.
+              </p>
+            )}
+            {setup.isError && (
+              <p className="notice danger" role="alert">
+                <span>
+                  <strong>The project could not be set up automatically.</strong>{' '}
+                  <Link to={`${base}/customize`}>Finish setting up by hand</Link>.
+                </span>
+              </p>
+            )}
+          </div>
+          )}
+          <PageError home={base}>
+            <Outlet context={context} />
+          </PageError>
+        </main>
+      </div>
+
+      {paletteOpen && (
+        <CommandPalette
+          scope={scope}
+          canWrite={canWrite}
+          onClose={() => setPaletteOpen(false)}
+          onNewEntry={openNewEntry}
+          onGodHand={openGodHand}
+        />
+      )}
+    </div>
+      {godHand && (
+        <GodHand
+          key={godHand.resume?.id ?? godHand.entity?.id ?? 'any'}
+          entity={godHand.entity}
+          resume={godHand.resume}
+          onClose={() => setGodHand(null)}
+        />
+      )}
+      {newEntry && (
+        <NewEntryDialog
+          // A fresh dialog for each thing, so nothing typed for one leaks into the next.
+          key={newEntry.resume?.id ?? newEntry.entity?.id ?? 'new'}
+          type={newEntry.type}
+          entity={newEntry.entity}
+          resume={newEntry.resume}
+          onClose={() => setNewEntry(null)}
+        />
+      )}
+    </ProjectProvider>
   )
 }

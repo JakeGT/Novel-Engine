@@ -51,8 +51,13 @@ def test_migrations_apply_twice_and_report_current(driver: Driver) -> None:
 
     assert "entity_scope_id_unique" in constraints
     assert "entity_id_unique" not in constraints
-    assert "fact_scope_id_unique" in constraints
-    assert "belief_scope_id_unique" in constraints
-    assert "event_scope_id_unique" in constraints
+    # Migration 0004 moved the canon projection to its own labels and dropped the
+    # constraints that had been placed on the legacy graph's type labels.
+    for label in ("canonentity", "canonfact", "canonbelief", "canonevent", "canonprovenance"):
+        assert f"{label}_scope_id_unique" in constraints
+        assert f"{label}_scope_branch_idx" in indexes
+    assert "canonasset_scope_id_unique" in constraints
+    for legacy in ("fact", "belief", "event", "provenance"):
+        assert f"{legacy}_scope_id_unique" not in constraints
     assert "commit_marker_unique" in constraints
     assert "entity_embeddings" in indexes

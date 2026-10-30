@@ -1,0 +1,113 @@
+{
+  "version": "saltglass-extraction/1",
+  "about": "Labelled passages for reading prose into suggested changes (EXT-008). Original text written for these tests. 'entries' is the story bible before reading; each case's 'expected' lists what a careful reader would suggest, each item with the kind of reading it needs: name (the entry's name), alias (one of its other names), pronoun (only 'he' or 'she' says who), epithet (a description, given as a guess for the author), new_entry (someone the bible lacks), narration (the narrator says it, so it is a fact), speech (a character says it: a belief, never a fact), disclosure (one character tells another). 'not_facts' are things the passage must not make facts: what is only said, and what is only near the truth. 'recorded' is an answer written by hand to look like a model's, including typical mistakes, and replayed by the scripted model in CI; '@key' stands for an entry's id.",
+  "entries": [
+    {"key": "wren", "type": "Character", "name": "Wren Halloway", "aliases": ["Wren"]},
+    {"key": "osric", "type": "Character", "name": "Osric Pell", "aliases": ["Osric"]},
+    {"key": "ada", "type": "Character", "name": "Ada Quill", "aliases": ["Ada"]},
+    {"key": "bram", "type": "Character", "name": "Bram Tolley", "aliases": ["Bram"]},
+    {"key": "quay", "type": "Location", "name": "Kestle Quay", "aliases": []},
+    {"key": "light", "type": "Location", "name": "Marrow Light", "aliases": []},
+    {"key": "house", "type": "Location", "name": "the Ferry House", "aliases": []},
+    {"key": "sextant", "type": "Object", "name": "the brass sextant", "aliases": []},
+    {"key": "ledger", "type": "Object", "name": "the tide ledger", "aliases": []},
+    {"key": "wardens", "type": "Faction", "name": "the Tidewardens", "aliases": ["Tidewardens"]}
+  ],
+  "cases": [
+    {
+      "id": "ferry-house-evening",
+      "text": "Wren Halloway came in out of the rain at the Ferry House and shook the water from her hood. Ada was already behind the counter, counting coppers into a tin. The keeper of the house slid the tide ledger across without a word.\n\nA stranger in a grey coat sat by the fire, turning his hat in his hands. He gave his name as Corin Vale and said he had come for the crossing.\n",
+      "expected": {
+        "entities": [["Corin Vale", "new_entry"]],
+        "facts": [
+          ["Wren Halloway", "LOCATED_AT", "the Ferry House", "name"],
+          ["Ada Quill", "LOCATED_AT", "the Ferry House", "alias"],
+          ["Corin Vale", "LOCATED_AT", "the Ferry House", "new_entry"]
+        ],
+        "beliefs": [],
+        "references": [["The keeper of the house", "Ada Quill", "epithet"]],
+        "not_facts": []
+      },
+      "recorded": {
+        "entities": [
+          {"ref": "corin", "type": "Character", "name": "Corin Vale", "quote": "He gave his name as Corin Vale"}
+        ],
+        "facts": [
+          {"subject_ref": "@wren", "predicate": "LOCATED_AT", "object_ref": "@house", "quote": "Wren Halloway came in out of the rain at the Ferry House"},
+          {"subject_ref": "@ada", "predicate": "LOCATED_AT", "object_ref": "@house", "quote": "Ada was already behind the counter", "stated": false},
+          {"subject_ref": "corin", "predicate": "LOCATED_AT", "object_ref": "@house", "quote": "A stranger in a grey coat sat by the fire", "stated": false},
+          {"subject_ref": "@wren", "predicate": "MEMBER_OF", "object_ref": "@wardens", "quote": "Wren had sworn to the Tidewardens long ago"}
+        ],
+        "references": [{"phrase": "The keeper of the house", "ref": "@ada"}]
+      }
+    },
+    {
+      "id": "said-is-not-so",
+      "text": "“Osric Pell is one of the Tidewardens,” Ada Quill said, low, so the men at the fire would not hear. “He swore the oath at midwinter.”\n\nWren shook her head and went on mending the net. Outside, Bram Tolley, who had worn the Tidewardens’ grey since he was a boy, stamped the snow from his boots.\n",
+      "expected": {
+        "entities": [],
+        "facts": [["Bram Tolley", "MEMBER_OF", "the Tidewardens", "narration"]],
+        "beliefs": [["Ada Quill", "Osric Pell", "MEMBER_OF", "the Tidewardens", "speech"]],
+        "references": [],
+        "not_facts": [["Osric Pell", "MEMBER_OF", "the Tidewardens", "speech"]]
+      },
+      "recorded": {
+        "facts": [
+          {"subject_ref": "@bram", "predicate": "MEMBER_OF", "object_ref": "@wardens", "quote": "Bram Tolley, who had worn the Tidewardens’ grey since he was a boy", "stated": false},
+          {"subject_ref": "@osric", "predicate": "MEMBER_OF", "object_ref": "@wardens", "quote": "Osric Pell is one of the Tidewardens"}
+        ],
+        "beliefs": [
+          {"holder_ref": "@ada", "about_ref": "@osric", "predicate": "MEMBER_OF", "object_ref": "@wardens", "quote": "“Osric Pell is one of the Tidewardens,” Ada Quill said"}
+        ]
+      }
+    },
+    {
+      "id": "he-and-the-old-keeper",
+      "text": "Osric Pell climbed to the lamp room of Marrow Light at dusk. He had kept the brass sextant in a drawer beneath the lens for thirty winters, wrapped in oilcloth against the salt. The old keeper did not trust the mainland instruments.\n\nBelow him, the girl who poled the ferry tied up at the jetty; she had brought the oil, as she did every week.\n",
+      "expected": {
+        "entities": [],
+        "facts": [
+          ["Osric Pell", "LOCATED_AT", "Marrow Light", "name"],
+          ["Osric Pell", "OWNS", "the brass sextant", "pronoun"]
+        ],
+        "beliefs": [],
+        "references": [
+          ["The old keeper", "Osric Pell", "epithet"],
+          ["the girl who poled the ferry", "Wren Halloway", "epithet"]
+        ],
+        "not_facts": []
+      },
+      "recorded": {
+        "facts": [
+          {"subject_ref": "@osric", "predicate": "LOCATED_AT", "object_ref": "@light", "quote": "Osric Pell climbed to the lamp room of Marrow Light at dusk"},
+          {"subject_ref": "@osric", "predicate": "OWNS", "object_ref": "@sextant", "quote": "He had kept the brass sextant in a drawer beneath the lens", "stated": false}
+        ],
+        "references": [{"phrase": "The old keeper", "ref": "@osric"}]
+      }
+    },
+    {
+      "id": "told-the-truth",
+      "text": "That night Ada Quill told Wren Halloway the truth: Osric Pell was her brother, and had been since before either of them could walk. Wren believed her at once; it explained the way Ada watched the light.\n\nAda owned the tide ledger, and she pressed it into Wren’s hands, but only to hold until morning.\n",
+      "expected": {
+        "entities": [],
+        "facts": [
+          ["Ada Quill", "RELATED_TO", "Osric Pell", "narration"],
+          ["Ada Quill", "OWNS", "the tide ledger", "alias"]
+        ],
+        "beliefs": [["Wren Halloway", "Ada Quill", "RELATED_TO", "Osric Pell", "disclosure"]],
+        "references": [],
+        "not_facts": [["Wren Halloway", "OWNS", "the tide ledger", "narration"]]
+      },
+      "recorded": {
+        "facts": [
+          {"subject_ref": "@ada", "predicate": "RELATED_TO", "object_ref": "@osric", "quote": "Osric Pell was her brother"},
+          {"subject_ref": "@ada", "predicate": "OWNS", "object_ref": "@ledger", "quote": "Ada owned the tide ledger"},
+          {"subject_ref": "@wren", "predicate": "OWNS", "object_ref": "@ledger", "quote": "she pressed it into Wren’s hands", "stated": false}
+        ],
+        "beliefs": [
+          {"holder_ref": "@wren", "about_ref": "@ada", "predicate": "RELATED_TO", "object_ref": "@osric", "quote": "Wren believed her at once"}
+        ]
+      }
+    }
+  ]
+}

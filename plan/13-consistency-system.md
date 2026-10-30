@@ -284,3 +284,21 @@ Agent corrections always produce diffs and never overwrite the accepted prose ve
 - Index lag is visible; critical checks fall back to canonical queries and direct source reads.
 - A critic response without verifiable evidence cannot produce a blocking finding.
 - Media processing failure or a text-only fallback cannot invalidate deterministic findings from reviewed media facts, but the run reports reduced multimodal coverage.
+
+## Revision 2026-10-10: findings an author can live with
+
+The engine described here is unchanged. Its presentation follows ADR-017:
+
+- **One action.** The author sees "Check", with a plain statement of what it will cost. Tiers,
+  profiles, and categories are the advanced view of the same run.
+- **Missing plan fields are questions.** Where preflight requires point of view, location,
+  purpose, or intended change, the assistant asks; it does not refuse to proceed.
+- **Findings are margin notes** with their evidence, in the story's words. "Explain" and "fix"
+  are done by asking; "fix" proposes a prose change or a canon change for review. Editing by hand
+  remains available.
+- **"Make this a rule"** turns a finding or a sentence into a drafted story rule with examples
+  (Phase 2.7). Suppression is offered as "this is intentional", with scope and expiry defaulted.
+- **Proposals are checked too.** A draft from a description, an interview, or a plan is checked
+  against existing canon before review, not only prose after generation (Phase 2.5).
+- Only deterministic, current, complete evaluation may block a commit; a model finding never
+  blocks (ADR-013). Document 16 has been corrected to say the same.

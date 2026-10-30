@@ -35,6 +35,13 @@ def _revision(rev) -> dict:
         "envelope_checksum": rev.envelope_checksum,
         "operation_count": rev.operation_count,
         "created_at": rev.created_at,
+        "origin": rev.origin,
+        "intent": rev.intent,
+        "mutation_id": rev.mutation_id,
+        "actor_user_id": rev.actor_user_id,
+        "decision_count": rev.decision_count,
+        "evidence_count": rev.evidence_count,
+        "status": rev.status,
     }
 
 
@@ -74,6 +81,29 @@ async def _record_history(
         record_id=record_id,
     )
     return {"items": [_history_entry(e) for e in entries]}
+
+
+@router.get("/provenance/{record_type}/{record_id}")
+async def record_provenance(
+    project_id: str,
+    record_type: str,
+    record_id: str,
+    scope: AccessScope = Depends(get_project_scope),
+    history: CanonHistoryService = Depends(get_canon_history_service),
+) -> dict:
+    """Why each change to a record exists: commit, origin, review decisions, evidence.
+
+    ``record_type`` is one of entity, fact, belief, event, asset_link. Reviewer
+    identities and notes are withheld from members who cannot write to the project.
+    """
+    entries = await history.record_provenance(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        record_type=record_type,
+        record_id=record_id,
+    )
+    return {"items": [entry.model_dump(mode="json") for entry in entries]}
 
 
 @router.get("/entities/{entity_id}/history")
@@ -317,6 +347,9 @@ class RevertCommitRequest(BaseModel):
     from_revision: int
     expected_revision: int
     to_revision: int | None = None
+    # A revert is high-impact: without this explicit acknowledgement it is parked
+    # as a proposal awaiting review (409 ``review_required``).
+    acknowledge_high_impact: bool = False
 
 
 @router.post("/reverts/preview")
@@ -350,6 +383,7 @@ async def commit_revert(
         from_revision=body.from_revision,
         expected_head=body.expected_revision,
         to_revision=body.to_revision,
+        acknowledge_high_impact=body.acknowledge_high_impact,
     )
     return {
         "commit_id": result.commit_id,

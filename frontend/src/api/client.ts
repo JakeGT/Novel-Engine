@@ -1,24 +1,212 @@
+import { noteSignedIn, shouldHoldFor401, waitForSignIn } from '../lib/reauth'
+import { askToSpend, canAskToSpend, type Sending, type SpendQuestion } from '../lib/spend'
 import type { components } from './schema'
 
-export type CanonEntity = components['schemas']['CanonEntityModel']
-export type Workspace = components['schemas']['WorkspaceModel']
-export type Project = components['schemas']['ProjectModel']
+type Schemas = components['schemas']
+
+// Contract types come straight from the generated OpenAPI schema. Only endpoints
+// the backend declares as an untyped object are typed locally, next to the call.
+export type CanonEntity = Schemas['CanonEntityModel']
+export type Telling = Schemas['TellResult']
+export type Trust = Schemas['TrustModel']
+export type Stance = Trust['default']
+export type Claim = Schemas['ClaimModel']
+export type CreateEntityRequest = Schemas['CreateEntityRequest']
+export type UpdateEntityRequest = Schemas['UpdateEntityRequest']
+export type Workspace = Schemas['WorkspaceModel']
+export type Project = Schemas['ProjectModel']
+export type Fact = Schemas['FactModel']
+export type Belief = Schemas['BeliefModel']
+export type CanonEvent = Schemas['EventModel']
+export type AssertFactRequest = Schemas['AssertFactRequest']
+export type Vocabulary = Schemas['VocabularyModel']
+export type VocabularyEntityType = Schemas['EntityTypeModel']
+export type VocabularyPredicate = Schemas['PredicateModel']
+export type SchemaVersion = Schemas['SchemaVersionModel']
+export type SchemaValidationReport = Schemas['ValidationReportModel']
+export type SchemaDraftResponse = Schemas['SchemaDraftResponse']
+export type MutationSummary = Schemas['MutationSummaryModel']
+export type MutationDetail = Schemas['MutationDetailModel']
+export type MutationOperation = Schemas['MutationOperationModel']
+export type MutationValidation = Schemas['MutationValidationModel']
+/** What a change touches: affected, may be affected, and what was not checked (CON-017). */
+export type Impact = Schemas['ImpactModel']
+export type ImpactDependent = Schemas['DependentModel']
+export type MutationCommit = Schemas['MutationCommitModel']
+export type MutationList = Schemas['MutationListResponse']
+export type ProposeMutationRequest = Schemas['ProposeMutationRequest']
+export type AccessKey = Schemas['AccessKeyModel']
+export type AccessKeyUse = Schemas['AccessKeyUseModel']
+export type CreateAccessKeyRequest = Schemas['CreateAccessKeyRequest']
+export type CreatedAccessKey = Schemas['CreatedAccessKeyModel']
+export type CharacterQuestionSheet = Schemas['CharacterQuestionSheetModel']
+export type CharacterProposal = Schemas['CharacterProposalModel']
+export type CharacterProposalRequest = Schemas['CharacterProposalRequest']
+export type EntityListResponse = Schemas['CanonEntityListResponse']
+export type AssistBrief = Schemas['AssistBriefRequest']
+export type AssistQuestionSheet = Schemas['AssistQuestionSheetModel']
+export type AssistProposalRequest = Schemas['AssistProposalRequest']
+export type ChangeProposal = Schemas['ChangeProposalModel']
+export type AssistThread = Schemas['ThreadModel']
+export type ThreadKind = 'change' | 'premise'
+export type ThreadTurn = Schemas['TurnModel']
+export type PremiseRound = Schemas['PremiseRoundModel']
+export type SuggestionRun = Schemas['SuggestionRunModel']
+export type SuggestionRunKind = 'links' | 'plan_draft' | 'plan_next' | 'premise'
+export type MergePreview = Schemas['MergePreviewModel']
+export type PlanGrounding = Schemas['GroundingModel']
+export type PlanItem = Schemas['PlanItemModel']
+export type PlanRef = Schemas['PlanRefModel']
+export type SceneCondition = Schemas['SceneCondition']
+export type ArcStage = Schemas['ArcStage']
+export type ArcReading = Schemas['ArcReadingModel']
+export type ConditionState = Schemas['ConditionStateModel']
+export type PlanPromise = Schemas['PromiseModel']
+export type OpenPlanItem = Schemas['OpenItemModel']
+export type Outline = Schemas['OutlineModel']
+export type PlanKind = Schemas['AddPlanItemRequest']['kind']
+export type AssistSession = Schemas['AssistSessionModel']
+export type SourceText = Schemas['TextModel']
+export type StoryRule = Schemas['RuleModel']
+export type RuleBody = Schemas['RuleBody']
+export type RulePattern = Schemas['Pattern']
+export type RuleCheck = Schemas['RuleCheckModel']
+export type RuleDraft = Schemas['RuleDraftModel']
+export type RuleExample = Schemas['RuleExample']
+export type SourceTextDetail = Schemas['TextDetailModel']
+export type TextMention = Schemas['MentionModel']
+export type NameQuestion = Schemas['NameQuestionModel']
+export type NameMemory = Schemas['NameMemoryModel']
+export type NameAnswer = Schemas['NameDecisionModel']
+export type NameExample = Schemas['NameExampleModel']
+export type Passage = Schemas['PassageModel']
+export type PassageRead = Schemas['ReadPassageModel']
+export type ReaderGuide = Schemas['GuideModel']
+export type GuidePart = NonNullable<ReaderGuide['part']>
+export type SchemaSuggestion = Schemas['SchemaSuggestionModel']
+export type AiProvider = Schemas['ProviderModel']
+export type AiChoice = Schemas['AiChoiceModel']
+export type Member = Schemas['MembershipModel']
+export type Invitation = Schemas['InvitationModel']
+export type MemberRole = Member['role']
+export type WorldTime = NonNullable<Schemas['EventModel']['when']>
+export type FactVisibility = Schemas['FactModel']['visibility']
+export type WhatIf = Schemas['WhatIfModel']
+export type WhatIfComparison = Schemas['ComparisonModel']
+export type WhatIfChange = Schemas['ChangeModel']
+export type Timeline = Schemas['TimelineModel']
+export type PlacedEvent = Schemas['PlacedEventModel']
+export type Moment = Schemas['MomentModel']
+export type Continuity = Schemas['ContinuityModel']
+export type ContinuityFinding = Schemas['ContinuityFindingModel']
+export type StateScale = Schemas['StateScale']
+export type ScaleProgress = Schemas['ScaleProgressModel']
+export type HelpEstimate = Schemas['HelpEstimateModel']
+export type FindingRecord = Schemas['RecordModel']
+export type HowLong = Schemas['HowLongModel']
+export type HowLongRequest = Schemas['HowLongRequest']
+export type SpannedFact = Schemas['SpannedFactModel']
+export type CharacterKnowledge = Schemas['CharacterKnowledgeModel']
+export type Learned = Schemas['LearnedModel']
+export type CheckRun = Schemas['RunModel']
+export type ScopedDismissal = Schemas['ScopedDismissalModel']
+export type CheckRunFinding = Schemas['RunFindingModel']
+export type CheckRunScene = Schemas['RunSceneModel']
+export type CheckCalibration = Schemas['CalibrationModel']
+export type ReviewFinding = Schemas['ReviewFindingModel']
+export type ReviewDismissAsk = Schemas['ReviewDismissRequest']
+export type FactKnowledge = Schemas['FactKnowledgeModel']
+export type ReaderJourney = Schemas['JourneyModel']
+export type ReaderStep = Schemas['ReaderStepModel']
+export type Reveal = Schemas['Reveal']
+export type SceneContext = Schemas['SceneContextModel']
+export type ContextItem = Schemas['ContextItemModel']
+export type ContextSignal = Schemas['SignalModel']
+export type SceneSummaries = Schemas['SceneSummariesModel']
+export type SceneSummary = Schemas['SceneSummaryModel']
+export type PartSummaries = Schemas['PartSummariesModel']
+export type PartSummary = Schemas['PartSummaryModel']
+export type ContextSettings = Schemas['ContextSettings']
+export type KeptContext = Schemas['KeptContextModel']
+export type ContextComparison = Schemas['ContextComparisonModel']
+export type SceneIntent = Schemas['SceneIntent']
+export type ThreadProgress = Schemas['ThreadProgressModel']
+export type WritingIndex = Schemas['IndexStatusModel']
+export type Studio = Schemas['StudioModel']
+export type SceneReading = Schemas['ReadingModel']
+export type SceneDraft = Schemas['DraftModel']
+export type DraftCheck = Schemas['CheckModel']
+export type AssistantNote = Schemas['AssistantNoteModel']
+export type FindingDismissal = Schemas['DismissalModel']
+// Where it stays dismissed is this scene unless said otherwise (CON-016).
+export type DismissAsk = Omit<Schemas['DismissRequest'], 'applies'> & {
+  applies?: Schemas['DismissRequest']['applies']
+}
+export type SceneVersion = Schemas['backend__api__v1__studio__VersionModel']
+export type StudioJob = Schemas['JobModel']
+export type DraftEstimate = Schemas['backend__api__v1__studio__EstimateModel']
+export type DraftAsk = Schemas['DraftRequest']
+export type StoryAssistantSettings = Schemas['StoryAssistantSettingsModel']
+export type SetAssistantSettings = Schemas['SetAssistantSettingsRequest']
+export type WorkspaceLimits = Schemas['WorkspaceLimitsModel']
+/** A computer connected through the connector, and a code waiting to be confirmed (SCN-002A). */
+export type ConnectedComputer = Schemas['ConnectedComputerModel']
+export type ComputerCode = Schemas['ComputerCodeModel']
+/** Keep the safe ones for me: which suggestions are kept without asking (AST-EXP-015). */
+export type KeptSettings = Schemas['KeptSettingsModel']
+export type KeepRule = Schemas['KeepRuleModel']
+export type KeptItem = Schemas['KeptItemModel']
+export type KeepDecision = Schemas['KeepDecisionModel']
+export type CheckProfile = Schemas['CheckProfile']
+// Checks with the assistant, one pass each (CON-008), and deep audits (CON-011).
+export type CheckPass = Schemas['CheckPass']
+export type VoiceEscalation = Schemas['VoiceEscalationModel']
+export type KnowsCheck = Schemas['KnowsCheck']
+export type CheckEstimate = Schemas['CheckEstimateModel']
+export type PassEstimate = Schemas['PassEstimateModel']
+export type AuditEstimate = Schemas['AuditEstimateModel']
+export type Audit = Schemas['AuditModel']
+export type AuditScene = Schemas['AuditSceneModel']
+// The author's voice, drift across an audit, correction plans, scheduled audits, a
+// what-if's differences and proposals from findings (CON-018, CON-011, CON-010).
+export type SceneVoice = Schemas['SceneVoiceModel']
+export type VoiceStats = Schemas['VoiceStatsModel']
+export type VoiceUsual = Schemas['UsualModel']
+export type VoiceNote = Schemas['VoiceNoteModel']
+export type BookVoice = Schemas['BookVoiceModel']
+export type AuditDrift = Schemas['AuditDriftModel']
+export type Corrections = Schemas['CorrectionsModel']
+export type CorrectionPlan = Schemas['CorrectionPlanModel']
+export type CorrectionEstimate = Schemas['CorrectionEstimateModel']
+export type AuditSchedule = Schemas['ScheduleModel']
+export type AuditSchedules = Schemas['ScheduleListModel']
+export type AuditScheduleAsk = Schemas['ScheduleRequest']
+export type WhatIfAudit = Schemas['WhatIfAuditModel']
+export type AuthorNotice = Schemas['NoticeModel']
+export type FindingRef = Schemas['FindingRef']
+export type FindingProposal = Schemas['FindingProposalModel']
+export type FindingProposalEstimate = Schemas['FindingProposalEstimateModel']
 
 export interface Scope {
   workspaceId: string | null
   projectId: string
+  /** The what-if being worked in; absent or null for the story itself (ADR-020). */
+  branchId?: string | null
 }
 
-export interface EntityListResponse {
-  items: CanonEntity[]
-  limit: number
-  offset: number
+/** A list endpoint the backend returns as an untyped `{items}` object. */
+export interface Items<T> {
+  items: T[]
+}
+
+export interface VersionName {
+  name: string
+  revision: number
 }
 
 export interface HistoryEntry {
   record_type: string
   record_id: string
-  branch_id: string
   revision: number
   operation_type: string
   commit_id: string
@@ -26,7 +214,18 @@ export interface HistoryEntry {
   created_at: string
 }
 
+export interface ImportSummary {
+  id: string
+  status: 'importing' | 'completed' | 'failed' | 'removed'
+  stage: string
+  commits_total: number
+  commits_applied: number
+  objects_imported: number
+  error: string | null
+}
+
 export interface ProjectionStatus {
+  import: ImportSummary | null
   projection: string
   branch_id: string
   head_revision: number
@@ -38,16 +237,185 @@ export interface ProjectionStatus {
   failed_deliveries: number
 }
 
+export interface ProjectAccess {
+  role: string
+  permissions: string[]
+  can_write: boolean
+  can_admin: boolean
+  auth_mode: string
+  hosted: boolean
+}
+
+export interface RevisionSummary {
+  revision: number
+  commit_id: string
+  expected_head: number
+  result_head: number
+  schema_version_id: string | null
+  operation_count: number
+  created_at: string
+  origin: string | null
+  intent: string | null
+  mutation_id: string | null
+  actor_user_id: string | null
+  decision_count: number
+  evidence_count: number
+  status: string
+}
+
+export interface ProvenanceEntry {
+  record_type: string
+  record_id: string
+  revision: number
+  commit_id: string
+  operation_type: string
+  origin: string | null
+  intent: string | null
+  schema_version_id: string | null
+  actor_user_id: string | null
+  decisions: { decision: string; actor_user_id: string | null; note: string | null; created_at: string }[]
+  evidence: { source_artefact_id: string; location: string | null }[]
+  redacted: boolean
+  created_at: string
+}
+
+export interface RevertProposal {
+  from_revision: number
+  to_revision: number
+  head_revision: number
+  operations: Record<string, unknown>[]
+  changes: {
+    revision: number
+    record_type: string
+    record_id: string
+    operation_type: string
+    inverse_operation: string | null
+    reason: string
+  }[]
+  conflicts: string[]
+  summary: string
+}
+
+export interface Asset {
+  id: string
+  name: string
+  lifecycle: string
+  created_revision: number
+  retired_revision: number | null
+  created_at: string
+}
+
+export interface AssetVersion {
+  id: string
+  asset_id: string
+  version: number
+  content_type: string
+  byte_length: number
+  checksum: string
+  source: string | null
+  licence: string | null
+  attribution: string | null
+  authority: string | null
+  visibility: string | null
+  created_revision: number
+  retired_revision: number | null
+}
+
+export interface AssetLink {
+  id: string
+  asset_id: string
+  asset_version_id: string | null
+  role: string
+  target_record_type: string
+  target_record_id: string
+  created_revision: number
+  retired_revision: number | null
+}
+
+/** A picture the author can choose for an entry or a scene, shown somewhere or nowhere. */
+export type LibraryPicture = Schemas['LibraryPictureModel']
+export type FoundPicture = Schemas['FoundPictureModel']
+export type PictureProcessing = Schemas['ProcessingModel']
+export type PictureStorage = Schemas['StorageModel']
+/** Which copy of a picture to fetch: a 256px thumbnail, a 1024px copy, or the file itself. */
+export type PictureSize = 'thumbnail' | 'web' | 'original'
+/** A fetched picture, and which copy the server sent (the original until a copy is made). */
+export type FetchedPicture = { url: string; served: PictureSize }
+
+export interface AssetLifecycleEvent {
+  action: string
+  asset_id: string
+  asset_version_id: string | null
+  actor_user_id: string | null
+  canon_revision: number | null
+  created_at: string
+}
+
+export interface Credential {
+  id: string
+  provider: string
+  label: string
+  key_last4: string
+  status: string
+  created_at: string
+  last_used_at: string | null
+  /** Whether the provider accepted the key when it was saved; null when it was not checked. */
+  verified: boolean | null
+}
+
+export interface SessionInfo {
+  user: { id: string; email: string | null; display_name: string | null }
+  auth_mode: string
+  /** True for the site's administrators, who may change site-wide settings (SSP-001). */
+  platform_admin: boolean
+  /** Present only in local (single-user) mode, which has exactly one project. */
+  local?: { workspace_id: string; project_id: string }
+}
+
+/** Where search by meaning can be pointed, and what a key for it looks like (SSP-001). */
+export type SearchProvider = Schemas['SearchProviderModel']
+export type SearchProviderModel = Schemas['SearchModelModel']
+/** How search by meaning is set up for the whole site, and the state of its index. */
+export type SearchSetup = Schemas['SiteSearchStateModel']
+export type SearchSetupSource = SearchSetup['source']
+/** Omit `api_key` to keep the stored key (only when provider and address are unchanged). */
+export type SaveSearchSetupBody = Schemas['SiteSearchSetupRequest']
+/** What saving answered: whether the provider was reached, a sentence to show, and the new state. */
+export type SaveSearchSetupResult = Schemas['SaveSearchSetupModel']
+
+/** A failed request, carrying the stable problem `code` so callers can branch on it. */
 export class ApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
+  status: number
+  code: string
+  fieldErrors: Record<string, string>
+
+  constructor(status: number, message: string, code = '', fieldErrors: Record<string, string> = {}) {
     super(message)
+    this.status = status
+    this.code = code
+    this.fieldErrors = fieldErrors
   }
 }
 
+export function isApiError(error: unknown, code?: string): error is ApiError {
+  return error instanceof ApiError && (code === undefined || error.code === code)
+}
+
+/** The branch head moved (or the commit raced); entered data is still valid to resubmit. */
+export function isStaleHead(error: unknown): boolean {
+  return isApiError(error, 'revision_conflict')
+}
+
+export function errorMessage(error: unknown, fallback = 'Request failed'): string {
+  if (!(error instanceof Error) || !error.message) return fallback
+  // Server validation text can carry bracketed finding codes; an author gets the sentence.
+  const text = error.message.replace(/\[[a-z0-9_.:-]+\]\s*/gi, '').trim()
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : fallback
+}
+
 const CSRF_COOKIE = 'novel_csrf'
+// Requests whose "not signed in" answer is the answer, not an interruption.
+const UNHELD = new Set(['/auth/me', '/auth/logout'])
 
 function readCookie(name: string): string {
   const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'))
@@ -62,93 +430,1213 @@ interface RequestOptions extends RequestInit {
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { workspaceId, json, ...rest } = options
   const method = (rest.method ?? 'GET').toUpperCase()
-  const headers = new Headers(rest.headers)
-  headers.set('Accept', 'application/json')
-  if (workspaceId) headers.set('X-Workspace-Id', workspaceId)
-  if (json !== undefined) headers.set('Content-Type', 'application/json')
-  if (method !== 'GET' && method !== 'HEAD') headers.set('X-CSRF-Token', readCookie(CSRF_COOKIE))
 
-  const response = await fetch(path, {
-    credentials: 'include',
-    ...rest,
-    method,
-    headers,
-    body: json !== undefined ? JSON.stringify(json) : rest.body,
-  })
+  // The size the author agreed to spend, once asked (see lib/spend).
+  let confirmedTokens: string | null = null
+  // What the author was shown, when the question was about pictures (CTX-013): the
+  // answer is only for those pictures going that way.
+  let confirmedSending: string | null = null
+  const send = () => {
+    const headers = new Headers(rest.headers)
+    headers.set('Accept', 'application/json')
+    if (workspaceId) headers.set('X-Workspace-Id', workspaceId)
+    if (confirmedTokens) headers.set('X-Confirm-Tokens', confirmedTokens)
+    if (confirmedSending) headers.set('X-Confirm-Sending', confirmedSending)
+    if (json !== undefined) headers.set('Content-Type', 'application/json')
+    // Read at the moment of sending: after signing in again the token is a new one.
+    if (method !== 'GET' && method !== 'HEAD') headers.set('X-CSRF-Token', readCookie(CSRF_COOKIE))
+    return fetch(path, {
+      credentials: 'include',
+      ...rest,
+      method,
+      headers,
+      body: json !== undefined ? JSON.stringify(json) : rest.body,
+    })
+  }
+
+  let response = await send()
+  // Signed out in the middle of work: hold the request, keep the page as it is,
+  // and send it again once the author has signed back in. Asking "am I signed in?"
+  // and signing out are answered as they are.
+  while (response.status === 401 && shouldHoldFor401() && !UNHELD.has(path)) {
+    await waitForSignIn()
+    response = await send()
+  }
+  // Larger than the author asked to be asked about: nothing was sent. Ask, and send it
+  // again only if they agree to that size. The story can change between asking and
+  // sending, so a new estimate is asked about once more rather than shown as an error.
+  for (let asks = 0; asks < 2 && response.status === 409 && canAskToSpend(); asks++) {
+    const asked = await spendQuestion(response.clone())
+    if (!asked) break
+    // The story it is about, so the question can show the pictures it would send.
+    const story = /^\/api\/v1\/projects\/([^/?]+)/.exec(path)
+    if (story && asked.sending) {
+      const headers = new Headers(rest.headers)
+      asked.scope = {
+        workspaceId: workspaceId ?? null,
+        projectId: decodeURIComponent(story[1]),
+        branchId: headers.get('X-Story-Branch'),
+      }
+    }
+    if (!(await askToSpend(asked))) {
+      throw new ApiError(409, 'Not sent: you chose not to go ahead. Nothing was spent.', 'not_confirmed')
+    }
+    confirmedTokens = String(asked.estimatedTokens)
+    confirmedSending = asked.sending?.digest ?? null
+    response = await send()
+  }
+  if (response.ok) noteSignedIn()
 
   if (!response.ok) {
     let detail = response.statusText
+    let code = ''
+    let fieldErrors: Record<string, string> = {}
     try {
-      const body = (await response.json()) as { detail?: string }
+      const body = (await response.json()) as {
+        detail?: string
+        code?: string
+        field_errors?: Record<string, string>
+      }
       detail = body.detail ?? detail
+      code = body.code ?? ''
+      fieldErrors = body.field_errors ?? {}
     } catch {
       // Non-JSON error body; keep the status text.
     }
-    throw new ApiError(response.status, detail)
+    throw new ApiError(response.status, detail, code, fieldErrors)
   }
   if (response.status === 204) return undefined as T
   return (await response.json()) as T
 }
 
-function query(params: Record<string, string | number | boolean | undefined>): string {
+/** The question a `needs_confirmation` refusal asks, or null for any other conflict. */
+async function spendQuestion(response: Response): Promise<SpendQuestion | null> {
+  try {
+    const body = (await response.json()) as {
+      code?: string
+      detail?: string
+      field_errors?: Record<string, string>
+      sending?: Sending | null
+    }
+    const estimated = Number(body.field_errors?.estimated_tokens)
+    if (body.code !== 'needs_confirmation' || !Number.isFinite(estimated) || estimated <= 0) return null
+    const threshold = Number(body.field_errors?.threshold_tokens)
+    return {
+      detail: body.detail ?? '',
+      estimatedTokens: estimated,
+      thresholdTokens: Number.isFinite(threshold) && threshold > 0 ? threshold : null,
+      sending: body.sending ?? null,
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Opens the stream of a job's progress and a draft's words as the model writes them
+ * (SCN-002): server-sent events, read with fetch so the workspace and line of the story
+ * go with it. The caller reads the body (lib/sse) and closes it with `signal`.
+ */
+export function openJobStream(scope: Scope, jobId: string, signal: AbortSignal): Promise<Response> {
+  const headers = new Headers({ Accept: 'text/event-stream', ...branchHeaders(scope) })
+  if (scope.workspaceId) headers.set('X-Workspace-Id', scope.workspaceId)
+  return fetch(`${project(scope)}/jobs/${encodeURIComponent(jobId)}/stream`, {
+    credentials: 'include',
+    headers,
+    signal,
+  })
+}
+
+type QueryParams = Record<string, string | number | boolean | readonly string[] | undefined | null>
+
+function query(params: QueryParams): string {
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined) search.set(key, String(value))
+    if (Array.isArray(value)) {
+      // A list is sent as the same name once for each value: ?passes=a&passes=b.
+      for (const item of value as readonly string[]) search.append(key, item)
+    } else if (value !== undefined && value !== null && value !== '') search.set(key, String(value))
   }
   const encoded = search.toString()
   return encoded ? `?${encoded}` : ''
 }
 
+function project(scope: Scope): string {
+  return `/api/v1/projects/${encodeURIComponent(scope.projectId)}`
+}
+
+/** Every project request says which line of the story it works in. */
+function branchHeaders(scope: Scope): Record<string, string> {
+  return scope.branchId ? { 'X-Story-Branch': scope.branchId } : {}
+}
+
+function get<T>(scope: Scope, path: string, params: QueryParams = {}): Promise<T> {
+  return request<T>(`${project(scope)}${path}${query(params)}`, {
+    workspaceId: scope.workspaceId,
+    headers: branchHeaders(scope),
+  })
+}
+
+function send<T>(scope: Scope, method: string, path: string, json?: unknown): Promise<T> {
+  return request<T>(`${project(scope)}${path}`, {
+    method,
+    workspaceId: scope.workspaceId,
+    headers: branchHeaders(scope),
+    json,
+  })
+}
+
+const id = encodeURIComponent
+
 export const api = {
-  session: () =>
-    request<{ user: { id: string; email: string | null; display_name: string | null } }>(
-      '/auth/me',
-    ),
+  session: () => request<SessionInfo>('/auth/me'),
 
   listWorkspaces: () => request<Workspace[]>('/api/v1/workspaces'),
 
+  /** A person who owns no workspace may create one of their own. */
+  createWorkspace: (body: Schemas['CreateWorkspaceRequest']) =>
+    request<Workspace>('/api/v1/workspaces', { method: 'POST', json: body }),
+
+  /** Ends the session. Hosted mode answers with the identity provider's sign-out address. */
+  logout: () => request<{ status: string; logout_url?: string }>('/auth/logout', { method: 'POST' }),
+
   listProjects: (workspaceId: string) =>
-    request<Project[]>(`/api/v1/workspaces/${workspaceId}/projects`, { workspaceId }),
+    request<Project[]>(`/api/v1/workspaces/${id(workspaceId)}/projects`, { workspaceId }),
 
-  listEntities: (
-    scope: Scope,
-    params: { limit?: number; offset?: number; include_retired?: boolean; entity_type?: string } = {},
-  ) =>
-    request<EntityListResponse>(
-      `/api/v1/projects/${scope.projectId}/entities${query(params)}`,
-      { workspaceId: scope.workspaceId },
-    ),
-
-  getEntity: (scope: Scope, entityId: string) =>
-    request<CanonEntity>(`/api/v1/projects/${scope.projectId}/entities/${entityId}`, {
-      workspaceId: scope.workspaceId,
-    }),
-
-  createEntity: (
-    scope: Scope,
-    body: { type: string; name: string; slug?: string; attributes?: Record<string, unknown>; expected_revision: number },
-  ) =>
-    request<CanonEntity>(`/api/v1/projects/${scope.projectId}/entities`, {
+  createProject: (workspaceId: string, body: Schemas['CreateProjectRequest']) =>
+    request<Project>(`/api/v1/workspaces/${id(workspaceId)}/projects`, {
       method: 'POST',
-      workspaceId: scope.workspaceId,
+      workspaceId,
       json: body,
     }),
 
-  retireEntity: (scope: Scope, entityId: string, expectedRevision: number) =>
-    request<CanonEntity>(`/api/v1/projects/${scope.projectId}/entities/${entityId}/retire`, {
-      method: 'POST',
-      workspaceId: scope.workspaceId,
-      json: { expected_revision: expectedRevision },
+  // --- people: members and invitations (hosted mode) ---------------------------
+  listMembers: (workspaceId: string) =>
+    request<Member[]>(`/api/v1/workspaces/${id(workspaceId)}/members`, { workspaceId }),
+  setMemberRole: (workspaceId: string, userId: string, role: MemberRole) =>
+    request<Member>(`/api/v1/workspaces/${id(workspaceId)}/members/${id(userId)}`, {
+      method: 'PATCH',
+      workspaceId,
+      json: { role },
     }),
+  removeMember: (workspaceId: string, userId: string) =>
+    request<void>(`/api/v1/workspaces/${id(workspaceId)}/members/${id(userId)}`, {
+      method: 'DELETE',
+      workspaceId,
+    }),
+  listInvitations: (workspaceId: string) =>
+    request<Invitation[]>(`/api/v1/workspaces/${id(workspaceId)}/invitations`, { workspaceId }),
+  /** The token in the answer is shown once and cannot be fetched again. */
+  createInvitation: (workspaceId: string, body: { role: MemberRole; email: string | null }) =>
+    request<{ invitation: Invitation; token: string }>(
+      `/api/v1/workspaces/${id(workspaceId)}/invitations`,
+      { method: 'POST', workspaceId, json: body },
+    ),
+  revokeInvitation: (workspaceId: string, invitationId: string) =>
+    request<{ revoked: boolean }>(
+      `/api/v1/workspaces/${id(workspaceId)}/invitations/${id(invitationId)}/revoke`,
+      { method: 'POST', workspaceId },
+    ),
+  acceptInvitation: (token: string) =>
+    request<Member>('/api/v1/invitations/accept', { method: 'POST', json: { token } }),
+
+  // --- AI provider keys (workspace owners; hosted mode) -------------------------
+  listCredentials: (workspaceId: string) =>
+    request<Credential[]>('/api/v1/credentials', { workspaceId }),
+  createCredential: (workspaceId: string, body: { provider: string; label: string; key: string }) =>
+    request<Credential>('/api/v1/credentials', { method: 'POST', workspaceId, json: body }),
+  // --- which AI provider and model the assistant uses ---------------------------
+  aiProviders: () => request<AiProvider[]>('/api/v1/ai/providers'),
+  /** Where writing goes to be searchable by meaning, for the whole site. */
+  searchWhere: () => request<Schemas['SearchWhereModel']>('/api/v1/ai/search'),
+  // --- search by meaning, set for the whole site (SSP-001) ---------------------
+  /** The providers the site's search by meaning can use, with where their keys come from. */
+  searchProviders: () => request<SearchProvider[]>('/api/v1/site/search-providers'),
+  /** How search by meaning is set up for the whole site, and the state of its index. */
+  searchSetup: () => request<SearchSetup>('/api/v1/site/search-setup'),
+  /** Save the site's search-by-meaning setup; omit `api_key` to keep the stored key. */
+  saveSearchSetup: (body: SaveSearchSetupBody) =>
+    request<SaveSearchSetupResult>('/api/v1/site/search-setup', { method: 'PUT', json: body }),
+  /** Stop using a service: the stored key is forgotten and the built-in model (or off) takes over. */
+  removeSearchSetup: () => request<SearchSetup>('/api/v1/site/search-setup', { method: 'DELETE' }),
+  /** Build (or rebuild) the search index from every passage on the site. */
+  buildSearchIndex: () => request<SearchSetup>('/api/v1/site/search-setup/build', { method: 'POST' }),
+  cancelSearchBuild: () =>
+    request<SearchSetup>('/api/v1/site/search-setup/build/cancel', { method: 'POST' }),
+  aiSettings: (workspaceId: string) => request<AiChoice>('/api/v1/ai/settings', { workspaceId }),
+  chooseAi: (workspaceId: string, body: { provider: string; model: string }) =>
+    request<AiChoice>('/api/v1/ai/settings', { method: 'PUT', workspaceId, json: body }),
+  /** What the signed-in person has spent of their assistant allowance. */
+  aiUsage: (workspaceId: string) =>
+    request<Schemas['AllowanceModel']>('/api/v1/ai/usage', { workspaceId }),
+  setAiUsage: (workspaceId: string, dailyTokens: number | null) =>
+    request<Schemas['AllowanceModel']>('/api/v1/ai/usage', {
+      method: 'PUT',
+      workspaceId,
+      json: { daily_tokens: dailyTokens },
+    }),
+  /** An owner's ceilings for everyone: when to ask first, and how much a conversation may use. */
+  workspaceLimits: (workspaceId: string) => request<WorkspaceLimits>('/api/v1/ai/limits', { workspaceId }),
+  setWorkspaceLimits: (workspaceId: string, body: Schemas['SetWorkspaceLimitsRequest']) =>
+    request<WorkspaceLimits>('/api/v1/ai/limits', { method: 'PUT', workspaceId, json: body }),
+  /** Which of the assistant's suggestions are kept without asking in this story. */
+  keptSettings: (scope: Scope) => get<KeptSettings>(scope, '/kept-for-you/settings'),
+  setKeptSettings: (scope: Scope, body: { kinds: string[]; allow_clients: boolean }) =>
+    send<KeptSettings>(scope, 'PUT', '/kept-for-you/settings', body),
+  keptForYou: (scope: Scope) => get<{ items: KeptItem[] }>(scope, '/kept-for-you'),
+  markKeptSeen: (scope: Scope) => send<void>(scope, 'POST', '/kept-for-you/seen'),
+  keepDecision: (scope: Scope, mutationId: string) =>
+    get<KeepDecision>(scope, `/kept-for-you/decisions/${id(mutationId)}`),
+  undoKept: (scope: Scope, mutationId: string) =>
+    send<{ undo_mutation_id: string }>(scope, 'POST', `/kept-for-you/${id(mutationId)}/undo`),
+  workspaceKept: (workspaceId: string) =>
+    request<{ forbidden: boolean }>('/api/v1/ai/kept-for-you', { workspaceId }),
+  setWorkspaceKept: (workspaceId: string, forbidden: boolean) =>
+    request<{ forbidden: boolean }>('/api/v1/ai/kept-for-you', {
+      method: 'PUT',
+      workspaceId,
+      json: { forbidden },
+    }),
+  /** How much the assistant does on its own in this story, and when to ask before spending. */
+  assistantSettings: (scope: Scope) => get<StoryAssistantSettings>(scope, '/assistant-settings'),
+  setAssistantSettings: (scope: Scope, body: SetAssistantSettings) =>
+    send<StoryAssistantSettings>(scope, 'PUT', '/assistant-settings', body),
+  /** The models the workspace's key can use, read live from the provider. */
+  aiModels: (workspaceId: string, provider: string) =>
+    request<Schemas['ModelListModel']>(
+      `/api/v1/ai/models?provider=${encodeURIComponent(provider)}`,
+      { workspaceId },
+    ),
+  revokeCredential: (workspaceId: string, credentialId: string) =>
+    request<Credential>(`/api/v1/credentials/${id(credentialId)}/revoke`, {
+      method: 'POST',
+      workspaceId,
+    }),
+
+  // --- a model on the author's own computer (SCN-002A; hosted and local) ---------
+  /** What a code typed in the app is about to connect, before saying yes. */
+  checkComputerCode: (workspaceId: string | null | undefined, code: string) =>
+    request<ComputerCode>('/api/v1/ai/connector/codes/check', { method: 'POST', workspaceId, json: { code } }),
+  decideComputerCode: (workspaceId: string | null | undefined, code: string, approve: boolean) =>
+    request<ComputerCode>('/api/v1/ai/connector/codes/decide', {
+      method: 'POST',
+      workspaceId,
+      json: { code, approve },
+    }),
+  computers: (workspaceId: string | null | undefined) =>
+    request<ConnectedComputer[]>('/api/v1/ai/connector/devices', { workspaceId }),
+  useComputer: (workspaceId: string | null | undefined, deviceId: string, model: string) =>
+    request<ConnectedComputer>(`/api/v1/ai/connector/devices/${id(deviceId)}/use`, {
+      method: 'POST',
+      workspaceId,
+      json: { model },
+    }),
+  stopUsingComputer: (workspaceId: string | null | undefined) =>
+    request<void>('/api/v1/ai/connector/use', { method: 'DELETE', workspaceId }),
+  disconnectComputer: (workspaceId: string | null | undefined, deviceId: string) =>
+    request<ConnectedComputer>(`/api/v1/ai/connector/devices/${id(deviceId)}/disconnect`, {
+      method: 'POST',
+      workspaceId,
+    }),
+
+  // --- access keys for other assistants (QRY-003; hosted and local) -------------
+  listAccessKeys: (workspaceId?: string | null) =>
+    request<AccessKey[]>('/api/v1/access-keys', { workspaceId }),
+  /** The key in the answer is shown once and cannot be fetched again. */
+  createAccessKey: (workspaceId: string | null | undefined, body: CreateAccessKeyRequest) =>
+    request<CreatedAccessKey>('/api/v1/access-keys', { method: 'POST', workspaceId, json: body }),
+  revokeAccessKey: (workspaceId: string | null | undefined, keyId: string) =>
+    request<AccessKey>(`/api/v1/access-keys/${id(keyId)}/revoke`, { method: 'POST', workspaceId }),
+  accessKeyUses: (workspaceId: string | null | undefined, keyId: string) =>
+    request<AccessKeyUse[]>(`/api/v1/access-keys/${id(keyId)}/uses`, { workspaceId }),
+
+  access: (scope: Scope) => get<ProjectAccess>(scope, '/access'),
+
+  projection: (scope: Scope) => get<ProjectionStatus>(scope, '/projection'),
+
+  // --- schema ---------------------------------------------------------------
+  vocabulary: (scope: Scope) => get<Vocabulary>(scope, '/schemas/vocabulary'),
+  listSchemaVersions: (scope: Scope) => get<SchemaVersion[]>(scope, '/schemas'),
+  validateSchema: (scope: Scope, definition: Record<string, unknown>) =>
+    send<SchemaValidationReport>(scope, 'POST', '/schemas/validate', { definition }),
+  createSchemaDraft: (scope: Scope, definition: Record<string, unknown>) =>
+    send<SchemaDraftResponse>(scope, 'POST', '/schemas/drafts', { definition }),
+  publishSchema: (scope: Scope, versionId: string) =>
+    send<SchemaVersion>(scope, 'POST', `/schemas/${id(versionId)}/publish`),
+
+  // --- entities ---------------------------------------------------------------
+  listEntities: (
+    scope: Scope,
+    params: { limit?: number; offset?: number; include_retired?: boolean; entity_type?: string } = {},
+  ) => get<EntityListResponse>(scope, '/entities', params),
+
+  searchEntities: (
+    scope: Scope,
+    params: { q: string; entity_type?: string; include_retired?: boolean; limit?: number },
+  ) => get<EntityListResponse>(scope, '/entities/search', params),
+
+  nameCollisions: (scope: Scope, entityType: string, name: string) =>
+    get<EntityListResponse>(scope, '/entities/name-collisions', { entity_type: entityType, name }),
+
+  getEntity: (scope: Scope, entityId: string) =>
+    get<CanonEntity>(scope, `/entities/${id(entityId)}`),
+
+  createEntity: (scope: Scope, body: CreateEntityRequest) =>
+    send<CanonEntity>(scope, 'POST', '/entities', body),
+
+  // --- the story plan: what the author means to happen; never read as fact -------
+  outline: (scope: Scope) => get<Outline>(scope, '/plan'),
+  addPlanItem: (scope: Scope, body: Schemas['AddPlanItemRequest']) =>
+    send<PlanItem>(scope, 'POST', '/plan', body),
+  changePlanItem: (scope: Scope, planId: string, body: Schemas['ChangePlanItemRequest']) =>
+    send<PlanItem>(scope, 'PATCH', `/plan/${id(planId)}`, body),
+  movePlanItem: (scope: Scope, planId: string, body: Schemas['MovePlanItemRequest']) =>
+    send<PlanItem>(scope, 'POST', `/plan/${id(planId)}/move`, body),
+  setSceneConditions: (scope: Scope, planId: string, body: Schemas['SetConditionsRequest']) =>
+    send<PlanItem>(scope, 'PUT', `/plan/${id(planId)}/conditions`, body),
+  /** How an arc's character changes: its stages in order, each with the scene it is reached in. */
+  setArcPath: (scope: Scope, planId: string, body: Schemas['SetPathRequest']) =>
+    send<PlanItem>(scope, 'PUT', `/plan/${id(planId)}/path`, body),
+  /** The story's shared scales (trust, standing…), each with its levels (STY-006). */
+  scales: (scope: Scope) => get<Schemas['ScalesModel']>(scope, '/plan/scales'),
+  setScales: (scope: Scope, body: Schemas['SetScalesRequest']) =>
+    send<Schemas['ScalesModel']>(scope, 'PUT', '/plan/scales', body),
+  /** What suggesting a scene's intent would use, before anything is sent (STY-003). */
+  intentEstimate: (scope: Scope, planId: string) =>
+    get<HelpEstimate>(scope, `/plan/${id(planId)}/intent/estimate`),
+  suggestIntent: (scope: Scope, planId: string) =>
+    send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/intent/suggest`),
+  /** What suggesting bridge scenes for one unmet condition would use (STY-004). */
+  bridgeEstimate: (scope: Scope, planId: string, condition: number) =>
+    get<HelpEstimate>(scope, `/plan/${id(planId)}/bridges/estimate`, { condition }),
+  suggestBridges: (scope: Scope, planId: string, condition: number) =>
+    send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/bridges/suggest${query({ condition })}`),
+  /** What suggesting the stages of an arc with none yet would use (STY-006). */
+  stagesEstimate: (scope: Scope, arcId: string) => get<HelpEstimate>(scope, `/plan/${id(arcId)}/stages/estimate`),
+  suggestStages: (scope: Scope, arcId: string) => send<StudioJob>(scope, 'POST', `/plan/${id(arcId)}/stages/suggest`),
+  /** A scene for a gap: a thread nothing moves along, or an arc's stage (with ``stage``) no scene reaches (STY-004). */
+  gapEstimate: (scope: Scope, planId: string, stage?: number) =>
+    get<HelpEstimate>(scope, `/plan/${id(planId)}/gap/estimate`, { stage }),
+  suggestGap: (scope: Scope, planId: string, stage?: number) =>
+    send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/gap/suggest${query({ stage })}`),
+  removePlanItem: (scope: Scope, planId: string, expectedRevision: number) =>
+    send<Schemas['RemovedModel']>(scope, 'POST', `/plan/${id(planId)}/remove`, {
+      expected_revision: expectedRevision,
+    } satisfies Schemas['RemovePlanItemRequest']),
+
+  // --- planning with the assistant: always a proposal or options, never a change ---
+  planQuestions: (scope: Scope, body: Schemas['PlanBriefRequest']) =>
+    send<AssistQuestionSheet>(scope, 'POST', '/assist/plan/questions', body),
+  planProposal: (scope: Scope, body: Schemas['PlanProposalRequest']) =>
+    send<Schemas['PlanProposalModel']>(scope, 'POST', '/assist/plan/proposals', body),
+  planDirections: (scope: Scope, aboutId: string | null) =>
+    send<Schemas['DirectionsModel']>(scope, 'POST', '/assist/plan/directions', { about_id: aboutId }),
+  chooseDirection: (scope: Scope, draft: Schemas['PlanDraft'], expectedRevision: number) =>
+    send<Schemas['PlanProposalModel']>(scope, 'POST', '/assist/plan/directions/choose', {
+      draft,
+      expected_revision: expectedRevision,
+    }),
+
+  // --- the author's own writing: kept as given; evidence, never canon by itself -----
+  texts: (scope: Scope) => get<Schemas['TextListModel']>(scope, '/texts'),
+  text: (scope: Scope, sourceId: string, versionId?: string) =>
+    get<SourceTextDetail>(scope, `/texts/${id(sourceId)}`, versionId ? { version_id: versionId } : {}),
+  addText: (scope: Scope, body: Schemas['AddTextRequest']) =>
+    send<SourceText>(scope, 'POST', '/texts', body),
+  reviseText: (scope: Scope, sourceId: string, body: Schemas['ReviseTextRequest']) =>
+    send<SourceText>(scope, 'PATCH', `/texts/${id(sourceId)}`, body),
+  removeText: (scope: Scope, sourceId: string) =>
+    send<void>(scope, 'DELETE', `/texts/${id(sourceId)}`),
+  /** The words a change points back to. */
+  passage: (scope: Scope, versionId: string, location?: string | null) =>
+    get<Passage>(scope, '/texts/passage', { version_id: versionId, ...(location ? { location } : {}) }),
+  addEntryFromText: (scope: Scope, sourceId: string, body: Schemas['AddEntryFromTextRequest']) =>
+    send<Schemas['AddedEntryModel']>(scope, 'POST', `/texts/${id(sourceId)}/entries`, body),
+  nameMemory: (scope: Scope) => get<Schemas['NameMemoryModel']>(scope, '/names'),
+  decideName: (scope: Scope, body: Schemas['NameDecisionRequest']) =>
+    send<Schemas['NameDecisionModel']>(scope, 'POST', '/names', body),
+  forgetName: (scope: Scope, bindingId: string) =>
+    send<void>(scope, 'DELETE', `/names/${id(bindingId)}`),
+  /** Keep a passage with an answer: here the phrase does, or does not, mean its entry. */
+  addNameExample: (scope: Scope, bindingId: string, body: Schemas['NameExampleRequest']) =>
+    send<Schemas['NameDecisionModel']>(scope, 'POST', `/names/${id(bindingId)}/examples`, body),
+  removeNameExample: (scope: Scope, bindingId: string, exampleId: string) =>
+    send<Schemas['NameDecisionModel']>(scope, 'DELETE', `/names/${id(bindingId)}/examples/${id(exampleId)}`),
+  /** The assistant reads a passage into suggested changes. Nothing is added by reading. */
+  readPassage: (scope: Scope, sourceId: string, body: Schemas['ReadPassageRequest']) =>
+    send<PassageRead>(scope, 'POST', `/assist/texts/${id(sourceId)}/read`, body),
+
+  // --- story rules: the author's own continuity rules; they warn, never stop -------
+  rules: (scope: Scope) => get<Schemas['RuleListModel']>(scope, '/rules'),
+  checkRule: (scope: Scope, body: Schemas['RuleCheckRequest']) =>
+    send<RuleCheck>(scope, 'POST', '/rules/check', body),
+  addRule: (scope: Scope, body: Schemas['AddRuleRequest']) =>
+    send<StoryRule>(scope, 'POST', '/rules', body),
+  changeRule: (scope: Scope, ruleId: string, body: Schemas['ChangeRuleRequest']) =>
+    send<StoryRule>(scope, 'PATCH', `/rules/${id(ruleId)}`, body),
+  removeRule: (scope: Scope, ruleId: string) => send<void>(scope, 'DELETE', `/rules/${id(ruleId)}`),
+  draftRule: (scope: Scope, sentence: string) =>
+    send<RuleDraft>(scope, 'POST', '/assist/rules/draft', { sentence }),
+
+  /** Fill an empty project with the short sample story, as one version. */
+  loadSample: (scope: Scope, expectedRevision: number) =>
+    send<Schemas['SampleLoadedModel']>(scope, 'POST', '/entities/sample', {
+      expected_revision: expectedRevision,
+    } satisfies Schemas['LoadSampleRequest']),
+
+  updateEntity: (scope: Scope, entityId: string, body: UpdateEntityRequest) =>
+    send<CanonEntity>(scope, 'PATCH', `/entities/${id(entityId)}`, body),
+
+  retireEntity: (
+    scope: Scope,
+    entityId: string,
+    expectedRevision: number,
+    acknowledgeHighImpact: boolean,
+  ) =>
+    send<CanonEntity>(scope, 'POST', `/entities/${id(entityId)}/retire`, {
+      expected_revision: expectedRevision,
+      acknowledge_high_impact: acknowledgeHighImpact,
+    } satisfies Schemas['RetireEntityRequest']),
 
   entityHistory: (scope: Scope, entityId: string) =>
-    request<{ items: HistoryEntry[] }>(
-      `/api/v1/projects/${scope.projectId}/entities/${entityId}/history`,
-      { workspaceId: scope.workspaceId },
+    get<Items<HistoryEntry>>(scope, `/entities/${id(entityId)}/history`),
+
+  /** Names an author has given to versions ("First draft done"). */
+  versionNames: (scope: Scope) => get<Items<VersionName>>(scope, '/tags'),
+  nameVersion: (scope: Scope, name: string, revision: number) =>
+    send<VersionName>(scope, 'POST', '/tags', { name, revision }),
+  removeVersionName: (scope: Scope, name: string) => send<void>(scope, 'DELETE', `/tags/${id(name)}`),
+  /** Every change saved after one version, up to and including another. */
+  changesBetween: (scope: Scope, after: number, upTo: number) =>
+    get<Items<HistoryEntry>>(scope, `/revisions/${after + 1}/diff/${upTo}`),
+
+  provenance: (scope: Scope, recordType: string, recordId: string) =>
+    get<Items<ProvenanceEntry>>(scope, `/provenance/${id(recordType)}/${id(recordId)}`),
+
+  // --- facts, beliefs, events -------------------------------------------------
+  listFacts: (
+    scope: Scope,
+    params: {
+      subject_id?: string
+      object_entity_id?: string
+      include_closed?: boolean
+      limit?: number
+    } = {},
+  ) => get<Items<Fact>>(scope, '/facts', params),
+  /** One fact, even one past the first page of a list. */
+  getFact: (scope: Scope, factId: string) => get<Fact>(scope, `/facts/${id(factId)}`),
+
+  assertFact: (scope: Scope, body: AssertFactRequest) => send<Fact>(scope, 'POST', '/facts', body),
+
+  closeFact: (scope: Scope, factId: string, expectedRevision: number) =>
+    send<Fact>(scope, 'POST', `/facts/${id(factId)}/close`, {
+      expected_revision: expectedRevision,
+    } satisfies Schemas['CloseRequest']),
+
+  assertBelief: (scope: Scope, body: Schemas['BeliefRequest']) =>
+    send<Belief>(scope, 'POST', '/beliefs', body),
+
+  closeBelief: (scope: Scope, beliefId: string, expectedRevision: number) =>
+    send<Belief>(scope, 'POST', `/beliefs/${id(beliefId)}/close`, {
+      expected_revision: expectedRevision,
+    } satisfies Schemas['CloseRequest']),
+
+  listBeliefs: (scope: Scope, params: { holder_entity_id?: string; limit?: number } = {}) =>
+    get<Items<Belief>>(scope, '/beliefs', params),
+
+  truthAgreement: (scope: Scope, beliefId: string) =>
+    get<{ belief_id: string; truth_agreement: 'agrees' | 'disagrees' | 'unknown' }>(
+      scope,
+      `/beliefs/${id(beliefId)}/truth-agreement`,
     ),
 
-  projection: (scope: Scope) =>
-    request<ProjectionStatus>(`/api/v1/projects/${scope.projectId}/projection`, {
-      workspaceId: scope.workspaceId,
+  listEvents: (scope: Scope, params: { entity_id?: string; limit?: number } = {}) =>
+    get<Items<CanonEvent>>(scope, '/events', params),
+  createEvent: (scope: Scope, body: Schemas['EventRequest']) =>
+    send<CanonEvent>(scope, 'POST', '/events', body),
+  amendEvent: (scope: Scope, eventId: string, body: Schemas['AmendEventRequest']) =>
+    send<CanonEvent>(scope, 'PATCH', `/events/${id(eventId)}`, body),
+  /** When a fact is true, and who may know it. */
+  amendFact: (scope: Scope, factId: string, body: Schemas['AmendFactRequest']) =>
+    send<Fact>(scope, 'POST', `/facts/${id(factId)}/amend`, body),
+
+  // --- story time (ADR-020) ----------------------------------------------------
+  timeline: (scope: Scope) => get<Timeline>(scope, '/timeline'),
+  moment: (scope: Scope, at: number) => get<Moment>(scope, '/timeline/moment', { at }),
+  setTimeUnit: (scope: Scope, unit: string) =>
+    send<{ unit: string }>(scope, 'PUT', '/timeline/unit', { unit }),
+  /** Continuity across story time and place: warnings and notes, never blocking. */
+  continuity: (scope: Scope) => get<Continuity>(scope, '/timeline/checks'),
+  /** The author's own travel times between places and lengths of events and facts. */
+  howLong: (scope: Scope) => get<HowLong>(scope, '/timeline/how-long'),
+  setHowLong: (scope: Scope, body: HowLongRequest) => send<HowLong>(scope, 'PUT', '/timeline/how-long', body),
+
+  // --- who knows what, and what the reader is shown ----------------------------
+  characterKnowledge: (scope: Scope, entityId: string) =>
+    get<CharacterKnowledge>(scope, `/knowledge/characters/${id(entityId)}`),
+  factKnowledge: (scope: Scope, factId: string) =>
+    get<FactKnowledge>(scope, `/knowledge/facts/${id(factId)}`),
+  /** Propose a telling for review: the event, and what each hearer comes to believe. */
+  tell: (scope: Scope, body: Schemas['TellRequest']) =>
+    send<Telling>(scope, 'POST', '/knowledge/tell', body),
+  /** Propose something seen for review: a belief for each person who notices it (KNW-006). */
+  witness: (scope: Scope, body: Schemas['WitnessRequest']) =>
+    send<Telling>(scope, 'POST', '/knowledge/witness', body),
+  /** Record that a character worked something out, and from what (KNW-002). Saved at once. */
+  infer: (scope: Scope, body: Schemas['InferRequest']) =>
+    send<Schemas['InferResult']>(scope, 'POST', '/knowledge/infer', body),
+  characterTrust: (scope: Scope, entityId: string) =>
+    get<Trust>(scope, `/knowledge/characters/${id(entityId)}/trust`),
+  setCharacterTrust: (scope: Scope, entityId: string, body: Schemas['TrustRequest']) =>
+    send<Trust>(scope, 'PUT', `/knowledge/characters/${id(entityId)}/trust`, body),
+  /** What is said in the story (KNW-005): about or by an entry, or in a scene. Never facts. */
+  listClaims: (scope: Scope, params: { entity_id?: string; scene_id?: string } = {}) =>
+    get<{ items: Claim[] }>(scope, '/knowledge/claims', params),
+  recordClaim: (scope: Scope, body: Schemas['ClaimRequest']) =>
+    send<Schemas['RecordedClaimModel']>(scope, 'POST', '/knowledge/claims', body),
+  /** Propose making what a claim says a fact; it waits in review. */
+  promoteClaim: (scope: Scope, eventId: string, expectedRevision: number) =>
+    send<{ mutation_id: string }>(scope, 'POST', `/knowledge/claims/${id(eventId)}/promote`, {
+      expected_revision: expectedRevision,
     }),
+  readerJourney: (scope: Scope) => get<ReaderJourney>(scope, '/reader'),
+  /** What a reader could know after a scene; at a saved version when one is given. */
+  readerGuide: (scope: Scope, sceneId: string, viewpoint?: string, version?: number, part?: GuidePart) =>
+    get<Schemas['GuideModel']>(scope, '/reader/guide', { scene: sceneId, viewpoint, version, part }),
+  setSceneReveals: (scope: Scope, planId: string, reveals: Reveal[], expectedRevision: number) =>
+    send<PlanItem>(scope, 'PUT', `/plan/${id(planId)}/reveals`, {
+      reveals,
+      expected_revision: expectedRevision,
+    }),
+  setSceneTime: (scope: Scope, planId: string, when: WorldTime | null, expectedRevision: number) =>
+    send<PlanItem>(scope, 'PUT', `/plan/${id(planId)}/when`, {
+      when,
+      expected_revision: expectedRevision,
+    }),
+
+  // --- what the assistant would be given for a scene (ADR-021) ------------------
+  sceneContext: (scope: Scope, planId: string, params: { budget?: number; secrets?: boolean } = {}) =>
+    get<SceneContext>(scope, `/plan/${id(planId)}/context`, params),
+  setSceneContext: (scope: Scope, planId: string, settings: ContextSettings, expectedRevision: number) =>
+    send<SceneContext>(scope, 'PUT', `/plan/${id(planId)}/context`, {
+      ...settings,
+      expected_revision: expectedRevision,
+    }),
+  keptSceneContexts: (scope: Scope, planId: string) =>
+    get<KeptContext[]>(scope, `/plan/${id(planId)}/context/kept`),
+  compareSceneContext: (scope: Scope, planId: string, manifestId: string) =>
+    get<ContextComparison>(scope, `/plan/${id(planId)}/context/kept/${id(manifestId)}`),
+  /** The summary later scenes are given of this one (CTX-006), and any suggestion waiting. */
+  sceneSummary: (scope: Scope, planId: string) =>
+    get<SceneSummaries>(scope, `/plan/${id(planId)}/summary`),
+  writeSceneSummary: (scope: Scope, planId: string, body: string) =>
+    send<SceneSummaries>(scope, 'PUT', `/plan/${id(planId)}/summary`, {
+      body,
+    } satisfies Schemas['WriteSummaryRequest']),
+  /** Ask the assistant to suggest a summary; it is used only once kept. */
+  suggestSceneSummary: (scope: Scope, planId: string) =>
+    send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/summary/suggest`),
+  decideSceneSummary: (scope: Scope, planId: string, summaryId: string, accept: boolean, body?: string) =>
+    send<SceneSummaries>(scope, 'POST', `/plan/${id(planId)}/summary/${id(summaryId)}`, {
+      accept,
+      body: body ?? null,
+    } satisfies Schemas['DecideSummaryRequest']),
+  /** The summary later scenes are given of a whole arc or beat (CTX-006). */
+  partSummary: (scope: Scope, planId: string) =>
+    get<PartSummaries>(scope, `/plan/${id(planId)}/part-summary`),
+  writePartSummary: (scope: Scope, planId: string, body: string) =>
+    send<PartSummaries>(scope, 'PUT', `/plan/${id(planId)}/part-summary`, {
+      body,
+    } satisfies Schemas['WriteSummaryRequest']),
+  /** Ask the assistant to suggest one from the scenes' kept summaries; used only once kept. */
+  suggestPartSummary: (scope: Scope, planId: string) =>
+    send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/part-summary/suggest`),
+  decidePartSummary: (scope: Scope, planId: string, summaryId: string, accept: boolean, body?: string) =>
+    send<PartSummaries>(scope, 'POST', `/plan/${id(planId)}/part-summary/${id(summaryId)}`, {
+      accept,
+      body: body ?? null,
+    } satisfies Schemas['DecideSummaryRequest']),
+  writingIndex: (scope: Scope) => get<WritingIndex>(scope, '/texts-index'),
+  rebuildWritingIndex: (scope: Scope) =>
+    send<{ passages: number }>(scope, 'POST', '/texts-index/rebuild'),
+
+  // --- the scene studio: a scene's prose, drafts waiting, and checks (ADR-022) -------
+  studio: (scope: Scope, planId: string) => get<Studio>(scope, `/plan/${id(planId)}/studio`),
+  // --- checks kept as runs (CON-001) --------------------------------------------
+  sceneCheckRuns: (scope: Scope, planId: string) =>
+    get<Items<CheckRun>>(scope, `/plan/${id(planId)}/checks/runs`),
+  recordSceneChecks: (scope: Scope, planId: string) =>
+    send<CheckRun>(scope, 'POST', `/plan/${id(planId)}/checks/runs`),
+  checkRunForJob: (scope: Scope, jobId: string) =>
+    get<CheckRun>(scope, `/checks/runs/by-job/${id(jobId)}`),
+  /** How often each check's findings were dismissed in this line of the story (CON-016). */
+  checkCalibration: (scope: Scope) => get<Items<CheckCalibration>>(scope, '/checks/calibration'),
+  /** How often each kind of finding on the review screen is dismissed in this story (CON-016). */
+  reviewCalibration: (scope: Scope) =>
+    get<Items<Schemas['ReviewCalibrationModel']>>(scope, '/review/calibration'),
+  /** Dismissals of one kind of finding for a character or a stretch of scenes (CON-016). */
+  scopedDismissals: (scope: Scope) => get<Items<ScopedDismissal>>(scope, '/dismissals/scoped'),
+  withdrawScopedDismissal: (scope: Scope, dismissalId: string) =>
+    send<ScopedDismissal>(scope, 'DELETE', `/dismissals/scoped/${id(dismissalId)}`),
+  saveSceneText: (scope: Scope, planId: string, content: string, baseVersionId: string | null) =>
+    send<Studio>(scope, 'PUT', `/plan/${id(planId)}/studio/text`, {
+      content,
+      base_version_id: baseVersionId,
+    } satisfies Schemas['SaveRequest']),
+  draftEstimate: (scope: Scope, planId: string, ask: DraftAsk) =>
+    send<DraftEstimate>(scope, 'POST', `/plan/${id(planId)}/studio/estimate`, ask),
+  /** Roughly what a check with the assistant of the scene's text (or a draft) would use,
+   * pass by pass; every pass when none are named. */
+  /** What a check would use, pass by pass; the usual passes, or those named (CON-008). */
+  checkEstimate: (scope: Scope, planId: string, draftId?: string | null, passes?: readonly CheckPass[]) =>
+    get<CheckEstimate>(scope, `/plan/${id(planId)}/studio/check-estimate`, { draft_id: draftId, passes }),
+  /** Ask for drafts. The key makes a resent request start the same work, not a second one. */
+  startDraft: (scope: Scope, planId: string, ask: DraftAsk, key: string) =>
+    request<StudioJob>(`${project(scope)}/plan/${id(planId)}/studio/drafts`, {
+      method: 'POST',
+      workspaceId: scope.workspaceId,
+      headers: { ...branchHeaders(scope), 'Idempotency-Key': key },
+      json: ask,
+    }),
+  /** Ask the assistant to check the scene's text, or one draft. */
+  startReview: (scope: Scope, planId: string, draftId: string | null, passes?: CheckPass[]) =>
+    send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/studio/reviews`, {
+      draft_id: draftId,
+      passes,
+    } satisfies Schemas['ReviewRequest']),
+  /** What auditing a part of the plan ('' for all of it) would read and use. Calls no model. */
+  auditEstimate: (scope: Scope, planId: string, passes?: readonly CheckPass[]) =>
+    get<AuditEstimate>(scope, '/audits/estimate', { plan_id: planId, passes }),
+  /** Audit a part of the story with the chosen passes; none runs only the free checks. */
+  startAudit: (scope: Scope, planId: string, passes: CheckPass[], key: string) =>
+    request<StudioJob>(`${project(scope)}/audits`, {
+      method: 'POST',
+      workspaceId: scope.workspaceId,
+      headers: { ...branchHeaders(scope), 'Idempotency-Key': key },
+      json: { plan_id: planId, passes } satisfies Schemas['AuditRequest'],
+    }),
+  audits: (scope: Scope, planId: string) =>
+    get<{ items: StudioJob[] }>(scope, '/audits', { plan_id: planId }),
+  audit: (scope: Scope, jobId: string) => get<Audit>(scope, `/audits/${id(jobId)}`),
+  /** Voice and relationships across the scenes an audit read. Calls no model. */
+  auditDrift: (scope: Scope, jobId: string) => get<AuditDrift>(scope, `/audits/${id(jobId)}/drift`),
+  corrections: (scope: Scope, jobId: string) =>
+    get<Corrections>(scope, `/audits/${id(jobId)}/corrections`),
+  correctionsEstimate: (scope: Scope, jobId: string) =>
+    get<CorrectionEstimate>(scope, `/audits/${id(jobId)}/corrections/estimate`),
+  /** Ask the assistant which scenes to change and why, from an audit's findings. */
+  planCorrections: (scope: Scope, jobId: string) =>
+    send<StudioJob>(scope, 'POST', `/audits/${id(jobId)}/corrections`),
+  decideCorrection: (scope: Scope, planId: string, index: number, decision: 'waiting' | 'kept' | 'skipped') =>
+    send<CorrectionPlan>(scope, 'PUT', `/corrections/${id(planId)}/items/${index}`, {
+      decision,
+    } satisfies Schemas['DecideStepRequest']),
+  auditSchedules: (scope: Scope) => get<AuditSchedules>(scope, '/audit-schedules'),
+  saveAuditSchedule: (scope: Scope, ask: AuditScheduleAsk) =>
+    send<AuditSchedule>(scope, 'PUT', '/audit-schedules', ask),
+  removeAuditSchedule: (scope: Scope, scheduleId: string) =>
+    send<void>(scope, 'DELETE', `/audit-schedules/${id(scheduleId)}`),
+  /** What differs between a what-if and the main story, with the checks. Calls no model. */
+  whatIfAudit: (scope: Scope, branchId: string) => get<WhatIfAudit>(scope, `/what-ifs/${id(branchId)}/audit`),
+  /** What the assistant would read and use checking only the scenes a what-if wrote differently. */
+  changedAuditEstimate: (scope: Scope, branchId: string) =>
+    get<AuditEstimate>(scope, `/what-ifs/${id(branchId)}/audit/changed/estimate`),
+  /** Ask the assistant to check only the scenes a what-if wrote differently (CON-011). */
+  startChangedAudit: (scope: Scope, branchId: string, passes: CheckPass[], key: string) =>
+    request<StudioJob>(`${project(scope)}/what-ifs/${id(branchId)}/audit/changed`, {
+      method: 'POST',
+      workspaceId: scope.workspaceId,
+      headers: { ...branchHeaders(scope), 'Idempotency-Key': key },
+      json: { passes } satisfies Schemas['ChangedAuditRequest'],
+    }),
+  /** Your notices in this story: one for each scheduled audit that finished (CON-011). */
+  notices: (scope: Scope, params: { jobId?: string; unseen?: boolean } = {}) =>
+    get<Schemas['NoticeListModel']>(scope, '/notices', {
+      job_id: params.jobId,
+      unseen: params.unseen ? true : undefined,
+    }),
+  markNoticeSeen: (scope: Scope, noticeId: string) =>
+    send<void>(scope, 'POST', `/notices/${id(noticeId)}/seen`),
+  /** How the scene's saved words sound against the author's usual. Calls no model. */
+  sceneVoice: (scope: Scope, planId: string) => get<SceneVoice>(scope, `/plan/${id(planId)}/voice`),
+  /** Whether the assistant's voice check of the flagged passages is offered, and its cost (CON-018). */
+  voiceEscalation: (scope: Scope, planId: string) =>
+    get<VoiceEscalation>(scope, `/plan/${id(planId)}/voice/escalation`),
+  startVoiceEscalation: (scope: Scope, planId: string) =>
+    send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/voice/escalation`),
+  /** Dismiss a note on how the scene sounds, with a reason (CON-018). */
+  dismissVoiceNote: (scope: Scope, planId: string, body: Schemas['VoiceDismissRequest']) =>
+    send<SceneVoice>(scope, 'POST', `/plan/${id(planId)}/voice/dismissals`, body),
+  undoVoiceDismissal: (scope: Scope, planId: string, dismissalId: string) =>
+    send<SceneVoice>(scope, 'DELETE', `/plan/${id(planId)}/voice/dismissals/${id(dismissalId)}`),
+  setVoiceLeftOut: (scope: Scope, planId: string, leftOut: boolean) =>
+    send<SceneVoice>(scope, 'PUT', `/plan/${id(planId)}/voice/usual`, {
+      left_out: leftOut,
+    } satisfies Schemas['CountRequest']),
+  bookVoice: (scope: Scope) => get<BookVoice>(scope, '/voice/book'),
+  findingProposalEstimate: (scope: Scope, planId: string, ref: FindingRef) =>
+    send<FindingProposalEstimate>(scope, 'POST', `/plan/${id(planId)}/findings/proposal-estimate`, ref),
+  /** Turn a finding into a story-bible change for review. Nothing changes until approved. */
+  findingProposal: (scope: Scope, planId: string, ref: FindingRef, choice: 'make_true' | 'change_bible') =>
+    send<FindingProposal>(scope, 'POST', `/plan/${id(planId)}/findings/proposal`, {
+      ...ref,
+      choice,
+    } satisfies Schemas['FindingProposalRequest']),
+  /** Read the scene's saved text into suggested changes to the story, for review. */
+  startReading: (scope: Scope, planId: string) =>
+    send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/studio/readings`),
+  /** Fill in the scene's plan card from its saved text, as a plan change for review. */
+  startPlanCard: (scope: Scope, planId: string) =>
+    send<StudioJob>(scope, 'POST', `/plan/${id(planId)}/studio/plan-card`),
+  keepDraft: (scope: Scope, draftId: string, baseVersionId: string | null) =>
+    send<Studio>(scope, 'POST', `/drafts/${id(draftId)}/keep`, {
+      base_version_id: baseVersionId,
+    } satisfies Schemas['KeepRequest']),
+  discardDraft: (scope: Scope, draftId: string) => send<void>(scope, 'DELETE', `/drafts/${id(draftId)}`),
+  /** Dismiss a check or a note on a scene, with a reason. The text is not changed. */
+  dismissFinding: (scope: Scope, planId: string, body: DismissAsk) =>
+    send<Studio>(scope, 'POST', `/plan/${id(planId)}/studio/dismissals`, body),
+  /** Bring a dismissed check or note back. */
+  undoDismissal: (scope: Scope, planId: string, dismissalId: string) =>
+    send<Studio>(scope, 'DELETE', `/plan/${id(planId)}/studio/dismissals/${id(dismissalId)}`),
+  job: (scope: Scope, jobId: string) => get<StudioJob>(scope, `/jobs/${id(jobId)}`),
+  cancelJob: (scope: Scope, jobId: string) => send<StudioJob>(scope, 'POST', `/jobs/${id(jobId)}/cancel`),
+  voice: (scope: Scope) => get<Schemas['VoiceModel']>(scope, '/voice'),
+  setVoice: (scope: Scope, notes: string) =>
+    send<Schemas['VoiceModel']>(scope, 'PUT', '/voice', { notes } satisfies Schemas['VoiceModel']),
+
+  // --- what-ifs: try a turn of the story without touching it (ADR-020) ----------
+  // These are about the story's lines themselves, so they always speak to the main story.
+  whatIfs: (scope: Scope) =>
+    get<{ items: WhatIf[] }>({ ...scope, branchId: null }, '/what-ifs'),
+  startWhatIf: (scope: Scope, body: { name: string; description?: string | null }) =>
+    send<WhatIf>({ ...scope, branchId: null }, 'POST', '/what-ifs', body),
+  setWhatIfAside: (scope: Scope, branchId: string, aside: boolean) =>
+    send<WhatIf>({ ...scope, branchId: null }, 'POST', `/what-ifs/${id(branchId)}/set-aside`, {
+      aside,
+    }),
+  compareWhatIf: (scope: Scope, branchId: string) =>
+    get<WhatIfComparison>({ ...scope, branchId: null }, `/what-ifs/${id(branchId)}/compare`),
+  bringBackWhatIf: (scope: Scope, branchId: string, keep: Record<string, 'what_if' | 'main'>) =>
+    send<{ mutation_id: string }>(
+      { ...scope, branchId: null },
+      'POST',
+      `/what-ifs/${id(branchId)}/bring-back`,
+      { keep },
+    ),
+
+  // --- assisted creation: describe, answer a few questions, review the draft -----
+  assistQuestions: (scope: Scope, body: AssistBrief) =>
+    send<AssistQuestionSheet>(scope, 'POST', '/assist/questions', body),
+  assistProposal: (scope: Scope, body: AssistProposalRequest) =>
+    send<CharacterProposal>(scope, 'POST', '/assist/proposals', body),
+  /** The God Hand: one instruction, every change it implies, as a proposal (or questions). */
+  assistChange: (scope: Scope, body: Schemas['ChangeRequest']) =>
+    send<ChangeProposal>(scope, 'POST', '/assist/changes', body),
+  /** Roughly what the assistant will read, to show before a request is sent. */
+  assistEstimate: (scope: Scope, sessionId?: string | null) =>
+    get<Schemas['backend__api__v1__canon_assist__EstimateModel']>(scope, '/assist/estimate', {
+      session_id: sessionId,
+    }),
+  /** Connections the entries describe but no fact records, as changes to review. */
+  assistLinks: (scope: Scope, expectedRevision: number) =>
+    send<ChangeProposal>(scope, 'POST', '/assist/links', {
+      expected_revision: expectedRevision,
+    } satisfies Schemas['LinkRequest']),
+  /** Revise a set of suggested changes by asking; it stays waiting for review. */
+  assistRevision: (scope: Scope, body: Schemas['RevisionRequest']) =>
+    send<Schemas['RevisionModel']>(scope, 'POST', '/assist/revisions', body),
+  /** The signed-in author's kept conversation of one kind: Change anything, or a premise. */
+  assistThread: (scope: Scope, kind: ThreadKind) =>
+    get<AssistThread>(scope, `/assist/threads/${id(kind)}`),
+  /** Erase that conversation and start again. Suggested and saved changes stay. */
+  clearAssistThread: (scope: Scope, kind: ThreadKind) =>
+    send<Schemas['ClearedModel']>(scope, 'DELETE', `/assist/threads/${id(kind)}`),
+  /** One round of starting from a premise: open questions, and entries to review. */
+  premiseRound: (scope: Scope, body: Schemas['PremiseRequest']) =>
+    send<PremiseRound>(scope, 'POST', '/assist/premise', body),
+  /** Recent runs of suggestions, with how many the author kept and how many quote them. */
+  suggestionRuns: (scope: Scope, kind: SuggestionRunKind, limit = 5) =>
+    get<{ items: SuggestionRun[] }>(scope, '/assist/runs', { kind, limit }),
+  /** What merging one entry into another would do now. Changes nothing. */
+  mergePreview: (scope: Scope, body: Schemas['MergePreviewRequest']) =>
+    send<MergePreview>(scope, 'POST', '/merges/preview', body),
+  /** Send a merge to review; it is saved only once approved. */
+  proposeMerge: (scope: Scope, body: Schemas['MergeProposalRequest']) =>
+    send<Schemas['MergeProposalModel']>(scope, 'POST', '/merges', body),
+  // --- conversations with the assistant, kept so they can be resumed and read back ---
+  /** The signed-in author's unfinished conversations in this project. */
+  openAssistSessions: (scope: Scope) =>
+    get<{ items: AssistSession[] }>(scope, '/assist/sessions'),
+  /** One kept conversation, by its id. */
+  assistSession: (scope: Scope, sessionId: string) =>
+    get<AssistSession>(scope, `/assist/sessions/${id(sessionId)}`),
+  /** The conversation a set of suggested changes came from, if one was kept. */
+  assistSessionFor: async (scope: Scope, mutationId: string) =>
+    (await get<{ items: AssistSession[] }>(scope, '/assist/sessions', { mutation_id: mutationId }))
+      .items[0] ?? null,
+  saveAssistAnswers: (scope: Scope, sessionId: string, answers: AssistSession['answers']) =>
+    send<AssistSession>(scope, 'PUT', `/assist/sessions/${id(sessionId)}/answers`, { answers }),
+  /** Add types and kinds of fact the assistant suggested to the project's setup. */
+  applySuggestions: (scope: Scope, sessionId: string, names: string[]) =>
+    send<Schemas['AppliedSuggestionsModel']>(
+      scope,
+      'POST',
+      `/assist/sessions/${id(sessionId)}/suggestions/apply`,
+      { names },
+    ),
+  closeAssistSession: (scope: Scope, sessionId: string) =>
+    send<AssistSession>(scope, 'POST', `/assist/sessions/${id(sessionId)}/close`),
+  /** Entries that are only a name so far: the to-do list for filling in. */
+  needsDetail: (scope: Scope) => get<EntityListResponse>(scope, '/entities/needs-detail', { limit: 50 }),
+
+  // --- guided character workflow ----------------------------------------------
+  characterQuestions: (scope: Scope, entityId: string) =>
+    send<CharacterQuestionSheet>(scope, 'POST', `/characters/${id(entityId)}/questions`),
+
+  characterProposal: (scope: Scope, entityId: string, body: CharacterProposalRequest) =>
+    send<CharacterProposal>(scope, 'POST', `/characters/${id(entityId)}/proposals`, body),
+
+  // --- mutation review --------------------------------------------------------
+  listMutations: (scope: Scope, params: { status?: string; limit?: number } = {}) =>
+    get<MutationList>(scope, '/mutations', params),
+
+  getMutation: (scope: Scope, mutationId: string) =>
+    get<MutationDetail>(scope, `/mutations/${id(mutationId)}`),
+
+  /** What the changes still included would touch, worked out without a model. */
+  mutationImpact: (scope: Scope, mutationId: string) =>
+    get<Impact>(scope, `/mutations/${id(mutationId)}/impact`),
+  /** What depends on one entry, before it is edited. */
+  entryImpact: (scope: Scope, entityId: string) => get<Impact>(scope, `/entities/${id(entityId)}/impact`),
+
+  proposeMutation: (scope: Scope, body: ProposeMutationRequest) =>
+    send<MutationDetail>(scope, 'POST', '/mutations', body),
+
+  validateMutation: (scope: Scope, mutationId: string) =>
+    send<MutationValidation>(scope, 'POST', `/mutations/${id(mutationId)}/validate`),
+  // --- advisory findings on a proposal, and dismissing them (CON-016) --------------
+  reviewFindings: (scope: Scope, mutationId: string) =>
+    get<Items<ReviewFinding>>(scope, `/mutations/${id(mutationId)}/findings`),
+  dismissReviewFinding: (scope: Scope, mutationId: string, ask: ReviewDismissAsk) =>
+    send<Items<ReviewFinding>>(scope, 'POST', `/mutations/${id(mutationId)}/findings/dismissals`, ask),
+  undoReviewDismissal: (scope: Scope, mutationId: string, dismissalId: string) =>
+    send<Items<ReviewFinding>>(
+      scope,
+      'DELETE',
+      `/mutations/${id(mutationId)}/findings/dismissals/${id(dismissalId)}`,
+    ),
+
+  /** Several keep/skip decisions in one request: all are recorded, or none. */
+  decideOperations: (
+    scope: Scope,
+    mutationId: string,
+    decisions: { ordinal: number; decision: 'accepted' | 'rejected'; note?: string | null }[],
+  ) =>
+    send<MutationDetail>(scope, 'POST', `/mutations/${id(mutationId)}/operations/decisions`, {
+      decisions,
+    } satisfies Schemas['OperationDecisionsRequest']),
+  decideOperation: (
+    scope: Scope,
+    mutationId: string,
+    ordinal: number,
+    decision: 'accepted' | 'rejected',
+    note: string | null,
+  ) =>
+    send<MutationDetail>(
+      scope,
+      'POST',
+      `/mutations/${id(mutationId)}/operations/${ordinal}/decision`,
+      { decision, note } satisfies Schemas['OperationDecisionRequest'],
+    ),
+
+  reviseOperation: (
+    scope: Scope,
+    mutationId: string,
+    ordinal: number,
+    operation: Record<string, unknown>,
+    reason: string | null,
+  ) =>
+    send<MutationDetail>(scope, 'PUT', `/mutations/${id(mutationId)}/operations/${ordinal}`, {
+      operation,
+      reason,
+    }),
+
+  approveMutation: (scope: Scope, mutationId: string, note: string | null) =>
+    send<MutationDetail>(scope, 'POST', `/mutations/${id(mutationId)}/approve`, {
+      note,
+    } satisfies Schemas['ReviewNoteRequest']),
+
+  rejectMutation: (scope: Scope, mutationId: string, note: string | null) =>
+    send<MutationDetail>(scope, 'POST', `/mutations/${id(mutationId)}/reject`, {
+      note,
+    } satisfies Schemas['ReviewNoteRequest']),
+
+  retargetMutation: (scope: Scope, mutationId: string, expectedRevision: number) =>
+    send<MutationDetail>(scope, 'POST', `/mutations/${id(mutationId)}/retarget`, {
+      expected_revision: expectedRevision,
+    } satisfies Schemas['RetargetRequest']),
+
+  commitMutation: (scope: Scope, mutationId: string) =>
+    send<MutationCommit>(scope, 'POST', `/mutations/${id(mutationId)}/commit`),
+
+  // --- history ----------------------------------------------------------------
+  listRevisions: (scope: Scope, params: { limit?: number; offset?: number } = {}) =>
+    get<Items<RevisionSummary>>(scope, '/revisions', params),
+
+  previewRevert: (scope: Scope, fromRevision: number, toRevision: number | null) =>
+    send<RevertProposal>(scope, 'POST', '/reverts/preview', {
+      from_revision: fromRevision,
+      to_revision: toRevision,
+    } satisfies Schemas['RevertPreviewRequest']),
+
+  commitRevert: (
+    scope: Scope,
+    body: { fromRevision: number; toRevision: number | null; expectedRevision: number },
+  ) =>
+    send<MutationCommit>(scope, 'POST', '/reverts', {
+      from_revision: body.fromRevision,
+      to_revision: body.toRevision,
+      expected_revision: body.expectedRevision,
+      acknowledge_high_impact: true,
+    } satisfies Schemas['RevertCommitRequest']),
+
+  // --- media ------------------------------------------------------------------
+  listAssets: (scope: Scope) => get<Items<Asset>>(scope, '/assets'),
+  listAssetVersions: (scope: Scope, assetId: string) =>
+    get<Items<AssetVersion>>(scope, `/assets/${id(assetId)}/versions`),
+  assetLifecycle: (scope: Scope, assetId: string) =>
+    get<Items<AssetLifecycleEvent>>(scope, `/assets/${id(assetId)}/lifecycle`),
+  listLinks: (scope: Scope, params: { target_id?: string; include_retired?: boolean } = {}) =>
+    get<Items<AssetLink>>(scope, '/links', params),
+  listAssetLinks: (scope: Scope, assetId: string) =>
+    get<Items<AssetLink>>(scope, `/assets/${id(assetId)}/links`, { include_retired: true }),
+
+  // --- pictures on entries ----------------------------------------------------
+  /** Upload an image (the file itself is the request body) and link it to an entry. */
+  addPicture: (scope: Scope, entityId: string, file: Blob, expectedRevision: number, name?: string) =>
+    request<{ link: AssetLink; version: AssetVersion }>(
+      `${project(scope)}/entities/${id(entityId)}/pictures${query({
+        expected_revision: expectedRevision,
+        name,
+      })}`,
+      {
+        method: 'POST',
+        workspaceId: scope.workspaceId,
+        body: file,
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      },
+    ),
+  /** Link an existing stored picture to an entry again (used to undo a removal). */
+  relinkPicture: (scope: Scope, link: AssetLink, expectedRevision: number) =>
+    send<AssetLink>(scope, 'POST', `/assets/${id(link.asset_id)}/links`, {
+      target_id: link.target_record_id,
+      target_record_type: link.target_record_type,
+      asset_version_id: link.asset_version_id,
+      role: link.role,
+      expected_revision: expectedRevision,
+    }),
+  /** Upload an image (the file itself is the request body) and show it on a scene. */
+  addScenePicture: (scope: Scope, sceneId: string, file: Blob, expectedRevision: number, name?: string) =>
+    request<{ link: AssetLink; version: AssetVersion }>(
+      `${project(scope)}/plan/${id(sceneId)}/pictures${query({ expected_revision: expectedRevision, name })}`,
+      {
+        method: 'POST',
+        workspaceId: scope.workspaceId,
+        body: file,
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      },
+    ),
+  /** Every picture in the story, including those shown nowhere now. */
+  pictureLibrary: (scope: Scope) => get<Schemas['PictureLibraryModel']>(scope, '/pictures'),
+  /** Pictures for some words: by name or reviewed description, then by meaning (AST-007). */
+  searchPictures: (scope: Scope, words: string) =>
+    get<Schemas['PictureSearchModel']>(scope, '/pictures/search', { q: words }),
+  /** Delete a picture's files; it must be shown nowhere first (AST-008). Cannot be undone. */
+  deletePicture: (scope: Scope, assetId: string) =>
+    send<Schemas['DeletedPictureModel']>(scope, 'POST', `/assets/${id(assetId)}/delete`),
+  /** Show a picture from the library on an entry or a scene: a new link, nothing copied. */
+  showPicture: (
+    scope: Scope,
+    picture: Pick<LibraryPicture, 'asset_id' | 'version_id'>,
+    target: { type: 'entity' | 'plan_item'; id: string },
+    expectedRevision: number,
+  ) =>
+    send<AssetLink>(scope, 'POST', `/assets/${id(picture.asset_id)}/links`, {
+      target_id: target.id,
+      target_record_type: target.type,
+      asset_version_id: picture.version_id,
+      role: 'DEPICTS',
+      expected_revision: expectedRevision,
+    }),
+  retireLink: (scope: Scope, linkId: string, expectedRevision: number) =>
+    send<unknown>(scope, 'POST', `/links/${id(linkId)}/retire`, {
+      expected_revision: expectedRevision,
+    }),
+  /**
+   * A picture as a local object address. An <img> cannot send the workspace header
+   * the server needs, so the bytes are fetched here and handed to the image.
+   */
+  pictureUrl: async (
+    scope: Scope,
+    assetId: string,
+    versionId: string,
+    size: PictureSize = 'original',
+  ): Promise<FetchedPicture> => {
+    const headers = new Headers(branchHeaders(scope))
+    if (scope.workspaceId) headers.set('X-Workspace-Id', scope.workspaceId)
+    const query = size === 'original' ? '' : `?size=${size}`
+    const response = await fetch(
+      `${project(scope)}/assets/${id(assetId)}/versions/${id(versionId)}/content${query}`,
+      { credentials: 'include', headers },
+    )
+    if (!response.ok) throw new ApiError(response.status, 'The picture could not be loaded.')
+    const served = (response.headers.get('X-Picture-Size') ?? 'original') as PictureSize
+    return { url: URL.createObjectURL(await response.blob()), served }
+  },
+  pictureProcessing: (scope: Scope, assetId: string, versionId: string) =>
+    get<PictureProcessing>(scope, `/assets/${id(assetId)}/versions/${id(versionId)}/processing`),
+  retryPicture: (scope: Scope, assetId: string, versionId: string) =>
+    send<PictureProcessing>(
+      scope,
+      'POST',
+      `/assets/${id(assetId)}/versions/${id(versionId)}/processing/retry`,
+    ),
+}
+
+// ---------------------------------------------------------------------------------
+// One picture: what the assistant saw in it, and how it is used in context
+// (AST-005, AST-007, CTX-013). Kept apart from `api` above so the picture page's calls
+// sit together.
+
+export type Picture = Schemas['PictureModel']
+export type PictureLink = Schemas['PictureLinkModel']
+export type PictureObservation = Schemas['ObservationModel']
+export type DescribeEstimate = Schemas['DescribeEstimateModel']
+export type PictureChoice = Schemas['PictureModel']['context_choice']
+/** A part of a picture the author marked (AST-007). */
+export type PicturePart = Schemas['PicturePartModel']
+export type PartSegment = Schemas['SegmentModel']
+/** Where a marked part is, in pixels of the picture as shown, its name and the entry it shows. */
+export type PartChange = {
+  x: number
+  y: number
+  width: number
+  height: number
+  label: string | null
+  entity_id: string | null
+}
+export type ContextPicture = Schemas['ContextPictureModel']
+
+export const pictureApi = {
+  picture: (scope: Scope, assetId: string) => get<Picture>(scope, `/pictures/${id(assetId)}`),
+  describeEstimate: (scope: Scope, assetId: string) =>
+    get<DescribeEstimate>(scope, `/pictures/${id(assetId)}/describe/estimate`),
+  /** Asked about first above the story's threshold (see lib/spend); a job to follow. */
+  describe: (scope: Scope, assetId: string) =>
+    send<StudioJob>(scope, 'POST', `/pictures/${id(assetId)}/describe`),
+  review: (
+    scope: Scope,
+    observationId: string,
+    decision: 'accept' | 'correct' | 'reject',
+    correctedText?: string,
+  ) =>
+    send<PictureObservation>(scope, 'POST', `/observations/${id(observationId)}/review`, {
+      decision,
+      corrected_text: correctedText ?? null,
+    }),
+  /** Offer an accepted detail as a fact: a suggestion in the review queue. */
+  propose: (scope: Scope, observationId: string, entityId?: string) =>
+    send<Schemas['ProposedFactModel']>(scope, 'POST', `/observations/${id(observationId)}/propose`, {
+      entity_id: entityId ?? null,
+    }),
+  setChoice: (scope: Scope, assetId: string, choice: PictureChoice) =>
+    send<Schemas['ContextChoiceModel']>(scope, 'PUT', `/pictures/${id(assetId)}/context`, { choice }),
+  changeLink: (
+    scope: Scope,
+    assetId: string,
+    linkId: string,
+    change: {
+      secret: boolean
+      known_by: string[]
+      applies_from: WorldTime | null
+      /** From this story time on it no longer applies (AST-001); null for to the end. */
+      applies_until?: WorldTime | null
+      /** The version it shows; null follows the newest. */
+      version_id?: string | null
+      expected_revision: number
+    },
+  ) => send<Picture>(scope, 'PUT', `/pictures/${id(assetId)}/links/${id(linkId)}`, change),
+  /** Mark a part of the picture's newest version: the author's own markup, no review. */
+  markPart: (scope: Scope, assetId: string, versionId: string, part: PartChange) =>
+    send<PartSegment>(scope, 'POST', `/assets/${id(assetId)}/versions/${id(versionId)}/segments`, part),
+  changePart: (scope: Scope, assetId: string, versionId: string, partId: string, part: PartChange) =>
+    send<PartSegment>(
+      scope,
+      'PUT',
+      `/assets/${id(assetId)}/versions/${id(versionId)}/segments/${id(partId)}`,
+      part,
+    ),
+  removePart: (scope: Scope, assetId: string, versionId: string, partId: string) =>
+    send<PartSegment>(
+      scope,
+      'POST',
+      `/assets/${id(assetId)}/versions/${id(versionId)}/segments/${id(partId)}/retire`,
+    ),
+}
+
+// ---------------------------------------------------------------------------------
+// Two-step picture uploads (AST-002): say what is coming (size and SHA-256), send the
+// bytes, then finish. Refused before anything is sent when it is too large or has no room.
+
+export type PictureUpload = Schemas['UploadModel']
+export type UploadFor = PictureUpload['for']
+
+async function sha256Hex(file: Blob): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer())
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+export const uploadApi = {
+  start: (scope: Scope, body: { for: UploadFor; id: string; name?: string | null; byte_length: number; sha256: string }) =>
+    send<PictureUpload>(scope, 'POST', '/uploads', body),
+  sendBytes: (scope: Scope, upload: PictureUpload, file: Blob) =>
+    request<Schemas['UploadReceivedModel']>(upload.send_to, {
+      method: 'PUT',
+      workspaceId: scope.workspaceId,
+      body: file,
+      headers: { ...branchHeaders(scope), 'Content-Type': file.type || 'application/octet-stream' },
+    }),
+  finish: (scope: Scope, upload: PictureUpload, expectedRevision?: number) =>
+    request<Schemas['UploadFinishedModel']>(
+      `${upload.finish_at}${query({ expected_revision: expectedRevision })}`,
+      { method: 'POST', workspaceId: scope.workspaceId, headers: branchHeaders(scope) },
+    ),
+  /** The whole two-step upload: what is promised is checked by the server at each step. */
+  upload: async (
+    scope: Scope,
+    target: { for: UploadFor; id: string; name?: string | null },
+    file: Blob,
+    expectedRevision?: number,
+  ) => {
+    const started = await uploadApi.start(scope, {
+      ...target,
+      byte_length: file.size,
+      sha256: await sha256Hex(file),
+    })
+    await uploadApi.sendBytes(scope, started, file)
+    return uploadApi.finish(scope, started, expectedRevision)
+  },
+}
+
+// ---------------------------------------------------------------------------------
+// The story's ready views (QRY-001): how far each is, and whether reads use it.
+
+export type StoryViews = Schemas['ViewStatusModel']
+export type StoryView = Schemas['ViewStateModel']
+
+export const storyViewsApi = {
+  status: (scope: Scope) => get<StoryViews>(scope, '/story-views'),
+  /** Check them against the story's history now (owners and administrators). */
+  check: (scope: Scope) => send<Schemas['ViewCheckModel']>(scope, 'POST', '/story-views/check'),
 }

@@ -56,7 +56,18 @@ def test_canon_entity_create_read_edit_retire(auth_client, fake_container) -> No
     assert edited.status_code == 200, edited.text
     assert edited.json()["name"] == "Aria II"
 
-    retired = auth_client.post(f"{base}/{entity_id}/retire", json={"expected_revision": 2})
+    # Retirement is destructive: without an explicit acknowledgement it is parked
+    # for review instead of committing.
+    parked = auth_client.post(f"{base}/{entity_id}/retire", json={"expected_revision": 2})
+    assert parked.status_code == 409, parked.text
+    assert parked.json()["code"] == "review_required"
+    assert parked.json()["field_errors"]["reasons"] == "destructive_operation"
+    assert auth_client.get(f"{base}/{entity_id}").json()["lifecycle"] == "active"
+
+    retired = auth_client.post(
+        f"{base}/{entity_id}/retire",
+        json={"expected_revision": 2, "acknowledge_high_impact": True},
+    )
     assert retired.status_code == 200, retired.text
     assert retired.json()["lifecycle"] == "retired"
 
@@ -163,3 +174,41 @@ def test_published_custom_type_and_attributes_are_enforced(auth_client, fake_con
     )
     assert invalid.status_code == 422, invalid.text
     assert "invalid_attributes" in invalid.json()["detail"]
+
+
+def test_the_sample_story_fills_an_empty_project_once(auth_client, fake_container) -> None:
+    project_id = _project_id(fake_container)
+    _publish_schema(auth_client, project_id)
+    base = f"/api/v1/projects/{project_id}"
+
+    loaded = auth_client.post(f"{base}/entities/sample", json={"expected_revision": 0})
+
+    assert loaded.status_code == 201, loaded.text
+    # One version, made by the person who asked, with nothing left waiting for review.
+    assert loaded.json() == {"revision": 1}
+    entries = auth_client.get(f"{base}/entities", params={"limit": 50}).json()["items"]
+    by_name = {item["name"]: item for item in entries}
+    assert len(entries) == 8 and {item["type"] for item in entries} == {
+        "Character",
+        "Location",
+        "Faction",
+        "Object",
+    }
+    ines = by_name["Ines Varga"]
+    assert ines["attributes"]["_importance"] == "main"
+    assert ines["attributes"]["_tags"] == ["protagonist"]
+    # One entry is left to fill in, and one belief disagrees with what is true.
+    todo = auth_client.get(f"{base}/entities/needs-detail").json()["items"]
+    assert [item["name"] for item in todo] == ["Dr. Amsel"]
+    assert len(auth_client.get(f"{base}/facts", params={"limit": 50}).json()["items"]) == 8
+    rooke = by_name["Captain Rooke"]["id"]
+    belief = auth_client.get(f"{base}/beliefs", params={"holder_entity_id": rooke}).json()["items"]
+    agreement = auth_client.get(f"{base}/beliefs/{belief[0]['id']}/truth-agreement").json()
+    assert agreement["truth_agreement"] == "disagrees"
+    waiting = auth_client.get(f"{base}/mutations?status=needs_review").json()["items"]
+    assert waiting == []
+
+    # It is never mixed into a project that already has something in it.
+    again = auth_client.post(f"{base}/entities/sample", json={"expected_revision": 1})
+    assert again.status_code == 409
+    assert "already has entries" in again.json()["detail"]

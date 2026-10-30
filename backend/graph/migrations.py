@@ -128,10 +128,53 @@ CANON_SCOPE_IDENTITY = Migration(
     ),
 )
 
+_CANON_LABELS = ("CanonEntity", "CanonFact", "CanonBelief", "CanonEvent", "CanonProvenance")
+
+CANON_PROJECTION_LABELS = Migration(
+    id="0004_canon_projection_labels",
+    description=(
+        "Give the canon projection its own labels (CanonEntity/CanonFact/CanonBelief/"
+        "CanonEvent/CanonProvenance/CanonAsset). The legacy generic graph labels every "
+        "node Entity plus its type, so a legacy 'Belief' or 'Event' node in the same "
+        "project was readable as projected canon and vice versa. Previously projected "
+        "canon nodes are discarded here; the projection is rebuilt from the PostgreSQL "
+        "journal (projection schema version 2). Legacy graph nodes are untouched."
+    ),
+    statements=(
+        # Projected canon entities carried kind='entity' and a commit id.
+        "MATCH (n:Entity) WHERE n.kind = 'entity' AND n.commit_id IS NOT NULL DETACH DELETE n",
+        # Projected facts/beliefs/events/provenance were never Entity-labelled.
+        "MATCH (n) WHERE (n:Fact OR n:Belief OR n:Event OR n:Provenance) AND NOT n:Entity "
+        "AND n.commit_id IS NOT NULL DETACH DELETE n",
+        "MATCH (n:Asset) WHERE NOT n:Entity DETACH DELETE n",
+        "MATCH (m:CommitMarker) DETACH DELETE m",
+        "DROP CONSTRAINT fact_scope_id_unique IF EXISTS",
+        "DROP CONSTRAINT belief_scope_id_unique IF EXISTS",
+        "DROP CONSTRAINT event_scope_id_unique IF EXISTS",
+        "DROP CONSTRAINT provenance_scope_id_unique IF EXISTS",
+        "DROP INDEX fact_scope_branch_idx IF EXISTS",
+        "DROP INDEX belief_scope_branch_idx IF EXISTS",
+        "DROP INDEX event_scope_branch_idx IF EXISTS",
+        *(
+            f"CREATE CONSTRAINT {label.lower()}_scope_id_unique IF NOT EXISTS FOR (n:{label}) "
+            "REQUIRE (n.workspace_id, n.project_id, n.id) IS UNIQUE"
+            for label in _CANON_LABELS
+        ),
+        "CREATE CONSTRAINT canonasset_scope_id_unique IF NOT EXISTS FOR (n:CanonAsset) "
+        "REQUIRE (n.workspace_id, n.project_id, n.id) IS UNIQUE",
+        *(
+            f"CREATE INDEX {label.lower()}_scope_branch_idx IF NOT EXISTS FOR (n:{label}) "
+            "ON (n.workspace_id, n.project_id, n.branch_id)"
+            for label in _CANON_LABELS
+        ),
+    ),
+)
+
 NEO4J_MIGRATIONS: tuple[Migration, ...] = (
     INITIAL_GRAPH_SCHEMA,
     ENTITY_SCOPE_IDENTITY,
     CANON_SCOPE_IDENTITY,
+    CANON_PROJECTION_LABELS,
 )
 
 

@@ -33,6 +33,8 @@ class CanonEntityModel(BaseModel):
     created_revision: int
     retired_revision: int | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
+    aliases: list[str] = Field(default_factory=list)
+    external_ids: dict[str, str] = Field(default_factory=dict)
 
 
 class CanonEntityListResponse(BaseModel):
@@ -44,8 +46,11 @@ class CanonEntityListResponse(BaseModel):
 class CreateEntityRequest(BaseModel):
     type: str
     name: str
+    # Omit to derive a unique slug from the name.
     slug: str | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
+    aliases: list[str] = Field(default_factory=list)
+    external_ids: dict[str, str] = Field(default_factory=dict)
     expected_revision: int = Field(ge=0)
 
 
@@ -53,11 +58,17 @@ class UpdateEntityRequest(BaseModel):
     name: str | None = None
     slug: str | None = None
     attributes: dict[str, Any] | None = None
+    # Omit to keep the current value; a list/mapping replaces it wholesale.
+    aliases: list[str] | None = None
+    external_ids: dict[str, str] | None = None
     expected_revision: int = Field(ge=0)
 
 
 class RetireEntityRequest(BaseModel):
     expected_revision: int = Field(ge=0)
+    # Retirement is destructive: without this explicit acknowledgement the request
+    # is parked as a proposal awaiting review (409 ``review_required``).
+    acknowledge_high_impact: bool = False
 
 
 def _model(entity: CanonEntity) -> CanonEntityModel:
@@ -88,6 +99,20 @@ async def canon_list_entities(
     )
 
 
+@router.get("/needs-detail", response_model=CanonEntityListResponse)
+async def canon_entities_needing_detail(
+    project_id: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    scope: AccessScope = Depends(get_project_scope),
+    service: CanonEntityService = Depends(get_canon_entity_service),
+) -> CanonEntityListResponse:
+    """Entries that are only a name so far, as a to-do list for filling in."""
+    entities = await service.needs_detail(scope, scope.workspace_id or "", project_id, limit=limit)
+    return CanonEntityListResponse(
+        items=[_model(entity) for entity in entities], limit=limit, offset=0
+    )
+
+
 @router.get("/search", response_model=CanonEntityListResponse)
 async def canon_search_entities(
     project_id: str,
@@ -112,6 +137,41 @@ async def canon_search_entities(
     )
 
 
+@router.get("/by-external-id", response_model=CanonEntityModel)
+async def canon_get_entity_by_external_id(
+    project_id: str,
+    namespace: str = Query(min_length=1, max_length=50),
+    value: str = Query(min_length=1, max_length=200),
+    scope: AccessScope = Depends(get_project_scope),
+    service: CanonEntityService = Depends(get_canon_entity_service),
+) -> CanonEntityModel:
+    entity = await service.get_by_external_id(
+        scope, scope.workspace_id or "", project_id, namespace=namespace, value=value
+    )
+    return _model(entity)
+
+
+@router.get("/name-collisions", response_model=CanonEntityListResponse)
+async def canon_entity_name_collisions(
+    project_id: str,
+    entity_type: str = Query(min_length=1),
+    name: str = Query(min_length=1, max_length=300),
+    scope: AccessScope = Depends(get_project_scope),
+    service: CanonEntityService = Depends(get_canon_entity_service),
+) -> CanonEntityListResponse:
+    """Active same-type entities with the same display name.
+
+    Names are not identity, so a collision never blocks a write; clients show
+    this as a warning before creating a possible duplicate.
+    """
+    entities = await service.name_collisions(
+        scope, scope.workspace_id or "", project_id, entity_type=entity_type, name=name
+    )
+    return CanonEntityListResponse(
+        items=[_model(entity) for entity in entities], limit=len(entities), offset=0
+    )
+
+
 @router.get("/{entity_id}", response_model=CanonEntityModel)
 async def canon_get_entity(
     project_id: str,
@@ -121,6 +181,32 @@ async def canon_get_entity(
 ) -> CanonEntityModel:
     entity = await service.get(scope, scope.workspace_id or "", project_id, entity_id)
     return _model(entity)
+
+
+class LoadSampleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int = Field(ge=0)
+
+
+class SampleLoadedModel(BaseModel):
+    revision: int
+
+
+@router.post("/sample", response_model=SampleLoadedModel, status_code=201)
+async def load_sample_story(
+    project_id: str,
+    body: LoadSampleRequest,
+    response: Response,
+    scope: AccessScope = Depends(require_project_scope),
+    service: CanonEntityService = Depends(get_canon_entity_service),
+) -> SampleLoadedModel:
+    """Fill an empty project with a short sample story to look around in."""
+    result = await service.load_sample(
+        scope, scope.workspace_id or "", project_id, expected_revision=body.expected_revision
+    )
+    response.headers["ETag"] = f'"{result.revision}"'
+    return SampleLoadedModel(revision=result.revision)
 
 
 @router.post("", response_model=CanonEntityModel, status_code=201)
@@ -139,6 +225,8 @@ async def canon_create_entity(
         name=body.name,
         slug=body.slug,
         attributes=body.attributes,
+        aliases=body.aliases,
+        external_ids=body.external_ids,
         expected_revision=body.expected_revision,
     )
     response.headers["ETag"] = f'"{result.revision}"'
@@ -162,6 +250,8 @@ async def canon_update_entity(
         name=body.name,
         slug=body.slug,
         attributes=body.attributes,
+        aliases=body.aliases,
+        external_ids=body.external_ids,
         expected_revision=body.expected_revision,
     )
     response.headers["ETag"] = f'"{result.revision}"'
@@ -183,6 +273,7 @@ async def canon_retire_entity(
         project_id,
         entity_id,
         expected_revision=body.expected_revision,
+        acknowledge_high_impact=body.acknowledge_high_impact,
     )
     response.headers["ETag"] = f'"{result.revision}"'
     return _model(entity)

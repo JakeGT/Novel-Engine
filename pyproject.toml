@@ -1,3 +1,9 @@
+# OSS-005: how ``make release`` builds the wheel and sdist (``uv build``). The project is
+# still not installed into its own environment (``[tool.uv] package = false``).
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
 [project]
 name = "novel-engine"
 version = "0.1.0"
@@ -13,6 +19,7 @@ dependencies = [
   "neo4j>=5.14.0",
   "openai>=1.10.0",
   "pgvector>=0.2",
+  "pillow>=12.3.0",
   "psycopg[binary]>=3.1",
   "pydantic>=2.6.0",
   "pydantic-settings>=2.1.0",
@@ -30,6 +37,7 @@ embeddings = ["sentence-transformers>=2.3.1"]
 [dependency-groups]
 dev = [
   "httpx>=0.27.0",
+  "hypothesis>=6.100",
   "mypy>=1.10.0",
   "pip-audit>=2.7",
   "pytest>=8.0.0",
@@ -42,6 +50,12 @@ dev = [
 
 [tool.uv]
 package = false
+
+[tool.uv.build-backend]
+# The application and the connector; migrations, deploy files and the frontend are in
+# the source tarball ``make release`` writes beside the wheel.
+module-name = ["backend", "connector"]
+module-root = ""
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -61,6 +75,7 @@ markers = [
   "integration: requires disposable external services such as PostgreSQL or Neo4j",
   "e2e: complete user workflow against disposable services",
   "llm: makes a live model-provider request",
+  "eval: evaluation case or benchmark (tests/eval); deterministic ones run in make test",
 ]
 
 [tool.ruff]

@@ -124,85 +124,83 @@ history, provenance, and visibility operations. Authenticated server context est
 Any write-like MCP operation can create only a mutation/patch proposal and cannot commit or modify
 review and invariant policy.
 
+Built 2026-10-18 (QRY-003, ADR-024): `POST /mcp` in the API app, authenticated by personal access
+keys made under People, with read tools over the same services and response models as the HTTP API
+and one proposal-only `suggest_changes` tool; see `plan/api-surface.md`.
+
 ## Frontend information architecture
 
-### Project shell
+Revised 2026-10-10 (ADR-017). The interface is organised by what the author is doing, not by how
+canon is stored, and reveals itself by level ([`19-assistant-first-experience.md`](19-assistant-first-experience.md)).
+Visual direction: [`20-design-direction.md`](20-design-direction.md). Screens marked *built* exist
+today; the rest are scheduled in the roadmap.
 
-- project switcher
-- workspace/member status, provider configuration, and usage
-- branch and timeline selector
-- global entity search/command palette
-- job activity and errors
-- settings and export
+### Always present
 
-### World workspace
+- the assistant (the God Hand): one place on every screen to describe, ask, be asked, and change
+  anything in the story by saying so; it always ends in a proposal (*built* for creation and
+  fill-in; changing existing canon is Phase 2.5)
+- search that reaches every entry and every feature (*built*)
+- review: what is waiting for the author's decision (*built*; grouping Phase 2.5)
+- the to-do list: what is unfinished (*built* for bare entries)
+- which key or local model pays for the next model call, and its cost before it is spent
 
-- entity list and typed editor
-- relationship editor
-- searchable lore and source view
-- project media library with safe previews, source/licence metadata, processing status, and explicit entity/location/object links
-- compact neighborhood graph as a supporting visualization
-- schema extension management
+### Level 1 — Start
 
-### Character workspace
+- describe-your-story first run and sample project (Phase 2.5)
+- the story bible as browsable entries (*built*)
+- library of projects (*built*)
 
-- identity and stable profile
-- branch/time-applicable portraits, costume/appearance references, and reviewed visual observations
-- current state at selected branch/tick
-- beliefs and knowledge with evidence
-- goals, relationships, voice samples, and history
-- guided question workflow with review before save
+### Level 2 — Shape
 
-### Story workspace
+- entry pages: details, facts as sentences, what a character believes compared with canon, events
+  (*built*); belief editor and pictures on entries (Phase 2.5)
+- history as versions, with "go back to this" (*built*)
+- members and invitations (Phase 2.5)
 
-- arcs, beats, and scene plans
-- typed scene preconditions/postconditions and character-arc state paths
-- reader disclosure/reveal planner, irony map, and spoiler position
-- unresolved threads, Chekhov-debt view, foreshadow/payoff, requirements, and intended changes
-- timeline/narrative-order views
-- readiness indicators based on required world state
+### Level 3 — Plan
 
-### Scene studio
+- the story plan built by interview: arcs, turning points, beats, scenes; an outline as the
+  by-hand view (Phase 2.6)
+- threads, promises, and payoffs; open ones as to-dos (Phase 2.6)
+- scene plans and readiness in plain words (Phase 2.6)
 
-- plan and constraints panel
-- manuscript editor with entity mentions
-- long-running structured prose document with immutable scene/version checkpoints
-- context inspector with pin/exclude controls
-- typed media context cards with authority/visibility/timestamp details and original-versus-caption/transcript delivery controls
-- draft variants and revision comparison
-- consistency findings
-- consistency profile, preflight constraints, and correction proposals
-- story invariant results, scoped suppressions, and postcondition coverage
-- alias/epithet candidate correction with positive/negative resolution feedback
-- extracted mutation review and commit panel
+### Level 4 — Write
 
-### History workspace
+- scene studio: manuscript editor with entry mentions, immutable scene versions, draft variants
+  (Phase 5)
+- what the assistant will use, explained per source, with pin and exclude as the by-hand path
+  (Phase 4)
+- findings as margin notes with evidence, "explain" and "fix" (Phase 5)
+- changes a scene makes to the world, in grouped review (Phase 6)
+- media references with safe previews (Phase 4)
 
-- branch graph
-- revision log
-- mutation and provenance inspector
-- point-in-time query, revision comparison, immutable tags, and evidence-level blame
-- impact preview and compensating revert proposal
-- branch comparison/merge workflow
+### Level 5 — Control
 
-### Story bible and audience exports
+- timelines and world time; points of view, secrets, and reader disclosure; what-ifs (branches)
+  with comparison and merge (Phase 3)
+- types and fields (*built* by hand; by asking Phase 2.5); story rules (Phase 2.7)
+- audits, exports, and reader-safe story bibles (Phases 3 and 7)
+- the raw record: revisions, mutation sets, provenance, schema versions, projection status
+  (*built*, under technical details and Advanced)
 
-- generate a character/location/timeline/recap snapshot at branch, revision, narrative position,
-  and author/reader/character viewpoint
-- preview exactly which propositions and media-derived details are included or withheld
-- share a beta-reader artifact without granting full project viewer access
+Supporting visualisation: a compact neighbourhood graph and timeline views support these screens;
+they are not the primary editor.
 
 ## Frontend technical direction
 
-- Keep React and Vite.
-- Add TypeScript before building product screens.
-- Generate API types/client from OpenAPI.
-- Use a server-state library for caching, retries, and invalidation.
-- Use a routing library with project/branch encoded in routes.
-- Choose an editor that supports decorations/entity mentions without locking canonical text into a proprietary document format.
+- React, Vite, and TypeScript; API types generated from the OpenAPI snapshot; TanStack Query for
+  server state; React Router (all in place).
+- Hand-written CSS on design tokens; no component framework. Fonts are bundled, because the hosted
+  site's content security policy allows only its own origin.
+- WebGL2 for expressive, non-essential visuals (the landing page), always with a static fallback
+  and reduced-motion support; WebGPU only as an enhancement where it is available. No visual may
+  be required to use the product.
+- Choose an editor that supports decorations/entity mentions without locking canonical text into a
+  proprietary document format.
 - Store a versioned structured editor document with deterministic Markdown/plain-text projections unless the canonical format decision selects otherwise.
-- Introduce a graph visualization library only for focused exploration; forms and lists remain primary editing surfaces.
-- Build accessible components and keyboard workflows from the start.
+- Introduce a graph visualization library only for focused exploration.
+- Accessible components and keyboard workflows, checked automatically in the browser tests.
 
 State ownership:
 
@@ -213,6 +211,12 @@ State ownership:
 - no duplicated client-side canonical state
 
 ## UX safeguards
+
+- Every capability has an assistant path and a by-hand path; the by-hand path works with no AI
+  provider and is one action away.
+- Nothing at Levels 1–4 requires choosing a branch, a time, a point of view, or a schema.
+- Internal terms appear only under technical details; author-facing names come from one mapping.
+- The assistant reports what it could not do, and never fills a gap in the story by invention.
 
 - Clearly label draft, proposed, and canonical content.
 - Clearly label local versus user-funded OpenRouter execution and show estimated/actual usage.

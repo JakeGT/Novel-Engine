@@ -60,7 +60,7 @@ def test_vector_store_contract(vector_store: PgVectorStore) -> None:
 
 def test_vector_store_health_false_when_table_missing(disposable_database) -> None:
     with psycopg.connect(disposable_database.psycopg_dsn, autocommit=True) as connection:
-        connection.execute("DROP TABLE vector_documents")
+        connection.execute("DROP TABLE embedding_vectors")
 
     store = PgVectorStore(disposable_database.psycopg_dsn, FakeEmbeddingProvider())
     assert store.health() is False
@@ -85,10 +85,11 @@ def test_vector_store_records_embedding_provenance(disposable_database) -> None:
 
     with psycopg.connect(disposable_database.psycopg_dsn) as connection:
         row = connection.execute(
-            "SELECT embedding_model, embedding_version, embedding_dimension, project_id "
-            "FROM vector_documents WHERE id = 'doc_prov'"
+            "SELECT g.model, g.revision, g.dimension, v.project_id, v.task, v.modality "
+            "FROM embedding_vectors v JOIN embedding_generations g ON g.id = v.generation_id "
+            "WHERE v.id = 'doc_prov'"
         ).fetchone()
-    assert row == ("fake-embedder", "7", 384, PROJECT)
+    assert row == ("fake-embedder", "7", 384, PROJECT, "document", "text")
 
 
 def test_vector_store_isolates_workspaces(vector_store: PgVectorStore) -> None:

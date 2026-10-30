@@ -1,0 +1,57 @@
+# Prompt snapshot. Change it only with: uv run python -m tests.prompts.snapshots --update
+id: character-questions
+version: 2
+
+##### case: a character
+
+=== system ===
+You help an author develop a character for a novel. Ask specific, concrete questions whose answers establish stable facts: appearance, personality, relationships, where they are, what they own, what groups they belong to, and what they believe (including things they may be wrong about). Do not ask about anything the context already settles.
+
+=== user ===
+Character: Mara Voss (id ent_mara)
+Also known as: the Fox
+
+##### answer shape
+{
+  "$defs": {
+    "CharacterQuestion": {
+      "properties": {
+        "category": {
+          "description": "e.g. appearance, personality, relationships, beliefs",
+          "title": "Category",
+          "type": "string"
+        },
+        "id": {
+          "description": "Short unique identifier, e.g. personality_1",
+          "title": "Id",
+          "type": "string"
+        },
+        "question": {
+          "title": "Question",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "question",
+        "category"
+      ],
+      "title": "CharacterQuestion",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "questions": {
+      "items": {
+        "$ref": "#/$defs/CharacterQuestion"
+      },
+      "title": "Questions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "questions"
+  ],
+  "title": "CharacterQuestionSheet",
+  "type": "object"
+}

@@ -129,6 +129,12 @@ Every delegated action records the policy version and why approval was or was no
 
 - Telemetry is off by default and opt-in when implemented.
 - Error monitoring (Sentry) is opt-in via a configured DSN; when enabled it sends scrubbed, content-free events (no request bodies, cookies, sensitive headers, user PII, or breadcrumbs), and the web client uses a separate `VITE_` variable.
+  Revised 2026-10-11: the hosted site takes both DSNs from secret files; the server hands the
+  browser its DSN and release in the page it serves, so nothing is built into the image; events
+  carry the deployed commit as their release and the internal ids of the person, workspace and
+  project; the browser side switches off every data-collection category of its SDK and drops
+  breadcrumbs, and is covered by a browser test against a stand-in. Source maps are built but
+  kept out of the site, with an upload script that has not been run against a real project.
 - Logs are metadata-first and omit manuscript/prompt content by default.
 - Imports and exports remain local unless the author selects an external integration.
 - The context preview identifies what will be sent to a configured remote model.
@@ -170,3 +176,72 @@ Before a public release, add:
 - local OpenAI-compatible and OpenRouter adapter contract tests
 - privacy/outbound-connection documentation review
 - license, notices, contribution, and security documents present
+
+## Revision 2026-10-10: first run and the provider key
+
+The product is now assistant-first (ADR-017), which raises a conflict this document did not have
+to resolve: "the portfolio instance never supplies a platform key" means a newly invited author
+cannot use the main way in until they have obtained an OpenRouter key.
+
+Until the owner decides otherwise, the position is unchanged, and the mitigation is the first-run
+work in Phase 2.5: provider setup is a guided first step, with the cost of a typical first session
+stated; the by-hand path is fully usable in the meantime; and the assistant explains, wherever it
+appears, why it is unavailable and how to connect a key. A capped starter allowance funded by the
+hosted instance is the alternative; it would revise ADR-008 and add cost exposure, and is listed
+as an owner decision in [`audit-2026-10-10.md`](audit-2026-10-10.md).
+
+Status: the hosted deployment went live on 2026-10-10 for the owner (`deploy/hosted`).
+
+## Revision 2026-10-10 (second): one gate, then onboarding
+
+The owner decided, following the platform guide (`platform-guide.md`, section 4): **who may use
+Novel Engine is decided once, by Authentik.** A person who completes sign-in gets an account and is
+onboarded: they name a first story and a library (a workspace of their own) and land in it. There
+is no second, in-product gate.
+
+- A signed-in person who owns no workspace may create one (`ALLOW_PERSONAL_WORKSPACE`, on by
+  default). Creating more than one is still limited to platform admins unless
+  `ALLOW_WORKSPACE_SELF_CREATION` is set.
+- Workspace invitations remain, for sharing a workspace with someone, not for admission.
+- This supersedes the statements in this document, ADR-009, and the Phase 1 evidence that hosted
+  workspaces can only be created by a platform admin.
+- Hosted sessions last 12 hours on the platform deployment, because Authentik sends no notice when
+  access is removed.
+- Sign-out returns to the product's front page: the ID token from sign-in is kept with the session
+  (never exposed by the API) and sent to the provider at sign-out, which is the only form in which
+  Authentik accepts a return address.
+
+The provider-key question is settled the same way for now: bring-your-own-key stays, and onboarding
+ends on the project's first screen with a prompt to connect a key; everything works by hand until
+then.
+
+Not adopted from the platform guide, by the owner's decision that gaps which are not security
+issues may stay: a `/healthz` alias, port 8080, `platform-admin` group membership as the source of
+admin rights (a configured list of user ids is used instead), and the platform's visual style
+(Novel Engine keeps its own). Known and left: the two database password files are mode `0444`
+inside an owner-only directory, and nothing prevents local single-user mode being configured with
+`APP_ENV=production` on a self-hosted install.
+
+## Revision 2026-10-10 (third): more providers, and a model chosen per workspace
+
+Bring-your-own-key is no longer OpenRouter only. A workspace may connect one key each for
+OpenRouter, Anthropic, OpenAI, Google, xAI, Mistral, and DeepSeek, and an owner chooses which
+provider and which model the assistant uses (`workspace_ai_settings`, `/api/v1/ai/*`, the Assistant
+page). Previously the model was one site-wide setting.
+
+- Every provider is reached through its OpenAI-compatible endpoint, so there is one adapter
+  (`backend/domain/providers.py` is the catalogue). Where a provider enforces a JSON schema it is
+  asked to; where it does not (Anthropic's and DeepSeek's compatible endpoints), or refuses for
+  the chosen model, the required shape is described in the prompt and the answer is validated by
+  the server before use.
+- Model names are not hard-coded as a list. The Assistant page reads the models the workspace's
+  key can use from the provider, and a name can also be typed. Three providers carry a suggested
+  model; for the others (OpenAI, Google, xAI) the owner must pick one before the assistant works.
+- With no explicit choice, the newest connected key is used with its suggested model. Removing
+  the chosen key falls back the same way.
+- A self-hosted copy is unchanged: the operator sets `AI_PROVIDER`, `AI_MODEL`, `AI_BASE_URL`.
+- **Not verified:** no provider, including OpenRouter, has been called for real from this
+  codebase. Addresses and suggested model names are from the providers' public documentation as
+  known when written. Anthropic describes its compatible endpoint as intended for evaluation; a
+  native adapter would be the sturdier choice if Anthropic direct becomes the main route.
+

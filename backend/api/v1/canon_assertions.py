@@ -13,10 +13,11 @@ from pydantic import BaseModel, ConfigDict
 
 from backend.api.auth import get_project_scope, require_project_scope
 from backend.api.dependencies import get_canon_assertion_service
-from backend.domain.canon.assertions import Belief, Fact
-from backend.domain.canon.events import Event, EventParticipant
+from backend.domain.canon.assertions import Belief, Fact, FactVisibility
+from backend.domain.canon.events import Event, EventClaim, EventParticipant
 from backend.domain.canon.propositions import Proposition
 from backend.domain.identity import AccessScope
+from backend.domain.worldtime import WorldTime
 from backend.services.canon_assertion_service import CanonAssertionService
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["canon-assertions"])
@@ -41,11 +42,32 @@ class AssertFactRequest(BaseModel):
     confidence: float = 1.0
     valid_from: datetime | None = None
     valid_until: datetime | None = None
+    starts: WorldTime | None = None
+    ends: WorldTime | None = None
+    visibility: FactVisibility | None = None
+
+
+class AmendFactRequest(BaseModel):
+    """When a fact is true, and who may know it. Fields left out stay as they are."""
+
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int
+    starts: WorldTime | None = None
+    ends: WorldTime | None = None
+    visibility: FactVisibility | None = None
 
 
 class CloseRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int
+
+
+class RetireRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int
+    # Retirement is destructive: without this explicit acknowledgement the request
+    # is parked as a proposal awaiting review (409 ``review_required``).
+    acknowledge_high_impact: bool = False
 
 
 class BeliefRequest(BaseModel):
@@ -67,6 +89,7 @@ class EventRequest(BaseModel):
     cause_ids: list[str] = []
     outcome_ids: list[str] = []
     world_position: str | None = None
+    when: WorldTime | None = None
 
 
 class AmendEventRequest(BaseModel):
@@ -74,6 +97,8 @@ class AmendEventRequest(BaseModel):
     expected_revision: int
     name: str | None = None
     world_position: str | None = None
+    # An unknown time clears it; leaving it out keeps it.
+    when: WorldTime | None = None
 
 
 class FactModel(BaseModel):
@@ -89,6 +114,9 @@ class FactModel(BaseModel):
     closed_revision: int | None = None
     valid_from: datetime | None = None
     valid_until: datetime | None = None
+    starts: WorldTime | None = None
+    ends: WorldTime | None = None
+    visibility: FactVisibility = FactVisibility.ORDINARY
 
 
 class BeliefModel(BaseModel):
@@ -104,6 +132,29 @@ class BeliefModel(BaseModel):
     closed_revision: int | None = None
 
 
+class EventClaimModel(BaseModel):
+    """What a claim says (never a fact), how it is said, and the scene it is said in."""
+
+    subject_id: str
+    predicate: str
+    object: dict
+    # states, suggests, wonders or denies.
+    modality: str
+    scene_id: str | None = None
+
+
+def _claim_model(claim: EventClaim | None) -> EventClaimModel | None:
+    if claim is None:
+        return None
+    return EventClaimModel(
+        subject_id=claim.proposition.subject_id,
+        predicate=claim.proposition.predicate,
+        object=claim.proposition.object.model_dump(mode="json"),
+        modality=claim.modality,
+        scene_id=claim.scene_id,
+    )
+
+
 class EventModel(BaseModel):
     id: str
     kind: str
@@ -113,6 +164,12 @@ class EventModel(BaseModel):
     cause_ids: list[str]
     outcome_ids: list[str]
     world_position: str | None = None
+    when: WorldTime | None = None
+    # On an event of kind "claim": what is said, how, and in which scene (KNW-005).
+    claim: EventClaimModel | None = None
+    # The scene it happens in, and what an inference was worked out from (KNW-002).
+    scene_id: str | None = None
+    premises: list[str] = []
     provenance_id: str
     created_revision: int
 
@@ -131,6 +188,9 @@ def _fact_model(fact: Fact) -> FactModel:
         closed_revision=fact.closed_revision,
         valid_from=fact.valid_from,
         valid_until=fact.valid_until,
+        starts=fact.starts,
+        ends=fact.ends,
+        visibility=fact.visibility,
     )
 
 
@@ -159,6 +219,10 @@ def _event_model(event: Event) -> EventModel:
         cause_ids=event.cause_ids,
         outcome_ids=event.outcome_ids,
         world_position=event.world_position,
+        when=event.when,
+        claim=_claim_model(event.claim),
+        scene_id=event.scene_id,
+        premises=list(event.premises),
         provenance_id=event.provenance_id,
         created_revision=event.created_revision,
     )
@@ -173,6 +237,7 @@ async def list_facts(
     include_closed: bool = False,
     subject_id: str | None = None,
     predicate: str | None = None,
+    object_entity_id: str | None = None,
     limit: int = Query(50, le=200),
     offset: int = 0,
     scope: AccessScope = Depends(get_project_scope),
@@ -185,6 +250,7 @@ async def list_facts(
         include_closed=include_closed,
         subject_id=subject_id,
         predicate=predicate,
+        object_entity_id=object_entity_id,
         limit=limit,
         offset=offset,
     )
@@ -208,6 +274,32 @@ async def assert_fact(
         confidence=body.confidence,
         valid_from=body.valid_from,
         valid_until=body.valid_until,
+        starts=body.starts,
+        ends=body.ends,
+        visibility=body.visibility,
+    )
+    response.headers["ETag"] = f'"{result.revision}"'
+    return _fact_model(fact)
+
+
+@router.post("/facts/{fact_id}/amend")
+async def amend_fact(
+    project_id: str,
+    fact_id: str,
+    body: AmendFactRequest,
+    response: Response,
+    scope: AccessScope = Depends(require_project_scope),
+    service: CanonAssertionService = Depends(get_canon_assertion_service),
+) -> FactModel:
+    result, fact = await service.amend_fact(
+        scope,
+        scope.workspace_id or "",
+        project_id,
+        fact_id,
+        expected_revision=body.expected_revision,
+        starts=body.starts,
+        ends=body.ends,
+        visibility=body.visibility,
     )
     response.headers["ETag"] = f'"{result.revision}"'
     return _fact_model(fact)
@@ -342,6 +434,7 @@ async def close_belief(
 async def list_events(
     project_id: str,
     include_retired: bool = False,
+    entity_id: str | None = None,
     limit: int = Query(50, le=200),
     offset: int = 0,
     scope: AccessScope = Depends(get_project_scope),
@@ -352,6 +445,7 @@ async def list_events(
         scope.workspace_id or "",
         project_id,
         include_retired=include_retired,
+        entity_id=entity_id,
         limit=limit,
         offset=offset,
     )
@@ -377,6 +471,7 @@ async def create_event(
         cause_ids=body.cause_ids,
         outcome_ids=body.outcome_ids,
         world_position=body.world_position,
+        when=body.when,
         expected_revision=body.expected_revision,
     )
     response.headers["ETag"] = f'"{result.revision}"'
@@ -410,6 +505,7 @@ async def amend_event(
         event_id,
         name=body.name,
         world_position=body.world_position,
+        when=body.when,
         expected_revision=body.expected_revision,
     )
     response.headers["ETag"] = f'"{result.revision}"'
@@ -420,7 +516,7 @@ async def amend_event(
 async def retire_event(
     project_id: str,
     event_id: str,
-    body: CloseRequest,
+    body: RetireRequest,
     response: Response,
     scope: AccessScope = Depends(require_project_scope),
     service: CanonAssertionService = Depends(get_canon_assertion_service),
@@ -431,6 +527,7 @@ async def retire_event(
         project_id,
         event_id,
         expected_revision=body.expected_revision,
+        acknowledge_high_impact=body.acknowledge_high_impact,
     )
     response.headers["ETag"] = f'"{result.revision}"'
     return _event_model(event)

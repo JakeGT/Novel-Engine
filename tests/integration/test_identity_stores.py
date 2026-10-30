@@ -101,6 +101,23 @@ async def test_login_attempt_is_consumed_once(session_factory) -> None:
 
 
 @pytest.mark.asyncio
+async def test_login_attempt_keeps_fresh_and_return_to(session_factory) -> None:
+    store = PostgresLoginAttemptStore(session_factory)
+    await store.create(
+        state="s3",
+        nonce="n",
+        code_verifier="v",
+        redirect_uri="https://x/cb",
+        ttl_seconds=600,
+        fresh=True,
+        return_to="/site",
+    )
+    attempt = await store.consume("s3")
+    assert attempt is not None
+    assert attempt.fresh is True and attempt.return_to == "/site"
+
+
+@pytest.mark.asyncio
 async def test_login_attempt_expires(session_factory) -> None:
     store = PostgresLoginAttemptStore(session_factory)
     await store.create(
@@ -119,3 +136,32 @@ async def test_unlink_identity_removes_link_but_keeps_user(session_factory) -> N
     assert await store.get_user_for_identity(ISSUER, "unlink-subject") is None
     assert await store.get_user(user_id) is not None
     assert await store.unlink_identity(ISSUER, "unlink-subject") is False
+
+
+@pytest.mark.asyncio
+async def test_a_replaced_session_is_known_and_lapses_soon_without_being_extended(
+    session_factory,
+) -> None:
+    from backend.core.security import hash_token
+    from backend.domain.identity import utcnow
+
+    user_id = await _make_user(session_factory, "rotating-user")
+    store = PostgresSessionStore(session_factory)
+    old = await store.create(user_id=user_id, ttl_seconds=3600, csrf_token="csrf")
+    assert await store.has_successor(old.id) is False
+
+    new = await store.create(
+        user_id=user_id, ttl_seconds=3600, csrf_token="csrf", rotated_from=hash_token(old.id)
+    )
+    await store.expire_within(old.id, 60)
+
+    assert await store.has_successor(old.id) is True
+    assert await store.has_successor(new.id) is False
+    kept = await store.get(old.id)
+    assert kept is not None and (kept.expires_at - utcnow()).total_seconds() <= 60
+    # Asking again for a longer grace never lengthens it.
+    await store.expire_within(old.id, 3000)
+    again = await store.get(old.id)
+    assert again is not None and again.expires_at == kept.expires_at
+    untouched = await store.get(new.id)
+    assert untouched is not None and (untouched.expires_at - utcnow()).total_seconds() > 3000

@@ -189,3 +189,39 @@ Maintain versioned fixtures for:
 - multimodal consistency cases with authoritative and misleading media hard negatives
 
 Run deterministic contract tests on every change. Run provider evaluations explicitly, record cost/model/date, and compare against an approved baseline before prompt or model migrations.
+
+## Revision 2026-10-10: the assistant's tasks
+
+"AI participates in bounded, inspectable tasks" stands, and conversation is now one of them. Each
+assistant task is bounded, versioned, schema-constrained, and ends in a proposal:
+
+| Task | Input | Output | Status |
+| --- | --- | --- | --- |
+| Questions for a description | description, optional type/name, existing entries | 5–8 questions | Built |
+| Draft from a description | description, answers, vocabulary, existing entries | entries, details, facts, beliefs | Built |
+| Fill in an entry | the entry, what is recorded, answers | details, names, facts | Built |
+| Start from a premise | a paragraph | starter world + open questions | Phase 2.5 |
+| Suggest links | an entry, semantic candidates | candidate facts for confirmation | Phase 2.5 |
+| Revise a proposed change | the change, an instruction | a new revision of that operation | Phase 2.5 |
+| Change by instruction (God Hand) | any instruction, tool access to all canon | every implied operation of any kind + consequences + questions | Phase 2.5 |
+| Planning interview | premise, bible, plan so far | arcs, beats, scene plans, open items | Phase 2.6 |
+| What happens next | plan and bible | 2–3 directions with consequences | Phase 2.6 |
+| Draft a rule | a sentence | invariant + caught/not-caught examples | Phase 2.7 |
+| Ask canon | a question | an answer with sources | Phase 2.7 |
+
+Rules that apply to all of them:
+
+- Output formats must convert to a strict JSON schema; free-form objects are not accepted by
+  providers (found 2026-10-10; enforced by a test for the creation format).
+- The hosted default model is configured as an OpenRouter id that supports structured output.
+- Model text is never trusted: every item is typed and validated, and what does not fit is
+  discarded with a reason shown to the author.
+- A missing field in a plan or a scene is a question to the author, not a pipeline failure.
+- Duplicate avoidance today is normalized name and alias within a type. Semantic resolution is
+  Phase 2.5 and produces suggestions only ("Semantic retrieval suggests candidates; it never
+  decides truth" is unchanged).
+
+Additions to the evaluation programme: question usefulness (answered rate, skipped rate),
+drafted-entry and drafted-link precision/recall, duplicate rate, kept-rate of drafted changes,
+plan groundedness (share of plan items that reference real entries), and invention rate (plan or
+bible items not supported by anything the author wrote).

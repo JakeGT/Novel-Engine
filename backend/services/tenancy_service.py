@@ -8,6 +8,7 @@ outcomes only (never raw invitation or session tokens).
 from __future__ import annotations
 
 import time
+from typing import Protocol
 
 from backend.core.config import Settings
 from backend.core.security import generate_token, hash_token
@@ -28,6 +29,15 @@ from backend.ports import (
     TenancyStorePort,
     WorkspacePurgePort,
 )
+
+
+class MemberKeys(Protocol):
+    """Access keys a member holds (ADR-024): withdrawn for good when they are removed."""
+
+    async def withdraw_for_member(
+        self, scope: AccessScope, workspace_id: str, user_id: str
+    ) -> list[str]: ...
+
 
 INVITATION_TTL_SECONDS = 60 * 60 * 24 * 7
 ACCEPT_RATE_LIMIT = 10
@@ -58,6 +68,20 @@ class TenancyService:
         self._accept_rate_limit = accept_rate_limit
         self._accept_rate_window_seconds = accept_rate_window_seconds
         self._accept_hits: dict[str, list[float]] = {}
+        self._member_keys: MemberKeys | None = None
+        self._member_devices: MemberKeys | None = None
+        self._member_threads: MemberKeys | None = None
+
+    def attach_member_keys(self, keys: MemberKeys) -> None:
+        self._member_keys = keys
+
+    def attach_member_devices(self, devices: MemberKeys) -> None:
+        """Computers a member connected (SCN-002A): disconnected when they are removed."""
+        self._member_devices = devices
+
+    def attach_member_threads(self, threads: MemberKeys) -> None:
+        """The assistant threads a member kept (AST-EXP-017): erased when they are removed."""
+        self._member_threads = threads
 
     async def _revoke_sessions(self, *user_ids: str) -> None:
         """Invalidate active sessions after a privilege change so roles re-evaluate."""
@@ -120,17 +144,38 @@ class TenancyService:
             detail=detail,
         )
 
-    def _authorize_workspace_creation(self, scope: AccessScope) -> None:
-        """Hosted deployments are invitation-gated: only platform admins may create a workspace.
+    async def _authorize_workspace_creation(self, scope: AccessScope) -> None:
+        """Who may create a workspace in a hosted deployment.
 
-        Local mode is a trusted single-user deployment and is always permitted.
+        Platform admins always may. Anyone else may create one workspace of their
+        own (a personal workspace) when that is enabled: the identity provider has
+        already decided they may use the product, so a second gate here would only
+        leave them signed in with nowhere to work. Unlimited self-creation stays a
+        separate, off-by-default setting. Local mode is a trusted single-user
+        deployment and is always permitted.
         """
         settings = self._settings
         if settings is None or not settings.is_hosted or settings.ALLOW_WORKSPACE_SELF_CREATION:
             return
         if scope.actor_user_id in settings.platform_admin_user_ids:
             return
-        raise ForbiddenError("Workspace creation requires platform administrator provisioning.")
+        if settings.ALLOW_PERSONAL_WORKSPACE and not await self._owns_a_workspace(
+            scope.actor_user_id
+        ):
+            return
+        raise ForbiddenError(
+            "You already have a workspace of your own. Ask a platform administrator if you "
+            "need another."
+            if settings.ALLOW_PERSONAL_WORKSPACE
+            else "Workspace creation requires platform administrator provisioning."
+        )
+
+    async def _owns_a_workspace(self, user_id: str) -> bool:
+        for workspace in await self._store.list_workspaces_for_user(user_id):
+            membership = await self._store.get_membership(workspace.id, user_id)
+            if membership is not None and membership.role is Role.OWNER:
+                return True
+        return False
 
     async def list_workspaces(self, scope: AccessScope) -> list[Workspace]:
         return await self._store.list_workspaces_for_user(scope.actor_user_id)
@@ -140,7 +185,7 @@ class TenancyService:
         return await self._authorize(scope, workspace_id, Permission.WORKSPACE_READ)
 
     async def create_workspace(self, scope: AccessScope, *, slug: str, name: str) -> Workspace:
-        self._authorize_workspace_creation(scope)
+        await self._authorize_workspace_creation(scope)
         workspace = await self._store.create_workspace(slug=slug, name=name)
         await self._store.add_membership(
             workspace_id=workspace.id, user_id=scope.actor_user_id, role=Role.OWNER
@@ -214,6 +259,33 @@ class TenancyService:
         await self._authorize(scope, workspace_id, Permission.WORKSPACE_READ)
         return await self._store.list_memberships(workspace_id)
 
+    async def list_member_profiles(
+        self, scope: AccessScope, workspace_id: str
+    ) -> list[tuple[Membership, str | None, str | None]]:
+        """Members with the name to show for each, and their email for those who manage access.
+
+        Any member may see who else is in the workspace by name. Email addresses
+        are shown only to members who can invite, because they are how an
+        invitation is addressed.
+        """
+        members = await self.list_members(scope, workspace_id)
+        try:
+            await self._authorize(scope, workspace_id, Permission.MEMBER_INVITE)
+            show_email = True
+        except ForbiddenError:
+            show_email = False
+        profiles: list[tuple[Membership, str | None, str | None]] = []
+        for member in members:
+            user = (
+                await self._identity_store.get_user(member.user_id)
+                if self._identity_store is not None
+                else None
+            )
+            name = user.display_name if user is not None else None
+            email = user.email if user is not None and show_email else None
+            profiles.append((member, name, email))
+        return profiles
+
     async def set_role(
         self, scope: AccessScope, workspace_id: str, user_id: str, role: Role
     ) -> Membership:
@@ -230,6 +302,10 @@ class TenancyService:
             target_id=user_id,
             detail={"role": role.value},
         )
+        if self._member_devices is not None and not role_allows(role, Permission.WORKSPACE_ADMIN):
+            # Only owners and admins may connect a computer: one who is no longer either
+            # keeps none (SCN-002A).
+            await self._member_devices.withdraw_for_member(scope, workspace_id, user_id)
         return membership
 
     async def remove_member(self, scope: AccessScope, workspace_id: str, user_id: str) -> bool:
@@ -244,6 +320,14 @@ class TenancyService:
                 target_type="membership",
                 target_id=user_id,
             )
+            if self._member_keys is not None:
+                # For good: coming back later does not bring a key back (ADR-024).
+                await self._member_keys.withdraw_for_member(scope, workspace_id, user_id)
+            if self._member_devices is not None:
+                await self._member_devices.withdraw_for_member(scope, workspace_id, user_id)
+            if self._member_threads is not None:
+                # Their conversations with the assistant were private to them: erased.
+                await self._member_threads.withdraw_for_member(scope, workspace_id, user_id)
         return removed
 
     async def transfer_ownership(

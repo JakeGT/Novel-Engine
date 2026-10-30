@@ -1,22 +1,29 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import * as Sentry from '@sentry/react'
-import './index.css'
+import '@fontsource-variable/instrument-sans/index.css'
+import '@fontsource-variable/newsreader/opsz.css'
+import '@fontsource-variable/newsreader/opsz-italic.css'
+import './styles/tokens.css'
+import './styles/app.css'
+import './styles/landing.css'
 import App from './App'
+import { CrashScreen } from './components/CrashScreen'
+import { reportReactError, startMonitoring } from './lib/monitoring'
+import { applyInitialTheme } from './lib/theme'
 
-const sentryDsn = import.meta.env.VITE_SENTRY_DSN_WEB
+// Off unless the server handed the page a DSN (see lib/monitoring.ts).
+startMonitoring()
 
-if (sentryDsn) {
-  Sentry.init({
-    dsn: sentryDsn,
-    environment: import.meta.env.MODE,
-    // PII is off by default; do not enable it.
-    tracesSampleRate: 0,
-  })
-}
+applyInitialTheme()
 
-createRoot(document.getElementById('root')!).render(
+createRoot(document.getElementById('root')!, {
+  onUncaughtError: reportReactError,
+  onCaughtError: reportReactError,
+  onRecoverableError: reportReactError,
+}).render(
   <StrictMode>
-    <App />
+    <CrashScreen>
+      <App />
+    </CrashScreen>
   </StrictMode>,
 )

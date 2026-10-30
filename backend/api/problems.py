@@ -8,14 +8,17 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from backend.api.middleware import get_correlation_id
+from backend.domain.archive import ArchiveImportError
 from backend.domain.errors import DomainError
 from backend.domain.identity import IdentityError, IdentityProviderUnavailable
-from backend.domain.journal import HeadConflict, RevisionConflict
+from backend.domain.journal import HeadConflict, MutationNotFound, RevisionConflict
 from backend.domain.operations import OperationValidationError
+from backend.domain.review import IllegalTransition
 from backend.domain.schemas import SchemaCompatibilityError, SchemaGovernanceError
 from backend.domain.tenancy import InvitationNotFound, TenancyError
 from backend.domain.validation import CanonValidationError
-from backend.ports import AIError
+from backend.ports import AIDeviceUnavailableError, AIError
+from backend.services.mutation_service import ReviewRequiredError
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 
@@ -51,17 +54,18 @@ def _problem_response(status: int, body: dict[str, Any]) -> JSONResponse:
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(DomainError)
     async def _handle_domain_error(request: Request, exc: DomainError) -> JSONResponse:
-        return _problem_response(
-            exc.status_code,
-            problem_body(
-                status=exc.status_code,
-                title=exc.title,
-                code=exc.code,
-                detail=exc.detail,
-                field_errors=exc.field_errors,
-                correlation_id=_correlation_id(request),
-            ),
+        body = problem_body(
+            status=exc.status_code,
+            title=exc.title,
+            code=exc.code,
+            detail=exc.detail,
+            field_errors=exc.field_errors,
+            correlation_id=_correlation_id(request),
         )
+        # Extension members never replace the standard ones.
+        extensions = getattr(exc, "extensions", None) or {}
+        body.update({key: value for key, value in extensions.items() if key not in body})
+        return _problem_response(exc.status_code, body)
 
     @app.exception_handler(RequestValidationError)
     async def _handle_request_validation(
@@ -94,6 +98,23 @@ def register_exception_handlers(app: FastAPI) -> None:
                 title="HTTP error",
                 code=f"http_{exc.status_code}",
                 detail=str(exc.detail),
+                correlation_id=_correlation_id(request),
+            ),
+        )
+
+    @app.exception_handler(AIDeviceUnavailableError)
+    async def _handle_device_unavailable(
+        request: Request, exc: AIDeviceUnavailableError
+    ) -> JSONResponse:
+        # The author's own computer did not answer (SCN-002A). The message is written by
+        # this site in plain words, never the model server's own text.
+        return _problem_response(
+            503,
+            problem_body(
+                status=503,
+                title="Your computer did not answer",
+                code="device_unavailable",
+                detail=str(exc),
                 correlation_id=_correlation_id(request),
             ),
         )
@@ -203,13 +224,75 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(OperationValidationError)
     @app.exception_handler(CanonValidationError)
     async def _handle_operation_validation(request: Request, exc: Exception) -> JSONResponse:
+        detail = str(exc)
+        # A story rule the author set to block says so in its own words (CON-015).
+        if isinstance(exc, CanonValidationError):
+            blocking = exc.report.blocking
+            if blocking and all(item.code.startswith("rule:") for item in blocking):
+                detail = " ".join(dict.fromkeys(item.message for item in blocking))
         return _problem_response(
             422,
             problem_body(
                 status=422,
                 title="Mutation validation failed",
                 code="validation_error",
+                detail=detail,
+                correlation_id=_correlation_id(request),
+            ),
+        )
+
+    @app.exception_handler(ReviewRequiredError)
+    async def _handle_review_required(request: Request, exc: ReviewRequiredError) -> JSONResponse:
+        return _problem_response(
+            409,
+            problem_body(
+                status=409,
+                title="Review required",
+                code="review_required",
                 detail=str(exc),
+                field_errors={
+                    "mutation_id": exc.mutation_id,
+                    "reasons": ",".join(exc.reasons),
+                },
+                correlation_id=_correlation_id(request),
+            ),
+        )
+
+    @app.exception_handler(IllegalTransition)
+    async def _handle_illegal_transition(request: Request, exc: IllegalTransition) -> JSONResponse:
+        return _problem_response(
+            409,
+            problem_body(
+                status=409,
+                title="Invalid mutation state",
+                code="invalid_state",
+                detail=str(exc),
+                correlation_id=_correlation_id(request),
+            ),
+        )
+
+    @app.exception_handler(ArchiveImportError)
+    async def _handle_import_state(request: Request, exc: ArchiveImportError) -> JSONResponse:
+        return _problem_response(
+            409,
+            problem_body(
+                status=409,
+                title="Import cannot be changed",
+                code="invalid_state",
+                detail=str(exc),
+                correlation_id=_correlation_id(request),
+            ),
+        )
+
+    @app.exception_handler(MutationNotFound)
+    async def _handle_mutation_not_found(request: Request, exc: MutationNotFound) -> JSONResponse:
+        return _problem_response(
+            404,
+            problem_body(
+                status=404,
+                title="Not found",
+                code="not_found",
+                detail="Mutation or operation not found.",
                 correlation_id=_correlation_id(request),
             ),
         )

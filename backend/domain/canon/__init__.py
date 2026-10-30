@@ -12,6 +12,7 @@ from backend.domain.canon.assertions import (
     Belief,
     Fact,
     FactStatus,
+    FactVisibility,
     TruthAgreement,
     truth_agreement,
 )
@@ -80,6 +81,7 @@ __all__ = [
     "retire_entity",
     "ensure_active_reference",
     "FactStatus",
+    "FactVisibility",
     "Fact",
     "Belief",
     "TruthAgreement",

@@ -9,6 +9,7 @@ Deterministic tests live here. The suite is organized by layer:
 | `contract/` | `contract` | In-process API and repository contract tests. |
 | `integration/` | `integration` | Disposable PostgreSQL/Neo4j containers; owns and destroys its data. |
 | `e2e/` | `e2e` | Complete user workflows against disposable services. |
+| `prompts/` | `unit` | Every prompt the app sends, built from fixed input and compared with its stored snapshot (`__snapshots__/`). After raising a prompt's version: `uv run python -m tests.prompts.snapshots --update`. |
 
 Live model-provider tests are marked `llm` and are excluded from ordinary CI.
 

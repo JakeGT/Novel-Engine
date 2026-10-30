@@ -111,6 +111,15 @@ jobs:
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile --store-dir "$PNPM_STORE_DIR"
 
+      # The committed client types must match the committed OpenAPI contract.
+      - name: Check generated API types for drift
+        run: |
+          pnpm exec openapi-typescript ../tests/contract/openapi_snapshot.json -o "$RUNNER_TEMP/schema.ts"
+          diff -u src/api/schema.ts "$RUNNER_TEMP/schema.ts"
+
+      - name: Audit production frontend dependencies
+        run: pnpm audit --prod --audit-level high
+
       - name: Lint frontend
         run: pnpm run lint
 
@@ -184,3 +193,102 @@ jobs:
 
       - name: Run integration tests
         run: uv run --locked pytest -m integration -q
+
+  e2e-browser:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.0-pg17
+        env:
+          POSTGRES_USER: novel
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: novel_engine
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U novel -d novel_engine"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      neo4j:
+        image: neo4j:5.26.0
+        env:
+          NEO4J_AUTH: neo4j/password
+        ports:
+          - 7687:7687
+        options: >-
+          --health-cmd "cypher-shell -u neo4j -p password 'RETURN 1'"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 30
+    env:
+      APP_ENV: test
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: novel
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: novel_engine
+      NEO4J_URI: bolt://localhost:7687
+      NEO4J_TEST_URI: bolt://localhost:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: password
+      pnpm_config_store_dir: ${{ github.workspace }}/.cache/pnpm-store
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: "0.11.16"
+          enable-cache: true
+
+      - name: Install locked Python dependencies
+        run: uv sync --locked
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.26.0
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install locked frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile --store-dir "$PNPM_STORE_DIR"
+
+      - name: Install the end-to-end browser
+        working-directory: frontend
+        run: pnpm exec playwright install --with-deps chromium
+
+      # The launcher creates and drops its own disposable database and applies
+      # the graph migrations to the service above.
+      - name: Run the browser end-to-end workflow
+        working-directory: frontend
+        run: pnpm exec playwright test
+
+      # Drafting and checking need a model: a local stand-in with set answers, never a provider.
+      - name: Run the browser tests that need a model
+        working-directory: frontend
+        run: pnpm exec playwright test --config playwright.model.config.ts
+
+      - name: Upload end-to-end traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-traces
+          path: |
+            frontend/test-results
+            frontend/test-results-model
+          if-no-files-found: ignore

@@ -89,6 +89,7 @@ class OIDCIdentityProvider:
         nonce: str,
         code_challenge: str,
         redirect_uri: str,
+        fresh: bool = False,
     ) -> str:
         discovery = await self._discover()
         params = {
@@ -101,6 +102,11 @@ class OIDCIdentityProvider:
             "code_challenge": code_challenge,
             "code_challenge_method": "S256",
         }
+        if fresh:
+            # OpenID Connect Core 1.0 section 3.1.2.1: ask the provider to authenticate
+            # the person again instead of reusing its own session.
+            params["prompt"] = "login"
+            params["max_age"] = "0"
         return f"{discovery['authorization_endpoint']}?{urlencode(params)}"
 
     async def _jwks_document(self, *, force: bool = False) -> dict[str, Any]:
@@ -147,11 +153,18 @@ class OIDCIdentityProvider:
         if claims.get("nonce") != expected_nonce:
             raise InvalidIdentityToken("ID token nonce mismatch")
 
+        raw_auth_time = claims.get("auth_time")
+        auth_time = (
+            int(raw_auth_time)
+            if isinstance(raw_auth_time, (int, float)) and not isinstance(raw_auth_time, bool)
+            else None
+        )
         return IdentityClaims(
             issuer=str(claims["iss"]),
             subject=str(claims["sub"]),
             email=claims.get("email"),
             display_name=claims.get("name") or claims.get("preferred_username"),
+            auth_time=auth_time,
         )
 
     async def exchange_code(
@@ -183,7 +196,8 @@ class OIDCIdentityProvider:
         id_token = response.json().get("id_token")
         if not id_token:
             raise InvalidIdentityToken("token response did not include an id_token")
-        return await self._validate_id_token(id_token, expected_nonce)
+        claims = await self._validate_id_token(id_token, expected_nonce)
+        return claims.model_copy(update={"id_token": id_token})
 
     async def logout_url(
         self,
@@ -199,9 +213,16 @@ class OIDCIdentityProvider:
         endpoint = discovery.get("end_session_endpoint")
         if not endpoint:
             return post_logout_redirect_uri
-        params: dict[str, str] = {"post_logout_redirect_uri": post_logout_redirect_uri}
-        if id_token_hint:
-            params["id_token_hint"] = id_token_hint
+        if not id_token_hint:
+            # A return address is only honoured alongside the ID token that proves
+            # whose session is ending; Authentik answers 400 to one sent on its own
+            # (with or without a client id). Without a token (a session from before
+            # tokens were kept) the provider ends the session on its own page.
+            return str(endpoint)
+        params: dict[str, str] = {
+            "post_logout_redirect_uri": post_logout_redirect_uri,
+            "id_token_hint": id_token_hint,
+        }
         if state:
             params["state"] = state
         return f"{endpoint}?{urlencode(params)}"

@@ -1,6 +1,6 @@
 # Phase 1 exit evidence
 
-- Status: Evidence collected; project-owner acceptance, a clean-host deployment rehearsal, and the first hosted Phase 1 CI run pending
+- Status: Accepted by the project owner on 2026-10-09 (recorded against commit `02ad806` on `phase-2-closure`). A clean-host deployment rehearsal, the first hosted CI run, and the live Authentik browser round trip remain pending.
 - Owner: project owner or designated technical lead
 - Branch: `main` (Phase 0 merged as `8d7a599`; Phase 1 implemented on top)
 - Date: 2026-10-08

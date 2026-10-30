@@ -16,6 +16,7 @@ def test_canon_scope_migration_is_registered() -> None:
         "0001_initial_graph_schema",
         "0002_entity_scope_identity",
         "0003_canon_scope_identity",
+        "0004_canon_projection_labels",
     ]
     canon = next(m for m in NEO4J_MIGRATIONS if m.id == "0003_canon_scope_identity")
     joined = " ".join(canon.statements)
@@ -25,7 +26,7 @@ def test_canon_scope_migration_is_registered() -> None:
 
 
 def test_postgres_head_is_canon_journal() -> None:
-    assert postgres_head_revision() == "0018_commit_integrity"
+    assert postgres_head_revision() == "0063_site_search_setup"
 
 
 def test_graph_layer_never_uses_elementid() -> None:

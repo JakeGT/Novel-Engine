@@ -168,3 +168,33 @@ async def test_finalize_is_idempotent_and_writes_one_outbox_message() -> None:
     outbox = await journal.list_outbox(workspace_id=WS, project_id=PROJECT)
     assert len(outbox) == 1
     assert outbox[0].idempotency_key == "commit:cmt-1"
+
+
+@pytest.mark.asyncio
+async def test_pending_outbox_is_found_however_many_were_delivered_before() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from backend.domain.journal import OutboxMessage
+    from tests.doubles import InMemoryCanonJournal
+
+    journal = InMemoryCanonJournal()
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    for number in range(150):
+        await journal.append_outbox(
+            OutboxMessage(
+                id=f"m{number}",
+                topic="canon.commit",
+                workspace_id="w",
+                project_id="p",
+                branch_id="b",
+                revision=number + 1,
+                payload={},
+                idempotency_key=f"k{number}",
+                created_at=start + timedelta(seconds=number),
+            )
+        )
+        if number < 140:
+            await journal.mark_outbox_published(message_id=f"m{number}")
+    pending = await journal.list_outbox(workspace_id="w", project_id="p", pending_only=True)
+    assert [m.id for m in pending] == [f"m{n}" for n in range(140, 150)]
+    assert await journal.projects_with_pending_outbox() == [("w", "p")]

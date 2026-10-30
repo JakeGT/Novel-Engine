@@ -1,0 +1,157 @@
+# Search by meaning off, behind, or changing model
+
+Finding passages and pictures by meaning uses a derived search index of vectors, kept in
+*generations*: one per model setting. Names and links work without it; nothing in the story
+depends on it, and it can always be built again. See ADR-010 (amendment 2026-10-20).
+
+## How you notice
+
+- Readiness says `200 degraded` with "Finding things by meaning is off for now; names and links
+  still work." The detailed answer has a `search_index` check with `active_generation`,
+  `active_model`, `active_dimension`, `active_rows`, `lag` (rows the index in use is missing),
+  and any `building_generation` with its `building_lag`.
+- Its detail says one of:
+  - "The search index in use was built with a different model from the one set for this
+    server." The model setting (`EMBEDDING_PROVIDER` and its settings) was changed and no new
+    index has been switched to yet.
+  - "Nothing has been indexed with the model set for this server yet." A fresh install; it
+    starts with the next writing indexed.
+  - "No search index has been built yet." / "The search index could not be read."
+  - the model's own reason, such as "no model revision is pinned (EMBEDDING_GEMMA_REVISION)" or
+    "the embeddings extra is not installed".
+- `/health/capabilities` shows `search_model`: the configured model, revision, size and what it
+  can read (`text`, `image`).
+
+## What to check
+
+1. `docker compose exec server python -m backend.devtools.embeddings status` (locally:
+   `make reindex-status`). It prints the configured model, the index in use, any build, what
+   each is missing, and whether search works now. Counts and model names only.
+2. Rows per generation, with no content:
+   ```sh
+   docker compose exec -T postgres psql -U novel -d novel_engine -c \
+     "SELECT g.id, g.model, g.dimension, g.state, count(v.id) AS rows
+        FROM embedding_generations g LEFT JOIN embedding_vectors v ON v.generation_id = g.id
+       GROUP BY g.id ORDER BY g.created_at;"
+   ```
+3. The log: `docker compose logs --since 1h server | grep -E 'embedding\.|vectors\.'`.
+   `vectors.not_indexed` with `reason=space_mismatch` means writing was not indexed because the
+   index in use is another model's; `embedding.picture_failed` means a picture was not embedded
+   when it was prepared (the next refresh catches it up).
+
+## What to do
+
+**Changing the model** (for example to EmbeddingGemma 2):
+
+1. Install the extra (`uv sync --locked --extra embeddings`) and pin a revision:
+   `EMBEDDING_PROVIDER=embeddinggemma`, `EMBEDDING_GEMMA_REVISION=<exact commit>`,
+   `EMBEDDING_GEMMA_DIMENSION=512` (or 768; measure first with `make eval-media
+   EVAL_MEDIA_ARGS='--provider embeddinggemma'`). Never float16: `EMBEDDING_DTYPE` is `auto`,
+   `bfloat16` or `float32`.
+2. Restart the server. Search by meaning is now off (the index in use is the old model's); names
+   and links keep working.
+3. Build the new index beside the old: `make reindex` (in Docker:
+   `docker compose exec server python -m backend.devtools.embeddings build`). It can be stopped
+   from another terminal with `make reindex-cancel`; what it made is removed. Add
+   `REINDEX_ARGS=--from-texts` to cut passages from the texts again instead of re-embedding the
+   stored ones.
+4. Switch: `make reindex-activate`. It refuses while rows are missing; finish the build first.
+   `REINDEX_ARGS=--force` switches anyway (only when you accept missing results).
+
+**Using an embedding service instead** (no model on this server; for a small VPS):
+
+There are two ways. Setting the key on the site settings page is the usual one; the server's own
+settings are for an install that cannot use the page.
+
+**On the page (a platform administrator):** open the site settings page, pick a provider (OpenAI,
+Google Gemini, Mistral, Voyage, OpenRouter, or "your own" OpenAI-compatible address), type a model
+and a size, and paste the key. The key is checked against the provider before it is kept (a
+refused key or model is said in plain words; an address that answers but is not an embedding
+service is refused; a provider that cannot be reached is kept as "unchecked"), then sealed and
+never shown again — only the last four characters and when it was set. Changing the provider or
+the address needs the key typed again, and needs a sign-in within the last 15 minutes. Saving a
+local address with no key removes a key sealed for another provider or host, so the page never
+claims a key is in use when it is not. The provider, model, size, whether the check passed and the
+host are logged (`site.search_setup_changed`), never the key. Then "Build search index" on the
+page builds the new index in the background and switches to it once nothing is missing; a build
+that fails is logged as `site.search_build_failed` (error type only), and one stopped by the
+person as `site.search_build_stopped`.
+
+**In the server's settings:** set `EMBEDDING_PROVIDER=api` and `EMBEDDING_API_PROVIDER` (the
+provider's table id), then any of `EMBEDDING_API_BASE_URL`, `EMBEDDING_API_MODEL`,
+`EMBEDDING_API_DIMENSION` (at most 2000; 0 means the model's default) and `EMBEDDING_API_NAME`
+(the provider's own are the defaults). The key goes in `EMBEDDING_API_KEY`, or in
+`secrets/embedding_api_key` on the hosted stack. When `EMBEDDING_PROVIDER=api` has a key (or a
+local address), it wins over the page and the page cannot change it. A service that refuses the
+size field needs `EMBEDDING_API_SEND_DIMENSION=false` and its own size.
+
+Either way, then build and switch as in steps 3 and 4 above (or use the page's build button). The
+build sends every stored passage of every story to the service, under the site's key; the
+Assistant page tells authors where their writing goes ("Search by meaning").
+
+`python -m backend.devtools.diagnostics` shows the service's host and whether a key is set, never
+the key. A refused key or unknown model is logged as `embedding.api_refused` with the status only;
+a busy or failing service is tried three times when writing (`embedding.api_failed`), and the
+passage waits on the list to be tried again; a search query gets one try of at most eight seconds,
+then that search uses words only. Pictures are not searched by meaning this way.
+
+**Going back:** `make reindex-rollback` switches to the index used before. If the model setting
+is still the new one, search stays off until the setting is changed back and the server
+restarted.
+
+**Behind** (`lag` above zero; a restore, or pictures and captions that arrived while the worker
+was down): `make reindex-refresh` (after a restore, `REINDEX_ARGS=--from-texts`). It only adds
+what is missing. Readiness's `search_index` part says how much of the lag is media
+(`caption_lag`, `picture_lag`). To have the server do this by itself, set
+`SEARCH_INDEX_CATCH_UP_MINUTES` (0, off, by default): between jobs it looks at up to 50 stories a
+round, taking turns, and brings up to three of them up to date in the index in use, only when that
+index is the configured model's (log event `embedding.caught_up`, counts only).
+
+**A build left waiting** (`building_generation` set, nothing running): continue it with
+`python -m backend.devtools.embeddings build --resume`, or remove it with
+`python -m backend.devtools.embeddings discard --generation <id>`.
+
+## How to confirm
+
+`make reindex-status` ends with `searchable: True`, `active_lag` totals 0, and readiness no longer
+lists `search_index` among its reasons.
+
+Checked against a disposable database with the stand-in model (2026-10-20): status, build,
+activate, rollback, build with `--activate`, cancel and refresh. Not yet run with a real model or
+on the hosted stack.
+
+## The passage index waiting list (CTX-005)
+
+Saving a text puts it on `passage_index_waiting`; the background worker (the same loop that
+keeps the graph up to date, every two seconds) reads it into the passage index. Nothing here
+can lose a text: the index is derived and can always be rebuilt.
+
+**How you notice.** Readiness's optional `passage_index` part is degraded (the oldest text has
+waited more than 15 minutes; counts only); the scene's context says "N texts you changed are
+still being read in…" for more than a minute or two, or "could not be read and will be tried again";
+`GET /api/v1/projects/{id}/texts-index` shows `waiting`, `waiting_seconds` and `failing`;
+`passage_index_deliveries_total{outcome="failed"}` rises; logs show `passages.index_failed`
+or `passages.worker.poll_error` (error type only, never the words).
+
+**What to check.**
+
+```sql
+SELECT workspace_id, project_id, count(*) AS waiting,
+       now() - min(first_requested_at) AS oldest,
+       count(*) FILTER (WHERE attempts > 0) AS failing,
+       max(attempts) AS most_attempts
+FROM passage_index_waiting GROUP BY 1, 2 ORDER BY oldest DESC;
+SELECT source_id, attempts, last_error, claimed_until FROM passage_index_waiting
+WHERE attempts > 0 ORDER BY attempts DESC LIMIT 20;
+```
+
+Rows waiting with no failures: is the API process running its worker (`app.startup` logged,
+not a command-line tool)? Rows failing: `last_error` is the error's type; a failure waits 5 s,
+doubling to 10 minutes, so a fixed cause clears by itself.
+
+**What to do.** Fix the cause (database, embedder settings — see above). To read everything now,
+`uv run python -m backend.devtools.reindex --workspace W --project P` rebuilds a story's index directly; rows still
+waiting are read again harmlessly. Deleting a row is safe (the next status read asks again
+for any text found behind). A claim held by a stopped server is let go after 120 seconds.
+
+**How to confirm.** `waiting` returns to 0 and the context dialog's note goes away by itself.

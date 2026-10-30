@@ -1,0 +1,392 @@
+/* The picture page (AST-007): a catalogue entry. The picture sits mounted on the left,
+   like a print on a mat; what is known about it runs down the right in sections ruled
+   off with hairlines. The one mark of colour is the editor's pencil: the cinnabar box
+   that shows which part of the picture a note is about. */
+
+.picture-page {
+  display: grid;
+  gap: 1.75rem;
+}
+
+.picture-head h1 {
+  overflow-wrap: anywhere;
+}
+
+.picture-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.75rem;
+  align-items: start;
+}
+
+@media (min-width: 960px) {
+  .picture-layout {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    gap: 2.5rem;
+  }
+
+  .picture-mat {
+    position: sticky;
+    top: 1.25rem;
+  }
+}
+
+.picture-mat {
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.picture-mat-frame {
+  position: relative;
+  justify-self: start;
+  max-width: 100%;
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-s);
+}
+
+.picture-mat-frame img {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  background: var(--surface-3);
+}
+
+.picture-mat-inner {
+  position: relative;
+}
+
+/* The note's part of the picture, measured on the image itself. */
+.picture-mat-inner .picture-mark {
+  position: absolute;
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 0 1px var(--surface);
+  pointer-events: none;
+}
+
+.picture-column {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+.picture-section {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.25rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.picture-section:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.picture-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.picture-actions .grow {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.picture-describe {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+
+.picture-notes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.picture-note {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.8rem 0.95rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: var(--radius-s);
+}
+
+.picture-note.marked {
+  border-left-color: var(--accent);
+}
+
+.picture-notes.quiet .picture-note {
+  background: transparent;
+  border-left-color: var(--line);
+}
+
+.picture-note-kind {
+  flex: 1 1 auto;
+  font-family: var(--font-ui);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+}
+
+.picture-note-words {
+  font-size: 1.05rem;
+}
+
+.picture-note-fact {
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--line);
+}
+
+.picture-choices {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.picture-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.picture-choice input {
+  margin-top: 0.25rem;
+}
+
+.picture-choice > span {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.picture-choice.chosen {
+  border-color: var(--ink-2);
+  background: var(--surface);
+}
+
+.picture-choices:disabled .picture-choice {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.picture-link {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.picture-link:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.picture-link .row {
+  border: 0;
+  padding: 0;
+}
+
+.picture-link-change {
+  padding: 0.85rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+}
+
+/* Marked parts (AST-007). The author's own parts are ruled in graphite with a small
+   number tag, quiet until one is asked for; the part being drawn is the pencil's cinnabar,
+   dashed, since it is not kept yet. */
+.picture-mat-inner .picture-part {
+  position: absolute;
+  border: 1px dashed color-mix(in srgb, var(--ink-2) 70%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--surface) 70%, transparent);
+  pointer-events: none;
+}
+
+.picture-mat-inner .picture-part.shown {
+  border: 2px solid var(--accent);
+}
+
+.picture-part-number {
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  min-width: 1.15rem;
+  padding: 0 0.25rem;
+  font-family: var(--font-ui);
+  font-size: 0.7rem;
+  line-height: 1.15rem;
+  text-align: center;
+  color: var(--surface);
+  background: var(--ink-2);
+}
+
+.picture-part.shown .picture-part-number {
+  background: var(--accent);
+}
+
+.picture-mat-inner .picture-draft {
+  position: absolute;
+  border: 2px dashed var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  pointer-events: none;
+}
+
+.picture-mat-inner.drawing .picture-part {
+  opacity: 0.45;
+}
+
+.picture-draw {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.region-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+}
+
+.region-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.35rem 0.75rem;
+  align-items: start;
+  padding: 0.65rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.region-item:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.region-number {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.6rem;
+  height: 1.6rem;
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  color: var(--ink-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-s);
+}
+
+.region-item.shown .region-number {
+  color: var(--surface);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.region-words {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.region-actions {
+  grid-column: 2;
+}
+
+/* Remove sits apart from the routine actions (D3). */
+.region-actions .region-remove {
+  margin-left: auto;
+}
+
+.region-form {
+  padding: 0.95rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-m);
+}
+
+.region-form-title {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.region-sides {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.region-sides legend {
+  padding: 0;
+  font-weight: 600;
+}
+
+.region-side-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem 0.75rem;
+}
+
+@media (min-width: 560px) {
+  .region-side-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.region-side-grid input {
+  width: 100%;
+  min-width: 0;
+}
+
+/* A note of the pictures check with its picture (CON-014). */
+.note-picture {
+  margin: 0.25rem 0 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.note-picture-frame {
+  justify-self: start;
+  max-width: min(100%, 12rem);
+  padding: 0.3rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+}
+
+.note-picture-frame img {
+  display: block;
+  max-width: 100%;
+  max-height: 8rem;
+  object-fit: contain;
+}
+
+.note-picture .picture-mat-inner {
+  position: relative;
+}
+
+.note-picture .picture-mark {
+  position: absolute;
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 0 1px var(--surface);
+  pointer-events: none;
+}

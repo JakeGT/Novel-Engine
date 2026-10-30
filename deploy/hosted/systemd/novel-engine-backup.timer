@@ -1,0 +1,12 @@
+# Runs novel-engine-backup.service once a night. Persistent= catches up one missed run
+# after the host was off; the random delay keeps it away from other nightly jobs.
+[Unit]
+Description=Nightly Novel Engine backup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=20m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -26,6 +26,8 @@ def create_engine(settings: Settings) -> AsyncEngine:
         max_overflow=settings.POSTGRES_MAX_OVERFLOW,
         pool_timeout=settings.POSTGRES_POOL_TIMEOUT,
         pool_pre_ping=True,
+        # Bound values are the author's words; an error must never carry them into a log.
+        hide_parameters=True,
     )
 
 

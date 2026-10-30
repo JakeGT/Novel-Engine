@@ -1,24 +1,70 @@
 """Idempotently seed the deterministic reference world.
 
-Graph entities/edges are always seeded. Derived vector documents are only
-indexed with ``--vectors`` so the default command never downloads an embedding
-model.
+The legacy graph manifest and the canonical reference world are always seeded;
+canon is committed through the mutation service, so the seed exercises the same
+path product writes use. Derived vector documents are only indexed with
+``--vectors`` so the default command never downloads an embedding model.
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import sys
 from collections.abc import Sequence
 
+from backend.core.config import Settings
 from backend.core.config import settings as default_settings
 from backend.devtools.guard import ensure_seed_allowed
 from backend.graph.manager import GraphManager
 from backend.seed.apply import apply_manifest
+from backend.seed.canon import SEED_PROJECTS, CanonSeedReport, apply_canon_seed
 from backend.seed.ledger import record_seed
 from backend.seed.schema import apply_schema
+from backend.seed.story import StorySeedReport, apply_story_seed
 from backend.seed.tenancy import apply_tenancy
 from backend.seed.world import REFERENCE_WORLD
+
+
+async def _seed_canon(settings: Settings) -> tuple[CanonSeedReport, StorySeedReport | None]:
+    """Commit the canonical reference world through the real mutation path, then the
+    layers beside it (a scene's prose and kept draft, a scoped name answer, a what-if)."""
+    from backend.adapters.canon_repository import PostgresCanonRepository
+    from backend.adapters.journal import PostgresCanonJournal
+    from backend.adapters.media_store import PostgresMediaStore
+    from backend.adapters.objects import FilesystemObjectStore
+    from backend.adapters.passage_store import PostgresManifestStore
+    from backend.adapters.schema_store import PostgresSchemaVersionStore
+    from backend.adapters.source_store import PostgresSourceStore
+    from backend.adapters.studio_store import PostgresStudioStore
+    from backend.core.database import create_engine, create_session_factory
+
+    engine = create_engine(settings)
+    factory = create_session_factory(engine)
+    try:
+        journal = PostgresCanonJournal(factory)
+        repository = PostgresCanonRepository(factory)
+        schemas = PostgresSchemaVersionStore(factory)
+        canon = await apply_canon_seed(
+            journal=journal,
+            repository=repository,
+            schemas=schemas,
+            media=PostgresMediaStore(factory),
+            objects=FilesystemObjectStore(settings.OBJECT_STORE_DIR),
+        )
+        if not canon.ok:
+            return canon, None
+        story = await apply_story_seed(
+            journal=journal,
+            repository=repository,
+            schemas=schemas,
+            sources=PostgresSourceStore(factory),
+            studio=PostgresStudioStore(factory),
+            manifests=PostgresManifestStore(factory),
+        )
+        return canon, story
+    finally:
+        await engine.dispose()
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -72,7 +118,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     tenancy = apply_tenancy(settings.postgres_dsn_psycopg)
-    schema_rows = apply_schema(settings.postgres_dsn_psycopg)
+    schema_rows = sum(
+        apply_schema(
+            settings.postgres_dsn_psycopg,
+            workspace_id=project.workspace_id,
+            project_id=project.project_id,
+        )
+        for project in SEED_PROJECTS
+    )
+    canon, story = asyncio.run(_seed_canon(settings))
 
     print(f"seed version: {report.version}")
     print(f"seed checksum: {report.checksum}")
@@ -80,13 +134,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"applied edges: {report.applied_edges}")
     print(f"identity/tenancy: inserted {tenancy.inserted} rows ({tenancy.counts})")
     print(f"project schema: published {schema_rows} version(s)")
+    print(f"canon seed version: {canon.version}")
+    print(f"canon seed checksum: {canon.checksum}")
+    print(f"canon heads: {canon.heads}")
+    if story is not None:
+        print(f"story layers: {', '.join(story.written) or 'already seeded'}")
     if args.vectors:
         print(f"indexed documents: {report.indexed_documents} (skipped {report.skipped_documents})")
     else:
         print("indexed documents: not requested (pass --vectors to index prose snippets)")
-    if report.problems:
-        print(f"seed verification FAILED with {len(report.problems)} problem(s):")
-        for problem in report.problems:
+    problems = [*report.problems, *canon.problems, *(story.problems if story else [])]
+    if problems:
+        print(f"seed verification FAILED with {len(problems)} problem(s):")
+        for problem in problems:
             print(f"  - {problem}")
         return 1
 

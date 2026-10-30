@@ -22,11 +22,39 @@ def _hosted_settings(**overrides) -> Settings:
 
 
 @pytest.mark.asyncio
-async def test_hosted_workspace_creation_requires_platform_admin() -> None:
+async def test_a_signed_in_person_may_create_one_workspace_of_their_own() -> None:
     service = TenancyService(InMemoryTenancyStore(), settings=_hosted_settings())
     scope = AccessScope(actor_user_id="usr_regular", auth_mode=AuthMode.HOSTED)
 
-    with pytest.raises(ForbiddenError):
+    first = await service.create_workspace(scope, slug="mine", name="Mine")
+    assert first.slug == "mine"
+    # One personal workspace, not unlimited self-service.
+    with pytest.raises(ForbiddenError, match="already have a workspace"):
+        await service.create_workspace(scope, slug="another", name="Another")
+
+
+@pytest.mark.asyncio
+async def test_being_invited_elsewhere_does_not_use_up_the_personal_workspace() -> None:
+    from backend.domain.identity import Role
+
+    store = InMemoryTenancyStore()
+    service = TenancyService(store, settings=_hosted_settings())
+    owner = AccessScope(actor_user_id="usr_owner", auth_mode=AuthMode.HOSTED)
+    shared = await service.create_workspace(owner, slug="shared", name="Shared")
+    await store.add_membership(workspace_id=shared.id, user_id="usr_guest", role=Role.EDITOR)
+
+    guest = AccessScope(actor_user_id="usr_guest", auth_mode=AuthMode.HOSTED)
+    assert (await service.create_workspace(guest, slug="guest", name="Guest")).slug == "guest"
+
+
+@pytest.mark.asyncio
+async def test_personal_workspaces_can_be_turned_off() -> None:
+    service = TenancyService(
+        InMemoryTenancyStore(), settings=_hosted_settings(ALLOW_PERSONAL_WORKSPACE=False)
+    )
+    scope = AccessScope(actor_user_id="usr_regular", auth_mode=AuthMode.HOSTED)
+
+    with pytest.raises(ForbiddenError, match="platform administrator"):
         await service.create_workspace(scope, slug="new", name="New")
 
 

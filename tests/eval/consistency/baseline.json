@@ -1,0 +1,119 @@
+{
+  "cases": 183,
+  "false_positives": [],
+  "families": {
+    "continuity": {
+      "clean": 15,
+      "defects": 21,
+      "f1": 0.975,
+      "false_negative": 1,
+      "false_positive": 0,
+      "false_positive_rate": 0.0,
+      "precision": 1.0,
+      "recall": 0.952,
+      "true_negative": 15,
+      "true_positive": 20
+    },
+    "drafting": {
+      "clean": 4,
+      "defects": 9,
+      "f1": 0.941,
+      "false_negative": 1,
+      "false_positive": 0,
+      "false_positive_rate": 0.0,
+      "precision": 1.0,
+      "recall": 0.889,
+      "true_negative": 4,
+      "true_positive": 8
+    },
+    "knowledge": {
+      "clean": 5,
+      "defects": 4,
+      "f1": 1.0,
+      "false_negative": 0,
+      "false_positive": 0,
+      "false_positive_rate": 0.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "true_negative": 5,
+      "true_positive": 4
+    },
+    "plan": {
+      "clean": 7,
+      "defects": 8,
+      "f1": 1.0,
+      "false_negative": 0,
+      "false_positive": 0,
+      "false_positive_rate": 0.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "true_negative": 7,
+      "true_positive": 8
+    },
+    "prose": {
+      "clean": 54,
+      "defects": 26,
+      "f1": 0.869,
+      "false_negative": 6,
+      "false_positive": 0,
+      "false_positive_rate": 0.0,
+      "precision": 1.0,
+      "recall": 0.769,
+      "true_negative": 54,
+      "true_positive": 20
+    },
+    "rules": {
+      "clean": 7,
+      "defects": 7,
+      "f1": 1.0,
+      "false_negative": 0,
+      "false_positive": 0,
+      "false_positive_rate": 0.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "true_negative": 7,
+      "true_positive": 7
+    },
+    "voice": {
+      "clean": 6,
+      "defects": 10,
+      "f1": 0.947,
+      "false_negative": 1,
+      "false_positive": 0,
+      "false_positive_rate": 0.0,
+      "precision": 1.0,
+      "recall": 0.9,
+      "true_negative": 6,
+      "true_positive": 9
+    }
+  },
+  "leakage": {
+    "cases": 10,
+    "caught": 9,
+    "recall": 0.9
+  },
+  "missed": [
+    "continuity/two-places-place-only-in-words",
+    "drafting/secret-by-pronoun",
+    "prose/after-named-but-denied",
+    "prose/age-by-pronoun",
+    "prose/dawn-without-a-cue",
+    "prose/eyes-by-pronoun",
+    "prose/journey-by-pronoun",
+    "prose/uses-it-by-pronoun",
+    "voice/short-scene-in-first-person"
+  ],
+  "overall": {
+    "clean": 98,
+    "defects": 85,
+    "f1": 0.944,
+    "false_negative": 9,
+    "false_positive": 0,
+    "false_positive_rate": 0.0,
+    "precision": 1.0,
+    "recall": 0.894,
+    "true_negative": 98,
+    "true_positive": 76
+  },
+  "set": "saltglass-consistency/1"
+}

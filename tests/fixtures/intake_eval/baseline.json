@@ -1,0 +1,50 @@
+{
+  "case": "lantern-coast/1",
+  "resolver": "names/1",
+  "labelled": 22,
+  "found": 15,
+  "correct": 14,
+  "precision": 0.933,
+  "recall": 0.636,
+  "recall_without_a_model": 0.933,
+  "by_kind": {
+    "alias": {
+      "labelled": 4,
+      "found": 4,
+      "recall": 1.0
+    },
+    "answered": {
+      "labelled": 1,
+      "found": 1,
+      "recall": 1.0
+    },
+    "epithet": {
+      "labelled": 1,
+      "found": 0,
+      "recall": 0.0
+    },
+    "mark": {
+      "labelled": 2,
+      "found": 1,
+      "recall": 0.5
+    },
+    "name": {
+      "labelled": 8,
+      "found": 8,
+      "recall": 1.0
+    },
+    "partial": {
+      "labelled": 2,
+      "found": 0,
+      "recall": 0.0
+    },
+    "pronoun": {
+      "labelled": 4,
+      "found": 0,
+      "recall": 0.0
+    }
+  },
+  "wrongly_found": [
+    "Hope"
+  ]
+}

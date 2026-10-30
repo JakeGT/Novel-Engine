@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 import re
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, status
 
-from backend.adapters.system import uuid7
 from backend.api.auth import (
     get_project_scope,
     require_local_graph_write,
@@ -24,28 +25,27 @@ from backend.api.dependencies import (
     get_usage_service,
 )
 from backend.api.v1 import schemas as s
+from backend.api.v1.assistant_settings import confirmed_tokens, get_assist_budget
 from backend.container import Container
 from backend.core.config import Settings
 from backend.domain.errors import (
-    CapabilityUnavailableError,
     ConflictError,
     FeatureNotImplementedError,
     NotFoundError,
     ValidationError,
 )
 from backend.domain.identity import AccessScope
-from backend.domain.usage import UsageOutcome, UsageRecord
 from backend.graph.policies import get_policy
 from backend.graph.resolver import extract_entity_ids
 from backend.graph.schema import Edge, Node
 from backend.graph.summarizer import summarize_context
-from backend.ports import AIUsage, EmbeddingPort, GraphRepository, SchemaRegistryPort
+from backend.ports import EmbeddingPort, GraphRepository, SchemaRegistryPort
+from backend.services.assistant_settings_service import AssistBudget
 from backend.services.auth_service import AuthenticatedSession
 from backend.services.character_service import CharacterService
 from backend.services.credential_service import CredentialService
+from backend.services.provider_route import resolve_provider
 from backend.services.usage_service import ProviderUsageService
-
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 project_router = APIRouter()
 
@@ -66,46 +66,10 @@ async def _provider_context(
     usage: ProviderUsageService,
     scope: AccessScope,
 ) -> tuple[str | None, str | None, str | None, Any]:
-    """Resolve the BYOK credential, enforce usage limits, and build a usage sink.
-
-    Hosted deployments require a workspace credential (no platform-funded
-    inference); local self-hosted mode uses the operator's server key.
-    """
-    workspace_id = scope.workspace_id or ""
-    project_id = scope.project_id or ""
-    credential_id: str | None = None
-    api_key: str | None = None
-    provider_base_url: str | None = None
-    provider = settings.AI_PROVIDER
-    if settings.is_hosted:
-        resolved = await credentials.resolve_active_for_use(scope, workspace_id)
-        if resolved is None:
-            raise CapabilityUnavailableError(
-                "No provider credential is configured for this workspace."
-            )
-        credential_id, api_key = resolved
-        provider_base_url = OPENROUTER_BASE_URL
-        provider = "openrouter"
-
-    await usage.ensure_within_limits(workspace_id=workspace_id, actor_user_id=scope.actor_user_id)
-
-    async def sink(ai_usage: AIUsage, model: str) -> None:
-        await usage.record(
-            UsageRecord(
-                id=str(uuid7()),
-                workspace_id=workspace_id,
-                project_id=project_id or None,
-                actor_user_id=scope.actor_user_id,
-                provider=provider,
-                model=model or "",
-                requested_route=model or "",
-                prompt_tokens=ai_usage.prompt_tokens,
-                completion_tokens=ai_usage.completion_tokens,
-                outcome=UsageOutcome.SUCCESS,
-            )
-        )
-
-    return credential_id, api_key, provider_base_url, sink
+    """Resolve the BYOK credential, enforce usage limits, and build a usage sink."""
+    return await resolve_provider(
+        settings=settings, credentials=credentials, usage=usage, scope=scope
+    )
 
 
 @project_router.get("/entities", response_model=s.EntityList, tags=["entities"])
@@ -468,7 +432,13 @@ def character_init(
     body: s.CharacterInitRequest,
     service: CharacterService = Depends(get_character_service),
     scope: AccessScope = Depends(require_project_scope),
+    _local: AuthenticatedSession = Depends(require_local_graph_write),
 ) -> s.Entity:
+    """Legacy graph-backed prototype (local only).
+
+    The product workflow is ``/projects/{project_id}/characters/...``, which
+    produces reviewable canon proposals instead of writing graph nodes.
+    """
     node = service.init_character_anchor(
         body.name,
         body.bio,
@@ -476,6 +446,29 @@ def character_init(
         project_id=scope.project_id or "",
     )
     return s.entity_from_node(node)
+
+
+# What the legacy character prompts read beyond the character: its instructions, and at
+# most this many related entries from the graph.
+_LEGACY_INSTRUCTION_TOKENS = 900
+_LEGACY_CONTEXT_ENTRIES = 15
+
+
+def _legacy_reads(
+    graph: GraphRepository, scope: AccessScope, sent_chars: int
+) -> Callable[[], Awaitable[int]]:
+    """An upper estimate of what a legacy character request reads: what was sent, plus
+    the largest entries in the story's graph, as many as it may include."""
+
+    async def reads() -> int:
+        nodes = graph.get_nodes(
+            workspace_id=scope.workspace_id or "", project_id=scope.project_id or ""
+        )
+        sizes = sorted((len(json.dumps(node.properties)) for node in nodes), reverse=True)
+        chars = sent_chars + sum(sizes[: _LEGACY_CONTEXT_ENTRIES + 1])
+        return _LEGACY_INSTRUCTION_TOKENS + chars // 4
+
+    return reads
 
 
 @project_router.post(
@@ -488,7 +481,18 @@ async def character_generate_questions(
     usage: ProviderUsageService = Depends(get_usage_service),
     settings: Settings = Depends(get_settings),
     scope: AccessScope = Depends(require_project_scope),
+    graph: GraphRepository = Depends(get_graph),
+    budget: AssistBudget = Depends(get_assist_budget),
+    confirmed: int | None = Depends(confirmed_tokens),
 ) -> s.QuestionSheet:
+    await budget.check(
+        scope,
+        scope.workspace_id or "",
+        scope.project_id or "",
+        reads=_legacy_reads(graph, scope, 0),
+        doing="Asking about this character",
+        confirmed_tokens=confirmed,
+    )
     credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
         settings=settings, credentials=credentials, usage=usage, scope=scope
     )
@@ -532,9 +536,23 @@ async def character_process_answers(
     usage: ProviderUsageService = Depends(get_usage_service),
     settings: Settings = Depends(get_settings),
     scope: AccessScope = Depends(require_project_scope),
+    _local: AuthenticatedSession = Depends(require_local_graph_write),
+    budget: AssistBudget = Depends(get_assist_budget),
+    confirmed: int | None = Depends(confirmed_tokens),
 ) -> s.GraphUpdateResponse:
+    """Legacy graph-backed prototype (local only); it writes model output to the
+    generic graph, so hosted deployments must use the canonical proposal workflow."""
     workspace_id = scope.workspace_id or ""
     project_id = scope.project_id or ""
+    answered = sum(len(question) + len(answer) for question, answer in body.answers.items())
+    await budget.check(
+        scope,
+        workspace_id,
+        project_id,
+        reads=_legacy_reads(container.graph, scope, answered),
+        doing="Turning these answers into changes",
+        confirmed_tokens=confirmed,
+    )
     credential_id, api_key, provider_base_url, usage_sink = await _provider_context(
         settings=settings, credentials=credentials, usage=usage, scope=scope
     )

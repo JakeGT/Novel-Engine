@@ -19,12 +19,19 @@ venv/
 
 # Runtime and generated data
 data/
+# Evaluation reports (make eval / make eval-model)
+var/eval/
+# Release artefacts (make release)
+/dist/
 backend/debug/
 *.log
 
 # Frontend
 frontend/node_modules/
 frontend/dist/
+frontend/test-results/
+frontend/test-results-model/
+frontend/playwright-report/
 
 # Editors and operating systems
 .idea/
@@ -38,3 +45,7 @@ Thumbs.db
 
 # envsitter local state
 .envsitter/
+
+# Hosted stack runtime state (deploy/hosted)
+deploy/hosted/secrets/
+deploy/hosted/backups/

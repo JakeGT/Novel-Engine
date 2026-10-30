@@ -1,10 +1,12 @@
 UV_CACHE_DIR ?= $(CURDIR)/.cache/uv
 PNPM_STORE_DIR ?= $(CURDIR)/.cache/pnpm-store
 export UV_CACHE_DIR
+# pnpm run/exec verify dependencies against the configured store; keep it the one frontend-install used.
+export pnpm_config_store_dir = $(PNPM_STORE_DIR)
 
-TYPE_CHECK_TARGETS = backend
+TYPE_CHECK_TARGETS = backend connector
 
-.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify verify seed reset-dev diagnostics retention reconcile project watch archive audit api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check secret-scan frontend-install frontend-lint frontend-typecheck frontend-test frontend-build check
+.PHONY: help install install-dev lock lock-check infra-up infra-down migrate migrate-verify verify seed reset-dev diagnostics retention rekey media read-models read-models-verify reindex reindex-refresh reindex-status reindex-activate reindex-rollback reindex-cancel eval-media eval eval-model reconcile project watch archive audit api test test-integration integration-test coverage-unit coverage-integration typecheck import-check lint format-check secret-scan frontend-install frontend-api-check frontend-lint frontend-typecheck frontend-test frontend-build frontend-e2e-install e2e release release-check check
 
 help:
 	@echo "install             Install runtime Python dependencies"
@@ -19,11 +21,26 @@ help:
 	@echo "seed                Seed the deterministic reference world"
 	@echo "reset-dev           Reset development stores (guarded; refuses production)"
 	@echo "diagnostics         Print a redacted diagnostics/support bundle"
-	@echo "retention           Purge expired sessions, attempts, invitations, and rate-limit hits"
+	@echo "retention           Purge expired sign-ins and assistant leftovers (RETENTION_ARGS='--days 30 --dry-run')"
+	@echo "rekey               Re-lock stored provider keys under a new credential key (REKEY_ARGS='rekey --apply')"
+	@echo "media               Picture upkeep: status, backfill, reconcile, copies (MEDIA_ARGS='status')"
+	@echo "read-models         The story's ready views: status, build or forget (READ_MODELS_ARGS=build)"
+	@echo "read-models-verify  Rebuild each ready view from the story's history and compare (READ_MODELS_ARGS=--repair)"
+	@echo "reindex             Build a new search index with the configured model (REINDEX_ARGS='--from-texts')"
+	@echo "reindex-refresh     Bring the search index in use up to date (after a restore, say)"
+	@echo "reindex-status      Show the search index in use, any build, and what is missing"
+	@echo "reindex-activate    Switch searching to the built index (REINDEX_ARGS='--force')"
+	@echo "reindex-rollback    Switch back to the search index used before"
+	@echo "reindex-cancel      Ask a running search index build to stop"
+	@echo "eval-media          Picture/words search evaluation; JSON report in var/eval (EVAL_MEDIA_ARGS)"
+	@echo "eval                Evaluation sets without a model; report in var/eval/report.md"
+	@echo "release             Reproducible release artefacts from HEAD in dist/release (RELEASE_ARGS=--ref|--worktree)"
+	@echo "release-check       The same, built twice and compared byte for byte"
+	@echo "eval-model          The same, plus reading with the configured model (asks before spending)"
 	@echo "reconcile           Reconcile an interrupted canon commit by id"
-	@echo "project             Project committed canon into the graph (PROJECT_ARGS=--lag|--rebuild)"
+	@echo "project             Project committed canon into the graph (PROJECT_ARGS=--lag|--rebuild|--verify)"
 	@echo "watch               Drain the canonical outbox into the graph (WATCH_ARGS=--interval N|--rebuild)"
-	@echo "archive             Export/import a canonical project archive (ARCHIVE_ARGS=--export PATH|--import PATH)"
+	@echo "archive             Export/restore/inspect project archives (ARCHIVE_ARGS=--export|--import|--imports|--remove-import|--upgrade-graph; see --help)"
 	@echo "audit               Audit Python dependencies for known vulnerabilities"
 	@echo "api                 Start the FastAPI development server"
 	@echo "test                Run hermetic tests (unit, application, contract)"
@@ -36,9 +53,12 @@ help:
 	@echo "format-check        Check Python formatting"
 	@echo "secret-scan         Scan tracked files for credential shapes"
 	@echo "frontend-install    Install frontend dependencies"
+	@echo "frontend-api-check  Verify generated frontend API types match OpenAPI"
 	@echo "frontend-lint       Lint the frontend"
 	@echo "frontend-typecheck  Type-check the frontend"
 	@echo "frontend-test       Run frontend component tests"
+	@echo "frontend-e2e-install Install the Playwright browser used by make e2e"
+	@echo "e2e                 Run the browser end-to-end workflow (needs infra + test profile)"
 	@echo "frontend-build      Build the frontend"
 	@echo "check               Run local static checks and hermetic tests"
 
@@ -79,7 +99,54 @@ diagnostics:
 	uv run --locked python -m backend.devtools.diagnostics
 
 retention:
-	uv run --locked python -m backend.devtools.retention
+	uv run --locked python -m backend.devtools.retention $(RETENTION_ARGS)
+
+rekey:
+	uv run --locked python -m backend.devtools.rekey $(or $(REKEY_ARGS),status)
+
+media:
+	uv run --locked python -m backend.devtools.media $(or $(MEDIA_ARGS),status)
+
+read-models:
+	uv run --locked python -m backend.devtools.read_models $(or $(READ_MODELS_ARGS),status)
+
+read-models-verify:
+	uv run --locked python -m backend.devtools.read_models verify $(READ_MODELS_ARGS)
+
+reindex:
+	uv run --locked python -m backend.devtools.embeddings build $(REINDEX_ARGS)
+
+reindex-refresh:
+	uv run --locked python -m backend.devtools.embeddings refresh $(REINDEX_ARGS)
+
+reindex-status:
+	uv run --locked python -m backend.devtools.embeddings status
+
+reindex-activate:
+	uv run --locked python -m backend.devtools.embeddings activate $(REINDEX_ARGS)
+
+reindex-rollback:
+	uv run --locked python -m backend.devtools.embeddings rollback
+
+reindex-cancel:
+	uv run --locked python -m backend.devtools.embeddings cancel
+
+# Runs with the deterministic stand-in by default (measures the harness, not a model).
+# Point it at a real model: EVAL_MEDIA_ARGS='--provider embeddinggemma' with the
+# embeddings extra installed and EMBEDDING_GEMMA_REVISION pinned.
+eval-media:
+	uv run --locked python -m tests.eval.multimodal.run --report var/eval/multimodal.json $(EVAL_MEDIA_ARGS)
+
+# Checks, context, review groups and reading, scored against labelled cases (QLT-003).
+# The deterministic ones also run in `make test`; this writes var/eval/report.{md,json}.
+eval:
+	uv run --locked python -m scripts.eval.run $(EVAL_ARGS)
+
+# Never in CI: reads the labelled passages with the configured provider after saying
+# about how many tokens that takes and waiting for "yes". EVAL_ARGS=--stand-in runs the
+# same path against the local stand-in model, with no spend.
+eval-model:
+	uv run --locked python -m scripts.eval.run --model $(EVAL_ARGS)
 
 reconcile:
 	uv run --locked python -m backend.devtools.reconcile $(COMMIT)
@@ -95,6 +162,7 @@ archive:
 
 audit:
 	uv run --locked pip-audit
+	pnpm --dir frontend audit --prod --audit-level high
 
 api:
 	uv run --locked uvicorn backend.main:app --reload
@@ -120,16 +188,29 @@ import-check:
 	uv run --locked python -c "import backend.main; print('import ok')"
 
 lint:
-	uv run --locked ruff check backend tests
+	uv run --locked ruff check backend connector tests
 
 format-check:
-	uv run --locked ruff format --check backend tests
+	uv run --locked ruff format --check backend connector tests
 
 secret-scan:
 	uv run --locked python -m scripts.ci.secret_scan
 
 frontend-install:
 	pnpm --dir frontend install --frozen-lockfile --store-dir "$(PNPM_STORE_DIR)"
+
+frontend-api-check:
+	@api_tmp=$$(mktemp); \
+	trap 'rm -f "$$api_tmp"' EXIT; \
+	pnpm --dir frontend exec openapi-typescript ../tests/contract/openapi_snapshot.json -o "$$api_tmp" || { \
+		echo "openapi-typescript failed; run: make frontend-install"; \
+		exit 1; \
+	}; \
+	cmp -s frontend/src/api/schema.ts "$$api_tmp" || { \
+		echo "frontend/src/api/schema.ts is stale; run: pnpm --dir frontend run gen:api"; \
+		diff -u frontend/src/api/schema.ts "$$api_tmp"; \
+		exit 1; \
+	}
 
 frontend-lint:
 	pnpm --dir frontend run lint
@@ -143,4 +224,27 @@ frontend-test:
 frontend-build:
 	pnpm --dir frontend run build
 
-check: lock-check lint format-check secret-scan typecheck test frontend-lint frontend-typecheck frontend-test frontend-build
+frontend-e2e-install:
+	pnpm --dir frontend exec playwright install chromium
+
+# Drives the real UI against a real API on a disposable PostgreSQL database and
+# the neo4j-test service (docker compose --profile test up -d --wait). Not part
+# of `check`, which must stay hermetic. Set E2E_BROWSER_CHANNEL=chrome to use an
+# installed Chrome instead of the Playwright-managed Chromium.
+e2e:
+	pnpm --dir frontend exec playwright test
+	pnpm --dir frontend exec playwright test --config playwright.model.config.ts
+
+# OSS-005: a reproducible release artefact set from one commit (HEAD unless
+# RELEASE_ARGS="--ref v0.1.0"): source tarball with lock files, wheel and sdist, the
+# built frontend, CycloneDX SBOMs, BUILDINFO.json and SHA256SUMS, in dist/release/.
+# Nothing is tagged or published. RELEASE_ARGS="--worktree" tries uncommitted work
+# (written to dist/release/novel-engine-<version>-worktree/, never as a release).
+release:
+	uv run --locked python -m scripts.release.build $(RELEASE_ARGS)
+
+# Builds twice and compares every file's checksum.
+release-check:
+	uv run --locked python -m scripts.release.build --check $(RELEASE_ARGS)
+
+check: lock-check lint format-check secret-scan typecheck test frontend-api-check frontend-lint frontend-typecheck frontend-test frontend-build

@@ -1,0 +1,216 @@
+# Prompt snapshot. Change it only with: uv run python -m tests.prompts.snapshots --update
+id: character-proposal
+version: 1
+
+##### case: two answers
+
+=== system ===
+Convert an author's answers about one character into structured proposals. Only state what the answers actually say. Rules:
+- facts are objective truths about the character; beliefs are what the character thinks, which may be false. Never mark a belief as true or false.
+- use only these predicates for the character:
+- LOCATED_AT: object is entity_ref of type ['Location']
+- MEMBER_OF: object is entity_ref of type ['Faction']
+- AGE: object is integer
+- new entities may only use these types: ['Character', 'Faction', 'Location', 'Object']
+- reuse an existing entity id when the answer refers to a known entity.
+- set question_id to the id of the answer each item came from.
+- put stable descriptive traits (appearance, temperament) in attributes.
+
+=== user ===
+Character: Mara Voss (id ent_mara)
+
+Answers:
+[q1] Q: Where does Mara live?
+A: In Saltmere.
+
+[q2] Q: Who does she work for?
+A: The guild.
+
+##### answer shape
+{
+  "$defs": {
+    "ProposedBelief": {
+      "properties": {
+        "about_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Entity the belief is about; defaults to the character",
+          "title": "About Ref"
+        },
+        "confidence": {
+          "default": 0.7,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "object_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Object Ref"
+        },
+        "object_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Object Value"
+        },
+        "predicate": {
+          "title": "Predicate",
+          "type": "string"
+        },
+        "question_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Question Id"
+        }
+      },
+      "required": [
+        "predicate"
+      ],
+      "title": "ProposedBelief",
+      "type": "object"
+    },
+    "ProposedEntity": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "ref": {
+          "description": "Local handle used by facts/beliefs in this proposal",
+          "title": "Ref",
+          "type": "string"
+        },
+        "type": {
+          "description": "One of the allowed entity types",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "type",
+        "name"
+      ],
+      "title": "ProposedEntity",
+      "type": "object"
+    },
+    "ProposedFact": {
+      "properties": {
+        "object_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Existing entity id or a new entity ref, for entity predicates",
+          "title": "Object Ref"
+        },
+        "object_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Value for scalar predicates",
+          "title": "Object Value"
+        },
+        "predicate": {
+          "title": "Predicate",
+          "type": "string"
+        },
+        "question_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Question Id"
+        }
+      },
+      "required": [
+        "predicate"
+      ],
+      "title": "ProposedFact",
+      "type": "object"
+    }
+  },
+  "description": "Structured model output. Untrusted: validated and typed before it becomes operations.",
+  "properties": {
+    "aliases": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Aliases",
+      "type": "array"
+    },
+    "attributes": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Attributes",
+      "type": "object"
+    },
+    "beliefs": {
+      "items": {
+        "$ref": "#/$defs/ProposedBelief"
+      },
+      "title": "Beliefs",
+      "type": "array"
+    },
+    "facts": {
+      "items": {
+        "$ref": "#/$defs/ProposedFact"
+      },
+      "title": "Facts",
+      "type": "array"
+    },
+    "new_entities": {
+      "items": {
+        "$ref": "#/$defs/ProposedEntity"
+      },
+      "title": "New Entities",
+      "type": "array"
+    }
+  },
+  "title": "CharacterProposal",
+  "type": "object"
+}

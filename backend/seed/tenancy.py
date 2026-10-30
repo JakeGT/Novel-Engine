@@ -14,6 +14,8 @@ from datetime import UTC, datetime
 
 import psycopg
 
+from backend.adapters.canon_tables import CANON_PROJECT_TABLES
+
 TENANCY_SEED_VERSION = "2026-10-06.1"
 FIXED_TIMESTAMP = datetime(2024, 1, 1, tzinfo=UTC)
 FAR_FUTURE = datetime(2099, 1, 1, tzinfo=UTC)
@@ -184,12 +186,13 @@ def clear_tenancy(dsn: str) -> bool:
     """Remove all identity/tenancy rows. ``False`` when the tables are unmigrated."""
     try:
         with psycopg.connect(dsn, autocommit=True) as connection:
+            # Canon/workflow/media tables share one list with project deletion so a
+            # new table cannot be left behind by the development reset.
             connection.execute(
-                "TRUNCATE TABLE outbox_messages, canon_revisions, commit_attempts, "
-                "commit_envelopes, review_decisions, mutation_operations, mutation_sets, "
-                "branch_reservations, branches, schema_versions, audit_events, invitations, "
-                "projects, memberships, workspaces, external_identities, sessions, "
-                "login_attempts, users RESTART IDENTITY CASCADE"
+                "TRUNCATE TABLE "
+                + ", ".join(CANON_PROJECT_TABLES)
+                + ", audit_events, invitations, projects, memberships, workspaces, "
+                "external_identities, sessions, login_attempts, users RESTART IDENTITY CASCADE"
             )
         return True
     except psycopg.errors.UndefinedTable:

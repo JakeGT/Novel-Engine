@@ -124,6 +124,8 @@ Dedicated application hostname/path behind reverse proxy/TLS, shared Authentik O
 
 If selected, a separately authenticated companion makes outbound connections from the user's network and brokers jobs to OpenAI-compatible local endpoints. It receives only authorized job context, never platform master secrets. Its protocol, updates, revocation, and threat model require a dedicated ADR.
 
+Built 2026-10-21 (SCN-002A, ADR-025): registration by the OAuth device grant (RFC 8628) confirmed by a workspace owner who sees the computer's name; a digest-only device credential rotated daily, stopped after 30 days, revocable at once and when its member leaves; an outbound HTTPS long poll (no inbound port, no redirects); only model listing and chat completions relayed; the words cleared once answered; a version floor enforced on both sides with nothing downloaded. Runbook `plan/runbooks/local-connector.md`.
+
 ## Operational runbooks required before beta
 
 - backup and restore
@@ -139,3 +141,32 @@ If selected, a separately authenticated companion makes outbound connections fro
 - spend spike investigation
 - shared IdP outage/key rotation and invitation abuse
 - suspected provider-key or tenant-data exposure
+
+Written so far (`plan/runbooks/`, 2026-10-18, completed 2026-10-21): backup and restore (with an
+example off-host copy), stuck jobs, provider outage and a revoked key, schema migration failure, a
+failed project import, credential key rotation (with `backend.devtools.rekey`, which re-locks every
+stored key in place), the story graph behind or wrong, a full disk, failed or corrupt commit
+recovery, vector reindex (`search-index.md`), media processing and orphaned objects
+(`media-processing.md`), data deletion, spend spikes, the shared identity provider (outage, key
+changes, invitation abuse), and suspected exposure of keys or tenant data. None has been rehearsed
+on the live site; every SQL statement in them is checked against the schema by
+`tests/integration/test_runbook_queries.py`.
+
+## Revision 2026-10-10: the in-product assistant
+
+Additions to the threat model and operations for ADR-017:
+
+- **Injection through the author's own text.** Descriptions, answers, and pasted prose are data.
+  They cannot change the assistant's instructions, widen its tools, or cause a commit; the only
+  output is a typed proposal that the validators and the review gate handle like any other.
+- **Runaway sessions.** An interview is several model calls. A session has a budget in calls and
+  tokens, shown to the author, enforced before each call, and counted against the existing
+  per-job and per-period limits.
+- **Conversation retention.** Stored conversations contain the author's story. They are
+  workspace-scoped, exported and deleted with the project, excluded from logs and telemetry, and
+  sent only to the provider the author configured.
+- **Degraded assistant.** Provider outage, a missing key, or an exhausted budget leaves every
+  by-hand path working and says plainly why the assistant is unavailable.
+- **Deployment reality.** The product is live for the owner ahead of the "runbooks before beta"
+  gate below. Backup is scripted; restore onto a clean host is unrehearsed (deferred by the owner
+  on 2026-10-10 until the project moves to a permanent host).

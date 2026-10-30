@@ -367,3 +367,49 @@ The multimodal context system is release-ready when:
 - [EmbeddingGemma 2 model card](https://ai.google.dev/gemma/docs/embeddinggemma/model_card_2)
 - [Google Hugging Face model repository](https://huggingface.co/google/embeddinggemma-2)
 - [Qwen3-Embedding-0.6B comparison candidate](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B)
+
+## Revision 2026-10-10: defaults and the assistant path
+
+- **Drop it in.** The author adds an image or a recording and the assistant asks what it is, then
+  proposes links and, where needed, bare entries. Authority, visibility, branch scope, and
+  validity have defaults (author reference, author-visible, main branch, always) and are advanced
+  controls.
+- **Delivery placement, corrected.** Asset identity, immutable version metadata, authority,
+  provenance, explicit links, a lifecycle audit, and archive inclusion shipped in Phase 2; secure
+  ingestion and processing did not and remain Phase 4.
+- **Scope.** Images come first. Whether audio and video stay in release one was an owner decision
+  listed in [`audit-2026-10-10.md`](audit-2026-10-10.md); decided 2026-10-21 (below).
+
+## Revision 2026-10-10 (second): pictures on entries come first
+
+The owner asked for a direct way to connect a picture to a character or a scene. The model for
+this already exists: media assets with immutable versions, and a reviewed `link_asset` operation
+that ties an asset to an entry (and later to a scene) with a role. What is missing is everything
+an author touches: there is no upload, no "add picture" on an entry, and no picture shown anywhere.
+
+A thin slice is therefore pulled forward to Phase 2.5 (backlog AST-EXP-018):
+
+- upload an image from an entry page, or pick one already in the media library
+- link it to that entry with a role: *portrait* for the picture that represents the entry,
+  *reference* for anything else; one portrait at a time per entry
+- show the portrait on the entry page and beside the entry's name in lists; show references in a
+  small gallery
+- the same link applies to scenes once scene plans exist (Phase 2.6)
+- images only (PNG, JPEG, WebP), with a size limit and a check that the bytes match the declared
+  type; stored privately and served only to members of the project
+- removing a picture retires the link; the asset and its history remain
+
+Deliberately left in Phase 4: scanning and sandboxed decoding of untrusted files, thumbnails and
+variants, captions and other derived observations, audio and video, embeddings and retrieval, and
+sending media to a model. Until Phase 4, a picture is something the author looks at, not
+something the assistant reads.
+
+## Decision 2026-10-21: audio and video deferred past release one
+
+The owner decided on 2026-10-21 that audio and video are deferred past release one; pictures stay
+the only media. Everything in this document about recordings, transcripts, audio ranges, video
+windows and keyframes, sound and film context parts, audio/video embeddings and retrieval, and
+audio/video checks describes later work, not release one. The contracts that already name them
+(`AudioPart`, `VideoPart`, audio and video embedding inputs) stay declared and refused, so adding
+them later does not change the shapes pictures use. The release-one exit criteria above apply to
+pictures. Recorded in ADR-010 (amendment 2026-10-21) and `11-decisions-and-questions.md`.

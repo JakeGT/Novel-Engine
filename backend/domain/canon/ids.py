@@ -26,7 +26,41 @@ ID_PREFIXES: dict[str, str] = {
     "asset_link": "alk",
     "project": "prj",
     "workspace": "wsp",
+    # A story plan record (story, arc, beat, scene, thread): intent, never fact.
+    "plan_item": "pln",
+    # Prose an author brought in, and one unchanging version of it. Evidence, not canon.
+    "source_text": "src",
+    "source_version": "srv",
+    # What an author decided a phrase means ("the Fox" is Mara), or does not mean.
+    "alias_binding": "alb",
+    # An author's own continuity rule (ADR-013).
+    "story_invariant": "inv",
+    # Reserved for records later phases introduce. No tables exist for these yet;
+    # reserving the prefixes keeps today's ids from colliding with them.
+    "scene_contract": "sct",
+    "narrated_assertion": "nar",
+    "speech_act": "spa",
+    "disclosure": "dsc",
+    "resolution_example": "rex",
+    "canon_tag": "tag",
+    "finding_suppression": "sup",
+    "dependency_edge": "dep",
+    "read_model_watermark": "rmw",
 }
+
+# Kinds whose prefix is reserved but which have no implementation in this phase.
+RESERVED_ID_KINDS: frozenset[str] = frozenset(
+    {
+        "scene_contract",
+        "narrated_assertion",
+        "speech_act",
+        "disclosure",
+        "resolution_example",
+        "finding_suppression",
+        "dependency_edge",
+        "read_model_watermark",
+    }
+)
 
 _ID_PATTERN = re.compile(r"^[a-z][a-z0-9]*_[A-Za-z0-9_-]+$")
 

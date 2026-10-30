@@ -33,6 +33,52 @@ class RevisionSummary(BaseModel):
     envelope_checksum: str
     operation_count: int = 0
     created_at: datetime
+    # Why the revision exists. ``actor_user_id`` is withheld from read-only members.
+    origin: str | None = None
+    intent: str | None = None
+    mutation_id: str | None = None
+    actor_user_id: str | None = None
+    decision_count: int = 0
+    evidence_count: int = 0
+    # Canonical commits are atomic: a listed revision is always fully committed.
+    status: str = "committed"
+
+
+class ProvenanceDecision(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    decision: str
+    actor_user_id: str | None = None
+    note: str | None = None
+    created_at: datetime
+
+
+class ProvenanceEvidence(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    source_artefact_id: str
+    location: str | None = None
+
+
+class ProvenanceEntry(BaseModel):
+    """Why one change to a canonical record exists: commit, origin, review, and evidence."""
+
+    model_config = {"extra": "forbid"}
+
+    record_type: str
+    record_id: str
+    revision: int
+    commit_id: str
+    operation_type: str
+    origin: str | None = None
+    intent: str | None = None
+    schema_version_id: str | None = None
+    actor_user_id: str | None = None
+    decisions: list[ProvenanceDecision] = Field(default_factory=list)
+    evidence: list[ProvenanceEvidence] = Field(default_factory=list)
+    # True when reviewer identities and notes were withheld from this reader.
+    redacted: bool = False
+    created_at: datetime
 
 
 class RecordHistoryEntry(BaseModel):

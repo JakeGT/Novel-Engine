@@ -1,3 +1,5 @@
+# Local development stores only. Ports are published on the loopback interface so
+# nothing else on the network can reach them. This is not the hosted deployment.
 services:
   postgres:
     image: pgvector/pgvector:0.8.0-pg17
@@ -6,7 +8,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-novel_engine}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -22,18 +24,21 @@ services:
       NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-password}
       NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
     ports:
-      - "${NEO4J_HTTP_PORT:-7474}:7474"
-      - "${NEO4J_BOLT_PORT:-7687}:7687"
+      - "127.0.0.1:${NEO4J_HTTP_PORT:-7474}:7474"
+      - "127.0.0.1:${NEO4J_BOLT_PORT:-7687}:7687"
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
       - neo4j_plugins:/plugins
+    # A plain HTTP request, not cypher-shell: cypher-shell starts a JVM on
+    # every check, which cost about a third of a core per container at rest.
     healthcheck:
-      test:
-        ["CMD-SHELL", "cypher-shell -u ${NEO4J_USER:-neo4j} -p ${NEO4J_PASSWORD:-password} 'RETURN 1' || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 15
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:7474/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
+      start_interval: 5s
     restart: unless-stopped
 
   neo4j-test:
@@ -42,16 +47,19 @@ services:
     environment:
       NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-password}
     ports:
-      - "${NEO4J_TEST_HTTP_PORT:-7475}:7474"
-      - "${NEO4J_TEST_BOLT_PORT:-7688}:7687"
+      - "127.0.0.1:${NEO4J_TEST_HTTP_PORT:-7475}:7474"
+      - "127.0.0.1:${NEO4J_TEST_BOLT_PORT:-7688}:7687"
     volumes:
       - neo4j_test_data:/data
+    # A plain HTTP request, not cypher-shell: cypher-shell starts a JVM on
+    # every check, which cost about a third of a core per container at rest.
     healthcheck:
-      test:
-        ["CMD-SHELL", "cypher-shell -u ${NEO4J_USER:-neo4j} -p ${NEO4J_PASSWORD:-password} 'RETURN 1' || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 15
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:7474/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
+      start_interval: 5s
     restart: unless-stopped
 
 volumes:

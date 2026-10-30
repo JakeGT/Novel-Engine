@@ -12,6 +12,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+from backend.domain.errors import DomainError
 from backend.domain.identity import utcnow
 
 
@@ -33,6 +34,8 @@ class UsageRecord(BaseModel):
     actual_route: str | None = None
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    # Of the prompt tokens, those the provider read from its cache (part of prompt_tokens).
+    cached_prompt_tokens: int = 0
     latency_ms: int = 0
     attempt: int = 1
     outcome: UsageOutcome = UsageOutcome.SUCCESS
@@ -49,6 +52,7 @@ class UsageTotals(BaseModel):
     request_count: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    cached_prompt_tokens: int = 0
     provider_cost_usd: float = 0.0
 
     @property
@@ -75,8 +79,27 @@ class UsageLimit:
         self.period_cost_limit = period_cost_limit
 
 
-class UsageLimitExceeded(RuntimeError):
+class UsageLimitExceeded(DomainError):
     """A per-job or rolling-period token/cost limit would be exceeded."""
+
+    status_code = 429
+    code = "usage_limit"
+
+
+class Allowance(BaseModel):
+    """What one person may spend through a workspace's key in a period, and has."""
+
+    period_seconds: int
+    # The limit in force: the lower of the site's and the workspace's. None = no limit.
+    limit_tokens: int | None
+    used_tokens: int
+    requests: int
+    # What a workspace owner chose, if anything, and the site's own ceiling.
+    workspace_limit_tokens: int | None
+    site_limit_tokens: int | None
+    # What the provider reported this person's calls in the period cost, in US dollars;
+    # None when no provider reported a cost (prices are never worked out here).
+    cost_usd: float | None = None
 
 
 class UsageError(RuntimeError):

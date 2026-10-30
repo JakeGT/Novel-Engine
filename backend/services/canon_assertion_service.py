@@ -12,7 +12,13 @@ from __future__ import annotations
 from datetime import datetime
 
 from backend.adapters.system import uuid7
-from backend.domain.canon.assertions import Belief, Fact, TruthAgreement, truth_agreement
+from backend.domain.canon.assertions import (
+    Belief,
+    Fact,
+    FactVisibility,
+    TruthAgreement,
+    truth_agreement,
+)
 from backend.domain.canon.entities import CanonEntity, EntityLifecycle
 from backend.domain.canon.errors import CanonError
 from backend.domain.canon.events import Event, EventParticipant
@@ -28,6 +34,7 @@ from backend.domain.errors import ConflictError, NotFoundError, ValidationError
 from backend.domain.identity import AccessScope
 from backend.domain.operations import (
     AmendEventOp,
+    AmendFactOp,
     AssertBeliefOp,
     AssertFactOp,
     CloseBeliefOp,
@@ -36,6 +43,7 @@ from backend.domain.operations import (
     RetireEventOp,
 )
 from backend.domain.tenancy import Permission
+from backend.domain.worldtime import WorldTime, is_unknown
 from backend.ports import CanonRepositoryPort, SchemaVersionStorePort
 from backend.services.mutation_service import CommitResult, MutationService
 from backend.services.schema_compiler import compile_definition
@@ -73,6 +81,8 @@ class CanonAssertionService:
         expected_revision: int,
         idempotency_key: str,
         schema_version_id: str | None = None,
+        *,
+        acknowledge_high_impact: bool = False,
     ) -> CommitResult:
         if schema_version_id is None and self._schema_store is not None:
             published = await self._schema_store.get_published(
@@ -90,7 +100,9 @@ class CanonAssertionService:
             idempotency_key=idempotency_key,
             schema_version_id=schema_version_id,
         )
-        return await self._mutation.commit(scope, mutation.id)
+        return await self._mutation.commit_author_change(
+            scope, mutation.id, acknowledge_high_impact=acknowledge_high_impact
+        )
 
     async def _require_entity(
         self, workspace_id: str, project_id: str, entity_id: str
@@ -152,12 +164,18 @@ class CanonAssertionService:
         confidence: float = 1.0,
         valid_from: datetime | None = None,
         valid_until: datetime | None = None,
+        starts: WorldTime | None = None,
+        ends: WorldTime | None = None,
+        visibility: FactVisibility | None = None,
         idempotency_key: str = "",
     ) -> tuple[CommitResult, Fact]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         subject = await self._require_entity(workspace_id, project_id, proposition.subject_id)
         spec = await self._validate_proposition(proposition, subject.type, workspace_id, project_id)
-        if spec is not None and spec.cardinality == Cardinality.ONE:
+        # A fact true for only part of the story may sit beside another value of a
+        # one-at-a-time kind; the commit validator compares the two spans.
+        spanned = not is_unknown(starts) or not is_unknown(ends)
+        if spec is not None and spec.cardinality == Cardinality.ONE and not spanned:
             existing = await self._reader.list_facts(
                 workspace_id=workspace_id,
                 project_id=project_id,
@@ -176,6 +194,9 @@ class CanonAssertionService:
             confidence=confidence,
             valid_from=valid_from,
             valid_until=valid_until,
+            starts=starts,
+            ends=ends,
+            visibility=visibility,
         )
         result = await self._commit(
             scope, workspace_id, project_id, [operation], expected_revision, idempotency_key
@@ -212,6 +233,38 @@ class CanonAssertionService:
         assert fact is not None
         return result, fact
 
+    async def amend_fact(
+        self,
+        scope: AccessScope,
+        workspace_id: str,
+        project_id: str,
+        fact_id: str,
+        *,
+        expected_revision: int,
+        starts: WorldTime | None = None,
+        ends: WorldTime | None = None,
+        visibility: FactVisibility | None = None,
+        idempotency_key: str = "",
+    ) -> tuple[CommitResult, Fact]:
+        """Say when a fact is true, or who may know it. Unset fields stay as they are."""
+        await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
+        existing = await self._reader.get_fact(
+            workspace_id=workspace_id, project_id=project_id, fact_id=fact_id
+        )
+        if existing is None:
+            raise NotFoundError("Fact not found.")
+        if starts is None and ends is None and visibility is None:
+            raise ValidationError("Say when the fact is true, or who may know it.")
+        operation = AmendFactOp(id=fact_id, starts=starts, ends=ends, visibility=visibility)
+        result = await self._commit(
+            scope, workspace_id, project_id, [operation], expected_revision, idempotency_key
+        )
+        fact = await self._reader.get_fact(
+            workspace_id=workspace_id, project_id=project_id, fact_id=fact_id
+        )
+        assert fact is not None
+        return result, fact
+
     async def get_fact(
         self, scope: AccessScope, workspace_id: str, project_id: str, fact_id: str
     ) -> Fact:
@@ -232,6 +285,7 @@ class CanonAssertionService:
         include_closed: bool = False,
         subject_id: str | None = None,
         predicate: str | None = None,
+        object_entity_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[Fact]:
@@ -242,6 +296,7 @@ class CanonAssertionService:
             include_closed=include_closed,
             subject_id=subject_id,
             predicate=predicate,
+            object_entity_id=object_entity_id,
             limit=limit,
             offset=offset,
         )
@@ -375,6 +430,7 @@ class CanonAssertionService:
         cause_ids: list[str] | None = None,
         outcome_ids: list[str] | None = None,
         world_position: str | None = None,
+        when: WorldTime | None = None,
         idempotency_key: str = "",
     ) -> tuple[CommitResult, Event]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
@@ -395,6 +451,7 @@ class CanonAssertionService:
             cause_ids=cause_ids or [],
             outcome_ids=outcome_ids or [],
             world_position=world_position,
+            when=when,
         )
         result = await self._commit(
             scope, workspace_id, project_id, [operation], expected_revision, idempotency_key
@@ -415,6 +472,7 @@ class CanonAssertionService:
         expected_revision: int,
         name: str | None = None,
         world_position: str | None = None,
+        when: WorldTime | None = None,
         idempotency_key: str = "",
     ) -> tuple[CommitResult, Event]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
@@ -423,7 +481,7 @@ class CanonAssertionService:
         )
         if existing is None:
             raise NotFoundError("Event not found.")
-        operation = AmendEventOp(id=event_id, name=name, world_position=world_position)
+        operation = AmendEventOp(id=event_id, name=name, world_position=world_position, when=when)
         result = await self._commit(
             scope, workspace_id, project_id, [operation], expected_revision, idempotency_key
         )
@@ -442,6 +500,7 @@ class CanonAssertionService:
         *,
         expected_revision: int,
         idempotency_key: str = "",
+        acknowledge_high_impact: bool = False,
     ) -> tuple[CommitResult, Event]:
         await self._authorize(scope, workspace_id, project_id, Permission.PROJECT_WRITE)
         existing = await self._reader.get_event(
@@ -451,7 +510,13 @@ class CanonAssertionService:
             raise NotFoundError("Event not found.")
         operation = RetireEventOp(id=event_id)
         result = await self._commit(
-            scope, workspace_id, project_id, [operation], expected_revision, idempotency_key
+            scope,
+            workspace_id,
+            project_id,
+            [operation],
+            expected_revision,
+            idempotency_key,
+            acknowledge_high_impact=acknowledge_high_impact,
         )
         event = await self._reader.get_event(
             workspace_id=workspace_id, project_id=project_id, event_id=event_id
@@ -477,6 +542,7 @@ class CanonAssertionService:
         project_id: str,
         *,
         include_retired: bool = False,
+        entity_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[Event]:
@@ -485,6 +551,7 @@ class CanonAssertionService:
             workspace_id=workspace_id,
             project_id=project_id,
             include_retired=include_retired,
+            entity_id=entity_id,
             limit=limit,
             offset=offset,
         )

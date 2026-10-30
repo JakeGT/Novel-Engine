@@ -6,6 +6,7 @@ advances (or rebuilds) the graph projection and reports lag.
     uv run --locked python -m backend.devtools.project --lag
     uv run --locked python -m backend.devtools.project
     uv run --locked python -m backend.devtools.project --rebuild
+    uv run --locked python -m backend.devtools.project --verify
 """
 
 from __future__ import annotations
@@ -20,9 +21,24 @@ from backend.core.config import settings as default_settings
 from backend.seed.apply import SEED_PROJECT_ID, SEED_WORKSPACE_ID
 
 
-async def _run(workspace: str, project: str, *, rebuild: bool, show_lag: bool) -> int:
+async def _run(
+    workspace: str, project: str, *, rebuild: bool, show_lag: bool, verify: bool = False
+) -> int:
     container = build_container(default_settings)
     try:
+        if verify:
+            # Journal replay vs normalized canon vs graph projection. Reports
+            # record ids and field names only; it never prints story content.
+            report = await container.equivalence_service.verify(workspace, project)
+            print(
+                f"equivalence: head={report.head_revision} "
+                f"journal={report.journal_checksum[:12]} canon={report.canon_checksum[:12]} "
+                f"projection={(report.projection_checksum or 'n/a')[:12]}"
+            )
+            for problem in report.problems:
+                print(f"  - {problem}")
+            print("equivalence OK" if report.ok else "equivalence FAILED")
+            return 0 if report.ok else 1
         branch = await container.journal.ensure_root_branch(
             workspace_id=workspace, project_id=project
         )
@@ -60,8 +76,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--project", default=SEED_PROJECT_ID)
     parser.add_argument("--rebuild", action="store_true", help="Discard and replay the projection.")
     parser.add_argument("--lag", action="store_true", help="Report projection lag only.")
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Compare journal replay, normalized canon, and the graph projection.",
+    )
     args = parser.parse_args(argv)
-    return asyncio.run(_run(args.workspace, args.project, rebuild=args.rebuild, show_lag=args.lag))
+    return asyncio.run(
+        _run(
+            args.workspace,
+            args.project,
+            rebuild=args.rebuild,
+            show_lag=args.lag,
+            verify=args.verify,
+        )
+    )
 
 
 if __name__ == "__main__":

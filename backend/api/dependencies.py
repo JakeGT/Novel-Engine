@@ -81,6 +81,18 @@ def get_schema_service(container: Container = Depends(get_container)) -> SchemaS
     return container.schema_service
 
 
+def get_plan_service(container: Container = Depends(get_container)) -> Any:
+    return container.plan_service
+
+
+def get_source_service(container: Container = Depends(get_container)) -> Any:
+    return container.source_service
+
+
+def get_rule_service(container: Container = Depends(get_container)) -> Any:
+    return container.rule_service
+
+
 def get_canon_entity_service(
     container: Container = Depends(get_container),
 ) -> CanonEntityService:
@@ -91,6 +103,30 @@ def get_canon_assertion_service(
     container: Container = Depends(get_container),
 ) -> CanonAssertionService:
     return container.canon_assertion_service
+
+
+def get_mutation_service(container: Container = Depends(get_container)) -> Any:
+    return container.mutation_service
+
+
+def get_canon_character_workflow(container: Container = Depends(get_container)) -> Any:
+    return container.canon_character_workflow
+
+
+def get_assist_session_service(container: Container = Depends(get_container)) -> Any:
+    return container.assist_session_service
+
+
+def get_conversation_service(container: Container = Depends(get_container)) -> Any:
+    return container.conversation_service
+
+
+def get_merge_service(container: Container = Depends(get_container)) -> Any:
+    return container.merge_service
+
+
+def get_archive_service(container: Container = Depends(get_container)) -> Any:
+    return container.archive_service
 
 
 def get_journal(container: Container = Depends(get_container)) -> Any:

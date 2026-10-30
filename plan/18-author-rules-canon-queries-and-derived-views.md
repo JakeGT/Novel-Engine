@@ -224,6 +224,12 @@ application contracts stabilize. MCP is another transport, not a second domain l
 - Hosted remote MCP and local/self-hosted MCP document their distinct authentication and network
   boundaries.
 
+Built 2026-10-18 (ADR-024, `backend/api/mcp.py`, `mcp_tools.py`): access keys establish scope; reads
+take a story, a what-if and (for an entry) a point of view, and report the story they read; the one
+write tool makes a reviewed proposal with origin `machine`. Revision and time coordinates are taken
+by the timeline tool (`at`); reading an entry at an earlier version is not offered yet. Boundaries
+are documented in `plan/runbooks/connected-assistants.md`.
+
 This lets authors use assistants they already fund while preserving Novel Engine's review and
 continuity guarantees.
 
@@ -258,7 +264,7 @@ audit trail; the system never silently retrains or changes thresholds from autho
 
 ## Delivery order
 
-### Data-compatible foundations (before Phase 2 storage freezes)
+### Data-compatible foundations (before Phase 2 storage freezes) — done or carried, see `05-storage-and-integrity.md`
 
 - finalize immutable assertions plus branch-local effect/tombstone semantics
 - finalize `WorldTime` and `NarrativePosition`
@@ -266,14 +272,14 @@ audit trail; the system never silently retrains or changes thresholds from autho
   disclosure, alias, tag, suppression, dependency, and projection-watermark records
 - keep deferred record tables out of the Phase 2 migration unless the Phase 2 workflow needs them
 
-### Phase 2 canonical query foundation
+### Phase 2 canonical query foundation — done
 
 - authoritative PostgreSQL history/provenance queries
 - revision comparison, immutable tags, and compensating revert proposals
 - dependency/outbox projection framework and visible watermarks
 - invariant evaluator interface, with built-in commit checks separated from author story rules
 
-### Thin text-first workflow immediately after Phase 2
+### Text intake (Phase 2.7; superseded as the first slice by assistant-led creation, Phases 2.5–2.6)
 
 - manuscript/scene paste or Markdown import
 - entity marks, alias candidate correction, and bounded extraction
@@ -311,3 +317,19 @@ Cross-modal retrieval and media critics remain outside the text-first critical p
 - Derived views expose freshness and rebuild from the journal.
 - Reader/character exports pass spoiler and secret-leakage tests.
 - External assistants can propose but cannot silently commit or weaken policy.
+
+## Revision 2026-10-10: rules, queries, and contracts by asking
+
+- **A rule is a sentence first.** The author writes "nobody dead may speak"; the assistant drafts
+  the typed predicate, shows examples it would and would not catch from the author's own story,
+  and the author reviews the examples. The AST is the advanced view. Rules stay warning-only
+  until explicitly made blocking (ADR-013).
+- **A canon question is a question.** `CanonQuery` keeps its explicit branch, revision, time, and
+  point-of-view coordinates for tools; an author asks "where was Mara when the fire started?" and
+  the answer states the scope it assumed and its sources.
+- **Scene contracts and arcs are inferred and optional.** They are drafted from the plan and the
+  scene, shown in plain words, and never required before writing.
+- **External assistants are proposal-only**, not read-only: an MCP write can create a proposal and
+  nothing else. The in-product assistant is the primary assistant; external ones use the same
+  boundary.
+- Disclosure modes, sincerity classes, the irony map, and suppression scope are Level 5.

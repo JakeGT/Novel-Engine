@@ -1,0 +1,251 @@
+# Prompt snapshot. Change it only with: uv run python -m tests.prompts.snapshots --update
+id: plan-draft
+version: 3
+
+##### case: beats with answers
+
+=== system ===
+Turn what an author has said about their story into plan items for them to review. A plan is what the author intends, not what is true in the story. Rules:
+- write down only what the author said or answered. Never invent a turn, an ending, a motive or a scene. What they have not decided goes in `gaps`, in plain words, and is left out of the plan.
+- kinds: story (the premise; at most one), arc (a line of change, usually one character's), beat (a turning point in an arc), scene (where a beat happens), thread (a question raised or a promise made to the reader).
+- an arc sits under the story; a beat under an arc; a scene under a beat. Use parent_ref with the id of an existing plan item or the ref of one you draft. Do not repeat an item that is already in the plan.
+- name the story's own entries by their exact ids, with a role: point_of_view and place (a scene, one each, only if the author said so), participant (who or what is in a beat or scene), about (whose arc or thread it is).
+- if the plan needs a person, place or thing that is not in the story bible, add it to new_entries with a type from ['Character', 'Faction', 'Location', 'Object'] and refer to it by its ref. Do not describe it.
+- when something sets up a question or a promise, draft a thread for it and list it in sets_up; list it in pays_off where it is answered.
+- in each item's `quote`, copy exactly the author's words it comes from (from what they said, their answers or the story bible); leave it empty when the item is your own suggestion. Never make a quote up.
+- for a scene you draft, add to `intents` (by its ref) only what the author said it is for: what the viewpoint character wants in it (goal), who or what is in the way (obstacle), and how it ends for them (outcome: yes, no, yes_but or no_and), each with the author's exact words that say it in its `_words`. Leave out anything they did not say; never fill it in yourself.
+- `understood` restates what is being planned in one plain sentence.
+Draft the arcs that are missing and the beats of each arc: its turning points, in order. Do not draft scenes.
+
+=== user ===
+Entries:
+- ent_mara: Mara Voss (Character)
+- ent_saltmere: Saltmere (Location)
+Facts (true in the story):
+- fct_1: Mara Voss LOCATED_AT Saltmere
+Story time is counted in years.
+
+What the author says:
+Mara learns who betrayed her father.
+
+Answers:
+Q: Where does Mara live?
+A: In Saltmere.
+Q: Who does she work for?
+A: The guild.
+
+##### answer shape
+{
+  "$defs": {
+    "DraftIntent": {
+      "description": "What a drafted scene is for (STY-003), only where the author's own words say it.\nUntrusted: each part is kept only when its words are found in what the author said.",
+      "properties": {
+        "goal": {
+          "default": "",
+          "description": "What the viewpoint character wants in it",
+          "title": "Goal",
+          "type": "string"
+        },
+        "goal_words": {
+          "default": "",
+          "description": "The author's words that say it, copied exactly; else empty",
+          "title": "Goal Words",
+          "type": "string"
+        },
+        "obstacle": {
+          "default": "",
+          "description": "Who or what stands in their way",
+          "title": "Obstacle",
+          "type": "string"
+        },
+        "obstacle_words": {
+          "default": "",
+          "description": "The author's words that say it, copied exactly; else empty",
+          "title": "Obstacle Words",
+          "type": "string"
+        },
+        "outcome": {
+          "default": "",
+          "description": "How it ends for them: yes, no, yes_but or no_and; else empty",
+          "title": "Outcome",
+          "type": "string"
+        },
+        "outcome_words": {
+          "default": "",
+          "description": "The author's words that say it, copied exactly; else empty",
+          "title": "Outcome Words",
+          "type": "string"
+        },
+        "ref": {
+          "description": "The ref of a scene you draft",
+          "title": "Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref"
+      ],
+      "title": "DraftIntent",
+      "type": "object"
+    },
+    "DraftPlanEntry": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "ref": {
+          "title": "Ref",
+          "type": "string"
+        },
+        "type": {
+          "description": "One of the allowed entry types",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "type",
+        "name"
+      ],
+      "title": "DraftPlanEntry",
+      "type": "object"
+    },
+    "DraftPlanItem": {
+      "properties": {
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/DraftPlanRef"
+          },
+          "title": "Entries",
+          "type": "array"
+        },
+        "kind": {
+          "description": "One of: story, arc, beat, scene, thread",
+          "title": "Kind",
+          "type": "string"
+        },
+        "parent_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The id of an existing plan item, or the ref of a drafted one",
+          "title": "Parent Ref"
+        },
+        "pays_off": {
+          "description": "Threads this resolves",
+          "items": {
+            "type": "string"
+          },
+          "title": "Pays Off",
+          "type": "array"
+        },
+        "quote": {
+          "default": "",
+          "description": "The author's own words this item comes from, copied exactly from what you were given; empty when it is your own suggestion",
+          "title": "Quote",
+          "type": "string"
+        },
+        "ref": {
+          "description": "A short local handle for this item",
+          "title": "Ref",
+          "type": "string"
+        },
+        "sets_up": {
+          "description": "Threads this opens",
+          "items": {
+            "type": "string"
+          },
+          "title": "Sets Up",
+          "type": "array"
+        },
+        "summary": {
+          "default": "",
+          "description": "What is meant to happen, in a sentence or two",
+          "title": "Summary",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "kind",
+        "title"
+      ],
+      "title": "DraftPlanItem",
+      "type": "object"
+    },
+    "DraftPlanRef": {
+      "properties": {
+        "ref": {
+          "description": "The id of an existing entry, or the ref of a new one",
+          "title": "Ref",
+          "type": "string"
+        },
+        "role": {
+          "description": "One of: point_of_view, place, participant, about",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "role"
+      ],
+      "title": "DraftPlanRef",
+      "type": "object"
+    }
+  },
+  "description": "Structured model output. Untrusted: typed and checked before it becomes operations.",
+  "properties": {
+    "gaps": {
+      "description": "What the author has not decided, left open rather than made up",
+      "items": {
+        "type": "string"
+      },
+      "title": "Gaps",
+      "type": "array"
+    },
+    "intents": {
+      "description": "For a drafted scene, what it is for, only where the author said so",
+      "items": {
+        "$ref": "#/$defs/DraftIntent"
+      },
+      "title": "Intents",
+      "type": "array"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/DraftPlanItem"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "new_entries": {
+      "description": "People, places or things the plan needs that are not in the story bible",
+      "items": {
+        "$ref": "#/$defs/DraftPlanEntry"
+      },
+      "title": "New Entries",
+      "type": "array"
+    },
+    "understood": {
+      "default": "",
+      "description": "One sentence restating what is planned",
+      "title": "Understood",
+      "type": "string"
+    }
+  },
+  "title": "PlanDraft",
+  "type": "object"
+}

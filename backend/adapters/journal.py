@@ -7,14 +7,18 @@ attempts, review decisions, canon revisions, and the transactional outbox.
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from typing import Any
 
 from sqlalchemy import text
 
 from backend.adapters.system import uuid7
 from backend.core.database import session_scope
+from backend.domain.branching import working_branch_id
 from backend.domain.canon.ids import format_canon_id
 from backend.domain.canon.revisions import CanonRevision
+from backend.domain.errors import NotFoundError
 from backend.domain.journal import (
     AttemptStatus,
     Branch,
@@ -23,14 +27,19 @@ from backend.domain.journal import (
     CommitEnvelope,
     HeadConflict,
     JournalError,
+    MutationNotFound,
     MutationOperation,
     MutationSet,
     MutationStatus,
+    MutationTransition,
+    OperationDecision,
+    OperationRevision,
     OutboxMessage,
     ReservationStatus,
     ReviewDecision,
     RevisionConflict,
 )
+from backend.domain.review import ensure_transition, is_editable
 
 
 def _branch(row: Any) -> Branch:
@@ -42,6 +51,11 @@ def _branch(row: Any) -> Branch:
         is_root=row.is_root,
         head_revision=row.head_revision,
         created_at=row.created_at,
+        parent_branch_id=getattr(row, "parent_branch_id", None),
+        fork_revision=getattr(row, "fork_revision", None),
+        description=getattr(row, "description", None),
+        status=getattr(row, "status", None) or "active",
+        created_by=getattr(row, "created_by", None),
     )
 
 
@@ -58,9 +72,93 @@ def _mutation(row: Any) -> MutationSet:
         correlation_id=row.correlation_id,
         idempotency_key=row.idempotency_key,
         expected_head=row.expected_head,
+        intent=row.intent,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
+
+
+def _transition(row: Any) -> MutationTransition:
+    return MutationTransition(
+        id=row.id,
+        mutation_id=row.mutation_id,
+        from_status=MutationStatus(row.from_status),
+        to_status=MutationStatus(row.to_status),
+        actor_user_id=row.actor_user_id,
+        reason=row.reason,
+        correlation_id=row.correlation_id,
+        idempotency_key=row.idempotency_key,
+        created_at=row.created_at,
+    )
+
+
+def _operation_decision(row: Any) -> OperationDecision:
+    return OperationDecision(
+        id=row.id,
+        mutation_id=row.mutation_id,
+        ordinal=row.ordinal,
+        operation_revision=row.operation_revision,
+        decision=row.decision,
+        actor_user_id=row.actor_user_id,
+        note=row.note,
+        created_at=row.created_at,
+    )
+
+
+async def apply_transition(
+    session: Any,
+    mutation: Any,
+    to_status: MutationStatus,
+    *,
+    actor_user_id: str | None,
+    reason: str,
+    correlation_id: str = "",
+    idempotency_key: str = "",
+) -> None:
+    """Enforce the state machine and append the transition inside ``session``'s transaction.
+
+    ``mutation`` must be a row already locked ``FOR UPDATE`` by the caller.
+    """
+    current = MutationStatus(mutation.status)
+    ensure_transition(current, to_status)
+    await session.execute(
+        text("UPDATE mutation_sets SET status = :status, updated_at = now() WHERE id = :id"),
+        {"status": to_status.value, "id": mutation.id},
+    )
+    await session.execute(
+        text(
+            """
+            INSERT INTO mutation_transitions (
+                id, mutation_id, workspace_id, project_id, from_status, to_status,
+                actor_user_id, reason, correlation_id, idempotency_key
+            )
+            VALUES (:id, :m, :w, :p, :from_status, :to_status, :actor, :reason, :corr, :key)
+            """
+        ),
+        {
+            "id": format_canon_id("operation", str(uuid7())),
+            "m": mutation.id,
+            "w": mutation.workspace_id,
+            "p": mutation.project_id,
+            "from_status": current.value,
+            "to_status": to_status.value,
+            "actor": actor_user_id,
+            "reason": reason,
+            "corr": correlation_id or mutation.correlation_id,
+            "key": idempotency_key or mutation.idempotency_key,
+        },
+    )
+
+
+async def _lock_mutation(session: Any, mutation_id: str) -> Any:
+    row = (
+        await session.execute(
+            text("SELECT * FROM mutation_sets WHERE id = :id FOR UPDATE"), {"id": mutation_id}
+        )
+    ).first()
+    if row is None:
+        raise MutationNotFound(f"mutation {mutation_id!r} not found")
+    return row
 
 
 def _envelope(row: Any) -> CommitEnvelope:
@@ -78,6 +176,11 @@ def _envelope(row: Any) -> CommitEnvelope:
         actor_user_id=row.actor_user_id,
         created_at=row.created_at,
     )
+
+
+# The first key of the two-key advisory locks taken by story_lock, so they never meet the
+# single-key locks used elsewhere (credentials, rate limits, the studio).
+_STORY_LOCK_SPACE = 12_012
 
 
 class PostgresCanonJournal:
@@ -113,6 +216,18 @@ class PostgresCanonJournal:
                 )
             ).one()
         return _branch(row)
+
+    async def working_branch(self, *, workspace_id: str, project_id: str) -> Branch:
+        """The what-if this request works in, or the main story (ADR-020)."""
+        branch_id = working_branch_id()
+        if branch_id is None:
+            return await self.ensure_root_branch(workspace_id=workspace_id, project_id=project_id)
+        branch = await self.get_branch(
+            workspace_id=workspace_id, project_id=project_id, branch_id=branch_id
+        )
+        if branch is None:
+            raise NotFoundError("That what-if was not found.")
+        return branch
 
     async def get_branch(
         self, *, workspace_id: str, project_id: str, branch_id: str
@@ -154,6 +269,7 @@ class PostgresCanonJournal:
         schema_version_id: str | None = None,
         correlation_id: str = "",
         idempotency_key: str = "",
+        intent: str = "edit",
     ) -> MutationSet:
         async with session_scope(self._session_factory) as session:
             if idempotency_key:
@@ -175,11 +291,11 @@ class PostgresCanonJournal:
                         INSERT INTO mutation_sets (
                             id, workspace_id, project_id, branch_id, schema_version_id,
                             status, origin, actor_user_id, correlation_id, idempotency_key,
-                            expected_head
+                            expected_head, intent
                         )
                         VALUES (
                             :id, :w, :p, :branch, :schema, 'draft', :origin, :actor,
-                            :corr, :key, :head
+                            :corr, :key, :head, :intent
                         )
                         RETURNING *
                         """
@@ -195,7 +311,116 @@ class PostgresCanonJournal:
                         "corr": correlation_id,
                         "key": idempotency_key,
                         "head": expected_head,
+                        "intent": intent,
                     },
+                )
+            ).one()
+        return _mutation(row)
+
+    async def list_mutations(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[MutationSet]:
+        async with session_scope(self._session_factory) as session:
+            rows = (
+                await session.execute(
+                    text(
+                        "SELECT * FROM mutation_sets WHERE workspace_id = :w AND project_id = :p "
+                        "AND branch_id = COALESCE(CAST(:wb AS TEXT), (SELECT id FROM branches "
+                        "WHERE workspace_id = :w AND project_id = :p AND is_root)) "
+                        "AND (CAST(:status AS TEXT) IS NULL OR status = :status) "
+                        "ORDER BY created_at DESC, id DESC LIMIT :limit OFFSET :offset"
+                    ),
+                    {
+                        "w": workspace_id,
+                        "p": project_id,
+                        "wb": working_branch_id(),
+                        "status": status,
+                        "limit": limit,
+                        "offset": offset,
+                    },
+                )
+            ).all()
+        return [_mutation(row) for row in rows]
+
+    async def transition_mutation(
+        self,
+        *,
+        mutation_id: str,
+        to_status: MutationStatus,
+        actor_user_id: str | None,
+        reason: str,
+        correlation_id: str = "",
+    ) -> MutationSet:
+        async with session_scope(self._session_factory) as session:
+            mutation = await _lock_mutation(session, mutation_id)
+            await apply_transition(
+                session,
+                mutation,
+                to_status,
+                actor_user_id=actor_user_id,
+                reason=reason,
+                correlation_id=correlation_id,
+            )
+            row = (
+                await session.execute(
+                    text("SELECT * FROM mutation_sets WHERE id = :id"), {"id": mutation_id}
+                )
+            ).one()
+        return _mutation(row)
+
+    async def list_transitions(self, *, mutation_id: str) -> list[MutationTransition]:
+        async with session_scope(self._session_factory) as session:
+            rows = (
+                await session.execute(
+                    text("SELECT * FROM mutation_transitions WHERE mutation_id = :m ORDER BY seq"),
+                    {"m": mutation_id},
+                )
+            ).all()
+        return [_transition(row) for row in rows]
+
+    async def retarget_mutation(
+        self,
+        *,
+        mutation_id: str,
+        expected_head: int,
+        actor_user_id: str | None,
+        reason: str,
+        keep_approval: bool = False,
+    ) -> MutationSet:
+        """Point an uncommitted proposal at a newer head.
+
+        Any approval is invalidated unless ``keep_approval``: the caller has shown that
+        nothing the proposal touches changed in between.
+        """
+        async with session_scope(self._session_factory) as session:
+            mutation = await _lock_mutation(session, mutation_id)
+            status = MutationStatus(mutation.status)
+            if not is_editable(status):
+                raise RevisionConflict(f"mutation in state {status.value!r} cannot be retargeted")
+            await session.execute(
+                text(
+                    "UPDATE mutation_sets SET expected_head = :head, updated_at = now() "
+                    "WHERE id = :id"
+                ),
+                {"head": expected_head, "id": mutation_id},
+            )
+            if status is MutationStatus.APPROVED and not keep_approval:
+                await apply_transition(
+                    session,
+                    mutation,
+                    MutationStatus.NEEDS_REVIEW,
+                    actor_user_id=actor_user_id,
+                    reason=reason,
+                )
+            row = (
+                await session.execute(
+                    text("SELECT * FROM mutation_sets WHERE id = :id"), {"id": mutation_id}
                 )
             ).one()
         return _mutation(row)
@@ -216,7 +441,7 @@ class PostgresCanonJournal:
         return _mutation(row) if row else None
 
     async def record_operations(
-        self, *, mutation_id: str, operations: list[MutationOperation]
+        self, *, mutation_id: str, operations: Sequence[MutationOperation]
     ) -> None:
         async with session_scope(self._session_factory) as session:
             for operation in operations:
@@ -231,7 +456,7 @@ class PostgresCanonJournal:
                         FROM mutation_sets ms WHERE ms.id = :m
                         ON CONFLICT (mutation_id, ordinal) DO UPDATE
                         SET operation_type = mutation_operations.operation_type
-                        RETURNING operation_type, payload
+                        RETURNING operation_type, payload, revision
                         """
                         ),
                         {
@@ -249,21 +474,229 @@ class PostgresCanonJournal:
                     raise RevisionConflict(
                         "mutation operation ordinal was reused with different content"
                     )
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO mutation_operation_revisions (
+                            mutation_id, ordinal, revision, workspace_id, project_id,
+                            operation_type, payload, reason
+                        )
+                        SELECT :m, :ord, :rev, ms.workspace_id, ms.project_id, :type,
+                               CAST(:payload AS JSONB), 'proposed'
+                        FROM mutation_sets ms WHERE ms.id = :m
+                        ON CONFLICT DO NOTHING
+                        """
+                    ),
+                    {
+                        "m": mutation_id,
+                        "ord": operation.ordinal,
+                        "rev": row.revision,
+                        "type": operation.operation_type,
+                        "payload": json.dumps(operation.payload),
+                    },
+                )
+
+    async def revise_operation(
+        self,
+        *,
+        mutation_id: str,
+        ordinal: int,
+        operation_type: str,
+        payload: dict[str, Any],
+        actor_user_id: str | None,
+        reason: str,
+    ) -> MutationOperation:
+        """Append a new immutable revision of one operation; never rewrites a prior one."""
+        async with session_scope(self._session_factory) as session:
+            mutation = await _lock_mutation(session, mutation_id)
+            status = MutationStatus(mutation.status)
+            if not is_editable(status):
+                raise RevisionConflict(f"mutation in state {status.value!r} cannot be edited")
+            row = (
+                await session.execute(
+                    text(
+                        "UPDATE mutation_operations SET operation_type = :type, "
+                        "payload = CAST(:payload AS JSONB), revision = revision + 1 "
+                        "WHERE mutation_id = :m AND ordinal = :ord RETURNING revision"
+                    ),
+                    {
+                        "m": mutation_id,
+                        "ord": ordinal,
+                        "type": operation_type,
+                        "payload": json.dumps(payload),
+                    },
+                )
+            ).first()
+            if row is None:
+                raise MutationNotFound(f"operation {ordinal} not found in {mutation_id!r}")
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO mutation_operation_revisions (
+                        mutation_id, ordinal, revision, workspace_id, project_id,
+                        operation_type, payload, actor_user_id, reason
+                    )
+                    VALUES (:m, :ord, :rev, :w, :p, :type, CAST(:payload AS JSONB), :actor, :reason)
+                    """
+                ),
+                {
+                    "m": mutation_id,
+                    "ord": ordinal,
+                    "rev": row.revision,
+                    "w": mutation.workspace_id,
+                    "p": mutation.project_id,
+                    "type": operation_type,
+                    "payload": json.dumps(payload),
+                    "actor": actor_user_id,
+                    "reason": reason,
+                },
+            )
+            if status is MutationStatus.APPROVED:
+                await apply_transition(
+                    session,
+                    mutation,
+                    MutationStatus.NEEDS_REVIEW,
+                    actor_user_id=actor_user_id,
+                    reason="operation edited after approval",
+                )
+        return MutationOperation(
+            ordinal=ordinal, operation_type=operation_type, payload=payload, revision=row.revision
+        )
+
+    async def list_operation_revisions(self, *, mutation_id: str) -> list[OperationRevision]:
+        async with session_scope(self._session_factory) as session:
+            rows = (
+                await session.execute(
+                    text(
+                        "SELECT * FROM mutation_operation_revisions WHERE mutation_id = :m "
+                        "ORDER BY ordinal, revision"
+                    ),
+                    {"m": mutation_id},
+                )
+            ).all()
+        return [
+            OperationRevision(
+                mutation_id=row.mutation_id,
+                ordinal=row.ordinal,
+                revision=row.revision,
+                operation_type=row.operation_type,
+                payload=dict(row.payload),
+                actor_user_id=row.actor_user_id,
+                reason=row.reason,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
+
+    async def record_operation_decision(
+        self,
+        *,
+        mutation_id: str,
+        ordinal: int,
+        decision: str,
+        actor_user_id: str | None = None,
+        note: str | None = None,
+    ) -> OperationDecision:
+        recorded = await self.record_operation_decisions(
+            mutation_id=mutation_id,
+            decisions=[(ordinal, decision, note)],
+            actor_user_id=actor_user_id,
+        )
+        return recorded[0]
+
+    async def record_operation_decisions(
+        self,
+        *,
+        mutation_id: str,
+        decisions: Sequence[tuple[int, str, str | None]],
+        actor_user_id: str | None = None,
+    ) -> list[OperationDecision]:
+        """Record several per-operation decisions together: all of them, or none."""
+        async with session_scope(self._session_factory) as session:
+            mutation = await _lock_mutation(session, mutation_id)
+            status = MutationStatus(mutation.status)
+            if not is_editable(status):
+                raise RevisionConflict(f"mutation in state {status.value!r} cannot be reviewed")
+            revisions = {
+                row.ordinal: row.revision
+                for row in (
+                    await session.execute(
+                        text(
+                            "SELECT ordinal, revision FROM mutation_operations "
+                            "WHERE mutation_id = :m"
+                        ),
+                        {"m": mutation_id},
+                    )
+                ).all()
+            }
+            rows = []
+            for ordinal, decision, note in decisions:
+                if ordinal not in revisions:
+                    raise MutationNotFound(f"operation {ordinal} not found in {mutation_id!r}")
+                rows.append(
+                    (
+                        await session.execute(
+                            text(
+                                """
+                                INSERT INTO operation_decisions (
+                                    id, mutation_id, ordinal, operation_revision, workspace_id,
+                                    project_id, decision, actor_user_id, note
+                                )
+                                VALUES (:id, :m, :ord, :rev, :w, :p, :decision, :actor, :note)
+                                RETURNING *
+                                """
+                            ),
+                            {
+                                "id": format_canon_id("operation", str(uuid7())),
+                                "m": mutation_id,
+                                "ord": ordinal,
+                                "rev": revisions[ordinal],
+                                "w": mutation.workspace_id,
+                                "p": mutation.project_id,
+                                "decision": decision,
+                                "actor": actor_user_id,
+                                "note": note,
+                            },
+                        )
+                    ).one()
+                )
+            if rows and status is MutationStatus.APPROVED:
+                await apply_transition(
+                    session,
+                    mutation,
+                    MutationStatus.NEEDS_REVIEW,
+                    actor_user_id=actor_user_id,
+                    reason="operation decision changed after approval",
+                )
+        return [_operation_decision(row) for row in rows]
+
+    async def list_operation_decisions(self, *, mutation_id: str) -> list[OperationDecision]:
+        async with session_scope(self._session_factory) as session:
+            rows = (
+                await session.execute(
+                    text("SELECT * FROM operation_decisions WHERE mutation_id = :m ORDER BY seq"),
+                    {"m": mutation_id},
+                )
+            ).all()
+        return [_operation_decision(row) for row in rows]
 
     async def list_operations(self, *, mutation_id: str) -> list[MutationOperation]:
         async with session_scope(self._session_factory) as session:
             rows = (
                 await session.execute(
                     text(
-                        "SELECT ordinal, operation_type, payload FROM mutation_operations "
-                        "WHERE mutation_id = :m ORDER BY ordinal"
+                        "SELECT ordinal, operation_type, payload, revision "
+                        "FROM mutation_operations WHERE mutation_id = :m ORDER BY ordinal"
                     ),
                     {"m": mutation_id},
                 )
             ).all()
         return [
             MutationOperation(
-                ordinal=row.ordinal, operation_type=row.operation_type, payload=dict(row.payload)
+                ordinal=row.ordinal,
+                operation_type=row.operation_type,
+                payload=dict(row.payload),
+                revision=row.revision,
             )
             for row in rows
         ]
@@ -275,8 +708,21 @@ class PostgresCanonJournal:
         decision: str,
         actor_user_id: str | None = None,
         note: str | None = None,
+        transition_to: MutationStatus | None = None,
+        correlation_id: str = "",
     ) -> ReviewDecision:
         async with session_scope(self._session_factory) as session:
+            if transition_to is not None:
+                mutation = await _lock_mutation(session, mutation_id)
+                if MutationStatus(mutation.status) is not transition_to:
+                    await apply_transition(
+                        session,
+                        mutation,
+                        transition_to,
+                        actor_user_id=actor_user_id,
+                        reason=note or f"review decision: {decision}",
+                        correlation_id=correlation_id,
+                    )
             row = (
                 await session.execute(
                     text(
@@ -636,14 +1082,17 @@ class PostgresCanonJournal:
             )
 
     async def list_outbox(
-        self, *, workspace_id: str, project_id: str, limit: int = 100
+        self, *, workspace_id: str, project_id: str, limit: int = 100, pending_only: bool = False
     ) -> list[OutboxMessage]:
+        # Pending messages are asked for by themselves: the oldest messages of a long-lived
+        # project are all delivered, so a plain "oldest first" page would never reach the new.
+        pending = " AND published_at IS NULL" if pending_only else ""
         async with session_scope(self._session_factory) as session:
             rows = (
                 await session.execute(
                     text(
-                        "SELECT * FROM outbox_messages WHERE workspace_id = :w AND project_id = :p "
-                        "ORDER BY created_at LIMIT :limit"
+                        "SELECT * FROM outbox_messages WHERE workspace_id = :w AND project_id = :p"
+                        f"{pending} ORDER BY created_at LIMIT :limit"
                     ),
                     {"w": workspace_id, "p": project_id, "limit": limit},
                 )
@@ -663,6 +1112,37 @@ class PostgresCanonJournal:
             )
             for row in rows
         ]
+
+    async def projects_with_pending_outbox(self, *, limit: int = 50) -> list[tuple[str, str]]:
+        async with session_scope(self._session_factory) as session:
+            rows = (
+                await session.execute(
+                    text(
+                        "SELECT workspace_id, project_id, min(created_at) AS oldest "
+                        "FROM outbox_messages WHERE published_at IS NULL "
+                        "GROUP BY workspace_id, project_id ORDER BY oldest LIMIT :limit"
+                    ),
+                    {"limit": limit},
+                )
+            ).all()
+        return [(str(row.workspace_id), str(row.project_id)) for row in rows]
+
+    @asynccontextmanager
+    async def story_lock(self, *, workspace_id: str, project_id: str) -> AsyncIterator[bool]:
+        """The right to deliver one story's changes to the graph, held while the block runs.
+
+        Yields False at once, without waiting, when another process holds it, so two servers
+        never deliver the same story at the same time. The lock belongs to a transaction kept
+        open for the block, so it is let go however the block ends, even if the process dies.
+        """
+        async with session_scope(self._session_factory) as session:
+            held = (
+                await session.execute(
+                    text("SELECT pg_try_advisory_xact_lock(:space, hashtext(:key))"),
+                    {"space": _STORY_LOCK_SPACE, "key": f"{workspace_id}/{project_id}"},
+                )
+            ).scalar()
+            yield bool(held)
 
     async def mark_outbox_published(self, *, message_id: str) -> None:
         async with session_scope(self._session_factory) as session:

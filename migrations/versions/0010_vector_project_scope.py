@@ -25,9 +25,7 @@ def upgrade() -> None:
     op.execute("ALTER TABLE vector_documents ALTER COLUMN project_id SET DEFAULT ''")
     op.execute("ALTER TABLE vector_documents ALTER COLUMN project_id SET NOT NULL")
     op.execute("ALTER TABLE vector_documents DROP CONSTRAINT IF EXISTS vector_documents_pkey")
-    op.execute(
-        "ALTER TABLE vector_documents ADD PRIMARY KEY (workspace_id, project_id, id)"
-    )
+    op.execute("ALTER TABLE vector_documents ADD PRIMARY KEY (workspace_id, project_id, id)")
     op.execute("DROP INDEX IF EXISTS vector_documents_workspace_idx")
     op.execute(
         "CREATE INDEX IF NOT EXISTS vector_documents_scope_idx "

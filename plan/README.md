@@ -27,8 +27,16 @@ Read in this order:
 19. [API surface](api-surface.md) — canonical `/api/v1` routes and the problem error contract.
 20. [Phase 0 baseline](phase-0-baseline.md) — pre-refactor API, storage, workflow, and worktree inventory.
 21. [Phase 1 todo](phase-1-todo.md) — execution-ready identity, tenancy, distribution, provider-credential, and isolation checklist.
-22. [Phase 2 todo](phase-2-todo.md) — draft execution plan for governed schema, revisioned canon, mutation commits, evidence assets, authoring UI, and archive recovery.
+23. [Assistant-first experience and the learning curve](19-assistant-first-experience.md) — the interaction loop, levels, capability map, story planning by conversation, and the definition of done for every feature (ADR-017). **Read this after 01.**
+24. [Design direction](20-design-direction.md) — the visual and interaction character of the product, with the research behind it.
+25. [Intuitive design rules](21-intuitive-design-rules.md) — the rules every screen is held to so it can be used without being taught, the sources behind them, and the review of the product against them.
+25. [Plan audit, 2026-10-10](audit-2026-10-10.md) — findings by document, what was changed, and decisions needed from the owner.
+27. [Phase 3 todo](phase-3-todo.md) — time, what-ifs and knowledge: state, design review, exit criteria.
+26. [Phase 2.5 todo](phase-2.5-todo.md) — assistant-led creation: what is built, what is partial, and what is next.
+22. [Phase 2 todo](phase-2-todo.md) — execution plan and completion dashboard for governed schema, revisioned canon, mutation review and commits, evidence assets, authoring UI, and archive recovery. Evidence: [phase-2-evidence.md](phase-2-evidence.md).
 23. [Author rules, canon queries, and derived views](18-author-rules-canon-queries-and-derived-views.md) — story invariants, explanation/history queries, reader disclosure, scene contracts, derived projections, MCP, and suppressions.
+- Later phase checklists: [2.6](phase-2.6-todo.md), [2.7](phase-2.7-todo.md), [4](phase-4-todo.md), [5](phase-5-todo.md), [6](phase-6-todo.md), [7](phase-7-todo.md). The [backlog](10-backlog.md) is the current status of every item.
+- [Recovery runbooks](runbooks/README.md) — what to do when a migration fails, work piles up, the graph is behind, a provider is down, a restore or import is needed, the disk fills, or the credential key must change (OPS-004).
 
 Architectural decisions that become settled should be recorded in `decisions/` using [the ADR template](decisions/000-template.md).
 
@@ -45,7 +53,7 @@ Architectural decisions that become settled should be recorded in `decisions/` u
 - **Open source and hosted use share one core.** Self-hosted local identity and invite-only portfolio identity enter the same scoped application contracts.
 - **Tenancy is explicit; commerce is absent.** Hosted workspace isolation is foundational, while billing and platform-funded inference are not release dependencies.
 - **Consistency is tiered.** Cheap deterministic checks run continuously; paid model audits escalate only where they add value.
-- **Context is multimodal and authority-aware.** Text, images, audio, and video retain original evidence, explicit links, provenance, branch/time/POV scope, and honest provider fallbacks.
+- **Context is multimodal and authority-aware.** Text and images retain original evidence, explicit links, provenance, branch/time/POV scope, and honest provider fallbacks. Audio and video are deferred past release one (owner decision 2026-10-21).
 
 ## Status vocabulary
 
@@ -57,29 +65,55 @@ Architectural decisions that become settled should be recorded in `decisions/` u
 | Implemented | Acceptance criteria and quality gates pass. |
 | Deferred | Intentionally excluded from the current release. |
 
-Core domain decisions are recorded under `decisions/`. ADR-008 proposes the open-source/free distribution pivot, ADR-009 accepts invite-only tenancy through shared portfolio identity (Authentik), ADR-010 accepts multimodal context with a shared embedding-space boundary, ADR-012 makes PostgreSQL authoritative canon with Neo4j as a replayable projection (superseding ADR-011), and ADR-013 accepts warning-default declarative story invariants while making built-in integrity checks permanently blocking. Licensing and governance remain owner decisions in `11-decisions-and-questions.md`.
+Core domain decisions are recorded under `decisions/`. ADR-008 proposes the open-source/free distribution pivot, ADR-009 accepts invite-only tenancy through shared portfolio identity (Authentik), ADR-010 accepts multimodal context with a shared embedding-space boundary, ADR-012 makes PostgreSQL authoritative canon with Neo4j as a replayable projection (superseding ADR-011), and ADR-013 accepts warning-default declarative story invariants while making built-in integrity checks permanently blocking. ADR-014 (review workflow and high-impact gate), ADR-015 (entity handles, evidence, and checksum-stable operation evolution), and ADR-016 (projection isolation, verified restore, and legacy archives) were accepted on 2026-10-10. ADR-017 (assistant-first interaction and progressive disclosure) is accepted in effect: the owner directed work to continue on the revised plan on 2026-10-10. ADR-018–024 (plan records, source texts and rules as data, story time and what-ifs, scene context, the scene studio, scenes back into the story, connected assistants) were accepted or accepted in effect between 2026-10-11 and 2026-10-18; ADR-025 (the local model connector) is proposed. Licensing and governance remain owner decisions in `11-decisions-and-questions.md`.
 
 ## Current repository baseline
 
-Implemented or partially implemented:
+Implemented and verified (see the per-phase evidence documents):
 
 - Phase 0 lifecycle, ports, migrations, deterministic tests, seed/reset, stable `/api/v1`, and
   PostgreSQL/pgvector + Neo4j infrastructure
 - Phase 1 OIDC/local identity, invitation-only tenancy, scoped stores, encrypted OpenRouter BYOK,
-  object storage, project transfer, and the minimal authenticated React shell
-- Phase 2 typed entity/fact/belief/event domain, immutable project schema versions/runtime
-  compilation, PostgreSQL journal/head/outbox migrations, and initial canonical authoring APIs
-- a transitional ADR-011 Neo4j-first commit implementation retained as characterization while the
-  ADR-012 PostgreSQL canon refactor is built
+  object storage, and project transfer
+- Phase 2 trustworthy canon: typed entities/facts/beliefs/events; immutable project schema
+  versions; an atomic PostgreSQL journal and normalized canon; a review state machine with
+  per-operation decisions and a high-impact gate evaluated in the commit transaction; naming
+  policy; evidence provenance, history, tags, and compensating reverts; media identity with a
+  lifecycle audit; a verified, ledgered archive restore; a replayable Neo4j projection with
+  journal/canon/projection equivalence checks; and an authoring and review UI with browser
+  end-to-end coverage
 
-Not yet product-ready:
+Phase 2 is complete and **accepted by the owner (2026-10-09)**, as is the Phase 1 evidence. Still
+open and operational: the first hosted CI run and the clean-host
+backup/restore rehearsal (deferred by the owner until the project is on a permanent host).
+ADR-014–016 were accepted on 2026-10-10.
 
-- normalized/versioned PostgreSQL canon and a single authoritative commit validator/unit of work
-- replayable Neo4j projection worker, revision watermarks, lag handling, and rebuild verification
-- branch-overlay closure and a structured fuzzy/invented-calendar `WorldTime` model
-- per-operation review policy, record/dependency-level rebasing, and automatic recovery workers
-- provenance/history UI, media identity, archive v2, and the Phase 2 authoring frontend
-- manuscript import, extraction/entity-resolution evaluation, story planning, scene generation,
-  consistency workflows, temporal branching, and production operations
-- declarative story invariants, reader disclosures, narrated assertions/belief propagation, scene
-  contracts, impact preview, spoiler-safe exports, purpose-built temporal views, and MCP transport
+Built on 2026-10-09/10 outside the original sequence: the hosted deployment, the redesigned
+interface, and assisted creation with the to-fill-in list (not yet verified with a real model).
+
+The plan was audited and revised on 2026-10-10 to be assistant-first with a gentle learning curve
+(ADR-017, documents 19 and 20, and the audit record).
+
+Built on 2026-10-10/11: Phases 2.5 (assistant-led creation), 2.6 (story planning) and 2.7 (text
+intake). Built on 2026-10-17: Phase 3 (story time, what-ifs, who knows what, the reader's ledger,
+record-level rebasing; ADR-020), Phase 4 (explainable scene context and the passage index;
+ADR-021), Phase 5 (the scene studio: drafts, checks and jobs; ADR-022) and Phase 6 (scenes read
+back into the story; ADR-023). Phase 7 (release hardening) is in progress with its code-side items
+done. Nine batches of open release-one items followed (2026-10-18 to 2026-10-21):
+pictures prepared in a sandboxed worker, searched by meaning, given to the assistant and checked
+against prose; generation-versioned search indexes and evaluation sets; consistency profiles,
+dismissals in one scene and beyond it, incremental checks and check history; ready views; planning
+help; voice measures and scheduled audits; a connector for a model on the author's own computer;
+and key rotation. `HANDOFF.md` has each batch.
+
+Still open:
+
+- **Real models.** Every assistant path has run against the scripted model and the local stand-in
+  only; quality with a real model is unmeasured (owner runs).
+- **Owner and operational items:** a licence and governance, the first hosted CI run, the restore
+  drill on a clean host, installing scheduled backups, identity recovery and MFA policy, and the
+  PostgreSQL row-level security decision.
+- **Remaining limits** listed per item in the backlog: search by meaning is off on the hosted site,
+  no streaming, no hosted malware scanning, MCP without OAuth sign-in.
+- **Deferred past release one by owner decision (2026-10-21):** audio and video (pictures are the
+  only media), and Google Docs, DOCX and LaTeX import (pasted text and Markdown are the ways in).

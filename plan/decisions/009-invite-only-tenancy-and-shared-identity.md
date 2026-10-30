@@ -139,3 +139,54 @@ own account. There is no platform balance, credit, or markup state.
   counts, latency, attempt, outcome, and provider-reported cost, and is bounded by
   per-job and rolling-period token/cost limits (`ProviderUsageService`).
 - Redaction masks `sk-`/`sk-or-` keys and secret-named fields in logs and errors.
+
+## Amendment 2026-10-21: re-locking stored keys under a new credential key, and operations (OPS-004, OPS-003)
+
+**Rotation in place.** `python -m backend.devtools.rekey` (`make rekey`) moves every stored
+provider key to the current `CREDENTIAL_KEK_VERSION`: each key's data key is unwrapped with its
+old version's KEK, checked against the stored ciphertext (AES-GCM authenticates it), wrapped
+again with the current KEK (`backend.core.crypto.rewrap_envelope`), and the new envelope is
+opened with the current KEK and compared with the key's recorded fingerprint before anything is
+written. The ciphertext itself is never re-encrypted and the provider key never leaves the
+adapter. One row per transaction under a row lock, so a second run, an owner connecting a key
+at the same time, or a stop part way leaves each row either as it was or fully moved; each move
+is a `credential.rekeyed` audit event in its workspace (actor `operator:rekey`). `rekey` is a dry
+run unless `--apply`; revoked keys are left on their old version unless `--include-revoked`;
+`verify` opens every active key with the keys the server holds and names which older versions no
+active key needs (`versions_safe_to_remove`). Output is counts and credential ids only, never a
+key, its last four characters, its fingerprint or a KEK. Settings that would make a rotation
+lose or misread keys are refused before anything is read (no KEK; an older KEK that is not a
+valid key; the current version listed again with a different key). The command builds only the
+vault and the audit store, so it works when another part of the server cannot start.
+
+The order of the runbook (`plan/runbooks/credential-key-rotation.md`) was set by what goes wrong
+elsewhere: one vault documents that its re-wrap commits before the configuration is switched,
+leaving a window in which secrets cannot be opened. Here the server is first given the new KEK
+as current *and* the old one in `CREDENTIAL_PREVIOUS_KEKS` (both accepted), and only then are
+keys moved, so there is no window; the old KEK is removed only after `verify` says no active key
+needs it.
+
+**Runbooks.** The runbooks `07-security-and-operations.md` asks for that did not exist are
+written: a change that failed to commit or damaged history, data deletion, spend spikes, the
+shared identity provider (outage, signing keys, client secret, invitation abuse), and suspected
+exposure of keys or stories. Every SQL statement in every runbook now runs against the migrated
+schema in `tests/integration/test_runbook_queries.py`.
+
+**Copying backups off the host (OPS-003).** `deploy/hosted/copy-off.sh` is an example to adapt:
+it takes the newest complete backup, checks it against its `MANIFEST` (never copying a damaged
+one), and either copies it into a folder on other storage (under a temporary name, checked again,
+then renamed) or runs the operator's own command (restic, rclone, rsync). It deletes nothing off
+the host: the off-site history should be pruned where this host cannot reach it, ideally an
+append-only or object-locked target, so a compromised host cannot destroy its backups.
+
+Tested against a disposable PostgreSQL and with made-up backup folders; no rotation or copy has
+been run on the live site.
+
+Sources: [Stonebranch, encryption key rotation](https://documentation.stonebranch.com/usp/encryption-key-rotation)
+(KEK rotation re-encrypts the DEKs, not the data);
+[nr-vault, key rotation](https://docs.typo3.org/p/netresearch/nr-vault/0.16/en-us/Operations/KeyRotation.html)
+(the window between re-wrap and configuration change);
+[WorkOS, envelope encryption](https://workos.com/blog/envelope-encryption-explained);
+[PyRestServer security practices](https://pyrestserver.readthedocs.io/en/latest/security.html)
+and [restic forum, append-only remote copies](https://forum.restic.net/t/local-repository-with-append-only-remote-copy/1211)
+(append-only targets; pruning needs delete rights, so run it elsewhere).

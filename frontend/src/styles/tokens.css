@@ -1,0 +1,126 @@
+/* Design tokens: ink on paper. One accent (cinnabar, the colour of a seal or an
+   editor's pencil), a small set of muted pigments for entry types, hairline rules
+   instead of shadows. Light is the default; dark is a desk at night. Every
+   text/background pair here meets WCAG AA. See plan/20-design-direction.md. */
+:root {
+  color-scheme: light;
+
+  --font-text: 'Newsreader Variable', 'Newsreader', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --font-display: var(--font-text);
+  --font-ui: 'Instrument Sans Variable', 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+
+  --bg: #f3ede2;
+  --bg-tint: #ebe3d4;
+  --surface: #f9f5ec;
+  --surface-2: #f0e9db;
+  --surface-3: #e6ddcc;
+  --ink: #1a1612;
+  --ink-2: #453d34;
+  --ink-3: #655b4f;
+  --line: #d8cebb;
+  --line-strong: #b3a690;
+
+  --accent: #9c2419;
+  --accent-hover: #7c1b12;
+  --accent-solid: #1a1612;
+  --accent-solid-hover: #382f27;
+  --on-accent: #f9f5ec;
+  --accent-soft: #efdcd3;
+  --accent-ring: rgba(156, 36, 25, 0.3);
+  --ember: #9c2419;
+  /* The accent where it sits on an ink-coloured block. */
+  --accent-on-ink: #f29a85;
+
+  --ok: #2c5a37;
+  --ok-soft: #dde7d5;
+  --warn: #74490a;
+  --warn-soft: #f1e2bd;
+  --danger: #981c1c;
+  --danger-solid: #981c1c;
+  --danger-soft: #f1d8d1;
+  --info: #2a4870;
+  --info-soft: #dae2ec;
+
+  --shadow-1: none;
+  --shadow-2: 0 1px 0 var(--line);
+  --shadow-3: 0 28px 70px -24px rgba(40, 28, 12, 0.45), 0 2px 0 rgba(40, 28, 12, 0.08);
+
+  --radius-s: 3px;
+  --radius-m: 4px;
+  --radius-l: 6px;
+  --radius-pill: 999px;
+
+  /* Pigments for entry types: a soft wash and a strong mark. Names are historical
+     (violet = indigo, teal = verdigris, amber = ochre, rose = madder). */
+  --tint-violet-bg: #dcdfe9;
+  --tint-violet-fg: #2e3963;
+  --tint-teal-bg: #d5e4dc;
+  --tint-teal-fg: #1e5748;
+  --tint-amber-bg: #eedfba;
+  --tint-amber-fg: #6c460a;
+  --tint-rose-bg: #efd7d4;
+  --tint-rose-fg: #86222e;
+  --tint-blue-bg: #d8e2ea;
+  --tint-blue-fg: #264d6b;
+  --tint-green-bg: #dee5cd;
+  --tint-green-fg: #3a561c;
+  --tint-slate-bg: #e3dbcd;
+  --tint-slate-fg: #4b3f32;
+
+  --grain-opacity: 0.5;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #14110e;
+  --bg-tint: #1a1612;
+  --surface: #1e1a15;
+  --surface-2: #25201a;
+  --surface-3: #2f2921;
+  --ink: #efe7d8;
+  --ink-2: #c8bda9;
+  --ink-3: #a59a86;
+  --line: #342d24;
+  --line-strong: #55493b;
+
+  --accent: #f0907a;
+  --accent-hover: #f7b2a1;
+  --accent-solid: #efe7d8;
+  --accent-solid-hover: #ffffff;
+  --on-accent: #14110e;
+  --accent-soft: #3b211b;
+  --accent-ring: rgba(240, 144, 122, 0.4);
+  --ember: #f0907a;
+  --accent-on-ink: #9c2419;
+
+  --ok: #93cfa0;
+  --ok-soft: #1c2c1f;
+  --warn: #e9c377;
+  --warn-soft: #33290f;
+  --danger: #f3a199;
+  --danger-solid: #b8322c;
+  --danger-soft: #391a18;
+  --info: #a3bfe6;
+  --info-soft: #18243a;
+
+  --shadow-3: 0 28px 70px -24px rgba(0, 0, 0, 0.85), 0 2px 0 rgba(0, 0, 0, 0.4);
+
+  --tint-violet-bg: #232845;
+  --tint-violet-fg: #b9c1ee;
+  --tint-teal-bg: #15322b;
+  --tint-teal-fg: #93d6c4;
+  --tint-amber-bg: #382b0d;
+  --tint-amber-fg: #ecc878;
+  --tint-rose-bg: #3d181e;
+  --tint-rose-fg: #f2a9b2;
+  --tint-blue-bg: #17293a;
+  --tint-blue-fg: #a6cbe6;
+  --tint-green-bg: #202e12;
+  --tint-green-fg: #b5d58e;
+  --tint-slate-bg: #2c261e;
+  --tint-slate-fg: #d2c5b0;
+
+  --grain-opacity: 0.35;
+}

@@ -8,15 +8,22 @@ a trusted single-user session for self-hosting. Sessions are always server-side.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC
+from datetime import UTC, datetime
+from urllib.parse import urlsplit
 
 from backend.core.config import Settings
-from backend.core.security import constant_time_equals, generate_pkce_pair, generate_token
+from backend.core.security import (
+    constant_time_equals,
+    generate_pkce_pair,
+    generate_token,
+    hash_token,
+)
 from backend.domain.identity import (
     IdentityClaims,
     IdentityProviderUnavailable,
     InvalidIdentityToken,
     Session,
+    StaleSignIn,
     User,
     utcnow,
 )
@@ -28,6 +35,49 @@ from backend.ports import (
 )
 
 LOGIN_ATTEMPT_TTL_SECONDS = 600
+
+# A fresh sign-in is accepted when the provider says it authenticated the person
+# within this window (plus clock skew), not merely when its own session was reused.
+FRESH_SIGN_IN_SECONDS = 5 * 60
+AUTH_TIME_CLOCK_SKEW_SECONDS = 60
+MAX_RETURN_TO_LENGTH = 200
+
+
+def safe_return_to(value: str | None) -> str | None:
+    """A same-site path to return to, or None for anything else (ignored, never an error)."""
+    if not value or len(value) > MAX_RETURN_TO_LENGTH:
+        return None
+    # Browsers drop tabs and new lines from addresses, so "/\t/evil" would become "//evil".
+    if any(
+        character.isspace() or ord(character) < 32 or ord(character) == 127 for character in value
+    ):
+        return None
+    if not value.startswith("/") or value.startswith("//") or "\\" in value:
+        return None
+    parts = urlsplit(value)
+    if parts.scheme or parts.netloc:
+        return None
+    return value
+
+
+# How long a replaced session id keeps working, for requests already in flight.
+ROTATION_GRACE_SECONDS = 60
+
+
+def _signed_in_at(claims: IdentityClaims) -> datetime:
+    """When the person last proved who they are: the provider's ``auth_time`` when it
+    says, so a sign-in the provider answered from its own session is not counted as
+    recent; otherwise now. Never later than now."""
+    now = utcnow()
+    if claims.auth_time is None:
+        return now
+    return min(now, datetime.fromtimestamp(claims.auth_time, tz=UTC))
+
+
+@dataclass
+class CompletedHostedLogin:
+    session: Session
+    return_to: str | None = None
 
 
 @dataclass
@@ -75,18 +125,43 @@ class AuthService:
         if created_at.tzinfo is None:
             created_at = created_at.replace(tzinfo=UTC)
         if (utcnow() - created_at).total_seconds() >= self._session_rotation_seconds:
+            if await self._session_store.has_successor(session.id):
+                # Already replaced: this is a request that was in flight, or one sent
+                # before the browser stored the new cookie. Serve it; do not replace again.
+                return AuthenticatedSession(user=user, session=session)
             rotated = await self._session_store.create(
                 user_id=session.user_id,
                 ttl_seconds=self._settings.SESSION_TTL_SECONDS,
-                csrf_token=generate_token(24),
-                rotated_from=session.id,
+                # The write token stays the same across the replacement. The request
+                # that triggers it carries the old one, and a changed token would
+                # refuse that request and strand the browser without a session.
+                csrf_token=session.csrf_token,
+                # Stored hashed, like the id itself, so it is not a usable credential.
+                rotated_from=hash_token(session.id),
+                id_token=session.id_token,
+                # The person signed in at the same moment they did before; only the
+                # session id (and its created_at) turns over.
+                authenticated_at=session.authenticated_at,
             )
-            await self._session_store.revoke(session.id)
+            # Not revoked at once: requests already on their way with the old id must
+            # still work. It lapses on its own shortly.
+            await self._session_store.expire_within(session.id, ROTATION_GRACE_SECONDS)
             return AuthenticatedSession(user=user, session=rotated, rotated_session=rotated)
 
         return AuthenticatedSession(user=user, session=session)
 
-    async def start_hosted_login(self) -> str:
+    async def signed_in(self, raw_session_id: str | None) -> bool:
+        """Whether a session is still in force, checked without replacing it: for a
+        long-lived response (a stream) that cannot hand the browser a new cookie."""
+        if not raw_session_id:
+            return False
+        session = await self._session_store.get(raw_session_id)
+        if session is None:
+            return False
+        user = await self._identity_store.get_user(session.user_id)
+        return user is not None and user.is_active
+
+    async def start_hosted_login(self, *, fresh: bool = False, return_to: str | None = None) -> str:
         if not self._identity_provider.is_available():
             raise IdentityProviderUnavailable("OIDC provider is not configured")
         state = generate_token(24)
@@ -98,15 +173,18 @@ class AuthService:
             code_verifier=code_verifier,
             redirect_uri=self._settings.OIDC_REDIRECT_URI,
             ttl_seconds=LOGIN_ATTEMPT_TTL_SECONDS,
+            fresh=fresh,
+            return_to=safe_return_to(return_to),
         )
         return await self._identity_provider.authorization_url(
             state=attempt.state,
             nonce=attempt.nonce,
             code_challenge=code_challenge,
             redirect_uri=attempt.redirect_uri,
+            fresh=attempt.fresh,
         )
 
-    async def complete_hosted_login(self, *, state: str, code: str) -> Session:
+    async def complete_hosted_login(self, *, state: str, code: str) -> CompletedHostedLogin:
         attempt = await self._login_attempt_store.consume(state)
         if attempt is None:
             raise InvalidIdentityToken("login state is missing or expired")
@@ -116,8 +194,20 @@ class AuthService:
             redirect_uri=attempt.redirect_uri,
             expected_nonce=attempt.nonce,
         )
+        if attempt.fresh and not self._just_authenticated(claims):
+            raise StaleSignIn("the provider did not authenticate the person again")
         user = await self._identity_store.get_or_create_user(claims)
-        return await self._new_session(user.id)
+        session = await self._new_session(
+            user.id, id_token=claims.id_token, authenticated_at=_signed_in_at(claims)
+        )
+        return CompletedHostedLogin(session=session, return_to=attempt.return_to)
+
+    @staticmethod
+    def _just_authenticated(claims: IdentityClaims) -> bool:
+        if claims.auth_time is None:
+            return False
+        age = utcnow().timestamp() - claims.auth_time
+        return age <= FRESH_SIGN_IN_SECONDS + AUTH_TIME_CLOCK_SKEW_SECONDS
 
     async def start_local_login(self) -> Session:
         claims = IdentityClaims(
@@ -128,22 +218,37 @@ class AuthService:
         user = await self._identity_store.get_or_create_user(claims)
         return await self._new_session(user.id)
 
-    async def _new_session(self, user_id: str) -> Session:
+    async def _new_session(
+        self,
+        user_id: str,
+        *,
+        id_token: str | None = None,
+        authenticated_at: datetime | None = None,
+    ) -> Session:
         return await self._session_store.create(
             user_id=user_id,
             ttl_seconds=self._settings.SESSION_TTL_SECONDS,
             csrf_token=generate_token(24),
+            id_token=id_token,
+            authenticated_at=authenticated_at,
         )
 
     async def logout(self, raw_session_id: str | None) -> None:
         if raw_session_id:
             await self._session_store.revoke(raw_session_id)
 
-    async def hosted_logout_url(self) -> str:
+    async def hosted_logout_url(self, id_token: str | None = None) -> str:
+        """Where to send the browser to end the provider's session too.
+
+        With the session's ID token the provider returns the person to the app's
+        front page; without one it ends the session on its own page.
+        """
         post_logout = self._settings.OIDC_POST_LOGOUT_REDIRECT_URI or "/"
         if not self._identity_provider.is_available():
             return post_logout
-        return await self._identity_provider.logout_url(post_logout_redirect_uri=post_logout)
+        return await self._identity_provider.logout_url(
+            post_logout_redirect_uri=post_logout, id_token_hint=id_token
+        )
 
     @staticmethod
     def csrf_valid(session: Session, header_value: str | None) -> bool:

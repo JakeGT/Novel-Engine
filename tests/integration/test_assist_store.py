@@ -1,0 +1,195 @@
+from datetime import UTC, datetime, timedelta
+
+import pytest
+import pytest_asyncio
+
+from backend.adapters.assist_store import PostgresAssistSessionStore
+from backend.core.database import create_engine, create_session_factory
+from backend.domain.assist import (
+    AssistAnswer,
+    AssistKind,
+    AssistQuestion,
+    AssistSession,
+    AssistStatus,
+    SchemaSuggestion,
+)
+
+pytestmark = pytest.mark.integration
+
+NOW = datetime(2026, 10, 10, 12, 0, tzinfo=UTC)
+
+
+@pytest_asyncio.fixture
+async def store(disposable_database):
+    engine = create_engine(disposable_database.settings())
+    try:
+        yield PostgresAssistSessionStore(create_session_factory(engine))
+    finally:
+        await engine.dispose()
+
+
+def _session(session_id: str, **overrides) -> AssistSession:
+    values = {
+        "id": session_id,
+        "workspace_id": "ws1",
+        "project_id": "p1",
+        "actor_user_id": "u1",
+        "kind": AssistKind.CREATE,
+        "description": "Mara is a pilot — “the Fox”.",
+        "created_at": NOW,
+        "updated_at": NOW,
+    }
+    values.update(overrides)
+    return AssistSession(**values)
+
+
+@pytest.mark.asyncio
+async def test_a_conversation_round_trips_and_updates_in_place(store) -> None:
+    question = AssistQuestion(id="q1", question="Where does she live?", category="place")
+    answer = AssistAnswer(question_id="q1", question="Where does she live?", answer="The harbor.")
+    suggestion = SchemaSuggestion(
+        kind="fact_kind", name="PLAYS", subject_types=["Character"], object_types=["Instrument"]
+    )
+    await store.save(_session("brf_1", entity_type="Character", name="Mara", questions=[question]))
+
+    await store.save(
+        _session(
+            "brf_1",
+            questions=[question],
+            answers=[answer],
+            notes=["One note"],
+            suggestions=[suggestion],
+            understood="Understood.",
+            status=AssistStatus.PROPOSED,
+            mutation_id="mut_1",
+            updated_at=NOW + timedelta(minutes=5),
+        )
+    )
+
+    kept = await store.get(workspace_id="ws1", project_id="p1", session_id="brf_1")
+    assert kept is not None
+    assert kept.description == "Mara is a pilot — “the Fox”."
+    assert kept.questions == [question] and kept.answers == [answer]
+    assert kept.notes == ["One note"] and kept.understood == "Understood."
+    assert kept.suggestions == [suggestion]
+    assert kept.status is AssistStatus.PROPOSED and kept.mutation_id == "mut_1"
+    assert kept.created_at == NOW and kept.updated_at == NOW + timedelta(minutes=5)
+    found = await store.for_mutation(workspace_id="ws1", project_id="p1", mutation_id="mut_1")
+    assert found is not None and found.id == "brf_1"
+    assert (
+        await store.for_mutation(workspace_id="ws1", project_id="p2", mutation_id="mut_1") is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_open_conversations_are_listed_per_author_newest_first(store) -> None:
+    await store.save(_session("brf_old"))
+    await store.save(_session("brf_new", updated_at=NOW + timedelta(hours=1)))
+    await store.save(_session("brf_done", status=AssistStatus.PROPOSED, mutation_id="mut_9"))
+    await store.save(_session("brf_theirs", actor_user_id="u2"))
+    await store.save(_session("brf_elsewhere", project_id="p2"))
+
+    mine = await store.list_open(workspace_id="ws1", project_id="p1", actor_user_id="u1", limit=10)
+
+    assert [session.id for session in mine] == ["brf_new", "brf_old"]
+    limited = await store.list_open(
+        workspace_id="ws1", project_id="p1", actor_user_id="u1", limit=1
+    )
+    assert [session.id for session in limited] == ["brf_new"]
+
+
+@pytest.mark.asyncio
+async def test_a_conversation_cannot_be_read_or_overwritten_from_another_scope(store) -> None:
+    await store.save(_session("brf_1"))
+
+    assert await store.get(workspace_id="ws2", project_id="p1", session_id="brf_1") is None
+    assert await store.get(workspace_id="ws1", project_id="p2", session_id="brf_1") is None
+    # The same id arriving under another workspace changes nothing.
+    await store.save(_session("brf_1", workspace_id="ws2", description="Overwritten"))
+    kept = await store.get(workspace_id="ws1", project_id="p1", session_id="brf_1")
+    assert kept is not None and kept.description.startswith("Mara")
+
+
+@pytest.mark.asyncio
+async def test_conversations_are_deleted_with_their_project_or_workspace(store) -> None:
+    await store.save(_session("brf_1"))
+    await store.save(_session("brf_2", project_id="p2"))
+    await store.save(_session("brf_3", workspace_id="ws2"))
+
+    # One conversation is erased only through its own scope.
+    assert await store.delete(workspace_id="ws2", project_id="p1", session_id="brf_1") == 0
+    assert await store.delete(workspace_id="ws1", project_id="p1", session_id="brf_1") == 1
+    await store.save(_session("brf_1"))
+
+    assert await store.delete_project("ws1", "p1") == 1
+    assert await store.get(workspace_id="ws1", project_id="p1", session_id="brf_1") is None
+    assert await store.delete_workspace("ws1") == 1
+    assert await store.get(workspace_id="ws2", project_id="p1", session_id="brf_3") is not None
+
+
+@pytest.mark.asyncio
+async def test_only_stale_unfinished_conversations_are_erased(store) -> None:
+    from datetime import timedelta
+
+    await store.save(_session("brf_old", updated_at=NOW - timedelta(days=40)))
+    await store.save(_session("brf_new"))
+    await store.save(
+        _session(
+            "brf_used",
+            status=AssistStatus.PROPOSED,
+            mutation_id="mut_1",
+            updated_at=NOW - timedelta(days=400),
+        )
+    )
+    await store.save(_session("brf_other", project_id="p2", updated_at=NOW - timedelta(days=40)))
+
+    erased = await store.delete_stale_open(
+        workspace_id="ws1", project_id="p1", before=NOW - timedelta(days=30)
+    )
+
+    assert erased == 1
+    assert await store.get(workspace_id="ws1", project_id="p1", session_id="brf_old") is None
+    for kept, project in (("brf_new", "p1"), ("brf_used", "p1"), ("brf_other", "p2")):
+        found = await store.get(workspace_id="ws1", project_id=project, session_id=kept)
+        assert found is not None
+
+
+@pytest.mark.asyncio
+async def test_a_workspaces_model_choice_is_kept_replaced_and_removed(disposable_database) -> None:
+    from backend.adapters.ai_settings_store import PostgresAiSettingsStore
+
+    engine = create_engine(disposable_database.settings())
+    try:
+        settings = PostgresAiSettingsStore(create_session_factory(engine))
+        assert await settings.get("ws1") is None
+        await settings.set(workspace_id="ws1", provider="openai", model="m-1", actor_user_id="u1")
+        await settings.set(workspace_id="ws1", provider="xai", model="m-2", actor_user_id=None)
+        await settings.set(workspace_id="ws2", provider="google", model="m-3", actor_user_id="u2")
+
+        assert await settings.get("ws1") == ("xai", "m-2")
+        assert await settings.delete_workspace("ws1") == 1
+        assert await settings.get("ws1") is None
+        assert await settings.get("ws2") == ("google", "m-3")
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_a_workspaces_allowance_is_kept_replaced_and_removed(disposable_database) -> None:
+    from backend.adapters.allowance_store import PostgresAllowanceStore
+
+    engine = create_engine(disposable_database.settings())
+    try:
+        store = PostgresAllowanceStore(create_session_factory(engine))
+        assert await store.get("ws1") is None
+        await store.set(workspace_id="ws1", daily_tokens=50_000, actor_user_id="u1")
+        await store.set(workspace_id="ws1", daily_tokens=80_000, actor_user_id=None)
+        await store.set(workspace_id="ws2", daily_tokens=30_000, actor_user_id="u2")
+
+        assert await store.get("ws1") == 80_000
+        await store.set(workspace_id="ws1", daily_tokens=None, actor_user_id="u1")
+        assert await store.get("ws1") is None
+        assert await store.delete_workspace("ws2") == 1
+        assert await store.get("ws2") is None
+    finally:
+        await engine.dispose()

@@ -1,0 +1,31 @@
+# Nightly backup of the hosted Novel Engine stack, then removal of old backups.
+# An example: copy to /etc/systemd/system/, change User= and the two paths to match the
+# host, then enable the timer (see deploy/hosted/README.md, "Scheduled backups").
+#
+# The steps run in order and stop at the first failure, so old backups are only removed
+# after a new one has been written in full.
+[Unit]
+Description=Back up Novel Engine (database and stored objects)
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+# Someone in the docker group who owns the checkout and its secrets/ folder.
+User=jaket
+# How many complete backups to keep.
+Environment=BACKUP_KEEP=14
+# Paths with a space must be quoted.
+ExecStart="/home/jaket/Projects/Novel Engine/deploy/hosted/backup.sh"
+# Copy the new backup off the host before pruning (see README, "Copying backups off the
+# host"): remove the # from one of the two Environment lines and from the ExecStart line.
+#Environment=BACKUP_COPY_TO=/mnt/offsite/novel-engine
+#Environment="BACKUP_COPY_COMMAND=restic -r sftp:backup@offsite:/novel-engine backup \"$1\""
+#ExecStart="/home/jaket/Projects/Novel Engine/deploy/hosted/copy-off.sh"
+ExecStart="/home/jaket/Projects/Novel Engine/deploy/hosted/prune-backups.sh"
+# A oneshot service has no time limit unless one is set here, so a dump that hangs
+# (a stuck database, a full disk) is stopped after 2 hours and shows in systemctl --failed.
+TimeoutStartSec=2h
+# No Nice= or IOSchedulingClass= here: the dump runs inside the postgres container, started
+# by the docker daemon, not as a child of this service, so they would only slow the shell
+# script. To make the dump gentler, set limits on the container in compose.yml instead.

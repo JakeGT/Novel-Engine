@@ -142,6 +142,15 @@ Release one needs a user-owned export containing:
 
 Embeddings are optional because they are derived. A restore test must create a clean environment, import the export, rebuild indexes, and compare canonical checksums and representative queries.
 
+As built (`backend/services/canon_archive.py`, format v4, 2026-10-17): the archive also carries
+every what-if (the version it started from, its own saved changes and named versions, which text
+holds each of its scenes, what was read from them and the findings dismissed there), the main
+story's readings and dismissed findings, and the conversations with the assistant. A what-if is
+restored by starting it again from the main story at that version and replaying its own changes,
+and its history is checked against the archive's checksums. Drafts waiting to be kept or discarded,
+unsaved proposals, jobs and usage records are left out, and the archive says so in its `left_out`
+list. Version 3 archives (main story only) still restore.
+
 ## Data lifecycle
 
 - Retire canonical entities rather than deleting referenced history.
@@ -152,19 +161,26 @@ Embeddings are optional because they are derived. A restore test must create a c
 - Redact secrets from logs and diagnostics.
 - Deleting a media asset covers originals, variants, segments, vectors, caches, and remote-provider uploads where supported, while preserving only an authorized audit tombstone.
 
-## Near-term Phase 2 corrections
+## Phase 2 corrections (done)
 
-- Add normalized/versioned PostgreSQL canon tables and one canonical commit unit of work.
-- Move every schema, lifecycle, cardinality, reference, and review-policy rule into commit-time
-  validation.
-- Replace the Neo4j canonical writer with an idempotent projection consumer and visible watermark.
-- Add full journal replay, projection rebuild, verification, and lag health.
-- Reserve stable serialized identities for story invariants, scene contracts, disclosures,
-  narrated assertions, aliases, tags, suppressions, and dependency edges before durable formats
-  freeze; implement only the Phase 2 query/invariant seams now.
-- Settle branch-local closure effects and the `WorldTime` value object before declaring fact/event
-  persistence stable.
-- Add point-in-time history/provenance queries, immutable revision tags, and compensating-revert
-  proposals as the first author-facing uses of the journal.
-- Prototype the representative branch/time/POV query in PostgreSQL and Neo4j before Phase 3 retains
-  Neo4j as required infrastructure.
+The corrections listed here before 2026-10-10 were completed in Phase 2: normalized and versioned
+PostgreSQL canon with one commit unit of work, commit-time validation, the Neo4j projection as an
+idempotent consumer with a visible watermark, journal replay and equivalence checks, history and
+provenance queries, tags, and compensating reverts. Evidence: `phase-2-evidence.md`.
+
+Still open from that list: reserving serialized identities for story invariants, scene contracts,
+disclosures, narrated assertions, aliases, suppressions, and dependency edges as each is built;
+the `WorldTime` value object (Phase 3); and the representative branch/time/POV query prototype in
+PostgreSQL and Neo4j that decides whether Neo4j remains required infrastructure (an owner
+decision, see `audit-2026-10-10.md`).
+
+## Revision 2026-10-10: storage for the assistant
+
+- **Conversations.** A description, the questions asked, the answers, and the proposal they
+  produced are stored together, workspace- and project-scoped, immutable once the proposal is
+  decided, and cited as evidence by the operations they produced (Phase 2.5; today only an
+  evidence reference exists).
+- **Plan records.** Story, arc, beat, scene plan, and thread records live in canon tables under
+  the journal, flagged as intent (Phase 2.6).
+- **Derived, not stored:** the to-fill-in list, open plan items, and link suggestions are computed
+  from canon and the derived index, and can be rebuilt.

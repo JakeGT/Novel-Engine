@@ -1,7 +1,7 @@
 """Provider credential domain models.
 
 Credentials are workspace-scoped secrets for a user's own provider account
-(OpenRouter). Plaintext key material never enters these models; only metadata and
+(OpenRouter, Anthropic, OpenAI, Google, xAI, Mistral, DeepSeek). Plaintext key material never enters these models; only metadata and
 a fingerprint are exposed.
 """
 
@@ -16,7 +16,14 @@ from backend.domain.identity import utcnow
 
 
 class CredentialProvider(StrEnum):
+    # Each has an entry in ``backend.domain.providers.PROVIDERS``.
     OPENROUTER = "openrouter"
+    ANTHROPIC = "anthropic"
+    OPENAI = "openai"
+    GOOGLE = "google"
+    XAI = "xai"
+    MISTRAL = "mistral"
+    DEEPSEEK = "deepseek"
 
 
 class CredentialStatus(StrEnum):
@@ -40,6 +47,9 @@ class Credential(BaseModel):
     rotated_at: datetime | None = None
     last_used_at: datetime | None = None
     revoked_at: datetime | None = None
+    # Whether the provider accepted the key when it was last saved; None when it was
+    # never checked (a key from before this was recorded, or read back from the vault).
+    verified: bool | None = None
 
 
 class CredentialError(RuntimeError):

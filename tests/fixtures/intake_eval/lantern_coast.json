@@ -1,0 +1,38 @@
+{
+  "version": "lantern-coast/1",
+  "about": "A labelled passage from the reference world. In the text, {{key:kind|words}} marks a place where an entry is meant; everything else is plain prose. Kinds: name (the entry's name as written in the story bible), alias (one of its other names), mark (the author marked it), answered (a phrase the author has answered a question about), partial (part of a name, such as a first name alone), epithet (a description nobody has answered yet), pronoun.",
+  "entries": [
+    {"key": "mara", "type": "Character", "name": "Mara Voss", "aliases": ["the lightkeeper"]},
+    {"key": "ivo", "type": "Character", "name": "Ivo Renn", "aliases": []},
+    {"key": "hope", "type": "Character", "name": "Hope", "aliases": []},
+    {"key": "harbor", "type": "Location", "name": "Lantern Harbor", "aliases": ["the harbor"]},
+    {"key": "tower", "type": "Location", "name": "Glasslight Tower", "aliases": []},
+    {"key": "lens", "type": "Object", "name": "Tideglass Lens", "aliases": ["the lens"]},
+    {"key": "salt", "type": "Object", "name": "Ember Salt", "aliases": []},
+    {"key": "kindlers", "type": "Faction", "name": "The Kindlers", "aliases": ["Kindlers"]}
+  ],
+  "answers": [
+    {"phrase": "the forger", "verdict": "is", "key": "ivo"},
+    {"phrase": "the old woman", "verdict": "is_not", "key": "mara"},
+    {"phrase": "Glass", "verdict": "ignore", "key": null}
+  ],
+  "text": [
+    "# The fire\n\n",
+    "{{mara:name|Mara Voss}} climbed {{tower:name|Glasslight Tower}} before the tide turned. ",
+    "{{mara:pronoun|She}} had kept the light for thirty years, and {{harbor:alias|the harbor}} had stopped thanking {{mara:pronoun|her}} for it. ",
+    "Below, {{kindlers:name|the Kindlers}} were stacking {{salt:name|Ember Salt}} on the quay, and an ember from their brazier drifted up past the gallery.\n\n",
+    "{{mara:partial|Mara}} turned {{lens:alias|the lens}} toward the smoke. ",
+    "The {{lens:name|Tideglass Lens}} had come back from the mainland a month ago, and {{ivo:mark|@Ivo}} had sworn it was untouched. ",
+    "Hope was all {{mara:pronoun|she}} had left to go on.\n\n",
+    "## The quay\n\n",
+    "\"You should not be up there alone,\" {{ivo:name|Ivo Renn}} called. ",
+    "{{ivo:answered|The forger}} had a way of sounding kind. ",
+    "{{hope:name|Hope}} stood beside {{ivo:pronoun|him}}, holding a lantern, and said nothing. ",
+    "Glass crunched under their boots.\n\n",
+    "\"{{mara:alias|The lightkeeper}} goes where the light is,\" {{mara:partial|Mara}} said. ",
+    "{{mara:epithet|The old keeper}} did not look down. ",
+    "Somewhere in {{harbor:name|Lantern Harbor}} a bell began to ring, and {{kindlers:alias|Kindlers}} ran for the boats. ",
+    "The old woman at the chandlery, who was nobody's keeper, shut her door. ",
+    "{{mara:mark|[[the lightkeeper]]}} had no hope of sleep now.\n"
+  ]
+}

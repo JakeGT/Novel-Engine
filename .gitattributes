@@ -9,3 +9,7 @@
 *.ico binary
 *.woff binary
 *.woff2 binary
+
+# Left out of release source archives (git archive, make release): agent-tool folders.
+.agent export-ignore
+.agent/** export-ignore

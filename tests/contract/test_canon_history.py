@@ -94,3 +94,31 @@ def test_revision_diff_and_fact_at_revision(auth_client) -> None:
     at_revision = auth_client.get(f"/api/v1/projects/{project}/facts/{fact_id}/at-revision/2")
     assert at_revision.status_code == 200, at_revision.text
     assert at_revision.json()["status"] == "asserted"
+
+
+def test_revision_list_pages_back_from_the_newest_revision(auth_client) -> None:
+    project = "local-project"
+    _publish_schema(auth_client, project)
+    for index in range(6):
+        created = auth_client.post(
+            f"/api/v1/projects/{project}/entities",
+            json={
+                "type": "Character",
+                "name": f"Person {index}",
+                "attributes": {},
+                "expected_revision": index,
+            },
+        )
+        assert created.status_code == 201, created.text
+
+    def page(**params) -> list[int]:
+        response = auth_client.get(f"/api/v1/projects/{project}/revisions", params=params)
+        assert response.status_code == 200, response.text
+        return [item["revision"] for item in response.json()["items"]]
+
+    # A short page is the newest revisions, not the oldest.
+    assert page(limit=2) == [6, 5]
+    assert page(limit=2, offset=2) == [4, 3]
+    assert page(limit=4, offset=4) == [2, 1]
+    assert page(limit=5, offset=6) == []
+    assert page() == [6, 5, 4, 3, 2, 1]

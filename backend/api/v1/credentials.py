@@ -31,6 +31,9 @@ class CredentialModel(BaseModel):
     rotated_at: datetime | None = None
     last_used_at: datetime | None = None
     revoked_at: datetime | None = None
+    # Whether the provider accepted the key when it was saved; None when it was not
+    # checked (a key from before this change, or one read back from the list).
+    verified: bool | None = None
 
     @classmethod
     def from_domain(cls, credential: Credential) -> CredentialModel:
@@ -47,6 +50,7 @@ class CredentialModel(BaseModel):
             rotated_at=credential.rotated_at,
             last_used_at=credential.last_used_at,
             revoked_at=credential.revoked_at,
+            verified=credential.verified,
         )
 
 

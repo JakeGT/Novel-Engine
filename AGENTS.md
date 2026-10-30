@@ -8,29 +8,50 @@ Novel Engine is an open-source fiction authoring system with self-hosted and fre
 
 ## Current maturity
 
-The repository is a stabilized prototype, not a production application. Phase 0 is complete.
-Phase 1 is implemented with explicit external/operational exit items remaining. Phase 2's
-implementation slices are complete with named review-UI, revert, seed, projection-query, and
-operational deferrals; owner acceptance remains pending. See `plan/phase-2-todo.md` and
-`plan/phase-2-evidence.md`.
+The repository is a release-one candidate that has not been released, not a production application. Phase 0 is complete.
+Phases 1 and 2 (identity and tenancy; trustworthy canon) are accepted by the owner (2026-10-09); the
+evidence is in `plan/phase-1-evidence.md` and `plan/phase-2-evidence.md`. Phases 2.5–6 are built and
+Phase 7's code-side release work is done; later batches of work (to batch 8, 2026-10-21) filled in
+backlog items. `plan/10-backlog.md` holds the current status of every capability.
+Still open and operational: the first hosted CI run and the clean-host backup/restore rehearsal
+(deferred by the owner until the project is on a permanent host). ADR-014–016 are accepted.
 
 - Application lifecycle, dependency container, ports, and adapters exist; imports perform no
   external work.
 - Neo4j and PostgreSQL/pgvector schemas are migration-controlled with read-only verification.
 - Stable `/api/v1` DTOs and an `application/problem+json` error contract exist; deprecated legacy
   `/api` aliases have been removed.
-- Graph CRUD, tagged-entity context retrieval, and the character questionnaire are implemented;
-  the world workflow is parked and unfinished.
-- The vector store is PostgreSQL/pgvector behind the vector port; the transitional Chroma
-  module has been removed.
-- The React frontend is a minimal authenticated project/entity authoring shell; review, schema,
-  media, and end-to-end workflow UI remain planned work.
-- OIDC/local identity, invite-only multi-tenancy, scoped storage, encrypted OpenRouter BYOK,
-  object storage, and project transfer foundations exist.
-- PostgreSQL atomically owns the Phase 2 journal and normalized canon. Neo4j is a replayable,
-  watermark-tracked projection and never decides canonical commit success.
-- Story planning, long-form generation, review UI, temporal branching, and production operations
-  remain planned work.
+- PostgreSQL atomically owns the journal and normalized canon. Neo4j is a replayable,
+  watermark-tracked projection under its own `Canon*` labels and never decides canonical commit
+  success.
+- Every canon write is a mutation set that passes a review gate and the authoritative validator
+  inside one PostgreSQL transaction. Model, import, destructive, bulk, and revert changes need an
+  explicit human approval; reviewers decide per operation, and an edit is a new operation revision.
+- The guided character workflow produces review proposals only. The generic graph API (CRUD,
+  tagged-entity context retrieval, the original character questionnaire) is a separate legacy
+  store whose writes are restricted to local mode; the old world workflow was removed by the owner
+  (Phase 1A, FND-008).
+- The vector store is PostgreSQL/pgvector behind the vector port. The author's writing has a
+  derived passage index (pointers and names, never the words), rebuildable; embeddings optional.
+- The React frontend covers the story bible, planning, texts and their reading, story rules, the
+  timeline, what-ifs, knowledge and the reader's ledger, scene context, the scene studio, review,
+  history, customisation and media panels, with component, accessibility and browser tests.
+- OIDC/local identity, invite-only multi-tenancy, scoped storage, encrypted keys for OpenRouter and
+  six other providers, object storage, and a verified, ledgered project archive restore exist.
+- Built since Phase 2 (each with a todo file and an ADR in `plan/`): assistant-led creation (2.5),
+  story planning (2.6), text intake and story rules (2.7), story time, what-ifs and point-of-view
+  knowledge (3), explainable scene context (4), the scene studio with background jobs (5), and
+  reading scenes back into reviewed proposals (6).
+- Built in later batches: pictures prepared in a sandboxed worker, described by a model and given
+  to the assistant as pictures or descriptions; generation-versioned search by meaning; consistency
+  profiles, checks kept as runs and re-run only where something changed, dismissals that come back
+  when what they said changes, and impact preview; deep and scheduled audits, correction plans and
+  voice; planning help; read-only MCP with access keys (ADR-024); and a connector for a model on the
+  author's own computer (ADR-025).
+- Still planned or partial: sound and film, release hardening items that are the owner's (licence,
+  hosted CI run, restore drill on a clean host), and any measurement of a real model's output.
+  Every assistant path has run against the scripted model and the local stand-in only. Each
+  backlog item's status line lists what it still lacks.
 
 Do not describe a planned capability as implemented. When changing a capability, update its
 status in `plan/`.
@@ -40,7 +61,8 @@ status in `plan/`.
 | Path | Responsibility |
 | --- | --- |
 | `backend/api/` | HTTP transport and request/response contracts (`v1/` canonical) |
-| `backend/services/` | Application workflows such as character and world creation |
+| `backend/services/` | Application workflows: mutation review and commit, canon entities/assertions/history, archive, projection, equivalence, media, schema, tenancy |
+| `backend/domain/` | Storage-neutral domain: canon records, operations, review policy, validation, naming |
 | `backend/graph/` | Graph schema, Neo4j persistence, resolution, traversal, summarization, migrations |
 | `backend/core/` | Configuration, database engine/session, structured logging/redaction |
 | `backend/ports.py` | Application/domain port protocols (graph, vector, embedding, AI, clock, IDs, schema, migration, database, artifacts) |
@@ -48,12 +70,14 @@ status in `plan/`.
 | `backend/container.py` | Dependency container built from explicit settings; owns adapters and lifecycle |
 | `backend/migrate.py` | `make migrate` CLI; Alembic plus Neo4j migration verification |
 | `backend/seed/` | Versioned reference-world manifest and idempotent seed application |
-| `backend/devtools/` | Guarded `seed`/`reset-dev` developer CLIs |
+| `backend/devtools/` | Guarded developer/operator CLIs: seed, reset, project, verify, watch, archive, diagnostics, retention, provision (first workspace), reconcile (interrupted commits), rekey (`make rekey`: re-lock stored provider keys under a new credential key), media (`make media`: picture preparation status, backfill, orphan files and retired copies), read_models (`make read-models`, `make read-models-verify`: build, verify and forget the story's ready views), reindex (rebuild the passage index), embeddings (`make reindex*`: build, refresh, switch, roll back and cancel search-by-meaning generations), intake_eval (name-finding measurement) |
+| `connector/` | Standalone, standard-library-only connector (`uv run python -m connector --site …`) that links Ollama, LM Studio or a llama.cpp server on an author's computer to a site by outbound long poll (ADR-025, `plan/runbooks/local-connector.md`); linted and type-checked with `backend` |
 | `migrations/` | Alembic environment and PostgreSQL/pgvector revisions |
 | `scripts/manual/` | Non-hermetic manual scripts; never collected by pytest |
 | `scripts/ci/` | CI guards such as the credential secret scanner |
-| `frontend/` | React application |
-| `tests/` | Automated tests: `unit`, `application`, `contract`, `integration`, `e2e` |
+| `frontend/` | React application; `frontend/e2e/` holds the Playwright browser tests |
+| `scripts/e2e/` | Launcher that serves the API on a disposable database for browser tests |
+| `tests/` | Automated tests: `unit`, `application`, `contract`, `integration`; `e2e` points to `frontend/e2e/` |
 | `plan/` | Product, architecture, delivery, and decision records |
 | `data/` | Generated local databases; never commit |
 
@@ -86,11 +110,15 @@ make import-check
 make test
 make test-integration
 make migrate-verify
+make frontend-api-check
 make frontend-lint
+make frontend-test
 make frontend-build
+make e2e
+make project PROJECT_ARGS=--verify
 ```
 
-Run the smallest relevant checks during iteration and `make check` before handing over a cross-cutting change. `make test` is hermetic (no services, network, API keys, model downloads, or persistent writes); mark tests that contact PostgreSQL or Neo4j with `integration` and tests that spend model tokens with `llm`. Start the disposable test Neo4j with `docker compose --profile test up -d --wait neo4j-test` before `make test-integration`.
+Run the smallest relevant checks during iteration and `make check` before handing over a cross-cutting change. `make e2e` drives the real UI against a real API on a disposable database and is not part of `make check`; it needs the test profile running and a browser (`make frontend-e2e-install`, or `E2E_BROWSER_CHANNEL=chrome`). `make test` is hermetic (no services, network, API keys, model downloads, or persistent writes); mark tests that contact PostgreSQL or Neo4j with `integration` and tests that spend model tokens with `llm`. Start the disposable test Neo4j with `docker compose --profile test up -d --wait neo4j-test` before `make test-integration`.
 
 Some restricted coding-agent seccomp sandboxes prevent Starlette/AnyIO's synchronous TestClient
 portal from starting even though the same locked tests pass normally. In that environment, run
@@ -107,7 +135,7 @@ The Makefile keeps tool caches under ignored `.cache/` so sandboxed coding agent
 1. Keep transport, application workflow, domain logic, and persistence separate. Endpoints should validate and delegate; they should not assemble prompts or Cypher.
 2. Treat PostgreSQL's immutable journal plus normalized/versioned canon tables as canonical story
    truth. Neo4j, pgvector, search, and summaries are derived and rebuildable projections.
-3. Treat model output as an untrusted proposal. Validate identifiers, types, references, branch/timeline invariants, and permissions before persistence.
+3. Treat model output as an untrusted proposal. Validate identifiers, types, references, branch/timeline invariants, and permissions before persistence. Canon changes only through a mutation set, the review gate, and the commit transaction; never add a write path around them.
 4. Preserve the distinction between objective facts and character beliefs. Never inject inaccessible truth into point-of-view context.
 5. Every canon mutation must carry provenance. Temporal facts must identify branch and validity interval.
 6. Prefer explicit typed request, response, and domain models. Do not silently register unknown schema types from ordinary API writes.
@@ -134,8 +162,9 @@ While coding:
 - Prefer a vertical slice with a visible acceptance criterion.
 - Keep external services behind dependency injection.
 - Avoid network calls and persistent database writes at module import time.
-- Use migrations for durable schema or index changes.
-- Keep prompts versioned and test their structured contracts separately from live quality evaluations.
+- Use migrations for durable schema or index changes. Keep Alembic revision ids at 32 characters or fewer. A new project-owned table must be added to `backend/adapters/canon_tables.py` so deletion and reset cover it.
+- A field added to a typed operation must be optional and registered in the canonical omit list in `backend/domain/operations.py`, or every earlier envelope checksum changes (ADR-015).
+- Keep prompts versioned and test their structured contracts separately from live quality evaluations. Every prompt is listed in `backend/domain/prompts.py`; changing its wording or answer shape means raising its version there and running `uv run python -m tests.prompts.snapshots --update` (the snapshot test fails otherwise).
 
 Before handoff:
 
