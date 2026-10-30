@@ -128,7 +128,8 @@ test('typing @ names an entry, and a scene shows pictures from the library', asy
   await expect(editor).toHaveValue('The stairs of @te')
   await page.keyboard.press('Control+Shift+z')
   await expect(editor).toHaveValue('The stairs of @"Tern Lighthouse" ')
-  await editor.pressSequentially('turned under @Wr')
+  // Any word of a name matches; "Callo" picks one name, as other tests add a "Wren Hollis".
+  await editor.pressSequentially('turned under @Callo')
   await expect(list).toBeVisible()
   await page.keyboard.press('Tab')
   await expect(editor).toHaveValue('The stairs of @"Tern Lighthouse" turned under @"Wren Calloway" ')

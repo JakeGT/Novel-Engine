@@ -203,7 +203,7 @@ test('an administrator sets up search by meaning, builds the index, and is refus
 
   await page.getByRole('link', { name: 'Site settings' }).click()
   await expect(page.getByRole('heading', { name: 'Site settings' })).toBeVisible()
-  await expect(page.getByRole('region', { name: 'Search by meaning' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Search by meaning', exact: true })).toBeVisible()
   await expectAccessible(page)
   await shot(page, '02-page')
 
@@ -212,7 +212,7 @@ test('an administrator sets up search by meaning, builds the index, and is refus
   await form.getByLabel('Provider').selectOption('openai')
   await form.getByLabel('Key').fill('sk-ok')
   await expect(
-    form.getByText('OpenAI is asked to read one word with this key before anything is kept.'),
+    form.getByText('OpenAI is asked to read one word with this setup before anything is kept.'),
   ).toBeVisible()
   await form.getByRole('button', { name: 'Check and save' }).click()
   await expect(form.getByText('Saved. OpenAI checked the key.')).toBeVisible()
@@ -257,7 +257,7 @@ test('an administrator sets up search by meaning, builds the index, and is refus
     },
   }
   await page.reload()
-  await expect(page.getByRole('region', { name: 'Search by meaning' })).toContainText(
+  await expect(page.getByRole('region', { name: 'Search by meaning', exact: true })).toContainText(
     'Set in the server’s settings, so it cannot be changed here.',
   )
   await expect(page.getByRole('region', { name: 'Set up search by meaning' })).toHaveCount(0)

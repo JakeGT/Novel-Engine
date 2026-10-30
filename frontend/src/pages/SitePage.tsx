@@ -47,6 +47,16 @@ function isFieldProblem(error: unknown): boolean {
   return isApiError(error, 'key_refused') || isApiError(error, 'model_refused') || isApiError(error, 'size_mismatch')
 }
 
+/** The service's name for a sentence: "your own" is named by its address. */
+function serviceName(setup: NonNullable<SearchSetup['setup']>): string {
+  if (setup.provider === 'custom') return setup.host ? `the service at ${setup.host}` : 'your own service'
+  return setup.provider_label
+}
+
+function capitalised(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
 /** One sentence on what is in use now, from where the setup is decided. */
 function inUseLine(state: SearchSetup): string {
   if (state.source === 'built_in') {
@@ -57,7 +67,9 @@ function inUseLine(state: SearchSetup): string {
   }
   const setup = state.setup
   if (setup) {
-    const line = `${setup.provider_label}${setup.host ? ` (${setup.host})` : ''}, ${setup.model}, ${setup.dimension} numbers`
+    const where =
+      setup.provider === 'custom' ? capitalised(serviceName(setup)) : `${setup.provider_label}${setup.host ? ` (${setup.host})` : ''}`
+    const line = `${where}, ${setup.model}, ${setup.dimension} numbers`
     return state.source === 'server'
       ? `${line}. Set in the server’s settings, so it cannot be changed here.`
       : `${line}.`
@@ -70,7 +82,7 @@ function inUseLine(state: SearchSetup): string {
 /** Where a build sends every passage, said the way the rest of the page says it. */
 function buildDestination(state: SearchSetup): string {
   if (state.source === 'built_in') return 'a model on this server'
-  return state.setup?.provider_label ?? 'the provider'
+  return state.setup ? serviceName(state.setup) : 'the provider'
 }
 
 function initialForm(providers: SearchProvider[], current: SearchSetup) {
@@ -145,7 +157,9 @@ function SetupForm({
   const addressIsLocal = Boolean(selectedProvider?.needs_url) && isLocalAddress(baseUrl)
   const keyRequired = !keyCanBeKept && !(addressIsLocal && selectedProvider?.key_optional_when_local)
   const needsSignIn = signInNeeded || signInAgain
-  const disabled = !kekConfigured || needsSignIn
+  const disabled = needsSignIn
+  // Without CREDENTIAL_KEK no key can be kept, but a service on this machine needs none.
+  const keyDisabled = disabled || !kekConfigured
 
   const save = useMutation({
     mutationFn: (body: SaveSearchSetupBody) => api.saveSearchSetup(body),
@@ -174,6 +188,7 @@ function SetupForm({
     onSuccess: (state) => {
       queryClient.setQueryData(['site-search-setup'], state)
       setConfirmingStop(false)
+      setSaid(null)
     },
   })
 
@@ -193,14 +208,17 @@ function SetupForm({
     if (!Number.isInteger(size) || size < 1 || size > 2000) {
       next.dimension = 'Size must be a whole number between 1 and 2000.'
     }
-    if (keyRequired && apiKey.trim() === '') {
+    if (keyRequired && !kekConfigured) {
+      next.key = 'This server cannot keep keys yet, so only a service on this machine can be used.'
+    } else if (keyRequired && apiKey.trim() === '') {
       next.key = `Paste a key from ${selectedProvider?.label ?? 'the provider'}.`
     }
     setErrors(next)
     if (Object.keys(next).length > 0) return
     const body: SaveSearchSetupBody = { provider, model, dimension: size }
     if (selectedProvider?.needs_url) body.base_url = baseUrl.trim()
-    if (!keyCanBeKept || apiKey.trim() !== '') body.api_key = apiKey.trim()
+    // Only a key that was typed is sent; leaving it out keeps the saved one or uses none.
+    if (apiKey.trim() !== '') body.api_key = apiKey.trim()
     save.mutate(body)
   }
 
@@ -393,7 +411,7 @@ function SetupForm({
               type="password"
               autoComplete="off"
               value={apiKey}
-              disabled={disabled}
+              disabled={keyDisabled}
               onChange={(event) => {
                 setApiKey(event.target.value)
                 clear()
@@ -413,7 +431,7 @@ function SetupForm({
             {save.isPending ? 'Saving…' : 'Check and save'}
           </Button>
           <span className="hint">
-            {selectedProvider.label} is asked to read one word with this key before anything is kept.
+            {selectedProvider.id === 'custom' ? 'Your service' : selectedProvider.label} is asked to read one word with this setup before anything is kept.
           </span>
         </div>
       </form>
@@ -431,7 +449,7 @@ function SetupForm({
 
       {confirmingStop && current.setup && (
         <ConfirmDialog
-          title={`Stop using ${current.setup.provider_label}?`}
+          title={`Stop using ${serviceName(current.setup)}?`}
           confirmLabel="Stop using the service"
           keepLabel="Keep using it"
           busy={stop.isPending}
@@ -443,9 +461,10 @@ function SetupForm({
           onConfirm={() => stop.mutate()}
         >
           <p>
-            The {current.setup.provider_label} key is forgotten. Search by meaning goes back to{' '}
-            {current.built_in ? `a model on this server (${current.built_in.model})` : 'off'}. Passages
-            are found by the words they use until an index is built again.
+            {current.setup.key.set ? 'The saved key is forgotten. ' : ''}
+            {current.built_in
+              ? `Search by meaning goes back to a model on this server (${current.built_in.model}). Passages are found by the words they use until an index is built again.`
+              : 'Search by meaning is switched off, and passages are found by the words they use.'}
           </p>
         </ConfirmDialog>
       )}
@@ -577,8 +596,8 @@ function SearchMeaningSection() {
           </div>
           {!data.kek_configured && (
             <p className="notice warn" role="note">
-              This server cannot keep keys yet: its administrator needs to set CREDENTIAL_KEK. See the
-              hosting guide.
+              This server cannot keep keys yet: its administrator needs to set CREDENTIAL_KEK (see the
+              hosting guide). Until then, only a service on this machine, which needs no key, can be used.
             </p>
           )}
           <SetupForm

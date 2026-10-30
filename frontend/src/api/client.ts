@@ -373,74 +373,15 @@ export interface SessionInfo {
 }
 
 /** Where search by meaning can be pointed, and what a key for it looks like (SSP-001). */
-export interface SearchProvider {
-  id: string
-  label: string
-  group: 'Model makers' | 'Hosting and routing' | 'Your own'
-  base_url: string | null
-  /** True when the provider's address is a server the administrator types. */
-  needs_url: boolean
-  key_url: string | null
-  key_hint: string | null
-  /** When the address is a server on this machine, no key is needed for this provider. */
-  key_optional_when_local: boolean
-  docs: string
-  models: SearchProviderModel[]
-  dimension_choices: number[] | null
-}
-
-export interface SearchProviderModel {
-  id: string
-  dimension: number
-  /** False when this model has one fixed size. */
-  adjustable: boolean
-  default_dimension: number
-}
-
-export type SearchSetupSource = 'page' | 'server' | 'built_in' | 'off'
-
+export type SearchProvider = Schemas['SearchProviderModel']
+export type SearchProviderModel = Schemas['SearchModelModel']
 /** How search by meaning is set up for the whole site, and the state of its index. */
-export interface SearchSetup {
-  source: SearchSetupSource
-  editable: boolean
-  kek_configured: boolean
-  setup: {
-    provider: string
-    provider_label: string
-    model: string
-    dimension: number
-    base_url: string | null
-    host: string
-    key: { set: boolean; hint: string | null; updated_at: string | null }
-    verified: boolean | null
-    updated_at: string
-  } | null
-  built_in: { model: string; dimension: number } | null
-  index: {
-    searchable: boolean
-    active_model: string | null
-    building: boolean
-    build: { done: number; total: number; state: 'running' | 'waiting' | 'failed' } | null
-    needs_build: boolean
-  }
-  sign_in_needed: boolean
-}
-
-export interface SaveSearchSetupBody {
-  provider: string
-  model: string
-  dimension: number
-  base_url?: string | null
-  /** Omit to keep the stored key (only when provider and address are unchanged). */
-  api_key?: string | null
-}
-
+export type SearchSetup = Schemas['SiteSearchStateModel']
+export type SearchSetupSource = SearchSetup['source']
+/** Omit `api_key` to keep the stored key (only when provider and address are unchanged). */
+export type SaveSearchSetupBody = Schemas['SiteSearchSetupRequest']
 /** What saving answered: whether the provider was reached, a sentence to show, and the new state. */
-export interface SaveSearchSetupResult {
-  check: 'ok' | 'unchecked'
-  message: string
-  state: SearchSetup
-}
+export type SaveSearchSetupResult = Schemas['SaveSearchSetupModel']
 
 /** A failed request, carrying the stable problem `code` so callers can branch on it. */
 export class ApiError extends Error {

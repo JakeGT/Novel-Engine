@@ -226,7 +226,8 @@ class SiteSearchService:
                 "cannot be stored."
             )
 
-        api_key = body.api_key
+        # An empty key is no key: the saved one is kept, or none is needed (a local address).
+        api_key = (body.api_key or "").strip() or None
         store_key: str | None = None
         check_key = ""
         secret_snapshot = None
@@ -262,20 +263,22 @@ class SiteSearchService:
             timeout_seconds=15.0,
         )
         result = await asyncio.to_thread(probe.check, CHECK_WORD)
+        # "Your own (OpenAI-compatible)" reads badly in a sentence; name the address.
+        who = f"The service at {host}" if body.provider == "custom" else spec.label
         if result.ok:
             verified: bool | None = True
             check = "ok"
-            message = f"{spec.label} accepted the setup."
+            message = f"{who} accepted the setup."
         elif result.status in (401, 403):
             raise self._refused(
                 "key_refused",
-                f"{spec.label} did not accept that key. Check it was copied in full and "
+                f"{who} did not accept that key. Check it was copied in full and "
                 "has not been revoked.",
             )
         elif result.status in (400, 404, 422):
             raise self._refused(
                 "model_refused",
-                f"{spec.label} did not accept the model {model} or the size {dimension}. "
+                f"{who} did not accept the model {model} or the size {dimension}. "
                 "Check the model name.",
             )
         elif result.unreadable:
@@ -294,7 +297,8 @@ class SiteSearchService:
             # wrong, so it is kept but not marked as checked.
             verified = False
             check = "unchecked"
-            message = f"{spec.label} could not be reached, so the key was kept unchecked."
+            kept = "key" if check_key else "setup"
+            message = f"{who} could not be reached, so the {kept} was kept unchecked."
 
         await asyncio.to_thread(
             self._store.save_setup,

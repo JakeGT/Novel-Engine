@@ -567,3 +567,26 @@ def test_forgetting_the_setup_removes_it(auth_client, fake_container, monkeypatc
     assert answer.json()["source"] == "built_in"
     assert answer.json()["setup"] is None
     assert fake_container.site_search_store.secret is None
+
+
+def test_an_empty_key_for_a_local_service_is_no_key(auth_client, fake_container, monkeypatch):
+    # The page leaves the key out, but a hand-written request may send "": the same thing.
+    _build_stack(fake_container)
+    monkeypatch.setattr(
+        "backend.services.site_search.api_embedder",
+        _probe(EmbeddingCheck(ok=True), {}),
+    )
+    answer = _put(
+        auth_client,
+        {
+            "provider": "custom",
+            "model": "nomic-embed-text",
+            "dimension": 8,
+            "base_url": "http://localhost:11434/v1",
+            "api_key": "",
+        },
+    )
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["state"]["setup"]["key"]["set"] is False
+    # "Your own" is named by its address in what the page shows.
+    assert answer.json()["message"] == "The service at localhost accepted the setup."

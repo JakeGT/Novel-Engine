@@ -11,11 +11,11 @@ afterEach(() => {
   sessionStorage.clear()
 })
 
-function renderHome() {
+function renderHome(at = '/') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/']}>
+      <MemoryRouter initialEntries={[at]}>
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/projects/:projectId" element={<p>project page</p>} />
@@ -148,6 +148,24 @@ describe('Home', () => {
       'href',
       '/projects/local-project',
     )
+  })
+
+  it('says a fresh sign-in that did not ask for the password changed nothing', async () => {
+    mockApi({
+      'GET /auth/me': {
+        user: { id: 'local', email: null, display_name: 'Local Author' },
+        auth_mode: 'local',
+        local: { workspace_id: 'local-workspace', project_id: 'local-project' },
+      },
+    })
+    const { container } = renderHome('/?signin=stale')
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('without asking for your password')
+    expect(within(alert).getByRole('link', { name: 'Sign in again' })).toHaveAttribute(
+      'href',
+      '/auth/login?fresh=1&return_to=%2Fsite',
+    )
+    await expectAccessible(container)
   })
 
   it('signs out here and at the identity provider', async () => {

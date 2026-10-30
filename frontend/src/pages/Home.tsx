@@ -204,7 +204,11 @@ function Library() {
   const name = firstName(session.data)
   // Nothing to come back to yet: this is the first visit, and onboarding takes over.
   const firstVisit = !local && workspaces.isSuccess && list.length === 0
-  const joined = Boolean((useLocation().state as { joined?: boolean } | null)?.joined)
+  const location = useLocation()
+  const joined = Boolean((location.state as { joined?: boolean } | null)?.joined)
+  // A fresh sign-in (before changing a site key) that the provider answered without
+  // asking for the password again: nothing was changed.
+  const staleSignIn = new URLSearchParams(location.search).get('signin') === 'stale'
 
   return (
     <div className="library" id="top">
@@ -244,6 +248,18 @@ function Library() {
           </div>
         )}
 
+        {staleSignIn && (
+          <div className="notice warn" role="alert">
+            <span>
+              Your sign-in provider let you back in without asking for your password, so the site’s
+              settings were not opened for changes. Try again, and enter your password when asked.
+            </span>
+            <a className="btn primary" href="/auth/login?fresh=1&return_to=%2Fsite">
+              Sign in again
+            </a>
+          </div>
+        )}
+
         {joined && (
           <p className="notice ok" role="status">
             You’ve joined the workspace. Its projects are below.
@@ -251,17 +267,22 @@ function Library() {
         )}
 
         {local && localProjectId && (
-          <div className="project-grid">
-            <Link
-              className="project-card"
-              to={`/projects/${localProjectId}`}
-              onClick={() => setActiveWorkspaceId(null)}
-            >
-              <span className="eyebrow">This computer</span>
-              <h3>Your project</h3>
-              <span className="muted small">Open project →</span>
-            </Link>
-          </div>
+          <section aria-labelledby="local-projects-heading" className="stack">
+            <h2 id="local-projects-heading" className="eyebrow">
+              This computer · project
+            </h2>
+            <div className="project-grid">
+              <Link
+                className="project-card"
+                to={`/projects/${localProjectId}`}
+                onClick={() => setActiveWorkspaceId(null)}
+              >
+                <span className="eyebrow">Project</span>
+                <h3>Your project</h3>
+                <span className="muted small">Open project →</span>
+              </Link>
+            </div>
+          </section>
         )}
 
         {!local && workspaces.isPending && <Loading>Finding your workspaces…</Loading>}

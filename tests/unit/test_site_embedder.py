@@ -115,6 +115,21 @@ def test_the_servers_own_model_wins_when_nothing_is_saved() -> None:
     assert embedder.current() is built_in
 
 
+def test_a_servers_own_model_that_cannot_run_is_not_offered() -> None:
+    # Turning a service off would mean "off", so the page must not promise the model.
+    class Missing(DeterministicEmbedding):
+        def available(self) -> bool:
+            return False
+
+    embedder = SiteEmbedder(settings=_settings(), store=FakeStore(), built_in=Missing(dimension=8))
+    assert embedder.source == "off"
+    assert embedder.built_in_info() is None
+    working = SiteEmbedder(
+        settings=_settings(), store=FakeStore(), built_in=DeterministicEmbedding(dimension=8)
+    )
+    assert working.built_in_info() == {"model": working.current().space.model, "dimension": 8}
+
+
 def test_nothing_is_off() -> None:
     embedder = SiteEmbedder(
         settings=_settings(EMBEDDING_PROVIDER="none"), store=FakeStore(), built_in=None

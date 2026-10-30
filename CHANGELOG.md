@@ -125,7 +125,9 @@ for authors and for whoever runs an install. Version numbers start when the owne
   again; changing the provider or the address needs the key typed again and a recent sign-in.
   Building the index and switching to it are on the same page. `EMBEDDING_API_PROVIDER` names the
   provider's table entry; the base URL, name, model and size now default to the provider's own.
-  Authors see no change.
+  "Sign in again" asks your identity provider for the password (it cannot answer from its own
+  session) and comes back to the page. Without `CREDENTIAL_KEK` no key can be kept, but a service
+  on the same machine, which needs none, can still be set. Authors see no change.
 - **Release artefacts:** `make release` builds a source tarball, wheel, the built frontend, SBOMs
   and checksums from one commit into `dist/release/`; `make release-check` builds twice and
   compares. Nothing is tagged or published.

@@ -437,7 +437,7 @@ describe('SitePage', () => {
     const { user } = await renderAdmin()
     await user.click(screen.getByRole('button', { name: 'Stop using a service' }))
     const dialog = await screen.findByRole('dialog', { name: 'Stop using OpenAI?' })
-    expect(dialog).toHaveTextContent('The OpenAI key is forgotten.')
+    expect(dialog).toHaveTextContent('The saved key is forgotten.')
     expect(dialog).toHaveTextContent('a model on this server (all-MiniLM-L6-v2)')
     await user.click(within(dialog).getByRole('button', { name: 'Stop using the service' }))
     await waitFor(() => expect(api.find('DELETE', '/site/search-setup')).toHaveLength(1))
@@ -466,18 +466,31 @@ describe('SitePage', () => {
     await waitFor(() => expect(api.find('POST', '/site/search-setup/build/cancel')).toHaveLength(1))
   })
 
-  it('disables the form and names the missing setting when keys cannot be kept', async () => {
-    mockApi({
+  it('without a way to keep keys, only a service on this machine can be set up', async () => {
+    const api = mockApi({
       'GET /auth/me': ADMIN_SESSION,
       'GET /site/search-providers': PROVIDERS,
-      'GET /site/search-setup': pageSetup({ kek_configured: false }),
+      'GET /site/search-setup': pageSetup({ kek_configured: false, setup: null, source: 'off' }),
+      'PUT /site/search-setup': { check: 'ok', message: 'Ollama accepted the setup.', state: pageSetup() },
     })
+    const user = userEvent.setup()
     renderSite()
     expect(await screen.findByText(/This server cannot keep keys yet/)).toBeInTheDocument()
     expect(screen.getByText(/CREDENTIAL_KEK/)).toBeInTheDocument()
-    expect(screen.getByLabelText('Provider')).toBeDisabled()
     expect(screen.getByLabelText('Key')).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Check and save' })).toBeDisabled()
+
+    // A provider that needs a key says why it cannot be saved.
+    await user.click(screen.getByRole('button', { name: 'Check and save' }))
+    expect(await screen.findByText(/only a service on this machine can be used/)).toBeInTheDocument()
+    expect(api.find('PUT', '/site/search-setup')).toHaveLength(0)
+
+    // A server on this machine needs no key, so it can be saved.
+    await user.selectOptions(screen.getByLabelText('Provider'), 'ollama')
+    await user.clear(screen.getByLabelText('Address'))
+    await user.type(screen.getByLabelText('Address'), 'http://localhost:11434/v1')
+    await user.click(screen.getByRole('button', { name: 'Check and save' }))
+    expect(await screen.findByText('Ollama accepted the setup.')).toBeInTheDocument()
+    expect(api.find('PUT', '/site/search-setup')).toHaveLength(1)
   })
 
   it('asks a signed-out visitor to sign in', async () => {

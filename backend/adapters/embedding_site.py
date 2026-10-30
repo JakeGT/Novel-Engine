@@ -185,7 +185,12 @@ class SiteEmbedder:
 
     def built_in_info(self) -> dict[str, Any] | None:
         provider = str(getattr(self._settings, "EMBEDDING_PROVIDER", "minilm")).lower()
-        if provider in ("minilm", "embeddinggemma", "fake") and self._built_in is not None:
+        # Only a model that can run: otherwise turning a service off means off.
+        if (
+            provider in ("minilm", "embeddinggemma", "fake")
+            and self._built_in is not None
+            and self._built_in.available()
+        ):
             return {
                 "model": self._built_in.space.model,
                 "dimension": self._built_in.space.dimension,

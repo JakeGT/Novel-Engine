@@ -999,3 +999,22 @@ service as `verified: false`, and never returns the key. Routes live in
 `backend/api/v1/site_search.py` (platform admins; CSRF on writes; recent sign-in for PUT/DELETE);
 `/auth/me` now reports `platform_admin`. There is only workspace-scoped audit storage, so a setup
 change is recorded as the `site.search_setup_changed` log event, not an audit row.
+
+Review and finish (2026-10-30). The work was split across DeepSeek Harness agents (backend, page,
+chat-key check; then review fixes and typed answers), each in its own worktree, reviewed here before
+merging. Fixes from the review: the key hint is the saved key's last four characters; store, embedder
+and check calls run off the event loop (check timeout 15 s); a database error during the periodic
+re-read keeps the current embedder and logs `site.search_setup_unreadable` once; a key sealed for
+another provider or host is never reused, and is dropped when a local address replaces it; a 2xx
+answer that is not an embedding service is `400 not_a_service`; a failed build logs
+`site.search_build_failed`. "Recent sign-in" now means something under single sign-on:
+`/auth/login?fresh=1` sends `prompt=login` and `max_age=0`, the callback requires `auth_time` within
+5 minutes (else `/?signin=stale`, explained on the home page), and the session's `authenticated_at`
+is the provider's `auth_time`, not the callback time. `return_to` takes same-site paths only (no
+`//`, `\`, scheme, whitespace or control characters). The routes have typed answers, so the page
+uses generated types. Workspace chat keys are also checked with their provider before they are kept
+(`verified`: true/false/null; Anthropic with `x-api-key`). Without `CREDENTIAL_KEK` only the key
+field is locked, so a local service can still be set. Checked against stand-ins only: the stand-in
+model server now answers `/embeddings`, and `e2e/site-settings.model.spec.ts` sets, checks, builds,
+uses and gives up a service end to end. No real embedding provider or identity provider has been
+tried with this.

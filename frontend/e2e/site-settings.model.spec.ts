@@ -41,7 +41,7 @@ test('the site is pointed at its own embedding service, checked, built and given
 
   await form.getByRole('button', { name: 'Check and save' }).click()
   await expect(form.getByRole('status')).toContainText('accepted the setup')
-  const summary = page.getByRole('region', { name: 'Search by meaning' })
+  const summary = page.getByRole('region', { name: 'Search by meaning', exact: true })
   await expect(summary.getByRole('note')).toContainText('e2e-embed, 64 numbers')
   await expectAccessible(page)
   await shot(page, '02-saved')
@@ -60,10 +60,12 @@ test('the site is pointed at its own embedding service, checked, built and given
   // Give it up again: the dialog says what happens first.
   await page.getByRole('button', { name: 'Stop using a service' }).click()
   const dialog = page.getByRole('dialog')
-  await expect(dialog).toContainText('Passages are found by the words they use')
+  await expect(dialog).toContainText(/passages are found by the words they use/i)
   await shot(page, '04-stop-dialog')
   await dialog.getByRole('button', { name: 'Stop using the service' }).click()
   await expect(dialog).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Stop using a service' })).toHaveCount(0)
+  // The earlier "accepted" message no longer describes anything in use.
+  await expect(form.getByText('accepted the setup')).toHaveCount(0)
   await shot(page, '05-given-up')
 })
