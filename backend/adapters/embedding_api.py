@@ -38,6 +38,32 @@ from backend.domain.embedding import (
 
 logger = logging.getLogger(__name__)
 
+
+class EmbeddingApiRefused(EmbeddingUnavailableError):
+    """The service answered with a clear refusal; its status is kept so a caller can
+    tell a refused key (401/403) from a refused model or size (400/404/422)."""
+
+    def __init__(self, status: int, message: str) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+@dataclass(frozen=True)
+class EmbeddingCheck:
+    """What checking a setup against the service found (one word, one try)."""
+
+    # True when the service answered and the vector is the size asked for.
+    ok: bool
+    # The service's status when it refused; None when it could not be reached.
+    status: int | None = None
+    # The vector's size when it differs from the one asked for.
+    length: int | None = None
+    # A 2xx answer that is not an embeddings response (an HTML page, say).
+    unreadable: bool = False
+    # The error type when the service could not be reached.
+    failure: str | None = None
+
+
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "host.docker.internal"})
 # Well under the common limits (OpenAI: 2,048 inputs and 300,000 tokens a request).
 MAX_INPUTS_PER_REQUEST = 64
@@ -97,6 +123,8 @@ class ApiTextEmbedding:
         dimension: int,
         send_dimension: bool = True,
         name: str = "",
+        dimension_field: str = "dimensions",
+        query_field: tuple[str, str, str] | None = None,
         timeout_seconds: float = 30.0,
         transport: httpx.BaseTransport | None = None,
         sleep: Any = time.sleep,
@@ -108,6 +136,8 @@ class ApiTextEmbedding:
         self._api_key = api_key.strip()
         self._model = model.strip()
         self._send_dimension = send_dimension
+        self._dimension_field = dimension_field
+        self._query_field = query_field
         self._name = name.strip() or self._host
         self._timeout = timeout_seconds
         self._transport = transport
@@ -179,10 +209,19 @@ class ApiTextEmbedding:
             )
         return self._client
 
-    def _post(self, texts: list[str], *, waiting: bool = False) -> list[list[float]]:
+    def _body(self, texts: list[str], *, task: EmbeddingTask) -> dict[str, Any]:
         body: dict[str, Any] = {"model": self._model, "input": texts, "encoding_format": "float"}
         if self._send_dimension:
-            body["dimensions"] = self._space.dimension
+            body[self._dimension_field] = self._space.dimension
+        if self._query_field is not None:
+            field, query_value, document_value = self._query_field
+            body[field] = query_value if task is EmbeddingTask.QUERY else document_value
+        return body
+
+    def _post(
+        self, texts: list[str], *, task: EmbeddingTask, waiting: bool = False
+    ) -> list[list[float]]:
+        body = self._body(texts, task=task)
         started = time.monotonic()
         status: int | None = None
         failure: str | None = None
@@ -219,7 +258,7 @@ class ApiTextEmbedding:
                         host=self._host,
                         status=status,
                     )
-                    raise EmbeddingUnavailableError(_refusal(status))
+                    raise EmbeddingApiRefused(status, _refusal(status))
             if attempt < attempts:
                 self._sleep(_wait(response, attempt))
         log_event(
@@ -263,7 +302,11 @@ class ApiTextEmbedding:
         texts = [format_text(self._space.tasks, task, item) for item in items]
         raw: list[list[float]] = [[] for _ in texts]
         for group in _requests(texts):
-            sent = self._post([texts[i] for i in group], waiting=task is EmbeddingTask.QUERY)
+            sent = self._post(
+                [texts[i] for i in group],
+                task=task,
+                waiting=task is EmbeddingTask.QUERY,
+            )
             for position, values in zip(group, sent, strict=True):
                 raw[position] = values
         out: list[EmbeddingVector] = []
@@ -276,6 +319,36 @@ class ApiTextEmbedding:
             # A shortened vector is not unit length; search compares unit vectors.
             out.append(_vector(self._space, normalize(values), task, item))
         return out
+
+    def check(self, word: str) -> EmbeddingCheck:
+        """One embedding of a fixed word, to see whether the service accepts this setup.
+
+        Used when a key and model are being saved on the page: it embeds the single
+        fixed word ``"lighthouse"`` (never any author's words), is tried once, and
+        reports the outcome without raising. A refused key, a refused model or size,
+        an unreachable service and a wrong-sized answer are told apart by the caller.
+        """
+        body = self._body([word], task=EmbeddingTask.QUERY)
+        try:
+            response = self._http().post("/embeddings", json=body, timeout=self._timeout)
+        except httpx.HTTPError as error:
+            return EmbeddingCheck(ok=False, failure=type(error).__name__)
+        status = response.status_code
+        if not 200 <= status < 300:
+            return EmbeddingCheck(ok=False, status=status)
+        try:
+            data = response.json()["data"]
+            ordered = sorted(data, key=lambda item: int(item["index"]))
+            vectors = [[float(value) for value in item["embedding"]] for item in ordered]
+        except (ValueError, KeyError, TypeError):
+            return EmbeddingCheck(ok=False, status=status, unreadable=True)
+        if not vectors:
+            return EmbeddingCheck(ok=False, status=status, unreadable=True)
+        length = len(vectors[0])
+        if length != self._space.dimension:
+            return EmbeddingCheck(ok=False, length=length)
+        self._answered = True
+        return EmbeddingCheck(ok=True)
 
 
 def _refusal(status: int) -> str:
@@ -297,4 +370,10 @@ def _wait(response: httpx.Response | None, attempt: int) -> float:
     return min(float(2 ** (attempt - 1)), MAX_WAIT_SECONDS)
 
 
-__all__ = ["ApiTextEmbedding", "WhereWordsGo", "is_local_host"]
+__all__ = [
+    "ApiTextEmbedding",
+    "EmbeddingApiRefused",
+    "EmbeddingCheck",
+    "WhereWordsGo",
+    "is_local_host",
+]

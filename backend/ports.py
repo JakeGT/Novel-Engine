@@ -600,6 +600,7 @@ class IdentityProviderPort(Protocol):
         nonce: str,
         code_challenge: str,
         redirect_uri: str,
+        fresh: bool = False,
     ) -> str: ...
 
     async def exchange_code(
@@ -641,6 +642,7 @@ class SessionStorePort(Protocol):
         csrf_token: str,
         rotated_from: str | None = None,
         id_token: str | None = None,
+        authenticated_at: datetime | None = None,
     ) -> Session: ...
 
     async def get(self, session_id: str) -> Session | None: ...
@@ -675,6 +677,8 @@ class LoginAttemptStorePort(Protocol):
         code_verifier: str,
         redirect_uri: str,
         ttl_seconds: int,
+        fresh: bool = False,
+        return_to: str | None = None,
     ) -> LoginAttempt: ...
 
     async def consume(self, state: str) -> LoginAttempt | None: ...

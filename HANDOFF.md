@@ -258,7 +258,7 @@ then `pnpm --dir frontend run gen:api`.
 
 ## 10. Data & migrations
 
-- Alembic (PostgreSQL) head: **`0062_audits_and_impact`** (… → `0022_archive_imports` →
+- Alembic (PostgreSQL) head: **`0063_site_search_setup`** (… → `0022_archive_imports` →
   `0023_session_id_token` → `0024_assist_sessions` → `0025_workspace_ai_settings` →
   `0026_assist_suggestions` → `0027_usage_allowance` → `0028_plan_items` →
   `0029_plan_conversations` → `0030_source_texts` → `0031_story_rules` → `0032_story_time` →
@@ -269,7 +269,8 @@ then `pnpm --dir frontend run gen:api`.
   `0050_read_models` → `0051_planning_help` → `0052_context_layers` → `0053_local_connector` →
   `0054_conversations` → `0055_voice_and_audits` → `0056_context_remainders` →
   `0057_check_remainders` → `0058_media_remainders` → `0059_streaming_and_routes` →
-  `0060_picture_regions` → `0061_check_passes_more` → `0062_audits_and_impact`).
+  `0060_picture_regions` → `0061_check_passes_more` → `0062_audits_and_impact` →
+  `0063_site_search_setup`).
 - Neo4j ordered migrations: `0001_initial_graph_schema`, `0002_entity_scope_identity`,
   `0003_canon_scope_identity`, `0004_canon_projection_labels` (checksums in
   `plan/phase-2-evidence.md`).
@@ -978,3 +979,23 @@ authors where their writing goes. The Docker image still leaves out the `embeddi
 without this option a deployed site searches by words. ADR-010 has the decision; the runbook
 `plan/runbooks/search-index.md` the steps. Tested against a stand-in service only; no real
 embedding service has been called.
+
+## Site search setup on a page (2026-10-30)
+
+The site's search-by-meaning setup moved from operator-only settings to a page a platform
+administrator fills in, following the workspace AI-key pattern. `backend/domain/embedding_providers.py`
+is the provider table (OpenAI, Google Gemini, Mistral, Voyage, OpenRouter, "your own"); a single
+row in `site_search_setup` (migration `0063`) holds the choice with a version bumped on every
+change, and `site_search_secrets` holds the key sealed exactly like workspace credentials
+(`CREDENTIAL_KEK`), included in the OPS-004 re-lock and verify tooling (`make rekey`). Sessions
+gained `authenticated_at` (carried unchanged through rotation), so "signed in recently" = within 15
+minutes. `backend/adapters/embedding_site.py::SiteEmbedder` is a delegating embedder that wraps the
+start-up embedder and re-reads the stored setup when its version changes (at most every 10 s, at
+once after a save in this process), so the vector store, the index service, `/ai/search`,
+diagnostics and the CLI all follow the setup without a restart; precedence is server `api` settings
+(with a key or a local address) → page setup → the server's own model → off. Saving embeds the fixed
+word `lighthouse` to check, refuses a bad key/model/size with distinct codes, keeps an unreachable
+service as `verified: false`, and never returns the key. Routes live in
+`backend/api/v1/site_search.py` (platform admins; CSRF on writes; recent sign-in for PUT/DELETE);
+`/auth/me` now reports `platform_admin`. There is only workspace-scoped audit storage, so a setup
+change is recorded as the `site.search_setup_changed` log event, not an audit row.

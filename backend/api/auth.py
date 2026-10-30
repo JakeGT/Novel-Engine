@@ -24,9 +24,9 @@ from backend.domain.errors import (
     UnauthorizedError,
     ValidationError,
 )
-from backend.domain.identity import AccessScope, AuthMode, Session
+from backend.domain.identity import AccessScope, AuthMode, Session, StaleSignIn
 from backend.domain.tenancy import ROLE_PERMISSIONS, Permission, Role
-from backend.services.auth_service import AuthenticatedSession, AuthService
+from backend.services.auth_service import AuthenticatedSession, AuthService, safe_return_to
 from backend.services.tenancy_service import TenancyService
 
 logger = logging.getLogger(__name__)
@@ -134,6 +134,16 @@ async def require_platform_admin(
     settings: Settings = Depends(get_settings),
 ) -> AuthenticatedSession:
     """CSRF-protected authority for platform-wide actions (global schema, provisioning)."""
+    if settings.is_hosted and auth_session.user.id not in settings.platform_admin_user_ids:
+        raise ForbiddenError("Platform administrator authority is required.")
+    return auth_session
+
+
+async def require_platform_admin_read(
+    auth_session: AuthenticatedSession = Depends(require_session),
+    settings: Settings = Depends(get_settings),
+) -> AuthenticatedSession:
+    """Read-only platform authority (the site's settings page), without CSRF."""
     if settings.is_hosted and auth_session.user.id not in settings.platform_admin_user_ids:
         raise ForbiddenError("Platform administrator authority is required.")
     return auth_session
@@ -372,13 +382,21 @@ async def project_access(
 
 @router.get("/login")
 async def login(
+    fresh: str | None = None,
+    return_to: str | None = None,
     auth: AuthService = Depends(get_auth_service),
     settings: Settings = Depends(get_settings),
 ) -> RedirectResponse:
+    target = safe_return_to(return_to)
     if settings.is_hosted:
-        return RedirectResponse(await auth.start_hosted_login(), status_code=302)
+        # Only "fresh=1" asks the provider for the password again; anything else is
+        # an ordinary login that may reuse the provider's session.
+        return RedirectResponse(
+            await auth.start_hosted_login(fresh=fresh == "1", return_to=target),
+            status_code=302,
+        )
     session = await auth.start_local_login()
-    response = RedirectResponse("/", status_code=302)
+    response = RedirectResponse(target or "/", status_code=302)
     _set_session_cookies(response, settings, session)
     return response
 
@@ -399,9 +417,12 @@ async def callback(
         raise UnauthorizedError("The identity provider rejected the login.")
     if not state or not code:
         raise ValidationError("Missing 'state' or 'code'.")
-    session = await auth.complete_hosted_login(state=state, code=code)
-    response = RedirectResponse("/", status_code=302)
-    _set_session_cookies(response, settings, session)
+    try:
+        completed = await auth.complete_hosted_login(state=state, code=code)
+    except StaleSignIn:
+        return RedirectResponse("/?signin=stale", status_code=302)
+    response = RedirectResponse(completed.return_to or "/", status_code=302)
+    _set_session_cookies(response, settings, completed.session)
     return response
 
 
@@ -418,6 +439,8 @@ async def me(
             "display_name": user.display_name,
         },
         "auth_mode": settings.AUTH_MODE,
+        # Local mode is the trusted single-user; hosted mode needs a listed admin id.
+        "platform_admin": not settings.is_hosted or user.id in settings.platform_admin_user_ids,
     }
     if not settings.is_hosted:
         # Local mode has one workspace and project and no tenancy rows to list;

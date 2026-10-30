@@ -37,3 +37,42 @@ def test_openapi_matches_snapshot() -> None:
     assert SNAPSHOT.exists(), f"missing snapshot; regenerate {SNAPSHOT.name}"
 
     assert spec == json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+
+
+SITE_SEARCH_RESPONSES = {
+    ("/api/v1/site/search-providers", "get"): "SearchProviderModel",
+    ("/api/v1/site/search-setup", "get"): "SiteSearchStateModel",
+    ("/api/v1/site/search-setup", "put"): "SaveSearchSetupModel",
+    ("/api/v1/site/search-setup", "delete"): "SiteSearchStateModel",
+    ("/api/v1/site/search-setup/build", "post"): "SiteSearchStateModel",
+    ("/api/v1/site/search-setup/build/cancel", "post"): "SiteSearchStateModel",
+}
+
+SITE_SEARCH_SCHEMAS = {
+    "BuiltInModel",
+    "SaveSearchSetupModel",
+    "SearchBuildModel",
+    "SearchIndexModel",
+    "SearchModelModel",
+    "SearchProviderModel",
+    "SearchSetupDetailModel",
+    "SearchSetupKeyModel",
+    "SiteSearchStateModel",
+}
+
+
+def _response_schema(spec: dict, path: str, method: str) -> dict:
+    schema = spec["paths"][path][method]["responses"]["200"]["content"]["application/json"][
+        "schema"
+    ]
+    # A list route wraps its item model in an array schema.
+    return schema["items"] if schema.get("type") == "array" else schema
+
+
+def test_site_search_routes_name_their_response_models() -> None:
+    spec = create_app().openapi()
+
+    for (path, method), model in SITE_SEARCH_RESPONSES.items():
+        assert _response_schema(spec, path, method)["$ref"] == f"#/components/schemas/{model}"
+
+    assert SITE_SEARCH_SCHEMAS <= set(spec["components"]["schemas"])

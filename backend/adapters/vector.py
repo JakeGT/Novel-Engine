@@ -64,8 +64,13 @@ class PgVectorStore:
         self._dsn = dsn
         self._embedder = as_multimodal(embeddings) if embeddings is not None else None
         self._index = index if index is not None else PgEmbeddingIndexStore(dsn)
-        space_dimension = self._embedder.space.dimension if self._embedder else None
-        self._dimension = dimension if dimension is not None else space_dimension
+        # An explicitly configured size (the legacy text model's EMBEDDING_DIMENSION)
+        # must match the embedder's own; None means the embedder's size is authoritative,
+        # which is how the delegating embedder's changing space is followed. The size is
+        # read only when an explicit one was given, so constructing the store never asks
+        # the (possibly dynamic) embedder for its space.
+        self._fixed_dimension = dimension
+        self._dimension = dimension
 
     @property
     def embedder(self) -> Any:
@@ -79,6 +84,8 @@ class PgVectorStore:
         """The configured size (``EMBEDDING_DIMENSION`` for a text-only model) must be the
         embedder's own; a generation stores any size from 1 to 2000."""
         if self._embedder is None:
+            return True
+        if self._fixed_dimension is None:
             return True
         return self._dimension == self._embedder.space.dimension
 

@@ -60,6 +60,9 @@ class IdentityClaims(BaseModel):
     # The signed ID token as issued. Kept with the session only, so sign-out can
     # prove to the provider whose session is ending and be returned to the app.
     id_token: str | None = None
+    # Seconds since the epoch when the provider actually authenticated the person
+    # (the ID token's ``auth_time``); None when the provider did not say.
+    auth_time: int | None = None
 
 
 class Session(BaseModel):
@@ -73,6 +76,9 @@ class Session(BaseModel):
     rotated_from: str | None = None
     # Hosted sessions only; presented to the identity provider at sign-out.
     id_token: str | None = None
+    # When the person actually signed in; carried unchanged through session rotation,
+    # so "signed in recently" keeps meaning the same thing however often the id turns.
+    authenticated_at: datetime = Field(default_factory=utcnow)
 
 
 class LoginAttempt(BaseModel):
@@ -84,6 +90,10 @@ class LoginAttempt(BaseModel):
     redirect_uri: str
     created_at: datetime = Field(default_factory=utcnow)
     expires_at: datetime
+    # Asked at /auth/login, stored here so the callback cannot add it.
+    fresh: bool = False
+    # A same-site path to return to after a successful login; None means "/".
+    return_to: str | None = None
 
 
 @dataclass(frozen=True)
@@ -107,6 +117,10 @@ class IdentityProviderUnavailable(IdentityError):
 
 class InvalidIdentityToken(IdentityError):
     """The provided identity token failed validation."""
+
+
+class StaleSignIn(IdentityError):
+    """A fresh sign-in was asked for, but the provider did not just authenticate."""
 
 
 class SessionInvalid(IdentityError):

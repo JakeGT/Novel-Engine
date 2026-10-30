@@ -1,6 +1,9 @@
-from urllib.parse import parse_qs, urlparse
+import time
+from urllib.parse import parse_qs, quote, urlparse
 
 import pytest
+
+from backend.domain.identity import IdentityClaims
 
 pytestmark = pytest.mark.contract
 
@@ -50,6 +53,117 @@ def test_hosted_login_redirects_to_provider(hosted_client, hosted_container) -> 
     assert hosted_container.identity_provider.authorization_calls[0]["redirect_uri"] == (
         hosted_container.settings.OIDC_REDIRECT_URI
     )
+
+
+def test_a_fresh_login_asks_the_provider_for_the_password_again(hosted_client) -> None:
+    fresh = hosted_client.get("/auth/login?fresh=1", follow_redirects=False)
+    ordinary = hosted_client.get("/auth/login", follow_redirects=False)
+
+    fresh_query = parse_qs(urlparse(fresh.headers["location"]).query)
+    ordinary_query = parse_qs(urlparse(ordinary.headers["location"]).query)
+    assert fresh_query["prompt"] == ["login"]
+    assert fresh_query["max_age"] == ["0"]
+    assert "prompt" not in ordinary_query and "max_age" not in ordinary_query
+
+
+def _hosted_login(
+    hosted_client,
+    hosted_container,
+    *,
+    fresh: bool = False,
+    auth_time: int | None = None,
+    return_to: str | None = None,
+):
+    query = []
+    if fresh:
+        query.append("fresh=1")
+    if return_to is not None:
+        query.append(f"return_to={quote(return_to, safe='')}")
+    login = hosted_client.get(
+        "/auth/login" + (f"?{'&'.join(query)}" if query else ""), follow_redirects=False
+    )
+    state = parse_qs(urlparse(login.headers["location"]).query)["state"][0]
+    hosted_container.identity_provider._claims = IdentityClaims(
+        issuer=hosted_container.settings.OIDC_ISSUER,
+        subject="subject-1",
+        email="user@example.com",
+        display_name="Test User",
+        auth_time=auth_time,
+    )
+    return hosted_client.get(f"/auth/callback?state={state}&code=code-123", follow_redirects=False)
+
+
+@pytest.mark.parametrize("auth_time", [None, int(time.time()) - 3600], ids=["missing", "stale"])
+def test_a_fresh_login_refuses_a_missing_or_old_auth_time(
+    hosted_client, hosted_container, auth_time
+) -> None:
+    response = _hosted_login(hosted_client, hosted_container, fresh=True, auth_time=auth_time)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "/?signin=stale"
+    assert not hosted_client.cookies.get(hosted_container.settings.SESSION_COOKIE_NAME)
+
+
+@pytest.mark.parametrize("auth_time", [None, int(time.time()) - 3600], ids=["missing", "old"])
+def test_a_missing_or_old_auth_time_is_fine_when_fresh_was_not_asked(
+    hosted_client, hosted_container, auth_time
+) -> None:
+    response = _hosted_login(hosted_client, hosted_container, auth_time=auth_time)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "/"
+    assert hosted_client.cookies.get(hosted_container.settings.SESSION_COOKIE_NAME)
+
+
+def test_a_fresh_login_allows_a_minute_of_clock_skew(hosted_client, hosted_container) -> None:
+    response = _hosted_login(
+        hosted_client,
+        hosted_container,
+        fresh=True,
+        auth_time=int(time.time()) - (5 * 60 + 30),
+    )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "/"
+    assert hosted_client.cookies.get(hosted_container.settings.SESSION_COOKIE_NAME)
+
+
+def test_return_to_is_honoured_after_a_hosted_login(hosted_client, hosted_container) -> None:
+    response = _hosted_login(hosted_client, hosted_container, return_to="/site")
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "/site"
+    assert hosted_client.cookies.get(hosted_container.settings.SESSION_COOKIE_NAME)
+
+
+def test_return_to_is_honoured_in_local_mode(api_client, fake_container) -> None:
+    response = api_client.get("/auth/login?return_to=%2Fsite", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "/site"
+    assert api_client.cookies.get(fake_container.settings.SESSION_COOKIE_NAME)
+
+
+@pytest.mark.parametrize(
+    "return_to", ["//evil.example", "https://evil.example", "/\\evil", "/" + "a" * 200]
+)
+def test_an_unsafe_return_to_is_ignored(api_client, return_to) -> None:
+    response = api_client.get(
+        "/auth/login?return_to=" + quote(return_to, safe=""), follow_redirects=False
+    )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "/"
+
+
+@pytest.mark.parametrize("return_to", ["//evil.example", "https://evil.example", "/\\evil"])
+def test_a_hosted_login_ignores_an_unsafe_return_to(
+    hosted_client, hosted_container, return_to
+) -> None:
+    response = _hosted_login(hosted_client, hosted_container, return_to=return_to)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "/"
 
 
 def test_hosted_callback_completes_login(hosted_client, hosted_container) -> None:

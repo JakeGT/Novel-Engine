@@ -89,6 +89,7 @@ class OIDCIdentityProvider:
         nonce: str,
         code_challenge: str,
         redirect_uri: str,
+        fresh: bool = False,
     ) -> str:
         discovery = await self._discover()
         params = {
@@ -101,6 +102,11 @@ class OIDCIdentityProvider:
             "code_challenge": code_challenge,
             "code_challenge_method": "S256",
         }
+        if fresh:
+            # OpenID Connect Core 1.0 section 3.1.2.1: ask the provider to authenticate
+            # the person again instead of reusing its own session.
+            params["prompt"] = "login"
+            params["max_age"] = "0"
         return f"{discovery['authorization_endpoint']}?{urlencode(params)}"
 
     async def _jwks_document(self, *, force: bool = False) -> dict[str, Any]:
@@ -147,11 +153,18 @@ class OIDCIdentityProvider:
         if claims.get("nonce") != expected_nonce:
             raise InvalidIdentityToken("ID token nonce mismatch")
 
+        raw_auth_time = claims.get("auth_time")
+        auth_time = (
+            int(raw_auth_time)
+            if isinstance(raw_auth_time, (int, float)) and not isinstance(raw_auth_time, bool)
+            else None
+        )
         return IdentityClaims(
             issuer=str(claims["iss"]),
             subject=str(claims["sub"]),
             email=claims.get("email"),
             display_name=claims.get("name") or claims.get("preferred_username"),
+            auth_time=auth_time,
         )
 
     async def exchange_code(

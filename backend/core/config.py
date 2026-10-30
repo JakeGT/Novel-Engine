@@ -99,17 +99,20 @@ class Settings(BaseSettings):
     # stand-in for tests and evaluations) or "none". Changing it needs a rebuild:
     # `make reindex`, then `make reindex-activate`.
     EMBEDDING_PROVIDER: Literal["minilm", "embeddinggemma", "api", "fake", "none"] = "minilm"
-    # EMBEDDING_PROVIDER=api: any OpenAI-compatible embeddings endpoint (OpenAI, Google,
-    # Mistral, OpenRouter, or Ollama/LM Studio on this machine). https unless local.
-    EMBEDDING_API_BASE_URL: str = "https://api.openai.com/v1"
+    # EMBEDDING_PROVIDER=api: which provider's table entry to follow (backend/domain/
+    # embedding_providers.py). The base URL, name and model below each default to "" for
+    # "the provider's own" (its address, label, and first suggested model); set them to
+    # override. A base URL for a non-custom provider overrides its address.
+    EMBEDDING_API_PROVIDER: str = "openai"
+    EMBEDDING_API_BASE_URL: str = ""
     # A secret: set it in the environment or as a mounted secret file, never in git.
     EMBEDDING_API_KEY: str = ""
-    EMBEDDING_API_MODEL: str = "text-embedding-3-small"
-    # How long each vector is (at most 2,000, the search index's limit). With
-    # EMBEDDING_API_SEND_DIMENSION the service is asked for this size (OpenAI's
-    # text-embedding-3 and Google's models can shorten theirs); turn that off for a
-    # service that refuses the "dimensions" field and set its own size here.
-    EMBEDDING_API_DIMENSION: int = 1536
+    EMBEDDING_API_MODEL: str = ""
+    # How long each vector is (at most 2,000, the search index's limit); 0 means the
+    # model's default size. With EMBEDDING_API_SEND_DIMENSION the service is asked for
+    # this size (OpenAI's text-embedding-3 and Google's models can shorten theirs); turn
+    # that off for a service that refuses the size field and set its own size here.
+    EMBEDDING_API_DIMENSION: int = 0
     EMBEDDING_API_SEND_DIMENSION: bool = True
     # The name authors are shown for where their writing goes ("OpenAI"); the host if empty.
     EMBEDDING_API_NAME: str = ""
@@ -284,9 +287,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_embedding_service(self) -> "Settings":
-        # Said at start-up rather than as a failed search later.
-        if not 1 <= self.EMBEDDING_API_DIMENSION <= 2000:
-            raise ValueError("EMBEDDING_API_DIMENSION must be between 1 and 2000")
+        # Said at start-up rather than as a failed search later. 0 means "the model's
+        # default size"; the resolved size is checked to be 1..2000 where it is used.
+        if not 0 <= self.EMBEDDING_API_DIMENSION <= 2000:
+            raise ValueError(
+                "EMBEDDING_API_DIMENSION must be between 1 and 2000 (or 0 for the model's)"
+            )
         if self.EMBEDDING_API_TIMEOUT_SECONDS <= 0:
             raise ValueError("EMBEDDING_API_TIMEOUT_SECONDS must be more than 0")
         return self
