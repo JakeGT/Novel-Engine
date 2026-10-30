@@ -7900,6 +7900,8 @@ export interface components {
             rotated_at?: string | null;
             /** Status */
             status: string;
+            /** Verified */
+            verified?: boolean | null;
             /** Workspace Id */
             workspace_id: string;
         };

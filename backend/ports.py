@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from backend.domain.archive import ArchiveImport, ImportStatus
 from backend.domain.canon.assertions import Belief, Fact
@@ -524,6 +524,17 @@ class AIGateway(Protocol):
         ...
 
     async def list_models(self, *, api_key: str, base_url: str) -> list[str]: ...
+
+    async def check_key(
+        self, *, api_key: str, base_url: str
+    ) -> Literal["ok", "refused", "unknown"]:
+        """Ask the provider whether it accepts the key, without spending anything.
+
+        ``refused`` means the provider answered with a clear "no" (401/403); ``ok``
+        means it accepted the key; anything else (unreachable, no models list, asked
+        to slow down, a server error) is ``unknown`` so a key is never thrown away
+        when only the network was wrong."""
+        ...
 
     async def aclose(self) -> None: ...
 
