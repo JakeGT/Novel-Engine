@@ -54,7 +54,8 @@ items below are unchanged. Current status: [`10-backlog.md`](10-backlog.md).
 - The open-source licence (none is in the repository; choosing one is the owner's decision).
 - Reinstalling Docker Compose on the host, and the deploy itself (the hosted containers were removed;
   volumes are intact).
-- The first hosted CI run and a restore drill on a clean host.
+- The first hosted CI run and a restore drill on a clean host. (2026-10-30: PR #2's jobs did not
+  start because of the GitHub account's billing; nothing in the code was run there.)
 - Turning on GitHub private vulnerability reporting, which `SECURITY.md` points to.
 - A real provider run of the release-one workflow (drafting, checks, reading), which the gates require.
 
