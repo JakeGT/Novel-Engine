@@ -50,10 +50,13 @@ x-app: &app
     # only. "api" sends every passage to an embedding service under the site's own key
     # (secrets/embedding_api_key); authors are told so on the Assistant page. After changing
     # it: `docker compose exec server python -m backend.devtools.embeddings build`, then `activate`.
+    # Alternatively, leave EMBEDDING_PROVIDER at its default and set the site's setup (service,
+    # model, size and key) on the site settings page instead, then build from there.
     EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-minilm}
-    EMBEDDING_API_BASE_URL: ${EMBEDDING_API_BASE_URL:-https://api.openai.com/v1}
-    EMBEDDING_API_MODEL: ${EMBEDDING_API_MODEL:-text-embedding-3-small}
-    EMBEDDING_API_DIMENSION: ${EMBEDDING_API_DIMENSION:-1536}
+    EMBEDDING_API_PROVIDER: ${EMBEDDING_API_PROVIDER:-openai}
+    EMBEDDING_API_BASE_URL: ${EMBEDDING_API_BASE_URL:-}
+    EMBEDDING_API_MODEL: ${EMBEDDING_API_MODEL:-}
+    EMBEDDING_API_DIMENSION: ${EMBEDDING_API_DIMENSION:-0}
     EMBEDDING_API_NAME: ${EMBEDDING_API_NAME:-}
   secrets:
     - postgres_password

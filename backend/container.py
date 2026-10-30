@@ -139,6 +139,10 @@ class Container:
     embedding_index: Any = None
     embedding_index_service: Any = None
     media_search: Any = None
+    # The site's search setup kept on a page (its service, model, size and sealed key).
+    site_search_store: Any = None
+    site_search_service: Any = None
+    site_embedder: Any = None
     # The story's ready views, their builder and replay checks (QRY-001).
     read_model_store: Any = None
     read_models: Any = None
@@ -184,8 +188,21 @@ def build_container(settings: Settings | None = None) -> Container:
     )
     from backend.adapters.embedding import build_multimodal_embedder
     from backend.adapters.embedding_generations import PgEmbeddingIndexStore
+    from backend.adapters.embedding_site import SiteEmbedder
+    from backend.adapters.site_search import SiteSearchStore
 
-    multimodal_embedder = build_multimodal_embedder(resolved, embeddings)
+    startup_embedder = build_multimodal_embedder(resolved, embeddings)
+    site_search_store = SiteSearchStore(
+        resolved.postgres_dsn_psycopg,
+        kek=resolved.CREDENTIAL_KEK,
+        key_version=resolved.CREDENTIAL_KEK_VERSION,
+        previous_keks=resolved.previous_credential_keks,
+    )
+    # The delegating embedder follows the site's setup without a restart: server
+    # settings first, then a setup saved on the page, then the server's own model.
+    multimodal_embedder = SiteEmbedder(
+        settings=resolved, store=site_search_store, built_in=startup_embedder
+    )
     embedding_index = PgEmbeddingIndexStore(resolved.postgres_dsn_psycopg)
     database = PostgresDatabase(resolved)
     identity_provider = OIDCIdentityProvider(
@@ -201,10 +218,9 @@ def build_container(settings: Settings | None = None) -> Container:
         vectors=PgVectorStore(
             resolved.postgres_dsn_psycopg,
             multimodal_embedder,
-            # EMBEDDING_DIMENSION describes the MiniLM text model only.
-            dimension=resolved.EMBEDDING_DIMENSION
-            if resolved.EMBEDDING_PROVIDER == "minilm"
-            else None,
+            # The delegating embedder's space changes, so no fixed size is asserted here;
+            # the embedder's own size is authoritative.
+            dimension=None,
             index=embedding_index,
         ),
         embeddings=embeddings,
@@ -234,6 +250,8 @@ def build_container(settings: Settings | None = None) -> Container:
         identity_provider=identity_provider,
         multimodal_embedder=multimodal_embedder,
         embedding_index=embedding_index,
+        site_search_store=site_search_store,
+        site_embedder=multimodal_embedder,
     )
 
     from backend.adapters.identity_store import (
@@ -911,6 +929,14 @@ def build_container(settings: Settings | None = None) -> Container:
         cropper=container.image_processor,
     )
     container.embedding_index_service.register_jobs()
+    from backend.services.site_search import SiteSearchService
+
+    container.site_search_service = SiteSearchService(
+        settings=resolved,
+        store=container.site_search_store,
+        embedder=container.site_embedder,
+        index=container.embedding_index_service,
+    )
     # Catching the search index up in the background, when switched on (CTX-012).
     container.embedding_index_service.schedule_catch_up(
         container.job_runner, resolved.SEARCH_INDEX_CATCH_UP_MINUTES

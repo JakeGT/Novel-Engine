@@ -292,6 +292,11 @@ class EmbeddingIndexService:
         searchable = False
         if self._embedder is None:
             reason = "Search by meaning is switched off."
+        elif not configured.get("available"):
+            # Off, or the model is not installed: the health reason says which in
+            # plain words. This comes before the space-match checks, because a model
+            # that cannot run is not "a different model from the index in use".
+            reason = str(configured.get("reason") or "The model for search is not available.")
         elif active is None:
             reason = "No search index has been built yet."
         elif not self._matches(active) and await self._call("count", active.id) == 0:
@@ -304,8 +309,6 @@ class EmbeddingIndexService:
                 "The search index in use was built with a different model from the one set "
                 "for this server. Build a new one (make reindex) and switch to it."
             )
-        elif not configured.get("available"):
-            reason = str(configured.get("reason") or "The model for search is not available.")
         else:
             searchable = True
         status = IndexStatus(

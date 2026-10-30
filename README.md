@@ -54,9 +54,9 @@ install it with `uv sync --locked --extra embeddings` when you need search by me
 vectors (`uv run --locked python -m backend.devtools.seed --vectors`), or real vector retrieval;
 `make reindex` builds a search index with the configured model. All automated tests use
 deterministic fakes and run without it. To run no model on the server at all (a small VPS, say),
-set `EMBEDDING_PROVIDER=api` and point it at an OpenAI-compatible embeddings service (see
-`.env.example`); every passage is then sent to that service, and authors are told so on the
-Assistant page.
+either set `EMBEDDING_PROVIDER=api` and point it at an OpenAI-compatible embeddings service (see
+`.env.example`), or set the site's service, model, size and key on the site settings page; every
+passage is then sent to that service, and authors are told so on the Assistant page.
 
 The full clean-checkout sequence used for Phase 0 verification is:
 
@@ -249,8 +249,9 @@ stored envelope-encrypted and never returned by the API; logs redact `sk-`/`sk-o
   and are sent to one when the author chooses; sound and film are not handled, and there is no
   hosted malware scanning.
 - Search by meaning needs the optional embeddings extra, which the hosted image does not install, or
-  an embedding service (`EMBEDDING_PROVIDER=api`); neither EmbeddingGemma 2 nor a real embedding
-  service has been run here (the service adapter is tested against a stand-in).
+  an embedding service (set on the site settings page, or `EMBEDDING_PROVIDER=api`); neither
+  EmbeddingGemma 2 nor a real embedding service has been run here (the service adapter is tested
+  against a stand-in).
 - Drafts stream as they are written, but are kept or discarded whole: no editing inside a draft,
   no merging.
 - The checks without a model find only what their words and records show (see each item's limits in

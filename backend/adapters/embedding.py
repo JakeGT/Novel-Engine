@@ -23,6 +23,7 @@ import importlib.util
 import io
 import json
 import logging
+import time
 import warnings
 from collections.abc import Callable, Sequence
 from typing import Any
@@ -422,6 +423,44 @@ class EmbeddingGemmaEmbedding:
         return out
 
 
+def api_embedder(
+    *,
+    provider_id: str,
+    base_url: str,
+    api_key: str,
+    model: str,
+    dimension: int,
+    name: str = "",
+    send_dimension: bool = True,
+    timeout_seconds: float = 30.0,
+    transport: Any = None,
+    sleep: Any = time.sleep,
+) -> Any:
+    """An ``ApiTextEmbedding`` for a provider, with that provider's request fields.
+
+    Used both for the server's settings and for a setup saved on the page, so the
+    provider's ``dimension_field`` and ``query_field`` are always applied. Returns the
+    adapter without calling anything.
+    """
+    from backend.adapters.embedding_api import ApiTextEmbedding
+    from backend.domain.embedding_providers import embedding_provider
+
+    spec = embedding_provider(provider_id)
+    return ApiTextEmbedding(
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+        dimension=dimension,
+        send_dimension=send_dimension,
+        name=name,
+        dimension_field=spec.dimension_field if spec is not None else "dimensions",
+        query_field=spec.query_field if spec is not None else None,
+        timeout_seconds=timeout_seconds,
+        transport=transport,
+        sleep=sleep,
+    )
+
+
 def build_multimodal_embedder(settings: Any, legacy: SentenceTransformerEmbedding) -> Any:
     """The typed embedder an install is configured for (``EMBEDDING_PROVIDER``).
 
@@ -441,15 +480,38 @@ def build_multimodal_embedder(settings: Any, legacy: SentenceTransformerEmbeddin
             dtype=settings.EMBEDDING_DTYPE,
         )
     if provider == "api":
-        from backend.adapters.embedding_api import ApiTextEmbedding
+        from backend.domain.embedding_providers import (
+            MAX_DIMENSION,
+            default_dimension,
+            embedding_provider,
+        )
 
-        return ApiTextEmbedding(
-            base_url=settings.EMBEDDING_API_BASE_URL,
+        provider_id = str(getattr(settings, "EMBEDDING_API_PROVIDER", "openai") or "openai")
+        spec = embedding_provider(provider_id)
+        base_url = str(getattr(settings, "EMBEDDING_API_BASE_URL", "") or "").strip()
+        if not base_url and spec is not None:
+            base_url = spec.base_url or ""
+        model = str(getattr(settings, "EMBEDDING_API_MODEL", "") or "").strip()
+        if not model and spec is not None and spec.models:
+            model = spec.models[0].id
+        dimension = int(getattr(settings, "EMBEDDING_API_DIMENSION", 0) or 0)
+        if dimension == 0:
+            dimension = default_dimension(model) or 0
+        if not 1 <= dimension <= MAX_DIMENSION:
+            raise EmbeddingError(
+                "EMBEDDING_API_DIMENSION must resolve to a size between 1 and 2000"
+            )
+        name = str(getattr(settings, "EMBEDDING_API_NAME", "") or "").strip()
+        if not name and spec is not None:
+            name = spec.label
+        return api_embedder(
+            provider_id=provider_id,
+            base_url=base_url,
             api_key=settings.EMBEDDING_API_KEY,
-            model=settings.EMBEDDING_API_MODEL,
-            dimension=settings.EMBEDDING_API_DIMENSION,
+            model=model,
+            dimension=dimension,
+            name=name,
             send_dimension=settings.EMBEDDING_API_SEND_DIMENSION,
-            name=settings.EMBEDDING_API_NAME,
             timeout_seconds=settings.EMBEDDING_API_TIMEOUT_SECONDS,
         )
     if provider == "fake":
@@ -463,6 +525,7 @@ __all__ = [
     "EmbeddingGemmaEmbedding",
     "MiniLMTextEmbedding",
     "SentenceTransformerEmbedding",
+    "api_embedder",
     "build_multimodal_embedder",
     "decode_image",
 ]

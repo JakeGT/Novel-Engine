@@ -839,7 +839,13 @@ class FakeIdentityProvider:
         return self._available
 
     async def authorization_url(
-        self, *, state: str, nonce: str, code_challenge: str, redirect_uri: str
+        self,
+        *,
+        state: str,
+        nonce: str,
+        code_challenge: str,
+        redirect_uri: str,
+        fresh: bool = False,
     ) -> str:
         self.authorization_calls.append(
             {
@@ -847,12 +853,14 @@ class FakeIdentityProvider:
                 "nonce": nonce,
                 "code_challenge": code_challenge,
                 "redirect_uri": redirect_uri,
+                "fresh": str(fresh),
             }
         )
+        extra = "&prompt=login&max_age=0" if fresh else ""
         return (
             f"https://idp.test/authorize?state={state}&nonce={nonce}"
             f"&code_challenge={code_challenge}&code_challenge_method=S256"
-            f"&redirect_uri={redirect_uri}"
+            f"&redirect_uri={redirect_uri}{extra}"
         )
 
     async def exchange_code(
@@ -937,6 +945,7 @@ class InMemorySessionStore:
         csrf_token: str,
         rotated_from: str | None = None,
         id_token: str | None = None,
+        authenticated_at: datetime | None = None,
     ) -> Session:
         from datetime import timedelta
 
@@ -950,6 +959,7 @@ class InMemorySessionStore:
             expires_at=now + timedelta(seconds=ttl_seconds),
             rotated_from=rotated_from,
             id_token=id_token,
+            authenticated_at=authenticated_at if authenticated_at is not None else now,
         )
         self.sessions[raw] = session
         return session
@@ -999,6 +1009,8 @@ class InMemoryLoginAttemptStore:
         code_verifier: str,
         redirect_uri: str,
         ttl_seconds: int,
+        fresh: bool = False,
+        return_to: str | None = None,
     ) -> LoginAttempt:
         from datetime import timedelta
 
@@ -1010,6 +1022,8 @@ class InMemoryLoginAttemptStore:
             redirect_uri=redirect_uri,
             created_at=now,
             expires_at=now + timedelta(seconds=ttl_seconds),
+            fresh=fresh,
+            return_to=return_to,
         )
         self.attempts[state] = attempt
         return attempt

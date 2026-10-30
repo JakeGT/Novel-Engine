@@ -5578,6 +5578,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/site/search-providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Search Providers */
+        get: operations["list_search_providers_api_v1_site_search_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/site/search-setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Search Setup */
+        get: operations["get_search_setup_api_v1_site_search_setup_get"];
+        /** Put Search Setup */
+        put: operations["put_search_setup_api_v1_site_search_setup_put"];
+        post?: never;
+        /** Delete Search Setup */
+        delete: operations["delete_search_setup_api_v1_site_search_setup_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/site/search-setup/build": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Build Search Setup */
+        post: operations["build_search_setup_api_v1_site_search_setup_build_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/site/search-setup/build/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Search Build */
+        post: operations["cancel_search_build_api_v1_site_search_setup_build_cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces": {
         parameters: {
             query?: never;
@@ -6677,6 +6747,13 @@ export interface components {
              * @default
              */
             when: string;
+        };
+        /** BuiltInModel */
+        BuiltInModel: {
+            /** Dimension */
+            dimension: number;
+            /** Model */
+            model: string;
         };
         /** CalibrationList */
         CalibrationList: {
@@ -11723,6 +11800,17 @@ export interface components {
             /** Content */
             content: string;
         };
+        /** SaveSearchSetupModel */
+        SaveSearchSetupModel: {
+            /**
+             * Check
+             * @enum {string}
+             */
+            check: "ok" | "unchecked";
+            /** Message */
+            message: string;
+            state: components["schemas"]["SiteSearchStateModel"];
+        };
         /** ScaleProgressModel */
         ScaleProgressModel: {
             /** Rows */
@@ -12126,6 +12214,101 @@ export interface components {
             /** Withdrawn At */
             withdrawn_at?: string | null;
         };
+        /** SearchBuildModel */
+        SearchBuildModel: {
+            /** Done */
+            done: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "running" | "waiting" | "failed";
+            /** Total */
+            total: number;
+        };
+        /** SearchIndexModel */
+        SearchIndexModel: {
+            /** Active Model */
+            active_model: string | null;
+            build: components["schemas"]["SearchBuildModel"] | null;
+            /** Building */
+            building: boolean;
+            /** Needs Build */
+            needs_build: boolean;
+            /** Searchable */
+            searchable: boolean;
+        };
+        /** SearchModelModel */
+        SearchModelModel: {
+            /** Adjustable */
+            adjustable: boolean;
+            /** Default Dimension */
+            default_dimension: number | null;
+            /** Dimension */
+            dimension: number;
+            /** Id */
+            id: string;
+        };
+        /** SearchProviderModel */
+        SearchProviderModel: {
+            /** Base Url */
+            base_url: string | null;
+            /** Dimension Choices */
+            dimension_choices: number[] | null;
+            /** Docs */
+            docs: string;
+            /**
+             * Group
+             * @enum {string}
+             */
+            group: "Model makers" | "Hosting and routing" | "Your own";
+            /** Id */
+            id: string;
+            /** Key Hint */
+            key_hint: string | null;
+            /** Key Optional When Local */
+            key_optional_when_local: boolean;
+            /** Key Url */
+            key_url: string | null;
+            /** Label */
+            label: string;
+            /** Models */
+            models: components["schemas"]["SearchModelModel"][];
+            /** Needs Url */
+            needs_url: boolean;
+        };
+        /** SearchSetupDetailModel */
+        SearchSetupDetailModel: {
+            /** Base Url */
+            base_url: string | null;
+            /** Dimension */
+            dimension: number;
+            /** Host */
+            host: string;
+            key: components["schemas"]["SearchSetupKeyModel"];
+            /** Model */
+            model: string;
+            /** Provider */
+            provider: string;
+            /** Provider Label */
+            provider_label: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Verified */
+            verified: boolean | null;
+        };
+        /** SearchSetupKeyModel */
+        SearchSetupKeyModel: {
+            /** Hint */
+            hint: string | null;
+            /** Set */
+            set: boolean;
+            /** Updated At */
+            updated_at: string | null;
+        };
         /**
          * SearchWhereModel
          * @description Where an author's writing goes to be searchable by meaning. Set by whoever runs the
@@ -12358,6 +12541,36 @@ export interface components {
             name: string;
             /** Note */
             note: string;
+        };
+        /** SiteSearchSetupRequest */
+        SiteSearchSetupRequest: {
+            /** Api Key */
+            api_key?: string | null;
+            /** Base Url */
+            base_url?: string | null;
+            /** Dimension */
+            dimension: number;
+            /** Model */
+            model: string;
+            /** Provider */
+            provider: string;
+        };
+        /** SiteSearchStateModel */
+        SiteSearchStateModel: {
+            built_in: components["schemas"]["BuiltInModel"] | null;
+            /** Editable */
+            editable: boolean;
+            index: components["schemas"]["SearchIndexModel"];
+            /** Kek Configured */
+            kek_configured: boolean;
+            setup: components["schemas"]["SearchSetupDetailModel"] | null;
+            /** Sign In Needed */
+            sign_in_needed: boolean;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "page" | "server" | "built_in" | "off";
         };
         /**
          * SourceKind
@@ -24984,6 +25197,139 @@ export interface operations {
             };
         };
     };
+    list_search_providers_api_v1_site_search_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchProviderModel"][];
+                };
+            };
+        };
+    };
+    get_search_setup_api_v1_site_search_setup_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteSearchStateModel"];
+                };
+            };
+        };
+    };
+    put_search_setup_api_v1_site_search_setup_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SiteSearchSetupRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaveSearchSetupModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_search_setup_api_v1_site_search_setup_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteSearchStateModel"];
+                };
+            };
+        };
+    };
+    build_search_setup_api_v1_site_search_setup_build_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteSearchStateModel"];
+                };
+            };
+        };
+    };
+    cancel_search_build_api_v1_site_search_setup_build_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteSearchStateModel"];
+                };
+            };
+        };
+    };
     list_workspaces_api_v1_workspaces_get: {
         parameters: {
             query?: never;
@@ -25458,7 +25804,10 @@ export interface operations {
     };
     login_auth_login_get: {
         parameters: {
-            query?: never;
+            query?: {
+                fresh?: string | null;
+                return_to?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -25472,6 +25821,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -73,11 +73,30 @@
   created or rotated the provider is asked whether it accepts it; a clear "no" is answered 400 and
   nothing is stored, and the answer's `verified` says `true` when the provider accepted it, `false`
   when it could not be reached (the key is kept and tried on first use), or `null` from the list.
+- `/api/v1/site/search-providers`, `/api/v1/site/search-setup` (`GET`, `PUT`, `DELETE`),
+  `/api/v1/site/search-setup/build` (+ `/build/cancel`): the site's search-by-meaning setup, set by
+  a platform administrator. The providers list is the table (OpenAI, Google Gemini, Mistral,
+  Voyage, OpenRouter, and "your own"); `search-setup` reports the source (`server`, `page`,
+  `built_in` or `off`), the saved setup (key as `set`, the stored key's last four characters as
+  `hint`, and when it was set, never the key), the index in use and whether a build is needed.
+  Saving checks the key against the provider by embedding the fixed word `lighthouse` (never an
+  author's words): a refused key is `400 key_refused`, a refused model `400 model_refused`, a
+  wrong size `400 size_mismatch`, a 2xx answer that is not an embedding service is
+  `400 not_a_service`, and an unreachable provider is kept with `verified: false`. Changing the
+  provider or the address needs the key typed again, and needs a sign-in within 15 minutes
+  (`403 sign_in_again`); saving a local address with no key drops a key sealed for another
+  provider or host. The key is sealed under `CREDENTIAL_KEK` and is never returned. `/auth/me`
+  reports `platform_admin`.
 - `/api/v1/ai/connector/codes/check`, `/codes/decide`, `/devices`, `/devices/{id}/use`,
   `/devices/{id}/disconnect`, `DELETE /ai/connector/use`: a workspace owner confirms a computer's
   connection code, lists connected computers, chooses one of their models for the assistant, stops
   using it, or disconnects it (SCN-002A, ADR-025).
 - `/auth/login`, `/auth/callback`, `/auth/me`, `/auth/logout`: OIDC (hosted) or local session.
+  `/auth/login` accepts `fresh=1` (hosted: the authorization request carries `prompt=login` and
+  `max_age=0`, and the callback refuses an ID token whose `auth_time` is missing or older than
+  5 minutes, plus 60 s clock skew, redirecting to `/?signin=stale`) and `return_to` (a same-site
+  path only, at most 200 characters; anything else is ignored). Both local and hosted logins
+  return to it after success.
 - `/api/v1/access-keys` (`GET`, `POST`; `/{id}/revoke`, `/{id}/uses`): personal access keys for
   other assistants (QRY-003, ADR-024). Signed-in session routes; `POST` answers with the key once
   (`key`), never again. A member sees their own keys; an owner sees and can withdraw everyone's in

@@ -60,20 +60,40 @@ depends on it, and it can always be built again. See ADR-010 (amendment 2026-10-
 
 **Using an embedding service instead** (no model on this server; for a small VPS):
 
-1. Set `EMBEDDING_PROVIDER=api`, `EMBEDDING_API_BASE_URL` (default OpenAI's),
-   `EMBEDDING_API_MODEL`, `EMBEDDING_API_DIMENSION` (at most 2000; OpenAI's
-   `text-embedding-3-small` gives 1536, and Google's models and OpenAI's large model are asked to
-   shorten theirs) and `EMBEDDING_API_NAME` (what authors are shown). The key goes in
-   `EMBEDDING_API_KEY`, or in `secrets/embedding_api_key` on the hosted stack. A service that
-   refuses the `dimensions` field needs `EMBEDDING_API_SEND_DIMENSION=false` and its own size.
-2. Restart, then build and switch as in steps 3 and 4 above. The build sends every stored passage
-   of every story to the service, under the site's key; the Assistant page tells authors where
-   their writing goes ("Search by meaning").
-3. `python -m backend.devtools.diagnostics` shows the service's host and whether a key is set,
-   never the key. A refused key or unknown model is logged as `embedding.api_refused` with the
-   status only; a busy or failing service is tried three times when writing (`embedding.api_failed`), and the
-   passage waits on the list to be tried again; a search query gets one try of at most eight
-   seconds, then that search uses words only. Pictures are not searched by meaning this way.
+There are two ways. Setting the key on the site settings page is the usual one; the server's own
+settings are for an install that cannot use the page.
+
+**On the page (a platform administrator):** open the site settings page, pick a provider (OpenAI,
+Google Gemini, Mistral, Voyage, OpenRouter, or "your own" OpenAI-compatible address), type a model
+and a size, and paste the key. The key is checked against the provider before it is kept (a
+refused key or model is said in plain words; an address that answers but is not an embedding
+service is refused; a provider that cannot be reached is kept as "unchecked"), then sealed and
+never shown again — only the last four characters and when it was set. Changing the provider or
+the address needs the key typed again, and needs a sign-in within the last 15 minutes. Saving a
+local address with no key removes a key sealed for another provider or host, so the page never
+claims a key is in use when it is not. The provider, model, size, whether the check passed and the
+host are logged (`site.search_setup_changed`), never the key. Then "Build search index" on the
+page builds the new index in the background and switches to it once nothing is missing; a build
+that fails is logged as `site.search_build_failed` (error type only), and one stopped by the
+person as `site.search_build_stopped`.
+
+**In the server's settings:** set `EMBEDDING_PROVIDER=api` and `EMBEDDING_API_PROVIDER` (the
+provider's table id), then any of `EMBEDDING_API_BASE_URL`, `EMBEDDING_API_MODEL`,
+`EMBEDDING_API_DIMENSION` (at most 2000; 0 means the model's default) and `EMBEDDING_API_NAME`
+(the provider's own are the defaults). The key goes in `EMBEDDING_API_KEY`, or in
+`secrets/embedding_api_key` on the hosted stack. When `EMBEDDING_PROVIDER=api` has a key (or a
+local address), it wins over the page and the page cannot change it. A service that refuses the
+size field needs `EMBEDDING_API_SEND_DIMENSION=false` and its own size.
+
+Either way, then build and switch as in steps 3 and 4 above (or use the page's build button). The
+build sends every stored passage of every story to the service, under the site's key; the
+Assistant page tells authors where their writing goes ("Search by meaning").
+
+`python -m backend.devtools.diagnostics` shows the service's host and whether a key is set, never
+the key. A refused key or unknown model is logged as `embedding.api_refused` with the status only;
+a busy or failing service is tried three times when writing (`embedding.api_failed`), and the
+passage waits on the list to be tried again; a search query gets one try of at most eight seconds,
+then that search uses words only. Pictures are not searched by meaning this way.
 
 **Going back:** `make reindex-rollback` switches to the index used before. If the model setting
 is still the new one, search stays off until the setting is changed back and the server

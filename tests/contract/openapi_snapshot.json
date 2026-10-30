@@ -2811,6 +2811,24 @@
         "title": "BrokenByModel",
         "type": "object"
       },
+      "BuiltInModel": {
+        "properties": {
+          "dimension": {
+            "title": "Dimension",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "dimension"
+        ],
+        "title": "BuiltInModel",
+        "type": "object"
+      },
       "CalibrationList": {
         "properties": {
           "items": {
@@ -17024,6 +17042,32 @@
         "title": "SaveRequest",
         "type": "object"
       },
+      "SaveSearchSetupModel": {
+        "properties": {
+          "check": {
+            "enum": [
+              "ok",
+              "unchecked"
+            ],
+            "title": "Check",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/SiteSearchStateModel"
+          }
+        },
+        "required": [
+          "check",
+          "message",
+          "state"
+        ],
+        "title": "SaveSearchSetupModel",
+        "type": "object"
+      },
       "ScaleProgressModel": {
         "properties": {
           "rows": {
@@ -18197,6 +18241,322 @@
         "title": "ScopedDismissalModel",
         "type": "object"
       },
+      "SearchBuildModel": {
+        "properties": {
+          "done": {
+            "title": "Done",
+            "type": "integer"
+          },
+          "state": {
+            "enum": [
+              "running",
+              "waiting",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "done",
+          "total",
+          "state"
+        ],
+        "title": "SearchBuildModel",
+        "type": "object"
+      },
+      "SearchIndexModel": {
+        "properties": {
+          "active_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Model"
+          },
+          "build": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchBuildModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "building": {
+            "title": "Building",
+            "type": "boolean"
+          },
+          "needs_build": {
+            "title": "Needs Build",
+            "type": "boolean"
+          },
+          "searchable": {
+            "title": "Searchable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "searchable",
+          "active_model",
+          "building",
+          "build",
+          "needs_build"
+        ],
+        "title": "SearchIndexModel",
+        "type": "object"
+      },
+      "SearchModelModel": {
+        "properties": {
+          "adjustable": {
+            "title": "Adjustable",
+            "type": "boolean"
+          },
+          "default_dimension": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Dimension"
+          },
+          "dimension": {
+            "title": "Dimension",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "dimension",
+          "adjustable",
+          "default_dimension"
+        ],
+        "title": "SearchModelModel",
+        "type": "object"
+      },
+      "SearchProviderModel": {
+        "properties": {
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "dimension_choices": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimension Choices"
+          },
+          "docs": {
+            "title": "Docs",
+            "type": "string"
+          },
+          "group": {
+            "enum": [
+              "Model makers",
+              "Hosting and routing",
+              "Your own"
+            ],
+            "title": "Group",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Hint"
+          },
+          "key_optional_when_local": {
+            "title": "Key Optional When Local",
+            "type": "boolean"
+          },
+          "key_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Url"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/SearchModelModel"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "needs_url": {
+            "title": "Needs Url",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "group",
+          "base_url",
+          "needs_url",
+          "key_url",
+          "key_hint",
+          "key_optional_when_local",
+          "docs",
+          "models",
+          "dimension_choices"
+        ],
+        "title": "SearchProviderModel",
+        "type": "object"
+      },
+      "SearchSetupDetailModel": {
+        "properties": {
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "dimension": {
+            "title": "Dimension",
+            "type": "integer"
+          },
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "key": {
+            "$ref": "#/components/schemas/SearchSetupKeyModel"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "provider_label": {
+            "title": "Provider Label",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "verified": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified"
+          }
+        },
+        "required": [
+          "provider",
+          "provider_label",
+          "model",
+          "dimension",
+          "base_url",
+          "host",
+          "key",
+          "verified",
+          "updated_at"
+        ],
+        "title": "SearchSetupDetailModel",
+        "type": "object"
+      },
+      "SearchSetupKeyModel": {
+        "properties": {
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hint"
+          },
+          "set": {
+            "title": "Set",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "set",
+          "hint",
+          "updated_at"
+        ],
+        "title": "SearchSetupKeyModel",
+        "type": "object"
+      },
       "SearchWhereModel": {
         "description": "Where an author's writing goes to be searchable by meaning. Set by whoever runs the\nsite, not by a workspace's key, so every author is told the same.",
         "properties": {
@@ -18867,6 +19227,112 @@
           "note"
         ],
         "title": "SignalModel",
+        "type": "object"
+      },
+      "SiteSearchSetupRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "dimension": {
+            "title": "Dimension",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "dimension"
+        ],
+        "title": "SiteSearchSetupRequest",
+        "type": "object"
+      },
+      "SiteSearchStateModel": {
+        "properties": {
+          "built_in": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BuiltInModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "editable": {
+            "title": "Editable",
+            "type": "boolean"
+          },
+          "index": {
+            "$ref": "#/components/schemas/SearchIndexModel"
+          },
+          "kek_configured": {
+            "title": "Kek Configured",
+            "type": "boolean"
+          },
+          "setup": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchSetupDetailModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sign_in_needed": {
+            "title": "Sign In Needed",
+            "type": "boolean"
+          },
+          "source": {
+            "enum": [
+              "page",
+              "server",
+              "built_in",
+              "off"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "editable",
+          "kek_configured",
+          "setup",
+          "built_in",
+          "index",
+          "sign_in_needed"
+        ],
+        "title": "SiteSearchStateModel",
         "type": "object"
       },
       "SourceKind": {
@@ -41828,6 +42294,152 @@
         ]
       }
     },
+    "/api/v1/site/search-providers": {
+      "get": {
+        "operationId": "list_search_providers_api_v1_site_search_providers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SearchProviderModel"
+                  },
+                  "title": "Response List Search Providers Api V1 Site Search Providers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Search Providers",
+        "tags": [
+          "site"
+        ]
+      }
+    },
+    "/api/v1/site/search-setup": {
+      "delete": {
+        "operationId": "delete_search_setup_api_v1_site_search_setup_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteSearchStateModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Delete Search Setup",
+        "tags": [
+          "site"
+        ]
+      },
+      "get": {
+        "operationId": "get_search_setup_api_v1_site_search_setup_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteSearchStateModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Search Setup",
+        "tags": [
+          "site"
+        ]
+      },
+      "put": {
+        "operationId": "put_search_setup_api_v1_site_search_setup_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteSearchSetupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaveSearchSetupModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Search Setup",
+        "tags": [
+          "site"
+        ]
+      }
+    },
+    "/api/v1/site/search-setup/build": {
+      "post": {
+        "operationId": "build_search_setup_api_v1_site_search_setup_build_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteSearchStateModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Build Search Setup",
+        "tags": [
+          "site"
+        ]
+      }
+    },
+    "/api/v1/site/search-setup/build/cancel": {
+      "post": {
+        "operationId": "cancel_search_build_api_v1_site_search_setup_build_cancel_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteSearchStateModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Cancel Search Build",
+        "tags": [
+          "site"
+        ]
+      }
+    },
     "/api/v1/workspaces": {
       "get": {
         "operationId": "list_workspaces_api_v1_workspaces_get",
@@ -42534,6 +43146,40 @@
     "/auth/login": {
       "get": {
         "operationId": "login_auth_login_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "fresh",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fresh"
+            }
+          },
+          {
+            "in": "query",
+            "name": "return_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Return To"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -42542,6 +43188,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Login",

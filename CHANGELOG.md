@@ -96,7 +96,7 @@ for authors and for whoever runs an install. Version numbers start when the owne
 ### For whoever runs it
 
 - **Upgrading:** take a backup first (`deploy/hosted/backup.sh` on the hosted profile). The server
-  applies migrations on start; this release adds migrations up to `0062_audits_and_impact`. Key rotation: `python -m backend.devtools.rekey`. `0047` moves search vectors into a
+  applies migrations on start; this release adds migrations up to `0063_site_search_setup`. Key rotation: `python -m backend.devtools.rekey`. `0047` moves search vectors into a
   new table; run `make reindex-status` afterwards.
 - **Readiness** now answers `ready`, `degraded` (200) or `unavailable` (503, a required store is
   down); a watcher that looked for `degraded` on a store outage must look for `unavailable`.
@@ -118,6 +118,14 @@ for authors and for whoever runs an install. Version numbers start when the owne
   OpenAI-compatible embeddings service (`EMBEDDING_API_*` in `.env.example`; on the hosted stack
   the key is `secrets/embedding_api_key`). Every passage is sent to that service under the site's
   key; rebuild the index after switching (`plan/runbooks/search-index.md`). Text only.
+- **Setting the search key on a page:** a platform administrator can now pick the embedding
+  provider (OpenAI, Google Gemini, Mistral, Voyage, OpenRouter, or "your own" OpenAI-compatible
+  address), type a model and size, and paste the key on the site settings page instead of editing
+  settings. The key is checked against the provider before it is kept, then sealed and never shown
+  again; changing the provider or the address needs the key typed again and a recent sign-in.
+  Building the index and switching to it are on the same page. `EMBEDDING_API_PROVIDER` names the
+  provider's table entry; the base URL, name, model and size now default to the provider's own.
+  Authors see no change.
 - **Release artefacts:** `make release` builds a source tarball, wheel, the built frontend, SBOMs
   and checksums from one commit into `dist/release/`; `make release-check` builds twice and
   compares. Nothing is tagged or published.

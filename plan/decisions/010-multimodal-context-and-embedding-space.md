@@ -657,3 +657,36 @@ separating anything. A CPU-only MiniLM image: offered to the owner, not chosen n
 Sources: OpenAI embeddings reference <https://developers.openai.com/api/reference/resources/embeddings/methods/create>;
 Gemini OpenAI compatibility <https://ai.google.dev/api/compatibility>; Gemini Embedding GA
 <https://developers.googleblog.com/gemini-embedding-available-gemini-api/>.
+
+## Amendment 2026-10-30: the site's search key on a page, sealed and checked
+
+**Owner decision (2026-10-30):** the site's embedding service, model and size move from operator-only
+settings to a page a platform administrator fills in. The pattern is the same as the workspace AI
+keys: a provider table (one entry per provider plus a docs row), a key typed into a page and checked
+against the provider before it is kept, stored sealed (AES-GCM under `CREDENTIAL_KEK`), and never
+returned again — only "set", the last four characters and when it was set.
+
+**Chosen.** `backend/domain/embedding_providers.py` holds the providers (OpenAI, Google Gemini,
+Mistral, Voyage, OpenRouter, and "your own" OpenAI-compatible), each with its address, docs, where
+to make a key, what a key looks like, suggested models, and the request field for a requested size
+(`dimensions` or `output_dimension`; Voyage also sends `input_type` to tell a query from a
+document). A single row (`site_search_setup`) holds the site's choice with a version bumped on every
+change, and a single row (`site_search_secrets`) holds the key, sealed exactly like workspace
+credentials and included in the OPS-004 re-lock and verify tooling. Sessions gain
+`authenticated_at` (carried unchanged through rotation), so "signed in recently" means within 15
+minutes. A delegating embedder (`SiteEmbedder`) re-reads the stored setup when its version changes,
+so the vector store, the index service, `/ai/search`, diagnostics and the CLI all follow the setup
+without a restart. The order of precedence is: the server's `EMBEDDING_PROVIDER=api` settings (with
+a key, or a local address) → a setup saved on the page → the server's own model → off.
+
+Saving checks the new setup by embedding the single fixed word `lighthouse` (never an author's
+words): a clear 401/403 refuses the key, a 400/404/422 refuses the model or size, a wrong-sized
+answer says the size to set, and an unreachable or 5xx service is kept with `verified: false`.
+Changing the key, the provider or the address needs a recent sign-in, and a key is kept only while
+the provider and address are unchanged. Redirects are never followed (a redirect would carry the
+key elsewhere). The key is opened only while the embedder is built, held in memory only, never
+logged and never in a repr.
+
+**Rejected.** Keeping the setup only in server settings: that cannot be changed without a restart,
+and the page gives an administrator the same "typed in, checked, sealed, never shown again" custody
+the workspace keys already have.

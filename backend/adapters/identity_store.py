@@ -53,6 +53,7 @@ class SessionRow(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     rotated_from: Mapped[str | None] = mapped_column(Text, nullable=True)
     id_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    authenticated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class LoginAttemptRow(Base):
@@ -64,6 +65,8 @@ class LoginAttemptRow(Base):
     redirect_uri: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    fresh: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    return_to: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 def _to_user(row: UserRow) -> User:
@@ -181,9 +184,12 @@ class PostgresSessionStore:
         csrf_token: str,
         rotated_from: str | None = None,
         id_token: str | None = None,
+        authenticated_at: datetime | None = None,
     ) -> Session:
         raw_token = generate_token()
         now = utcnow()
+        # A rotated session keeps the moment the person signed in; a fresh one is now.
+        signed_in_at = authenticated_at if authenticated_at is not None else now
         expires_at = now + timedelta(seconds=ttl_seconds)
         async with session_scope(self._session_factory) as session:
             session.add(
@@ -195,6 +201,7 @@ class PostgresSessionStore:
                     expires_at=expires_at,
                     rotated_from=rotated_from,
                     id_token=id_token,
+                    authenticated_at=signed_in_at,
                 )
             )
         return Session(
@@ -205,6 +212,7 @@ class PostgresSessionStore:
             expires_at=expires_at,
             rotated_from=rotated_from,
             id_token=id_token,
+            authenticated_at=signed_in_at,
         )
 
     async def get(self, session_id: str) -> Session | None:
@@ -226,6 +234,7 @@ class PostgresSessionStore:
                 expires_at=row.expires_at,
                 rotated_from=row.rotated_from,
                 id_token=row.id_token,
+                authenticated_at=row.authenticated_at,
             )
 
     async def has_successor(self, session_id: str) -> bool:
@@ -274,6 +283,8 @@ class PostgresLoginAttemptStore:
         code_verifier: str,
         redirect_uri: str,
         ttl_seconds: int,
+        fresh: bool = False,
+        return_to: str | None = None,
     ) -> LoginAttempt:
         now = utcnow()
         expires_at = now + timedelta(seconds=ttl_seconds)
@@ -286,6 +297,8 @@ class PostgresLoginAttemptStore:
                     redirect_uri=redirect_uri,
                     created_at=now,
                     expires_at=expires_at,
+                    fresh=fresh,
+                    return_to=return_to,
                 )
             )
         return LoginAttempt(
@@ -295,6 +308,8 @@ class PostgresLoginAttemptStore:
             redirect_uri=redirect_uri,
             created_at=now,
             expires_at=expires_at,
+            fresh=fresh,
+            return_to=return_to,
         )
 
     async def consume(self, state: str) -> LoginAttempt | None:
@@ -312,6 +327,8 @@ class PostgresLoginAttemptStore:
                 redirect_uri=row.redirect_uri,
                 created_at=row.created_at,
                 expires_at=row.expires_at,
+                fresh=row.fresh,
+                return_to=row.return_to,
             )
             if attempt.expires_at <= utcnow():
                 return None

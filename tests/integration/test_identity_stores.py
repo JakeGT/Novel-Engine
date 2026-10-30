@@ -101,6 +101,23 @@ async def test_login_attempt_is_consumed_once(session_factory) -> None:
 
 
 @pytest.mark.asyncio
+async def test_login_attempt_keeps_fresh_and_return_to(session_factory) -> None:
+    store = PostgresLoginAttemptStore(session_factory)
+    await store.create(
+        state="s3",
+        nonce="n",
+        code_verifier="v",
+        redirect_uri="https://x/cb",
+        ttl_seconds=600,
+        fresh=True,
+        return_to="/site",
+    )
+    attempt = await store.consume("s3")
+    assert attempt is not None
+    assert attempt.fresh is True and attempt.return_to == "/site"
+
+
+@pytest.mark.asyncio
 async def test_login_attempt_expires(session_factory) -> None:
     store = PostgresLoginAttemptStore(session_factory)
     await store.create(

@@ -5,6 +5,8 @@ Each stored provider key has its own data key, locked with the server's credenti
 given the new key as the current one and the old one in ``CREDENTIAL_PREVIOUS_KEKS``, so
 keys on either version keep working. This command moves every stored key to the current
 version in place, so the old key can be retired without asking owners to connect again.
+It also moves the site's own search key (the embedding service key set on the page), which
+is sealed the same way.
 
 Commands (counts and credential ids only are printed; never a key, its last characters,
 its fingerprint or a credential key):
@@ -74,6 +76,39 @@ def _counts(report: Any) -> list[dict[str, Any]]:
     return [asdict(item) for item in report]
 
 
+def _merge_rekey(primary: Any, site: Any) -> Any:
+    """One report covering both workspace keys and the site's own search key."""
+    primary.examined += site.examined
+    primary.already_current += site.already_current
+    primary.rekeyed.extend(site.rekeyed)
+    primary.skipped_revoked += site.skipped_revoked
+    for version, ids in site.missing_version.items():
+        primary.missing_version.setdefault(version, []).extend(ids)
+    primary.unopenable.extend(site.unopenable)
+    return primary
+
+
+def _merge_verify(primary: Any, site: Any) -> Any:
+    from dataclasses import replace
+
+    counts: dict[tuple[int, str], Any] = {
+        (item.key_version, item.status): item for item in primary.by_version
+    }
+    for item in site.by_version:
+        key = (item.key_version, item.status)
+        if key in counts:
+            counts[key] = replace(counts[key], count=counts[key].count + item.count)
+        else:
+            counts[key] = item
+    primary.by_version = [counts[key] for key in sorted(counts)]
+    primary.checked += site.checked
+    primary.opened += site.opened
+    for version, ids in site.missing_version.items():
+        primary.missing_version.setdefault(version, []).extend(ids)
+    primary.unopenable.extend(site.unopenable)
+    return primary
+
+
 async def run(
     command: str,
     settings: Settings,
@@ -91,11 +126,12 @@ async def run(
     owned = container is None
     engine: Any = None
     if owned:
-        # Only the two stores it needs, so the command works even when another part of the
+        # Only the stores it needs, so the command works even when another part of the
         # server cannot start.
         from types import SimpleNamespace
 
         from backend.adapters.credentials import PostgresCredentialVault
+        from backend.adapters.site_search import SiteSearchStore
         from backend.adapters.tenancy_store import PostgresTenancyStore
         from backend.core.database import create_engine, create_session_factory
 
@@ -109,20 +145,34 @@ async def run(
                 previous_keks=settings.previous_credential_keks,
             ),
             tenancy=PostgresTenancyStore(factory),
+            site_search=SiteSearchStore(
+                settings.postgres_dsn_psycopg,
+                kek=settings.CREDENTIAL_KEK,
+                key_version=settings.CREDENTIAL_KEK_VERSION,
+                previous_keks=settings.previous_credential_keks,
+            ),
         )
     try:
         vault = container.credentials
+        site = getattr(container, "site_search", None)
         if command == "status":
+            keys = _counts(await vault.key_versions())
+            if site is not None:
+                keys.extend(_counts(site.key_versions()))
             return 0, {
                 "current_version": vault.current_version,
                 "configured_versions": vault.configured_versions,
-                "keys": _counts(await vault.key_versions()),
+                "keys": keys,
             }
         if command == "rekey":
             # Each move's audit event is written with the move itself, in one transaction.
             report = await vault.rekey(
                 dry_run=not apply, include_revoked=include_revoked, audit_actor=OPERATOR_ACTOR
             )
+            if site is not None:
+                report = _merge_rekey(
+                    report, site.rekey(dry_run=not apply, audit_actor=OPERATOR_ACTOR)
+                )
             return (0 if report.ok else 1), {
                 "ok": report.ok,
                 "dry_run": report.dry_run,
@@ -136,6 +186,8 @@ async def run(
             }
         if command == "verify":
             check = await vault.verify(include_revoked=include_revoked)
+            if site is not None:
+                check = _merge_verify(check, site.verify(include_revoked=include_revoked))
             return (0 if check.ok else 1), {
                 "ok": check.ok,
                 "current_version": check.current_version,
