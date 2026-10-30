@@ -283,9 +283,11 @@ then `pnpm --dir frontend run gen:api`.
 **Phase 2 has no remaining code work.** What is open is owner or operational:
 
 1. ~~Accept or reject `plan/phase-1-evidence.md`.~~ Accepted by the owner on 2026-10-09.
-2. Push `phase-2-closure` and run the first clean-checkout hosted CI workflow. The `e2e-browser`
-   job and the API-drift step were added in this work and have never run in hosted CI, so expect to
-   fix environment details there.
+2. ~~Push `phase-2-closure`.~~ Pushed and merged into `main` as PR #2 on 2026-10-30, after every
+   check passed locally. The first hosted CI run is still open: on PR #2 GitHub did not start any
+   job ("recent account payments have failed or your spending limit needs to be increased"), so the
+   `e2e-browser` job and the API-drift step have still never run in hosted CI. Fix the account's
+   billing, then re-run the workflow on `main` and expect to fix environment details there.
 3. Run, or time-box, the clean-host install and coordinated PostgreSQL/Neo4j/object-store
    backup/restore rehearsal.
    **Deferred by the owner on 2026-10-10** until the project is complete and on a permanent host.
